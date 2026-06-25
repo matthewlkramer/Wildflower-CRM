@@ -33,9 +33,10 @@ import type {
   CreateQuickbooksRuleBody,
   EmailIntelFeedbackList,
   EmailIntelPrompt,
-  EmailIntelPromptOverview,
+  EmailIntelPromptConsole,
   EntityCodingRule,
   ForbiddenResponse,
+  GenerateEmailIntelPromptBody,
   GetOwnedRecordCountsParams,
   NotFoundResponse,
   OwnedRecordCounts,
@@ -62,7 +63,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
- * @summary Active AI prompt + draft + version history (admin only)
+ * @summary Per-(signal type, review phase) review prompts — active + draft + history (admin only)
  */
 export const getAdminListEmailIntelPromptsUrl = () => {
 
@@ -72,9 +73,9 @@ export const getAdminListEmailIntelPromptsUrl = () => {
   return `/api/admin/email-intel/prompts`
 }
 
-export const adminListEmailIntelPrompts = async ( options?: RequestInit): Promise<EmailIntelPromptOverview> => {
+export const adminListEmailIntelPrompts = async ( options?: RequestInit): Promise<EmailIntelPromptConsole> => {
   
-  return customFetch<EmailIntelPromptOverview>(getAdminListEmailIntelPromptsUrl(),
+  return customFetch<EmailIntelPromptConsole>(getAdminListEmailIntelPromptsUrl(),
   {      
     ...options,
     method: 'GET'
@@ -117,7 +118,7 @@ export type AdminListEmailIntelPromptsQueryError = ErrorType<void>
 
 
 /**
- * @summary Active AI prompt + draft + version history (admin only)
+ * @summary Per-(signal type, review phase) review prompts — active + draft + history (admin only)
  */
 
 export function useAdminListEmailIntelPrompts<TData = Awaited<ReturnType<typeof adminListEmailIntelPrompts>>, TError = ErrorType<void>>(
@@ -136,7 +137,7 @@ export function useAdminListEmailIntelPrompts<TData = Awaited<ReturnType<typeof 
 
 
 /**
- * @summary Save a hand-edited prompt as the new active version (admin only)
+ * @summary Save a hand-edited review prompt as the new active version for a (signal type, review phase) key (admin only)
  */
 export const getAdminSaveEmailIntelPromptUrl = () => {
 
@@ -193,7 +194,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type AdminSaveEmailIntelPromptMutationError = ErrorType<BadRequestResponse | void>
 
     /**
- * @summary Save a hand-edited prompt as the new active version (admin only)
+ * @summary Save a hand-edited review prompt as the new active version for a (signal type, review phase) key (admin only)
  */
 export const useAdminSaveEmailIntelPrompt = <TError = ErrorType<BadRequestResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminSaveEmailIntelPrompt>>, TError,{data: BodyType<SaveEmailIntelPromptBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -206,7 +207,7 @@ export const useAdminSaveEmailIntelPrompt = <TError = ErrorType<BadRequestRespon
       return useMutation(getAdminSaveEmailIntelPromptMutationOptions(options));
     }
     /**
- * @summary Draft an improved prompt from recent feedback, saved as a non-active draft (admin only)
+ * @summary Draft an improved review prompt for a (signal type, review phase) key from recent feedback, saved as a non-active draft (admin only)
  */
 export const getAdminGenerateEmailIntelPromptUrl = () => {
 
@@ -216,23 +217,24 @@ export const getAdminGenerateEmailIntelPromptUrl = () => {
   return `/api/admin/email-intel/prompts/generate`
 }
 
-export const adminGenerateEmailIntelPrompt = async ( options?: RequestInit): Promise<EmailIntelPrompt> => {
+export const adminGenerateEmailIntelPrompt = async (generateEmailIntelPromptBody: GenerateEmailIntelPromptBody, options?: RequestInit): Promise<EmailIntelPrompt> => {
   
   return customFetch<EmailIntelPrompt>(getAdminGenerateEmailIntelPromptUrl(),
   {      
     ...options,
-    method: 'POST'
-    
-    
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      generateEmailIntelPromptBody,)
   }
 );}
   
 
 
 
-export const getAdminGenerateEmailIntelPromptMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>, TError,void, TContext> => {
+export const getAdminGenerateEmailIntelPromptMutationOptions = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>, TError,{data: BodyType<GenerateEmailIntelPromptBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>, TError,{data: BodyType<GenerateEmailIntelPromptBody>}, TContext> => {
 
 const mutationKey = ['adminGenerateEmailIntelPrompt'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -244,10 +246,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>, void> = () => {
-          
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>, {data: BodyType<GenerateEmailIntelPromptBody>}> = (props) => {
+          const {data} = props ?? {};
 
-          return  adminGenerateEmailIntelPrompt(requestOptions)
+          return  adminGenerateEmailIntelPrompt(data,requestOptions)
         }
 
 
@@ -258,18 +260,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminGenerateEmailIntelPromptMutationResult = NonNullable<Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>>
-    
-    export type AdminGenerateEmailIntelPromptMutationError = ErrorType<void>
+    export type AdminGenerateEmailIntelPromptMutationBody = BodyType<GenerateEmailIntelPromptBody>
+    export type AdminGenerateEmailIntelPromptMutationError = ErrorType<BadRequestResponse | void>
 
     /**
- * @summary Draft an improved prompt from recent feedback, saved as a non-active draft (admin only)
+ * @summary Draft an improved review prompt for a (signal type, review phase) key from recent feedback, saved as a non-active draft (admin only)
  */
-export const useAdminGenerateEmailIntelPrompt = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useAdminGenerateEmailIntelPrompt = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>, TError,{data: BodyType<GenerateEmailIntelPromptBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>,
         TError,
-        void,
+        {data: BodyType<GenerateEmailIntelPromptBody>},
         TContext
       > => {
       return useMutation(getAdminGenerateEmailIntelPromptMutationOptions(options));

@@ -18,6 +18,13 @@ import { aiProposalLimit } from "./aiConcurrency";
 import { logger } from "./logger";
 import { newId } from "./helpers";
 import { loadWildflowerUpdateNote } from "./wildflowerUpdatesNote";
+import {
+  buildActionProposingCorePrompt,
+  composeSystemPrompt,
+  deriveHideDecision,
+  resolveReviewPrompts,
+  signalTypeForKind,
+} from "./emailIntelPrompts";
 
 /**
  * AI-proposed structured actions for email-intelligence proposals.
@@ -248,14 +255,24 @@ export type ProposedAction =
 const ACTION_TOOL_SCHEMA = {
   name: "propose_actions",
   description:
-    "Return the structured CRM mutations the reviewer should consider for this email-intelligence proposal. Return an empty array if no actions are warranted — that's a valid response. Separately, set `suppress` when the proposal is noise that the reviewer should never have to see at all.",
+    "Return the structured CRM mutations the reviewer should consider for this email-intelligence proposal. Return an empty array if no actions are warranted — that's a valid response. Separately, set `accuracy` to judge whether the detected signal is genuinely correct, and `suppress` when an accurate proposal is nonetheless noise the reviewer should never have to see. Follow the ACCURACY REVIEW and SUPPRESSION REVIEW criteria given in the system prompt.",
   input_schema: {
     type: "object",
     properties: {
+      accuracy: {
+        type: "object",
+        description:
+          "Judge whether the DETECTED SIGNAL is genuinely what it claims to be, per the ACCURACY REVIEW criteria in the system prompt. Set isAccurate=false ONLY when the signal is clearly wrong (e.g. a grant WINNER announcement detected as a new opportunity, a vendor RFP detected as funding, a signature whose name belongs to someone other than the matched person, an out-of-office detected as a departure). An inaccurate proposal is hidden from the reviewer regardless of any actions — be conservative and leave isAccurate=true for borderline-but-plausible signals.",
+        required: ["isAccurate", "reason"],
+        properties: {
+          isAccurate: { type: "boolean" },
+          reason: { type: "string", description: "Short justification when isAccurate is false, under 140 chars." },
+        },
+      },
       suppress: {
         type: "object",
         description:
-          "Set shouldSuppress=true ONLY when this proposal is clearly noise the reviewer should not have to triage — e.g. a grant WINNER/recipient announcement (not a new opportunity), a promo/newsletter/event-registration/sponsorship blast, an RFP to hire a vendor/contractor (sender is buying, not funding), an opportunity whose application deadline has already passed, a plain out-of-office auto-reply (person still at the org), or a signature whose name clearly belongs to someone other than the highlighted CRM person. Be conservative: when in doubt, do NOT suppress.",
+          "Set shouldSuppress=true ONLY when an ACCURATE proposal is clearly noise the reviewer should not have to triage, per the SUPPRESSION REVIEW criteria in the system prompt — e.g. an opportunity whose application deadline has already passed, a plain out-of-office auto-reply (person still at the org, no new contact), or a signature where every parsed field already matches the CRM. Be conservative: when in doubt, do NOT suppress.",
         required: ["shouldSuppress", "reason"],
         properties: {
           shouldSuppress: { type: "boolean" },
@@ -961,68 +978,6 @@ async function enrichRoleActionLabels(
 // Prompt builder
 // ──────────────────────────────────────────────────────────────────
 
-/**
- * The built-in default system prompt. Used as the fallback when no
- * admin-saved version exists in `email_intel_prompts`, and as the
- * starting point the "Generate AI update" flow improves on. Exported so
- * the admin console can display it before the first save.
- */
-export function buildDefaultSystemPrompt(): string {
-  return [
-    "You are a fundraising-CRM data steward. The user runs Wildflower Schools' fundraising operation.",
-    "Each turn, you receive one email-intelligence proposal — a signal extracted from a synced Gmail message — along with whatever CRM context is relevant.",
-    "Your job: call the `propose_actions` tool exactly once, returning the concrete CRM mutations the reviewer should consider applying.",
-    "",
-    "Rules:",
-    "• Only use IDs that appear verbatim in the CRM CONTEXT block. Never invent IDs.",
-    "• When the person's EMPLOYER named in the message is NOT in context, surface it so a reviewer can add it. Default to `create_org_with_per` (it goes in the organizations table) with the org's name, your best-guess organizationType, and emailDomain when evident. ONLY use `create_funder_with_per` instead when the email gives strong evidence the employer is a philanthropic GRANTMAKER — an entity whose purpose is to give grants/money to grantees (private/community/family foundation, grantmaking trust, corporate giving program). The system reconciles either one deterministically: if a funder or organization of that name already exists it links the role to that existing entity instead of creating a duplicate. So you do NOT need to know what already exists — just surface the employer and pick the right table. CRITICAL: a name containing \"Fund\", \"Foundation\", \"Trust\", \"Endowment\", \"Philanthropies\", or \"Charitable\" does NOT make it a funder — operating nonprofits (e.g. Foundation for Economic Education), think tanks, charities that deliver programs, and internal sub-entities/fiscal-sponsorship funds are organizations, not grantmakers. An employer whose name contains \"Wildflower\" is the user's OWN organization or an internal Wildflower sub-entity/fiscal-sponsorship fund (e.g. \"Black Wildflowers Fund\") — always use create_org_with_per for it, never create_funder_with_per. When unsure, choose create_org_with_per. Pick organizationType from the best-fit enum when the kind of org is clear (single charter school → school; charter network / CMO → cmo or school_network; district → school_district; law firm → law_firm; operating nonprofit → nonprofit). NEVER emit a bare `create_per` that lacks an entity id — either resolve the id from context, use create_org_with_per / create_funder_with_per, or omit.",
-    "• Be conservative. If the signal is ambiguous or contradicts current CRM state without strong evidence, return fewer actions or an empty list. The reviewer prefers missing a change over a wrong one.",
-    "• Use the email message body (quoted at the bottom) as the source of truth for what the sender actually said. Don't generalize beyond it.",
-    "• `reason` on each action should quote or paraphrase the specific phrase in the message that justifies the change. Keep it under 140 chars.",
-    "• For LinkedIn job changes: typical pattern is one `deactivate_per` for the role they're leaving + one `create_per` for the new role at the new company when that company resolves to a funder/organization id in context — otherwise, for a new NON-FUNDER employer, use `create_org_with_per`. If the message names a replacement, add `create_person_with_per` for that successor.",
-    "• For auto-responder 'I've moved' / departure / 'I'm no longer here' messages: deactivate the old role if a new company is named, create the new role if it resolves to a known entity, add the new email if one is given (with setPrimary=true if they say it's their new primary).",
-    "• CRITICAL for departure/move auto-replies: these messages frequently name a SUCCESSOR / new point of contact at the SAME org (e.g. 'reach out to my colleague Jane Doe at jane@org.org'). When the message names such a replacement who is NOT already in the CRM, you MUST propose adding them with `create_person_with_per` — firstName + lastName, their emailAddress and externalTitleOrRole (title/role) when the message gives them — attached via organizationId to the org they belong to (the departing person's org). Resolve that organizationId from the CRM CONTEXT: the matched person's current/past role entity, the 'Matched organization', or the 'Organization candidates by name lookup' (the sender's domain is matched there). If the org is NOT in context at all, fall back to `create_org_with_per` (or `create_funder_with_per` for a clear grantmaker) naming the successor's employer the same way you would for any employer-not-in-context — never silently drop the successor. This add-successor action is IN ADDITION to any legitimate change to the departing person, not instead of it.",
-    "• A SUCCESSOR must be a DIFFERENT, specifically NAMED individual (a real first AND last name). The departing / subject person themselves is NOT a successor — never create_person_with_per for the very person whose departure the auto-reply announces. A generic role mailbox or unnamed group is NOT a successor either — e.g. info@/grants@/contact@ addresses, 'a member of the team', 'your regular point of contact', 'the SeaChange team'. If the auto-reply names no specific replacement individual — only a generic inbox, a team, or just the departing person — and the departing person's own record needs no change, there is nothing new: leave actions empty and suppress as before.",
-    "• For signature_update proposals: the payload.parsed object holds {name,title,company,phone,email}. Cross-check EACH parsed field against the CRM CONTEXT and emit an action ONLY for fields that are genuinely NEW or changed. Never restate the status quo. Specifically:",
-    "    – email: if it already appears under 'Emails on file' (case-insensitive), emit nothing for it.",
-    "    – phone: compare digits only (ignore spaces/dashes/parens/country code) against 'Phones on file'. If a matching number is already on file, emit nothing. If it is genuinely new, emit `set_phone` with the person's id. NEVER treat a conference / meeting dial-in number as a personal phone — Zoom / Google Meet / Teams access numbers (e.g. 'one tap mobile', 'dial by your location', 'join by phone', a 'Meeting ID' / 'Passcode' / 'PIN', or a number with a ',,123456789#' suffix) are meeting access numbers, not the contact's phone; emit nothing for them.",
-    "    – title/role: if the person already has a CURRENT role at that company with that same title, emit nothing. If they have a CURRENT role at that company but its title is empty or different and the message shows a new title, emit `update_per_title` using that role's id — do NOT emit create_per for a role they already hold. Only use create_per when it is a genuinely different/new entity the person isn't already attached to AND that entity's id is in context; if the entity is a non-funder employer not yet in the CRM, use create_org_with_per instead.",
-    "    – company: treat it as changed ONLY if it doesn't match the name of ANY current role entity in context. The detector sometimes mis-parses a sentence fragment as a company — if the parsed company looks like prose or references Wildflower (the user's own org), ignore it entirely.",
-    "• Never emit `create_per` for a role the person already holds (same entity, current). If only the title differs, use `update_per_title`. Don't contradict yourself: if your reason says the person already has the role, emit no action for it.",
-    "• For bounce messages: emit `mark_email_invalid` only for hard bounces. Soft bounces are review-only — return an empty actions array. Only mark an address invalid if it appears verbatim under the matched person's 'Emails on file' — never invalidate an address that isn't in the CRM context.",
-    "• Never emit both `add_email` and `set_primary_email` for the same new address — use a single `add_email` with setPrimary=true instead.",
-    "• For grant opportunities: emit one `create_grant_opportunity` per distinct RFP / grant program named, with organizationId only if the grant-making organization appears in context. Use cold_lead unless the message indicates an active invitation (then warm_lead). Don't invent ask amounts — only set askAmount if the message states one. NEVER create a grant opportunity whose application deadline is already in the past relative to TODAY'S DATE shown below — skip it entirely.",
-    "",
-    "Suppression (separate from actions):",
-    "• Set `suppress.shouldSuppress=true` when the WHOLE proposal is noise the reviewer should never see. Concretely: grant WINNER / recipient announcements (celebrating awards already made, not a new opening); promo / newsletter / event-registration / sponsorship blasts; an RFP to hire a vendor/contractor/consultant (the sender is buying services, not offering grant funding); a grant whose application DEADLINE has already passed relative to TODAY'S DATE shown below; a plain out-of-office / vacation auto-reply where the person is still at their org AND names no new contact (only a genuine departure or new-job move is worth surfacing); a signature_update whose parsed name clearly belongs to a different person than the highlighted CRM person; a signature_update where every parsed field (email / phone / title / company) already matches the CRM state so there is nothing new for the reviewer to do.",
-    "• NEVER suppress a departure / 'I'm no longer here' / 'I've moved' auto-reply SOLELY because the subject person needs no change or isn't a matched CRM person. If the message names a successor / new point of contact who isn't already in the CRM (a new person, a new email, or a role change worth recording), the proposal MUST stay visible with the corresponding action(s) — emit them and leave shouldSuppress=false. Only suppress such a message when there is genuinely nothing new for a human: no new person named, no new email, no role change.",
-    "• When you suppress, you should normally also return an empty actions array.",
-    "• Be conservative: suppression hides the item from the reviewer entirely, so when in doubt, leave shouldSuppress=false and let the reviewer decide.",
-    "",
-    "Wildflower updates (separate from actions and suppression):",
-    "• When a WILDFLOWER UPDATES note appears in the context, it holds the team's current shared talking points / news. You MAY set the optional `wildflowerUpdate` object on the tool — but only rarely, when this specific email genuinely warrants it: `donorOutreach` to suggest reaching out to THIS matched donor about a relevant current update, and/or `noteRevision` to suggest editing the shared note when this email contains a concrete newsworthy Wildflower update worth adding. Omit `wildflowerUpdate` entirely when neither applies — that is the common case.",
-    "",
-    "Return an empty actions array when no automatic mutation is warranted — that is a valid and often correct answer.",
-  ].join("\n");
-}
-
-/**
- * Resolve the system prompt the pipeline should use right now: the
- * admin-saved active version from `email_intel_prompts` if one exists,
- * otherwise the built-in default. Reading this per-run means an admin's
- * save takes effect on the next proposal without a redeploy. The
- * prompt-cache breakpoint downstream caches on the text bytes, so a new
- * prompt naturally invalidates the cache (correct behavior).
- */
-export async function getActiveSystemPrompt(): Promise<string> {
-  const [row] = await db
-    .select({ promptText: emailIntelPrompts.promptText })
-    .from(emailIntelPrompts)
-    .where(eq(emailIntelPrompts.status, "active"))
-    .limit(1);
-  return row?.promptText ?? buildDefaultSystemPrompt();
-}
-
 function buildUserPrompt(args: {
   proposal: EmailProposal;
   personContext: PersonContext | null;
@@ -1226,10 +1181,25 @@ export async function proposeActionsForProposal(
       wildflowerNote,
     });
 
-    // Load the admin-editable system prompt (active DB version, or the
+    // Build the system prompt: the hidden, hard-coded action-proposing core
+    // (how to act) + the admin-editable accuracy & suppression REVIEW prompts
+    // for THIS proposal's signal type (active DB version per phase, or the
     // built-in default). Done once here so the same text drives both the
-    // request and the prompt-cache key for this call.
-    const systemPrompt = await getActiveSystemPrompt();
+    // request and the prompt-cache key for this call. A proposal whose kind
+    // maps to no review signal type (defensive — wildflower_update rows never
+    // reach this path) falls back to the core alone.
+    const signalType = signalTypeForKind(proposal.kind);
+    let systemPrompt: string;
+    if (signalType) {
+      const reviewPrompts = await resolveReviewPrompts(signalType);
+      systemPrompt = composeSystemPrompt({
+        signalType,
+        accuracyPrompt: reviewPrompts.accuracy,
+        suppressionPrompt: reviewPrompts.suppression,
+      });
+    } else {
+      systemPrompt = buildActionProposingCorePrompt();
+    }
 
     // Route the AI call through (a) a process-global concurrency limiter so
     // a sync's inline fan-out can't burst many simultaneous requests at the
@@ -1282,17 +1252,22 @@ export async function proposeActionsForProposal(
     );
 
     let actions: ProposedAction[] = [];
+    let accuracy: { isAccurate?: boolean; reason?: string } | null = null;
     let suppress: { shouldSuppress?: boolean; reason?: string } | null = null;
     let wildflowerUpdate: WildflowerUpdateToolOutput | null = null;
     for (const block of response.content) {
       if (block.type === "tool_use" && block.name === "propose_actions") {
         const input = block.input as {
           actions?: unknown;
+          accuracy?: unknown;
           suppress?: unknown;
           wildflowerUpdate?: unknown;
         };
         if (Array.isArray(input.actions)) {
           actions = input.actions as ProposedAction[];
+        }
+        if (input.accuracy && typeof input.accuracy === "object") {
+          accuracy = input.accuracy as { isAccurate?: boolean; reason?: string };
         }
         if (input.suppress && typeof input.suppress === "object") {
           suppress = input.suppress as { shouldSuppress?: boolean; reason?: string };
@@ -1337,17 +1312,20 @@ export async function proposeActionsForProposal(
       return !deadlineHasPassed(a.deadline ?? null, now);
     });
 
-    // When the model judges the whole proposal to be noise, auto-ignore
-    // it so the reviewer never has to triage it. Guard: never suppress a
-    // proposal that also carries concrete CRM mutations — if there's
-    // something for the reviewer to apply, the item must stay visible.
-    // `disableAutoSuppress` (set by the reviewer-driven /revise path) keeps
-    // the proposal pending no matter what the model returns: the reviewer
-    // explicitly asked to re-run it and expects it to stay in their queue.
-    const shouldIgnore =
-      !opts?.disableAutoSuppress &&
-      suppress?.shouldSuppress === true &&
-      actions.length === 0;
+    // Decide whether to auto-hide the proposal from the reviewer, and why.
+    // Two distinct reasons: an INACCURATE signal (hidden regardless of any
+    // actions — the detection itself is wrong) takes precedence over
+    // SUPPRESSION of an accurate-but-noise proposal (only when it carries no
+    // concrete mutations). `disableAutoSuppress` (the reviewer-driven /revise
+    // path) keeps the proposal pending no matter what the model returns: the
+    // reviewer explicitly asked to re-run it and expects it to stay in their
+    // queue. See deriveHideDecision for the full precedence.
+    const hideDecision = deriveHideDecision({
+      disableAutoSuppress: opts?.disableAutoSuppress,
+      actionsCount: actions.length,
+      accuracy,
+      suppress,
+    });
 
     // Two writes, deliberately not combined: the first ALWAYS records the
     // analysis result (clearing the in-flight epoch sentinel), so the row
@@ -1367,15 +1345,13 @@ export async function proposeActionsForProposal(
       })
       .where(eq(emailProposals.id, proposalId));
 
-    if (shouldIgnore) {
+    if (hideDecision.hide) {
       await db
         .update(emailProposals)
         .set({
-          status: "ignored" as const,
+          status: hideDecision.status,
           resolvedAt: new Date(),
-          reviewerNote: `Auto-suppressed: ${
-            suppress?.reason ?? "non-actionable noise"
-          }`.slice(0, 500),
+          reviewerNote: hideDecision.reviewerNote,
           updatedAt: new Date(),
         })
         .where(

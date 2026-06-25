@@ -434,6 +434,20 @@ function ProposalList({ kind }: { kind: Kind }) {
               <p className="text-xs text-muted-foreground">
                 {new Date(p.emailSentAt ?? p.createdAt).toLocaleString()}
               </p>
+              {p.reviewerNote &&
+              p.reviewerNote.startsWith("Flagged inaccurate") ? (
+                <p
+                  className="text-xs font-medium text-amber-700"
+                  data-testid={`proposal-inaccurate-${p.id}`}
+                >
+                  {p.reviewerNote}
+                </p>
+              ) : p.reviewerNote &&
+                p.reviewerNote.startsWith("Auto-suppressed") ? (
+                <p className="text-xs text-muted-foreground italic">
+                  {p.reviewerNote}
+                </p>
+              ) : null}
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
               {p.targetPersonId ? (

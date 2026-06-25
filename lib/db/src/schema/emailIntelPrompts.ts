@@ -4,6 +4,8 @@ import { users } from "./users";
 import {
   emailIntelPromptOriginEnum,
   emailIntelPromptStatusEnum,
+  emailIntelReviewPhaseEnum,
+  emailIntelSignalTypeEnum,
 } from "./_enums";
 
 /**
@@ -28,6 +30,13 @@ export const emailIntelPrompts = pgTable(
     promptText: text("prompt_text").notNull(),
     status: emailIntelPromptStatusEnum("status").notNull().default("archived"),
     origin: emailIntelPromptOriginEnum("origin").notNull(),
+    // Which review prompt this version belongs to. Nullable ONLY for legacy
+    // pre-split combined-prompt rows retained as archived history — every new
+    // row written by the admin console carries both. The active/draft partial
+    // uniques are keyed on (signal_type, review_phase), so legacy null-keyed
+    // rows must be archived (they can never occupy a per-key active/draft slot).
+    signalType: emailIntelSignalTypeEnum("signal_type"),
+    reviewPhase: emailIntelReviewPhaseEnum("review_phase"),
     // Who authored this version. For AI-generated drafts this is the
     // admin who clicked "Generate AI update". Nullable so deleting a
     // user doesn't destroy prompt history.
@@ -38,15 +47,16 @@ export const emailIntelPrompts = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
-    // At most one active version and one outstanding draft. Both indexes
-    // are partial on a constant-valued column: every matching row shares
-    // the same `status` value, so a plain unique on `status` collapses to
-    // "only one row may have this status".
-    uniqueIndex("email_intel_prompts_active_uq")
-      .on(t.status)
+    // At most one active version and one outstanding draft PER review key
+    // (signal_type, review_phase). Legacy null-keyed rows are all archived,
+    // so they never satisfy these partial predicates — only properly-keyed
+    // rows compete for a slot. (A composite unique treats NULLs as distinct
+    // anyway, so even a stray null-keyed active row wouldn't collide.)
+    uniqueIndex("email_intel_prompts_active_key_uq")
+      .on(t.signalType, t.reviewPhase)
       .where(sql`status = 'active'`),
-    uniqueIndex("email_intel_prompts_draft_uq")
-      .on(t.status)
+    uniqueIndex("email_intel_prompts_draft_key_uq")
+      .on(t.signalType, t.reviewPhase)
       .where(sql`status = 'draft'`),
     index("email_intel_prompts_created_idx").on(t.createdAt),
   ],

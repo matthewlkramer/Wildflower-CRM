@@ -4879,30 +4879,65 @@ export const EmailIntelPromptOrigin = {
   reverted: 'reverted',
 } as const;
 
+export type EmailIntelSignalType = typeof EmailIntelSignalType[keyof typeof EmailIntelSignalType];
+
+
+export const EmailIntelSignalType = {
+  linkedin_job_change: 'linkedin_job_change',
+  auto_responder_move: 'auto_responder_move',
+  bounce: 'bounce',
+  signature_update: 'signature_update',
+  grant_opportunity: 'grant_opportunity',
+  thank_you_acknowledgment: 'thank_you_acknowledgment',
+} as const;
+
+export type EmailIntelReviewPhase = typeof EmailIntelReviewPhase[keyof typeof EmailIntelReviewPhase];
+
+
+export const EmailIntelReviewPhase = {
+  accuracy: 'accuracy',
+  suppression: 'suppression',
+} as const;
+
 export interface EmailIntelPrompt {
   id: string;
   promptText: string;
   status: EmailIntelPromptStatus;
   origin: EmailIntelPromptOrigin;
+  signalType?: EmailIntelSignalType | null;
+  reviewPhase?: EmailIntelReviewPhase | null;
   authorUserId?: string | null;
   authorName?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface EmailIntelPromptOverview {
+export interface EmailIntelPromptKey {
+  signalType: EmailIntelSignalType;
+  reviewPhase: EmailIntelReviewPhase;
   active?: EmailIntelPrompt | null;
   draft?: EmailIntelPrompt | null;
   history: EmailIntelPrompt[];
-  /** Built-in default prompt text (used when no active version exists). */
+  /** Built-in default review prompt text for this key (used when no active version exists). */
   default: string;
-  /** True when no saved active version exists and the pipeline is on the built-in default. */
+  /** True when no saved active version exists for this key and the pipeline is on the built-in default. */
   usingDefault: boolean;
 }
 
+export interface EmailIntelPromptConsole {
+  keys: EmailIntelPromptKey[];
+}
+
 export interface SaveEmailIntelPromptBody {
+  signalType: EmailIntelSignalType;
+  reviewPhase: EmailIntelReviewPhase;
   /** @minLength 1 */
   promptText: string;
+}
+
+export interface GenerateEmailIntelPromptBody {
+  signalType: EmailIntelSignalType;
+  reviewPhase: EmailIntelReviewPhase;
 }
 
 export interface EmailIntelFeedbackAction {

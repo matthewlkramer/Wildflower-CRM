@@ -61,6 +61,9 @@ import type {
   FundraisingCategory,
   FiscalYear,
   EmailIntelPrompt,
+  EmailIntelPromptKey,
+  EmailIntelSignalType,
+  EmailIntelReviewPhase,
   EmailProposalKind,
   EmailProposalStatus,
   QuickbooksHandlingRule,
@@ -1747,6 +1750,39 @@ const ORIGIN_LABELS: Record<EmailIntelPrompt["origin"], string> = {
   reverted: "Reverted",
 };
 
+// The 6 review signal types, in display order. `bounce` covers both bounce
+// kinds; `wildflower_update` is intentionally absent (it never goes through
+// the review step).
+const SIGNAL_TYPE_ORDER: EmailIntelSignalType[] = [
+  "linkedin_job_change",
+  "auto_responder_move",
+  "bounce",
+  "signature_update",
+  "grant_opportunity",
+  "thank_you_acknowledgment",
+];
+
+const SIGNAL_TYPE_LABELS: Record<EmailIntelSignalType, string> = {
+  linkedin_job_change: "LinkedIn job change",
+  auto_responder_move: "Auto-responder / departure",
+  bounce: "Email bounce",
+  signature_update: "Email signature update",
+  grant_opportunity: "Grant opportunity",
+  thank_you_acknowledgment: "Thank-you acknowledgment",
+};
+
+const REVIEW_PHASE_LABELS: Record<EmailIntelReviewPhase, string> = {
+  accuracy: "Accuracy",
+  suppression: "Suppression",
+};
+
+const REVIEW_PHASE_HELP: Record<EmailIntelReviewPhase, string> = {
+  accuracy:
+    "Decides whether the detected signal is genuinely correct. An inaccurate verdict hides the proposal with a distinct “Flagged inaccurate” reason.",
+  suppression:
+    "Decides whether an accurate signal is nonetheless noise not worth a reviewer’s time. A suppress verdict hides it as “Auto-suppressed”.",
+};
+
 /**
  * Minimal line-level diff: classify each line of `next` against `prev` as
  * added / unchanged, and each line of `prev` missing from `next` as removed.
@@ -1772,19 +1808,95 @@ function lineDiff(
 }
 
 function EmailIntelligenceSection() {
-  const { toast } = useToast();
-  const qc = useQueryClient();
-
   const promptsQ = useAdminListEmailIntelPrompts({
     query: { queryKey: getAdminListEmailIntelPromptsQueryKey() },
   });
 
   const errStatus = (promptsQ.error as unknown as { status?: number } | null)?.status;
 
+  // 403 → hide the whole card for non-admins.
+  if (errStatus === 403) return null;
+
+  const keys = promptsQ.data?.keys ?? [];
+  const keyFor = (signalType: EmailIntelSignalType, reviewPhase: EmailIntelReviewPhase) =>
+    keys.find((k) => k.signalType === signalType && k.reviewPhase === reviewPhase) ?? null;
+
+  return (
+    <Card data-testid="admin-email-intel-section">
+      <CardHeader>
+        <CardTitle>Email intelligence review prompts</CardTitle>
+        <CardDescription>
+          The AI follows a hidden, fixed core prompt to decide which CRM actions
+          to propose. The editable prompts below tune only the per-signal{" "}
+          <strong>review</strong> step: an <strong>accuracy</strong> check (is the
+          detected signal correct?) and a <strong>suppression</strong> check (is
+          it worth a reviewer’s time?). Hand-edit each, or generate an improved
+          draft from recent reviewer feedback — drafts are never applied until you
+          approve them.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-8">
+        {promptsQ.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : (
+          <>
+            {SIGNAL_TYPE_ORDER.map((signalType) => (
+              <div
+                key={signalType}
+                className="space-y-4"
+                data-testid={`email-intel-signal-${signalType}`}
+              >
+                <h3 className="text-base font-semibold">
+                  {SIGNAL_TYPE_LABELS[signalType]}
+                </h3>
+                <div className="space-y-6 pl-1">
+                  {EMAIL_INTEL_PHASE_ORDER.map((reviewPhase) => {
+                    const keyState = keyFor(signalType, reviewPhase);
+                    if (!keyState) return null;
+                    return (
+                      <ReviewPromptEditor
+                        key={reviewPhase}
+                        keyState={keyState}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+            <Separator />
+
+            <EmailIntelFeedbackFeed />
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const EMAIL_INTEL_PHASE_ORDER: EmailIntelReviewPhase[] = ["accuracy", "suppression"];
+
+/**
+ * Editor for a single (signal type, review phase) review prompt: shows the
+ * active version (or built-in default), lets an admin hand-edit + save, AI-draft
+ * from feedback, approve/discard the draft, and revert to any archived version.
+ * Scoped per key — saving here never touches another signal or phase.
+ */
+function ReviewPromptEditor({ keyState }: { keyState: EmailIntelPromptKey }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const { signalType, reviewPhase } = keyState;
+  const active = keyState.active ?? null;
+  const aiDraft = keyState.draft ?? null;
+  const history = keyState.history ?? [];
+  const usingDefault = keyState.usingDefault;
+  const baselineText = active?.promptText ?? keyState.default ?? "";
+
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [showDraftDiff, setShowDraftDiff] = useState(true);
 
+  const tid = `${signalType}-${reviewPhase}`;
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: getAdminListEmailIntelPromptsQueryKey() });
 
@@ -1793,7 +1905,7 @@ function EmailIntelligenceSection() {
       onSuccess: () => {
         invalidate();
         setEditing(false);
-        toast({ title: "Prompt saved as the new active version" });
+        toast({ title: "Review prompt saved as the new active version" });
       },
       onError: (e: unknown) =>
         toast({
@@ -1817,7 +1929,7 @@ function EmailIntelligenceSection() {
           title: status === 409 ? "No feedback yet" : "Generation failed",
           description:
             status === 409
-              ? "There are no resolved proposals to learn from yet."
+              ? "There are no resolved proposals for this signal type to learn from yet."
               : e instanceof Error
                 ? e.message
                 : "Unknown error",
@@ -1872,216 +1984,190 @@ function EmailIntelligenceSection() {
     },
   });
 
-  // 403 → hide the whole card for non-admins.
-  if (errStatus === 403) return null;
-
-  const overview = promptsQ.data;
-  const active = overview?.active ?? null;
-  const aiDraft = overview?.draft ?? null;
-  const history = overview?.history ?? [];
-  const usingDefault = overview?.usingDefault ?? true;
-  const baselineText = active?.promptText ?? overview?.default ?? "";
-
   const startEdit = () => {
     setDraft(baselineText);
     setEditing(true);
   };
 
   return (
-    <Card data-testid="admin-email-intel-section">
-      <CardHeader>
-        <CardTitle>Email intelligence prompt</CardTitle>
-        <CardDescription>
-          The system prompt the AI follows when proposing CRM actions from
-          incoming email. Hand-edit it, or generate an improved draft from recent
-          reviewer feedback — drafts are never applied until you approve them.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {promptsQ.isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : (
-          <>
-            {/* Active prompt + editor */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">Active prompt</span>
-                {usingDefault ? (
-                  <Badge variant="secondary">Built-in default</Badge>
-                ) : active ? (
-                  <Badge variant="secondary">{ORIGIN_LABELS[active.origin]}</Badge>
-                ) : null}
-                {active?.updatedAt ? (
-                  <span className="text-xs text-muted-foreground">
-                    updated {new Date(active.updatedAt).toLocaleString()}
-                    {active.authorName ? ` by ${active.authorName}` : ""}
-                  </span>
-                ) : null}
-              </div>
+    <div className="space-y-2 rounded-md border p-3" data-testid={`email-intel-key-${tid}`}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge variant="outline">{REVIEW_PHASE_LABELS[reviewPhase]}</Badge>
+        {usingDefault ? (
+          <Badge variant="secondary">Built-in default</Badge>
+        ) : active ? (
+          <Badge variant="secondary">{ORIGIN_LABELS[active.origin]}</Badge>
+        ) : null}
+        {active?.updatedAt ? (
+          <span className="text-xs text-muted-foreground">
+            updated {new Date(active.updatedAt).toLocaleString()}
+            {active.authorName ? ` by ${active.authorName}` : ""}
+          </span>
+        ) : null}
+      </div>
+      <p className="text-xs text-muted-foreground">{REVIEW_PHASE_HELP[reviewPhase]}</p>
 
-              {editing ? (
-                <div className="space-y-2">
-                  <Textarea
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    rows={18}
-                    className="font-mono text-xs"
-                    data-testid="email-intel-prompt-editor"
-                  />
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      disabled={save.isPending || !draft.trim()}
-                      onClick={() => save.mutate({ data: { promptText: draft } })}
-                      data-testid="email-intel-save"
-                    >
-                      {save.isPending ? "Saving…" : "Save as active"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={save.isPending}
-                      onClick={() => setEditing(false)}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
+      {editing ? (
+        <div className="space-y-2">
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={12}
+            className="font-mono text-xs"
+            data-testid={`email-intel-prompt-editor-${tid}`}
+          />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              disabled={save.isPending || !draft.trim()}
+              onClick={() =>
+                save.mutate({ data: { signalType, reviewPhase, promptText: draft } })
+              }
+              data-testid={`email-intel-save-${tid}`}
+            >
+              {save.isPending ? "Saving…" : "Save as active"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={save.isPending}
+              onClick={() => setEditing(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <pre className="max-h-60 overflow-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap font-mono">
+            {baselineText}
+          </pre>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={startEdit}
+              data-testid={`email-intel-edit-${tid}`}
+            >
+              Edit prompt
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={generate.isPending}
+              onClick={() => generate.mutate({ data: { signalType, reviewPhase } })}
+              data-testid={`email-intel-generate-${tid}`}
+            >
+              {generate.isPending ? "Generating…" : "Generate AI update"}
+            </Button>
+          </div>
+        </>
+      )}
+
+      {/* Outstanding AI draft awaiting review */}
+      {aiDraft ? (
+        <div
+          className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3"
+          data-testid={`email-intel-draft-${tid}`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Badge className="bg-amber-600 hover:bg-amber-600">AI draft</Badge>
+              <span className="text-xs text-muted-foreground">
+                generated {new Date(aiDraft.createdAt).toLocaleString()}
+                {aiDraft.authorName ? ` by ${aiDraft.authorName}` : ""}
+              </span>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => setShowDraftDiff((v) => !v)}>
+              {showDraftDiff ? "Show full text" : "Show diff"}
+            </Button>
+          </div>
+          {showDraftDiff ? (
+            <pre className="max-h-60 overflow-auto rounded-md bg-background p-3 text-xs whitespace-pre-wrap font-mono">
+              {lineDiff(baselineText, aiDraft.promptText).map((l, i) => (
+                <div
+                  key={i}
+                  className={
+                    l.type === "added"
+                      ? "bg-emerald-100 text-emerald-900"
+                      : l.type === "removed"
+                        ? "bg-red-100 text-red-900 line-through"
+                        : ""
+                  }
+                >
+                  {l.type === "added" ? "+ " : l.type === "removed" ? "- " : "  "}
+                  {l.text}
                 </div>
-              ) : (
-                <>
-                  <pre className="max-h-72 overflow-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap font-mono">
-                    {baselineText}
-                  </pre>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={startEdit} data-testid="email-intel-edit">
-                      Edit prompt
-                    </Button>
+              ))}
+            </pre>
+          ) : (
+            <pre className="max-h-60 overflow-auto rounded-md bg-background p-3 text-xs whitespace-pre-wrap font-mono">
+              {aiDraft.promptText}
+            </pre>
+          )}
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              disabled={activate.isPending}
+              onClick={() => activate.mutate({ id: aiDraft.id })}
+              data-testid={`email-intel-approve-draft-${tid}`}
+            >
+              {activate.isPending ? "Approving…" : "Approve & activate"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={discard.isPending}
+              onClick={() => discard.mutate({ id: aiDraft.id })}
+              data-testid={`email-intel-discard-draft-${tid}`}
+            >
+              Discard
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Version history */}
+      {history.length > 0 ? (
+        <div className="space-y-2">
+          <span className="text-xs font-medium text-muted-foreground">Version history</span>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Archived</TableHead>
+                <TableHead>Origin</TableHead>
+                <TableHead>Author</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {history.map((h) => (
+                <TableRow key={h.id} data-testid={`email-intel-history-${h.id}`}>
+                  <TableCell className="text-sm">
+                    {new Date(h.updatedAt).toLocaleString()}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">{ORIGIN_LABELS[h.origin]}</Badge>
+                  </TableCell>
+                  <TableCell className="text-sm">{h.authorName ?? "—"}</TableCell>
+                  <TableCell className="text-right">
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={generate.isPending}
-                      onClick={() => generate.mutate()}
-                      data-testid="email-intel-generate"
+                      disabled={revert.isPending}
+                      onClick={() => revert.mutate({ id: h.id })}
+                      data-testid={`email-intel-revert-${h.id}`}
                     >
-                      {generate.isPending ? "Generating…" : "Generate AI update"}
+                      Revert to this
                     </Button>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Outstanding AI draft awaiting review */}
-            {aiDraft ? (
-              <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3" data-testid="email-intel-draft">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Badge className="bg-amber-600 hover:bg-amber-600">AI draft</Badge>
-                    <span className="text-xs text-muted-foreground">
-                      generated {new Date(aiDraft.createdAt).toLocaleString()}
-                      {aiDraft.authorName ? ` by ${aiDraft.authorName}` : ""}
-                    </span>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setShowDraftDiff((v) => !v)}
-                  >
-                    {showDraftDiff ? "Show full text" : "Show diff"}
-                  </Button>
-                </div>
-                {showDraftDiff ? (
-                  <pre className="max-h-72 overflow-auto rounded-md bg-background p-3 text-xs whitespace-pre-wrap font-mono">
-                    {lineDiff(baselineText, aiDraft.promptText).map((l, i) => (
-                      <div
-                        key={i}
-                        className={
-                          l.type === "added"
-                            ? "bg-emerald-100 text-emerald-900"
-                            : l.type === "removed"
-                              ? "bg-red-100 text-red-900 line-through"
-                              : ""
-                        }
-                      >
-                        {l.type === "added" ? "+ " : l.type === "removed" ? "- " : "  "}
-                        {l.text}
-                      </div>
-                    ))}
-                  </pre>
-                ) : (
-                  <pre className="max-h-72 overflow-auto rounded-md bg-background p-3 text-xs whitespace-pre-wrap font-mono">
-                    {aiDraft.promptText}
-                  </pre>
-                )}
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    disabled={activate.isPending}
-                    onClick={() => activate.mutate({ id: aiDraft.id })}
-                    data-testid="email-intel-approve-draft"
-                  >
-                    {activate.isPending ? "Approving…" : "Approve & activate"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={discard.isPending}
-                    onClick={() => discard.mutate({ id: aiDraft.id })}
-                    data-testid="email-intel-discard-draft"
-                  >
-                    Discard
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            {/* Version history */}
-            {history.length > 0 ? (
-              <div className="space-y-2">
-                <span className="text-sm font-medium">Version history</span>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Archived</TableHead>
-                      <TableHead>Origin</TableHead>
-                      <TableHead>Author</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {history.map((h) => (
-                      <TableRow key={h.id} data-testid={`email-intel-history-${h.id}`}>
-                        <TableCell className="text-sm">
-                          {new Date(h.updatedAt).toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{ORIGIN_LABELS[h.origin]}</Badge>
-                        </TableCell>
-                        <TableCell className="text-sm">{h.authorName ?? "—"}</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={revert.isPending}
-                            onClick={() => revert.mutate({ id: h.id })}
-                            data-testid={`email-intel-revert-${h.id}`}
-                          >
-                            Revert to this
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            ) : null}
-
-            <Separator />
-
-            <EmailIntelFeedbackFeed />
-          </>
-        )}
-      </CardContent>
-    </Card>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

@@ -6,10 +6,11 @@ import {
   users,
   type EmailIntelPrompt,
 } from "@workspace/db/schema";
-import { and, count, desc, eq, ilike, inArray, notExists, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, isNull, notExists, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { anthropic, withRateLimitRetry } from "@workspace/integrations-anthropic-ai";
 import {
+  AdminGenerateEmailIntelPromptBody,
   AdminListEmailIntelFeedbackQueryParams,
   AdminSaveEmailIntelPromptBody,
 } from "@workspace/api-zod";
@@ -23,32 +24,42 @@ import {
   parseOrBadRequest,
   parsePagination,
 } from "../lib/helpers";
+import { type ProposedAction } from "../lib/proposeActions";
 import {
-  buildDefaultSystemPrompt,
-  type ProposedAction,
-} from "../lib/proposeActions";
+  EMAIL_INTEL_REVIEW_PHASES,
+  EMAIL_INTEL_SIGNAL_TYPES,
+  buildDefaultReviewPrompt,
+  kindsForSignalType,
+  signalTypeLabel,
+  type EmailIntelReviewPhase,
+  type EmailIntelSignalType,
+} from "../lib/emailIntelPrompts";
 import { aiProposalLimit } from "../lib/aiConcurrency";
 import { logger } from "../lib/logger";
 
 /**
  * Email-intelligence admin console.
  *
- * Lets an admin hand-edit / AI-draft / version / revert the system
- * prompt that drives the email-intelligence action proposals, and
+ * Lets an admin hand-edit / AI-draft / version / revert the per-(signal type,
+ * review phase) REVIEW prompts that shape the email-intelligence pipeline, and
  * browse a cross-mailbox feed of reviewer feedback (accepted / rejected
- * proposals + reviewer notes + the actions the AI proposed) to inform
- * those edits.
+ * proposals + reviewer notes + the actions the AI proposed) to inform those
+ * edits.
  *
- * Versioning model (see `emailIntelPrompts` schema):
- *   - exactly one `active` row at a time (the pipeline reads it),
- *   - at most one `draft` row (an AI-generated candidate awaiting review),
+ * IMPORTANT: the hidden, hard-coded action-proposing CORE prompt ("how to
+ * act") is NEVER exposed by any route here — admins can neither see nor edit
+ * it. Only the accuracy + suppression review criteria are editable.
+ *
+ * Versioning model (see `emailIntelPrompts` schema), scoped PER KEY
+ * (signalType, reviewPhase):
+ *   - exactly one `active` row per key at a time (the pipeline reads it),
+ *   - at most one `draft` row per key (an AI-generated candidate),
  *   - all superseded versions kept as `archived` history.
- * Saving / activating / reverting never destroys a prior version — a
- * revert copies an old version's text into a brand-new active row.
+ * Saving / activating / reverting never destroys a prior version — a revert
+ * copies an old version's text into a brand-new active row for that key.
  *
- * Every route is admin-only (403 otherwise) so the frontend can hide
- * the whole console behind the same 403-gate it uses for other admin
- * sections.
+ * Every route is admin-only (403 otherwise) so the frontend can hide the whole
+ * console behind the same 403-gate it uses for other admin sections.
  */
 
 const router: IRouter = Router();
@@ -90,6 +101,8 @@ function serializePrompt(
     promptText: row.promptText,
     status: row.status,
     origin: row.origin,
+    signalType: row.signalType,
+    reviewPhase: row.reviewPhase,
     authorUserId: row.authorUserId,
     authorName: row.authorUserId ? authorNames.get(row.authorUserId) ?? null : null,
     createdAt: row.createdAt.toISOString(),
@@ -119,9 +132,12 @@ async function loadAuthorNames(
 // ── Prompt console ──────────────────────────────────────────────────
 
 /**
- * Overview: the live active version (omitted while on the built-in
- * default), any outstanding AI draft, the archived history (newest
- * first), and the built-in default text for reference / diffing.
+ * Console: the full state of every review-prompt key (one per signal type ×
+ * review phase). For each key we return the live active version (omitted while
+ * on the built-in default), any outstanding AI draft, the archived history
+ * (newest first), the built-in default text, and whether the pipeline is
+ * currently on the default. The hidden action-proposing core is never
+ * returned.
  */
 router.get(
   "/admin/email-intel/prompts",
@@ -132,23 +148,35 @@ router.get(
       .from(emailIntelPrompts)
       .orderBy(desc(emailIntelPrompts.createdAt));
     const authorNames = await loadAuthorNames(rows);
-    const active = rows.find((r) => r.status === "active") ?? null;
-    const draft = rows.find((r) => r.status === "draft") ?? null;
-    const history = rows.filter((r) => r.status === "archived");
-    res.json({
-      active: active ? serializePrompt(active, authorNames) : null,
-      draft: draft ? serializePrompt(draft, authorNames) : null,
-      history: history.map((r) => serializePrompt(r, authorNames)),
-      default: buildDefaultSystemPrompt(),
-      usingDefault: !active,
-    });
+
+    const keys = EMAIL_INTEL_SIGNAL_TYPES.flatMap((signalType) =>
+      EMAIL_INTEL_REVIEW_PHASES.map((reviewPhase) => {
+        const forKey = rows.filter(
+          (r) => r.signalType === signalType && r.reviewPhase === reviewPhase,
+        );
+        const active = forKey.find((r) => r.status === "active") ?? null;
+        const draft = forKey.find((r) => r.status === "draft") ?? null;
+        const history = forKey.filter((r) => r.status === "archived");
+        return {
+          signalType,
+          reviewPhase,
+          active: active ? serializePrompt(active, authorNames) : null,
+          draft: draft ? serializePrompt(draft, authorNames) : null,
+          history: history.map((r) => serializePrompt(r, authorNames)),
+          default: buildDefaultReviewPrompt(signalType, reviewPhase),
+          usingDefault: !active,
+        };
+      }),
+    );
+    res.json({ keys });
   }),
 );
 
 /**
- * Save a hand-edited prompt as the new active version. Demotes the
- * current active row to `archived` (preserving history) and inserts a
- * new `active` row in the same transaction.
+ * Save a hand-edited review prompt as the new active version FOR ONE KEY.
+ * Demotes that key's current active row to `archived` (preserving history)
+ * and inserts a new `active` row in the same transaction. Other keys are
+ * untouched.
  */
 router.post(
   "/admin/email-intel/prompts",
@@ -162,11 +190,19 @@ router.post(
       res.status(400).json({ error: "validation_error", message: "promptText is required" });
       return;
     }
+    const signalType = body.signalType as EmailIntelSignalType;
+    const reviewPhase = body.reviewPhase as EmailIntelReviewPhase;
     const saved = await db.transaction(async (tx) => {
       await tx
         .update(emailIntelPrompts)
         .set({ status: "archived", updatedAt: new Date() })
-        .where(eq(emailIntelPrompts.status, "active"));
+        .where(
+          and(
+            eq(emailIntelPrompts.status, "active"),
+            eq(emailIntelPrompts.signalType, signalType),
+            eq(emailIntelPrompts.reviewPhase, reviewPhase),
+          ),
+        );
       const [row] = await tx
         .insert(emailIntelPrompts)
         .values({
@@ -174,6 +210,8 @@ router.post(
           promptText,
           status: "active",
           origin: "hand_edited",
+          signalType,
+          reviewPhase,
           authorUserId: me.id,
         })
         .returning();
@@ -185,36 +223,52 @@ router.post(
 );
 
 /**
- * Generate an improved prompt draft from recent reviewer feedback.
- * Saves the result as a non-active `draft` (replacing any existing
- * draft) — never auto-applied. The admin reviews + approves it via the
- * activate route.
+ * Generate an improved review-prompt draft FOR ONE KEY from recent reviewer
+ * feedback scoped to that signal type. Saves the result as a non-active
+ * `draft` (replacing any existing draft for that key) — never auto-applied.
+ * The admin reviews + approves it via the activate route.
  */
 router.post(
   "/admin/email-intel/prompts/generate",
   asyncHandler(async (req, res) => {
     const me = requireAdmin(req, res);
     if (!me) return;
+    const body = parseOrBadRequest(AdminGenerateEmailIntelPromptBody, req.body, res);
+    if (!body) return;
+    const signalType = body.signalType as EmailIntelSignalType;
+    const reviewPhase = body.reviewPhase as EmailIntelReviewPhase;
 
-    // Current baseline: the active prompt, or the built-in default.
+    // Current baseline: this key's active prompt, or its built-in default.
     const [activeRow] = await db
       .select()
       .from(emailIntelPrompts)
-      .where(eq(emailIntelPrompts.status, "active"))
+      .where(
+        and(
+          eq(emailIntelPrompts.status, "active"),
+          eq(emailIntelPrompts.signalType, signalType),
+          eq(emailIntelPrompts.reviewPhase, reviewPhase),
+        ),
+      )
       .limit(1);
-    const currentPrompt = activeRow?.promptText ?? buildDefaultSystemPrompt();
+    const currentPrompt =
+      activeRow?.promptText ?? buildDefaultReviewPrompt(signalType, reviewPhase);
 
-    // Recent resolved feedback to learn from, newest first.
+    // Recent resolved feedback for THIS signal type's kinds, newest first.
     const feedback = await db
       .select()
       .from(emailProposals)
-      .where(inArray(emailProposals.status, ["applied", "rejected", "ignored"]))
+      .where(
+        and(
+          inArray(emailProposals.status, ["applied", "rejected", "ignored"]),
+          inArray(emailProposals.kind, kindsForSignalType(signalType)),
+        ),
+      )
       .orderBy(desc(emailProposals.resolvedAt))
       .limit(120);
     if (feedback.length === 0) {
       res.status(409).json({
         error: "no_feedback",
-        message: "No resolved proposals to learn from yet.",
+        message: `No resolved ${signalTypeLabel(signalType)} proposals to learn from yet.`,
       });
       return;
     }
@@ -234,15 +288,21 @@ router.post(
       })
       .join("\n");
 
+    const phaseGoal =
+      reviewPhase === "accuracy"
+        ? "These ACCURACY criteria decide whether the detected signal is genuinely what it claims to be; an inaccurate verdict hides the proposal from the reviewer with a distinct 'Flagged inaccurate' reason."
+        : "These SUPPRESSION criteria decide whether an ACCURATE signal is nonetheless noise not worth a reviewer's time; a suppress verdict hides the proposal with an 'Auto-suppressed' reason.";
+
     const userPrompt = [
-      "You are tuning the SYSTEM PROMPT that instructs an AI assistant which CRM actions to propose from incoming email signals.",
-      "Below is the CURRENT system prompt, followed by a sample of recent reviewer feedback (which proposals humans ACCEPTED, REJECTED, or IGNORED, with any notes they left).",
+      `You are tuning the ${reviewPhase.toUpperCase()} REVIEW CRITERIA for "${signalTypeLabel(signalType)}" email-intelligence proposals.`,
+      phaseGoal,
+      "Below is the CURRENT review-criteria text for this signal type and phase, followed by a sample of recent reviewer feedback (which proposals humans ACCEPTED, REJECTED, or IGNORED, with any notes they left).",
       "",
-      "Produce an IMPROVED version of the system prompt that would reduce the rejected/ignored proposals while preserving the accepted behavior. Keep the same overall structure, scope, and action vocabulary — do NOT invent new action types or remove existing capabilities. Make targeted edits: tighten rules that led to rejections, clarify ambiguous guidance, and add concise guardrails justified by the feedback.",
+      "Produce an IMPROVED version of ONLY these review criteria that would better match reviewer judgment — reduce wrongly-hidden good proposals and wrongly-shown noise — while staying narrowly scoped to this one signal type and this one review phase. Do NOT write action/how-to-act instructions (those live in a separate hidden prompt). Do NOT mention other signal types. Keep it concise.",
       "",
-      "Return ONLY the full revised system prompt text, with no preamble, commentary, or code fences.",
+      "Return ONLY the full revised review-criteria text, with no preamble, commentary, or code fences.",
       "",
-      "===== CURRENT SYSTEM PROMPT =====",
+      "===== CURRENT REVIEW CRITERIA =====",
       currentPrompt,
       "",
       "===== RECENT REVIEWER FEEDBACK =====",
@@ -281,8 +341,16 @@ router.post(
     }
 
     const draft = await db.transaction(async (tx) => {
-      // Replace any outstanding draft — only one candidate at a time.
-      await tx.delete(emailIntelPrompts).where(eq(emailIntelPrompts.status, "draft"));
+      // Replace any outstanding draft FOR THIS KEY — one candidate per key.
+      await tx
+        .delete(emailIntelPrompts)
+        .where(
+          and(
+            eq(emailIntelPrompts.status, "draft"),
+            eq(emailIntelPrompts.signalType, signalType),
+            eq(emailIntelPrompts.reviewPhase, reviewPhase),
+          ),
+        );
       const [row] = await tx
         .insert(emailIntelPrompts)
         .values({
@@ -290,6 +358,8 @@ router.post(
           promptText: generated,
           status: "draft",
           origin: "ai_generated",
+          signalType,
+          reviewPhase,
           authorUserId: me.id,
         })
         .returning();
@@ -302,8 +372,8 @@ router.post(
 
 /**
  * Activate a version: promote the target row to `active` and demote the
- * current active row to `archived`. Used to approve an AI draft. The
- * activated row's origin is preserved.
+ * current active row FOR THE SAME KEY to `archived`. Used to approve an AI
+ * draft. The activated row's origin is preserved.
  */
 router.post(
   "/admin/email-intel/prompts/:id/activate",
@@ -322,10 +392,21 @@ router.post(
       return;
     }
     const activated = await db.transaction(async (tx) => {
+      const keyFilters: SQL[] = [eq(emailIntelPrompts.status, "active")];
+      keyFilters.push(
+        target.signalType
+          ? eq(emailIntelPrompts.signalType, target.signalType)
+          : isNull(emailIntelPrompts.signalType),
+      );
+      keyFilters.push(
+        target.reviewPhase
+          ? eq(emailIntelPrompts.reviewPhase, target.reviewPhase)
+          : isNull(emailIntelPrompts.reviewPhase),
+      );
       await tx
         .update(emailIntelPrompts)
         .set({ status: "archived", updatedAt: new Date() })
-        .where(eq(emailIntelPrompts.status, "active"));
+        .where(and(...keyFilters));
       const [row] = await tx
         .update(emailIntelPrompts)
         .set({ status: "active", updatedAt: new Date() })
@@ -339,9 +420,9 @@ router.post(
 );
 
 /**
- * Revert to a prior version by COPYING its text into a brand-new active
- * row (origin `reverted`). The old version stays in history untouched —
- * revert never destroys.
+ * Revert to a prior version by COPYING its text into a brand-new active row
+ * (origin `reverted`) for the SAME key. The old version stays in history
+ * untouched — revert never destroys.
  */
 router.post(
   "/admin/email-intel/prompts/:id/revert",
@@ -356,10 +437,21 @@ router.post(
       .limit(1);
     if (!target) return notFound(res, "email-intel prompt");
     const reverted = await db.transaction(async (tx) => {
+      const keyFilters: SQL[] = [eq(emailIntelPrompts.status, "active")];
+      keyFilters.push(
+        target.signalType
+          ? eq(emailIntelPrompts.signalType, target.signalType)
+          : isNull(emailIntelPrompts.signalType),
+      );
+      keyFilters.push(
+        target.reviewPhase
+          ? eq(emailIntelPrompts.reviewPhase, target.reviewPhase)
+          : isNull(emailIntelPrompts.reviewPhase),
+      );
       await tx
         .update(emailIntelPrompts)
         .set({ status: "archived", updatedAt: new Date() })
-        .where(eq(emailIntelPrompts.status, "active"));
+        .where(and(...keyFilters));
       const [row] = await tx
         .insert(emailIntelPrompts)
         .values({
@@ -367,6 +459,8 @@ router.post(
           promptText: target.promptText,
           status: "active",
           origin: "reverted",
+          signalType: target.signalType,
+          reviewPhase: target.reviewPhase,
           authorUserId: me.id,
         })
         .returning();

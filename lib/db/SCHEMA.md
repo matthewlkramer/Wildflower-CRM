@@ -332,8 +332,20 @@ Column-level detail lives in each schema file; this is the orientation map.
   `linkedin_job_change`, `auto_responder_move`, `bounce_invalid`, `bounce_soft`,
   `signature_update`, `grant_opportunity`, `thank_you_acknowledgment`). Status enum
   `pending` / `applied` / `rejected` / `ignored`.
-- `email_intel_prompts` — versioned AI prompt (`active` / `draft` / `archived`;
-  origin `hand_edited` / `ai_generated` / `reverted`).
+- `email_intel_prompts` — versioned, admin-editable **review** prompts, one
+  key per (`signal_type`, `review_phase`). `signal_type` enum
+  `email_intel_signal_type` (`linkedin_job_change`, `auto_responder_move`,
+  `bounce`, `signature_update`, `grant_opportunity`,
+  `thank_you_acknowledgment` — the two bounce kinds collapse to `bounce`;
+  `wildflower_update` is intentionally absent). `review_phase` enum
+  `email_intel_review_phase` (`accuracy` / `suppression`). Status
+  `active` / `draft` / `archived`, origin `hand_edited` / `ai_generated` /
+  `reverted`. Partial unique indexes enforce at most one `active` and one
+  `draft` per (`signal_type`, `review_phase`). Both columns are nullable for
+  legacy rows (demoted to `archived`). The hidden "action-proposing core"
+  prompt (how to act) is hard-coded in `emailIntelPrompts.ts` and never
+  stored here or exposed by any API; these rows hold only the accuracy /
+  suppression review criteria appended to that core.
 - `grant_leads` — team-shared, cross-inbox grant-opportunity queue extracted from
   email (status `new` / `claimed` / `converted` / `archived`).
 

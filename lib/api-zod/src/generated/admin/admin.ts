@@ -9,14 +9,19 @@ import * as zod from 'zod';
 
 
 /**
- * @summary Active AI prompt + draft + version history (admin only)
+ * @summary Per-(signal type, review phase) review prompts — active + draft + history (admin only)
  */
 export const AdminListEmailIntelPromptsResponse = zod.object({
+  "keys": zod.array(zod.object({
+  "signalType": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment']),
+  "reviewPhase": zod.enum(['accuracy', 'suppression']),
   "active": zod.object({
   "id": zod.string(),
   "promptText": zod.string(),
   "status": zod.enum(['active', 'draft', 'archived']),
   "origin": zod.enum(['hand_edited', 'ai_generated', 'reverted']),
+  "signalType": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment']).nullish(),
+  "reviewPhase": zod.enum(['accuracy', 'suppression']).nullish(),
   "authorUserId": zod.string().nullish(),
   "authorName": zod.string().nullish(),
   "createdAt": zod.string().datetime({}),
@@ -27,6 +32,8 @@ export const AdminListEmailIntelPromptsResponse = zod.object({
   "promptText": zod.string(),
   "status": zod.enum(['active', 'draft', 'archived']),
   "origin": zod.enum(['hand_edited', 'ai_generated', 'reverted']),
+  "signalType": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment']).nullish(),
+  "reviewPhase": zod.enum(['accuracy', 'suppression']).nullish(),
   "authorUserId": zod.string().nullish(),
   "authorName": zod.string().nullish(),
   "createdAt": zod.string().datetime({}),
@@ -37,22 +44,27 @@ export const AdminListEmailIntelPromptsResponse = zod.object({
   "promptText": zod.string(),
   "status": zod.enum(['active', 'draft', 'archived']),
   "origin": zod.enum(['hand_edited', 'ai_generated', 'reverted']),
+  "signalType": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment']).nullish(),
+  "reviewPhase": zod.enum(['accuracy', 'suppression']).nullish(),
   "authorUserId": zod.string().nullish(),
   "authorName": zod.string().nullish(),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })),
-  "default": zod.string().describe('Built-in default prompt text (used when no active version exists).'),
-  "usingDefault": zod.boolean().describe('True when no saved active version exists and the pipeline is on the built-in default.')
+  "default": zod.string().describe('Built-in default review prompt text for this key (used when no active version exists).'),
+  "usingDefault": zod.boolean().describe('True when no saved active version exists for this key and the pipeline is on the built-in default.')
+}))
 })
 
 /**
- * @summary Save a hand-edited prompt as the new active version (admin only)
+ * @summary Save a hand-edited review prompt as the new active version for a (signal type, review phase) key (admin only)
  */
 
 
 
 export const AdminSaveEmailIntelPromptBody = zod.object({
+  "signalType": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment']),
+  "reviewPhase": zod.enum(['accuracy', 'suppression']),
   "promptText": zod.string().min(1)
 })
 
@@ -61,6 +73,8 @@ export const AdminSaveEmailIntelPromptResponse = zod.object({
   "promptText": zod.string(),
   "status": zod.enum(['active', 'draft', 'archived']),
   "origin": zod.enum(['hand_edited', 'ai_generated', 'reverted']),
+  "signalType": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment']).nullish(),
+  "reviewPhase": zod.enum(['accuracy', 'suppression']).nullish(),
   "authorUserId": zod.string().nullish(),
   "authorName": zod.string().nullish(),
   "createdAt": zod.string().datetime({}),
@@ -68,13 +82,20 @@ export const AdminSaveEmailIntelPromptResponse = zod.object({
 })
 
 /**
- * @summary Draft an improved prompt from recent feedback, saved as a non-active draft (admin only)
+ * @summary Draft an improved review prompt for a (signal type, review phase) key from recent feedback, saved as a non-active draft (admin only)
  */
+export const AdminGenerateEmailIntelPromptBody = zod.object({
+  "signalType": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment']),
+  "reviewPhase": zod.enum(['accuracy', 'suppression'])
+})
+
 export const AdminGenerateEmailIntelPromptResponse = zod.object({
   "id": zod.string(),
   "promptText": zod.string(),
   "status": zod.enum(['active', 'draft', 'archived']),
   "origin": zod.enum(['hand_edited', 'ai_generated', 'reverted']),
+  "signalType": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment']).nullish(),
+  "reviewPhase": zod.enum(['accuracy', 'suppression']).nullish(),
   "authorUserId": zod.string().nullish(),
   "authorName": zod.string().nullish(),
   "createdAt": zod.string().datetime({}),
@@ -93,6 +114,8 @@ export const AdminActivateEmailIntelPromptResponse = zod.object({
   "promptText": zod.string(),
   "status": zod.enum(['active', 'draft', 'archived']),
   "origin": zod.enum(['hand_edited', 'ai_generated', 'reverted']),
+  "signalType": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment']).nullish(),
+  "reviewPhase": zod.enum(['accuracy', 'suppression']).nullish(),
   "authorUserId": zod.string().nullish(),
   "authorName": zod.string().nullish(),
   "createdAt": zod.string().datetime({}),
@@ -111,6 +134,8 @@ export const AdminRevertEmailIntelPromptResponse = zod.object({
   "promptText": zod.string(),
   "status": zod.enum(['active', 'draft', 'archived']),
   "origin": zod.enum(['hand_edited', 'ai_generated', 'reverted']),
+  "signalType": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment']).nullish(),
+  "reviewPhase": zod.enum(['accuracy', 'suppression']).nullish(),
   "authorUserId": zod.string().nullish(),
   "authorName": zod.string().nullish(),
   "createdAt": zod.string().datetime({}),

@@ -368,14 +368,14 @@ paths:
     get:
       operationId: adminListEmailIntelPrompts
       tags: [admin]
-      summary: Active AI prompt + draft + version history (admin only)
+      summary: Per-(signal type, review phase) review prompts — active + draft + history (admin only)
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailIntelPromptOverview" } } } }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailIntelPromptConsole" } } } }
         "403": { description: Admin required }
     post:
       operationId: adminSaveEmailIntelPrompt
       tags: [admin]
-      summary: Save a hand-edited prompt as the new active version (admin only)
+      summary: Save a hand-edited review prompt as the new active version for a (signal type, review phase) key (admin only)
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SaveEmailIntelPromptBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailIntelPrompt" } } } }
@@ -385,9 +385,11 @@ paths:
     post:
       operationId: adminGenerateEmailIntelPrompt
       tags: [admin]
-      summary: Draft an improved prompt from recent feedback, saved as a non-active draft (admin only)
+      summary: Draft an improved review prompt for a (signal type, review phase) key from recent feedback, saved as a non-active draft (admin only)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/GenerateEmailIntelPromptBody" } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailIntelPrompt" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "403": { description: Admin required }
         "409": { description: No feedback available to learn from }
   /admin/email-intel/prompts/{id}/activate:
@@ -7554,6 +7556,18 @@ components:
     EmailIntelPromptOrigin:
       type: string
       enum: [hand_edited, ai_generated, reverted]
+    EmailIntelSignalType:
+      # The kind of detected signal a review prompt is scoped to. The
+      # `bounce` value covers both bounce_invalid and bounce_soft proposal
+      # kinds. `wildflower_update` is intentionally absent — it is
+      # AI-generated, not regex-detected, and stays outside this review model.
+      type: string
+      enum: [linkedin_job_change, auto_responder_move, bounce, signature_update, grant_opportunity, thank_you_acknowledgment]
+    EmailIntelReviewPhase:
+      # `accuracy`   — judge whether the detected signal is actually correct.
+      # `suppression` — even when accurate, decide if it is worth a human's time.
+      type: string
+      enum: [accuracy, suppression]
     EmailIntelPrompt:
       type: object
       required: [id, promptText, status, origin, createdAt, updatedAt]
@@ -7562,28 +7576,51 @@ components:
         promptText:   { type: string }
         status:       { $ref: "#/components/schemas/EmailIntelPromptStatus" }
         origin:       { $ref: "#/components/schemas/EmailIntelPromptOrigin" }
+        # signalType + reviewPhase identify which review prompt this version
+        # belongs to. Nullable only for legacy combined-prompt rows retained
+        # as history; every new row is keyed.
+        signalType:   { allOf: [ { $ref: "#/components/schemas/EmailIntelSignalType" } ], nullable: true }
+        reviewPhase:  { allOf: [ { $ref: "#/components/schemas/EmailIntelReviewPhase" } ], nullable: true }
         authorUserId: { type: string, nullable: true }
         authorName:   { type: string, nullable: true }
         createdAt:    { type: string, format: date-time }
         updatedAt:    { type: string, format: date-time }
-    EmailIntelPromptOverview:
-      # The full state the admin console needs in one fetch: the live
-      # active version (omitted when on the built-in default), any
-      # outstanding AI draft awaiting review, the archived version
-      # history (newest first), and the built-in default text.
+    EmailIntelPromptKey:
+      # The full state for a single (signal type, review phase) review
+      # prompt: the live active version (omitted while on the built-in
+      # default), any outstanding AI draft awaiting review, the archived
+      # version history (newest first), and the built-in default text.
       type: object
-      required: [history, default, usingDefault]
+      required: [signalType, reviewPhase, history, default, usingDefault]
       properties:
+        signalType:   { $ref: "#/components/schemas/EmailIntelSignalType" }
+        reviewPhase:  { $ref: "#/components/schemas/EmailIntelReviewPhase" }
         active:       { allOf: [ { $ref: "#/components/schemas/EmailIntelPrompt" } ], nullable: true }
         draft:        { allOf: [ { $ref: "#/components/schemas/EmailIntelPrompt" } ], nullable: true }
         history:      { type: array, items: { $ref: "#/components/schemas/EmailIntelPrompt" } }
-        default:      { type: string, description: "Built-in default prompt text (used when no active version exists)." }
-        usingDefault: { type: boolean, description: "True when no saved active version exists and the pipeline is on the built-in default." }
+        default:      { type: string, description: "Built-in default review prompt text for this key (used when no active version exists)." }
+        usingDefault: { type: boolean, description: "True when no saved active version exists for this key and the pipeline is on the built-in default." }
+    EmailIntelPromptConsole:
+      # All review-prompt keys (one per signal type × review phase) the admin
+      # console renders in one fetch. The hidden action-proposing core prompt
+      # is never returned here — admins cannot see or edit it.
+      type: object
+      required: [keys]
+      properties:
+        keys: { type: array, items: { $ref: "#/components/schemas/EmailIntelPromptKey" } }
     SaveEmailIntelPromptBody:
       type: object
-      required: [promptText]
+      required: [signalType, reviewPhase, promptText]
       properties:
-        promptText: { type: string, minLength: 1 }
+        signalType:  { $ref: "#/components/schemas/EmailIntelSignalType" }
+        reviewPhase: { $ref: "#/components/schemas/EmailIntelReviewPhase" }
+        promptText:  { type: string, minLength: 1 }
+    GenerateEmailIntelPromptBody:
+      type: object
+      required: [signalType, reviewPhase]
+      properties:
+        signalType:  { $ref: "#/components/schemas/EmailIntelSignalType" }
+        reviewPhase: { $ref: "#/components/schemas/EmailIntelReviewPhase" }
     EmailIntelFeedbackAction:
       type: object
       required: [type, reason]

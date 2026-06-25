@@ -483,6 +483,30 @@ export const emailIntelPromptOriginEnum = pgEnum("email_intel_prompt_origin", [
   "reverted",
 ]);
 
+// The detected-signal family an email-intelligence REVIEW prompt is scoped
+// to. Distinct from email_proposal_kind: `bounce` collapses the two bounce
+// kinds (bounce_invalid + bounce_soft), and `wildflower_update` is
+// intentionally absent — those rows are materialized already-analyzed and
+// never go through the AI review step. See signalTypeForKind() in the
+// api-server emailIntelPrompts lib for the kind → signal-type mapping.
+export const emailIntelSignalTypeEnum = pgEnum("email_intel_signal_type", [
+  "linkedin_job_change",
+  "auto_responder_move",
+  "bounce",
+  "signature_update",
+  "grant_opportunity",
+  "thank_you_acknowledgment",
+]);
+
+// Which review phase a prompt drives. The hidden action-proposing core
+// (how to act) is not a phase — it is hard-coded and never editable.
+//   - `accuracy`    : is the detected signal actually correct?
+//   - `suppression` : even if accurate, is it worth a human's attention?
+export const emailIntelReviewPhaseEnum = pgEnum("email_intel_review_phase", [
+  "accuracy",
+  "suppression",
+]);
+
 // ---- People-entity-role enums ----
 export const peopleEntityRoleConnectionEnum = pgEnum(
   "people_entity_role_connection",
