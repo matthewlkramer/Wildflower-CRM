@@ -753,7 +753,7 @@ function ProposalList({ kind }: { kind: Kind }) {
   );
 }
 
-type ProposedActionView = {
+export type ProposedActionView = {
   type: string;
   reason?: string;
   [k: string]: unknown;
@@ -878,13 +878,18 @@ function ProposedActionsBlock({
   );
 }
 
-function describeAction(a: ProposedActionView): string {
+export function describeAction(a: ProposedActionView): string {
   const s = (k: string) => (typeof a[k] === "string" ? (a[k] as string) : undefined);
   const n = (k: string) => (typeof a[k] === "number" ? (a[k] as number) : undefined);
   const b = (k: string) => (typeof a[k] === "boolean" ? (a[k] as boolean) : undefined);
   switch (a.type) {
-    case "deactivate_per":
+    case "deactivate_per": {
+      const title = s("roleTitle");
+      const ent = s("roleEntityName");
+      const label = [title, ent].filter(Boolean).join(" @ ");
+      if (label) return `Mark role inactive: ${label}`;
       return `Mark current role inactive (role id ${s("perId") ?? "?"})`;
+    }
     case "create_per": {
       const named = s("entityName");
       const where =
@@ -912,9 +917,11 @@ function describeAction(a: ProposedActionView): string {
       return `Create funder "${s("funderName") ?? "?"}" and add role${role}`;
     }
     case "add_email":
-      return `Add email ${s("emailAddress")} to person${b("setPrimary") ? " (and make it primary)" : ""}`;
-    case "set_primary_email":
-      return `Promote ${s("emailAddress") ?? s("emailId") ?? "an email"} to primary`;
+      return `Add email ${s("emailAddress")} to ${s("personName") ?? s("organizationName") ?? "person"}${b("setPrimary") ? " (and make it primary)" : ""}`;
+    case "set_primary_email": {
+      const who = s("personName") ?? s("organizationName");
+      return `Promote ${s("emailAddress") ?? s("emailId") ?? "an email"} to primary${who ? ` for ${who}` : ""}`;
+    }
     case "mark_email_invalid":
       return `Mark ${s("emailAddress")} as invalid (bounced)`;
     case "create_grant_opportunity": {
@@ -926,9 +933,12 @@ function describeAction(a: ProposedActionView): string {
       return parts.join(", ");
     }
     case "set_phone":
-      return `Add phone ${s("phoneNumber")}${s("phoneType") ? ` (${s("phoneType")})` : ""} to person${b("setPrimary") ? " (and make it primary)" : ""}`;
-    case "update_per_title":
+      return `Add phone ${s("phoneNumber")}${s("phoneType") ? ` (${s("phoneType")})` : ""} to ${s("personName") ?? s("organizationName") ?? "person"}${b("setPrimary") ? " (and make it primary)" : ""}`;
+    case "update_per_title": {
+      const ent = s("roleEntityName");
+      if (ent) return `Update role title to "${s("externalTitleOrRole")}" @ ${ent}`;
       return `Update role title to "${s("externalTitleOrRole")}" (role id ${s("perId") ?? "?"})`;
+    }
     default:
       return a.type;
   }

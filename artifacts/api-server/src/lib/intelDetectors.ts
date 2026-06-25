@@ -450,17 +450,47 @@ export function parseEmailSignature(
   const companyProseRe =
     /\b(membership|for all|on behalf|please|thank|regards|sincerely|looking forward|sent from|wildflower)\b/i;
 
+  // Zoom / Google Meet / Teams dial-in blocks list "one tap mobile" and
+  // "dial by your location" numbers that are MEETING ACCESS numbers, not
+  // the sender's personal phone. Mark every line inside such a block so
+  // the phone detector skips them — a genuine labeled / separator-shaped
+  // personal number elsewhere in the signature is still picked up.
+  const meetingCueRe =
+    /\b(zoom|google\s+meet|microsoft\s+teams|webex|gotomeeting|dial\s+by\s+your\s+location|dial[-\s]?in|one[-\s]?tap\s+mobile|join\s+by\s+phone|meeting\s+id|passcode|find\s+your\s+local\s+number|international\s+numbers?\s+available)\b|PIN\s*:|,,\s*\d|#\s*$/i;
+  // A line that starts as a phone number (e.g. "+1 312 626 6799 US (Chicago)").
+  const dialNumberLineRe = /^\+?\d[\d\s().\-]{6,}\d/;
+  const meetingTainted = new Array<boolean>(tail.length).fill(false);
+  let inMeetingBlock = false;
+  for (let i = 0; i < tail.length; i++) {
+    const l = tail[i];
+    if (meetingCueRe.test(l)) {
+      meetingTainted[i] = true;
+      inMeetingBlock = true;
+      continue;
+    }
+    if (inMeetingBlock) {
+      // Inside a dial-in block, bare number lines are additional access
+      // numbers — keep tainting them. Any other content line closes it.
+      if (dialNumberLineRe.test(l)) {
+        meetingTainted[i] = true;
+        continue;
+      }
+      inMeetingBlock = false;
+    }
+  }
+
   let title: string | null = null;
   let company: string | null = null;
   let phone: string | null = null;
   let email: string | null = null;
 
-  for (const line of tail) {
+  for (let li = 0; li < tail.length; li++) {
+    const line = tail[li];
     if (!email) {
       const m = line.match(emailRe);
       if (m) email = m[0].toLowerCase();
     }
-    if (!phone) {
+    if (!phone && !meetingTainted[li]) {
       const hasLabel = phoneLabelRe.test(line);
       const m = line.match(phoneRe);
       if (m && looksLikePhone(m[0], hasLabel)) {

@@ -58,6 +58,12 @@ export type ProposedAction =
   | {
       type: "deactivate_per";
       perId: string;
+      // Display-only: the referenced role's title and the name of the
+      // entity it's at, set by enrichRoleActionLabels so the review UI can
+      // render "Title @ Entity" instead of a raw role id. Not used when
+      // applying. Absent when the role no longer resolves.
+      roleTitle?: string | null;
+      roleEntityName?: string | null;
       reason: string;
     }
   | {
@@ -174,6 +180,12 @@ export type ProposedAction =
       emailAddress: string;
       emailType?: "work" | "personal" | "other";
       setPrimary?: boolean;
+      // Display-only: the name of the target the change applies to, set by
+      // enrichPersonActionNames so the review UI names the person (or
+      // organization) instead of the bare word "person". Not used when
+      // applying. Exactly one is set per the email-owner XOR.
+      personName?: string | null;
+      organizationName?: string | null;
       reason: string;
     }
   | {
@@ -184,6 +196,10 @@ export type ProposedAction =
       emailId?: string;
       personId?: string;
       emailAddress?: string;
+      // Display-only: the name of the target (person or organization that
+      // owns the email — see add_email).
+      personName?: string | null;
+      organizationName?: string | null;
       reason: string;
     }
   | {
@@ -207,6 +223,10 @@ export type ProposedAction =
       phoneNumber: string;
       phoneType?: "work" | "mobile" | "home" | "other";
       setPrimary?: boolean;
+      // Display-only: the name of the target (person or organization — see
+      // add_email).
+      personName?: string | null;
+      organizationName?: string | null;
       reason: string;
     }
   | {
@@ -214,6 +234,11 @@ export type ProposedAction =
       // Existing people_entity_roles row to set externalTitleOrRole on.
       perId: string;
       externalTitleOrRole: string;
+      // Display-only: the referenced role's current title and the name of
+      // the entity it's at, set by enrichRoleActionLabels (see
+      // deactivate_per). Absent when the role no longer resolves.
+      roleTitle?: string | null;
+      roleEntityName?: string | null;
       reason: string;
     };
 
@@ -730,6 +755,208 @@ async function enrichCreatePerEntityNames(
   });
 }
 
+// Fill the display-only name on every person-targeted action (set_phone /
+// add_email / set_primary_email) so the review UI names the target instead
+// of the bare word "person". Phone/email rows are owned by exactly one of
+// a person OR an organization (the email-owner XOR), so we resolve both:
+// person targets get `personName`, organization-owned targets get
+// `organizationName`. set_primary_email may carry only an emailId, so we
+// resolve that to its owner (person or organization) first. Ids that no
+// longer resolve are left without a name (the UI falls back to "person").
+async function enrichPersonActionNames(
+  actions: ProposedAction[],
+): Promise<ProposedAction[]> {
+  const isPersonAction = (
+    a: ProposedAction,
+  ): a is Extract<
+    ProposedAction,
+    { type: "set_phone" | "add_email" | "set_primary_email" }
+  > =>
+    a.type === "set_phone" ||
+    a.type === "add_email" ||
+    a.type === "set_primary_email";
+
+  // An organization id may ride along on any of these actions even though
+  // the JSON schema only names personId — the union allows extra fields and
+  // the email-owner XOR means a target can be an organization. Read it
+  // defensively without widening the typed shape.
+  const orgIdOf = (a: ProposedAction): string | undefined => {
+    const v = (a as { organizationId?: unknown }).organizationId;
+    return typeof v === "string" && v.length > 0 ? v : undefined;
+  };
+
+  const targets = actions.filter(isPersonAction);
+  if (targets.length === 0) return actions;
+
+  const personIds = new Set<string>();
+  const orgIds = new Set<string>();
+  const emailIds = new Set<string>();
+  for (const a of targets) {
+    const org = orgIdOf(a);
+    if (org) orgIds.add(org);
+    if (a.type === "set_primary_email") {
+      if (a.personId) personIds.add(a.personId);
+      else if (!org && a.emailId) emailIds.add(a.emailId);
+    } else if (a.personId) {
+      personIds.add(a.personId);
+    }
+  }
+
+  // Resolve set_primary_email rows that only carry an emailId to their
+  // owner (person or organization), so we can name them too.
+  const emailToPerson = new Map<string, string>();
+  const emailToOrg = new Map<string, string>();
+  if (emailIds.size > 0) {
+    const rows = await db
+      .select({
+        id: emailsTable.id,
+        personId: emailsTable.personId,
+        organizationId: emailsTable.organizationId,
+      })
+      .from(emailsTable)
+      .where(inArray(emailsTable.id, [...emailIds]));
+    for (const r of rows) {
+      if (r.personId) {
+        emailToPerson.set(r.id, r.personId);
+        personIds.add(r.personId);
+      } else if (r.organizationId) {
+        emailToOrg.set(r.id, r.organizationId);
+        orgIds.add(r.organizationId);
+      }
+    }
+  }
+
+  if (personIds.size === 0 && orgIds.size === 0) return actions;
+  const personNameOf = new Map<string, string>();
+  const orgNameOf = new Map<string, string>();
+  await Promise.all([
+    (async () => {
+      if (personIds.size === 0) return;
+      const rows = await db
+        .select({ id: people.id, fullName: people.fullName })
+        .from(people)
+        .where(inArray(people.id, [...personIds]));
+      for (const r of rows) if (r.fullName) personNameOf.set(r.id, r.fullName);
+    })(),
+    (async () => {
+      if (orgIds.size === 0) return;
+      const rows = await db
+        .select({ id: organizations.id, name: organizations.name })
+        .from(organizations)
+        .where(inArray(organizations.id, [...orgIds]));
+      for (const r of rows) if (r.name) orgNameOf.set(r.id, r.name);
+    })(),
+  ]);
+
+  return actions.map((a) => {
+    if (!isPersonAction(a)) return a;
+    // A person target wins; otherwise fall back to an organization target.
+    const personId =
+      a.type === "set_primary_email"
+        ? a.personId ?? (a.emailId ? emailToPerson.get(a.emailId) : undefined)
+        : a.personId;
+    const personName = personId ? personNameOf.get(personId) : undefined;
+    if (personName) return { ...a, personName };
+
+    const orgId =
+      orgIdOf(a) ??
+      (a.type === "set_primary_email" && a.emailId
+        ? emailToOrg.get(a.emailId)
+        : undefined);
+    const orgName = orgId ? orgNameOf.get(orgId) : undefined;
+    if (orgName) return { ...a, organizationName: orgName };
+
+    return a;
+  });
+}
+
+// Fill the display-only `roleTitle` / `roleEntityName` on every
+// role-targeted action (deactivate_per / update_per_title) so the review
+// UI can render "Title @ Entity" instead of an opaque role record id.
+// Looks up the referenced people_entity_roles row, then resolves the name
+// of the entity (organization / payment intermediary / household) it's at.
+// Roles that no longer resolve are left unenriched (the UI falls back to
+// the id-based text).
+async function enrichRoleActionLabels(
+  actions: ProposedAction[],
+): Promise<ProposedAction[]> {
+  const isRoleAction = (
+    a: ProposedAction,
+  ): a is Extract<
+    ProposedAction,
+    { type: "deactivate_per" | "update_per_title" }
+  > => a.type === "deactivate_per" || a.type === "update_per_title";
+
+  const perIds = new Set<string>();
+  for (const a of actions) if (isRoleAction(a) && a.perId) perIds.add(a.perId);
+  if (perIds.size === 0) return actions;
+
+  const roleRows = await db
+    .select({
+      id: peopleEntityRoles.id,
+      externalTitleOrRole: peopleEntityRoles.externalTitleOrRole,
+      organizationId: peopleEntityRoles.organizationId,
+      paymentIntermediaryId: peopleEntityRoles.paymentIntermediaryId,
+      householdId: peopleEntityRoles.householdId,
+    })
+    .from(peopleEntityRoles)
+    .where(inArray(peopleEntityRoles.id, [...perIds]));
+
+  const entityIds = {
+    organization: new Set<string>(),
+    paymentIntermediary: new Set<string>(),
+    household: new Set<string>(),
+  };
+  for (const r of roleRows) {
+    if (r.organizationId) entityIds.organization.add(r.organizationId);
+    else if (r.paymentIntermediaryId)
+      entityIds.paymentIntermediary.add(r.paymentIntermediaryId);
+    else if (r.householdId) entityIds.household.add(r.householdId);
+  }
+
+  const entityNameOf = new Map<string, string>();
+  const loadNames = async (
+    set: Set<string>,
+    table: typeof organizations | typeof paymentIntermediaries | typeof households,
+  ) => {
+    if (set.size === 0) return;
+    const rows = await db
+      .select({ id: table.id, name: table.name })
+      .from(table)
+      .where(inArray(table.id, [...set]));
+    for (const r of rows) if (r.name) entityNameOf.set(r.id, r.name);
+  };
+  await Promise.all([
+    loadNames(entityIds.organization, organizations),
+    loadNames(entityIds.paymentIntermediary, paymentIntermediaries),
+    loadNames(entityIds.household, households),
+  ]);
+
+  const labelOf = new Map<
+    string,
+    { roleTitle: string | null; roleEntityName: string | null }
+  >();
+  for (const r of roleRows) {
+    const entityId =
+      r.organizationId ?? r.paymentIntermediaryId ?? r.householdId;
+    labelOf.set(r.id, {
+      roleTitle: r.externalTitleOrRole ?? null,
+      roleEntityName: entityId ? entityNameOf.get(entityId) ?? null : null,
+    });
+  }
+
+  return actions.map((a) => {
+    if (!isRoleAction(a)) return a;
+    const label = labelOf.get(a.perId);
+    if (!label) return a;
+    return {
+      ...a,
+      roleTitle: label.roleTitle,
+      roleEntityName: label.roleEntityName,
+    };
+  });
+}
+
 // ──────────────────────────────────────────────────────────────────
 // Prompt builder
 // ──────────────────────────────────────────────────────────────────
@@ -758,7 +985,7 @@ export function buildDefaultSystemPrompt(): string {
     "• A SUCCESSOR must be a DIFFERENT, specifically NAMED individual (a real first AND last name). The departing / subject person themselves is NOT a successor — never create_person_with_per for the very person whose departure the auto-reply announces. A generic role mailbox or unnamed group is NOT a successor either — e.g. info@/grants@/contact@ addresses, 'a member of the team', 'your regular point of contact', 'the SeaChange team'. If the auto-reply names no specific replacement individual — only a generic inbox, a team, or just the departing person — and the departing person's own record needs no change, there is nothing new: leave actions empty and suppress as before.",
     "• For signature_update proposals: the payload.parsed object holds {name,title,company,phone,email}. Cross-check EACH parsed field against the CRM CONTEXT and emit an action ONLY for fields that are genuinely NEW or changed. Never restate the status quo. Specifically:",
     "    – email: if it already appears under 'Emails on file' (case-insensitive), emit nothing for it.",
-    "    – phone: compare digits only (ignore spaces/dashes/parens/country code) against 'Phones on file'. If a matching number is already on file, emit nothing. If it is genuinely new, emit `set_phone` with the person's id.",
+    "    – phone: compare digits only (ignore spaces/dashes/parens/country code) against 'Phones on file'. If a matching number is already on file, emit nothing. If it is genuinely new, emit `set_phone` with the person's id. NEVER treat a conference / meeting dial-in number as a personal phone — Zoom / Google Meet / Teams access numbers (e.g. 'one tap mobile', 'dial by your location', 'join by phone', a 'Meeting ID' / 'Passcode' / 'PIN', or a number with a ',,123456789#' suffix) are meeting access numbers, not the contact's phone; emit nothing for them.",
     "    – title/role: if the person already has a CURRENT role at that company with that same title, emit nothing. If they have a CURRENT role at that company but its title is empty or different and the message shows a new title, emit `update_per_title` using that role's id — do NOT emit create_per for a role they already hold. Only use create_per when it is a genuinely different/new entity the person isn't already attached to AND that entity's id is in context; if the entity is a non-funder employer not yet in the CRM, use create_org_with_per instead.",
     "    – company: treat it as changed ONLY if it doesn't match the name of ANY current role entity in context. The detector sometimes mis-parses a sentence fragment as a company — if the parsed company looks like prose or references Wildflower (the user's own org), ignore it entirely.",
     "• Never emit `create_per` for a role the person already holds (same entity, current). If only the title differs, use `update_per_title`. Don't contradict yourself: if your reason says the person already has the role, emit no action for it.",
@@ -1093,6 +1320,12 @@ export async function proposeActionsForProposal(
     // model-emitted create_per (ids drawn from context) and the
     // reconciler-rewritten ones.
     actions = await enrichCreatePerEntityNames(actions);
+
+    // Name the person on phone/email actions and attach the role's
+    // title + entity name on the two role actions, so the review UI can
+    // render readable descriptions instead of bare "person" / raw role ids.
+    actions = await enrichPersonActionNames(actions);
+    actions = await enrichRoleActionLabels(actions);
 
     // Belt-and-suspenders: deterministically drop any grant opportunity
     // whose application deadline is already in the past relative to

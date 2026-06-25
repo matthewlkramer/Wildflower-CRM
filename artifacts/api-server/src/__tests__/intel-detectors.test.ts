@@ -163,4 +163,57 @@ describe("parseEmailSignature — phone heuristics", () => {
     );
     expect(sig?.phone ?? null).toBeNull();
   });
+
+  it("ignores a Zoom dial-in block", () => {
+    const sig = parseEmailSignature(
+      [
+        "Jane Doe",
+        "Director of Development",
+        "Acme Foundation",
+        "Join Zoom Meeting",
+        "https://zoom.us/j/123456789",
+        "One tap mobile +1 301 715 8592,,123456789# US",
+        "Dial by your location",
+        "+1 301 715 8592 US (Washington DC)",
+        "+1 312 626 6799 US (Chicago)",
+        "Meeting ID: 123 456 789",
+        "Passcode: 654321",
+      ].join("\n"),
+      null,
+    );
+    expect(sig?.phone ?? null).toBeNull();
+  });
+
+  it("ignores a Google Meet dial-in block", () => {
+    const sig = parseEmailSignature(
+      [
+        "Bob Smith",
+        "Program Officer",
+        "Beta Foundation",
+        "Join with Google Meet",
+        "To join by phone dial +1 651-371-2940",
+        "PIN: 123 456 789#",
+      ].join("\n"),
+      null,
+    );
+    expect(sig?.phone ?? null).toBeNull();
+  });
+
+  it("still detects a genuine personal phone alongside a Zoom block", () => {
+    const sig = parseEmailSignature(
+      [
+        "Jane Doe",
+        "Director of Development",
+        "Acme Foundation",
+        "Mobile: (415) 555-9876",
+        "Join Zoom Meeting",
+        "One tap mobile +1 301 715 8592,,123456789# US",
+        "Dial by your location",
+        "+1 312 626 6799 US (Chicago)",
+      ].join("\n"),
+      null,
+    );
+    expect(sig?.phone).toBeTruthy();
+    expect(sig?.phone?.replace(/\D/g, "")).toContain("4155559876");
+  });
 });
