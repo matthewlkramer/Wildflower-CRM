@@ -90,6 +90,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   laneBadges,
+  deriveCardStatus,
   extractGateIssues,
   deriveApproveBodyFromProposal,
   EXCLUSION_REASON_LABELS,
@@ -200,25 +201,12 @@ function axisOf(card: ReconciliationCard): AxisId {
   return card.hasStripeEvidence ? "qs" : "qg";
 }
 
+// Supplemental chips for the badge row. The amount-delta and donor chips were
+// removed — the amount now lives on each side of the card and the donor name is
+// shown in the CRM-gift lane + the Status line — so only the Stripe-payout
+// provenance chip remains here.
 function evidenceBullets(card: ReconciliationCard): string[] {
   const out: string[] = [];
-  const amt = num(card.amount);
-  const giftAmt = num(card.resolvedGiftAmount);
-  if (amt != null && giftAmt != null) {
-    const delta = Math.abs(amt - giftAmt);
-    out.push(
-      delta < 0.005
-        ? `Amount matches (${money(card.amount)})`
-        : `Amount delta ${money(String(delta))} (QB ${money(card.amount)} vs gift ${money(card.resolvedGiftAmount)})`,
-    );
-  } else if (amt != null) {
-    out.push(`QuickBooks amount ${money(card.amount)}`);
-  }
-  if (card.proposedDonorName) {
-    out.push(
-      `Donor: ${card.proposedDonorName}${card.proposedDonorKind ? ` (${card.proposedDonorKind})` : ""}`,
-    );
-  }
   if (card.hasStripeEvidence && card.stripePayoutId) {
     out.push(
       `Stripe payout ${card.stripePayoutId}${card.stripeChargeCount ? ` · ${card.stripeChargeCount} charges` : ""}`,
@@ -329,6 +317,10 @@ export default function ReconciliationWorkbench() {
     const review: ReconciliationCard[] = [];
     const qbo: ReconciliationCard[] = [];
     for (const c of filtered) {
+      // Cards whose gift link is already settled ("Link to gift confirmed")
+      // drop out of the review surface — they belong in the Confirmed queue, not
+      // Needs review. Partial/multiple (amounts still diverge) stay visible.
+      if (deriveCardStatus(c).key === "confirmed") continue;
       if (c.syncGap) sync.push(c);
       else if (c.needsResearch) research.push(c);
       else if (c.proposedGiftId || c.proposedDonorId || c.resolvedGiftId)
@@ -1220,6 +1212,13 @@ function ReconCard({
   const hasGift = Boolean(card.resolvedGiftId || card.proposedGiftId);
   const hasDonor = Boolean(card.proposedDonorId || card.proposedDonorName);
   const linkedGiftName = card.resolvedGiftName ?? card.proposedGiftName;
+  const status = deriveCardStatus(card);
+  // Header id: the human "No." (qbDocNumber) if present, else the stable QB id.
+  const qbIdText = card.qbDocNumber ?? card.qbEntityId;
+  // Real donor on the QB side: a Stripe charge's QB payer is literally "Stripe",
+  // so prefer the charge's payer name when this money came through Stripe.
+  const qbPayerName = card.stripeChargeDonorName ?? card.payerName;
+  const crmRecordLane = lanes.find((b) => b.key === "crmRecord");
 
   return (
     <div
@@ -1239,24 +1238,41 @@ function ReconCard({
           />
         </div>
 
-        {/* Left: QuickBooks anchor (payment method in the header) */}
+        {/* Left: QuickBooks anchor (transaction type + id, payment method & Stripe in the header) */}
         <div className="flex-1 p-3">
           <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            <span>QuickBooks</span>
-            {card.qbEntityType && <span>· {card.qbEntityType}</span>}
+            <span>
+              {card.qbEntityType ?? "QuickBooks"}
+              {qbIdText ? ` (#${qbIdText})` : ""}
+            </span>
             {card.qbPaymentMethod && (
               <span className="rounded bg-muted px-1.5 py-0.5 normal-case">
                 {card.qbPaymentMethod}
               </span>
             )}
+            {card.hasStripeEvidence && (
+              <span className="rounded bg-indigo-100 px-1.5 py-0.5 normal-case text-indigo-700">
+                Stripe
+              </span>
+            )}
           </div>
-          <div className="font-medium">{card.payerName ?? "Unknown payer"}</div>
-          <div className="text-lg font-semibold tabular-nums">
-            {money(card.amount)}
-          </div>
+          <div className="font-medium">{qbPayerName ?? "Unknown payer"}</div>
+          {card.stripeGrossAmount != null ? (
+            <div className="text-sm font-semibold tabular-nums">
+              {money(card.stripeGrossAmount)} gross
+              <span className="font-normal text-muted-foreground">
+                {" = "}
+                {money(card.stripeNetAmount)} net + {money(card.stripeFeeAmount)}{" "}
+                fee
+              </span>
+            </div>
+          ) : (
+            <div className="text-lg font-semibold tabular-nums">
+              {money(card.amount)}
+            </div>
+          )}
           <div className="text-xs text-muted-foreground">
             {card.dateReceived ?? "—"}
-            {card.qbDocNumber ? ` · #${card.qbDocNumber}` : ""}
           </div>
         </div>
 
@@ -1271,18 +1287,24 @@ function ReconCard({
           </div>
           {hasGift ? (
             <>
-              <Badge variant="secondary" className="mb-1 text-[10px]">
-                {card.resolvedGiftId ? "Linked gift" : "Link existing gift"}
-              </Badge>
-              <div className="font-medium">{linkedGiftName ?? "Existing gift"}</div>
+              <div className="font-medium">
+                {card.proposedDonorName ?? card.proposedDonorKind ?? "Donor"}
+              </div>
+              {linkedGiftName && (
+                <div className="text-xs text-muted-foreground">
+                  {linkedGiftName}
+                </div>
+              )}
               {num(card.resolvedGiftAmount) != null && (
                 <div className="text-lg font-semibold tabular-nums">
                   {money(card.resolvedGiftAmount)}
                 </div>
               )}
-              <div className="text-xs text-muted-foreground">
-                {card.proposedDonorKind ?? card.proposedDonorName ?? "—"}
-              </div>
+              {card.resolvedGiftDate && (
+                <div className="text-xs text-muted-foreground">
+                  Close date: {card.resolvedGiftDate}
+                </div>
+              )}
             </>
           ) : hasDonor ? (
             <>
@@ -1334,13 +1356,16 @@ function ReconCard({
         </div>
       </div>
 
-      {/* Lanes + evidence */}
+      {/* Status + CRM-record lane + evidence */}
       <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2">
-        {lanes.map((b) => (
-          <Badge key={b.key} variant={b.variant} className="text-[10px]">
-            {b.label}
+        <Badge variant={status.variant} className="text-[10px]">
+          Status: {status.label}
+        </Badge>
+        {crmRecordLane && (
+          <Badge variant={crmRecordLane.variant} className="text-[10px]">
+            {crmRecordLane.label}
           </Badge>
-        ))}
+        )}
         {card.syncGap && (
           <Badge className="bg-orange-100 text-orange-800 text-[10px]">
             Sync gap

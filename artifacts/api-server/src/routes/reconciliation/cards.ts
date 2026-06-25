@@ -91,13 +91,31 @@ const stripeEvidenceExpr = sql<{
   payoutId: string;
   chargeCount: number;
   reconciliationStatus: string | null;
+  charge: {
+    grossAmount: string | null;
+    netAmount: string | null;
+    feeAmount: string | null;
+    payerName: string | null;
+  } | null;
 } | null>`(
   SELECT jsonb_build_object(
     'payoutId', p.id,
     'chargeCount', (
       SELECT COUNT(*)::int FROM stripe_staged_charges c WHERE c.stripe_payout_id = p.id
     ),
-    'reconciliationStatus', p.qb_reconciliation_status
+    'reconciliationStatus', p.qb_reconciliation_status,
+    -- The single backing charge's money + payer, but ONLY when exactly one
+    -- charge backs the payout (MIN collapses that lone row; COUNT<>1 → NULL),
+    -- so multi-charge payouts never show one charge's donor as the whole.
+    'charge', (
+      SELECT CASE WHEN COUNT(*) = 1 THEN jsonb_build_object(
+        'grossAmount', MIN(c.gross_amount)::text,
+        'netAmount',   MIN(c.net_amount)::text,
+        'feeAmount',   MIN(c.fee_amount)::text,
+        'payerName',   MIN(c.payer_name)
+      ) ELSE NULL END
+      FROM stripe_staged_charges c WHERE c.stripe_payout_id = p.id
+    )
   )
   FROM stripe_payouts p
   WHERE p.matched_qb_staged_payment_id = ${stagedPayments.id}
@@ -364,9 +382,14 @@ router.get(
         stripeChargeCount: row.stripeEvidence?.chargeCount ?? null,
         stripeReconciliationStatus:
           row.stripeEvidence?.reconciliationStatus ?? null,
+        stripeChargeDonorName: row.stripeEvidence?.charge?.payerName ?? null,
+        stripeGrossAmount: row.stripeEvidence?.charge?.grossAmount ?? null,
+        stripeNetAmount: row.stripeEvidence?.charge?.netAmount ?? null,
+        stripeFeeAmount: row.stripeEvidence?.charge?.feeAmount ?? null,
         resolvedGiftId: row.resolvedGiftId ?? null,
         resolvedGiftName: row.resolvedGiftName ?? null,
         resolvedGiftAmount: row.resolvedGiftAmount ?? null,
+        resolvedGiftDate: row.resolvedGiftDate ?? null,
         finalAmountSource: row.finalAmountSource ?? null,
         fundingSource: isSourceGroup
           ? (groupAgg?.commonFundingSource ?? null)

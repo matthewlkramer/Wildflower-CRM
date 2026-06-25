@@ -3524,9 +3524,19 @@ export interface ReconciliationCard {
   stripeChargeCount?: number | null;
   /** Reconciliation state of the Stripe payout backing this money (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when there is no Stripe evidence. */
   stripeReconciliationStatus?: string | null;
+  /** Payer/customer name on the single Stripe charge backing this money — the real donor, not the 'Stripe' processor name that appears as the QB payer. Null for multi-charge payouts or non-Stripe money. */
+  stripeChargeDonorName?: string | null;
+  /** Gross amount (major units) of the single Stripe charge backing this money; null for multi-charge payouts or non-Stripe money. */
+  stripeGrossAmount?: string | null;
+  /** Net amount deposited (gross − processor fee) for the single backing Stripe charge; null for multi-charge payouts or non-Stripe money. */
+  stripeNetAmount?: string | null;
+  /** Processor fee on the single backing Stripe charge (gross − net); null for multi-charge payouts or non-Stripe money. */
+  stripeFeeAmount?: string | null;
   resolvedGiftId?: string | null;
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;
+  /** Close/received date of the linked (resolved) gift, shown on the card's CRM-gift side. Null when no gift is linked yet. */
+  resolvedGiftDate?: string | null;
   finalAmountSource?: GiftFinalAmountSource | null;
   /** Auto-proposal satisfies the consistency gate (one-click approve). */
   ready: boolean;
