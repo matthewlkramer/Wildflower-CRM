@@ -185,6 +185,7 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "intendedUsage": zod.enum(['gen_ops', 'growth', 'school_startup', 'teacher_training', 'project']).nullish(),
   "fundableProjectId": zod.string().nullish(),
   "directToSchool": zod.boolean(),
+  "schoolRecipientId": zod.string().nullish(),
   "formallyRestricted": zod.boolean().describe('True if the grant letter formally restricts this allocation; false if it merely documents the donor\'s intent.'),
   "reimbursableShare": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.').nullish().describe('Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count.'),
   "status": zod.enum(['working', 'committed', 'superseded', 'committed_with_conditions', 'superseded_by_pledge', 'superseded_by_gift', 'abandoned']).nullish(),

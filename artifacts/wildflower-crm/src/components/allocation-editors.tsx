@@ -11,6 +11,7 @@ import {
   useListEntities,
   useListFiscalYears,
   useListFundableProjects,
+  useListSchools,
   useListRevenueAccounts,
   getGetOpportunityOrPledgeQueryKey,
   getGetGiftOrPaymentQueryKey,
@@ -161,6 +162,11 @@ function useFundableProjectOptions(currentId: string | null = null): ReadonlyArr
 function useFundableProjectNameMap(): Map<string, string> {
   const { data } = useListFundableProjects();
   return new Map((data ?? []).map((p) => [p.id, p.name]));
+}
+
+function useSchoolNameMap(): Map<string, string> {
+  const { data } = useListSchools({ limit: 10000 });
+  return new Map((data?.data ?? []).map((s) => [s.id, s.shortName || s.name]));
 }
 
 // Negative amounts are never valid for an allocation (or a parent total), so they
@@ -652,6 +658,7 @@ type PledgeFormState = CodingFormState & {
   status: string;
   fundableProjectId: string;
   directToSchool: boolean;
+  schoolRecipientId: string;
   contingent: boolean;
   conditions: string;
   notes: string;
@@ -670,6 +677,7 @@ function pledgeStateFrom(a: PledgeAllocation | null): PledgeFormState {
     status: a?.status ?? "",
     fundableProjectId: a?.fundableProjectId ?? "",
     directToSchool: a?.directToSchool ?? false,
+    schoolRecipientId: a?.schoolRecipientId ?? "",
     contingent: a?.contingent ?? false,
     conditions: a?.conditions ?? "",
     notes: a?.notes ?? "",
@@ -726,6 +734,7 @@ function PledgeAllocationDialog({
         status: (noneToNull(s.status) as PledgeAllocationStatus | null) ?? null,
         fundableProjectId: noneToNull(s.fundableProjectId),
         directToSchool: s.directToSchool,
+        schoolRecipientId: emptyToNull(s.schoolRecipientId),
         contingent: s.contingent,
         conditions: emptyToNull(s.conditions),
         notes: emptyToNull(s.notes),
@@ -746,6 +755,7 @@ function PledgeAllocationDialog({
     if (noneToNull(s.reimbursableShare)) body.reimbursableShare = s.reimbursableShare as ReimbursableShare;
     if (noneToNull(s.status)) body.status = s.status as PledgeAllocationStatus;
     if (noneToNull(s.fundableProjectId)) body.fundableProjectId = s.fundableProjectId;
+    if (emptyToNull(s.schoolRecipientId)) body.schoolRecipientId = s.schoolRecipientId.trim();
     if (emptyToNull(s.conditions)) body.conditions = s.conditions.trim();
     if (emptyToNull(s.notes)) body.notes = s.notes.trim();
     if (coding.restrictionType != null) body.restrictionType = coding.restrictionType;
@@ -868,8 +878,30 @@ function PledgeAllocationDialog({
               <CheckboxField
                 id="pa-direct"
                 checked={s.directToSchool}
-                onCheckedChange={(v) => set("directToSchool", v)}
+                onCheckedChange={(v) =>
+                  setS((prev) => ({
+                    ...prev,
+                    directToSchool: v,
+                    schoolRecipientId: v ? prev.schoolRecipientId : "",
+                  }))
+                }
                 label="Funds flow directly to a school"
+              />
+            </DialogField>
+            <DialogField label="School recipient" htmlFor="pa-school">
+              <Input
+                id="pa-school"
+                className="h-8 text-sm"
+                value={s.schoolRecipientId}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setS((prev) => ({
+                    ...prev,
+                    schoolRecipientId: v,
+                    directToSchool: v.trim() ? true : prev.directToSchool,
+                  }));
+                }}
+                placeholder="School ID"
               />
             </DialogField>
             <DialogField label="Payment type">
@@ -986,6 +1018,7 @@ export function PledgeAllocationsEditor({
   const entityOptions = useEntityOptions();
   const entityNameById = new Map(entityOptions.map((o) => [o.value, o.label]));
   const projectNameById = useFundableProjectNameMap();
+  const schoolNameById = useSchoolNameMap();
   const regionNames = useRegionNameMap();
   const [dialog, setDialog] = useState<PledgeDialogState>(null);
 
@@ -1040,6 +1073,9 @@ export function PledgeAllocationsEditor({
   }
 
   function usageLabel(a: PledgeAllocation): string {
+    if (a.schoolRecipientId) {
+      return schoolNameById.get(a.schoolRecipientId) ?? "School";
+    }
     if (a.intendedUsage === "project") {
       return (a.fundableProjectId ? projectNameById.get(a.fundableProjectId) : null) ?? "Project";
     }

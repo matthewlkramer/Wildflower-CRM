@@ -43,11 +43,14 @@ router.post(
       fundableProjectId: body.fundableProjectId,
       regionIds: body.regionIds,
     });
+    // A concrete school recipient implies the funds flow directly to a school.
+    const directToSchool = body.schoolRecipientId ? true : body.directToSchool;
     const [row] = await db
       .insert(pledgeAllocations)
       .values({
         id: newId(),
         ...body,
+        directToSchool,
         objectCode: coding.objectCode,
         revenueLocation: coding.revenueLocation,
         revenueClass: coding.revenueClass,
@@ -76,10 +79,22 @@ router.patch(
       regionIds: body.regionIds !== undefined ? body.regionIds : existing.regionIds,
     };
     const coding = await derivePledgeAllocationCoding(merged.pledgeOrOpportunityId, merged);
+    // Keep schoolRecipientId <-> directToSchool coherent: a concrete school
+    // implies direct-to-school; explicitly unchecking direct-to-school clears
+    // the school link. Only the keys the caller actually touched are overridden.
+    const schoolCoherence: Partial<typeof pledgeAllocations.$inferInsert> = {};
+    if (body.schoolRecipientId) {
+      schoolCoherence.schoolRecipientId = body.schoolRecipientId;
+      schoolCoherence.directToSchool = true;
+    } else if (body.directToSchool === false) {
+      schoolCoherence.schoolRecipientId = null;
+      schoolCoherence.directToSchool = false;
+    }
     const [row] = await db
       .update(pledgeAllocations)
       .set({
         ...body,
+        ...schoolCoherence,
         objectCode: coding.objectCode,
         revenueLocation: coding.revenueLocation,
         revenueClass: coding.revenueClass,

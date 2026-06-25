@@ -16,6 +16,7 @@ import {
 import { opportunitiesAndPledges } from "./opportunitiesAndPledges";
 import { entities } from "./entities";
 import { fundableProjects } from "./fundableProjects";
+import { schools } from "./schools";
 import { fiscalYears } from "./fiscalYears";
 
 export const pledgeAllocations = pgTable("pledge_allocations", {
@@ -45,6 +46,13 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
     { onDelete: "restrict" },
   ),
   directToSchool: boolean("direct_to_school").default(false).notNull(),
+  // FK to schools.id — the specific school this allocation's funds flow to.
+  // Mirrors gift_allocations.schoolRecipientId. When set, the API forces
+  // directToSchool=true to keep the two coherent. RESTRICT: a school can't be
+  // deleted while allocations still point at it (money-trail line items).
+  schoolRecipientId: text("school_recipient_id").references(() => schools.id, {
+    onDelete: "restrict",
+  }),
   // Whether this allocation is FORMALLY restricted by the grant letter (true)
   // vs. just our documented understanding of the donor's intent (false). The
   // gift_allocations equivalent is split into regional + fund-use booleans; at
@@ -88,6 +96,7 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   index("pledge_allocations_pledge_or_opportunity_id_idx").on(t.pledgeOrOpportunityId),
   index("pledge_allocations_entity_id_idx").on(t.entityId),
   index("pledge_allocations_fundable_project_id_idx").on(t.fundableProjectId),
+  index("pledge_allocations_school_recipient_id_idx").on(t.schoolRecipientId),
   index("pledge_allocations_region_ids_gin_idx").using("gin", t.regionIds),
   index("pledge_allocations_grant_year_idx").on(t.grantYear),
 ]);

@@ -1672,6 +1672,7 @@ export interface PledgeAllocation {
   intendedUsage?: IntendedUsage | null;
   fundableProjectId?: string | null;
   directToSchool: boolean;
+  schoolRecipientId?: string | null;
   /** True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent. */
   formallyRestricted: boolean;
   /** Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count. */
@@ -1899,6 +1900,7 @@ export interface CreatePledgeAllocationBody {
   intendedUsage?: IntendedUsage;
   fundableProjectId?: string;
   directToSchool?: boolean;
+  schoolRecipientId?: string;
   formallyRestricted?: boolean;
   reimbursableShare?: ReimbursableShare;
   status?: PledgeAllocationStatus;
@@ -1924,6 +1926,7 @@ export interface UpdatePledgeAllocationBody {
   intendedUsage?: IntendedUsage | null;
   fundableProjectId?: string | null;
   directToSchool?: boolean;
+  schoolRecipientId?: string | null;
   formallyRestricted?: boolean;
   reimbursableShare?: ReimbursableShare | null;
   status?: PledgeAllocationStatus | null;
