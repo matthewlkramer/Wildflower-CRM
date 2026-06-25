@@ -3125,6 +3125,41 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYearBreakdown" } } } }
 
+  /fiscal-year-report/{fyId}:
+    get:
+      operationId: getFiscalYearReport
+      tags: [analytics]
+      summary: The records behind one fiscal year + track's progress-to-goal bar.
+      description: |
+        Returns every record that contributes to a single fiscal year +
+        fundraising category's "progress to goal" calculation, tagged by bucket
+        (`received` | `committed` | `open`), plus the reconciling per-bucket
+        totals. Mirrors the dashboard-summary `fyMetricsFor` semantics exactly
+        (same archived / countsTowardGoal / reimbursable-`direct` exclusions;
+        committed = per-opp unpaid remainder of status='pledge'; weighted open =
+        sub_amount × win_probability on status='open') so the totals reconcile to
+        the dashboard bar for the same FY + track + entity filter. Rows are
+        ordered received → committed → open, amount descending within each bucket.
+      parameters:
+        - { name: fyId, in: path, required: true, schema: { type: string }, description: "fiscal_years.id (e.g. `fy2026`)." }
+        - name: category
+          in: query
+          required: false
+          description: "Which track to report — `revenue` (Grants) or `loan_capital` (Loans). Defaults to revenue."
+          schema: { $ref: "#/components/schemas/FundraisingCategory" }
+        - name: entityIds
+          in: query
+          required: false
+          description: |
+            Optional list of `entities.id` slugs. When provided, all three buckets
+            and the goal are restricted to allocations on those entities. Omit or
+            pass an empty list to include all entities.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYearReport" } } } }
+
   # ─── Bulk record updates ───────────────────────────────────────────────────
   # One endpoint per entity. The body is { ids, patch } where `patch` is
   # a per-entity subset of writable fields. Only fields present in `patch`
@@ -4472,6 +4507,77 @@ components:
             totalAsk:      { type: string, description: "SUM(sub_amount) across the rows (numeric string)." }
             totalWeighted: { type: string, description: "SUM(weightedAmount) across the rows (numeric string)." }
             rows:          { type: array, items: { $ref: "#/components/schemas/FiscalYearOpenRow" } }
+
+    FiscalYearReportBucket:
+      type: string
+      enum: [received, committed, open]
+      description: |
+        Which slice of a fiscal year's progress-to-goal calculation a row
+        contributes to: `received` (cash-in gift allocations), `committed`
+        (per-opp unpaid remainder of a written pledge), or `open` (weighted
+        open opportunity pipeline).
+    FiscalYearReportRow:
+      type: object
+      required: [rowId, bucket, amount]
+      description: |
+        One record contributing to a fiscal year + track's progress-to-goal
+        calculation, denormalized with its donor (Donor-XOR: exactly one of
+        organization / household / individual) and a link target (giftId for
+        `received`, opportunityId for `committed`/`open`).
+      properties:
+        rowId:                      { type: string, description: "Stable React key, unique across buckets (`<bucket>:<id>`)." }
+        bucket:                     { $ref: "#/components/schemas/FiscalYearReportBucket" }
+        amount:                     { type: string, description: "received: gift_allocations.sub_amount; committed: per-opp unpaid remainder (pledged − paid-this-FY, clamped ≥ 0); open: pledge_allocations.sub_amount (ask). Numeric string." }
+        weightedAmount:             { type: string, nullable: true, description: "committed: remainder × win_probability; open: sub_amount × win_probability; null for received. Numeric string." }
+        category:                   { $ref: "#/components/schemas/FundraisingCategory" }
+        entityId:                   { type: string, nullable: true }
+        intendedUsage:              { type: string, nullable: true }
+        displayUsage:               { type: string, nullable: true, description: "Server-computed human-readable usage label (received rows only)." }
+        fundableProjectId:          { type: string, nullable: true }
+        giftId:                     { type: string, nullable: true, description: "Link target for `received` rows." }
+        giftType:                   { type: string, nullable: true }
+        dateReceived:               { type: string, format: date, nullable: true }
+        opportunityId:              { type: string, nullable: true, description: "Link target for `committed` / `open` rows." }
+        opportunityName:            { type: string, nullable: true }
+        opportunityStage:           { type: string, nullable: true }
+        winProbability:             { type: string, nullable: true, description: "Parent opp's win_probability (0–1, numeric string)." }
+        projectedCloseDate:         { type: string, format: date, nullable: true }
+        pledgedAmount:              { type: string, nullable: true, description: "committed: total pledged to this FY before payments (numeric string)." }
+        paidAmount:                 { type: string, nullable: true, description: "committed: payments booked this FY against the pledge (numeric string)." }
+        organizationId:             { type: string, nullable: true }
+        organizationName:           { type: string, nullable: true }
+        householdId:                { type: string, nullable: true }
+        householdName:              { type: string, nullable: true }
+        individualGiverPersonId:    { type: string, nullable: true }
+        individualGiverPersonName:  { type: string, nullable: true }
+        organizationPriority:           { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
+        individualGiverPersonPriority:  { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
+    FiscalYearReportTotals:
+      type: object
+      required: [received, committed, committedWeighted, openAsk, openWeighted, weightedProjection, goal]
+      description: |
+        Per-bucket reconciling totals for the FY + track. `received`,
+        `committedWeighted` and `openWeighted` are the three segments of the
+        dashboard progress-to-goal bar; `weightedProjection` is their sum.
+      properties:
+        received:           { type: string, description: "SUM of received rows' amount." }
+        committed:          { type: string, description: "SUM of committed rows' amount (100% unpaid remainder)." }
+        committedWeighted:  { type: string, description: "SUM of committed rows' weightedAmount (remainder × win_probability) — the dashboard bar's Committed segment." }
+        openAsk:            { type: string, description: "SUM of open rows' amount (ask)." }
+        openWeighted:       { type: string, description: "SUM of open rows' weightedAmount — the dashboard bar's Weighted open pipeline segment." }
+        weightedProjection: { type: string, description: "received + committedWeighted + openWeighted — matches the dashboard bar's projection." }
+        goal:               { type: string, nullable: true, description: "Fundraising goal for the FY + track; null if not set." }
+    FiscalYearReport:
+      type: object
+      required: [fiscalYear, category, totals, rows]
+      description: |
+        The records behind one fiscal year + track's progress-to-goal bar. Totals
+        reconcile to the dashboard bar for the same FY + track + entity filter.
+      properties:
+        fiscalYear: { $ref: "#/components/schemas/DashboardFiscalYear" }
+        category:   { $ref: "#/components/schemas/FundraisingCategory" }
+        totals:     { $ref: "#/components/schemas/FiscalYearReportTotals" }
+        rows:       { type: array, items: { $ref: "#/components/schemas/FiscalYearReportRow" } }
 
     # ─── Organizations ─────────────────────────────────────────────────────────
     # Unified table — consolidates former `funders` (issuesGrants=true) and

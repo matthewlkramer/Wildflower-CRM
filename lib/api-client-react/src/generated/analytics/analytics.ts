@@ -18,8 +18,10 @@ import type {
 import type {
   DashboardSummary,
   FiscalYearBreakdown,
+  FiscalYearReport,
   GetDashboardSummaryParams,
   GetFiscalYearBreakdownParams,
+  GetFiscalYearReportParams,
   GetProjectionsByFyEntityParams,
   ProjectionsByFyEntity
 } from '../api.schemas';
@@ -287,6 +289,102 @@ export function useGetFiscalYearBreakdown<TData = Awaited<ReturnType<typeof getF
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetFiscalYearBreakdownQueryOptions(fyId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Returns every record that contributes to a single fiscal year +
+fundraising category's "progress to goal" calculation, tagged by bucket
+(`received` | `committed` | `open`), plus the reconciling per-bucket
+totals. Mirrors the dashboard-summary `fyMetricsFor` semantics exactly
+(same archived / countsTowardGoal / reimbursable-`direct` exclusions;
+committed = per-opp unpaid remainder of status='pledge'; weighted open =
+sub_amount × win_probability on status='open') so the totals reconcile to
+the dashboard bar for the same FY + track + entity filter. Rows are
+ordered received → committed → open, amount descending within each bucket.
+
+ * @summary The records behind one fiscal year + track's progress-to-goal bar.
+ */
+export const getGetFiscalYearReportUrl = (fyId: string,
+    params?: GetFiscalYearReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/fiscal-year-report/${fyId}?${stringifiedParams}` : `/api/fiscal-year-report/${fyId}`
+}
+
+export const getFiscalYearReport = async (fyId: string,
+    params?: GetFiscalYearReportParams, options?: RequestInit): Promise<FiscalYearReport> => {
+  
+  return customFetch<FiscalYearReport>(getGetFiscalYearReportUrl(fyId,params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetFiscalYearReportQueryKey = (fyId: string,
+    params?: GetFiscalYearReportParams,) => {
+    return [
+    `/api/fiscal-year-report/${fyId}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getGetFiscalYearReportQueryOptions = <TData = Awaited<ReturnType<typeof getFiscalYearReport>>, TError = ErrorType<unknown>>(fyId: string,
+    params?: GetFiscalYearReportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFiscalYearReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFiscalYearReportQueryKey(fyId,params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFiscalYearReport>>> = ({ signal }) => getFiscalYearReport(fyId,params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(fyId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFiscalYearReport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetFiscalYearReportQueryResult = NonNullable<Awaited<ReturnType<typeof getFiscalYearReport>>>
+export type GetFiscalYearReportQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary The records behind one fiscal year + track's progress-to-goal bar.
+ */
+
+export function useGetFiscalYearReport<TData = Awaited<ReturnType<typeof getFiscalYearReport>>, TError = ErrorType<unknown>>(
+ fyId: string,
+    params?: GetFiscalYearReportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFiscalYearReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetFiscalYearReportQueryOptions(fyId,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

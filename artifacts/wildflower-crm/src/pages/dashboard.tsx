@@ -41,16 +41,11 @@ export default function Dashboard() {
   const fy = data?.currentFiscalYear;
   const byFy = data?.byFiscalYear ?? [];
 
-  // Forward entity scope to the FY detail page. The detail view has a
-  // single-entity dropdown, so we can only forward when exactly one entity is
-  // selected. With 0 selected we pass nothing (detail falls back to its
-  // Wildflower Foundation default). With 2+ selected we DISABLE the drilldown
-  // link entirely — opening the detail page filtered to a different entity
-  // than the dashboard would silently mismatch the tile totals and break
-  // user trust. Users can narrow to a single entity first to drill in.
+  // The FY Report drilldown sources its entity scope from the global header
+  // filter (the same source as these bars), so the report reconciles to the bar
+  // for any number of selected entities — no per-link entity forwarding needed.
+  // These flags only drive the informational banner under the track toggle.
   const multiEntityFilterActive = selectedEntityIds.length > 1;
-  const forwardedEntityParam =
-    selectedEntityIds.length === 1 ? `&entity=${encodeURIComponent(selectedEntityIds[0])}` : "";
   const entityFilterActive = selectedEntityIds.length > 0;
 
   // Loan-fund capital reports as a track parallel to revenue — never mixed.
@@ -65,17 +60,16 @@ export default function Dashboard() {
   // pledges), Weighted open pipeline. Same hue, descending strength, so the
   // "how much is real money vs. probability-weighted" reads at a glance. The
   // three segments sum to the weighted projection; the goal is the full width.
-  // Drilldown destinations mirror the old tiles: received/weighted-asks lead to
-  // the FY detail page; committed has no standalone detail view, so no link.
+  // Every segment drills into the FY Report page, which lists the actual records
+  // behind all three buckets (received gifts, committed pledges, open pipeline).
   const BAR_SEGMENTS: {
     key: "received" | "committed" | "openWeighted";
     label: string;
     color: string;
-    metric: string | null;
   }[] = [
-    { key: "received", label: "Received", color: "bg-primary", metric: "received" },
-    { key: "committed", label: "Committed", color: "bg-primary/60", metric: null },
-    { key: "openWeighted", label: "Weighted open pipeline", color: "bg-primary/30", metric: "weighted-asks" },
+    { key: "received", label: "Received", color: "bg-primary" },
+    { key: "committed", label: "Committed", color: "bg-primary/60" },
+    { key: "openWeighted", label: "Weighted open pipeline", color: "bg-primary/30" },
   ];
 
   const renderGoalBar = (m: FiscalYearMetrics) => {
@@ -100,10 +94,11 @@ export default function Dashboard() {
     const coverage = hasGoal ? projection / goalNum : null;
     const remaining = hasGoal && !overGoal ? Math.max(0, goalNum - projection) : 0;
 
-    const segHref = (metric: string | null) =>
-      metric && !multiEntityFilterActive
-        ? `/fiscal-year/${fySlug}?metric=${metric}${catParam}${forwardedEntityParam}`
-        : undefined;
+    // Every segment drills into the FY Report, which lists the actual records
+    // behind all three buckets. The report sources entity scope from the global
+    // header filter (the same source as this bar), so it reconciles to the bar
+    // for any number of selected entities — no entity gate or param needed.
+    const reportHref = `/fiscal-year-report/${fySlug}?category=${trackSlug}`;
 
     return (
       <div key={fySlug} className="space-y-2" data-testid={`fy-bar-${fySlug}`}>
@@ -137,19 +132,15 @@ export default function Dashboard() {
             const v = segValue[seg.key];
             const width = denom > 0 ? (v / denom) * 100 : 0;
             if (width <= 0) return null;
-            const href = segHref(seg.metric);
             const title = `${seg.label}: ${formatCurrency(v)}`;
             const className = cn(
-              "block h-full first:rounded-l-md transition-opacity",
+              "block h-full first:rounded-l-md transition-opacity cursor-pointer hover:opacity-80",
               seg.color,
-              href ? "cursor-pointer hover:opacity-80" : "",
             );
             const style = { width: `${width}%` };
             const testId = `fy-bar-seg-${seg.key}-${fySlug}`;
-            return href ? (
-              <Link key={seg.key} href={href} className={className} style={style} title={title} data-testid={testId} />
-            ) : (
-              <div key={seg.key} className={className} style={style} title={title} data-testid={testId} />
+            return (
+              <Link key={seg.key} href={reportHref} className={className} style={style} title={title} data-testid={testId} />
             );
           })}
         </div>
@@ -230,8 +221,8 @@ export default function Dashboard() {
           </div>
           {multiEntityFilterActive ? (
             <p className="text-xs text-muted-foreground">
-              Showing the combined total across {selectedEntityIds.length} entities — narrow to a
-              single entity to drill into a segment.
+              Showing the combined total across {selectedEntityIds.length} entities (change in the
+              header). Click a segment to see the records behind it.
             </p>
           ) : entityFilterActive ? (
             <p className="text-xs text-muted-foreground">Filtered to 1 entity (change in the header).</p>

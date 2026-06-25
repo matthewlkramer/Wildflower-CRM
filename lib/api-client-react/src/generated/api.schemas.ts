@@ -1040,6 +1040,103 @@ export interface FiscalYearBreakdown {
   loanCapital: FiscalYearCategoryBreakdown;
 }
 
+/**
+ * Which slice of a fiscal year's progress-to-goal calculation a row
+contributes to: `received` (cash-in gift allocations), `committed`
+(per-opp unpaid remainder of a written pledge), or `open` (weighted
+open opportunity pipeline).
+
+ */
+export type FiscalYearReportBucket = typeof FiscalYearReportBucket[keyof typeof FiscalYearReportBucket];
+
+
+export const FiscalYearReportBucket = {
+  received: 'received',
+  committed: 'committed',
+  open: 'open',
+} as const;
+
+/**
+ * One record contributing to a fiscal year + track's progress-to-goal
+calculation, denormalized with its donor (Donor-XOR: exactly one of
+organization / household / individual) and a link target (giftId for
+`received`, opportunityId for `committed`/`open`).
+
+ */
+export interface FiscalYearReportRow {
+  /** Stable React key, unique across buckets (`<bucket>:<id>`). */
+  rowId: string;
+  bucket: FiscalYearReportBucket;
+  /** received: gift_allocations.sub_amount; committed: per-opp unpaid remainder (pledged − paid-this-FY, clamped ≥ 0); open: pledge_allocations.sub_amount (ask). Numeric string. */
+  amount: string;
+  /** committed: remainder × win_probability; open: sub_amount × win_probability; null for received. Numeric string. */
+  weightedAmount?: string | null;
+  category?: FundraisingCategory;
+  entityId?: string | null;
+  intendedUsage?: string | null;
+  /** Server-computed human-readable usage label (received rows only). */
+  displayUsage?: string | null;
+  fundableProjectId?: string | null;
+  /** Link target for `received` rows. */
+  giftId?: string | null;
+  giftType?: string | null;
+  dateReceived?: string | null;
+  /** Link target for `committed` / `open` rows. */
+  opportunityId?: string | null;
+  opportunityName?: string | null;
+  opportunityStage?: string | null;
+  /** Parent opp's win_probability (0–1, numeric string). */
+  winProbability?: string | null;
+  projectedCloseDate?: string | null;
+  /** committed: total pledged to this FY before payments (numeric string). */
+  pledgedAmount?: string | null;
+  /** committed: payments booked this FY against the pledge (numeric string). */
+  paidAmount?: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
+  householdId?: string | null;
+  householdName?: string | null;
+  individualGiverPersonId?: string | null;
+  individualGiverPersonName?: string | null;
+  readonly organizationPriority?: Priority | null;
+  readonly individualGiverPersonPriority?: Priority | null;
+}
+
+/**
+ * Per-bucket reconciling totals for the FY + track. `received`,
+`committedWeighted` and `openWeighted` are the three segments of the
+dashboard progress-to-goal bar; `weightedProjection` is their sum.
+
+ */
+export interface FiscalYearReportTotals {
+  /** SUM of received rows' amount. */
+  received: string;
+  /** SUM of committed rows' amount (100% unpaid remainder). */
+  committed: string;
+  /** SUM of committed rows' weightedAmount (remainder × win_probability) — the dashboard bar's Committed segment. */
+  committedWeighted: string;
+  /** SUM of open rows' amount (ask). */
+  openAsk: string;
+  /** SUM of open rows' weightedAmount — the dashboard bar's Weighted open pipeline segment. */
+  openWeighted: string;
+  /** received + committedWeighted + openWeighted — matches the dashboard bar's projection. */
+  weightedProjection: string;
+  /** Fundraising goal for the FY + track; null if not set. */
+  goal: string | null;
+}
+
+/**
+ * The records behind one fiscal year + track's progress-to-goal bar. Totals
+reconcile to the dashboard bar for the same FY + track + entity filter.
+
+ */
+export interface FiscalYearReport {
+  fiscalYear: DashboardFiscalYear;
+  category: FundraisingCategory;
+  totals: FiscalYearReportTotals;
+  rows: FiscalYearReportRow[];
+}
+
 export interface Organization {
   id: string;
   name: string;
@@ -7153,6 +7250,20 @@ Omit to include all entities.
 
  */
 entityId?: string;
+};
+
+export type GetFiscalYearReportParams = {
+/**
+ * Which track to report — `revenue` (Grants) or `loan_capital` (Loans). Defaults to revenue.
+ */
+category?: FundraisingCategory;
+/**
+ * Optional list of `entities.id` slugs. When provided, all three buckets
+and the goal are restricted to allocations on those entities. Omit or
+pass an empty list to include all entities.
+
+ */
+entityIds?: string[];
 };
 
 export type RequestUploadUrlBody = {

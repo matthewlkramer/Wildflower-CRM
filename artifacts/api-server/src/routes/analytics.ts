@@ -560,6 +560,355 @@ router.get(
   }),
 );
 
+// The records behind ONE fiscal year + track's progress-to-goal bar. Mirrors
+// `fyMetricsFor` semantics exactly (same archived / countsTowardGoal /
+// reimbursable-`direct` exclusions; committed = per-opp unpaid remainder of
+// status='pledge'; weighted open = sub_amount × win_probability on status='open')
+// so the per-bucket totals reconcile to the dashboard bar for the same FY +
+// track + entity filter. Returns every contributing row tagged by bucket,
+// ordered received → committed → open, amount descending within each.
+router.get(
+  "/fiscal-year-report/:fyId",
+  asyncHandler(async (req, res) => {
+    const fyId = String(req.params.fyId ?? "");
+    if (!fyId) return notFound(res, "fiscal year");
+    const category: FundraisingCategory = isFundraisingCategory(req.query.category)
+      ? req.query.category
+      : "revenue";
+    const entityIds = parseEntityIdsParam(req.query.entityIds);
+    const hasEntityFilter = entityIds.length > 0;
+
+    const fyRow = await db
+      .select({
+        id: fiscalYears.id,
+        startDate: sql<string>`${fiscalYears.startDate}::text`,
+        endDate: sql<string>`${fiscalYears.endDate}::text`,
+      })
+      .from(fiscalYears)
+      .where(eq(fiscalYears.id, fyId))
+      .then((r) => r[0]);
+    if (!fyRow) return notFound(res, "fiscal year");
+    const endYear = Number(fyId.slice(2));
+    const fiscalYear = {
+      id: fyRow.id,
+      label: `FY ${endYear}`,
+      startDate: fyRow.startDate,
+      endDate: fyRow.endDate,
+    };
+
+    // Track filter, one per source table. Revenue = "anything not loan" using
+    // IS DISTINCT FROM so a null loan_or_grant still counts as revenue (mirrors
+    // the giftCategorySql / oppCategorySql / goalCategorySql CASE expressions).
+    const oppCatFilter =
+      category === "loan_capital"
+        ? sql`${opportunitiesAndPledges.loanOrGrant} = 'loan'`
+        : sql`${opportunitiesAndPledges.loanOrGrant} IS DISTINCT FROM 'loan'`;
+    const giftCatFilter =
+      category === "loan_capital"
+        ? sql`${giftsAndPayments.loanOrGrant} = 'loan'`
+        : sql`${giftsAndPayments.loanOrGrant} IS DISTINCT FROM 'loan'`;
+    const goalCatFilter =
+      category === "loan_capital"
+        ? sql`${fiscalYearEntityGoals.loanOrGrant} = 'loan'`
+        : sql`${fiscalYearEntityGoals.loanOrGrant} IS DISTINCT FROM 'loan'`;
+
+    // Per-opp pledged amount + win-prob for this FY+track (status='pledge'),
+    // and the payments already booked against those pledges this FY. The
+    // committed bucket is one row per pledge opp: remainder = pledged − paid
+    // (clamped ≥ 0), exactly like fyMetricsFor's committed rollup.
+    const pledgedPerOpp = db
+      .select({
+        oppId: sql<string>`${pledgeAllocations.pledgeOrOpportunityId}`.as("pledged_opp_id"),
+        pledged: sql<string>`SUM(${pledgeAllocations.subAmount})`.as("pledged"),
+        winProb: sql<string>`COALESCE(MAX(${opportunitiesAndPledges.winProbability}), 0.9)`.as("pledged_win_prob"),
+      })
+      .from(pledgeAllocations)
+      .innerJoin(
+        opportunitiesAndPledges,
+        eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
+      )
+      .where(
+        and(
+          eq(opportunitiesAndPledges.status, "pledge"),
+          eq(pledgeAllocations.grantYear, fyId),
+          pledgeAllocCountsTowardGoal,
+          oppCatFilter,
+          hasEntityFilter ? inArray(pledgeAllocations.entityId, entityIds) : undefined,
+        ),
+      )
+      .groupBy(pledgeAllocations.pledgeOrOpportunityId)
+      .as("pledged_per_opp");
+
+    const paidPerOpp = db
+      .select({
+        oppId: sql<string>`${giftsAndPayments.opportunityId}`.as("paid_opp_id"),
+        paid: sql<string>`SUM(${giftAllocations.subAmount})`.as("paid"),
+      })
+      .from(giftAllocations)
+      .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
+      .where(
+        and(
+          eq(giftAllocations.grantYear, fyId),
+          isNull(giftsAndPayments.archivedAt),
+          eq(giftsAndPayments.countsTowardGoal, true),
+          giftAllocCountsTowardGoal,
+          hasEntityFilter ? inArray(giftAllocations.entityId, entityIds) : undefined,
+        ),
+      )
+      .groupBy(giftsAndPayments.opportunityId)
+      .as("paid_per_opp");
+
+    const [receivedRaw, committedRaw, openRaw, goalRow] = await Promise.all([
+      // Received = gift_allocations booked to this FY+track (cash in).
+      db
+        .select({
+          allocationId: giftAllocations.id,
+          subAmount: sql<string>`${giftAllocations.subAmount}::text`,
+          entityId: giftAllocations.entityId,
+          intendedUsage: sql<string | null>`${giftAllocations.intendedUsage}::text`,
+          displayUsage: giftAllocations.displayUsage,
+          fundableProjectId: giftAllocations.fundableProjectId,
+          giftId: giftAllocations.giftId,
+          giftType: sql<string | null>`${giftsAndPayments.type}::text`,
+          dateReceived: sql<string | null>`${giftsAndPayments.dateReceived}::text`,
+          organizationId: giftsAndPayments.organizationId,
+          organizationName: organizations.name,
+          householdId: giftsAndPayments.householdId,
+          householdName: households.name,
+          individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
+          individualGiverPersonName: personDisplayNameSql,
+          organizationPriority: organizations.priority,
+          individualGiverPersonPriority: people.priority,
+        })
+        .from(giftAllocations)
+        .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
+        .leftJoin(organizations, eq(organizations.id, giftsAndPayments.organizationId))
+        .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
+        .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
+        .where(
+          and(
+            eq(giftAllocations.grantYear, fyId),
+            isNull(giftsAndPayments.archivedAt),
+            eq(giftsAndPayments.countsTowardGoal, true),
+            giftAllocCountsTowardGoal,
+            giftCatFilter,
+            hasEntityFilter ? inArray(giftAllocations.entityId, entityIds) : undefined,
+          ),
+        )
+        .orderBy(desc(giftAllocations.subAmount)),
+      // Committed = per-opp unpaid remainder of written pledges. Drop fully-paid
+      // opps (remainder ≤ 0) — they contribute $0 so excluding them keeps the
+      // totals identical while removing noise rows.
+      db
+        .select({
+          opportunityId: opportunitiesAndPledges.id,
+          opportunityName: opportunitiesAndPledges.name,
+          opportunityStage: sql<string | null>`${opportunitiesAndPledges.stage}::text`,
+          winProbability: sql<string | null>`${opportunitiesAndPledges.winProbability}::text`,
+          projectedCloseDate: sql<string | null>`${opportunitiesAndPledges.projectedCloseDate}::text`,
+          pledged: sql<string>`${pledgedPerOpp.pledged}::text`,
+          paid: sql<string>`COALESCE(${paidPerOpp.paid}, 0)::text`,
+          remainder: sql<string>`GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0)::text`,
+          weighted: sql<string>`(GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0) * ${pledgedPerOpp.winProb})::text`,
+          organizationId: opportunitiesAndPledges.organizationId,
+          organizationName: organizations.name,
+          householdId: opportunitiesAndPledges.householdId,
+          householdName: households.name,
+          individualGiverPersonId: opportunitiesAndPledges.individualGiverPersonId,
+          individualGiverPersonName: personDisplayNameSql,
+          organizationPriority: organizations.priority,
+          individualGiverPersonPriority: people.priority,
+        })
+        .from(pledgedPerOpp)
+        .innerJoin(opportunitiesAndPledges, eq(opportunitiesAndPledges.id, pledgedPerOpp.oppId))
+        .leftJoin(paidPerOpp, eq(pledgedPerOpp.oppId, paidPerOpp.oppId))
+        .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
+        .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
+        .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
+        .where(sql`GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0) > 0`)
+        .orderBy(desc(sql`GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0)`)),
+      // Open = pledge_allocations on status='open' opps for this FY+track.
+      db
+        .select({
+          allocationId: pledgeAllocations.id,
+          subAmount: sql<string>`${pledgeAllocations.subAmount}::text`,
+          weightedAmount: sql<string>`(${pledgeAllocations.subAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1))::text`,
+          entityId: pledgeAllocations.entityId,
+          intendedUsage: sql<string | null>`${pledgeAllocations.intendedUsage}::text`,
+          fundableProjectId: pledgeAllocations.fundableProjectId,
+          opportunityId: pledgeAllocations.pledgeOrOpportunityId,
+          opportunityName: opportunitiesAndPledges.name,
+          opportunityStage: sql<string | null>`${opportunitiesAndPledges.stage}::text`,
+          winProbability: sql<string | null>`${opportunitiesAndPledges.winProbability}::text`,
+          projectedCloseDate: sql<string | null>`${opportunitiesAndPledges.projectedCloseDate}::text`,
+          organizationId: opportunitiesAndPledges.organizationId,
+          organizationName: organizations.name,
+          householdId: opportunitiesAndPledges.householdId,
+          householdName: households.name,
+          individualGiverPersonId: opportunitiesAndPledges.individualGiverPersonId,
+          individualGiverPersonName: personDisplayNameSql,
+          organizationPriority: organizations.priority,
+          individualGiverPersonPriority: people.priority,
+        })
+        .from(pledgeAllocations)
+        .innerJoin(
+          opportunitiesAndPledges,
+          eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
+        )
+        .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
+        .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
+        .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
+        .where(
+          and(
+            eq(opportunitiesAndPledges.status, "open"),
+            eq(pledgeAllocations.grantYear, fyId),
+            pledgeAllocCountsTowardGoal,
+            oppCatFilter,
+            hasEntityFilter ? inArray(pledgeAllocations.entityId, entityIds) : undefined,
+          ),
+        )
+        .orderBy(desc(pledgeAllocations.subAmount)),
+      db
+        .select({
+          goal: sql<string | null>`NULLIF(SUM(${fiscalYearEntityGoals.goalAmount}), 0)::text`,
+        })
+        .from(fiscalYearEntityGoals)
+        .where(
+          and(
+            eq(fiscalYearEntityGoals.fiscalYearId, fyId),
+            goalCatFilter,
+            hasEntityFilter ? inArray(fiscalYearEntityGoals.entityId, entityIds) : undefined,
+          ),
+        )
+        .then((r) => r[0]),
+    ]);
+
+    const donorOf = <
+      R extends {
+        organizationId: string | null;
+        organizationName: string | null;
+        householdId: string | null;
+        householdName: string | null;
+        individualGiverPersonId: string | null;
+        individualGiverPersonName: string | null;
+        organizationPriority: unknown;
+        individualGiverPersonPriority: unknown;
+      },
+    >(
+      r: R,
+    ) => ({
+      organizationId: r.organizationId,
+      organizationName: r.organizationName,
+      householdId: r.householdId,
+      householdName: r.householdName,
+      individualGiverPersonId: r.individualGiverPersonId,
+      individualGiverPersonName: r.individualGiverPersonName,
+      organizationPriority: r.organizationPriority,
+      individualGiverPersonPriority: r.individualGiverPersonPriority,
+    });
+
+    const receivedRows = receivedRaw.map((r) => ({
+      rowId: `received:${r.allocationId}`,
+      bucket: "received" as const,
+      amount: r.subAmount,
+      weightedAmount: null,
+      category,
+      entityId: r.entityId,
+      intendedUsage: r.intendedUsage,
+      displayUsage: r.displayUsage,
+      fundableProjectId: r.fundableProjectId,
+      giftId: r.giftId,
+      giftType: r.giftType,
+      dateReceived: r.dateReceived,
+      opportunityId: null,
+      opportunityName: null,
+      opportunityStage: null,
+      winProbability: null,
+      projectedCloseDate: null,
+      pledgedAmount: null,
+      paidAmount: null,
+      ...donorOf(r),
+    }));
+
+    const committedRows = committedRaw.map((r) => ({
+      rowId: `committed:${r.opportunityId}`,
+      bucket: "committed" as const,
+      amount: r.remainder,
+      weightedAmount: r.weighted,
+      category,
+      entityId: null,
+      intendedUsage: null,
+      displayUsage: null,
+      fundableProjectId: null,
+      giftId: null,
+      giftType: null,
+      dateReceived: null,
+      opportunityId: r.opportunityId,
+      opportunityName: r.opportunityName,
+      opportunityStage: r.opportunityStage,
+      winProbability: r.winProbability,
+      projectedCloseDate: r.projectedCloseDate,
+      pledgedAmount: r.pledged,
+      paidAmount: r.paid,
+      ...donorOf(r),
+    }));
+
+    const openRows = openRaw.map((r) => ({
+      rowId: `open:${r.allocationId}`,
+      bucket: "open" as const,
+      amount: r.subAmount,
+      weightedAmount: r.weightedAmount,
+      category,
+      entityId: r.entityId,
+      intendedUsage: r.intendedUsage,
+      displayUsage: null,
+      fundableProjectId: r.fundableProjectId,
+      giftId: null,
+      giftType: null,
+      dateReceived: null,
+      opportunityId: r.opportunityId,
+      opportunityName: r.opportunityName,
+      opportunityStage: r.opportunityStage,
+      winProbability: r.winProbability,
+      projectedCloseDate: r.projectedCloseDate,
+      pledgedAmount: null,
+      paidAmount: null,
+      ...donorOf(r),
+    }));
+
+    // Sum at the API edge so the header totals always agree with the visible
+    // rows. Each per-row amount/weighted is already SQL-computed, so summing
+    // them reproduces fyMetricsFor's SUM(...) and reconciles to the dashboard.
+    const sumStr = (vals: Array<string | null>) =>
+      vals.reduce((acc, v) => acc + Number(v ?? 0), 0).toFixed(2);
+    const received = sumStr(receivedRows.map((r) => r.amount));
+    const committed = sumStr(committedRows.map((r) => r.amount));
+    const committedWeighted = sumStr(committedRows.map((r) => r.weightedAmount));
+    const openAsk = sumStr(openRows.map((r) => r.amount));
+    const openWeighted = sumStr(openRows.map((r) => r.weightedAmount));
+    const weightedProjection = (
+      Number(received) +
+      Number(committedWeighted) +
+      Number(openWeighted)
+    ).toFixed(2);
+
+    res.json({
+      fiscalYear,
+      category,
+      totals: {
+        received,
+        committed,
+        committedWeighted,
+        openAsk,
+        openWeighted,
+        weightedProjection,
+        goal: goalRow?.goal ?? null,
+      },
+      rows: [...receivedRows, ...committedRows, ...openRows],
+    });
+  }),
+);
+
 router.get(
   "/projections-by-fy-entity",
   asyncHandler(async (req, res) => {

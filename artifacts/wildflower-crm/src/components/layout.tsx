@@ -26,6 +26,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Lightbulb,
+  FileBarChart,
   ScrollText,
   CopyCheck,
   ListChecks,
@@ -63,6 +64,7 @@ const navItems: NavEntry[] = [
   { href: "/opportunities", label: "Opportunities", icon: Target },
   { href: "/pledges", label: "Pledges", icon: HandCoins },
   { href: "/gifts", label: "Gifts", icon: Gift },
+  { href: "/fiscal-year-report/current", label: "FY Report", icon: FileBarChart },
   { href: "/grant-leads", label: "Grant Leads", icon: Lightbulb },
   { href: "/grants-calendar", label: "Grants Calendar", icon: CalendarDays },
 

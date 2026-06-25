@@ -26,6 +26,7 @@ import Interactions from "@/pages/interactions";
 import Projections from "@/pages/projections";
 import GrantsCalendar from "@/pages/grants-calendar";
 import FiscalYearDetail from "@/pages/fiscal-year-detail";
+import FiscalYearReport from "@/pages/fiscal-year-report";
 import Admin from "@/pages/admin";
 import AuditLog from "@/pages/audit-log";
 import PotentialDuplicates from "@/pages/potential-duplicates";
@@ -224,6 +225,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/interactions"><ProtectedRoute component={Interactions} /></Route>
           <Route path="/projections"><ProtectedRoute component={Projections} /></Route>
           <Route path="/fiscal-year/:fyId"><ProtectedRoute component={FiscalYearDetail} /></Route>
+          <Route path="/fiscal-year-report/:fyId"><ProtectedRoute component={FiscalYearReport} /></Route>
           <Route path="/grants-calendar"><ProtectedRoute component={GrantsCalendar} /></Route>
           <Route path="/reporting-deadlines"><ProtectedRoute component={ReportingDeadlines} /></Route>
           <Route path="/grant-leads"><ProtectedRoute component={GrantLeads} /></Route>

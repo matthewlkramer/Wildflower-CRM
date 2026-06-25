@@ -215,3 +215,73 @@ export const GetFiscalYearBreakdownResponse = zod.object({
 }).describe('Per-category (revenue OR loan_capital) supporting detail for one FY.')
 }).describe('Supporting detail for a single FY\'s dashboard money tiles, split into the two\nparallel tracks (`revenue` and `loanCapital`). Within each category `received`\npowers the \"Received\" tile (gift_allocations summed); `openPipeline` powers\nboth the \"Open asks\" tile (totalAsk) and the \"Weighted asks\" tile (totalWeighted).\n')
 
+/**
+ * Returns every record that contributes to a single fiscal year +
+fundraising category's "progress to goal" calculation, tagged by bucket
+(`received` | `committed` | `open`), plus the reconciling per-bucket
+totals. Mirrors the dashboard-summary `fyMetricsFor` semantics exactly
+(same archived / countsTowardGoal / reimbursable-`direct` exclusions;
+committed = per-opp unpaid remainder of status='pledge'; weighted open =
+sub_amount × win_probability on status='open') so the totals reconcile to
+the dashboard bar for the same FY + track + entity filter. Rows are
+ordered received → committed → open, amount descending within each bucket.
+
+ * @summary The records behind one fiscal year + track's progress-to-goal bar.
+ */
+export const GetFiscalYearReportParams = zod.object({
+  "fyId": zod.coerce.string().describe('fiscal_years.id (e.g. `fy2026`).')
+})
+
+export const GetFiscalYearReportQueryParams = zod.object({
+  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Which track to report — `revenue` (Grants) or `loan_capital` (Loans). Defaults to revenue.'),
+  "entityIds": zod.array(zod.coerce.string()).optional().describe('Optional list of `entities.id` slugs. When provided, all three buckets\nand the goal are restricted to allocations on those entities. Omit or\npass an empty list to include all entities.\n')
+})
+
+export const GetFiscalYearReportResponse = zod.object({
+  "fiscalYear": zod.object({
+  "id": zod.string().describe('fy-slug (e.g. `fy2026`).'),
+  "label": zod.string().describe('Human label (e.g. `FY 2026`).'),
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date()
+}),
+  "category": zod.enum(['revenue', 'loan_capital']).describe('Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n'),
+  "totals": zod.object({
+  "received": zod.string().describe('SUM of received rows\' amount.'),
+  "committed": zod.string().describe('SUM of committed rows\' amount (100% unpaid remainder).'),
+  "committedWeighted": zod.string().describe('SUM of committed rows\' weightedAmount (remainder × win_probability) — the dashboard bar\'s Committed segment.'),
+  "openAsk": zod.string().describe('SUM of open rows\' amount (ask).'),
+  "openWeighted": zod.string().describe('SUM of open rows\' weightedAmount — the dashboard bar\'s Weighted open pipeline segment.'),
+  "weightedProjection": zod.string().describe('received + committedWeighted + openWeighted — matches the dashboard bar\'s projection.'),
+  "goal": zod.string().nullable().describe('Fundraising goal for the FY + track; null if not set.')
+}).describe('Per-bucket reconciling totals for the FY + track. `received`,\n`committedWeighted` and `openWeighted` are the three segments of the\ndashboard progress-to-goal bar; `weightedProjection` is their sum.\n'),
+  "rows": zod.array(zod.object({
+  "rowId": zod.string().describe('Stable React key, unique across buckets (`<bucket>:<id>`).'),
+  "bucket": zod.enum(['received', 'committed', 'open']).describe('Which slice of a fiscal year\'s progress-to-goal calculation a row\ncontributes to: `received` (cash-in gift allocations), `committed`\n(per-opp unpaid remainder of a written pledge), or `open` (weighted\nopen opportunity pipeline).\n'),
+  "amount": zod.string().describe('received: gift_allocations.sub_amount; committed: per-opp unpaid remainder (pledged − paid-this-FY, clamped ≥ 0); open: pledge_allocations.sub_amount (ask). Numeric string.'),
+  "weightedAmount": zod.string().nullish().describe('committed: remainder × win_probability; open: sub_amount × win_probability; null for received. Numeric string.'),
+  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n'),
+  "entityId": zod.string().nullish(),
+  "intendedUsage": zod.string().nullish(),
+  "displayUsage": zod.string().nullish().describe('Server-computed human-readable usage label (received rows only).'),
+  "fundableProjectId": zod.string().nullish(),
+  "giftId": zod.string().nullish().describe('Link target for `received` rows.'),
+  "giftType": zod.string().nullish(),
+  "dateReceived": zod.string().date().nullish(),
+  "opportunityId": zod.string().nullish().describe('Link target for `committed` \/ `open` rows.'),
+  "opportunityName": zod.string().nullish(),
+  "opportunityStage": zod.string().nullish(),
+  "winProbability": zod.string().nullish().describe('Parent opp\'s win_probability (0–1, numeric string).'),
+  "projectedCloseDate": zod.string().date().nullish(),
+  "pledgedAmount": zod.string().nullish().describe('committed: total pledged to this FY before payments (numeric string).'),
+  "paidAmount": zod.string().nullish().describe('committed: payments booked this FY against the pledge (numeric string).'),
+  "organizationId": zod.string().nullish(),
+  "organizationName": zod.string().nullish(),
+  "householdId": zod.string().nullish(),
+  "householdName": zod.string().nullish(),
+  "individualGiverPersonId": zod.string().nullish(),
+  "individualGiverPersonName": zod.string().nullish(),
+  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish()
+}).describe('One record contributing to a fiscal year + track\'s progress-to-goal\ncalculation, denormalized with its donor (Donor-XOR: exactly one of\norganization \/ household \/ individual) and a link target (giftId for\n`received`, opportunityId for `committed`\/`open`).\n'))
+}).describe('The records behind one fiscal year + track\'s progress-to-goal bar. Totals\nreconcile to the dashboard bar for the same FY + track + entity filter.\n')
+
