@@ -107,6 +107,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -149,6 +150,7 @@ function normalizeAmount(raw: string): string {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Admin() {
+  const isAdmin = useIsAdmin();
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey(), staleTime: 30_000 },
   });
@@ -172,17 +174,46 @@ export default function Admin() {
         </p>
       </div>
 
-      <EntitiesSection entities={entities} loading={entitiesQ.isLoading} />
-      <GoalsSection entities={entities} fyList={fyList} goals={goals} loading={goalsQ.isLoading || fyListQ.isLoading} />
-      <AdminSyncSection />
-      <SchoolSyncSection />
-      <CalendarMeetingFiltersSection />
-      <InternalEmailDomainsSection />
-      <WildflowerUpdatesSection />
-      <QuickbooksRulesSection />
-      <EntityCodingRulesSection entities={entities} />
-      <ReassignOwnerSection />
-      <EmailIntelligenceSection />
+      <Tabs defaultValue="funds-goals" className="space-y-6">
+        <TabsList className="flex h-auto flex-wrap justify-start gap-1">
+          <TabsTrigger value="funds-goals">Funds &amp; Goals</TabsTrigger>
+          {isAdmin && <TabsTrigger value="integrations">Integrations / Sync</TabsTrigger>}
+          <TabsTrigger value="email">Email</TabsTrigger>
+          <TabsTrigger value="finance-rules">Finance Rules</TabsTrigger>
+          {isAdmin && <TabsTrigger value="users">Users</TabsTrigger>}
+        </TabsList>
+
+        <TabsContent value="funds-goals" className="space-y-8">
+          <EntitiesSection entities={entities} loading={entitiesQ.isLoading} />
+          <GoalsSection entities={entities} fyList={fyList} goals={goals} loading={goalsQ.isLoading || fyListQ.isLoading} />
+        </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="integrations" className="space-y-8">
+            <AdminSyncSection />
+            <SchoolSyncSection />
+          </TabsContent>
+        )}
+
+        <TabsContent value="email" className="space-y-8">
+          <CalendarMeetingFiltersSection />
+          <InternalEmailDomainsSection />
+          <WildflowerUpdatesSection />
+          <EmailIntelligenceSection />
+        </TabsContent>
+
+        <TabsContent value="finance-rules" className="space-y-8">
+          <QuickbooksRulesSection />
+          <EntityCodingRulesSection entities={entities} />
+        </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="users" className="space-y-8">
+            <ReassignOwnerSection />
+          </TabsContent>
+        )}
+      </Tabs>
+
       <p className="text-xs text-muted-foreground">
         Looking to connect or disconnect your own Google account? That moved
         to <a className="underline" href="/settings">Settings</a>.
