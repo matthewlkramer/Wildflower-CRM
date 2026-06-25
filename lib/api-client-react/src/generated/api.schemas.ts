@@ -6119,6 +6119,10 @@ export type ListPeopleParams = {
 includeArchived?: IncludeArchivedQueryParameter;
 search?: string;
 deceased?: boolean;
+/**
+ * When `false`, exclude people who hold a current role at the Wildflower Foundation organization (internal staff / "foundation partners"). Omit or `true` to include everyone.
+ */
+showFoundationPartners?: boolean;
 regionId?: string;
 /**
  * Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).

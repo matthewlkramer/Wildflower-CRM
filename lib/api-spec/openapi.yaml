@@ -884,6 +884,7 @@ paths:
         - { $ref: "#/components/parameters/IncludeArchivedQuery" }
         - { name: search, in: query, schema: { type: string } }
         - { name: deceased, in: query, schema: { type: boolean } }
+        - { name: showFoundationPartners, in: query, description: "When `false`, exclude people who hold a current role at the Wildflower Foundation organization (internal staff / \"foundation partners\"). Omit or `true` to include everyone.", schema: { type: boolean } }
         - { name: regionId, in: query, schema: { type: string } }
         # Presence filters on computed rollup fields. `has` keeps rows with a
         # value, `blank` keeps rows with none. Omit for no constraint.

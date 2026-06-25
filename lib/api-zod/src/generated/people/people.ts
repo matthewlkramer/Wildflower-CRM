@@ -19,6 +19,7 @@ export const ListPeopleQueryParams = zod.object({
   "includeArchived": zod.coerce.boolean().optional().describe('Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.'),
   "search": zod.coerce.string().optional(),
   "deceased": zod.coerce.boolean().optional(),
+  "showFoundationPartners": zod.coerce.boolean().optional().describe('When `false`, exclude people who hold a current role at the Wildflower Foundation organization (internal staff \/ \"foundation partners\"). Omit or `true` to include everyone.'),
   "regionId": zod.coerce.string().optional(),
   "lifetimeGivingPresence": zod.enum(['has', 'blank']).optional().describe('Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).'),
   "lastGiftPresence": zod.enum(['has', 'blank']).optional().describe('Rollup presence filter on most-recent gift date (`has` = any gift, `blank` = none).'),

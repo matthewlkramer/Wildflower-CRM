@@ -153,6 +153,19 @@ const peopleActiveAffiliationExists = sql`EXISTS (
     AND (per.funder_id IS NOT NULL OR per.organization_id IS NOT NULL)
 )`;
 
+// The Wildflower Foundation organization (name "Wildflower Foundation", email
+// domain wildflowerschools.org). People with a *current* role here are internal
+// staff ("foundation partners"); the individuals list hides them by default via
+// the showFoundationPartners toggle. The org PK is an Airtable record id (stable
+// across dev/prod since both seed from the same base).
+const FOUNDATION_ORG_ID = "rec6Imee3i0zIjcJ8";
+const peopleCurrentFoundationRoleExists = sql`EXISTS (
+  SELECT 1 FROM people_entity_roles per
+  WHERE per.person_id = ${PEOPLE_ID}
+    AND per.current = 'current'
+    AND per.organization_id = ${FOUNDATION_ORG_ID}
+)`;
+
 const peopleListSelect = {
   ...getTableColumns(people),
   lifetimeGiving: sql<string | null>`${peopleLifetimeGivingExpr}::text`.as("lifetime_giving"),
@@ -223,6 +236,12 @@ router.get(
     // we bypass the generated zod field (zod.coerce.boolean inverts "false").
     const deceased = parseBoolQuery(req, "deceased");
     if (deceased !== undefined) filters.push(eq(people.deceased, deceased));
+    // Hide internal Wildflower Foundation staff unless the "Show foundation
+    // partners" toggle is on. Read from the raw query string (like deceased,
+    // the generated zod coerces "false" to true). Param absent = no filter, so
+    // other listPeople consumers (pickers, etc.) are unaffected.
+    const showFoundationPartners = parseBoolQuery(req, "showFoundationPartners");
+    if (showFoundationPartners === false) filters.push(sql`NOT ${peopleCurrentFoundationRoleExists}`);
     if (q.regionId) filters.push(eq(people.currentHomeRegionId, q.regionId));
     const capacityFilter = splitBlank(q.capacityRating);
     if (capacityFilter.wantsBlank && capacityFilter.values.length > 0) {

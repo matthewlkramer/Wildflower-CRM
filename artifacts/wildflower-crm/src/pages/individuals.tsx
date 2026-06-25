@@ -561,6 +561,13 @@ export default function Individuals() {
     "wf.list.people.showDeceased",
     false,
   );
+  // Internal Wildflower Foundation staff ("foundation partners") are hidden by
+  // default; the "Show foundation partners" toggle opts them back in.
+  // Off = send showFoundationPartners:false.
+  const [showFoundationPartners, setShowFoundationPartners] = usePersistedState<boolean>(
+    "wf.list.people.showFoundationPartners",
+    false,
+  );
 
   const ts = useTableState("individuals");
   const sortActive = ts.sort.key !== null;
@@ -571,6 +578,8 @@ export default function Individuals() {
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     // Hide deceased people unless the "Show deceased" toggle is on.
     ...(showDeceased ? {} : { deceased: false }),
+    // Hide Wildflower Foundation staff unless the "Show foundation partners" toggle is on.
+    ...(showFoundationPartners ? {} : { showFoundationPartners: false }),
     ...(capacityTiers.length > 0
       ? { capacityRating: [...capacityTiers].sort() as CapacityRating[] }
       : {}),
@@ -1153,6 +1162,24 @@ export default function Individuals() {
                 className="cursor-pointer text-sm text-muted-foreground whitespace-nowrap"
               >
                 Show deceased
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="toggle-show-foundation-partners"
+                checked={showFoundationPartners}
+                onCheckedChange={(v) => {
+                  setShowFoundationPartners(v);
+                  setPage(1);
+                  selection.clear();
+                }}
+                data-testid="toggle-show-foundation-partners"
+              />
+              <Label
+                htmlFor="toggle-show-foundation-partners"
+                className="cursor-pointer text-sm text-muted-foreground whitespace-nowrap"
+              >
+                Show foundation partners
               </Label>
             </div>
             <div className="flex rounded-md border overflow-hidden">
