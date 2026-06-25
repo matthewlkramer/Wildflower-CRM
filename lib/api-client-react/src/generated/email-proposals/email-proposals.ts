@@ -458,4 +458,73 @@ export const useReviseEmailProposal = <TError = ErrorType<BadRequestResponse | N
       > => {
       return useMutation(getReviseEmailProposalMutationOptions(options));
     }
+    /**
+ * @summary Restore an AI auto-hidden (status `ignored`) proposal back to the pending review queue (owner-scoped, ignored-only). Used when the reviewer judges the AI's "flagged inaccurate" / "auto-suppressed" verdict to be wrong. Keeps the existing analysis (proposed actions) and reviewer note as audit trail, flips status `ignored` → `pending`, and returns the refreshed proposal. Does NOT re-run the AI.
+ */
+export const getReopenEmailProposalUrl = (id: string,) => {
+
+
+  
+
+  return `/api/email-proposals/${id}/reopen`
+}
+
+export const reopenEmailProposal = async (id: string, options?: RequestInit): Promise<EmailProposal> => {
+  
+  return customFetch<EmailProposal>(getReopenEmailProposalUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getReopenEmailProposalMutationOptions = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reopenEmailProposal>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reopenEmailProposal>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['reopenEmailProposal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reopenEmailProposal>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  reopenEmailProposal(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReopenEmailProposalMutationResult = NonNullable<Awaited<ReturnType<typeof reopenEmailProposal>>>
+    
+    export type ReopenEmailProposalMutationError = ErrorType<NotFoundResponse | ErrorResponse>
+
+    /**
+ * @summary Restore an AI auto-hidden (status `ignored`) proposal back to the pending review queue (owner-scoped, ignored-only). Used when the reviewer judges the AI's "flagged inaccurate" / "auto-suppressed" verdict to be wrong. Keeps the existing analysis (proposed actions) and reviewer note as audit trail, flips status `ignored` → `pending`, and returns the refreshed proposal. Does NOT re-run the AI.
+ */
+export const useReopenEmailProposal = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reopenEmailProposal>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reopenEmailProposal>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getReopenEmailProposalMutationOptions(options));
+    }
     

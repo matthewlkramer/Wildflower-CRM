@@ -7,6 +7,7 @@ import {
   useRejectEmailProposal,
   useRetryEmailProposal,
   useReviseEmailProposal,
+  useReopenEmailProposal,
   useListUnrecognizedCorrespondents,
   useCreateCorrespondentIgnore,
   useCreateEmail,
@@ -42,7 +43,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { EmailDetailDialog } from "@/components/email-detail-dialog";
-import { Mail, Check, X, MessageSquarePlus, ExternalLink, RefreshCw, Lightbulb } from "lucide-react";
+import { Mail, Check, X, MessageSquarePlus, ExternalLink, RefreshCw, Lightbulb, ChevronDown, ChevronRight, Undo2, EyeOff } from "lucide-react";
 
 type Kind =
   | "linkedin_job_change"
@@ -393,11 +394,14 @@ function ProposalList({ kind }: { kind: Kind }) {
   const retriable = rows.filter(isRetriable);
   if (rows.length === 0) {
     return (
-      <Card>
-        <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          Nothing pending in this category.
-        </CardContent>
-      </Card>
+      <div className="space-y-3">
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            Nothing pending in this category.
+          </CardContent>
+        </Card>
+        <AutoHandledSection kind={kind} />
+      </div>
     );
   }
 
@@ -598,6 +602,7 @@ function ProposalList({ kind }: { kind: Kind }) {
           </CardContent>
         </Card>
       ))}
+      <AutoHandledSection kind={kind} />
       <Dialog
         open={noteTarget !== null}
         onOpenChange={(open) => {
@@ -759,6 +764,189 @@ function ProposalList({ kind }: { kind: Kind }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <EmailDetailDialog
+        emailId={viewEmailId}
+        onClose={() => setViewEmailId(null)}
+      />
+    </div>
+  );
+}
+
+/**
+ * Collapsed "Auto-handled by AI" audit section for one proposal kind.
+ *
+ * The main queue only fetches `status: "pending"`, so proposals the
+ * analysis step auto-hid — flagged inaccurate ("Flagged inaccurate: …")
+ * or suppressed as noise ("Auto-suppressed: …"), both stored as
+ * `status: "ignored"` — never appear there. This secondary, collapsed
+ * section fetches those `ignored` rows for the current reviewer's mailbox
+ * so they can spot AI mistakes (a wrong "inaccurate" verdict) and re-open
+ * the proposal back into the pending queue.
+ *
+ * Rows are split by the distinct auto-hide reason (inaccurate vs
+ * suppressed) read off the reviewer note prefix. Re-open does NOT re-run
+ * the AI — it just restores the existing analysis to pending.
+ */
+function AutoHandledSection({ kind }: { kind: Kind }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const params = { kind, status: "ignored" as const, limit: 50 };
+  const { data, isLoading } = useListEmailProposals(params, {
+    query: { queryKey: getListEmailProposalsQueryKey(params) },
+  });
+  const [viewEmailId, setViewEmailId] = useState<string | null>(null);
+
+  const reopen = useReopenEmailProposal({
+    mutation: {
+      onSuccess: () => {
+        void qc.invalidateQueries({
+          queryKey: getListEmailProposalsQueryKey({ kind, status: "ignored" }),
+        });
+        void qc.invalidateQueries({
+          queryKey: getListEmailProposalsQueryKey({ kind, status: "pending" }),
+        });
+        void qc.invalidateQueries({
+          queryKey: getGetEmailProposalSummaryQueryKey(),
+        });
+        toast({ title: "Re-opened for review" });
+      },
+      onError: (e) =>
+        toast({
+          title: "Could not re-open",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const rows = data?.data ?? [];
+  const inaccurate = rows.filter((p) =>
+    (p.reviewerNote ?? "").startsWith("Flagged inaccurate"),
+  );
+  const suppressed = rows.filter((p) =>
+    (p.reviewerNote ?? "").startsWith("Auto-suppressed"),
+  );
+  // Any other `ignored` rows (e.g. legacy / no recognizable prefix) still
+  // belong in the audit list so nothing is silently lost.
+  const other = rows.filter(
+    (p) => !inaccurate.includes(p) && !suppressed.includes(p),
+  );
+
+  // Nothing auto-hidden and not still loading: render nothing so the tab
+  // stays clean.
+  if (!isLoading && rows.length === 0) return null;
+
+  const total = rows.length;
+
+  const renderRow = (p: (typeof rows)[number], reason: string) => (
+    <div
+      key={p.id}
+      className="flex flex-wrap items-start justify-between gap-3 rounded-md border bg-background px-3 py-2"
+      data-testid={`auto-handled-${p.id}`}
+    >
+      <div className="min-w-0 space-y-0.5">
+        <div className="text-sm font-medium truncate">
+          {summarizeProposal(p)}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {new Date(p.emailSentAt ?? p.createdAt).toLocaleString()}
+        </div>
+        <div className="text-xs text-muted-foreground italic">{reason}</div>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {p.sourceMessageId ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8"
+            onClick={() => setViewEmailId(p.sourceMessageId ?? null)}
+            data-testid={`btn-auto-handled-view-email-${p.id}`}
+          >
+            <Mail className="h-3.5 w-3.5 mr-1" />
+            View email
+          </Button>
+        ) : null}
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8"
+          disabled={reopen.isPending}
+          onClick={() => reopen.mutate({ id: p.id })}
+          data-testid={`btn-reopen-${p.id}`}
+        >
+          <Undo2 className="h-4 w-4 mr-1.5" />
+          Re-open
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      className="rounded-md border bg-muted/30"
+      data-testid={`auto-handled-section-${kind}`}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:text-foreground"
+        data-testid={`btn-toggle-auto-handled-${kind}`}
+      >
+        {open ? (
+          <ChevronDown className="h-4 w-4 shrink-0" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0" />
+        )}
+        <EyeOff className="h-4 w-4 shrink-0" />
+        <span className="font-medium">
+          Auto-handled by AI{isLoading ? "" : ` (${total})`}
+        </span>
+        <span className="text-xs">— hidden from the queue; re-open if wrong</span>
+      </button>
+      {open ? (
+        <div className="space-y-4 px-3 pb-3">
+          {isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : (
+            <>
+              {inaccurate.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                    Flagged inaccurate ({inaccurate.length})
+                  </div>
+                  {inaccurate.map((p) =>
+                    renderRow(
+                      p,
+                      p.reviewerNote ?? "Flagged inaccurate",
+                    ),
+                  )}
+                </div>
+              ) : null}
+              {suppressed.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Auto-suppressed ({suppressed.length})
+                  </div>
+                  {suppressed.map((p) =>
+                    renderRow(p, p.reviewerNote ?? "Auto-suppressed"),
+                  )}
+                </div>
+              ) : null}
+              {other.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Other ({other.length})
+                  </div>
+                  {other.map((p) =>
+                    renderRow(p, p.reviewerNote ?? "Hidden from queue"),
+                  )}
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      ) : null}
       <EmailDetailDialog
         emailId={viewEmailId}
         onClose={() => setViewEmailId(null)}

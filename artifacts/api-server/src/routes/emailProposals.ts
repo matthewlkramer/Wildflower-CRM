@@ -748,6 +748,75 @@ router.post(
   }),
 );
 
+/**
+ * Restore an AI auto-hidden proposal (status `ignored`) back to the
+ * pending review queue. Auto-hidden rows are those the analysis step
+ * flagged as inaccurate ("Flagged inaccurate: …") or suppressed as
+ * noise ("Auto-suppressed: …") — both carry `status='ignored'`. When a
+ * reviewer judges that verdict to be wrong, this re-opens the proposal
+ * so it reappears in the main pending queue for normal triage.
+ *
+ * Lightweight by design: it does NOT re-run the AI. The existing
+ * proposed actions + analysis are preserved, and the prior reviewer
+ * note (the auto-hide reason) is kept as audit trail with a short
+ * "Re-opened by reviewer" marker appended. Same ownership + state
+ * guards and 404-vs-409 behavior as accept/reject/retry/revise: a user
+ * can only re-open their own mailbox's `ignored` proposals.
+ */
+router.post(
+  "/email-proposals/:id/reopen",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const id = paramId(req);
+    // Flip ignored → pending, scoped to the caller's own ignored
+    // proposal. The conditional UPDATE doubles as the ownership + state
+    // guard — a non-ignored or someone else's row matches zero rows.
+    const [reopened] = await db
+      .update(emailProposals)
+      .set({
+        status: "pending",
+        resolvedAt: null,
+        resolvedByUserId: null,
+        reviewerNote: appendReviewerNoteSql("Re-opened by reviewer"),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(emailProposals.id, id),
+          eq(emailProposals.mailboxUserId, user.id),
+          eq(emailProposals.status, "ignored"),
+        ),
+      )
+      .returning();
+    if (!reopened) {
+      // Distinguish "doesn't exist / not yours" (404) from "not ignored"
+      // (409) the same way accept/reject/retry/revise do.
+      const [existing] = await db
+        .select()
+        .from(emailProposals)
+        .where(
+          and(
+            eq(emailProposals.id, id),
+            eq(emailProposals.mailboxUserId, user.id),
+          ),
+        )
+        .limit(1);
+      if (!existing) return notFound(res, "email proposal");
+      res.status(409).json({
+        error: "proposal_not_ignored",
+        status: existing.status,
+        message: `Cannot re-open proposal in status '${existing.status}'.`,
+      });
+      return;
+    }
+    res.json(reopened);
+  }),
+);
+
 // Touch sql to silence unused-import warnings when the per-kind apply
 // logic above doesn't reach the raw-SQL branch.
 void sql;

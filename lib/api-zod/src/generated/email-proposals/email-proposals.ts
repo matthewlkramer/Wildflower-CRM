@@ -253,3 +253,45 @@ export const ReviseEmailProposalResponse = zod.object({
   "reviewerNote": zod.string().nullish()
 })
 
+/**
+ * @summary Restore an AI auto-hidden (status `ignored`) proposal back to the pending review queue (owner-scoped, ignored-only). Used when the reviewer judges the AI's "flagged inaccurate" / "auto-suppressed" verdict to be wrong. Keeps the existing analysis (proposed actions) and reviewer note as audit trail, flips status `ignored` → `pending`, and returns the refreshed proposal. Does NOT re-run the AI.
+ */
+export const ReopenEmailProposalParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ReopenEmailProposalResponse = zod.object({
+  "id": zod.string(),
+  "mailboxUserId": zod.string(),
+  "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
+  "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
+  "sourceMessageId": zod.string().nullish(),
+  "targetPersonId": zod.string().nullish(),
+  "targetOrganizationId": zod.string().nullish(),
+  "targetEmailId": zod.string().nullish(),
+  "subjectEmail": zod.string().nullish(),
+  "subjectName": zod.string().nullish(),
+  "subjectDomain": zod.string().nullish(),
+  "emailSentAt": zod.string().datetime({}).nullish(),
+  "payload": zod.record(zod.string(), zod.unknown()),
+  "proposedActions": zod.array(zod.object({
+  "type": zod.enum(['deactivate_per', 'create_per', 'create_person_with_per', 'add_email', 'set_primary_email', 'mark_email_invalid', 'create_grant_opportunity']),
+  "reason": zod.string()
+})).optional(),
+  "actionsAnalyzedAt": zod.string().datetime({}).nullish(),
+  "actionsModel": zod.string().nullish(),
+  "actionsError": zod.string().nullish(),
+  "appliedActions": zod.array(zod.object({
+  "type": zod.string(),
+  "status": zod.enum(['applied', 'skipped', 'failed']),
+  "message": zod.string().nullish(),
+  "createdId": zod.string().nullish()
+})).nullish(),
+  "dedupeKey": zod.string(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({}),
+  "resolvedAt": zod.string().datetime({}).nullish(),
+  "resolvedByUserId": zod.string().nullish(),
+  "reviewerNote": zod.string().nullish()
+})
+

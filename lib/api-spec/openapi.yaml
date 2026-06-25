@@ -285,6 +285,26 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /email-proposals/{id}/reopen:
+    post:
+      operationId: reopenEmailProposal
+      tags: [email-proposals]
+      summary: >-
+        Restore an AI auto-hidden (status `ignored`) proposal back to the
+        pending review queue (owner-scoped, ignored-only). Used when the
+        reviewer judges the AI's "flagged inaccurate" / "auto-suppressed"
+        verdict to be wrong. Keeps the existing analysis (proposed actions)
+        and reviewer note as audit trail, flips status `ignored` → `pending`,
+        and returns the refreshed proposal. Does NOT re-run the AI.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmailProposal" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The proposal is not in the `ignored` state, so it cannot be re-opened.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   # ─── Task intelligence (AI-suggested next-step cultivation tasks) ────────────
   /task-proposals:
