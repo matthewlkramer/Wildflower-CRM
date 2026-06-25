@@ -434,7 +434,9 @@ export default function Opportunities({
       : {}),
     // Pledges intentionally have no stage/type filter — never let stale
     // persisted state or a saved view silently narrow the pledges query.
-    ...(pledgeView !== "pledges" && stages.length > 0
+    // In kanban view the board already groups by stage, so a stage filter
+    // would just narrow the columns — never apply it there.
+    ...(pledgeView !== "pledges" && effectiveViewMode !== "kanban" && stages.length > 0
       ? { stage: [...stages].sort() as OpportunityStage[] }
       : {}),
     ...(pledgeView !== "pledges" && types.length > 0
@@ -682,12 +684,16 @@ export default function Opportunities({
       // Pledges drop the stage filter (stage is irrelevant once committed) and
       // the type filter (solicitation/renewal/open_application is a funnel
       // attribute) — both belong to the opportunities funnel, not pledges.
-      return isPledgeView
-        ? defs.filter((d) => d.key !== "stage" && d.key !== "type")
-        : defs;
+      // Kanban view groups columns by stage, so the stage filter is redundant
+      // there — hide it from both the chooser and the filter row.
+      return defs.filter((d) => {
+        if (isPledgeView && (d.key === "stage" || d.key === "type")) return false;
+        if (effectiveViewMode === "kanban" && d.key === "stage") return false;
+        return true;
+      });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [statuses, stages, types, fiscalYears, owners, paidPresence, coveredFysPresence, entitiesPresence, sameDefaultStatus, defaultStatusArr, isPledgeView],
+    [statuses, stages, types, fiscalYears, owners, paidPresence, coveredFysPresence, entitiesPresence, sameDefaultStatus, defaultStatusArr, isPledgeView, effectiveViewMode],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),

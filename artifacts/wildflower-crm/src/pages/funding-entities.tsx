@@ -594,7 +594,9 @@ export default function Organizations() {
       : showDefunct
         ? {}
         : { activeStatus: NON_DEFUNCT_STATUS_PARAM as ActiveStatus[] }),
-    ...(connectionStatuses.length > 0
+    // Kanban view groups columns by connection status + enthusiasm, so those
+    // filters would just narrow the board — never apply them there.
+    ...(viewMode !== "kanban" && connectionStatuses.length > 0
       ? { connectionStatus: [...connectionStatuses].sort() as ConnectionStatus[] }
       : {}),
     ...(priorities.length > 0
@@ -605,7 +607,9 @@ export default function Organizations() {
     ...(openAsksPresence ? { openAsksPresence } : {}),
     ...(primaryContactPresence ? { primaryContactPresence } : {}),
     ...(capacityTiers.length > 0 ? { capacityRating: [...capacityTiers].sort() as CapacityRating[] } : {}),
-    ...(enthusiasms.length > 0 ? { enthusiasm: [...enthusiasms].sort() } : {}),
+    ...(viewMode !== "kanban" && enthusiasms.length > 0
+      ? { enthusiasm: [...enthusiasms].sort() }
+      : {}),
     ...(strategicAlignments.length > 0 ? { strategicAlignment: [...strategicAlignments].sort() } : {}),
     ...(interestsThematicSel.length > 0 ? { interestsThematic: [...interestsThematicSel].sort() } : {}),
     ...(regionIdsSel.length > 0 ? { regionIds: [...regionIdsSel].sort() } : {}),
@@ -804,7 +808,8 @@ export default function Organizations() {
   // computed columns are opt-in (defaultVisible:false). Each def's
   // `clear` resets its value so hiding an active filter stops narrowing.
   const filterRegistry = useMemo<FilterDef[]>(
-    () => [
+    () => {
+      const defs: FilterDef[] = [
       {
         key: "issuesGrants",
         label: "Grant-making",
@@ -1054,9 +1059,16 @@ export default function Organizations() {
           />
         ),
       },
-    ],
+      ];
+      // Kanban view groups columns by connection status + enthusiasm, so those
+      // filters are redundant there — hide them from both the chooser and the
+      // filter row (the params builder likewise omits their values in kanban).
+      return viewMode === "kanban"
+        ? defs.filter((d) => d.key !== "connection" && d.key !== "enthusiasm")
+        : defs;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [issuesGrants, makesPris, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, interestsThematicSel, regionIdsSel],
+    [issuesGrants, makesPris, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, interestsThematicSel, regionIdsSel, viewMode],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),

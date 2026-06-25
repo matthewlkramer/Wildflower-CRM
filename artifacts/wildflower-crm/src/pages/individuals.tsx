@@ -588,10 +588,14 @@ export default function Individuals() {
     ...(lastGiftPresence ? { lastGiftPresence } : {}),
     ...(openAsksPresence ? { openAsksPresence } : {}),
     ...(activeAffiliationPresence ? { activeAffiliationPresence } : {}),
-    ...(connectionStatusSel.length > 0
+    // Kanban view groups columns by connection status + enthusiasm, so those
+    // filters would just narrow the board — never apply them there.
+    ...(viewMode !== "kanban" && connectionStatusSel.length > 0
       ? { connectionStatus: [...connectionStatusSel].sort() as ConnectionStatus[] }
       : {}),
-    ...(enthusiasmSel.length > 0 ? { enthusiasm: [...enthusiasmSel].sort() } : {}),
+    ...(viewMode !== "kanban" && enthusiasmSel.length > 0
+      ? { enthusiasm: [...enthusiasmSel].sort() }
+      : {}),
     ...(prioritySel.length > 0 ? { priority: [...prioritySel].sort() } : {}),
     ...(regionIdsSel.length > 0 ? { regionIds: [...regionIdsSel].sort() } : {}),
     ...(newsletterSel.length > 0
@@ -789,7 +793,8 @@ export default function Individuals() {
   // computed columns are opt-in (defaultVisible:false). Each def's
   // `clear` resets its value so hiding an active filter stops narrowing.
   const filterRegistry = useMemo<FilterDef[]>(
-    () => [
+    () => {
+      const defs: FilterDef[] = [
       {
         key: "capacity",
         label: "Capacity",
@@ -957,9 +962,16 @@ export default function Individuals() {
           />
         ),
       },
-    ],
+      ];
+      // Kanban view groups columns by connection status + enthusiasm, so those
+      // filters are redundant there — hide them from both the chooser and the
+      // filter row (the params builder likewise omits their values in kanban).
+      return viewMode === "kanban"
+        ? defs.filter((d) => d.key !== "connectionStatus" && d.key !== "enthusiasm")
+        : defs;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel, newsletterSel],
+    [capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel, newsletterSel, viewMode],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
