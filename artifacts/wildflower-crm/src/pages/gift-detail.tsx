@@ -25,6 +25,7 @@ import {
   type GiftAuditReconciliationRecord,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
 import { GiftAllocationsEditor } from "@/components/allocation-editors";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
@@ -348,6 +349,12 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
           Split into pledge
         </Button>
       ) : null}
+      <FlagForResearchDialog
+        targetType="gift"
+        targetId={gift.id}
+        recordLabel={gift.name ?? "this gift"}
+        triggerTestId="button-flag-research-gift"
+      />
       <ConfirmDeleteDialog
         title="Archive this gift?"
         description="It will be hidden from lists. An admin can restore it from the archived view."

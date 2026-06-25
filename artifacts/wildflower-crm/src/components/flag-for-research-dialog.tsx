@@ -1,0 +1,130 @@
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useFlagForResearch,
+  type FlagForResearchBodyTargetType,
+} from "@workspace/api-client-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+
+const CLEANUP_KEY_PREFIX = "/api/cleanup-queue";
+
+/**
+ * "Flag for research" action — adds the current record to the Cleanup Queue
+ * with reason_code='needs_research'. Shared across opportunity/pledge,
+ * organization, person and gift detail pages.
+ *
+ * The server is idempotent against the (target_type, target_id, reason_code)
+ * unique key, so re-flagging an already-flagged record surfaces the existing
+ * item instead of creating a duplicate.
+ */
+export function FlagForResearchDialog({
+  targetType,
+  targetId,
+  recordLabel = "this record",
+  triggerTestId = "button-flag-research",
+}: {
+  targetType: FlagForResearchBodyTargetType;
+  targetId: string;
+  /** Human label shown in the dialog (e.g. the record's name). */
+  recordLabel?: string;
+  triggerTestId?: string;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const flagMut = useFlagForResearch();
+
+  const submit = () => {
+    const trimmed = note.trim();
+    if (trimmed.length === 0) return;
+    flagMut.mutate(
+      { data: { targetType, targetId, note: trimmed } },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({
+            queryKey: [CLEANUP_KEY_PREFIX],
+          });
+          setOpen(false);
+          setNote("");
+          toast({
+            title: "Flagged for research",
+            description: "Added to the Cleanup Queue for follow-up.",
+          });
+        },
+        onError: (err) =>
+          toast({
+            title: "Couldn't flag",
+            description:
+              err instanceof Error ? err.message : "Something went wrong.",
+            variant: "destructive",
+          }),
+      },
+    );
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!flagMut.isPending) setOpen(v);
+      }}
+    >
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen(true)}
+        data-testid={triggerTestId}
+      >
+        Flag for research
+      </Button>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Flag for research</DialogTitle>
+          <DialogDescription>
+            Add {recordLabel} to the Cleanup Queue so the team can research and
+            follow up on it.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor="flag-research-note">What needs research?</Label>
+          <Textarea
+            id="flag-research-note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Describe what to look into or follow up on…"
+            rows={4}
+            data-testid="input-flag-research-note"
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setOpen(false)}
+            disabled={flagMut.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={submit}
+            disabled={flagMut.isPending || note.trim().length === 0}
+            data-testid="button-confirm-flag-research"
+          >
+            {flagMut.isPending ? "Flagging…" : "Flag for research"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

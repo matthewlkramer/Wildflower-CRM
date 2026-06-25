@@ -22,6 +22,7 @@ import {
   type Priority,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import { canSeeIdentity, canManageIdentity, displayOrganizationName, ANONYMOUS_LABEL } from "@/lib/visibility";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { PinnedMediaCard } from "@/components/media-mentions-panel";
@@ -300,6 +301,12 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
           Edit name
         </Button>
       )}
+      <FlagForResearchDialog
+        targetType="organization"
+        targetId={org.id}
+        recordLabel={displayName}
+        triggerTestId="button-flag-research-organization"
+      />
       <ConfirmDeleteDialog
         title={`Archive ${displayName}?`}
         description="It will be hidden from lists. An admin can restore it from the archived view."

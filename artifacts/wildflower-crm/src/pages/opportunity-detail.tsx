@@ -27,6 +27,7 @@ import { PledgeAllocationsEditor } from "@/components/allocation-editors";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { TasksPanel } from "@/components/tasks-panel";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
 import { GrantLetterUpload } from "@/components/grant-letter-upload";
 import { ReportingDeadlinesDialog } from "@/components/reporting-deadlines-dialog";
@@ -391,6 +392,12 @@ function OppView({
       >
         Edit name
       </Button>
+      <FlagForResearchDialog
+        targetType={entityLabel.toLowerCase() === "pledge" ? "pledge" : "opportunity"}
+        targetId={opp.id}
+        recordLabel={opp.name ?? `this ${entityLabel.toLowerCase()}`}
+        triggerTestId="button-flag-research-opp"
+      />
       <ConfirmDeleteDialog
         title={`Archive this ${entityLabel.toLowerCase()}?`}
         description="It will be hidden from lists. An admin can restore it from the archived view."

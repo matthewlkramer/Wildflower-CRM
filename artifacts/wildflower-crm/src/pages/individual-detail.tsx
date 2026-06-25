@@ -30,6 +30,7 @@ import {
 } from "@workspace/api-client-react";
 import { Archive, Check, Pencil, Trash2, X } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import {
   EmailsEditor,
   PhoneNumbersEditor,
@@ -360,6 +361,12 @@ function PersonView({ person }: { person: PersonDetail }) {
           <Pencil className="h-4 w-4" />
         </Button>
       )}
+      <FlagForResearchDialog
+        targetType="person"
+        targetId={person.id}
+        recordLabel={canSeeName ? personDisplayName(person) : "this person"}
+        triggerTestId="button-flag-research-person"
+      />
       <ConfirmDeleteDialog
         title={`Archive ${canSeeName ? personDisplayName(person) : ANONYMOUS_LABEL}?`}
         description="It will be hidden from lists. An admin can restore it from the archived view."

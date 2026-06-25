@@ -171,6 +171,22 @@ paths:
         - { $ref: "#/components/parameters/Page" }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CleanupItemList" } } } }
+    post:
+      operationId: flagForResearch
+      tags: [cleanup-queue]
+      summary: >-
+        Flag a record for research — adds it to the Cleanup Queue with
+        reason_code='needs_research'. Idempotent against the
+        (target_type, target_id, reason_code) unique key: re-flagging an
+        already-flagged record returns the existing item instead of creating a
+        duplicate.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/FlagForResearchBody" } } }
+      responses:
+        "200": { description: "Already flagged — returns the existing item.", content: { application/json: { schema: { $ref: "#/components/schemas/CleanupItem" } } } }
+        "201": { description: "Created a new cleanup item.", content: { application/json: { schema: { $ref: "#/components/schemas/CleanupItem" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /cleanup-queue/{id}/resolve:
     post:
       operationId: resolveCleanupItem
@@ -6883,6 +6899,15 @@ components:
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/CleanupItem" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+    FlagForResearchBody:
+      type: object
+      required: [targetType, targetId, note]
+      description: >-
+        Flag a record for research. reason_code is always 'needs_research'.
+      properties:
+        targetType: { type: string, enum: [opportunity, pledge, organization, person, gift], description: "Kind of record being flagged." }
+        targetId:   { type: string, minLength: 1, description: "Id of the record being flagged." }
+        note:       { type: string, minLength: 1, description: "What needs research / follow-up on this record." }
     ResolveStagedPaymentBody:
       type: object
       description: "Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary."

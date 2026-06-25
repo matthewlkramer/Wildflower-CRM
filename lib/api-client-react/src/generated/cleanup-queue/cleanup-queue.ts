@@ -20,14 +20,16 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  BadRequestResponse,
   CleanupItem,
   CleanupItemList,
+  FlagForResearchBody,
   ListCleanupQueueParams,
   NotFoundResponse
 } from '../api.schemas';
 
 import { customFetch } from '../../custom-fetch';
-import type { ErrorType } from '../../custom-fetch';
+import type { ErrorType , BodyType } from '../../custom-fetch';
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -120,6 +122,76 @@ export function useListCleanupQueue<TData = Awaited<ReturnType<typeof listCleanu
 
 
 /**
+ * @summary Flag a record for research — adds it to the Cleanup Queue with reason_code='needs_research'. Idempotent against the (target_type, target_id, reason_code) unique key: re-flagging an already-flagged record returns the existing item instead of creating a duplicate.
+ */
+export const getFlagForResearchUrl = () => {
+
+
+  
+
+  return `/api/cleanup-queue`
+}
+
+export const flagForResearch = async (flagForResearchBody: FlagForResearchBody, options?: RequestInit): Promise<CleanupItem> => {
+  
+  return customFetch<CleanupItem>(getFlagForResearchUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      flagForResearchBody,)
+  }
+);}
+  
+
+
+
+export const getFlagForResearchMutationOptions = <TError = ErrorType<BadRequestResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof flagForResearch>>, TError,{data: BodyType<FlagForResearchBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof flagForResearch>>, TError,{data: BodyType<FlagForResearchBody>}, TContext> => {
+
+const mutationKey = ['flagForResearch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof flagForResearch>>, {data: BodyType<FlagForResearchBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  flagForResearch(data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type FlagForResearchMutationResult = NonNullable<Awaited<ReturnType<typeof flagForResearch>>>
+    export type FlagForResearchMutationBody = BodyType<FlagForResearchBody>
+    export type FlagForResearchMutationError = ErrorType<BadRequestResponse>
+
+    /**
+ * @summary Flag a record for research — adds it to the Cleanup Queue with reason_code='needs_research'. Idempotent against the (target_type, target_id, reason_code) unique key: re-flagging an already-flagged record returns the existing item instead of creating a duplicate.
+ */
+export const useFlagForResearch = <TError = ErrorType<BadRequestResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof flagForResearch>>, TError,{data: BodyType<FlagForResearchBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof flagForResearch>>,
+        TError,
+        {data: BodyType<FlagForResearchBody>},
+        TContext
+      > => {
+      return useMutation(getFlagForResearchMutationOptions(options));
+    }
+    /**
  * @summary Mark a cleanup item as resolved (the record was cleaned up by hand).
  */
 export const getResolveCleanupItemUrl = (id: string,) => {

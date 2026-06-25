@@ -6,7 +6,7 @@ import {
   users,
 } from "@workspace/db/schema";
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
-import { ListCleanupQueueQueryParams } from "@workspace/api-zod";
+import { FlagForResearchBody, ListCleanupQueueQueryParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
 import {
@@ -111,6 +111,80 @@ router.get(
       data: rows.map((r) => serialize(r as CleanupRow)),
       pagination: { page, limit, total: Number(totalRows[0]?.c ?? 0) },
     });
+  }),
+);
+
+// Flag a record for research — append it to the queue with
+// reason_code='needs_research'. Idempotent against the
+// (target_type, target_id, reason_code) unique key: re-flagging an already
+// flagged record (regardless of its status) returns the existing item rather
+// than minting a duplicate. The deterministic id ('cleanup_nr_' || targetId)
+// mirrors the hand-applied seed (migration 0077) so app-created and seeded rows
+// share one PK scheme.
+router.post(
+  "/cleanup-queue",
+  asyncHandler(async (req, res) => {
+    const body = parseOrBadRequest(FlagForResearchBody, req.body, res);
+    if (!body) return;
+
+    const reasonCode = "needs_research";
+    const note = body.note.trim();
+    if (note.length === 0) {
+      res
+        .status(400)
+        .json({ error: "bad_request", message: "A note is required." });
+      return;
+    }
+
+    const inserted = await db
+      .insert(cleanupQueue)
+      .values({
+        id: `cleanup_nr_${body.targetId}`,
+        targetType: body.targetType,
+        targetId: body.targetId,
+        reasonCode,
+        note,
+        status: "open",
+      })
+      .onConflictDoNothing({
+        target: [
+          cleanupQueue.targetType,
+          cleanupQueue.targetId,
+          cleanupQueue.reasonCode,
+        ],
+      })
+      .returning();
+
+    if (inserted[0]) {
+      const enriched = await enrich(inserted);
+      res.status(201).json(serialize(enriched[0]!));
+      return;
+    }
+
+    // Already flagged — surface the existing item (no duplicate created).
+    const existing = await db
+      .select()
+      .from(cleanupQueue)
+      .where(
+        and(
+          eq(cleanupQueue.targetType, body.targetType),
+          eq(cleanupQueue.targetId, body.targetId),
+          eq(cleanupQueue.reasonCode, reasonCode),
+        ),
+      )
+      .limit(1);
+
+    if (existing[0]) {
+      const enriched = await enrich(existing);
+      res.status(200).json(serialize(enriched[0]!));
+      return;
+    }
+
+    // Extremely unlikely: conflict reported but row not found (race). Treat as
+    // a transient failure.
+    res
+      .status(409)
+      .json({ error: "conflict", message: "Could not flag this record." });
   }),
 );
 

@@ -4128,6 +4128,38 @@ export interface CleanupItemList {
 }
 
 /**
+ * Kind of record being flagged.
+ */
+export type FlagForResearchBodyTargetType = typeof FlagForResearchBodyTargetType[keyof typeof FlagForResearchBodyTargetType];
+
+
+export const FlagForResearchBodyTargetType = {
+  opportunity: 'opportunity',
+  pledge: 'pledge',
+  organization: 'organization',
+  person: 'person',
+  gift: 'gift',
+} as const;
+
+/**
+ * Flag a record for research. reason_code is always 'needs_research'.
+ */
+export interface FlagForResearchBody {
+  /** Kind of record being flagged. */
+  targetType: FlagForResearchBodyTargetType;
+  /**
+   * Id of the record being flagged.
+   * @minLength 1
+   */
+  targetId: string;
+  /**
+   * What needs research / follow-up on this record.
+   * @minLength 1
+   */
+  note: string;
+}
+
+/**
  * Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary.
  */
 export interface ResolveStagedPaymentBody {
