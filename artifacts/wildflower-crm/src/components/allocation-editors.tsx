@@ -12,22 +12,21 @@ import {
   useListFiscalYears,
   useListFundableProjects,
   useListSchools,
-  useListRevenueAccounts,
   getGetOpportunityOrPledgeQueryKey,
   getGetGiftOrPaymentQueryKey,
   type PledgeAllocation,
   type GiftAllocation,
   type IntendedUsage,
   type PledgeAllocationStatus,
-  type ReimbursableShare,
-  type RestrictionType,
-  type DeferredRevenue,
+  type ReimbursementType,
+  type RestrictionAxis,
+  type OpportunityConditional,
+  type OpportunityConditionsMet,
   type CreatePledgeAllocationBody,
   type UpdatePledgeAllocationBody,
   type CreateGiftAllocationBody,
   type UpdateGiftAllocationBody,
 } from "@workspace/api-client-react";
-import { LOCATIONS } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -91,43 +90,47 @@ const PLEDGE_ALLOCATION_STATUS_OPTIONS: ReadonlyArray<Option> = [
   { value: "abandoned", label: "Abandoned" },
 ];
 
-const RESTRICTION_TYPE_OPTIONS: ReadonlyArray<Option> = [
+// Per-axis restriction taxonomy (Task #449). Applied independently to the
+// regional / fund-use / time axes. donor_restricted = the funder imposed it (a
+// true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP
+// restriction — counts as unrestricted for restriction rollups); unrestricted.
+const RESTRICTION_AXIS_OPTIONS: ReadonlyArray<Option> = [
   { value: "unrestricted", label: "Unrestricted" },
-  { value: "purpose", label: "Purpose-restricted" },
-  { value: "time", label: "Time-restricted" },
-  { value: "both", label: "Purpose & time-restricted" },
-  { value: "unclear", label: "Unclear (needs review)" },
-  { value: "na", label: "N/A" },
+  { value: "donor_restricted", label: "Donor-restricted" },
+  { value: "wf_restricted", label: "WF board-designated" },
 ];
 
-const DEFERRED_REVENUE_OPTIONS: ReadonlyArray<Option> = [
-  { value: "yes", label: "Yes" },
+const RESTRICTION_AXIS_HINT =
+  "Set each axis independently. Donor-restricted means the funder formally imposed it (a true restriction); WF board-designated is an internal designation that still counts as unrestricted for accounting.";
+
+// Per-allocation grant condition + whether the conditions have been met.
+const CONDITIONAL_OPTIONS: ReadonlyArray<Option> = [
+  { value: "unconditional", label: "Unconditional" },
+  { value: "conditional_unspecified", label: "Conditional (unspecified)" },
+  { value: "reimbursable", label: "Reimbursable" },
+  { value: "conditional_on_funder_determination", label: "Conditional on funder determination" },
+  { value: "conditional_on_target", label: "Conditional on target / match" },
+];
+
+const CONDITIONS_MET_OPTIONS: ReadonlyArray<Option> = [
   { value: "no", label: "No" },
-  { value: "na", label: "N/A" },
+  { value: "partial", label: "Partial" },
+  { value: "yes", label: "Yes" },
 ];
 
 // Direct vs indirect share on a reimbursable grant. DIRECT-tagged allocations are
 // EXCLUDED from goal analytics (received, committed, open ask, weighted); the
 // full award/reimbursement amount is still recorded on the line. Untagged (the
 // default) and indirect both still count toward goals.
-const REIMBURSABLE_SHARE_OPTIONS: ReadonlyArray<Option> = [
+const REIMBURSEMENT_TYPE_OPTIONS: ReadonlyArray<Option> = [
   { value: "direct", label: "Direct (excluded from goals)" },
   { value: "indirect", label: "Indirect (counts toward goals)" },
 ];
 
-const REIMBURSABLE_SHARE_HINT =
+const REIMBURSEMENT_TYPE_HINT =
   "Tag the direct vs indirect share on a reimbursable grant. The full amount is still recorded; only DIRECT-tagged shares are excluded from goal totals.";
 
 const NONE = "__none__";
-
-// Human-readable hints for the coding flags surfaced by the derivation lib.
-const CODING_FLAG_LABELS: Record<string, string> = {
-  restriction_unclear: "Restriction unclear — set a restriction type so an Object Code can be derived.",
-  restriction_na: "Restriction is N/A — no contribution Object Code is derived.",
-  loan_no_revenue_account: "Loan-fund investment — principal movement, no revenue Object Code.",
-  payer_type_assumed: "Payer type was assumed — confirm the donor type.",
-  location_default: "Location defaulted to Foundation General — no entity/region signal.",
-};
 
 function useEntityOptions(): ReadonlyArray<Option> {
   const { data } = useListEntities();
@@ -302,237 +305,151 @@ function MoreDetails({ children }: { children: React.ReactNode }) {
   );
 }
 
-const RESTRICTED_HINT =
-  "Check if the grant letter formally restricts this. Leave unchecked if it's just our documented understanding of the donor's intent.";
-
 /* ──────────────────────────────────────────────────────────────────────── */
-/* Revenue-coding capture + derived display                                  */
+/* Restriction axes (regional / fund-use / time)                             */
 /* ──────────────────────────────────────────────────────────────────────── */
 
-// The coding-related slice of an allocation form. Shared by pledge + gift
-// dialogs since the revenue-accounting capture fields are identical.
-type CodingFormState = {
-  restrictionType: string;
-  restrictionEvidence: string;
+// The restriction slice of an allocation form. Shared by pledge + gift dialogs
+// since the three axes + verbatim purpose are identical on both. Revenue-coding
+// capture moved off allocations onto staged_payments in Task #449.
+type RestrictionAxisState = {
+  regionalRestrictionType: string;
+  usageRestrictionType: string;
+  timeRestrictionType: string;
   purposeVerbatim: string;
-  deferredRevenue: string;
-  deferredRevenueReason: string;
-  objectCodeOverride: string;
-  revenueLocationOverride: string;
-  revenueClassOverride: string;
 };
 
-function codingStateFrom(
+function restrictionAxisStateFrom(
   a: Pick<
     PledgeAllocation | GiftAllocation,
-    | "restrictionType"
-    | "restrictionEvidence"
+    | "regionalRestrictionType"
+    | "usageRestrictionType"
+    | "timeRestrictionType"
     | "purposeVerbatim"
-    | "deferredRevenue"
-    | "deferredRevenueReason"
-    | "objectCodeOverride"
-    | "revenueLocationOverride"
-    | "revenueClassOverride"
   > | null,
-): CodingFormState {
+): RestrictionAxisState {
   return {
-    restrictionType: a?.restrictionType ?? "",
-    restrictionEvidence: a?.restrictionEvidence ?? "",
+    regionalRestrictionType: a?.regionalRestrictionType ?? "unrestricted",
+    usageRestrictionType: a?.usageRestrictionType ?? "unrestricted",
+    timeRestrictionType: a?.timeRestrictionType ?? "unrestricted",
     purposeVerbatim: a?.purposeVerbatim ?? "",
-    deferredRevenue: a?.deferredRevenue ?? "",
-    deferredRevenueReason: a?.deferredRevenueReason ?? "",
-    objectCodeOverride: a?.objectCodeOverride ?? "",
-    revenueLocationOverride: a?.revenueLocationOverride ?? "",
-    revenueClassOverride: a?.revenueClassOverride ?? "",
   };
 }
 
-// Capture fields shared by the create + update bodies (both allocation types).
-type CodingBody = {
-  restrictionType?: RestrictionType | null;
-  restrictionEvidence?: string | null;
-  purposeVerbatim?: string | null;
-  deferredRevenue?: DeferredRevenue | null;
-  deferredRevenueReason?: string | null;
-  objectCodeOverride?: string | null;
-  revenueLocationOverride?: string | null;
-  revenueClassOverride?: string | null;
+// The three axes are required (non-null, default unrestricted) on both create +
+// update bodies, so they are always sent.
+type RestrictionAxisBody = {
+  regionalRestrictionType: RestrictionAxis;
+  usageRestrictionType: RestrictionAxis;
+  timeRestrictionType: RestrictionAxis;
 };
 
-function codingBodyFrom(s: CodingFormState): CodingBody {
+function restrictionAxisBody(s: RestrictionAxisState): RestrictionAxisBody {
   return {
-    restrictionType: (noneToNull(s.restrictionType) as RestrictionType | null) ?? null,
-    restrictionEvidence: emptyToNull(s.restrictionEvidence),
-    purposeVerbatim: emptyToNull(s.purposeVerbatim),
-    deferredRevenue: (noneToNull(s.deferredRevenue) as DeferredRevenue | null) ?? null,
-    deferredRevenueReason: emptyToNull(s.deferredRevenueReason),
-    objectCodeOverride: noneToNull(s.objectCodeOverride),
-    revenueLocationOverride: noneToNull(s.revenueLocationOverride),
-    revenueClassOverride: noneToNull(s.revenueClassOverride),
+    regionalRestrictionType: s.regionalRestrictionType as RestrictionAxis,
+    usageRestrictionType: s.usageRestrictionType as RestrictionAxis,
+    timeRestrictionType: s.timeRestrictionType as RestrictionAxis,
   };
 }
 
-// Object Code options from the live revenue_accounts table (active only).
-function useRevenueAccountOptions(): ReadonlyArray<Option> {
-  const { data } = useListRevenueAccounts({ activeOnly: true });
-  return (data ?? []).map((acct) => ({
-    value: acct.code,
-    label: `${acct.code} — ${acct.name}`,
-  }));
-}
-
-const LOCATION_OPTIONS: ReadonlyArray<Option> = LOCATIONS.map((loc) => ({
-  value: loc,
-  label: loc,
-}));
-
-// Read-only "Derived / Effective" line: shows the frozen snapshot and, when an
-// override is set, the override that supersedes it.
-function CodingValue({
-  label,
-  derived,
-  override,
+// A required-value select (no "None" item) for a restriction axis.
+function AxisSelect({
+  id,
+  value,
+  onValueChange,
 }: {
-  label: string;
-  derived: string | null | undefined;
-  override: string | null | undefined;
+  id?: string;
+  value: string;
+  onValueChange: (v: string) => void;
 }) {
-  const hasOverride = override != null && override !== "";
-  const effective = hasOverride ? override : (derived ?? null);
   return (
-    <div className="flex items-baseline justify-between gap-2 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right">
-        {effective ? (
-          <span className="font-medium">{effective}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-        {hasOverride ? (
-          <span className="ml-1 text-muted-foreground">
-            (override{derived ? `; derived ${derived}` : ""})
-          </span>
-        ) : null}
-      </span>
-    </div>
+    <Select value={value || "unrestricted"} onValueChange={onValueChange}>
+      <SelectTrigger id={id} className="h-8 text-sm">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent className="max-h-72">
+        {RESTRICTION_AXIS_OPTIONS.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
-// The full revenue-coding section rendered inside each allocation dialog's
-// "More details": capture inputs, the derived snapshot, review flags, and the
-// manual overrides. `derived` is the snapshot on the existing row (add mode has
-// none until the first save).
-function RevenueCodingFields({
+// The restriction section rendered inside each allocation dialog's "More
+// details": three per-axis dropdowns + the donor's verbatim purpose.
+function RestrictionAxisFields({
   s,
-  set,
-  derived,
+  setAxis,
 }: {
-  s: CodingFormState;
-  set: <K extends keyof CodingFormState>(k: K, v: CodingFormState[K]) => void;
-  derived: Pick<
-    PledgeAllocation | GiftAllocation,
-    "objectCode" | "revenueLocation" | "revenueClass" | "codingFlags"
-  > | null;
+  s: RestrictionAxisState;
+  setAxis: (k: keyof RestrictionAxisState, v: string) => void;
 }) {
-  const accountOptions = useRevenueAccountOptions();
-  const flags = derived?.codingFlags ?? [];
   return (
     <div className="space-y-3 rounded-md border border-border/60 p-3">
-      <p className="text-xs font-medium text-muted-foreground">Revenue accounting</p>
-
-      <DialogField label="Restriction type" htmlFor="rc-restriction">
-        <DialogSelect
-          id="rc-restriction"
-          value={s.restrictionType || NONE}
-          onValueChange={(v) => set("restrictionType", v)}
-          options={RESTRICTION_TYPE_OPTIONS}
+      <p className="text-xs font-medium text-muted-foreground">Restriction</p>
+      <p className="text-xs text-muted-foreground">{RESTRICTION_AXIS_HINT}</p>
+      <DialogField label="Regional" htmlFor="ra-regional">
+        <AxisSelect
+          id="ra-regional"
+          value={s.regionalRestrictionType}
+          onValueChange={(v) => setAxis("regionalRestrictionType", v)}
         />
       </DialogField>
-      <DialogField label="Restriction evidence" htmlFor="rc-evidence">
-        <Textarea
-          id="rc-evidence"
-          className="text-sm min-h-[48px]"
-          value={s.restrictionEvidence}
-          onChange={(e) => set("restrictionEvidence", e.target.value)}
-          placeholder="Where the restriction is documented (grant letter section, email…)"
-          rows={2}
+      <DialogField label="Fund use" htmlFor="ra-usage">
+        <AxisSelect
+          id="ra-usage"
+          value={s.usageRestrictionType}
+          onValueChange={(v) => setAxis("usageRestrictionType", v)}
         />
       </DialogField>
-      <DialogField label="Purpose (verbatim)" htmlFor="rc-purpose">
+      <DialogField label="Time" htmlFor="ra-time">
+        <AxisSelect
+          id="ra-time"
+          value={s.timeRestrictionType}
+          onValueChange={(v) => setAxis("timeRestrictionType", v)}
+        />
+      </DialogField>
+      <DialogField label="Purpose (verbatim)" htmlFor="ra-purpose">
         <Textarea
-          id="rc-purpose"
+          id="ra-purpose"
           className="text-sm min-h-[48px]"
           value={s.purposeVerbatim}
-          onChange={(e) => set("purposeVerbatim", e.target.value)}
+          onChange={(e) => setAxis("purposeVerbatim", e.target.value)}
           placeholder="Donor's stated purpose, copied verbatim"
           rows={2}
         />
       </DialogField>
-      <DialogField label="Deferred revenue" htmlFor="rc-deferred">
-        <DialogSelect
-          id="rc-deferred"
-          value={s.deferredRevenue || NONE}
-          onValueChange={(v) => set("deferredRevenue", v)}
-          options={DEFERRED_REVENUE_OPTIONS}
-        />
-      </DialogField>
-      <DialogField label="Deferred reason" htmlFor="rc-deferred-reason">
-        <Textarea
-          id="rc-deferred-reason"
-          className="text-sm min-h-[48px]"
-          value={s.deferredRevenueReason}
-          onChange={(e) => set("deferredRevenueReason", e.target.value)}
-          placeholder="Why this is (or isn't) deferred"
-          rows={2}
-        />
-      </DialogField>
+    </div>
+  );
+}
 
-      <div className="space-y-1 rounded-md bg-muted/40 p-2">
-        <p className="text-xs font-medium text-muted-foreground">Derived QuickBooks coding</p>
-        <CodingValue label="Object Code" derived={derived?.objectCode} override={s.objectCodeOverride} />
-        <CodingValue label="Location" derived={derived?.revenueLocation} override={s.revenueLocationOverride} />
-        <CodingValue label="Class" derived={derived?.revenueClass} override={s.revenueClassOverride} />
-        {flags.length ? (
-          <ul className="mt-1 space-y-0.5">
-            {flags.map((f) => (
-              <li key={f} className="text-xs text-amber-600 dark:text-amber-500">
-                {CODING_FLAG_LABELS[f] ?? f}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {derived == null ? (
-          <p className="text-xs text-muted-foreground">Coding is derived on save.</p>
-        ) : null}
-      </div>
-
-      <DialogField label="Object Code override" htmlFor="rc-oc-override">
-        <DialogSelect
-          id="rc-oc-override"
-          value={s.objectCodeOverride || NONE}
-          onValueChange={(v) => set("objectCodeOverride", v)}
-          options={accountOptions}
-          placeholder="— Use derived —"
-        />
-      </DialogField>
-      <DialogField label="Location override" htmlFor="rc-loc-override">
-        <DialogSelect
-          id="rc-loc-override"
-          value={s.revenueLocationOverride || NONE}
-          onValueChange={(v) => set("revenueLocationOverride", v)}
-          options={LOCATION_OPTIONS}
-          placeholder="— Use derived —"
-        />
-      </DialogField>
-      <DialogField label="Class override" htmlFor="rc-class-override">
-        <Input
-          id="rc-class-override"
-          className="h-8 text-sm"
-          value={s.revenueClassOverride}
-          onChange={(e) => set("revenueClassOverride", e.target.value)}
-          placeholder="— Use derived —"
-        />
-      </DialogField>
+// Restriction badges for a list row: one badge per donor-restricted axis (a true
+// GAAP restriction). WF board-designated + unrestricted show no badge. "Intent"
+// when no axis is donor-restricted.
+function RestrictionBadges({
+  a,
+}: {
+  a: Pick<
+    PledgeAllocation | GiftAllocation,
+    "regionalRestrictionType" | "usageRestrictionType" | "timeRestrictionType"
+  >;
+}) {
+  const labels: string[] = [];
+  if (a.usageRestrictionType === "donor_restricted") labels.push("Use");
+  if (a.regionalRestrictionType === "donor_restricted") labels.push("Region");
+  if (a.timeRestrictionType === "donor_restricted") labels.push("Time");
+  if (!labels.length) return <span className="text-muted-foreground">Intent</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {labels.map((label) => (
+        <Badge key={label} variant="secondary" className="gap-1 whitespace-nowrap">
+          <Lock className="h-3 w-3" />
+          {label}
+        </Badge>
+      ))}
     </div>
   );
 }
@@ -617,9 +534,9 @@ const GIFT_HEADERS = [
   { key: "restriction", label: "Restriction" },
 ];
 
-// Small badge for a direct/indirect reimbursable-share tag, or an em-dash when
+// Small badge for a direct/indirect reimbursement-type tag, or an em-dash when
 // untagged. Direct is the visually distinct one since it's excluded from goals.
-function ReimbursableShareCell({ value }: { value: string | null | undefined }) {
+function ReimbursementTypeCell({ value }: { value: string | null | undefined }) {
   if (value === "direct") {
     return (
       <Badge variant="outline" className="whitespace-nowrap border-amber-500 text-amber-700">
@@ -640,12 +557,12 @@ function ReimbursableShareCell({ value }: { value: string | null | undefined }) 
 // Sum of subAmounts on direct-tagged allocations — the portion excluded from
 // goal analytics. Returns null when nothing is direct-tagged.
 function directExcludedTotal(
-  allocations: ReadonlyArray<{ reimbursableShare?: string | null; subAmount?: string | null }>,
+  allocations: ReadonlyArray<{ reimbursementType?: string | null; subAmount?: string | null }>,
 ): number | null {
   let sum = 0;
   let any = false;
   for (const a of allocations) {
-    if (a.reimbursableShare === "direct") {
+    if (a.reimbursementType === "direct") {
       any = true;
       sum += parseAmount(a.subAmount ?? null) ?? 0;
     }
@@ -657,15 +574,16 @@ function directExcludedTotal(
 /* Pledge allocation dialog (add + edit)                                     */
 /* ──────────────────────────────────────────────────────────────────────── */
 
-type PledgeFormState = CodingFormState & {
+type PledgeFormState = RestrictionAxisState & {
   subAmount: string;
   entityId: string;
   intendedUsage: string;
   grantYear: string;
   expectedPaymentDate: string;
   regionIds: string[];
-  formallyRestricted: boolean;
-  reimbursableShare: string;
+  reimbursementType: string;
+  conditional: string;
+  conditionsMet: string;
   status: string;
   fundableProjectId: string;
   directToSchool: boolean;
@@ -677,15 +595,16 @@ type PledgeFormState = CodingFormState & {
 
 function pledgeStateFrom(a: PledgeAllocation | null): PledgeFormState {
   return {
-    ...codingStateFrom(a),
+    ...restrictionAxisStateFrom(a),
     subAmount: a?.subAmount ?? "",
     entityId: a?.entityId ?? "",
     intendedUsage: a?.intendedUsage ?? "",
     grantYear: a?.grantYear ?? "",
     expectedPaymentDate: a?.expectedPaymentDate ?? "",
     regionIds: a?.regionIds ?? [],
-    formallyRestricted: a?.formallyRestricted ?? false,
-    reimbursableShare: a?.reimbursableShare ?? "",
+    reimbursementType: a?.reimbursementType ?? "",
+    conditional: a?.conditional ?? "",
+    conditionsMet: a?.conditionsMet ?? "no",
     status: a?.status ?? "",
     fundableProjectId: a?.fundableProjectId ?? "",
     directToSchool: a?.directToSchool ?? false,
@@ -733,7 +652,7 @@ function PledgeAllocationDialog({
 
   function buildBody(): CreatePledgeAllocationBody | UpdatePledgeAllocationBody {
     const amount = parseAmount(s.subAmount);
-    const coding = codingBodyFrom(s);
+    const axes = restrictionAxisBody(s);
     if (mode === "edit") {
       const body: UpdatePledgeAllocationBody = {
         subAmount: amount == null ? null : String(amount),
@@ -742,8 +661,10 @@ function PledgeAllocationDialog({
         grantYear: noneToNull(s.grantYear),
         expectedPaymentDate: emptyToNull(s.expectedPaymentDate),
         regionIds: s.regionIds,
-        formallyRestricted: s.formallyRestricted,
-        reimbursableShare: (noneToNull(s.reimbursableShare) as ReimbursableShare | null) ?? null,
+        ...axes,
+        reimbursementType: (noneToNull(s.reimbursementType) as ReimbursementType | null) ?? null,
+        conditional: (noneToNull(s.conditional) as OpportunityConditional | null) ?? null,
+        conditionsMet: s.conditionsMet as OpportunityConditionsMet,
         status: (noneToNull(s.status) as PledgeAllocationStatus | null) ?? null,
         fundableProjectId: noneToNull(s.fundableProjectId),
         directToSchool: s.directToSchool,
@@ -751,12 +672,13 @@ function PledgeAllocationDialog({
         contingent: s.contingent,
         conditions: emptyToNull(s.conditions),
         notes: emptyToNull(s.notes),
-        ...coding,
+        purposeVerbatim: emptyToNull(s.purposeVerbatim),
       };
       return body;
     }
     const body: CreatePledgeAllocationBody = {
-      formallyRestricted: s.formallyRestricted,
+      ...axes,
+      conditionsMet: s.conditionsMet as OpportunityConditionsMet,
       directToSchool: s.directToSchool,
       contingent: s.contingent,
     };
@@ -766,22 +688,19 @@ function PledgeAllocationDialog({
     if (noneToNull(s.grantYear)) body.grantYear = s.grantYear;
     if (emptyToNull(s.expectedPaymentDate)) body.expectedPaymentDate = s.expectedPaymentDate;
     if (s.regionIds.length) body.regionIds = s.regionIds;
-    if (noneToNull(s.reimbursableShare)) body.reimbursableShare = s.reimbursableShare as ReimbursableShare;
+    if (noneToNull(s.reimbursementType)) body.reimbursementType = s.reimbursementType as ReimbursementType;
+    if (noneToNull(s.conditional)) body.conditional = s.conditional as OpportunityConditional;
     if (noneToNull(s.status)) body.status = s.status as PledgeAllocationStatus;
     if (noneToNull(s.fundableProjectId)) body.fundableProjectId = s.fundableProjectId;
     if (emptyToNull(s.schoolRecipientId)) body.schoolRecipientId = s.schoolRecipientId.trim();
     if (emptyToNull(s.conditions)) body.conditions = s.conditions.trim();
     if (emptyToNull(s.notes)) body.notes = s.notes.trim();
-    if (coding.restrictionType != null) body.restrictionType = coding.restrictionType;
-    if (coding.restrictionEvidence != null) body.restrictionEvidence = coding.restrictionEvidence;
-    if (coding.purposeVerbatim != null) body.purposeVerbatim = coding.purposeVerbatim;
-    if (coding.deferredRevenue != null) body.deferredRevenue = coding.deferredRevenue;
-    if (coding.deferredRevenueReason != null) body.deferredRevenueReason = coding.deferredRevenueReason;
-    if (coding.objectCodeOverride != null) body.objectCodeOverride = coding.objectCodeOverride;
-    if (coding.revenueLocationOverride != null) body.revenueLocationOverride = coding.revenueLocationOverride;
-    if (coding.revenueClassOverride != null) body.revenueClassOverride = coding.revenueClassOverride;
+    if (emptyToNull(s.purposeVerbatim)) body.purposeVerbatim = s.purposeVerbatim.trim();
     return body;
   }
+
+  const setAxis = (k: keyof RestrictionAxisState, v: string) =>
+    setS((prev) => ({ ...prev, [k]: v }));
 
   async function handleSave() {
     if (saving) return;
@@ -865,26 +784,45 @@ function PledgeAllocationDialog({
             />
           </DialogField>
 
-          <DialogField label="Reimbursable share" htmlFor="pa-share">
+          <DialogField label="Conditional" htmlFor="pa-conditional">
             <DialogSelect
-              id="pa-share"
-              value={s.reimbursableShare || NONE}
-              onValueChange={(v) => set("reimbursableShare", v)}
-              options={REIMBURSABLE_SHARE_OPTIONS}
+              id="pa-conditional"
+              value={s.conditional || NONE}
+              onValueChange={(v) => set("conditional", v)}
+              options={CONDITIONAL_OPTIONS}
             />
-            <p className="mt-1 text-xs text-muted-foreground">{REIMBURSABLE_SHARE_HINT}</p>
+          </DialogField>
+
+          <DialogField label="Conditions met" htmlFor="pa-conditions-met">
+            <Select
+              value={s.conditionsMet || "no"}
+              onValueChange={(v) => set("conditionsMet", v)}
+            >
+              <SelectTrigger id="pa-conditions-met" className="h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                {CONDITIONS_MET_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </DialogField>
+
+          <DialogField label="Reimbursement type" htmlFor="pa-reimb">
+            <DialogSelect
+              id="pa-reimb"
+              value={s.reimbursementType || NONE}
+              onValueChange={(v) => set("reimbursementType", v)}
+              options={REIMBURSEMENT_TYPE_OPTIONS}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">{REIMBURSEMENT_TYPE_HINT}</p>
           </DialogField>
 
           <MoreDetails>
-            <DialogField label="Restriction">
-              <CheckboxField
-                id="pa-restricted"
-                checked={s.formallyRestricted}
-                onCheckedChange={(v) => set("formallyRestricted", v)}
-                label="Formally restricted by grant letter"
-                hint={RESTRICTED_HINT}
-              />
-            </DialogField>
+            <RestrictionAxisFields s={s} setAxis={setAxis} />
             <DialogField label="Status" htmlFor="pa-status">
               <DialogSelect
                 id="pa-status"
@@ -960,7 +898,6 @@ function PledgeAllocationDialog({
                 rows={2}
               />
             </DialogField>
-            <RevenueCodingFields s={s} set={set} derived={initial} />
           </MoreDetails>
         </div>
         <DialogFooter className="sm:justify-between">
@@ -1156,17 +1093,10 @@ export function PledgeAllocationsEditor({
                   {regionLabels.length ? regionLabels.join(", ") : "—"}
                 </TableCell>
                 <TableCell data-testid={`text-opp-alloc-${a.id}-share`}>
-                  <ReimbursableShareCell value={a.reimbursableShare} />
+                  <ReimbursementTypeCell value={a.reimbursementType} />
                 </TableCell>
                 <TableCell>
-                  {a.formallyRestricted ? (
-                    <Badge variant="secondary" className="gap-1 whitespace-nowrap">
-                      <Lock className="h-3 w-3" />
-                      Restricted
-                    </Badge>
-                  ) : (
-                    <span className="text-muted-foreground">Intent</span>
-                  )}
+                  <RestrictionBadges a={a} />
                 </TableCell>
               </TableRow>
             );
@@ -1204,15 +1134,13 @@ export function PledgeAllocationsEditor({
 /* Gift allocation dialog (add + edit)                                       */
 /* ──────────────────────────────────────────────────────────────────────── */
 
-type GiftFormState = CodingFormState & {
+type GiftFormState = RestrictionAxisState & {
   subAmount: string;
   entityId: string;
   intendedUsage: string;
   grantYear: string;
   regionIds: string[];
-  formalRegionalRestriction: boolean;
-  formalFundUseRestriction: boolean;
-  reimbursableShare: string;
+  reimbursementType: string;
   countsTowardGoal: boolean;
   fundableProjectId: string;
   schoolRecipientId: string;
@@ -1222,15 +1150,13 @@ type GiftFormState = CodingFormState & {
 
 function giftStateFrom(a: GiftAllocation | null): GiftFormState {
   return {
-    ...codingStateFrom(a),
+    ...restrictionAxisStateFrom(a),
     subAmount: a?.subAmount ?? "",
     entityId: a?.entityId ?? "",
     intendedUsage: a?.intendedUsage ?? "",
     grantYear: a?.grantYear ?? "",
     regionIds: a?.regionIds ?? [],
-    formalRegionalRestriction: a?.formalRegionalRestriction ?? false,
-    formalFundUseRestriction: a?.formalFundUseRestriction ?? false,
-    reimbursableShare: a?.reimbursableShare ?? "",
+    reimbursementType: a?.reimbursementType ?? "",
     countsTowardGoal: a?.countsTowardGoal ?? true,
     fundableProjectId: a?.fundableProjectId ?? "",
     schoolRecipientId: a?.schoolRecipientId ?? "",
@@ -1276,7 +1202,7 @@ function GiftAllocationDialog({
   // NOTE: displayUsage is trigger-maintained in the DB and must never be written.
   function buildBody(): CreateGiftAllocationBody | UpdateGiftAllocationBody {
     const amount = parseAmount(s.subAmount);
-    const coding = codingBodyFrom(s);
+    const axes = restrictionAxisBody(s);
     if (mode === "edit") {
       const body: UpdateGiftAllocationBody = {
         subAmount: amount == null ? null : String(amount),
@@ -1284,21 +1210,19 @@ function GiftAllocationDialog({
         intendedUsage: (noneToNull(s.intendedUsage) as IntendedUsage | null) ?? null,
         grantYear: noneToNull(s.grantYear),
         regionIds: s.regionIds,
-        formalRegionalRestriction: s.formalRegionalRestriction,
-        formalFundUseRestriction: s.formalFundUseRestriction,
-        reimbursableShare: (noneToNull(s.reimbursableShare) as ReimbursableShare | null) ?? null,
+        ...axes,
+        reimbursementType: (noneToNull(s.reimbursementType) as ReimbursementType | null) ?? null,
         countsTowardGoal: s.countsTowardGoal,
         fundableProjectId: noneToNull(s.fundableProjectId),
         schoolRecipientId: emptyToNull(s.schoolRecipientId),
         spendingStart: emptyToNull(s.spendingStart),
         spendingEnd: emptyToNull(s.spendingEnd),
-        ...coding,
+        purposeVerbatim: emptyToNull(s.purposeVerbatim),
       };
       return body;
     }
     const body: CreateGiftAllocationBody = {
-      formalRegionalRestriction: s.formalRegionalRestriction,
-      formalFundUseRestriction: s.formalFundUseRestriction,
+      ...axes,
       countsTowardGoal: s.countsTowardGoal,
     };
     if (amount != null) body.subAmount = String(amount);
@@ -1306,21 +1230,17 @@ function GiftAllocationDialog({
     if (noneToNull(s.intendedUsage)) body.intendedUsage = s.intendedUsage as IntendedUsage;
     if (noneToNull(s.grantYear)) body.grantYear = s.grantYear;
     if (s.regionIds.length) body.regionIds = s.regionIds;
-    if (noneToNull(s.reimbursableShare)) body.reimbursableShare = s.reimbursableShare as ReimbursableShare;
+    if (noneToNull(s.reimbursementType)) body.reimbursementType = s.reimbursementType as ReimbursementType;
     if (noneToNull(s.fundableProjectId)) body.fundableProjectId = s.fundableProjectId;
     if (emptyToNull(s.schoolRecipientId)) body.schoolRecipientId = s.schoolRecipientId.trim();
     if (emptyToNull(s.spendingStart)) body.spendingStart = s.spendingStart;
     if (emptyToNull(s.spendingEnd)) body.spendingEnd = s.spendingEnd;
-    if (coding.restrictionType != null) body.restrictionType = coding.restrictionType;
-    if (coding.restrictionEvidence != null) body.restrictionEvidence = coding.restrictionEvidence;
-    if (coding.purposeVerbatim != null) body.purposeVerbatim = coding.purposeVerbatim;
-    if (coding.deferredRevenue != null) body.deferredRevenue = coding.deferredRevenue;
-    if (coding.deferredRevenueReason != null) body.deferredRevenueReason = coding.deferredRevenueReason;
-    if (coding.objectCodeOverride != null) body.objectCodeOverride = coding.objectCodeOverride;
-    if (coding.revenueLocationOverride != null) body.revenueLocationOverride = coding.revenueLocationOverride;
-    if (coding.revenueClassOverride != null) body.revenueClassOverride = coding.revenueClassOverride;
+    if (emptyToNull(s.purposeVerbatim)) body.purposeVerbatim = s.purposeVerbatim.trim();
     return body;
   }
+
+  const setAxis = (k: keyof RestrictionAxisState, v: string) =>
+    setS((prev) => ({ ...prev, [k]: v }));
 
   async function handleSave() {
     if (saving) return;
@@ -1391,14 +1311,14 @@ function GiftAllocationDialog({
             />
           </DialogField>
 
-          <DialogField label="Reimbursable share" htmlFor="ga-share">
+          <DialogField label="Reimbursement type" htmlFor="ga-reimb">
             <DialogSelect
-              id="ga-share"
-              value={s.reimbursableShare || NONE}
-              onValueChange={(v) => set("reimbursableShare", v)}
-              options={REIMBURSABLE_SHARE_OPTIONS}
+              id="ga-reimb"
+              value={s.reimbursementType || NONE}
+              onValueChange={(v) => set("reimbursementType", v)}
+              options={REIMBURSEMENT_TYPE_OPTIONS}
             />
-            <p className="mt-1 text-xs text-muted-foreground">{REIMBURSABLE_SHARE_HINT}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{REIMBURSEMENT_TYPE_HINT}</p>
           </DialogField>
 
           <DialogField label="Goal tracking" htmlFor="ga-counts-goal">
@@ -1412,23 +1332,7 @@ function GiftAllocationDialog({
           </DialogField>
 
           <MoreDetails>
-            <DialogField label="Restriction">
-              <div className="space-y-2">
-                <CheckboxField
-                  id="ga-use-rest"
-                  checked={s.formalFundUseRestriction}
-                  onCheckedChange={(v) => set("formalFundUseRestriction", v)}
-                  label="Formally restricted to this use"
-                  hint={RESTRICTED_HINT}
-                />
-                <CheckboxField
-                  id="ga-region-rest"
-                  checked={s.formalRegionalRestriction}
-                  onCheckedChange={(v) => set("formalRegionalRestriction", v)}
-                  label="Formally restricted to this region"
-                />
-              </div>
-            </DialogField>
+            <RestrictionAxisFields s={s} setAxis={setAxis} />
             <DialogField label="Fundable project" htmlFor="ga-project">
               <DialogSelect
                 id="ga-project"
@@ -1464,7 +1368,6 @@ function GiftAllocationDialog({
                 onChange={(e) => set("spendingEnd", e.target.value)}
               />
             </DialogField>
-            <RevenueCodingFields s={s} set={set} derived={initial} />
           </MoreDetails>
         </div>
         <DialogFooter className="sm:justify-between">
@@ -1614,7 +1517,6 @@ export function GiftAllocationsEditor({
           {allocations.map((a) => {
             const amt = parseAmount(a.subAmount);
             const regionLabels = (a.regionIds ?? []).map((id) => regionNames.get(id) ?? id);
-            const restricted = a.formalFundUseRestriction || a.formalRegionalRestriction;
             return (
               <TableRow
                 key={a.id}
@@ -1638,27 +1540,10 @@ export function GiftAllocationsEditor({
                   {regionLabels.length ? regionLabels.join(", ") : "—"}
                 </TableCell>
                 <TableCell data-testid={`text-gift-alloc-${a.id}-share`}>
-                  <ReimbursableShareCell value={a.reimbursableShare} />
+                  <ReimbursementTypeCell value={a.reimbursementType} />
                 </TableCell>
                 <TableCell>
-                  {restricted ? (
-                    <div className="flex flex-wrap gap-1">
-                      {a.formalFundUseRestriction ? (
-                        <Badge variant="secondary" className="gap-1 whitespace-nowrap">
-                          <Lock className="h-3 w-3" />
-                          Use
-                        </Badge>
-                      ) : null}
-                      {a.formalRegionalRestriction ? (
-                        <Badge variant="secondary" className="gap-1 whitespace-nowrap">
-                          <Lock className="h-3 w-3" />
-                          Region
-                        </Badge>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">Intent</span>
-                  )}
+                  <RestrictionBadges a={a} />
                 </TableCell>
               </TableRow>
             );

@@ -248,9 +248,25 @@ export const opportunityStageEnum = pgEnum("opportunity_stage", [
 // analytics (received, committed, open ask, weighted); untagged (null) and
 // indirect both still count. Never affects opportunity-status or pledge
 // paid-amount derivation (those keep summing all allocations). Manual entry only.
-export const reimbursableShareEnum = pgEnum("reimbursable_share", [
+//
+// Renamed from `reimbursable_share` → `reimbursement_type` (Task #449). The
+// values are unchanged; this is a Publish-time pg-type + column RENAME (confirm
+// in the Publish UI rather than diffing as drop+add; never push-force).
+export const reimbursementTypeEnum = pgEnum("reimbursement_type", [
   "direct",
   "indirect",
+]);
+
+// Three-axis restriction taxonomy (Task #449) — ONE shared pg enum reused by the
+// regional / fund-use / time restriction columns on BOTH gift_allocations and
+// pledge_allocations. `donor_restricted` = the funder formally restricts this
+// axis; `wf_restricted` = Wildflower board-designated (internal) restriction;
+// `unrestricted` = no restriction. Replaces the coarse "formally restricted"
+// booleans and the old restriction_type enum. Default `unrestricted`.
+export const restrictionAxisEnum = pgEnum("restriction_axis", [
+  "donor_restricted",
+  "wf_restricted",
+  "unrestricted",
 ]);
 
 export const opportunityConditionalEnum = pgEnum("opportunity_conditional", [

@@ -92,7 +92,6 @@ import {
   canonicalWinProbability,
   deriveOppFields,
 } from "../lib/pledgeStage";
-import { rederivePledgeAllocations } from "../lib/revenueCoding";
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
 import {
   donorDisplayColumns,
@@ -544,11 +543,15 @@ router.post(
       (body.stage !== undefined || body.lossType !== undefined) &&
       body.winProbability === undefined
     ) {
+      // Grant conditions moved onto pledge allocations (Task #449); a brand-new
+      // opportunity has none yet, so it defaults to non-conditional (90%).
+      // applyDerivedOppFields below re-canonicalises from the allocation rollup
+      // once allocations are added.
       const derivedStatus = deriveOppFields({
         stage: body.stage ?? null,
         lossType: body.lossType ?? null,
         writtenPledge: body.writtenPledge ?? null,
-        conditional: body.conditional ?? null,
+        conditional: null,
         grantLetterUrl: body.grantLetterUrl ?? null,
         awardedAmount: body.awardedAmount ?? null,
         paidAmount: 0,
@@ -556,7 +559,7 @@ router.post(
       const wp = canonicalWinProbability(
         derivedStatus,
         body.stage ?? null,
-        body.conditional ?? null,
+        null,
       );
       if (wp !== null) writeValues.winProbability = wp;
     }
@@ -626,11 +629,14 @@ router.patch(
       writeData.loanOrGrant = legacyCategoryToLoanOrGrant(body.fundraisingCategory);
     }
     if (stageOrLossTypeInBody && body.winProbability === undefined) {
+      // Conditions live on the pledge allocations now; the inline stamp uses the
+      // non-conditional default and applyDerivedOppFields below re-canonicalises
+      // win_probability from the allocation conditional rollup.
       const derivedStatus = deriveOppFields({
         stage: merged.stage ?? null,
         lossType: merged.lossType ?? null,
         writtenPledge: merged.writtenPledge ?? null,
-        conditional: merged.conditional ?? null,
+        conditional: null,
         grantLetterUrl: merged.grantLetterUrl ?? null,
         awardedAmount: merged.awardedAmount ?? null,
         paidAmount: 0,
@@ -638,7 +644,7 @@ router.patch(
       const wp = canonicalWinProbability(
         derivedStatus,
         merged.stage,
-        merged.conditional ?? null,
+        null,
       );
       if (wp !== null) writeData.winProbability = wp;
     }
@@ -683,15 +689,9 @@ router.patch(
       if (Number(existingCount) === 0) promptForReportingDeadlines = true;
     }
 
-    // A donor change shifts the derived revenue coding (payer type) of every
-    // allocation under this opportunity/pledge — re-derive the snapshots.
-    if (
-      existing.organizationId !== row.organizationId ||
-      existing.individualGiverPersonId !== row.individualGiverPersonId ||
-      existing.householdId !== row.householdId
-    ) {
-      await rederivePledgeAllocations(row.id);
-    }
+    // Revenue coding is no longer a persisted snapshot on the allocation
+    // (Task #449) — it's derived on demand from the allocation's scope + the
+    // gift/opportunity donor, so a donor change needs no allocation rewrite.
 
     await auditUpdate(req, "opportunity", row.id, existing as Record<string, unknown>, (final ?? row) as Record<string, unknown>, Object.keys(body), "Updated opportunity");
     res.json({ ...(final ?? row), promptForReportingDeadlines });

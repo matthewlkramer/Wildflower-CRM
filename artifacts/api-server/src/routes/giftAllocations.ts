@@ -9,7 +9,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
-import { deriveGiftAllocationCoding } from "../lib/revenueCoding";
+import { giftAllocationCodingPreview } from "../lib/revenueCoding";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -36,22 +36,11 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateGiftAllocationBody, req.body, res);
     if (!body) return;
-    const coding = await deriveGiftAllocationCoding(body.giftId, {
-      restrictionType: body.restrictionType,
-      entityId: body.entityId,
-      intendedUsage: body.intendedUsage,
-      fundableProjectId: body.fundableProjectId,
-      regionIds: body.regionIds,
-    });
     const [row] = await db
       .insert(giftAllocations)
       .values({
         id: newId(),
         ...body,
-        objectCode: coding.objectCode,
-        revenueLocation: coding.revenueLocation,
-        revenueClass: coding.revenueClass,
-        codingFlags: coding.codingFlags,
       })
       .returning();
     res.status(201).json(row);
@@ -66,29 +55,28 @@ router.patch(
     const id = paramId(req);
     const [existing] = await db.select().from(giftAllocations).where(eq(giftAllocations.id, id));
     if (!existing) return notFound(res, "allocation");
-    const merged = {
-      giftId: body.giftId !== undefined ? body.giftId : existing.giftId,
-      restrictionType: body.restrictionType !== undefined ? body.restrictionType : existing.restrictionType,
-      entityId: body.entityId !== undefined ? body.entityId : existing.entityId,
-      intendedUsage: body.intendedUsage !== undefined ? body.intendedUsage : existing.intendedUsage,
-      fundableProjectId: body.fundableProjectId !== undefined ? body.fundableProjectId : existing.fundableProjectId,
-      regionIds: body.regionIds !== undefined ? body.regionIds : existing.regionIds,
-    };
-    const coding = await deriveGiftAllocationCoding(merged.giftId, merged);
     const [row] = await db
       .update(giftAllocations)
       .set({
         ...body,
-        objectCode: coding.objectCode,
-        revenueLocation: coding.revenueLocation,
-        revenueClass: coding.revenueClass,
-        codingFlags: coding.codingFlags,
         updatedAt: new Date(),
       })
       .where(eq(giftAllocations.id, id))
       .returning();
     if (!row) return notFound(res, "allocation");
     res.json(row);
+  }),
+);
+
+// On-demand revenue-coding preview (not persisted on the allocation). The
+// authoritative coding lives on the QuickBooks payment record; this surfaces a
+// live "coding instructions" preview derived from the allocation's scope.
+router.get(
+  "/gift-allocations/:id/coding-preview",
+  asyncHandler(async (req, res) => {
+    const preview = await giftAllocationCodingPreview(paramId(req));
+    if (!preview) return notFound(res, "allocation");
+    res.json(preview);
   }),
 );
 

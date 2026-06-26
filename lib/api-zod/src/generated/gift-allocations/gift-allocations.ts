@@ -28,29 +28,33 @@ export const ListGiftAllocationsResponse = zod.object({
   "subAmount": zod.string().nullish(),
   "grantYear": zod.string().nullish(),
   "entityId": zod.string().nullish(),
-  "formalRegionalRestriction": zod.boolean(),
   "intendedUsage": zod.enum(['gen_ops', 'growth', 'school_startup', 'teacher_training', 'project']).nullish(),
   "fundableProjectId": zod.string().nullish(),
-  "formalFundUseRestriction": zod.boolean(),
-  "reimbursableShare": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.').nullish().describe('Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count.'),
+  "regionalRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "usageRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "timeRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "reimbursementType": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)').nullish().describe('Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count.'),
   "countsTowardGoal": zod.boolean().describe('When false, this allocation\'s money is excluded from goal\/received analytics rollups (e.g. government reimbursement that doesn\'t advance the fundraising goal). Per-allocation; defaults true.'),
   "schoolRecipientId": zod.string().nullish(),
   "spendingStart": zod.string().date().nullish(),
   "spendingEnd": zod.string().date().nullish(),
   "regionIds": zod.array(zod.string()).nullish(),
   "displayUsage": zod.string().nullish().describe('Server-computed human-readable usage label (school name | usage label | usage + \' - \' + region names). Maintained by DB triggers; read-only.'),
-  "restrictionType": zod.enum(['unrestricted', 'purpose', 'time', 'both', 'unclear', 'na']).describe('CFO restriction taxonomy. \'unclear\' is never silently treated as unrestricted.').nullish(),
-  "restrictionEvidence": zod.string().nullish(),
   "purposeVerbatim": zod.string().nullish(),
-  "deferredRevenue": zod.enum(['yes', 'no', 'na']).nullish(),
+  "formalRegionalRestriction": zod.boolean().optional().describe('@deprecated — use regionalRestrictionType.'),
+  "formalFundUseRestriction": zod.boolean().optional().describe('@deprecated — use usageRestrictionType.'),
+  "reimbursableShare": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)').nullish().describe('@deprecated — renamed to reimbursementType.'),
+  "restrictionType": zod.enum(['unrestricted', 'purpose', 'time', 'both', 'unclear', 'na']).describe('@deprecated (Task #449) — superseded by the three RestrictionAxis fields. Retained only on deprecated read fields and legacy audit\/reconciler views.').nullish(),
+  "restrictionEvidence": zod.string().nullish(),
+  "deferredRevenue": zod.enum(['yes', 'no', 'na']).nullish().describe('@deprecated — coding snapshot moved to staged_payments.'),
   "deferredRevenueReason": zod.string().nullish(),
-  "objectCode": zod.string().nullish().describe('Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode.'),
+  "objectCode": zod.string().nullish(),
   "objectCodeOverride": zod.string().nullish(),
   "revenueLocation": zod.string().nullish(),
   "revenueLocationOverride": zod.string().nullish(),
   "revenueClass": zod.string().nullish(),
   "revenueClassOverride": zod.string().nullish(),
-  "codingFlags": zod.array(zod.string()).nullish().describe('Coding flags for human review (e.g. restriction_unclear, location_default).'),
+  "codingFlags": zod.array(zod.string()).nullish(),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })),
@@ -66,24 +70,18 @@ export const CreateGiftAllocationBody = zod.object({
   "subAmount": zod.string().optional(),
   "grantYear": zod.string().optional(),
   "entityId": zod.string().optional(),
-  "formalRegionalRestriction": zod.boolean().optional(),
+  "regionalRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).optional().describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "usageRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).optional().describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "timeRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).optional().describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
   "intendedUsage": zod.enum(['gen_ops', 'growth', 'school_startup', 'teacher_training', 'project']).optional(),
   "fundableProjectId": zod.string().optional(),
-  "formalFundUseRestriction": zod.boolean().optional(),
-  "reimbursableShare": zod.enum(['direct', 'indirect']).optional().describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.'),
+  "reimbursementType": zod.enum(['direct', 'indirect']).optional().describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)'),
   "countsTowardGoal": zod.boolean().optional(),
   "schoolRecipientId": zod.string().optional(),
   "spendingStart": zod.string().date().optional(),
   "spendingEnd": zod.string().date().optional(),
   "regionIds": zod.array(zod.string()).optional(),
-  "restrictionType": zod.enum(['unrestricted', 'purpose', 'time', 'both', 'unclear', 'na']).optional().describe('CFO restriction taxonomy. \'unclear\' is never silently treated as unrestricted.'),
-  "restrictionEvidence": zod.string().optional(),
-  "purposeVerbatim": zod.string().optional(),
-  "deferredRevenue": zod.enum(['yes', 'no', 'na']).optional(),
-  "deferredRevenueReason": zod.string().optional(),
-  "objectCodeOverride": zod.string().optional(),
-  "revenueLocationOverride": zod.string().optional(),
-  "revenueClassOverride": zod.string().optional()
+  "purposeVerbatim": zod.string().optional()
 })
 
 export const UpdateGiftAllocationParams = zod.object({
@@ -95,24 +93,18 @@ export const UpdateGiftAllocationBody = zod.object({
   "subAmount": zod.string().nullish(),
   "grantYear": zod.string().nullish(),
   "entityId": zod.string().nullish(),
-  "formalRegionalRestriction": zod.boolean().optional(),
+  "regionalRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).optional().describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "usageRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).optional().describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "timeRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).optional().describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
   "intendedUsage": zod.enum(['gen_ops', 'growth', 'school_startup', 'teacher_training', 'project']).nullish(),
   "fundableProjectId": zod.string().nullish(),
-  "formalFundUseRestriction": zod.boolean().optional(),
-  "reimbursableShare": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.').nullish(),
+  "reimbursementType": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)').nullish(),
   "countsTowardGoal": zod.boolean().optional(),
   "schoolRecipientId": zod.string().nullish(),
   "spendingStart": zod.string().date().nullish(),
   "spendingEnd": zod.string().date().nullish(),
   "regionIds": zod.array(zod.string()).nullish(),
-  "restrictionType": zod.enum(['unrestricted', 'purpose', 'time', 'both', 'unclear', 'na']).describe('CFO restriction taxonomy. \'unclear\' is never silently treated as unrestricted.').nullish(),
-  "restrictionEvidence": zod.string().nullish(),
-  "purposeVerbatim": zod.string().nullish(),
-  "deferredRevenue": zod.enum(['yes', 'no', 'na']).nullish(),
-  "deferredRevenueReason": zod.string().nullish(),
-  "objectCodeOverride": zod.string().nullish(),
-  "revenueLocationOverride": zod.string().nullish(),
-  "revenueClassOverride": zod.string().nullish()
+  "purposeVerbatim": zod.string().nullish()
 })
 
 export const UpdateGiftAllocationResponse = zod.object({
@@ -121,29 +113,33 @@ export const UpdateGiftAllocationResponse = zod.object({
   "subAmount": zod.string().nullish(),
   "grantYear": zod.string().nullish(),
   "entityId": zod.string().nullish(),
-  "formalRegionalRestriction": zod.boolean(),
   "intendedUsage": zod.enum(['gen_ops', 'growth', 'school_startup', 'teacher_training', 'project']).nullish(),
   "fundableProjectId": zod.string().nullish(),
-  "formalFundUseRestriction": zod.boolean(),
-  "reimbursableShare": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.').nullish().describe('Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count.'),
+  "regionalRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "usageRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "timeRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "reimbursementType": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)').nullish().describe('Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count.'),
   "countsTowardGoal": zod.boolean().describe('When false, this allocation\'s money is excluded from goal\/received analytics rollups (e.g. government reimbursement that doesn\'t advance the fundraising goal). Per-allocation; defaults true.'),
   "schoolRecipientId": zod.string().nullish(),
   "spendingStart": zod.string().date().nullish(),
   "spendingEnd": zod.string().date().nullish(),
   "regionIds": zod.array(zod.string()).nullish(),
   "displayUsage": zod.string().nullish().describe('Server-computed human-readable usage label (school name | usage label | usage + \' - \' + region names). Maintained by DB triggers; read-only.'),
-  "restrictionType": zod.enum(['unrestricted', 'purpose', 'time', 'both', 'unclear', 'na']).describe('CFO restriction taxonomy. \'unclear\' is never silently treated as unrestricted.').nullish(),
-  "restrictionEvidence": zod.string().nullish(),
   "purposeVerbatim": zod.string().nullish(),
-  "deferredRevenue": zod.enum(['yes', 'no', 'na']).nullish(),
+  "formalRegionalRestriction": zod.boolean().optional().describe('@deprecated — use regionalRestrictionType.'),
+  "formalFundUseRestriction": zod.boolean().optional().describe('@deprecated — use usageRestrictionType.'),
+  "reimbursableShare": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)').nullish().describe('@deprecated — renamed to reimbursementType.'),
+  "restrictionType": zod.enum(['unrestricted', 'purpose', 'time', 'both', 'unclear', 'na']).describe('@deprecated (Task #449) — superseded by the three RestrictionAxis fields. Retained only on deprecated read fields and legacy audit\/reconciler views.').nullish(),
+  "restrictionEvidence": zod.string().nullish(),
+  "deferredRevenue": zod.enum(['yes', 'no', 'na']).nullish().describe('@deprecated — coding snapshot moved to staged_payments.'),
   "deferredRevenueReason": zod.string().nullish(),
-  "objectCode": zod.string().nullish().describe('Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode.'),
+  "objectCode": zod.string().nullish(),
   "objectCodeOverride": zod.string().nullish(),
   "revenueLocation": zod.string().nullish(),
   "revenueLocationOverride": zod.string().nullish(),
   "revenueClass": zod.string().nullish(),
   "revenueClassOverride": zod.string().nullish(),
-  "codingFlags": zod.array(zod.string()).nullish().describe('Coding flags for human review (e.g. restriction_unclear, location_default).'),
+  "codingFlags": zod.array(zod.string()).nullish(),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })
@@ -151,4 +147,24 @@ export const UpdateGiftAllocationResponse = zod.object({
 export const DeleteGiftAllocationParams = zod.object({
   "id": zod.coerce.string()
 })
+
+/**
+ * Returns the derived Object Code / Location / Class / flags for this gift
+allocation, computed on the fly from its donor, fund entity, restriction
+axes and region — never persisted on the allocation. The reviewer copies
+the result onto the linked staged_payments coding (where the snapshot now
+lives).
+
+ * @summary Live revenue-coding instructions derived on demand from this gift allocation's scope.
+ */
+export const GetGiftAllocationCodingPreviewParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetGiftAllocationCodingPreviewResponse = zod.object({
+  "objectCode": zod.string().nullable().describe('Derived Object Code (e.g. 4000.1 \/ 4100.2), or null when it can\'t be resolved cleanly.'),
+  "location": zod.string().nullable().describe('Derived Revenue Location.'),
+  "revenueClass": zod.string().nullable().describe('Derived Suggested Class.'),
+  "flags": zod.array(zod.string()).describe('Ambiguities surfaced for human review (e.g. location_default, payer_type_assumed, loan_no_revenue_account).')
+}).describe('Live, on-demand revenue-coding instructions derived from an allocation\'s\nscope (donor kind, fund entity, restriction axes, region). NOT persisted\non the allocation — a read-only preview the reviewer copies onto the\nlinked staged_payments coding snapshot.\n')
 

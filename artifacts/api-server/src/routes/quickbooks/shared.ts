@@ -183,9 +183,9 @@ export const stagedSelect = {
     | {
         entityName: string | null;
         usageLabel: string | null;
-        restrictionType: string | null;
-        regionalRestriction: boolean;
-        fundUseRestriction: boolean;
+        regionalRestrictionType: string;
+        usageRestrictionType: string;
+        timeRestrictionType: string;
       }[]
     | null
   >`(
@@ -193,9 +193,9 @@ export const stagedSelect = {
       jsonb_build_object(
         'entityName', e.name,
         'usageLabel', COALESCE(NULLIF(ga.display_usage, ''), ga.intended_usage::text),
-        'restrictionType', ga.restriction_type::text,
-        'regionalRestriction', ga.formal_regional_restriction,
-        'fundUseRestriction', ga.formal_fund_use_restriction
+        'regionalRestrictionType', ga.regional_restriction_type::text,
+        'usageRestrictionType', ga.usage_restriction_type::text,
+        'timeRestrictionType', ga.time_restriction_type::text
       ) ORDER BY ga.created_at, ga.id
     )
     FROM gift_allocations ga

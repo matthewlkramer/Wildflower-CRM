@@ -104,20 +104,6 @@ const CATEGORY_OPTIONS = [
   { value: "loan_capital", label: "Loan Capital" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<FundraisingCategory>>;
 
-const CONDITIONAL_OPTIONS = [
-  { value: "unconditional", label: "Unconditional" },
-  { value: "conditional_unspecified", label: "Conditional (unspecified)" },
-  { value: "reimbursable", label: "Reimbursable" },
-  { value: "conditional_on_funder_determination", label: "Conditional — funder determination" },
-  { value: "conditional_on_target", label: "Conditional — on target" },
-] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityConditional>>;
-
-const CONDITIONS_MET_OPTIONS = [
-  { value: "no", label: "No" },
-  { value: "partial", label: "Partial" },
-  { value: "yes", label: "Yes" },
-] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityConditionsMet>>;
-
 const CONDITIONS_MET_LABELS: Record<OpportunityConditionsMet, string> = {
   no: "No",
   partial: "Partial",
@@ -655,40 +641,15 @@ function OppView({
 
             <FieldCard
               title="Conditions"
-              empty={
-                !opp.conditional && !opp.conditions && opp.conditionsMet === "no"
-              }
+              empty={!opp.conditionalRollup && opp.conditionsMetRollup === "no"}
             >
-              <div className="space-y-1">
-                <Row label="Conditional">
-                  <InlineEditSelect
-                    label="Conditional"
-                    testIdBase="opp-conditional"
-                    value={opp.conditional ?? null}
-                    options={CONDITIONAL_OPTIONS}
-                    display={formatEnum(opp.conditional) || "—"}
-                    onSave={(next) => patch({ conditional: next })}
-                  />
-                </Row>
-                <Row label="Conditions met">
-                  <InlineEditSelect
-                    label="Conditions met"
-                    testIdBase="opp-conditions-met"
-                    value={opp.conditionsMet}
-                    options={CONDITIONS_MET_OPTIONS}
-                    allowNull={false}
-                    display={CONDITIONS_MET_LABELS[opp.conditionsMet]}
-                    onSave={(next) => patch({ conditionsMet: next ?? "no" })}
-                  />
-                </Row>
-                <div className="pt-2">
-                  <EditableNote
-                    label="Conditions"
-                    testIdBase="opp-conditions"
-                    value={opp.conditions ?? null}
-                    onSave={(next) => patch({ conditions: next })}
-                  />
-                </div>
+              <div className="space-y-2 text-sm">
+                <DerivedRow label="Conditional" hint="derived from allocations">
+                  {formatEnum(opp.conditionalRollup) || "—"}
+                </DerivedRow>
+                <DerivedRow label="Conditions met" hint="derived from allocations">
+                  {CONDITIONS_MET_LABELS[opp.conditionsMetRollup ?? "no"]}
+                </DerivedRow>
               </div>
             </FieldCard>
 
@@ -743,7 +704,7 @@ function OppView({
                   pledgeOrOpportunityId={opp.id}
                   allocations={opp.allocations ?? []}
                   totalAmount={targetAmount}
-                  reimbursablePrompt={opp.conditional === "reimbursable"}
+                  reimbursablePrompt={opp.conditionalRollup === "reimbursable"}
                 />
               </div>
             </RelatedCard>

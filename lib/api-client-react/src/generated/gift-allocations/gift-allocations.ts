@@ -26,6 +26,7 @@ import type {
   GiftAllocationList,
   ListGiftAllocationsParams,
   NotFoundResponse,
+  RevenueCodingPreview,
   UpdateGiftAllocationBody
 } from '../api.schemas';
 
@@ -308,4 +309,83 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeleteGiftAllocationMutationOptions(options));
     }
+    /**
+ * Returns the derived Object Code / Location / Class / flags for this gift
+allocation, computed on the fly from its donor, fund entity, restriction
+axes and region — never persisted on the allocation. The reviewer copies
+the result onto the linked staged_payments coding (where the snapshot now
+lives).
+
+ * @summary Live revenue-coding instructions derived on demand from this gift allocation's scope.
+ */
+export const getGetGiftAllocationCodingPreviewUrl = (id: string,) => {
+
+
+  
+
+  return `/api/gift-allocations/${id}/coding-preview`
+}
+
+export const getGiftAllocationCodingPreview = async (id: string, options?: RequestInit): Promise<RevenueCodingPreview> => {
+  
+  return customFetch<RevenueCodingPreview>(getGetGiftAllocationCodingPreviewUrl(id),
+  {      
+    ...options,
+    method: 'GET'
     
+    
+  }
+);}
+  
+
+
+
+
+export const getGetGiftAllocationCodingPreviewQueryKey = (id: string,) => {
+    return [
+    `/api/gift-allocations/${id}/coding-preview`
+    ] as const;
+    }
+
+    
+export const getGetGiftAllocationCodingPreviewQueryOptions = <TData = Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGiftAllocationCodingPreviewQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>> = ({ signal }) => getGiftAllocationCodingPreview(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetGiftAllocationCodingPreviewQueryResult = NonNullable<Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>>
+export type GetGiftAllocationCodingPreviewQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Live revenue-coding instructions derived on demand from this gift allocation's scope.
+ */
+
+export function useGetGiftAllocationCodingPreview<TData = Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>, TError = ErrorType<NotFoundResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetGiftAllocationCodingPreviewQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+

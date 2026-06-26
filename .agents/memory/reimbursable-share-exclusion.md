@@ -5,10 +5,11 @@ description: How direct-tagged reimbursable allocation lines are excluded from g
 
 # Reimbursable direct/indirect share exclusion
 
-Allocation lines (pledge + gift) carry a nullable `reimbursableShare`
-(`direct` | `indirect`) tag. Full award/reimbursement amounts are always
-recorded; goal analytics EXCLUDE only DIRECT-tagged lines. Untagged (null) and
-indirect both still count.
+Allocation lines (pledge + gift) carry a nullable `reimbursementType`
+(`direct` | `indirect`) tag — **renamed from `reimbursableShare`** (pg type
+`reimbursable_share` → `reimbursement_type`, Task #449). Full
+award/reimbursement amounts are always recorded; goal analytics EXCLUDE only
+DIRECT-tagged lines. Untagged (null) and indirect both still count.
 
 **Rule:** the exclusion predicate is `<col> IS DISTINCT FROM 'direct'`
 (null-safe — null is NOT excluded). Centralized in analytics.ts as module consts

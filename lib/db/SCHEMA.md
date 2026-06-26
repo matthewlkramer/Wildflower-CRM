@@ -174,11 +174,20 @@ merge — see "Re-importing" below.)
 - `gift_allocations` — line items within a gift. `entity_id` → `entities`,
   `fundable_project_id` → `fundable_projects` (when project usage),
   `school_recipient_id` → `schools`, `grant_year`, `region_ids text[]`. Restriction
-  booleans `formal_regional_restriction` / `formal_fund_use_restriction` (where vs
-  what). `display_usage` is a **trigger-maintained, read-only** human label
+  is captured on **three independent axes** —
+  `regional_restriction_type` / `usage_restriction_type` / `time_restriction_type`,
+  each a `restriction_axis` (`donor_restricted` / `wf_restricted` / `unrestricted`),
+  NOT NULL default `unrestricted` (see below). `display_usage` is a
+  **trigger-maintained, read-only** human label
   (`compute_gift_allocation_display_usage` + triggers in `post-import-fixups.sql`);
   renames of a school / region / fundable project cascade into it — **never write
-  `display_usage` directly**. Plus revenue-coding capture (below).
+  `display_usage` directly**. The revenue-coding snapshot no longer lives here — it
+  is derived on demand from scope and captured on `staged_payments` (below). The old
+  coarse `formal_*` restriction booleans and the per-allocation coding columns
+  (`object_code`(+`_override`), `revenue_location`(+`_override`),
+  `revenue_class`(+`_override`), `coding_flags`, `restriction_type`,
+  `restriction_evidence`, `deferred_revenue`(+`_reason`)) are **`@deprecated`** —
+  still physically present for the deprecate-then-drop window, no longer written.
 
 ### Donor XOR — three mutually-exclusive donor options
 
@@ -206,21 +215,54 @@ approved/reconciled into a gift (via `validateGiftInvariants`), not by the table
 nullable `fundable_project_id` (populated only when usage = `project`). Parent rows
 are header-only and do not carry these.
 
+## Restriction taxonomy (three axes)
+
+Each allocation row carries **three independent restriction axes** — regional, fund-use
+(`usage`), and time — each a `restriction_axis` enum: `donor_restricted` /
+`wf_restricted` / `unrestricted`, NOT NULL default `unrestricted`. A line codes as
+*restricted* (→ 4100.x object code) when **ANY** axis is `donor_restricted`;
+`wf_restricted` (an internal Wildflower designation) and `unrestricted` both code as
+unrestricted (4000.x). This replaces the coarse `formal_*` booleans and the old
+`restriction_type` enum (`unrestricted` / `purpose` / `time` / `both` / `unclear` /
+`na`), which are now `@deprecated` (kept physical until the deferred drop). Because the
+axes default `unrestricted`, there is no longer an `unclear` review-flag path from
+restriction.
+
 ## Revenue-accounting coding capture (CFO "Revenue Extractor")
 
-The allocation tables (`pledge_allocations` / `gift_allocations`) capture accounting
-codes alongside scope, derived from donor kind + fundable project + region by
-`revenueCoding.ts` (lib + route) with per-fund-entity overrides in
+Revenue-coding is **derived on demand** from allocation scope (donor kind + fundable
+project + region + the three restriction axes) by `revenueCoding.ts` /
+`@workspace/api-zod`'s `deriveRevenueCoding`, with per-fund-entity overrides in
 `entity_coding_rules` (keyed on `entities.id` — fiscal-sponsee "SPO" defaults:
-`force_restricted` / `location` / `revenue_class`).
-- `restriction_type` enum: `unrestricted` / `purpose` / `time` / `both` /
-  `unclear` / `na`. **`unclear` is never silently defaulted to unrestricted — it
-  flags for human review.**
+`force_restricted` / `location` / `revenue_class`). It is **no longer persisted on the
+allocation rows**; the allocation editors show a live read-only preview and the
+reviewer captures the resolved snapshot onto the matching `staged_payments` row.
+- **`staged_payments` coding snapshot** — `object_code`(+`_override`),
+  `revenue_location`(+`_override`), `revenue_class`(+`_override`), `coding_flags text[]`,
+  `deferred_revenue` enum (`yes` / `no` / `na`), `deferred_revenue_reason`. Captured
+  via the staged-payment coding write endpoint; describes the QuickBooks *payment*, not
+  the donor's intent.
 - `deferred_revenue` enum: `yes` / `no` / `na` (CRM captures the answer; it does NOT
   compute AR).
 - `revenue_accounts` — the GL account list the coder maps onto.
 - `entity_coding_rules` — per-fund-entity overrides (PK `entities.id`;
   fiscal-sponsee defaults) applied during derivation.
+
+## Grant conditions (on pledge allocations)
+
+Grant conditions live on `pledge_allocations` — `conditional` (enum, nullable) +
+`conditions_met` (enum, default `no`). The opportunity header exposes a **derived,
+read-only rollup** (`conditionalRollup` / `conditionsMetRollup`, via
+`deriveConditionalRollup`): the opportunity is conditional when ANY pledge allocation
+is a genuinely-uncertain conditional kind, and conditions are met only when every
+conditional allocation has `conditions_met = yes`. This drives win-probability
+weighting — a conditional written pledge weights `0.7500` instead of `0.9000`. The old
+header `conditional` / `conditions` / `conditions_met` columns are kept physical but
+**write-deprecated** (source for the one-time backfill only).
+
+The `reimbursement_type` enum (`direct` / `indirect`, renamed from
+`reimbursable_share`) on both allocation tables tags direct-vs-indirect cost share;
+`direct`-tagged lines are recorded in full but **excluded** from goal analytics.
 
 ## Fundraising category (revenue vs loan capital)
 

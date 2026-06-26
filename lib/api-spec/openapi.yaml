@@ -1349,6 +1349,21 @@ paths:
       tags: [pledge-allocations]
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses: { "204": { description: Deleted } }
+  /pledge-allocations/{id}/coding-preview:
+    get:
+      operationId: getPledgeAllocationCodingPreview
+      tags: [pledge-allocations]
+      summary: Live revenue-coding instructions derived on demand from this pledge allocation's scope.
+      description: |
+        Returns the derived Object Code / Location / Class / flags for this
+        pledge allocation, computed on the fly from its donor, fund entity,
+        restriction axes and region — never persisted on the allocation. A
+        read-only preview the reviewer can use when the pledge converts to a
+        gift and its money is coded on the linked staged_payments row.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RevenueCodingPreview" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Gifts & payments ──────────────────────────────────────────────────────
   /gifts-and-payments:
@@ -1544,6 +1559,21 @@ paths:
       tags: [gift-allocations]
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses: { "204": { description: Deleted } }
+  /gift-allocations/{id}/coding-preview:
+    get:
+      operationId: getGiftAllocationCodingPreview
+      tags: [gift-allocations]
+      summary: Live revenue-coding instructions derived on demand from this gift allocation's scope.
+      description: |
+        Returns the derived Object Code / Location / Class / flags for this gift
+        allocation, computed on the fly from its donor, fund entity, restriction
+        axes and region — never persisted on the allocation. The reviewer copies
+        the result onto the linked staged_payments coding (where the snapshot now
+        lives).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RevenueCodingPreview" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Interactions (manual touchpoints) ────────────────────────────────────
   /interactions:
@@ -2699,6 +2729,28 @@ paths:
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/SetStagedPaymentNeedsResearchBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /staged-payments/{id}/set-coding:
+    post:
+      operationId: setStagedPaymentCoding
+      tags: [staged-payments]
+      summary: Set or clear the revenue-coding snapshot on a staged payment (the QuickBooks payment record).
+      description: |
+        Reviewer captures/edits the accounting coding for this QuickBooks
+        payment — Object Code, Revenue Location, Revenue Class (each with a
+        manual override), the deferred-revenue flag + reason, and the coding
+        flags. The coding snapshot now lives on the payment record, not on the
+        allocation; a live derivation is available per-allocation via
+        `/gift-allocations/{id}/coding-preview`. Only provided fields are
+        written; passing null clears that field. Orthogonal to reconcile status,
+        allowed on a row in any state.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SetStagedPaymentCodingBody" } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -4109,8 +4161,9 @@ components:
         funding:   { $ref: "#/components/schemas/ReconciliationLaneStatus" }
         crmRecord: { allOf: [ { $ref: "#/components/schemas/ReconciliationLaneStatus" } ], nullable: true }
     IntendedUsage: { type: string, enum: [gen_ops, growth, school_startup, teacher_training, project] }
-    ReimbursableShare: { type: string, enum: [direct, indirect], description: "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation." }
-    RestrictionType: { type: string, enum: [unrestricted, purpose, time, both, unclear, na], description: "CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted." }
+    ReimbursementType: { type: string, enum: [direct, indirect], description: "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)" }
+    RestrictionAxis: { type: string, enum: [donor_restricted, wf_restricted, unrestricted], description: "Per-axis restriction taxonomy applied independently to the regional / fund-use / time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none." }
+    RestrictionType: { type: string, enum: [unrestricted, purpose, time, both, unclear, na], description: "@deprecated (Task #449) — superseded by the three RestrictionAxis fields. Retained only on deprecated read fields and legacy audit/reconciler views." }
     DeferredRevenue: { type: string, enum: [yes, no, na] }
 
     # ─── Users ─────────────────────────────────────────────────────────────────
@@ -5254,9 +5307,14 @@ components:
         # UI can show a Paid column and a paid-vs-awarded comparison.
         paidAmount:                 { type: string, readOnly: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
-        conditional:                { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true }
-        conditions:                 { type: string, nullable: true }
-        conditionsMet:              { $ref: "#/components/schemas/OpportunityConditionsMet" }
+        # @deprecated (Task #449) — grant conditions moved onto pledge_allocations.
+        # These header fields are no longer written (use the allocation fields +
+        # the derived *Rollup values below). Retained read-only for back-compat.
+        conditional:                { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true, deprecated: true }
+        conditions:                 { type: string, nullable: true, deprecated: true }
+        conditionsMet:              { allOf: [ { $ref: "#/components/schemas/OpportunityConditionsMet" } ], deprecated: true }
+        conditionalRollup:          { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true, readOnly: true, description: "Derived from the opportunity's pledge allocations: conditional when ANY allocation carries a conditional condition, else unconditional. Drives win-probability. Null when no allocation is set." }
+        conditionsMetRollup:        { allOf: [ { $ref: "#/components/schemas/OpportunityConditionsMet" } ], readOnly: true, description: "Derived from the opportunity's pledge allocations: 'yes' only when every conditional allocation's conditions are met; otherwise 'no'." }
         individualGiverPersonId:    { type: string, nullable: true }
         individualAdvisorPersonId:  { type: string, nullable: true }
         matchId:                    { type: string, nullable: true }
@@ -5340,9 +5398,6 @@ components:
         askAmount:                  { type: string }
         awardedAmount:              { type: string }
         type:                       { $ref: "#/components/schemas/OpportunityType" }
-        conditional:                { $ref: "#/components/schemas/OpportunityConditional" }
-        conditions:                 { type: string }
-        conditionsMet:              { $ref: "#/components/schemas/OpportunityConditionsMet" }
         individualGiverPersonId:    { type: string }
         individualAdvisorPersonId:  { type: string }
         matchId:                    { type: string }
@@ -5372,9 +5427,6 @@ components:
         askAmount:                  { type: string, nullable: true }
         awardedAmount:              { type: string, nullable: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
-        conditional:                { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true }
-        conditions:                 { type: string, nullable: true }
-        conditionsMet:              { $ref: "#/components/schemas/OpportunityConditionsMet" }
         individualGiverPersonId:    { type: string, nullable: true }
         individualAdvisorPersonId:  { type: string, nullable: true }
         matchId:                    { type: string, nullable: true }
@@ -5398,7 +5450,7 @@ components:
     # ─── Pledge allocations ────────────────────────────────────────────────────
     PledgeAllocation:
       type: object
-      required: [id, directToSchool, formallyRestricted, createdAt, updatedAt]
+      required: [id, directToSchool, regionalRestrictionType, usageRestrictionType, timeRestrictionType, conditionsMet, createdAt, updatedAt]
       properties:
         id:                     { type: string }
         pledgeOrOpportunityId:  { type: string, nullable: true }
@@ -5409,26 +5461,34 @@ components:
         fundableProjectId:      { type: string, nullable: true }
         directToSchool:         { type: boolean }
         schoolRecipientId:      { type: string, nullable: true }
-        formallyRestricted:     { type: boolean, description: "True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent." }
-        reimbursableShare:      { allOf: [ { $ref: "#/components/schemas/ReimbursableShare" } ], nullable: true, description: "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count." }
+        regionalRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
+        usageRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
+        timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
+        reimbursementType:      { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true, description: "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count." }
+        conditional:            { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true, description: "Per-allocation grant condition (moved off the opportunity header in Task #449). Drives the pledge's derived conditionalRollup / win-probability." }
+        conditionsMet:          { $ref: "#/components/schemas/OpportunityConditionsMet" }
         status:                 { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
         contingent:             { type: boolean, description: "Scheduled (false) vs contingent (true) future payment." }
-        conditions:             { type: string, nullable: true }
+        conditions:             { type: string, nullable: true, description: "Free-text grant conditions for this allocation (moved off the opportunity header in Task #449)." }
         expectedPaymentDate:    { type: string, format: date, nullable: true, description: "Date this allocation's payment is expected. Per-row (a grant year may hold multiple payments); allocations sharing a date roll up into one expected payment. Drives overdue detection. Null = unscheduled." }
         notes:                  { type: string, nullable: true }
         regionIds:              { type: array, items: { type: string }, nullable: true }
-        restrictionType:        { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true }
-        restrictionEvidence:    { type: string, nullable: true }
         purposeVerbatim:        { type: string, nullable: true }
-        deferredRevenue:        { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true }
-        deferredRevenueReason:  { type: string, nullable: true }
-        objectCode:             { type: string, nullable: true, readOnly: true, description: "Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode." }
-        objectCodeOverride:     { type: string, nullable: true }
-        revenueLocation:        { type: string, nullable: true, readOnly: true }
-        revenueLocationOverride: { type: string, nullable: true }
-        revenueClass:           { type: string, nullable: true, readOnly: true }
-        revenueClassOverride:   { type: string, nullable: true }
-        codingFlags:            { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Coding flags for human review (e.g. restriction_unclear, location_default)." }
+        # @deprecated (Task #449) — superseded by regional/usage/time RestrictionAxis
+        # + the staged-payment coding snapshot. Read-only; no longer written.
+        formallyRestricted:     { type: boolean, deprecated: true, description: "@deprecated — use the three RestrictionAxis fields." }
+        reimbursableShare:      { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true, deprecated: true, description: "@deprecated — renamed to reimbursementType." }
+        restrictionType:        { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true, deprecated: true }
+        restrictionEvidence:    { type: string, nullable: true, deprecated: true }
+        deferredRevenue:        { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true, deprecated: true, description: "@deprecated — coding snapshot moved to staged_payments." }
+        deferredRevenueReason:  { type: string, nullable: true, deprecated: true }
+        objectCode:             { type: string, nullable: true, readOnly: true, deprecated: true }
+        objectCodeOverride:     { type: string, nullable: true, deprecated: true }
+        revenueLocation:        { type: string, nullable: true, readOnly: true, deprecated: true }
+        revenueLocationOverride: { type: string, nullable: true, deprecated: true }
+        revenueClass:           { type: string, nullable: true, readOnly: true, deprecated: true }
+        revenueClassOverride:   { type: string, nullable: true, deprecated: true }
+        codingFlags:            { type: array, items: { type: string }, nullable: true, readOnly: true, deprecated: true }
         createdAt:              { type: string, format: date-time }
         updatedAt:              { type: string, format: date-time }
     PledgeAllocationList:
@@ -5448,22 +5508,19 @@ components:
         fundableProjectId:     { type: string }
         directToSchool:        { type: boolean }
         schoolRecipientId:     { type: string }
-        formallyRestricted:    { type: boolean }
-        reimbursableShare:     { $ref: "#/components/schemas/ReimbursableShare" }
+        regionalRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
+        usageRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
+        timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
+        reimbursementType:     { $ref: "#/components/schemas/ReimbursementType" }
+        conditional:           { $ref: "#/components/schemas/OpportunityConditional" }
+        conditionsMet:         { $ref: "#/components/schemas/OpportunityConditionsMet" }
         status:                { $ref: "#/components/schemas/PledgeAllocationStatus" }
         contingent:            { type: boolean }
         conditions:            { type: string }
         expectedPaymentDate:   { type: string, format: date }
         notes:                 { type: string }
         regionIds:             { type: array, items: { type: string } }
-        restrictionType:       { $ref: "#/components/schemas/RestrictionType" }
-        restrictionEvidence:   { type: string }
         purposeVerbatim:       { type: string }
-        deferredRevenue:       { $ref: "#/components/schemas/DeferredRevenue" }
-        deferredRevenueReason: { type: string }
-        objectCodeOverride:    { type: string }
-        revenueLocationOverride: { type: string }
-        revenueClassOverride:  { type: string }
     UpdatePledgeAllocationBody:
       type: object
       properties:
@@ -5475,22 +5532,19 @@ components:
         fundableProjectId:     { type: string, nullable: true }
         directToSchool:        { type: boolean }
         schoolRecipientId:     { type: string, nullable: true }
-        formallyRestricted:    { type: boolean }
-        reimbursableShare:     { allOf: [ { $ref: "#/components/schemas/ReimbursableShare" } ], nullable: true }
+        regionalRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
+        usageRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
+        timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
+        reimbursementType:     { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true }
+        conditional:           { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true }
+        conditionsMet:         { $ref: "#/components/schemas/OpportunityConditionsMet" }
         status:                { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
         contingent:            { type: boolean }
         conditions:            { type: string, nullable: true }
         expectedPaymentDate:   { type: string, format: date, nullable: true }
         notes:                 { type: string, nullable: true }
         regionIds:             { type: array, items: { type: string }, nullable: true }
-        restrictionType:       { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true }
-        restrictionEvidence:   { type: string, nullable: true }
         purposeVerbatim:       { type: string, nullable: true }
-        deferredRevenue:       { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true }
-        deferredRevenueReason: { type: string, nullable: true }
-        objectCodeOverride:    { type: string, nullable: true }
-        revenueLocationOverride: { type: string, nullable: true }
-        revenueClassOverride:  { type: string, nullable: true }
 
     # ─── Gifts & payments ──────────────────────────────────────────────────────
     GiftOrPayment:
@@ -5593,12 +5647,13 @@ components:
         dateReceived:         { type: string, format: date, nullable: true }
     GiftAuditReconciliationRestriction:
       type: object
-      required: [allocationId]
+      required: [allocationId, regionalRestrictionType, usageRestrictionType, timeRestrictionType]
       properties:
         allocationId:    { type: string }
-        restrictionType: { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true }
+        regionalRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
+        usageRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
+        timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
         purposeVerbatim: { type: string, nullable: true }
-        restrictionEvidence: { type: string, nullable: true }
         subAmount:       { type: string, nullable: true }
         displayUsage:    { type: string, nullable: true }
     GiftAuditReconciliationDonor:
@@ -5841,6 +5896,19 @@ components:
         skipped:     { type: integer, description: "Matched rows the rule could not apply to cleanly, left pending (0 when dryRun=true)." }
 
     # ─── Revenue coding reference & rules ────────────────────────────────────
+    RevenueCodingPreview:
+      type: object
+      required: [objectCode, location, revenueClass, flags]
+      description: |
+        Live, on-demand revenue-coding instructions derived from an allocation's
+        scope (donor kind, fund entity, restriction axes, region). NOT persisted
+        on the allocation — a read-only preview the reviewer copies onto the
+        linked staged_payments coding snapshot.
+      properties:
+        objectCode:   { type: string, nullable: true, description: "Derived Object Code (e.g. 4000.1 / 4100.2), or null when it can't be resolved cleanly." }
+        location:     { type: string, nullable: true, description: "Derived Revenue Location." }
+        revenueClass: { type: string, nullable: true, description: "Derived Suggested Class." }
+        flags:        { type: array, items: { type: string }, description: "Ambiguities surfaced for human review (e.g. location_default, payer_type_assumed, loan_no_revenue_account)." }
     RevenueAccount:
       type: object
       required: [code, name, kind, sortOrder, active, createdAt, updatedAt]
@@ -5969,6 +6037,20 @@ components:
         fundingSource:             { $ref: "#/components/schemas/StagedPaymentFundingSource", nullable: true, description: "WHERE this money came from / how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown / not yet determined. Auto-seeded at ingest, human-correctable." }
         fundingSourceProvenance:   { $ref: "#/components/schemas/StagedPaymentFundingSourceProvenance" }
         needsResearch:             { type: boolean, description: "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via /set-needs-research with no side effects on reconcile status or matching." }
+        # ── Revenue-accounting / QuickBooks coding snapshot (Task #449) ──────────
+        # The derived coding snapshot describes a QuickBooks PAYMENT, so it lives
+        # here (moved off gift/pledge allocations). Each `*Override` lets a human
+        # override the derived value (effective = override ?? derived). Set via
+        # /staged-payments/{id}/set-coding.
+        objectCode:                { type: string, nullable: true }
+        objectCodeOverride:        { type: string, nullable: true }
+        revenueLocation:           { type: string, nullable: true }
+        revenueLocationOverride:   { type: string, nullable: true }
+        revenueClass:              { type: string, nullable: true }
+        revenueClassOverride:      { type: string, nullable: true }
+        codingFlags:               { type: array, items: { type: string }, nullable: true, description: "Coding flags surfaced for human review (e.g. location_default, payer_type_assumed)." }
+        deferredRevenue:           { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true }
+        deferredRevenueReason:     { type: string, nullable: true }
         resolvedGiftId:            { type: string, nullable: true }
         resolvedGiftName:          { type: string, nullable: true }
         resolvedGiftAmount:        { type: string, nullable: true }
@@ -6589,14 +6671,14 @@ components:
           description: "Donorbox donations tied to the chain — enrichment for the Stripe charges, or non-Stripe new money the reviewer linked to this deposit. Empty when none apply."
     ReconciliationCardGiftAllocation:
       type: object
-      required: [regionalRestriction, fundUseRestriction]
+      required: [regionalRestrictionType, usageRestrictionType, timeRestrictionType]
       description: "Compact intended-usage summary of one allocation line on a reconciler card's linked CRM gift, so a reviewer can judge what the money is for."
       properties:
         entityName:      { type: string, nullable: true, description: "Wildflower legal entity the allocation is attributed to." }
         usageLabel:      { type: string, nullable: true, description: "Human-readable intended-usage label (display_usage, falling back to the intended_usage code) — e.g. 'Gen Ops', 'School Startup', or a project name." }
-        restrictionType: { type: string, nullable: true, description: "Restriction type of the allocation (unrestricted | purpose | time | both | unclear | na)." }
-        regionalRestriction: { type: boolean, description: "True when the allocation is formally restricted to a region." }
-        fundUseRestriction:  { type: boolean, description: "True when the allocation is formally restricted in how the funds may be used." }
+        regionalRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
+        usageRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
+        timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
     ReconciliationCard:
       type: object
       required: [stagedPaymentId, status, queue, hasStripeEvidence, ready, isSourceGroup, needsResearch]
@@ -6666,6 +6748,21 @@ components:
           nullable: true
           description: "Compact per-member rows of the group, for display. Null when not a group. The representative is the card's stagedPaymentId."
           items: { $ref: "#/components/schemas/ReconciliationCardGroupMember" }
+        # ── Revenue-accounting / QuickBooks coding snapshot (Task #449) ──────────
+        # The derived coding snapshot describes this QuickBooks PAYMENT (moved off
+        # gift/pledge allocations). Surfaced read-only on the card so the reviewer
+        # can see + edit it inline via /staged-payments/{id}/set-coding. Each
+        # `*Override` lets a human override the derived value (effective =
+        # override ?? derived).
+        objectCode:              { type: string, nullable: true }
+        objectCodeOverride:      { type: string, nullable: true }
+        revenueLocation:         { type: string, nullable: true }
+        revenueLocationOverride: { type: string, nullable: true }
+        revenueClass:            { type: string, nullable: true }
+        revenueClassOverride:    { type: string, nullable: true }
+        codingFlags:             { type: array, items: { type: string }, nullable: true, description: "Coding flags surfaced for human review (e.g. location_default, payer_type_assumed)." }
+        deferredRevenue:         { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true }
+        deferredRevenueReason:   { type: string, nullable: true }
         createdAt:          { type: string, format: date-time, nullable: true }
         updatedAt:          { type: string, format: date-time, nullable: true }
     ReconciliationCardList:
@@ -7117,6 +7214,24 @@ components:
       description: "Set or clear the plain human 'needs research' flag on a staged payment. A pure annotation with no side effects on reconcile status or matching."
       properties:
         needsResearch: { type: boolean, description: "True to flag this row for further research, false to clear it." }
+    SetStagedPaymentCodingBody:
+      type: object
+      description: |
+        Set or clear the revenue-coding snapshot on a staged payment. All fields
+        optional; only provided fields are written. The bare fields are the
+        derived coding values, the *Override fields pin a manual value, and
+        codingFlags surfaces ambiguities for human review. Passing null clears a
+        field.
+      properties:
+        objectCode:              { type: string, nullable: true }
+        objectCodeOverride:      { type: string, nullable: true }
+        revenueLocation:         { type: string, nullable: true }
+        revenueLocationOverride: { type: string, nullable: true }
+        revenueClass:            { type: string, nullable: true }
+        revenueClassOverride:    { type: string, nullable: true }
+        codingFlags:             { type: array, items: { type: string }, nullable: true }
+        deferredRevenue:         { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true }
+        deferredRevenueReason:   { type: string, nullable: true }
     GroupStagedPaymentsBody:
       type: object
       required: [stagedPaymentIds]
@@ -7182,36 +7297,42 @@ components:
     # ─── Gift allocations ──────────────────────────────────────────────────────
     GiftAllocation:
       type: object
-      required: [id, formalRegionalRestriction, formalFundUseRestriction, countsTowardGoal, createdAt, updatedAt]
+      required: [id, regionalRestrictionType, usageRestrictionType, timeRestrictionType, countsTowardGoal, createdAt, updatedAt]
       properties:
         id:                          { type: string }
         giftId:                      { type: string, nullable: true }
         subAmount:                   { type: string, nullable: true }
         grantYear:                   { type: string, nullable: true }
         entityId:                    { type: string, nullable: true }
-        formalRegionalRestriction:   { type: boolean }
         intendedUsage:               { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
         fundableProjectId:           { type: string, nullable: true }
-        formalFundUseRestriction:    { type: boolean }
-        reimbursableShare:           { allOf: [ { $ref: "#/components/schemas/ReimbursableShare" } ], nullable: true, description: "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count." }
+        regionalRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
+        usageRestrictionType:        { $ref: "#/components/schemas/RestrictionAxis" }
+        timeRestrictionType:         { $ref: "#/components/schemas/RestrictionAxis" }
+        reimbursementType:           { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true, description: "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count." }
         countsTowardGoal:            { type: boolean, description: "When false, this allocation's money is excluded from goal/received analytics rollups (e.g. government reimbursement that doesn't advance the fundraising goal). Per-allocation; defaults true." }
         schoolRecipientId:           { type: string, nullable: true }
         spendingStart:               { type: string, format: date, nullable: true }
         spendingEnd:                 { type: string, format: date, nullable: true }
         regionIds:                   { type: array, items: { type: string }, nullable: true }
         displayUsage:                { type: string, nullable: true, readOnly: true, description: "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only." }
-        restrictionType:             { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true }
-        restrictionEvidence:         { type: string, nullable: true }
         purposeVerbatim:             { type: string, nullable: true }
-        deferredRevenue:             { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true }
-        deferredRevenueReason:       { type: string, nullable: true }
-        objectCode:                  { type: string, nullable: true, readOnly: true, description: "Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode." }
-        objectCodeOverride:          { type: string, nullable: true }
-        revenueLocation:             { type: string, nullable: true, readOnly: true }
-        revenueLocationOverride:     { type: string, nullable: true }
-        revenueClass:                { type: string, nullable: true, readOnly: true }
-        revenueClassOverride:        { type: string, nullable: true }
-        codingFlags:                 { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Coding flags for human review (e.g. restriction_unclear, location_default)." }
+        # @deprecated (Task #449) — superseded by regional/usage/time RestrictionAxis
+        # + the staged-payment coding snapshot. Read-only; no longer written.
+        formalRegionalRestriction:   { type: boolean, deprecated: true, description: "@deprecated — use regionalRestrictionType." }
+        formalFundUseRestriction:    { type: boolean, deprecated: true, description: "@deprecated — use usageRestrictionType." }
+        reimbursableShare:           { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true, deprecated: true, description: "@deprecated — renamed to reimbursementType." }
+        restrictionType:             { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true, deprecated: true }
+        restrictionEvidence:         { type: string, nullable: true, deprecated: true }
+        deferredRevenue:             { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true, deprecated: true, description: "@deprecated — coding snapshot moved to staged_payments." }
+        deferredRevenueReason:       { type: string, nullable: true, deprecated: true }
+        objectCode:                  { type: string, nullable: true, readOnly: true, deprecated: true }
+        objectCodeOverride:          { type: string, nullable: true, deprecated: true }
+        revenueLocation:             { type: string, nullable: true, readOnly: true, deprecated: true }
+        revenueLocationOverride:     { type: string, nullable: true, deprecated: true }
+        revenueClass:                { type: string, nullable: true, readOnly: true, deprecated: true }
+        revenueClassOverride:        { type: string, nullable: true, deprecated: true }
+        codingFlags:                 { type: array, items: { type: string }, nullable: true, readOnly: true, deprecated: true }
         createdAt:                   { type: string, format: date-time }
         updatedAt:                   { type: string, format: date-time }
     GiftAllocationList:
@@ -7227,24 +7348,18 @@ components:
         subAmount:                   { type: string }
         grantYear:                   { type: string }
         entityId:                    { type: string }
-        formalRegionalRestriction:   { type: boolean }
+        regionalRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
+        usageRestrictionType:        { $ref: "#/components/schemas/RestrictionAxis" }
+        timeRestrictionType:         { $ref: "#/components/schemas/RestrictionAxis" }
         intendedUsage:               { $ref: "#/components/schemas/IntendedUsage" }
         fundableProjectId:           { type: string }
-        formalFundUseRestriction:    { type: boolean }
-        reimbursableShare:           { $ref: "#/components/schemas/ReimbursableShare" }
+        reimbursementType:           { $ref: "#/components/schemas/ReimbursementType" }
         countsTowardGoal:            { type: boolean }
         schoolRecipientId:           { type: string }
         spendingStart:               { type: string, format: date }
         spendingEnd:                 { type: string, format: date }
         regionIds:                   { type: array, items: { type: string } }
-        restrictionType:             { $ref: "#/components/schemas/RestrictionType" }
-        restrictionEvidence:         { type: string }
         purposeVerbatim:             { type: string }
-        deferredRevenue:             { $ref: "#/components/schemas/DeferredRevenue" }
-        deferredRevenueReason:       { type: string }
-        objectCodeOverride:          { type: string }
-        revenueLocationOverride:     { type: string }
-        revenueClassOverride:        { type: string }
     UpdateGiftAllocationBody:
       type: object
       properties:
@@ -7252,24 +7367,18 @@ components:
         subAmount:                   { type: string, nullable: true }
         grantYear:                   { type: string, nullable: true }
         entityId:                    { type: string, nullable: true }
-        formalRegionalRestriction:   { type: boolean }
+        regionalRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
+        usageRestrictionType:        { $ref: "#/components/schemas/RestrictionAxis" }
+        timeRestrictionType:         { $ref: "#/components/schemas/RestrictionAxis" }
         intendedUsage:               { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
         fundableProjectId:           { type: string, nullable: true }
-        formalFundUseRestriction:    { type: boolean }
-        reimbursableShare:           { allOf: [ { $ref: "#/components/schemas/ReimbursableShare" } ], nullable: true }
+        reimbursementType:           { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true }
         countsTowardGoal:            { type: boolean }
         schoolRecipientId:           { type: string, nullable: true }
         spendingStart:               { type: string, format: date, nullable: true }
         spendingEnd:                 { type: string, format: date, nullable: true }
         regionIds:                   { type: array, items: { type: string }, nullable: true }
-        restrictionType:             { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true }
-        restrictionEvidence:         { type: string, nullable: true }
         purposeVerbatim:             { type: string, nullable: true }
-        deferredRevenue:             { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true }
-        deferredRevenueReason:       { type: string, nullable: true }
-        objectCodeOverride:          { type: string, nullable: true }
-        revenueLocationOverride:     { type: string, nullable: true }
-        revenueClassOverride:        { type: string, nullable: true }
 
     # ─── Interactions ─────────────────────────────────────────────────────────
     InteractionKind:

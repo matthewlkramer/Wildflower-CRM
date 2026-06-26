@@ -10,10 +10,14 @@ import {
   useExcludeStagedPayment,
   useReIncludeStagedPayment,
   useSetStagedPaymentNeedsResearch,
+  useSetStagedPaymentCoding,
   useGroupStagedPayments,
   useResolveStripeStagedCharge,
   useCreateGiftFromStripeStagedCharge,
   useRejectStripeStagedCharge,
+  useListGiftAllocations,
+  getListGiftAllocationsQueryKey,
+  useGetGiftAllocationCodingPreview,
   getGetReconciliationGraphQueryOptions,
   approveReconciliationCard,
   rejectStagedPayment,
@@ -29,6 +33,8 @@ import {
   type StagedPaymentExclusionReason,
   type GiftOrPayment,
   type GiftOrPaymentDetail,
+  type SetStagedPaymentCodingBody,
+  type DeferredRevenue,
 } from "@workspace/api-client-react";
 import {
   AlertCircle,
@@ -861,6 +867,7 @@ export default function ReconciliationWorkbench() {
         }}
         onToggleResearch={() => handleToggleResearch(card)}
         onUnstage={() => unstage(card.stagedPaymentId)}
+        onCodingSaved={invalidateAll}
       />
     );
   };
@@ -1229,6 +1236,7 @@ function ReconCard({
   onGroup,
   onToggleResearch,
   onUnstage,
+  onCodingSaved,
 }: {
   card: ReconciliationCard;
   staged: StagedChange | undefined;
@@ -1247,6 +1255,7 @@ function ReconCard({
   onGroup: () => void;
   onToggleResearch: () => void;
   onUnstage: () => void;
+  onCodingSaved: () => void;
 }) {
   const conf = confidenceOf(card);
   const meta = CONFIDENCE_META[conf];
@@ -1437,8 +1446,15 @@ function ReconCard({
                   <div className="mt-1 space-y-1 text-xs">
                     {card.resolvedGiftAllocations.map((a, i) => {
                       const restrFlags = [
-                        a.regionalRestriction ? "regional" : null,
-                        a.fundUseRestriction ? "fund-use" : null,
+                        a.regionalRestrictionType !== "unrestricted"
+                          ? `regional: ${a.regionalRestrictionType}`
+                          : null,
+                        a.usageRestrictionType !== "unrestricted"
+                          ? `usage: ${a.usageRestrictionType}`
+                          : null,
+                        a.timeRestrictionType !== "unrestricted"
+                          ? `time: ${a.timeRestrictionType}`
+                          : null,
                       ].filter((f): f is string => f !== null);
                       return (
                         <div key={i} className="text-muted-foreground">
@@ -1446,12 +1462,9 @@ function ReconCard({
                             {a.usageLabel ?? "Unspecified usage"}
                           </span>
                           {a.entityName ? ` · ${a.entityName}` : ""}
-                          {(a.restrictionType || restrFlags.length > 0) && (
+                          {restrFlags.length > 0 && (
                             <div className="text-[11px] text-muted-foreground/80">
-                              Restriction: {a.restrictionType ?? "—"}
-                              {restrFlags.length > 0
-                                ? ` (${restrFlags.join(", ")})`
-                                : ""}
+                              Restriction: {restrFlags.join(", ")}
                             </div>
                           )}
                         </div>
@@ -1544,6 +1557,8 @@ function ReconCard({
           )}
         />
       )}
+
+      {expanded && <CodingPanel card={card} onSaved={onCodingSaved} />}
 
       {/* Actions: inline primary + Reject + full Resolve menu */}
       <div className="flex items-center gap-2 border-t px-3 py-2">
@@ -1809,6 +1824,306 @@ function LineageStrip({
           — gift recorded gross; QB deposit is net.
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Revenue coding (QuickBooks payment snapshot, Task #449) ─────────────────
+// The 9-field accounting coding snapshot lives on the staged payment (the QB
+// payment record), not the allocation. The reviewer captures/edits it here and
+// can copy values from the live, on-demand coding preview derived from the
+// linked gift's allocation scope.
+
+const DEFERRED_REVENUE_OPTIONS: { value: DeferredRevenue; label: string }[] = [
+  { value: "na", label: "N/A" },
+  { value: "no", label: "No" },
+  { value: "yes", label: "Yes" },
+];
+
+function codingEmptyToNull(s: string): string | null {
+  const t = s.trim();
+  return t === "" ? null : t;
+}
+
+function AllocationCodingPreview({
+  allocationId,
+  label,
+}: {
+  allocationId: string;
+  label: string | null;
+}) {
+  const { data, isLoading, isError } =
+    useGetGiftAllocationCodingPreview(allocationId);
+  return (
+    <div className="rounded border bg-background px-2 py-1.5 text-[11px]">
+      <div className="mb-0.5 font-medium text-muted-foreground">
+        {label || "Allocation"}
+      </div>
+      {isLoading ? (
+        <div className="flex items-center gap-1 text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" /> deriving…
+        </div>
+      ) : isError || !data ? (
+        <div className="text-muted-foreground">No preview.</div>
+      ) : (
+        <div className="space-y-0.5">
+          <div>
+            Object code:{" "}
+            <span className="font-medium tabular-nums">
+              {data.objectCode ?? "—"}
+            </span>
+          </div>
+          <div>
+            Location: <span className="font-medium">{data.location ?? "—"}</span>
+          </div>
+          <div>
+            Class:{" "}
+            <span className="font-medium">{data.revenueClass ?? "—"}</span>
+          </div>
+          {data.flags.length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-0.5">
+              {data.flags.map((f, i) => (
+                <span
+                  key={i}
+                  className="rounded bg-amber-50 px-1 text-[10px] text-amber-800"
+                >
+                  {f}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CodingField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-[11px]">
+      <span className="font-medium text-muted-foreground">{label}</span>
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="h-7 text-xs"
+      />
+    </label>
+  );
+}
+
+function CodingPanel({
+  card,
+  onSaved,
+}: {
+  card: ReconciliationCard;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const setCodingM = useSetStagedPaymentCoding();
+  const giftId = card.resolvedGiftId ?? "";
+  const allocsQuery = useListGiftAllocations(
+    { giftId },
+    {
+      query: {
+        enabled: !!giftId,
+        queryKey: getListGiftAllocationsQueryKey({ giftId }),
+      },
+    },
+  );
+
+  const seed = useCallback(
+    () => ({
+      objectCode: card.objectCode ?? "",
+      objectCodeOverride: card.objectCodeOverride ?? "",
+      revenueLocation: card.revenueLocation ?? "",
+      revenueLocationOverride: card.revenueLocationOverride ?? "",
+      revenueClass: card.revenueClass ?? "",
+      revenueClassOverride: card.revenueClassOverride ?? "",
+      deferredRevenue: (card.deferredRevenue ?? "na") as DeferredRevenue,
+      deferredRevenueReason: card.deferredRevenueReason ?? "",
+    }),
+    [
+      card.objectCode,
+      card.objectCodeOverride,
+      card.revenueLocation,
+      card.revenueLocationOverride,
+      card.revenueClass,
+      card.revenueClassOverride,
+      card.deferredRevenue,
+      card.deferredRevenueReason,
+    ],
+  );
+
+  const [form, setForm] = useState(seed);
+  // Re-seed from the (refetched) card after a save / when switching cards.
+  useEffect(() => {
+    setForm(seed());
+  }, [seed]);
+
+  const set = (k: keyof typeof form, v: string) =>
+    setForm((prev) => ({ ...prev, [k]: v }));
+
+  const save = async () => {
+    const body: SetStagedPaymentCodingBody = {
+      objectCode: codingEmptyToNull(form.objectCode),
+      objectCodeOverride: codingEmptyToNull(form.objectCodeOverride),
+      revenueLocation: codingEmptyToNull(form.revenueLocation),
+      revenueLocationOverride: codingEmptyToNull(form.revenueLocationOverride),
+      revenueClass: codingEmptyToNull(form.revenueClass),
+      revenueClassOverride: codingEmptyToNull(form.revenueClassOverride),
+      deferredRevenue: form.deferredRevenue,
+      deferredRevenueReason: codingEmptyToNull(form.deferredRevenueReason),
+    };
+    try {
+      await setCodingM.mutateAsync({ id: card.stagedPaymentId, data: body });
+      onSaved();
+      toast({ title: "Revenue coding saved." });
+    } catch (err) {
+      toast({
+        title: "Couldn't save coding",
+        description: err instanceof Error ? err.message : "Something went wrong.",
+      });
+    }
+  };
+
+  const allocations = allocsQuery.data?.data ?? [];
+
+  return (
+    <div className="border-t bg-muted/20 px-3 py-2">
+      <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Revenue coding (QuickBooks payment)
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <CodingField
+              label="Object code"
+              value={form.objectCode}
+              onChange={(v) => set("objectCode", v)}
+              placeholder="e.g. 4000.1"
+            />
+            <CodingField
+              label="Object code override"
+              value={form.objectCodeOverride}
+              onChange={(v) => set("objectCodeOverride", v)}
+            />
+            <CodingField
+              label="Revenue location"
+              value={form.revenueLocation}
+              onChange={(v) => set("revenueLocation", v)}
+            />
+            <CodingField
+              label="Location override"
+              value={form.revenueLocationOverride}
+              onChange={(v) => set("revenueLocationOverride", v)}
+            />
+            <CodingField
+              label="Revenue class"
+              value={form.revenueClass}
+              onChange={(v) => set("revenueClass", v)}
+            />
+            <CodingField
+              label="Class override"
+              value={form.revenueClassOverride}
+              onChange={(v) => set("revenueClassOverride", v)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1 text-[11px]">
+              <span className="font-medium text-muted-foreground">
+                Deferred revenue
+              </span>
+              <Select
+                value={form.deferredRevenue}
+                onValueChange={(v) => set("deferredRevenue", v)}
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DEFERRED_REVENUE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+            <CodingField
+              label="Deferred reason"
+              value={form.deferredRevenueReason}
+              onChange={(v) => set("deferredRevenueReason", v)}
+            />
+          </div>
+          {card.codingFlags && card.codingFlags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Flags
+              </span>
+              {card.codingFlags.map((f, i) => (
+                <span
+                  key={i}
+                  className="rounded bg-amber-50 px-1 text-[10px] text-amber-800"
+                >
+                  {f}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={save}
+              disabled={setCodingM.isPending}
+              className="h-7"
+            >
+              {setCodingM.isPending ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : null}
+              Save coding
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Coding preview (derived from gift allocations)
+          </div>
+          {!giftId ? (
+            <div className="text-[11px] text-muted-foreground">
+              Link a gift to derive a coding preview from its allocations.
+            </div>
+          ) : allocsQuery.isLoading ? (
+            <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" /> loading allocations…
+            </div>
+          ) : allocations.length === 0 ? (
+            <div className="text-[11px] text-muted-foreground">
+              The linked gift has no allocations to derive coding from.
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {allocations.map((a) => (
+                <AllocationCodingPreview
+                  key={a.id}
+                  allocationId={a.id}
+                  label={a.displayUsage || a.intendedUsage || null}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

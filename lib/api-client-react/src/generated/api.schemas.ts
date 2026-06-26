@@ -567,18 +567,30 @@ export const IntendedUsage = {
 } as const;
 
 /**
- * Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation.
+ * Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)
  */
-export type ReimbursableShare = typeof ReimbursableShare[keyof typeof ReimbursableShare];
+export type ReimbursementType = typeof ReimbursementType[keyof typeof ReimbursementType];
 
 
-export const ReimbursableShare = {
+export const ReimbursementType = {
   direct: 'direct',
   indirect: 'indirect',
 } as const;
 
 /**
- * CFO restriction taxonomy. 'unclear' is never silently treated as unrestricted.
+ * Per-axis restriction taxonomy applied independently to the regional / fund-use / time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.
+ */
+export type RestrictionAxis = typeof RestrictionAxis[keyof typeof RestrictionAxis];
+
+
+export const RestrictionAxis = {
+  donor_restricted: 'donor_restricted',
+  wf_restricted: 'wf_restricted',
+  unrestricted: 'unrestricted',
+} as const;
+
+/**
+ * @deprecated (Task #449) — superseded by the three RestrictionAxis fields. Retained only on deprecated read fields and legacy audit/reconciler views.
  */
 export type RestrictionType = typeof RestrictionType[keyof typeof RestrictionType];
 
@@ -1738,9 +1750,16 @@ export interface OpportunityOrPledge {
   awardedAmount?: string | null;
   readonly paidAmount?: string;
   type?: OpportunityType | null;
+  /** @deprecated */
   conditional?: OpportunityConditional | null;
+  /** @deprecated */
   conditions?: string | null;
+  /** @deprecated */
   conditionsMet: OpportunityConditionsMet;
+  /** Derived from the opportunity's pledge allocations: conditional when ANY allocation carries a conditional condition, else unconditional. Drives win-probability. Null when no allocation is set. */
+  readonly conditionalRollup?: OpportunityConditional | null;
+  /** Derived from the opportunity's pledge allocations: 'yes' only when every conditional allocation's conditions are met; otherwise 'no'. */
+  readonly conditionsMetRollup?: OpportunityConditionsMet;
   individualGiverPersonId?: string | null;
   individualAdvisorPersonId?: string | null;
   matchId?: string | null;
@@ -1787,31 +1806,58 @@ export interface PledgeAllocation {
   fundableProjectId?: string | null;
   directToSchool: boolean;
   schoolRecipientId?: string | null;
-  /** True if the grant letter formally restricts this allocation; false if it merely documents the donor's intent. */
-  formallyRestricted: boolean;
+  regionalRestrictionType: RestrictionAxis;
+  usageRestrictionType: RestrictionAxis;
+  timeRestrictionType: RestrictionAxis;
   /** Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count. */
-  reimbursableShare?: ReimbursableShare | null;
+  reimbursementType?: ReimbursementType | null;
+  /** Per-allocation grant condition (moved off the opportunity header in Task #449). Drives the pledge's derived conditionalRollup / win-probability. */
+  conditional?: OpportunityConditional | null;
+  conditionsMet: OpportunityConditionsMet;
   status?: PledgeAllocationStatus | null;
   /** Scheduled (false) vs contingent (true) future payment. */
   contingent?: boolean;
+  /** Free-text grant conditions for this allocation (moved off the opportunity header in Task #449). */
   conditions?: string | null;
   /** Date this allocation's payment is expected. Per-row (a grant year may hold multiple payments); allocations sharing a date roll up into one expected payment. Drives overdue detection. Null = unscheduled. */
   expectedPaymentDate?: string | null;
   notes?: string | null;
   regionIds?: string[] | null;
-  restrictionType?: RestrictionType | null;
-  restrictionEvidence?: string | null;
   purposeVerbatim?: string | null;
+  /**
+   * @deprecated — use the three RestrictionAxis fields.
+   * @deprecated
+   */
+  formallyRestricted?: boolean;
+  /**
+   * @deprecated — renamed to reimbursementType.
+   * @deprecated
+   */
+  reimbursableShare?: ReimbursementType | null;
+  /** @deprecated */
+  restrictionType?: RestrictionType | null;
+  /** @deprecated */
+  restrictionEvidence?: string | null;
+  /**
+   * @deprecated — coding snapshot moved to staged_payments.
+   * @deprecated
+   */
   deferredRevenue?: DeferredRevenue | null;
+  /** @deprecated */
   deferredRevenueReason?: string | null;
-  /** Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode. */
+  /** @deprecated */
   readonly objectCode?: string | null;
+  /** @deprecated */
   objectCodeOverride?: string | null;
+  /** @deprecated */
   readonly revenueLocation?: string | null;
+  /** @deprecated */
   revenueLocationOverride?: string | null;
+  /** @deprecated */
   readonly revenueClass?: string | null;
+  /** @deprecated */
   revenueClassOverride?: string | null;
-  /** Coding flags for human review (e.g. restriction_unclear, location_default). */
+  /** @deprecated */
   readonly codingFlags?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
@@ -1965,9 +2011,6 @@ export interface CreateOpportunityOrPledgeBody {
   askAmount?: string;
   awardedAmount?: string;
   type?: OpportunityType;
-  conditional?: OpportunityConditional;
-  conditions?: string;
-  conditionsMet?: OpportunityConditionsMet;
   individualGiverPersonId?: string;
   individualAdvisorPersonId?: string;
   matchId?: string;
@@ -1997,9 +2040,6 @@ export interface UpdateOpportunityOrPledgeBody {
   askAmount?: string | null;
   awardedAmount?: string | null;
   type?: OpportunityType | null;
-  conditional?: OpportunityConditional | null;
-  conditions?: string | null;
-  conditionsMet?: OpportunityConditionsMet;
   individualGiverPersonId?: string | null;
   individualAdvisorPersonId?: string | null;
   matchId?: string | null;
@@ -2035,22 +2075,19 @@ export interface CreatePledgeAllocationBody {
   fundableProjectId?: string;
   directToSchool?: boolean;
   schoolRecipientId?: string;
-  formallyRestricted?: boolean;
-  reimbursableShare?: ReimbursableShare;
+  regionalRestrictionType?: RestrictionAxis;
+  usageRestrictionType?: RestrictionAxis;
+  timeRestrictionType?: RestrictionAxis;
+  reimbursementType?: ReimbursementType;
+  conditional?: OpportunityConditional;
+  conditionsMet?: OpportunityConditionsMet;
   status?: PledgeAllocationStatus;
   contingent?: boolean;
   conditions?: string;
   expectedPaymentDate?: string;
   notes?: string;
   regionIds?: string[];
-  restrictionType?: RestrictionType;
-  restrictionEvidence?: string;
   purposeVerbatim?: string;
-  deferredRevenue?: DeferredRevenue;
-  deferredRevenueReason?: string;
-  objectCodeOverride?: string;
-  revenueLocationOverride?: string;
-  revenueClassOverride?: string;
 }
 
 export interface UpdatePledgeAllocationBody {
@@ -2062,22 +2099,19 @@ export interface UpdatePledgeAllocationBody {
   fundableProjectId?: string | null;
   directToSchool?: boolean;
   schoolRecipientId?: string | null;
-  formallyRestricted?: boolean;
-  reimbursableShare?: ReimbursableShare | null;
+  regionalRestrictionType?: RestrictionAxis;
+  usageRestrictionType?: RestrictionAxis;
+  timeRestrictionType?: RestrictionAxis;
+  reimbursementType?: ReimbursementType | null;
+  conditional?: OpportunityConditional | null;
+  conditionsMet?: OpportunityConditionsMet;
   status?: PledgeAllocationStatus | null;
   contingent?: boolean;
   conditions?: string | null;
   expectedPaymentDate?: string | null;
   notes?: string | null;
   regionIds?: string[] | null;
-  restrictionType?: RestrictionType | null;
-  restrictionEvidence?: string | null;
   purposeVerbatim?: string | null;
-  deferredRevenue?: DeferredRevenue | null;
-  deferredRevenueReason?: string | null;
-  objectCodeOverride?: string | null;
-  revenueLocationOverride?: string | null;
-  revenueClassOverride?: string | null;
 }
 
 export interface GiftAllocation {
@@ -2086,12 +2120,13 @@ export interface GiftAllocation {
   subAmount?: string | null;
   grantYear?: string | null;
   entityId?: string | null;
-  formalRegionalRestriction: boolean;
   intendedUsage?: IntendedUsage | null;
   fundableProjectId?: string | null;
-  formalFundUseRestriction: boolean;
+  regionalRestrictionType: RestrictionAxis;
+  usageRestrictionType: RestrictionAxis;
+  timeRestrictionType: RestrictionAxis;
   /** Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count. */
-  reimbursableShare?: ReimbursableShare | null;
+  reimbursementType?: ReimbursementType | null;
   /** When false, this allocation's money is excluded from goal/received analytics rollups (e.g. government reimbursement that doesn't advance the fundraising goal). Per-allocation; defaults true. */
   countsTowardGoal: boolean;
   schoolRecipientId?: string | null;
@@ -2100,19 +2135,46 @@ export interface GiftAllocation {
   regionIds?: string[] | null;
   /** Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only. */
   readonly displayUsage?: string | null;
-  restrictionType?: RestrictionType | null;
-  restrictionEvidence?: string | null;
   purposeVerbatim?: string | null;
+  /**
+   * @deprecated — use regionalRestrictionType.
+   * @deprecated
+   */
+  formalRegionalRestriction?: boolean;
+  /**
+   * @deprecated — use usageRestrictionType.
+   * @deprecated
+   */
+  formalFundUseRestriction?: boolean;
+  /**
+   * @deprecated — renamed to reimbursementType.
+   * @deprecated
+   */
+  reimbursableShare?: ReimbursementType | null;
+  /** @deprecated */
+  restrictionType?: RestrictionType | null;
+  /** @deprecated */
+  restrictionEvidence?: string | null;
+  /**
+   * @deprecated — coding snapshot moved to staged_payments.
+   * @deprecated
+   */
   deferredRevenue?: DeferredRevenue | null;
+  /** @deprecated */
   deferredRevenueReason?: string | null;
-  /** Derived Object Code snapshot. Effective = objectCodeOverride ?? objectCode. */
+  /** @deprecated */
   readonly objectCode?: string | null;
+  /** @deprecated */
   objectCodeOverride?: string | null;
+  /** @deprecated */
   readonly revenueLocation?: string | null;
+  /** @deprecated */
   revenueLocationOverride?: string | null;
+  /** @deprecated */
   readonly revenueClass?: string | null;
+  /** @deprecated */
   revenueClassOverride?: string | null;
-  /** Coding flags for human review (e.g. restriction_unclear, location_default). */
+  /** @deprecated */
   readonly codingFlags?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
@@ -2161,9 +2223,10 @@ export interface GiftAuditReconciliationRecord {
 
 export interface GiftAuditReconciliationRestriction {
   allocationId: string;
-  restrictionType?: RestrictionType | null;
+  regionalRestrictionType: RestrictionAxis;
+  usageRestrictionType: RestrictionAxis;
+  timeRestrictionType: RestrictionAxis;
   purposeVerbatim?: string | null;
-  restrictionEvidence?: string | null;
   subAmount?: string | null;
   displayUsage?: string | null;
 }
@@ -2678,6 +2741,24 @@ export interface ApplyRuleToPendingResult {
   skipped: number;
 }
 
+/**
+ * Live, on-demand revenue-coding instructions derived from an allocation's
+scope (donor kind, fund entity, restriction axes, region). NOT persisted
+on the allocation — a read-only preview the reviewer copies onto the
+linked staged_payments coding snapshot.
+
+ */
+export interface RevenueCodingPreview {
+  /** Derived Object Code (e.g. 4000.1 / 4100.2), or null when it can't be resolved cleanly. */
+  objectCode: string | null;
+  /** Derived Revenue Location. */
+  location: string | null;
+  /** Derived Suggested Class. */
+  revenueClass: string | null;
+  /** Ambiguities surfaced for human review (e.g. location_default, payer_type_assumed, loan_no_revenue_account). */
+  flags: string[];
+}
+
 export type RevenueAccountKind = typeof RevenueAccountKind[keyof typeof RevenueAccountKind];
 
 
@@ -2822,6 +2903,16 @@ export interface StagedPayment {
   fundingSourceProvenance: StagedPaymentFundingSourceProvenance;
   /** Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via /set-needs-research with no side effects on reconcile status or matching. */
   needsResearch: boolean;
+  objectCode?: string | null;
+  objectCodeOverride?: string | null;
+  revenueLocation?: string | null;
+  revenueLocationOverride?: string | null;
+  revenueClass?: string | null;
+  revenueClassOverride?: string | null;
+  /** Coding flags surfaced for human review (e.g. location_default, payer_type_assumed). */
+  codingFlags?: string[] | null;
+  deferredRevenue?: DeferredRevenue | null;
+  deferredRevenueReason?: string | null;
   resolvedGiftId?: string | null;
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;
@@ -3623,12 +3714,9 @@ export interface ReconciliationCardGiftAllocation {
   entityName?: string | null;
   /** Human-readable intended-usage label (display_usage, falling back to the intended_usage code) — e.g. 'Gen Ops', 'School Startup', or a project name. */
   usageLabel?: string | null;
-  /** Restriction type of the allocation (unrestricted | purpose | time | both | unclear | na). */
-  restrictionType?: string | null;
-  /** True when the allocation is formally restricted to a region. */
-  regionalRestriction: boolean;
-  /** True when the allocation is formally restricted in how the funds may be used. */
-  fundUseRestriction: boolean;
+  regionalRestrictionType: RestrictionAxis;
+  usageRestrictionType: RestrictionAxis;
+  timeRestrictionType: RestrictionAxis;
 }
 
 export type ReconciliationCardProposedDonorKind = typeof ReconciliationCardProposedDonorKind[keyof typeof ReconciliationCardProposedDonorKind] | null;
@@ -3741,6 +3829,16 @@ export interface ReconciliationCard {
   sourceGroupTotalAmount?: string | null;
   /** Compact per-member rows of the group, for display. Null when not a group. The representative is the card's stagedPaymentId. */
   sourceGroupMembers?: ReconciliationCardGroupMember[] | null;
+  objectCode?: string | null;
+  objectCodeOverride?: string | null;
+  revenueLocation?: string | null;
+  revenueLocationOverride?: string | null;
+  revenueClass?: string | null;
+  revenueClassOverride?: string | null;
+  /** Coding flags surfaced for human review (e.g. location_default, payer_type_assumed). */
+  codingFlags?: string[] | null;
+  deferredRevenue?: DeferredRevenue | null;
+  deferredRevenueReason?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -4383,6 +4481,26 @@ export interface SetStagedPaymentNeedsResearchBody {
 }
 
 /**
+ * Set or clear the revenue-coding snapshot on a staged payment. All fields
+optional; only provided fields are written. The bare fields are the
+derived coding values, the *Override fields pin a manual value, and
+codingFlags surfaces ambiguities for human review. Passing null clears a
+field.
+
+ */
+export interface SetStagedPaymentCodingBody {
+  objectCode?: string | null;
+  objectCodeOverride?: string | null;
+  revenueLocation?: string | null;
+  revenueLocationOverride?: string | null;
+  revenueClass?: string | null;
+  revenueClassOverride?: string | null;
+  codingFlags?: string[] | null;
+  deferredRevenue?: DeferredRevenue | null;
+  deferredRevenueReason?: string | null;
+}
+
+/**
  * Mark two or more staged payments as ONE physical gift entered separately in QuickBooks (a 'same physical gift' source group). Stamps a shared sourceGroupId. Does not change donor or gift links and never reconciles by itself.
  */
 export interface GroupStagedPaymentsBody {
@@ -4456,24 +4574,18 @@ export interface CreateGiftAllocationBody {
   subAmount?: string;
   grantYear?: string;
   entityId?: string;
-  formalRegionalRestriction?: boolean;
+  regionalRestrictionType?: RestrictionAxis;
+  usageRestrictionType?: RestrictionAxis;
+  timeRestrictionType?: RestrictionAxis;
   intendedUsage?: IntendedUsage;
   fundableProjectId?: string;
-  formalFundUseRestriction?: boolean;
-  reimbursableShare?: ReimbursableShare;
+  reimbursementType?: ReimbursementType;
   countsTowardGoal?: boolean;
   schoolRecipientId?: string;
   spendingStart?: string;
   spendingEnd?: string;
   regionIds?: string[];
-  restrictionType?: RestrictionType;
-  restrictionEvidence?: string;
   purposeVerbatim?: string;
-  deferredRevenue?: DeferredRevenue;
-  deferredRevenueReason?: string;
-  objectCodeOverride?: string;
-  revenueLocationOverride?: string;
-  revenueClassOverride?: string;
 }
 
 export interface UpdateGiftAllocationBody {
@@ -4481,24 +4593,18 @@ export interface UpdateGiftAllocationBody {
   subAmount?: string | null;
   grantYear?: string | null;
   entityId?: string | null;
-  formalRegionalRestriction?: boolean;
+  regionalRestrictionType?: RestrictionAxis;
+  usageRestrictionType?: RestrictionAxis;
+  timeRestrictionType?: RestrictionAxis;
   intendedUsage?: IntendedUsage | null;
   fundableProjectId?: string | null;
-  formalFundUseRestriction?: boolean;
-  reimbursableShare?: ReimbursableShare | null;
+  reimbursementType?: ReimbursementType | null;
   countsTowardGoal?: boolean;
   schoolRecipientId?: string | null;
   spendingStart?: string | null;
   spendingEnd?: string | null;
   regionIds?: string[] | null;
-  restrictionType?: RestrictionType | null;
-  restrictionEvidence?: string | null;
   purposeVerbatim?: string | null;
-  deferredRevenue?: DeferredRevenue | null;
-  deferredRevenueReason?: string | null;
-  objectCodeOverride?: string | null;
-  revenueLocationOverride?: string | null;
-  revenueClassOverride?: string | null;
 }
 
 export type InteractionKind = typeof InteractionKind[keyof typeof InteractionKind];

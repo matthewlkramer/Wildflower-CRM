@@ -39,6 +39,7 @@ import type {
   RevertStagedPaymentMatchesBody,
   RevertStagedPaymentMatchesResponse,
   SearchStagedPaymentDonorsParams,
+  SetStagedPaymentCodingBody,
   SetStagedPaymentEntityBody,
   SetStagedPaymentFundingSourceBody,
   SetStagedPaymentNeedsResearchBody,
@@ -797,6 +798,86 @@ export const useSetStagedPaymentNeedsResearch = <TError = ErrorType<BadRequestRe
         TContext
       > => {
       return useMutation(getSetStagedPaymentNeedsResearchMutationOptions(options));
+    }
+    /**
+ * Reviewer captures/edits the accounting coding for this QuickBooks
+payment — Object Code, Revenue Location, Revenue Class (each with a
+manual override), the deferred-revenue flag + reason, and the coding
+flags. The coding snapshot now lives on the payment record, not on the
+allocation; a live derivation is available per-allocation via
+`/gift-allocations/{id}/coding-preview`. Only provided fields are
+written; passing null clears that field. Orthogonal to reconcile status,
+allowed on a row in any state.
+
+ * @summary Set or clear the revenue-coding snapshot on a staged payment (the QuickBooks payment record).
+ */
+export const getSetStagedPaymentCodingUrl = (id: string,) => {
+
+
+  
+
+  return `/api/staged-payments/${id}/set-coding`
+}
+
+export const setStagedPaymentCoding = async (id: string,
+    setStagedPaymentCodingBody: SetStagedPaymentCodingBody, options?: RequestInit): Promise<StagedPayment> => {
+  
+  return customFetch<StagedPayment>(getSetStagedPaymentCodingUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      setStagedPaymentCodingBody,)
+  }
+);}
+  
+
+
+
+export const getSetStagedPaymentCodingMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStagedPaymentCoding>>, TError,{id: string;data: BodyType<SetStagedPaymentCodingBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setStagedPaymentCoding>>, TError,{id: string;data: BodyType<SetStagedPaymentCodingBody>}, TContext> => {
+
+const mutationKey = ['setStagedPaymentCoding'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStagedPaymentCoding>>, {id: string;data: BodyType<SetStagedPaymentCodingBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setStagedPaymentCoding(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetStagedPaymentCodingMutationResult = NonNullable<Awaited<ReturnType<typeof setStagedPaymentCoding>>>
+    export type SetStagedPaymentCodingMutationBody = BodyType<SetStagedPaymentCodingBody>
+    export type SetStagedPaymentCodingMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Set or clear the revenue-coding snapshot on a staged payment (the QuickBooks payment record).
+ */
+export const useSetStagedPaymentCoding = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStagedPaymentCoding>>, TError,{id: string;data: BodyType<SetStagedPaymentCodingBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setStagedPaymentCoding>>,
+        TError,
+        {id: string;data: BodyType<SetStagedPaymentCodingBody>},
+        TContext
+      > => {
+      return useMutation(getSetStagedPaymentCodingMutationOptions(options));
     }
     /**
  * Human-driven counterpart to the insert-time auto-exclude: files a staged

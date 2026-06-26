@@ -5,10 +5,27 @@ description: Domain rules and gotchas for the opportunity/pledge & gift allocati
 
 # Allocation editors (pledge + gift)
 
-## Restriction model is asymmetric — do NOT unify it
-- `pledge_allocations` carries ONE flag: `formallyRestricted` → UI badge "Restricted" vs "Intent".
-- `gift_allocations` carries TWO flags: `formalFundUseRestriction` + `formalRegionalRestriction` → "Use" / "Region" badges vs "Intent".
-- **Why:** "formally restricted" means the grant letter legally restricts the money; unchecked means it's only our documented understanding of donor intent. Gifts distinguish use-vs-region restriction; pledges don't. They are intentionally separate columns — don't collapse them into one boolean.
+## Restriction model is THREE AXES (Task #449 — replaced the old flags)
+- Both `pledge_allocations` AND `gift_allocations` now carry three independent
+  `restriction_axis` columns: `regionalRestrictionType` / `usageRestrictionType` /
+  `timeRestrictionType`, each `donor_restricted | wf_restricted | unrestricted`
+  (NOT NULL default `unrestricted`).
+- A line codes as restricted (→ 4100.x object code) when **ANY** axis is
+  `donor_restricted`; `wf_restricted` (internal WF designation) and `unrestricted`
+  both code unrestricted (`anyDonorRestricted` in `@workspace/api-zod`).
+- The OLD flags (`formallyRestricted` on pledge; `formalFundUseRestriction` +
+  `formalRegionalRestriction` on gift) and the `restriction_type` enum are
+  `@deprecated` (kept physical for the deprecate-then-drop window; backfill in
+  `lib/db/migrations/0082`).
+- **Coding moved off allocations** — the revenue-coding snapshot (object code +
+  override, revenue location + override, revenue class + override, coding flags,
+  deferred revenue + reason) is now derived-on-demand (preview via
+  `deriveRevenueCoding`) and captured onto `staged_payments`, NOT persisted on
+  allocations.
+- **Grant conditions moved onto `pledge_allocations`** (`conditional` +
+  `conditionsMet`); the opportunity header exposes a derived read-only rollup
+  (`deriveConditionalRollup`) driving win-probability (conditional pledge 0.7500 vs
+  0.9000). Old header `conditional`/`conditions`/`conditionsMet` are write-deprecated.
 
 ## displayUsage is trigger-maintained — never write it
 - `gift_allocations.displayUsage` is a denormalized label maintained by a DB trigger. The client must never include it in any create/update body or form state. Use it read-only (e.g. as a Usage fallback when only a school recipient is set).

@@ -12,7 +12,10 @@ import {
   intendedUsageEnum,
   restrictionTypeEnum,
   deferredRevenueEnum,
-  reimbursableShareEnum,
+  reimbursementTypeEnum,
+  restrictionAxisEnum,
+  opportunityConditionalEnum,
+  opportunityConditionsMetEnum,
 } from "./_enums";
 import { opportunitiesAndPledges } from "./opportunitiesAndPledges";
 import { entities } from "./entities";
@@ -54,21 +57,35 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   schoolRecipientId: text("school_recipient_id").references(() => schools.id, {
     onDelete: "restrict",
   }),
-  // Whether this allocation is FORMALLY restricted by the grant letter (true)
-  // vs. just our documented understanding of the donor's intent (false). The
-  // gift_allocations equivalent is split into regional + fund-use booleans; at
-  // the opportunity/pledge stage a single flag is sufficient.
+  // @deprecated (Task #449) — replaced by the three-axis restriction taxonomy
+  // (regionalRestrictionType / usageRestrictionType / timeRestrictionType). No
+  // code reads or writes this anymore; retained ONLY so dev push stays additive
+  // and prod Publish never auto-drops it (prod invariant #7). Physical DROP ships
+  // as a reviewed, human-applied SQL file in lib/db/migrations/.
   formallyRestricted: boolean("formally_restricted").default(false).notNull(),
+  // ── Restriction taxonomy (Task #449) ─────────────────────────────────────
+  // Three independent axes capturing the donor's restriction INTENT, each one of
+  // donor_restricted / wf_restricted / unrestricted. Mirrors gift_allocations.
+  // NOT NULL default 'unrestricted'.
+  regionalRestrictionType: restrictionAxisEnum("regional_restriction_type")
+    .default("unrestricted")
+    .notNull(),
+  usageRestrictionType: restrictionAxisEnum("usage_restriction_type")
+    .default("unrestricted")
+    .notNull(),
+  timeRestrictionType: restrictionAxisEnum("time_restriction_type")
+    .default("unrestricted")
+    .notNull(),
   // Direct vs indirect share on a reimbursable grant. Nullable = untagged
   // (normal money). DIRECT is excluded from goal analytics; null + indirect
   // both count. Never affects opportunity-status / pledge paid-amount
-  // derivation (those keep summing ALL allocations). See _enums.ts.
-  reimbursableShare: reimbursableShareEnum("reimbursable_share"),
+  // derivation (those keep summing ALL allocations). See _enums.ts. Renamed
+  // from reimbursable_share (Task #449).
+  reimbursementType: reimbursementTypeEnum("reimbursement_type"),
   status: pledgeAllocationStatusEnum("status"),
-  // Scheduled (false, the default) vs contingent (true) future payment. The
-  // opportunity-level `conditional` enum is header-only; booking treats each
-  // pledge year/tranche separately, so contingency is captured per allocation.
-  // The free-text `conditions` below describes the contingency when set.
+  // Scheduled (false, the default) vs contingent (true) future payment. Booking
+  // treats each pledge year/tranche separately, so contingency is captured per
+  // allocation. The free-text `conditions` below describes the contingency.
   contingent: boolean("contingent").default(false).notNull(),
   conditions: text("conditions"),
   // Per-row expected payment date (NOT tranched by grant year — a single fiscal
@@ -77,19 +94,28 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   // allocations. Drives overdue detection on committed/partially-paid pledges.
   // Nullable = unscheduled.
   expectedPaymentDate: date("expected_payment_date"),
+  // ── Grant conditions, per-allocation (Task #449) ──────────────────────────
+  // Moved down from the opportunity header (where money is actually booked per
+  // year/tranche). The header now exposes a READ-ONLY derived rollup of these.
+  // `conditional` mirrors opportunityConditionalEnum (nullable = unset);
+  // `conditionsMet` mirrors opportunityConditionsMetEnum (default 'no').
+  conditional: opportunityConditionalEnum("conditional"),
+  conditionsMet: opportunityConditionsMetEnum("conditions_met")
+    .default("no")
+    .notNull(),
   notes: text("notes"),
   // Array of regions.id values. Array columns can't carry native FK
   // constraints; the API layer is responsible for validating writes.
   regionIds: text("region_ids").array(),
-  // ── Revenue-accounting / QuickBooks coding (CFO "Revenue Extractor") ──
-  // See gift_allocations for column semantics. Captured at the pledge stage so
-  // coding intent is recorded before any cash arrives.
+  // The donor's restriction language, verbatim. Still active.
+  purposeVerbatim: text("purpose_verbatim"),
+  // ── @deprecated (Task #449) — revenue-coding snapshot moved to staged_payments ──
+  // See gift_allocations for the deprecate-then-drop rationale. No code reads or
+  // writes these anymore; the on-demand coding preview is derived from scope.
   restrictionType: restrictionTypeEnum("restriction_type"),
   restrictionEvidence: text("restriction_evidence"),
-  purposeVerbatim: text("purpose_verbatim"),
   deferredRevenue: deferredRevenueEnum("deferred_revenue"),
   deferredRevenueReason: text("deferred_revenue_reason"),
-  // Derived QBO coding SNAPSHOT (override via *Override columns).
   objectCode: text("object_code"),
   objectCodeOverride: text("object_code_override"),
   revenueLocation: text("revenue_location"),

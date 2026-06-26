@@ -11,7 +11,7 @@ import type { Server } from "node:http";
  *
  * Asserts against the real route handlers + the real `applyDerivedOppFields`
  * derivation, hitting the dev Postgres so the SQL exclusion predicate
- * (`reimbursable_share IS DISTINCT FROM 'direct'`) is actually exercised.
+ * (`reimbursement_type IS DISTINCT FROM 'direct'`) is actually exercised.
  *
  * The only seam mocked is the Clerk auth gate. All seeded rows use a unique run
  * prefix and are cleaned up. Skips automatically when no real DATABASE_URL.
@@ -85,7 +85,7 @@ async function seedGift(subAmount: string, share: Share): Promise<string> {
     subAmount,
     entityId: ENTITY_ID,
     grantYear: FY_ID,
-    reimbursableShare: share,
+    reimbursementType: share,
   });
   seededGiftIds.push(id);
   return id;
@@ -107,7 +107,7 @@ async function seedOpenPledgeAlloc(subAmount: string, share: Share): Promise<str
     subAmount,
     entityId: ENTITY_ID,
     grantYear: FY_ID,
-    reimbursableShare: share,
+    reimbursementType: share,
   });
   seededOppIds.push(oppId);
   return oppId;
@@ -243,7 +243,7 @@ describe.skipIf(!HAS_DB)("reimbursable share — goal analytics exclusion", () =
         subAmount: "1000.00",
         entityId: ENTITY_ID,
         grantYear: FY_ID,
-        reimbursableShare: "direct",
+        reimbursementType: "direct",
       },
       {
         id: nextId("palloc"),
@@ -251,7 +251,7 @@ describe.skipIf(!HAS_DB)("reimbursable share — goal analytics exclusion", () =
         subAmount: "500.00",
         entityId: ENTITY_ID,
         grantYear: FY_ID,
-        reimbursableShare: "indirect",
+        reimbursementType: "indirect",
       },
     ]);
 

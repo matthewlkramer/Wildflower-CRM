@@ -84,9 +84,9 @@ export const ListReconciliationCardsResponse = zod.object({
   "resolvedGiftAllocations": zod.array(zod.object({
   "entityName": zod.string().nullish().describe('Wildflower legal entity the allocation is attributed to.'),
   "usageLabel": zod.string().nullish().describe('Human-readable intended-usage label (display_usage, falling back to the intended_usage code) — e.g. \'Gen Ops\', \'School Startup\', or a project name.'),
-  "restrictionType": zod.string().nullish().describe('Restriction type of the allocation (unrestricted | purpose | time | both | unclear | na).'),
-  "regionalRestriction": zod.boolean().describe('True when the allocation is formally restricted to a region.'),
-  "fundUseRestriction": zod.boolean().describe('True when the allocation is formally restricted in how the funds may be used.')
+  "regionalRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "usageRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "timeRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.')
 }).describe('Compact intended-usage summary of one allocation line on a reconciler card\'s linked CRM gift, so a reviewer can judge what the money is for.')).nullish().describe('Intended-usage rollup of the linked gift\'s allocation lines (entity, usage label, restriction) — shown on the card\'s CRM-gift side so a reviewer can judge what the money is for. Null when no gift is linked or the gift has no allocations.'),
   "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).nullish().describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.'),
   "ready": zod.boolean().describe('Auto-proposal satisfies the consistency gate (one-click approve).'),
@@ -111,6 +111,15 @@ export const ListReconciliationCardsResponse = zod.object({
   "fundingSource": zod.enum(['stripe', 'brokerage', 'daf', 'donorbox', 'paypal', 'wire_ach', 'check', 'cash', 'employer_match', 'other']).nullish().describe('WHERE the incoming money came from \/ how it rendered. A first-class origin dimension, DISTINCT from qbPaymentMethod (the QB instrument like Visa\/Check) and from the derived reconciliation funding lane (reconcile progress, not origin). Auto-seeded at ingest by detectFundingSource and human-correctable. other = a known origin outside this list.'),
   "isRepresentative": zod.boolean().describe('True for the single member that anchors the group card \/ carries the group\'s gift link on approve (the card\'s stagedPaymentId).')
 }).describe('One member of a manual \'same physical gift\' source group, summarized for the group card.')).nullish().describe('Compact per-member rows of the group, for display. Null when not a group. The representative is the card\'s stagedPaymentId.'),
+  "objectCode": zod.string().nullish(),
+  "objectCodeOverride": zod.string().nullish(),
+  "revenueLocation": zod.string().nullish(),
+  "revenueLocationOverride": zod.string().nullish(),
+  "revenueClass": zod.string().nullish(),
+  "revenueClassOverride": zod.string().nullish(),
+  "codingFlags": zod.array(zod.string()).nullish().describe('Coding flags surfaced for human review (e.g. location_default, payer_type_assumed).'),
+  "deferredRevenue": zod.enum(['yes', 'no', 'na']).nullish(),
+  "deferredRevenueReason": zod.string().nullish(),
   "createdAt": zod.string().datetime({}).nullish(),
   "updatedAt": zod.string().datetime({}).nullish()
 }).describe('List item for the unified reconciler — one per QB staged payment (the anchor), OR one per manual \'same physical gift\' source group (collapsed; stagedPaymentId is the representative member). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card.')),

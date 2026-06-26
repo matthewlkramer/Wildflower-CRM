@@ -233,14 +233,29 @@ mid-run as noise (retry), not a blocker.
   archived, and the QB staged row is excluded with reason `processor_payout` (set
   ONLY on human confirm) so the same money is never booked twice. Key files:
   `stripeSync.ts`, `stripeReconcile.ts`, `stripeMatch.ts`, `stripeConfirm.ts`.
-- **Revenue-accounting coding (CFO "Revenue Extractor")** — gift/pledge allocations
-  capture accounting codes alongside scope, derived from donor kind + fundable
-  project + region by `revenueCoding.ts`, with per-fund-entity overrides
-  (fiscal-sponsee defaults, keyed on `entities.id`) in `entity_coding_rules` (GL
-  account list in `revenue_accounts`). `restriction_type`
-  (`unrestricted` / `purpose` / `time` / `both` / `unclear` / `na`) never silently
-  defaults `unclear` to unrestricted — it flags for human review. `deferred_revenue`
-  is captured, not computed (the CRM does not derive AR).
+- **Allocation restriction (three axes)** — restriction is captured per allocation on
+  three independent axes (`regional` / `usage` / `time`), each a `restriction_axis`
+  enum (`donor_restricted` / `wf_restricted` / `unrestricted`, default `unrestricted`).
+  A line codes as restricted (→ 4100.x) when ANY axis is `donor_restricted`;
+  `wf_restricted` and `unrestricted` both code as unrestricted. Replaces the coarse
+  `formal_*` booleans and the old `restriction_type` enum (now `@deprecated`,
+  deprecate-then-drop). `reimbursable_share` is renamed `reimbursement_type`
+  (`direct` / `indirect`).
+- **Revenue-accounting coding (CFO "Revenue Extractor")** — coding (object code +
+  override, revenue location + override, revenue class + override, coding flags,
+  `deferred_revenue` + reason) is **derived on demand** from allocation scope (donor
+  kind + fundable project + region + restriction axes) by `revenueCoding.ts` /
+  `deriveRevenueCoding`, with per-fund-entity overrides (fiscal-sponsee defaults,
+  keyed on `entities.id`) in `entity_coding_rules` (GL account list in
+  `revenue_accounts`). It is **no longer persisted on allocations** — the editors show
+  a live read-only preview and the reviewer captures the snapshot onto the matching
+  `staged_payments` row (it describes the QuickBooks payment, not donor intent).
+  `deferred_revenue` is captured, not computed (the CRM does not derive AR).
+- **Grant conditions (on pledge allocations)** — `conditional` + `conditions_met` live
+  on `pledge_allocations`; the opportunity header exposes a derived read-only rollup
+  (`deriveConditionalRollup`) that drives win-probability weighting (a conditional
+  written pledge weights `0.7500` instead of `0.9000`). The old header
+  `conditional` / `conditions` / `conditions_met` columns are write-deprecated.
 - **Email & calendar sync + intelligence** — per-user Gmail/Calendar sync into
   `email_messages` / `calendar_events` (Chicago-time-aware scheduler, advisory-locked,
   matched to CRM entities with suppression controls). AI "email intelligence" (Claude

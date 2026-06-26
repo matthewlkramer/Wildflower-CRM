@@ -1,5 +1,9 @@
 import { db } from "@workspace/db";
-import { opportunitiesAndPledges, giftsAndPayments } from "@workspace/db/schema";
+import {
+  opportunitiesAndPledges,
+  giftsAndPayments,
+  pledgeAllocations,
+} from "@workspace/db/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 // ── Cultivation funnel ───────────────────────────────────────────────────────
@@ -50,6 +54,46 @@ export function isConditionalPledge(
     conditional === "conditional_on_funder_determination" ||
     conditional === "conditional_on_target"
   );
+}
+
+export interface ConditionalRollup {
+  // Representative conditional value across the opportunity's pledge
+  // allocations: a conditional kind when ANY allocation is conditional, else
+  // 'unconditional'. Null when the opportunity has no allocations at all.
+  conditional: string | null;
+  // 'yes' only when every conditional allocation has its conditions met;
+  // vacuously 'yes' when there are no conditional allocations.
+  conditionsMet: "yes" | "no";
+}
+
+/**
+ * Derive the header-level conditional rollup from an opportunity's pledge
+ * allocations (Task #449 — grant conditions moved off the opportunity header
+ * onto the allocations). Drives win-probability weighting.
+ */
+export async function deriveConditionalRollup(
+  opportunityId: string,
+): Promise<ConditionalRollup> {
+  const allocs = await db
+    .select({
+      conditional: pledgeAllocations.conditional,
+      conditionsMet: pledgeAllocations.conditionsMet,
+    })
+    .from(pledgeAllocations)
+    .where(eq(pledgeAllocations.pledgeOrOpportunityId, opportunityId));
+  if (allocs.length === 0) return { conditional: null, conditionsMet: "yes" };
+  const conditionalAllocs = allocs.filter((a) => isConditionalPledge(a.conditional));
+  if (conditionalAllocs.length === 0) {
+    return { conditional: "unconditional", conditionsMet: "yes" };
+  }
+  // Deterministic representative value (sorted) so repeated derivations agree.
+  const conditional = [...conditionalAllocs]
+    .map((a) => a.conditional!)
+    .sort()[0]!;
+  const conditionsMet = conditionalAllocs.every((a) => a.conditionsMet === "yes")
+    ? "yes"
+    : "no";
+  return { conditional, conditionsMet };
 }
 
 /**
@@ -194,11 +238,16 @@ export async function applyDerivedOppFields(
       ),
     );
 
+  // Grant conditions now live on the pledge allocations; the header conditional
+  // is a derived rollup (conditional when ANY allocation is conditional). It
+  // drives win-probability weighting (90% non-conditional / 75% conditional).
+  const rollup = await deriveConditionalRollup(id);
+
   const { status, stage, writtenPledge } = deriveOppFields({
     stage: row.stage,
     lossType: row.lossType,
     writtenPledge: row.writtenPledge,
-    conditional: row.conditional,
+    conditional: rollup.conditional,
     grantLetterUrl: row.grantLetterUrl,
     awardedAmount: row.awardedAmount,
     paidAmount: paid,
@@ -206,18 +255,28 @@ export async function applyDerivedOppFields(
 
   const statusOrStageChanged = status !== row.status || stage !== row.stage;
   const paidChanged = Number(paid) !== Number(row.paid ?? 0);
+  // Re-canonicalise win-probability when status/stage changes OR when the
+  // allocation-driven conditional rollup would change the pledge weight (an
+  // allocation edit re-stamps win_probability even if status is unchanged).
+  const canonicalWp = canonicalWinProbability(status, stage, rollup.conditional);
+  const winProbabilityChanged =
+    status === "pledge" &&
+    canonicalWp !== null &&
+    canonicalWp !== row.winProbability;
   if (
     statusOrStageChanged ||
     writtenPledge !== row.writtenPledge ||
-    paidChanged
+    paidChanged ||
+    winProbabilityChanged
   ) {
     // A status/stage change re-canonicalises win_probability to the default,
     // intentionally overwriting any prior user override (same rule as the
-    // explicit PATCH path).
-    const winProbability = statusOrStageChanged
-      ? canonicalWinProbability(status, stage, row.conditional) ??
-        row.winProbability
-      : row.winProbability;
+    // explicit PATCH path). An allocation-driven conditional change does the
+    // same so the pledge weight tracks its conditions.
+    const winProbability =
+      statusOrStageChanged || winProbabilityChanged
+        ? canonicalWp ?? row.winProbability
+        : row.winProbability;
     await db
       .update(opportunitiesAndPledges)
       .set({

@@ -19,6 +19,7 @@ import {
   ExcludeStagedPaymentBody,
   SetStagedPaymentEntityBody,
   SetStagedPaymentFundingSourceBody,
+  SetStagedPaymentCodingBody,
   SetStagedPaymentNeedsResearchBody,
   GroupStagedPaymentsBody,
   UngroupStagedPaymentsBody,
@@ -494,6 +495,61 @@ router.post(
         fundingSourceProvenance: "manual",
         updatedAt: new Date(),
       })
+      .where(eq(stagedPayments.id, id))
+      .returning(stagedReturnColumns);
+    res.json(row);
+  }),
+);
+
+// ─── POST /staged-payments/:id/set-coding ──────────────────────────────────
+// Reviewer captures/edits the revenue-coding snapshot for this QuickBooks
+// payment record. The snapshot moved off the allocation onto the staged row
+// (Task #449); a live per-allocation derivation is available at
+// /gift-allocations/{id}/coding-preview. Only fields present in the body are
+// written; passing null clears that field. Orthogonal to reconcile status, so
+// allowed on a row in any state.
+router.post(
+  "/staged-payments/:id/set-coding",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const parsed = SetStagedPaymentCodingBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    const existing = await db
+      .select({ id: stagedPayments.id })
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, id))
+      .then((r) => r[0]);
+    if (!existing) return notFound(res, "staged payment");
+
+    // Only write fields the caller actually sent (partial update); a present
+    // null clears the column, an absent key leaves it untouched.
+    const b = parsed.data;
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if ("objectCode" in b) set.objectCode = b.objectCode ?? null;
+    if ("objectCodeOverride" in b)
+      set.objectCodeOverride = b.objectCodeOverride ?? null;
+    if ("revenueLocation" in b) set.revenueLocation = b.revenueLocation ?? null;
+    if ("revenueLocationOverride" in b)
+      set.revenueLocationOverride = b.revenueLocationOverride ?? null;
+    if ("revenueClass" in b) set.revenueClass = b.revenueClass ?? null;
+    if ("revenueClassOverride" in b)
+      set.revenueClassOverride = b.revenueClassOverride ?? null;
+    if ("codingFlags" in b) set.codingFlags = b.codingFlags ?? null;
+    if ("deferredRevenue" in b) set.deferredRevenue = b.deferredRevenue ?? null;
+    if ("deferredRevenueReason" in b)
+      set.deferredRevenueReason = b.deferredRevenueReason ?? null;
+
+    const [row] = await db
+      .update(stagedPayments)
+      .set(set)
       .where(eq(stagedPayments.id, id))
       .returning(stagedReturnColumns);
     res.json(row);

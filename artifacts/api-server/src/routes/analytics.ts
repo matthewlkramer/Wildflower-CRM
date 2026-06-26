@@ -132,8 +132,8 @@ function isFundraisingCategory(v: unknown): v is FundraisingCategory {
 // drop the direct share. This must NEVER be applied to opportunity-status or
 // pledge paid-amount derivation (those keep summing ALL allocations so cash_in
 // still fires on full reimbursement).
-const pledgeAllocCountsTowardGoal = sql`${pledgeAllocations.reimbursableShare} IS DISTINCT FROM 'direct'`;
-const giftAllocCountsTowardGoal = sql`${giftAllocations.reimbursableShare} IS DISTINCT FROM 'direct'`;
+const pledgeAllocCountsTowardGoal = sql`${pledgeAllocations.reimbursementType} IS DISTINCT FROM 'direct'`;
+const giftAllocCountsTowardGoal = sql`${giftAllocations.reimbursementType} IS DISTINCT FROM 'direct'`;
 
 async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
   // Entity scoping is applied at the allocation level (both pledge_allocations

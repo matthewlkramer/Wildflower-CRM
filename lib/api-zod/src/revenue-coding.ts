@@ -35,8 +35,30 @@ export const DEFERRED_REVENUE_VALUES = ["yes", "no", "na"] as const;
 export type DeferredRevenue = (typeof DEFERRED_REVENUE_VALUES)[number];
 
 // A restriction is "restricted" (→ 4100.x) when purpose / time / both.
+// LEGACY: kept for the deprecated `restriction_type` columns still physically
+// present on the allocation tables. The live coding derivation now reads the
+// three restriction axes (see `anyDonorRestricted`).
 export function isRestricted(rt: RestrictionType | null | undefined): boolean {
   return rt === "purpose" || rt === "time" || rt === "both";
+}
+
+// ── Three-axis restriction taxonomy ─────────────────────────────────────────
+// Each allocation carries three independent restriction axes — regional,
+// fund-use (usage), and time — each one of these values. A line is "restricted"
+// for object-code purposes (→ 4100.x) when ANY axis is donor_restricted;
+// wf_restricted (an internal Wildflower designation) and unrestricted both count
+// as unrestricted for revenue-account coding.
+export const RESTRICTION_AXIS_VALUES = [
+  "donor_restricted",
+  "wf_restricted",
+  "unrestricted",
+] as const;
+export type RestrictionAxis = (typeof RESTRICTION_AXIS_VALUES)[number];
+
+export function anyDonorRestricted(
+  ...axes: Array<RestrictionAxis | string | null | undefined>
+): boolean {
+  return axes.some((a) => a === "donor_restricted");
 }
 
 // ── Payer type ──────────────────────────────────────────────────────────────
@@ -241,7 +263,12 @@ export interface CodingInput {
   donorKind: DonorKind | null;
   // organizations.entity_type for an org donor (else null).
   orgEntityType: string | null;
-  restrictionType: RestrictionType | null;
+  // Three-axis restriction taxonomy. A line is "restricted" (→ 4100.x) when ANY
+  // axis is donor_restricted; wf_restricted / unrestricted both count as
+  // unrestricted for revenue-account coding.
+  regionalRestrictionType?: RestrictionAxis | string | null;
+  usageRestrictionType?: RestrictionAxis | string | null;
+  timeRestrictionType?: RestrictionAxis | string | null;
   // gifts_and_payments.type — 'loan_fund_investment' was the LEGACY loan signal.
   // Prefer `loanOrGrant` when present; this stays only as the fallback.
   giftType?: string | null;
@@ -317,23 +344,17 @@ export function deriveRevenueCoding(
   const location = deriveLocation(input, entityRules, flags);
   const revenueClass = deriveRevenueClass(rule, location);
 
-  // Restriction status (entity rule can force restricted).
-  let restricted: boolean;
-  if (rule?.forceRestricted) {
-    restricted = true;
-  } else if (input.restrictionType == null || input.restrictionType === "unclear") {
-    // Never silently default unclear → unrestricted. Leave the account unset
-    // and flag for human review.
-    flags.push("restriction_unclear");
-    return { objectCode: null, location, revenueClass, flags };
-  } else if (input.restrictionType === "na") {
-    // N/A → restriction logic doesn't apply (invoice, refund, unrestricted
-    // intercompany). No contribution account is derived.
-    flags.push("restriction_na");
-    return { objectCode: null, location, revenueClass, flags };
-  } else {
-    restricted = isRestricted(input.restrictionType);
-  }
+  // Restriction status: an entity rule can force restricted; otherwise the line
+  // is restricted when ANY restriction axis is donor_restricted. wf_restricted
+  // and unrestricted both code as unrestricted (4000.x). Axes default
+  // unrestricted, so there is no "unclear" path to flag.
+  const restricted =
+    rule?.forceRestricted === true ||
+    anyDonorRestricted(
+      input.regionalRestrictionType,
+      input.usageRestrictionType,
+      input.timeRestrictionType,
+    );
 
   const { payerType, assumed } = derivePayerType(
     input.donorKind,

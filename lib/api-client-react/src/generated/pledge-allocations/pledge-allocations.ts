@@ -26,6 +26,7 @@ import type {
   NotFoundResponse,
   PledgeAllocation,
   PledgeAllocationList,
+  RevenueCodingPreview,
   UpdatePledgeAllocationBody
 } from '../api.schemas';
 
@@ -308,4 +309,83 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeletePledgeAllocationMutationOptions(options));
     }
+    /**
+ * Returns the derived Object Code / Location / Class / flags for this
+pledge allocation, computed on the fly from its donor, fund entity,
+restriction axes and region — never persisted on the allocation. A
+read-only preview the reviewer can use when the pledge converts to a
+gift and its money is coded on the linked staged_payments row.
+
+ * @summary Live revenue-coding instructions derived on demand from this pledge allocation's scope.
+ */
+export const getGetPledgeAllocationCodingPreviewUrl = (id: string,) => {
+
+
+  
+
+  return `/api/pledge-allocations/${id}/coding-preview`
+}
+
+export const getPledgeAllocationCodingPreview = async (id: string, options?: RequestInit): Promise<RevenueCodingPreview> => {
+  
+  return customFetch<RevenueCodingPreview>(getGetPledgeAllocationCodingPreviewUrl(id),
+  {      
+    ...options,
+    method: 'GET'
     
+    
+  }
+);}
+  
+
+
+
+
+export const getGetPledgeAllocationCodingPreviewQueryKey = (id: string,) => {
+    return [
+    `/api/pledge-allocations/${id}/coding-preview`
+    ] as const;
+    }
+
+    
+export const getGetPledgeAllocationCodingPreviewQueryOptions = <TData = Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPledgeAllocationCodingPreviewQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>> = ({ signal }) => getPledgeAllocationCodingPreview(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPledgeAllocationCodingPreviewQueryResult = NonNullable<Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>>
+export type GetPledgeAllocationCodingPreviewQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Live revenue-coding instructions derived on demand from this pledge allocation's scope.
+ */
+
+export function useGetPledgeAllocationCodingPreview<TData = Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>, TError = ErrorType<NotFoundResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPledgeAllocationCodingPreviewQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+

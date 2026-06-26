@@ -1,5 +1,7 @@
 import { db } from "@workspace/db";
 import {
+  giftAllocations,
+  pledgeAllocations,
   giftsAndPayments,
   opportunitiesAndPledges,
   organizations,
@@ -10,21 +12,26 @@ import { eq, inArray } from "drizzle-orm";
 import {
   deriveRevenueCoding,
   type CodingInput,
+  type CodingResult,
   type DonorKind,
   type EntityCodingRule,
 } from "@workspace/api-zod";
 
-/** Snapshot columns written onto an allocation row. */
-export interface CodingSnapshot {
-  objectCode: string | null;
-  revenueLocation: string | null;
-  revenueClass: string | null;
-  codingFlags: string[];
-}
+/**
+ * Revenue-coding derivation.
+ *
+ * The coding snapshot (Object Code / Location / Class / flags) is NO LONGER
+ * persisted on allocation rows — it now lives on the QuickBooks payment record
+ * (`staged_payments`). This module derives the coding ON DEMAND from an
+ * allocation's scope so the CRM can show a live "coding instructions" preview
+ * (the allocation editors + the per-allocation coding-preview endpoints).
+ */
 
-/** Fields read off the allocation being written. */
+/** Restriction axes read off the allocation being coded. */
 export interface AllocationCodingFields {
-  restrictionType?: string | null;
+  regionalRestrictionType?: string | null;
+  usageRestrictionType?: string | null;
+  timeRestrictionType?: string | null;
   entityId?: string | null;
   intendedUsage?: string | null;
   fundableProjectId?: string | null;
@@ -124,13 +131,15 @@ async function computeFromDonor(
   donor: ParentDonor | null,
   fields: AllocationCodingFields,
   rules: EntityCodingRule[],
-): Promise<CodingSnapshot> {
+): Promise<CodingResult> {
   const entityType = await orgEntityType(donor?.organizationId ?? null);
   const states = await regionStates(fields.regionIds);
   const input: CodingInput = {
     donorKind: donor?.donorKind ?? null,
     orgEntityType: entityType,
-    restrictionType: (fields.restrictionType ?? null) as CodingInput["restrictionType"],
+    regionalRestrictionType: fields.regionalRestrictionType ?? null,
+    usageRestrictionType: fields.usageRestrictionType ?? null,
+    timeRestrictionType: fields.timeRestrictionType ?? null,
     giftType: donor?.giftType ?? null,
     loanOrGrant: donor?.loanOrGrant ?? null,
     entityId: fields.entityId ?? null,
@@ -138,96 +147,70 @@ async function computeFromDonor(
     fundableProjectId: fields.fundableProjectId ?? null,
     regionStates: states,
   };
-  const result = deriveRevenueCoding(input, rules);
-  return {
-    objectCode: result.objectCode,
-    revenueLocation: result.location,
-    revenueClass: result.revenueClass,
-    codingFlags: result.flags,
-  };
+  return deriveRevenueCoding(input, rules);
 }
 
-/** Derive the coding snapshot for a GIFT allocation. */
+/** Live coding preview for a GIFT allocation, derived from its scope. */
 export async function deriveGiftAllocationCoding(
   giftId: string | null | undefined,
   fields: AllocationCodingFields,
   rules?: EntityCodingRule[],
-): Promise<CodingSnapshot> {
+): Promise<CodingResult> {
   const ruleSet = rules ?? (await loadEntityCodingRules());
   const donor = giftId ? await loadGiftDonor(giftId) : null;
   return computeFromDonor(donor, fields, ruleSet);
 }
 
-/** Derive the coding snapshot for a PLEDGE/OPPORTUNITY allocation. */
+/** Live coding preview for a PLEDGE/OPPORTUNITY allocation, derived from scope. */
 export async function derivePledgeAllocationCoding(
   pledgeOrOpportunityId: string | null | undefined,
   fields: AllocationCodingFields,
   rules?: EntityCodingRule[],
-): Promise<CodingSnapshot> {
+): Promise<CodingResult> {
   const ruleSet = rules ?? (await loadEntityCodingRules());
   const donor = pledgeOrOpportunityId ? await loadOppDonor(pledgeOrOpportunityId) : null;
   return computeFromDonor(donor, fields, ruleSet);
 }
 
-/** Re-derive coding for ALL allocations under a gift (donor change). */
-export async function rederiveGiftAllocations(giftId: string): Promise<void> {
-  const rules = await loadEntityCodingRules();
-  const { giftAllocations } = await import("@workspace/db/schema");
-  const allocs = await db.select().from(giftAllocations).where(eq(giftAllocations.giftId, giftId));
-  for (const a of allocs) {
-    const snap = await deriveGiftAllocationCoding(
-      giftId,
-      {
-        restrictionType: a.restrictionType,
-        entityId: a.entityId,
-        intendedUsage: a.intendedUsage,
-        fundableProjectId: a.fundableProjectId,
-        regionIds: a.regionIds,
-      },
-      rules,
-    );
-    await db
-      .update(giftAllocations)
-      .set({
-        objectCode: snap.objectCode,
-        revenueLocation: snap.revenueLocation,
-        revenueClass: snap.revenueClass,
-        codingFlags: snap.codingFlags,
-        updatedAt: new Date(),
-      })
-      .where(eq(giftAllocations.id, a.id));
-  }
+/**
+ * On-demand coding preview for an existing GIFT allocation row (by id). Returns
+ * null when the allocation doesn't exist.
+ */
+export async function giftAllocationCodingPreview(
+  allocationId: string,
+): Promise<CodingResult | null> {
+  const [a] = await db.select().from(giftAllocations).where(eq(giftAllocations.id, allocationId));
+  if (!a) return null;
+  return deriveGiftAllocationCoding(a.giftId, {
+    regionalRestrictionType: a.regionalRestrictionType,
+    usageRestrictionType: a.usageRestrictionType,
+    timeRestrictionType: a.timeRestrictionType,
+    entityId: a.entityId,
+    intendedUsage: a.intendedUsage,
+    fundableProjectId: a.fundableProjectId,
+    regionIds: a.regionIds,
+  });
 }
 
-/** Re-derive coding for ALL allocations under an opportunity/pledge (donor change). */
-export async function rederivePledgeAllocations(pledgeOrOpportunityId: string): Promise<void> {
-  const rules = await loadEntityCodingRules();
-  const { pledgeAllocations } = await import("@workspace/db/schema");
-  const allocs = await db
+/**
+ * On-demand coding preview for an existing PLEDGE/OPPORTUNITY allocation row (by
+ * id). Returns null when the allocation doesn't exist.
+ */
+export async function pledgeAllocationCodingPreview(
+  allocationId: string,
+): Promise<CodingResult | null> {
+  const [a] = await db
     .select()
     .from(pledgeAllocations)
-    .where(eq(pledgeAllocations.pledgeOrOpportunityId, pledgeOrOpportunityId));
-  for (const a of allocs) {
-    const snap = await derivePledgeAllocationCoding(
-      pledgeOrOpportunityId,
-      {
-        restrictionType: a.restrictionType,
-        entityId: a.entityId,
-        intendedUsage: a.intendedUsage,
-        fundableProjectId: a.fundableProjectId,
-        regionIds: a.regionIds,
-      },
-      rules,
-    );
-    await db
-      .update(pledgeAllocations)
-      .set({
-        objectCode: snap.objectCode,
-        revenueLocation: snap.revenueLocation,
-        revenueClass: snap.revenueClass,
-        codingFlags: snap.codingFlags,
-        updatedAt: new Date(),
-      })
-      .where(eq(pledgeAllocations.id, a.id));
-  }
+    .where(eq(pledgeAllocations.id, allocationId));
+  if (!a) return null;
+  return derivePledgeAllocationCoding(a.pledgeOrOpportunityId, {
+    regionalRestrictionType: a.regionalRestrictionType,
+    usageRestrictionType: a.usageRestrictionType,
+    timeRestrictionType: a.timeRestrictionType,
+    entityId: a.entityId,
+    intendedUsage: a.intendedUsage,
+    fundableProjectId: a.fundableProjectId,
+    regionIds: a.regionIds,
+  });
 }

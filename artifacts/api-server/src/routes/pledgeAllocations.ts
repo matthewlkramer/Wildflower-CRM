@@ -9,7 +9,8 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
-import { derivePledgeAllocationCoding } from "../lib/revenueCoding";
+import { pledgeAllocationCodingPreview } from "../lib/revenueCoding";
+import { applyDerivedOppFields } from "../lib/pledgeStage";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -36,13 +37,6 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreatePledgeAllocationBody, req.body, res);
     if (!body) return;
-    const coding = await derivePledgeAllocationCoding(body.pledgeOrOpportunityId, {
-      restrictionType: body.restrictionType,
-      entityId: body.entityId,
-      intendedUsage: body.intendedUsage,
-      fundableProjectId: body.fundableProjectId,
-      regionIds: body.regionIds,
-    });
     // A concrete school recipient implies the funds flow directly to a school.
     const directToSchool = body.schoolRecipientId ? true : body.directToSchool;
     const [row] = await db
@@ -51,12 +45,11 @@ router.post(
         id: newId(),
         ...body,
         directToSchool,
-        objectCode: coding.objectCode,
-        revenueLocation: coding.revenueLocation,
-        revenueClass: coding.revenueClass,
-        codingFlags: coding.codingFlags,
       })
       .returning();
+    // Conditions now live on the allocation; recompute the header conditional
+    // rollup + win-probability for the parent opportunity/pledge.
+    await applyDerivedOppFields(row?.pledgeOrOpportunityId);
     res.status(201).json(row);
   }),
 );
@@ -69,16 +62,6 @@ router.patch(
     const id = paramId(req);
     const [existing] = await db.select().from(pledgeAllocations).where(eq(pledgeAllocations.id, id));
     if (!existing) return notFound(res, "allocation");
-    const merged = {
-      pledgeOrOpportunityId:
-        body.pledgeOrOpportunityId !== undefined ? body.pledgeOrOpportunityId : existing.pledgeOrOpportunityId,
-      restrictionType: body.restrictionType !== undefined ? body.restrictionType : existing.restrictionType,
-      entityId: body.entityId !== undefined ? body.entityId : existing.entityId,
-      intendedUsage: body.intendedUsage !== undefined ? body.intendedUsage : existing.intendedUsage,
-      fundableProjectId: body.fundableProjectId !== undefined ? body.fundableProjectId : existing.fundableProjectId,
-      regionIds: body.regionIds !== undefined ? body.regionIds : existing.regionIds,
-    };
-    const coding = await derivePledgeAllocationCoding(merged.pledgeOrOpportunityId, merged);
     // Keep schoolRecipientId <-> directToSchool coherent: a concrete school
     // implies direct-to-school; explicitly unchecking direct-to-school clears
     // the school link. Only the keys the caller actually touched are overridden.
@@ -95,23 +78,40 @@ router.patch(
       .set({
         ...body,
         ...schoolCoherence,
-        objectCode: coding.objectCode,
-        revenueLocation: coding.revenueLocation,
-        revenueClass: coding.revenueClass,
-        codingFlags: coding.codingFlags,
         updatedAt: new Date(),
       })
       .where(eq(pledgeAllocations.id, id))
       .returning();
     if (!row) return notFound(res, "allocation");
+    // Conditions live on the allocation; a conditional change re-derives the
+    // header rollup + win-probability. Re-point covers both the old and new
+    // parent when the allocation was moved between opportunities.
+    await applyDerivedOppFields(existing.pledgeOrOpportunityId);
+    if (row.pledgeOrOpportunityId !== existing.pledgeOrOpportunityId) {
+      await applyDerivedOppFields(row.pledgeOrOpportunityId);
+    }
     res.json(row);
+  }),
+);
+
+// On-demand revenue-coding preview (not persisted on the allocation).
+router.get(
+  "/pledge-allocations/:id/coding-preview",
+  asyncHandler(async (req, res) => {
+    const preview = await pledgeAllocationCodingPreview(paramId(req));
+    if (!preview) return notFound(res, "allocation");
+    res.json(preview);
   }),
 );
 
 router.delete(
   "/pledge-allocations/:id",
   asyncHandler(async (req, res) => {
-    await db.delete(pledgeAllocations).where(eq(pledgeAllocations.id, paramId(req)));
+    const id = paramId(req);
+    const [existing] = await db.select().from(pledgeAllocations).where(eq(pledgeAllocations.id, id));
+    await db.delete(pledgeAllocations).where(eq(pledgeAllocations.id, id));
+    // Removing an allocation can change the header conditional rollup.
+    await applyDerivedOppFields(existing?.pledgeOrOpportunityId);
     res.status(204).end();
   }),
 );

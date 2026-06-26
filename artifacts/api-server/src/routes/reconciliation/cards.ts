@@ -677,6 +677,18 @@ router.get(
               isRepresentative: m.stagedPaymentId === row.id,
             }))
           : null,
+        // Revenue-accounting / QuickBooks coding snapshot (Task #449) — lives on
+        // the staged payment now; surfaced read-only here so the workbench can
+        // show + edit it inline without a second fetch.
+        objectCode: row.objectCode ?? null,
+        objectCodeOverride: row.objectCodeOverride ?? null,
+        revenueLocation: row.revenueLocation ?? null,
+        revenueLocationOverride: row.revenueLocationOverride ?? null,
+        revenueClass: row.revenueClass ?? null,
+        revenueClassOverride: row.revenueClassOverride ?? null,
+        codingFlags: row.codingFlags ?? null,
+        deferredRevenue: row.deferredRevenue ?? null,
+        deferredRevenueReason: row.deferredRevenueReason ?? null,
         // A group card's readiness can't come from the single-row auto hint, and
         // a charge card is approved through the per-charge Stripe flow (resolve →
         // create-gift), not the one-click QB anchor approve.

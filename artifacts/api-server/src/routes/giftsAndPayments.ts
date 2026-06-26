@@ -133,7 +133,6 @@ import {
   derivedProcessorFeeForGift,
 } from "../lib/giftPaymentSummary";
 import { deriveGiftLanes } from "../lib/reconciliationLanes";
-import { rederiveGiftAllocations } from "../lib/revenueCoding";
 import { inArray } from "drizzle-orm";
 
 const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "quickbooksTie"] as const;
@@ -637,16 +636,9 @@ router.patch(
     ) {
       await applyGiftQbTieMany(row.id);
     }
-    // A donor or gift-type change shifts the derived revenue coding (payer type /
-    // loan exclusion) of every allocation under this gift — re-derive snapshots.
-    if (
-      existing.organizationId !== row.organizationId ||
-      existing.individualGiverPersonId !== row.individualGiverPersonId ||
-      existing.householdId !== row.householdId ||
-      existing.type !== row.type
-    ) {
-      await rederiveGiftAllocations(row.id);
-    }
+    // Revenue coding is no longer a persisted snapshot on the allocation
+    // (Task #449) — it's derived on demand from the allocation's scope + the
+    // gift donor/type, so a donor or gift-type change needs no allocation rewrite.
     await auditUpdate(req, "gift", row.id, existing as Record<string, unknown>, row as Record<string, unknown>, Object.keys(body), "Updated gift");
     res.json(row);
   }),
@@ -1336,10 +1328,14 @@ router.post(
           fundableProjectId: a.fundableProjectId,
           regionIds: a.regionIds,
           directToSchool: a.schoolRecipientId != null,
-          formallyRestricted: a.formalFundUseRestriction || a.formalRegionalRestriction,
-          // Carry the direct/indirect reimbursable tag onto the pledge allocation
+          // Carry the 3-axis restriction coding across the gift→pledge split so
+          // the pledge allocation keeps the same restriction picture (Task #449).
+          regionalRestrictionType: a.regionalRestrictionType,
+          usageRestrictionType: a.usageRestrictionType,
+          timeRestrictionType: a.timeRestrictionType,
+          // Carry the direct/indirect reimbursement tag onto the pledge allocation
           // so the goal-analytics exclusion survives a gift→pledge split.
-          reimbursableShare: a.reimbursableShare,
+          reimbursementType: a.reimbursementType,
           status: "superseded_by_gift",
         });
       }
@@ -1873,9 +1869,10 @@ router.get(
     const restrictions = await db
       .select({
         allocationId: giftAllocations.id,
-        restrictionType: giftAllocations.restrictionType,
+        regionalRestrictionType: giftAllocations.regionalRestrictionType,
+        usageRestrictionType: giftAllocations.usageRestrictionType,
+        timeRestrictionType: giftAllocations.timeRestrictionType,
         purposeVerbatim: giftAllocations.purposeVerbatim,
-        restrictionEvidence: giftAllocations.restrictionEvidence,
         subAmount: giftAllocations.subAmount,
         displayUsage: giftAllocations.displayUsage,
       })

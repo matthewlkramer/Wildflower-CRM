@@ -22,6 +22,7 @@ import {
   stagedPaymentEntitySourceEnum,
   stagedPaymentFundingSourceEnum,
   stagedPaymentFundingSourceProvenanceEnum,
+  deferredRevenueEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
 import { people } from "./people";
@@ -321,6 +322,26 @@ export const stagedPayments = pgTable(
     // wants to come back to it. Never auto-derived and has NO side effects on
     // reconcile status / matching — a pure annotation set via set-needs-research.
     needsResearch: boolean("needs_research").notNull().default(false),
+
+    // ── Revenue-accounting / QuickBooks coding snapshot (Task #449) ──────────
+    // The derived QBO coding snapshot describes a QuickBooks PAYMENT, so it lives
+    // HERE (moved off gift_allocations / pledge_allocations). A reviewer edits it
+    // in the staged-payment (Finance Reconciliation) surface; the CRM can still
+    // produce a live coding-instructions preview from the linked gift's allocation
+    // scope (deriveRevenueCoding). All nullable/editable — `*Override` columns let
+    // a human override the derived value (effective = override ?? derived).
+    objectCode: text("object_code"),
+    objectCodeOverride: text("object_code_override"),
+    revenueLocation: text("revenue_location"),
+    revenueLocationOverride: text("revenue_location_override"),
+    revenueClass: text("revenue_class"),
+    revenueClassOverride: text("revenue_class_override"),
+    // Coding flags surfaced for human review (e.g. "location_default",
+    // "payer_type_assumed", "loan_no_revenue_account").
+    codingFlags: text("coding_flags").array(),
+    // Deferred-revenue capture (CRM captures the answer; it does NOT compute AR).
+    deferredRevenue: deferredRevenueEnum("deferred_revenue"),
+    deferredRevenueReason: text("deferred_revenue_reason"),
 
     // @deprecated — the "sync gap" annotation was removed end-to-end (no API,
     // no UI). The column is retained ONLY so dev `drizzle-kit push` stays purely
