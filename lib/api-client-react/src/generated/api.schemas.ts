@@ -3578,6 +3578,22 @@ export interface SettlementLineage {
   donations: SettlementLineageDonation[];
 }
 
+/**
+ * Compact intended-usage summary of one allocation line on a reconciler card's linked CRM gift, so a reviewer can judge what the money is for.
+ */
+export interface ReconciliationCardGiftAllocation {
+  /** Wildflower legal entity the allocation is attributed to. */
+  entityName?: string | null;
+  /** Human-readable intended-usage label (display_usage, falling back to the intended_usage code) — e.g. 'Gen Ops', 'School Startup', or a project name. */
+  usageLabel?: string | null;
+  /** Restriction type of the allocation (unrestricted | purpose | time | both | unclear | na). */
+  restrictionType?: string | null;
+  /** True when the allocation is formally restricted to a region. */
+  regionalRestriction: boolean;
+  /** True when the allocation is formally restricted in how the funds may be used. */
+  fundUseRestriction: boolean;
+}
+
 export type ReconciliationCardProposedDonorKind = typeof ReconciliationCardProposedDonorKind[keyof typeof ReconciliationCardProposedDonorKind] | null;
 
 
@@ -3621,6 +3637,14 @@ export interface ReconciliationCard {
   qbEntityId?: string | null;
   /** QuickBooks document/reference number (the 'No.' field), human-visible; may be absent (e.g. some deposits). */
   qbDocNumber?: string | null;
+  /** QuickBooks GL account name(s) on the transaction line(s) — the 'object code'. QBO bakes the numeric account number into the name as a prefix (e.g. '4000.1 Unrestricted Donations:…'), so this carries both the code and the label. Null/empty when the line(s) have no account. */
+  qbAccountNames?: string[] | null;
+  /** QuickBooks class(es) tagged on the transaction line(s). Null/empty when the line(s) are unclassed. */
+  qbClasses?: string[] | null;
+  /** QuickBooks transaction-level memo/note, distinct from the per-line description (lineDescription). */
+  qbTransactionMemo?: string | null;
+  /** QuickBooks Location/Department (DepartmentRef) on the transaction, e.g. 'National:Foundation Operations'. Derived read-only from the raw QB payload; null when none is tagged. */
+  qbLocation?: string | null;
   entityId?: string | null;
   entityName?: string | null;
   proposedDonorId?: string | null;
@@ -3651,6 +3675,10 @@ export interface ReconciliationCard {
   resolvedGiftAmount?: string | null;
   /** Close/received date of the linked (resolved) gift, shown on the card's CRM-gift side. Null when no gift is linked yet. */
   resolvedGiftDate?: string | null;
+  /** Fiscal-year slug (grantYear) of the linked gift, shown on the card's CRM-gift side. Null when no gift is linked or the gift has no fiscal year set. */
+  resolvedGiftFiscalYear?: string | null;
+  /** Intended-usage rollup of the linked gift's allocation lines (entity, usage label, restriction) — shown on the card's CRM-gift side so a reviewer can judge what the money is for. Null when no gift is linked or the gift has no allocations. */
+  resolvedGiftAllocations?: ReconciliationCardGiftAllocation[] | null;
   finalAmountSource?: GiftFinalAmountSource | null;
   /** Auto-proposal satisfies the consistency gate (one-click approve). */
   ready: boolean;

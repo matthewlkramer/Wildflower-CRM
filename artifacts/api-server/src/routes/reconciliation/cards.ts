@@ -388,6 +388,10 @@ router.get(
         qbEntityType: row.qbEntityType,
         qbEntityId: row.qbEntityId,
         qbDocNumber: row.qbDocNumber ?? null,
+        qbAccountNames: row.lineAccountNames ?? null,
+        qbClasses: row.lineClasses ?? null,
+        qbTransactionMemo: row.qbTransactionMemo ?? null,
+        qbLocation: row.qbLocation ?? null,
         entityId: row.entityId,
         entityName: row.entityName,
         proposedDonorId: donorId,
@@ -413,6 +417,8 @@ router.get(
         resolvedGiftName: row.resolvedGiftName ?? null,
         resolvedGiftAmount: row.resolvedGiftAmount ?? null,
         resolvedGiftDate: row.resolvedGiftDate ?? null,
+        resolvedGiftFiscalYear: row.resolvedGiftFiscalYear ?? null,
+        resolvedGiftAllocations: row.resolvedGiftAllocations ?? null,
         finalAmountSource: row.finalAmountSource ?? null,
         fundingSource: isSourceGroup
           ? (groupAgg?.commonFundingSource ?? null)

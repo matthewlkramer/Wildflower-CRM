@@ -6544,6 +6544,16 @@ components:
           type: array
           items: { $ref: "#/components/schemas/SettlementLineageDonation" }
           description: "Donorbox donations tied to the chain — enrichment for the Stripe charges, or non-Stripe new money the reviewer linked to this deposit. Empty when none apply."
+    ReconciliationCardGiftAllocation:
+      type: object
+      required: [regionalRestriction, fundUseRestriction]
+      description: "Compact intended-usage summary of one allocation line on a reconciler card's linked CRM gift, so a reviewer can judge what the money is for."
+      properties:
+        entityName:      { type: string, nullable: true, description: "Wildflower legal entity the allocation is attributed to." }
+        usageLabel:      { type: string, nullable: true, description: "Human-readable intended-usage label (display_usage, falling back to the intended_usage code) — e.g. 'Gen Ops', 'School Startup', or a project name." }
+        restrictionType: { type: string, nullable: true, description: "Restriction type of the allocation (unrestricted | purpose | time | both | unclear | na)." }
+        regionalRestriction: { type: boolean, description: "True when the allocation is formally restricted to a region." }
+        fundUseRestriction:  { type: boolean, description: "True when the allocation is formally restricted in how the funds may be used." }
     ReconciliationCard:
       type: object
       required: [stagedPaymentId, status, queue, hasStripeEvidence, ready, isSourceGroup, needsResearch, syncGap]
@@ -6562,6 +6572,10 @@ components:
         qbEntityType:    { type: string, nullable: true, description: "QuickBooks transaction type (SalesReceipt | Payment | Deposit | …) — part of the QB key used to reference this card." }
         qbEntityId:      { type: string, nullable: true, description: "QuickBooks internal transaction id — the stable, unique QB key for this card's record." }
         qbDocNumber:     { type: string, nullable: true, description: "QuickBooks document/reference number (the 'No.' field), human-visible; may be absent (e.g. some deposits)." }
+        qbAccountNames:  { type: array, nullable: true, items: { type: string }, description: "QuickBooks GL account name(s) on the transaction line(s) — the 'object code'. QBO bakes the numeric account number into the name as a prefix (e.g. '4000.1 Unrestricted Donations:…'), so this carries both the code and the label. Null/empty when the line(s) have no account." }
+        qbClasses:       { type: array, nullable: true, items: { type: string }, description: "QuickBooks class(es) tagged on the transaction line(s). Null/empty when the line(s) are unclassed." }
+        qbTransactionMemo: { type: string, nullable: true, description: "QuickBooks transaction-level memo/note, distinct from the per-line description (lineDescription)." }
+        qbLocation:      { type: string, nullable: true, description: "QuickBooks Location/Department (DepartmentRef) on the transaction, e.g. 'National:Foundation Operations'. Derived read-only from the raw QB payload; null when none is tagged." }
         entityId:        { type: string, nullable: true }
         entityName:      { type: string, nullable: true }
         proposedDonorId:         { type: string, nullable: true }
@@ -6586,6 +6600,12 @@ components:
         resolvedGiftName:   { type: string, nullable: true }
         resolvedGiftAmount: { type: string, nullable: true }
         resolvedGiftDate:   { type: string, format: date, nullable: true, description: "Close/received date of the linked (resolved) gift, shown on the card's CRM-gift side. Null when no gift is linked yet." }
+        resolvedGiftFiscalYear: { type: string, nullable: true, description: "Fiscal-year slug (grantYear) of the linked gift, shown on the card's CRM-gift side. Null when no gift is linked or the gift has no fiscal year set." }
+        resolvedGiftAllocations:
+          type: array
+          nullable: true
+          description: "Intended-usage rollup of the linked gift's allocation lines (entity, usage label, restriction) — shown on the card's CRM-gift side so a reviewer can judge what the money is for. Null when no gift is linked or the gift has no allocations."
+          items: { $ref: "#/components/schemas/ReconciliationCardGiftAllocation" }
         finalAmountSource:  { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
         ready:              { type: boolean, description: "Auto-proposal satisfies the consistency gate (one-click approve)." }
         needsResearch:      { type: boolean, description: "Plain human-set 'needs research' flag (parked for later); orthogonal to reconcile status. Set via /staged-payments/{id}/set-needs-research." }

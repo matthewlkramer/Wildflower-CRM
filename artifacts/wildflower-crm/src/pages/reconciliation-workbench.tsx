@@ -1204,7 +1204,7 @@ function ReconCard({
         <div className="flex-1 p-3">
           <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             <span>
-              {card.qbEntityType ?? "QuickBooks"}
+              {card.qbEntityType ? `QBO ${card.qbEntityType}` : "QBO"}
               {qbIdText ? ` (#${qbIdText})` : ""}
             </span>
             {card.qbPaymentMethod && (
@@ -1236,6 +1236,47 @@ function ReconCard({
           <div className="text-xs text-muted-foreground">
             {card.dateReceived ?? "—"}
           </div>
+          {(card.qbAccountNames?.length ||
+            card.qbClasses?.length ||
+            card.qbLocation ||
+            card.lineDescription ||
+            card.qbTransactionMemo) && (
+            <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
+              {card.qbAccountNames && card.qbAccountNames.length > 0 && (
+                <div>
+                  <span className="text-muted-foreground/70">Object code: </span>
+                  {card.qbAccountNames.join(" · ")}
+                </div>
+              )}
+              {card.qbClasses && card.qbClasses.length > 0 && (
+                <div>
+                  <span className="text-muted-foreground/70">Class: </span>
+                  {card.qbClasses.join(" · ")}
+                </div>
+              )}
+              {card.qbLocation && (
+                <div>
+                  <span className="text-muted-foreground/70">Location: </span>
+                  {card.qbLocation}
+                </div>
+              )}
+              {card.lineDescription && (
+                <div>
+                  <span className="text-muted-foreground/70">
+                    Description:{" "}
+                  </span>
+                  {card.lineDescription}
+                </div>
+              )}
+              {card.qbTransactionMemo &&
+                card.qbTransactionMemo !== card.lineDescription && (
+                  <div>
+                    <span className="text-muted-foreground/70">Memo: </span>
+                    {card.qbTransactionMemo}
+                  </div>
+                )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center px-1 text-muted-foreground">
@@ -1267,6 +1308,38 @@ function ReconCard({
                   Close date: {card.resolvedGiftDate}
                 </div>
               )}
+              {card.resolvedGiftFiscalYear && (
+                <div className="text-xs text-muted-foreground">
+                  Fiscal year: {card.resolvedGiftFiscalYear}
+                </div>
+              )}
+              {card.resolvedGiftAllocations &&
+                card.resolvedGiftAllocations.length > 0 && (
+                  <div className="mt-1 space-y-1 text-xs">
+                    {card.resolvedGiftAllocations.map((a, i) => {
+                      const restrFlags = [
+                        a.regionalRestriction ? "regional" : null,
+                        a.fundUseRestriction ? "fund-use" : null,
+                      ].filter((f): f is string => f !== null);
+                      return (
+                        <div key={i} className="text-muted-foreground">
+                          <span className="text-foreground">
+                            {a.usageLabel ?? "Unspecified usage"}
+                          </span>
+                          {a.entityName ? ` · ${a.entityName}` : ""}
+                          {(a.restrictionType || restrFlags.length > 0) && (
+                            <div className="text-[11px] text-muted-foreground/80">
+                              Restriction: {a.restrictionType ?? "—"}
+                              {restrFlags.length > 0
+                                ? ` (${restrFlags.join(", ")})`
+                                : ""}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
             </>
           ) : hasDonor ? (
             <>

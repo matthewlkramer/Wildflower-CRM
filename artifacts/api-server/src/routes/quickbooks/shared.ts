@@ -145,6 +145,41 @@ export const stagedSelect = {
   resolvedGiftName: resolvedGift.name,
   resolvedGiftAmount: resolvedGift.amount,
   resolvedGiftDate: resolvedGift.dateReceived,
+  // Fiscal-year slug (grantYear) of the resolved gift's header, for the card's
+  // CRM-gift side.
+  resolvedGiftFiscalYear: resolvedGift.grantYear,
+  // Intended-usage rollup of the resolved gift's allocation lines (entity +
+  // usage label + restriction), so a reviewer can judge the match on the card.
+  // Correlated on the staged row's gift-link COLUMNS (matched/created/group),
+  // NOT on the resolvedGift alias — a bare aliased column interpolated into a
+  // correlated subquery renders unqualified and would bind to the inner table.
+  resolvedGiftAllocations: sql<
+    | {
+        entityName: string | null;
+        usageLabel: string | null;
+        restrictionType: string | null;
+        regionalRestriction: boolean;
+        fundUseRestriction: boolean;
+      }[]
+    | null
+  >`(
+    SELECT jsonb_agg(
+      jsonb_build_object(
+        'entityName', e.name,
+        'usageLabel', COALESCE(NULLIF(ga.display_usage, ''), ga.intended_usage::text),
+        'restrictionType', ga.restriction_type::text,
+        'regionalRestriction', ga.formal_regional_restriction,
+        'fundUseRestriction', ga.formal_fund_use_restriction
+      ) ORDER BY ga.created_at, ga.id
+    )
+    FROM gift_allocations ga
+    LEFT JOIN entities e ON e.id = ga.entity_id
+    WHERE ga.gift_id = COALESCE(
+      ${stagedPayments.matchedGiftId},
+      ${stagedPayments.createdGiftId},
+      ${stagedPayments.groupReconciledGiftId}
+    )
+  )`.as("resolved_gift_allocations"),
   // Split summary: when a staged row is split across several existing gifts its
   // resolution lives entirely in staged_payment_splits (resolvedGift above is
   // null because no single matched/created/group gift is set). These correlated
@@ -179,6 +214,12 @@ export const stagedSelect = {
     ) lt
     WHERE lt->>'TxnType' = 'Deposit'
   )`.as("qb_deposit_links"),
+  // QuickBooks Location/Department (DepartmentRef) tagged on the transaction —
+  // derived READ-ONLY from the stored raw QB payload (it is not a captured
+  // column). E.g. "National:Foundation Operations". Null when none.
+  qbLocation: sql<string | null>`(
+    ${stagedPayments.qbRaw} -> 'DepartmentRef' ->> 'name'
+  )`.as("qb_location"),
   // "Gift likely not created yet": this row has no gift of its own, and every
   // same-donor / similar-amount gift is already linked to a DIFFERENT staged
   // payment (no unlinked candidate is left to match). Signals the fundraiser to
