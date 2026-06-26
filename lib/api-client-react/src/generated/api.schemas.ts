@@ -878,8 +878,25 @@ export interface FiscalYearMetrics {
   loanCapital: FiscalYearCategoryMetrics;
 }
 
+/**
+ * Counts for the donor-lifecycle worklists ("what hasn't been done yet").
+Each count is scoped by the dashboard's global entity filter (when set)
+and excludes archived rows, matching the corresponding filtered-list
+worklist preset. See the `worklist` query params on the opportunities and
+gifts list endpoints for the canonical per-worklist definitions.
+
+ */
+export interface DashboardWorklists {
+  verbalNoLetter: number;
+  committedUnpaid: number;
+  partiallyPaid: number;
+  stagedUnprocessed: number;
+  giftsMissingAllocations: number;
+}
+
 export interface DashboardSummary {
   counts: DashboardCounts;
+  worklists: DashboardWorklists;
   currentFiscalYear: DashboardFiscalYear;
   /** Per-FY metrics for the current FY and the next FY (in that order). */
   byFiscalYear: FiscalYearMetrics[];
@@ -6709,6 +6726,27 @@ pledgeView?: ListOpportunitiesAndPledgesPledgeView;
  * Filter strictly on the written_pledge column.
  */
 writtenPledge?: boolean;
+/**
+ * Donor-lifecycle worklist preset ("what hasn't been done yet"). Each
+value applies a composite server-side filter on top of any other
+filters (status, owner, entity scope, etc.) and is the canonical,
+drift-proof definition shared with the dashboard worklist counts:
+  verbal_no_letter — stage=verbal_confirmation, written_pledge=false,
+                     grant_letter_url IS NULL, status=open. A verbal
+                     yes with no recorded written commitment yet.
+                     Rows are ordered stalest-first (least recently
+                     updated) so the oldest sit at the top.
+  committed_unpaid — status=pledge with $0 received. A written pledge
+                     nothing has been paid against yet.
+  partially_paid   — status=pledge with >$0 received (a pledge fully
+                     paid flips to cash_in, so status=pledge + paid>0
+                     means paid < awarded). No expected-payment-date
+                     field exists, so rows are ordered by projected
+                     close date (oldest first) as a best-effort
+                     "overdue" proxy.
+
+ */
+worklist?: ListOpportunitiesAndPledgesWorklist;
 type?: string[];
 organizationId?: string;
 householdId?: string;
@@ -6769,6 +6807,15 @@ export type ListOpportunitiesAndPledgesPledgeView = typeof ListOpportunitiesAndP
 export const ListOpportunitiesAndPledgesPledgeView = {
   pledges: 'pledges',
   opportunities: 'opportunities',
+} as const;
+
+export type ListOpportunitiesAndPledgesWorklist = typeof ListOpportunitiesAndPledgesWorklist[keyof typeof ListOpportunitiesAndPledgesWorklist];
+
+
+export const ListOpportunitiesAndPledgesWorklist = {
+  verbal_no_letter: 'verbal_no_letter',
+  committed_unpaid: 'committed_unpaid',
+  partially_paid: 'partially_paid',
 } as const;
 
 export type ListPledgeAllocationsParams = {
@@ -6852,6 +6899,17 @@ quickbooksTie?: ListGiftsAndPaymentsQuickbooksTieItem[];
  */
 awaitingEvidence?: boolean;
 /**
+ * Donor-lifecycle worklist preset ("what hasn't been done yet"), the
+canonical definition shared with the dashboard worklist counts:
+  missing_allocations — gift headers with no gift_allocations rows
+                        at all. ALL money scope (entity, fiscal year,
+                        sub-amounts, coding) lives on allocation rows,
+                        so a gift with none is uncoded/unattributed
+                        and needs allocation work.
+
+ */
+worklist?: ListGiftsAndPaymentsWorklist;
+/**
  * Sort order (default date_desc).
  */
 sort?: GiftSort;
@@ -6915,6 +6973,13 @@ export const ListGiftsAndPaymentsQuickbooksTieItem = {
   amount_mismatch: 'amount_mismatch',
   missing: 'missing',
   untied: 'untied',
+} as const;
+
+export type ListGiftsAndPaymentsWorklist = typeof ListGiftsAndPaymentsWorklist[keyof typeof ListGiftsAndPaymentsWorklist];
+
+
+export const ListGiftsAndPaymentsWorklist = {
+  missing_allocations: 'missing_allocations',
 } as const;
 
 export type ListGiftAllocationsParams = {

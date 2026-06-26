@@ -11,6 +11,7 @@ import {
   type TaskStatus,
   type ListOrganizationsParams,
   type FiscalYearMetrics,
+  type DashboardWorklists,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -241,6 +242,8 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
+      <WorklistsCard worklists={data?.worklists} isLoading={isLoading} />
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <UpcomingMeetingsCard />
         <TeamUpcomingMeetingsCard />
@@ -354,6 +357,96 @@ function TopPrioritiesRow() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// Donor-lifecycle worklists ("what hasn't been done yet"). Each tile links to a
+// pre-filtered list (the `worklist` URL param the list pages read) except the
+// staged-money tile, which links to the reconciliation workbench. Counts come
+// from the dashboard summary and honor the global entity filter.
+const WORKLIST_ITEMS: ReadonlyArray<{
+  key: keyof DashboardWorklists;
+  label: string;
+  desc: string;
+  href: string;
+}> = [
+  {
+    key: "verbalNoLetter",
+    label: "Verbal yes, no letter",
+    desc: "Verbal commitments with no written grant letter recorded yet.",
+    href: "/opportunities?worklist=verbal_no_letter",
+  },
+  {
+    key: "committedUnpaid",
+    label: "Committed but unpaid",
+    desc: "Written pledges with nothing paid against them yet.",
+    href: "/pledges?worklist=committed_unpaid",
+  },
+  {
+    key: "partiallyPaid",
+    label: "Partially paid pledges",
+    desc: "Pledges with some money in but not fully paid.",
+    href: "/pledges?worklist=partially_paid",
+  },
+  {
+    key: "stagedUnprocessed",
+    label: "Money staged, not processed",
+    desc: "Staged QuickBooks / Stripe payments awaiting reconciliation.",
+    href: "/reconciliation-workbench?queue=review",
+  },
+  {
+    key: "giftsMissingAllocations",
+    label: "Gifts missing allocations",
+    desc: "Gifts with no allocation rows — unattributed money.",
+    href: "/gifts?worklist=missing_allocations",
+  },
+];
+
+function WorklistsCard({
+  worklists,
+  isLoading,
+}: {
+  worklists?: DashboardWorklists;
+  isLoading: boolean;
+}) {
+  return (
+    <Card data-testid="card-worklists">
+      <CardHeader>
+        <CardTitle className="text-lg">Worklists</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {WORKLIST_ITEMS.map((item) => {
+            const count = worklists?.[item.key];
+            return (
+              <Link key={item.key} href={item.href}>
+                <Card
+                  className="cursor-pointer hover:bg-muted/30 transition-colors h-full"
+                  data-testid={`worklist-tile-${item.key}`}
+                >
+                  <CardContent className="p-4 space-y-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-medium text-sm">{item.label}</span>
+                      {isLoading ? (
+                        <Skeleton className="h-6 w-8" />
+                      ) : (
+                        <span
+                          className="text-xl font-semibold tabular-nums"
+                          data-testid={`worklist-count-${item.key}`}
+                        >
+                          {count ?? 0}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{item.desc}</p>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

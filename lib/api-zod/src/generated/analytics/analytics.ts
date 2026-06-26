@@ -25,6 +25,13 @@ export const GetDashboardSummaryResponse = zod.object({
   "pledges": zod.number(),
   "gifts": zod.number()
 }),
+  "worklists": zod.object({
+  "verbalNoLetter": zod.number(),
+  "committedUnpaid": zod.number(),
+  "partiallyPaid": zod.number(),
+  "stagedUnprocessed": zod.number(),
+  "giftsMissingAllocations": zod.number()
+}).describe('Counts for the donor-lifecycle worklists (\"what hasn\'t been done yet\").\nEach count is scoped by the dashboard\'s global entity filter (when set)\nand excludes archived rows, matching the corresponding filtered-list\nworklist preset. See the `worklist` query params on the opportunities and\ngifts list endpoints for the canonical per-worklist definitions.\n'),
   "currentFiscalYear": zod.object({
   "id": zod.string().describe('fy-slug (e.g. `fy2026`).'),
   "label": zod.string().describe('Human label (e.g. `FY 2026`).'),

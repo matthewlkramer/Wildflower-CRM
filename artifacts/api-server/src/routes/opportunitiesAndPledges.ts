@@ -3,8 +3,9 @@ import { db } from "@workspace/db";
 import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
 import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, organizations, households, people, tasks, type NewPledgeAllocation } from "@workspace/db/schema";
 import { giftHeaderColumns } from "./giftsAndPayments";
+import { oppWorklistConds, type OppWorklist } from "../lib/worklists";
 import { alias } from "drizzle-orm/pg-core";
-import { and, count, desc, eq, exists, getTableColumns, ilike, inArray, isNull, notExists, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, exists, getTableColumns, ilike, inArray, isNull, notExists, or, sql, type SQL } from "drizzle-orm";
 
 // Second `people` alias so we can join *both* the individual giver
 // (via individual_giver_person_id) and the primary contact (via
@@ -290,9 +291,22 @@ router.get(
     } else if (q.entitiesPresence === "blank") {
       filters.push(sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`);
     }
+    // Donor-lifecycle worklist preset — composite predicate shared verbatim
+    // with the dashboard worklist counts (see lib/worklists).
+    if (q.worklist) filters.push(...oppWorklistConds(q.worklist as OppWorklist));
     const archivedFilter = activeOnlyUnlessAdmin(req, opportunitiesAndPledges.archivedAt);
     if (archivedFilter) filters.push(archivedFilter);
     const where = filters.length ? and(...filters) : undefined;
+    // Default order is newest projected-close first. Two worklists override it:
+    // verbal_no_letter surfaces the stalest (least-recently-updated) first, and
+    // partially_paid orders by oldest projected close as a best-effort "overdue"
+    // proxy (no expected-payment-date field exists).
+    const worklistOrder =
+      q.worklist === "verbal_no_letter"
+        ? [asc(opportunitiesAndPledges.updatedAt)]
+        : q.worklist === "partially_paid"
+          ? [sql`${opportunitiesAndPledges.projectedCloseDate} ASC NULLS LAST`]
+          : null;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
         .select(donorJoinSelect)
@@ -302,7 +316,7 @@ router.get(
         .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
         .leftJoin(primaryContact, eq(primaryContact.id, opportunitiesAndPledges.primaryContactPersonId))
         .where(where)
-        .orderBy(desc(opportunitiesAndPledges.projectedCloseDate))
+        .orderBy(...(worklistOrder ?? [desc(opportunitiesAndPledges.projectedCloseDate)]))
         .limit(limit)
         .offset(offset),
       db

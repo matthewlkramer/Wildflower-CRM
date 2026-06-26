@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
@@ -11,6 +11,7 @@ import {
   useUnarchiveOpportunityOrPledge,
   useUpdateOpportunityOrPledge,
   useListEntities,
+  ListOpportunitiesAndPledgesWorklist,
   type ListOpportunitiesAndPledgesParams,
   type OpportunityStatus,
   type OpportunityStage,
@@ -102,6 +103,13 @@ const STAGES: OpportunityStage[] = [
 const TYPES: OpportunityType[] = ["solicitation", "renewal", "open_application"];
 
 const PAGE_SIZE = 50;
+
+// Human labels for the donor-lifecycle worklist banner.
+const OPP_WORKLIST_LABELS: Record<ListOpportunitiesAndPledgesWorklist, string> = {
+  verbal_no_letter: "Verbal yes, no letter",
+  committed_unpaid: "Committed but unpaid",
+  partially_paid: "Partially paid pledges",
+};
 
 const NONE = "__none__";
 type OppDraft = {
@@ -388,6 +396,17 @@ export default function Opportunities({
   const effectiveViewMode: "list" | "kanban" = pledgeView === "pledges" ? "list" : viewMode;
   const selection = useRowSelection();
   const [, navigate] = useLocation();
+  // Donor-lifecycle worklist preset, read from the URL (?worklist=...). Set by
+  // the dashboard worklist tiles. Only the values valid for this list endpoint
+  // are honored; anything else is ignored. URL-driven only (not a saved-view
+  // filter) — a dismissible banner shows when active.
+  const urlSearch = useSearch();
+  const rawWorklist = new URLSearchParams(urlSearch).get("worklist");
+  const worklist: ListOpportunitiesAndPledgesWorklist | undefined =
+    rawWorklist &&
+    (Object.values(ListOpportunitiesAndPledgesWorklist) as string[]).includes(rawWorklist)
+      ? (rawWorklist as ListOpportunitiesAndPledgesWorklist)
+      : undefined;
   const { toast } = useToast();
   const isAdmin = useIsAdmin();
   const queryClient = useQueryClient();
@@ -429,6 +448,7 @@ export default function Opportunities({
     ...(isAdmin && showArchived ? { includeArchived: true } : {}),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(pledgeView ? { pledgeView } : {}),
+    ...(worklist ? { worklist } : {}),
     ...(effectiveStatuses.length > 0
       ? { status: effectiveStatuses as OpportunityStatus[] }
       : {}),
@@ -908,6 +928,26 @@ export default function Opportunities({
         canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null || filtersState !== null}
         onClearAll={clearAll}
       />
+
+      {worklist && (
+        <div
+          className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          data-testid="worklist-banner"
+        >
+          <span>
+            Showing worklist: <strong>{OPP_WORKLIST_LABELS[worklist]}</strong>
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-amber-900 hover:bg-amber-100"
+            onClick={() => navigate(pledgeView === "pledges" ? "/pledges" : "/opportunities")}
+            data-testid="worklist-banner-clear"
+          >
+            Clear
+          </Button>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="grow min-w-[200px]">

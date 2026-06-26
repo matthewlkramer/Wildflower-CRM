@@ -1232,6 +1232,28 @@ paths:
           required: false
           description: "Filter strictly on the written_pledge column."
           schema: { type: boolean }
+        - name: worklist
+          in: query
+          required: false
+          description: |
+            Donor-lifecycle worklist preset ("what hasn't been done yet"). Each
+            value applies a composite server-side filter on top of any other
+            filters (status, owner, entity scope, etc.) and is the canonical,
+            drift-proof definition shared with the dashboard worklist counts:
+              verbal_no_letter — stage=verbal_confirmation, written_pledge=false,
+                                 grant_letter_url IS NULL, status=open. A verbal
+                                 yes with no recorded written commitment yet.
+                                 Rows are ordered stalest-first (least recently
+                                 updated) so the oldest sit at the top.
+              committed_unpaid — status=pledge with $0 received. A written pledge
+                                 nothing has been paid against yet.
+              partially_paid   — status=pledge with >$0 received (a pledge fully
+                                 paid flips to cash_in, so status=pledge + paid>0
+                                 means paid < awarded). No expected-payment-date
+                                 field exists, so rows are ordered by projected
+                                 close date (oldest first) as a best-effort
+                                 "overdue" proxy.
+          schema: { type: string, enum: [verbal_no_letter, committed_unpaid, partially_paid] }
         - name: type
           in: query
           style: form
@@ -1396,6 +1418,18 @@ paths:
           explode: false
           schema: { type: array, items: { type: string, enum: [exempt, tied, amount_mismatch, missing, untied] } }
         - { name: awaitingEvidence, in: query, required: false, description: "When true, list only gifts awaiting funding evidence (edge case B4): CRM-first gifts logged by a fundraiser before any funding evidence arrived. The state is human-entered amount (`finalAmountSource = human`, which the DB CHECK guarantees has null QuickBooks/Stripe evidence pointers) AND no QuickBooks tie yet (`quickbooksTieStatus = missing`). Off-books/exempt and processor-sourced (tied) gifts are excluded.", schema: { type: boolean } }
+        - name: worklist
+          in: query
+          required: false
+          description: |
+            Donor-lifecycle worklist preset ("what hasn't been done yet"), the
+            canonical definition shared with the dashboard worklist counts:
+              missing_allocations — gift headers with no gift_allocations rows
+                                    at all. ALL money scope (entity, fiscal year,
+                                    sub-amounts, coding) lives on allocation rows,
+                                    so a gift with none is uncoded/unattributed
+                                    and needs allocation work.
+          schema: { type: string, enum: [missing_allocations] }
         - { name: sort, in: query, required: false, schema: { $ref: "#/components/schemas/GiftSort" }, description: "Sort order (default date_desc)." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
@@ -4331,11 +4365,35 @@ components:
         fiscalYear:  { $ref: "#/components/schemas/DashboardFiscalYear" }
         revenue:     { $ref: "#/components/schemas/FiscalYearCategoryMetrics" }
         loanCapital: { $ref: "#/components/schemas/FiscalYearCategoryMetrics" }
+    DashboardWorklists:
+      type: object
+      description: |
+        Counts for the donor-lifecycle worklists ("what hasn't been done yet").
+        Each count is scoped by the dashboard's global entity filter (when set)
+        and excludes archived rows, matching the corresponding filtered-list
+        worklist preset. See the `worklist` query params on the opportunities and
+        gifts list endpoints for the canonical per-worklist definitions.
+      required:
+        [verbalNoLetter, committedUnpaid, partiallyPaid, stagedUnprocessed, giftsMissingAllocations]
+      properties:
+        # opportunities?worklist=verbal_no_letter
+        verbalNoLetter:          { type: integer }
+        # pledges?worklist=committed_unpaid
+        committedUnpaid:         { type: integer }
+        # pledges?worklist=partially_paid
+        partiallyPaid:           { type: integer }
+        # staged_payments + stripe_staged_charges still status=pending (links to
+        # the reconciliation workbench). Stripe charges carry no entity column,
+        # so they are not entity-scoped.
+        stagedUnprocessed:       { type: integer }
+        # gifts?worklist=missing_allocations
+        giftsMissingAllocations: { type: integer }
     DashboardSummary:
       type: object
-      required: [counts, currentFiscalYear, byFiscalYear]
+      required: [counts, worklists, currentFiscalYear, byFiscalYear]
       properties:
         counts:            { $ref: "#/components/schemas/DashboardCounts" }
+        worklists:         { $ref: "#/components/schemas/DashboardWorklists" }
         currentFiscalYear: { $ref: "#/components/schemas/DashboardFiscalYear" }
         byFiscalYear:
           type: array

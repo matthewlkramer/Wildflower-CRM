@@ -10,7 +10,14 @@ import {
   giftAllocations,
   fiscalYears,
   fiscalYearEntityGoals,
+  stagedPayments,
+  stripeStagedCharges,
 } from "@workspace/db/schema";
+import {
+  oppWorklistCountWhere,
+  giftWorklistCountWhere,
+  stagedPendingWhere,
+} from "../lib/worklists";
 import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound } from "../lib/helpers";
@@ -333,6 +340,14 @@ router.get(
       [{ value: openCt }],
       [{ value: pledgesCt }],
       [{ value: giftsCt }],
+      // Donor-lifecycle worklist counts — entity-scoped, archived excluded.
+      // Predicates are shared verbatim with the filtered-list worklists.
+      [{ value: verbalNoLetterCt }],
+      [{ value: committedUnpaidCt }],
+      [{ value: partiallyPaidCt }],
+      [{ value: stagedPaymentsPendingCt }],
+      [{ value: stripeChargesPendingCt }],
+      [{ value: giftsMissingAllocCt }],
       currentFyMetrics,
       nextFyMetrics,
     ] = await Promise.all([
@@ -356,6 +371,30 @@ router.get(
         .select({ value: count() })
         .from(giftsAndPayments)
         .where(isNull(giftsAndPayments.archivedAt)),
+      db
+        .select({ value: count() })
+        .from(opportunitiesAndPledges)
+        .where(oppWorklistCountWhere("verbal_no_letter", entityIds)),
+      db
+        .select({ value: count() })
+        .from(opportunitiesAndPledges)
+        .where(oppWorklistCountWhere("committed_unpaid", entityIds)),
+      db
+        .select({ value: count() })
+        .from(opportunitiesAndPledges)
+        .where(oppWorklistCountWhere("partially_paid", entityIds)),
+      db
+        .select({ value: count() })
+        .from(stagedPayments)
+        .where(stagedPendingWhere(stagedPayments, entityIds, true)),
+      db
+        .select({ value: count() })
+        .from(stripeStagedCharges)
+        .where(stagedPendingWhere(stripeStagedCharges, entityIds, false)),
+      db
+        .select({ value: count() })
+        .from(giftsAndPayments)
+        .where(giftWorklistCountWhere("missing_allocations", entityIds)),
       fyMetricsFor(currentFy, entityIds),
       fyMetricsFor(nextFy, entityIds),
     ]);
@@ -369,6 +408,13 @@ router.get(
         openOpportunities: Number(openCt),
         pledges: Number(pledgesCt),
         gifts: Number(giftsCt),
+      },
+      worklists: {
+        verbalNoLetter: Number(verbalNoLetterCt),
+        committedUnpaid: Number(committedUnpaidCt),
+        partiallyPaid: Number(partiallyPaidCt),
+        stagedUnprocessed: Number(stagedPaymentsPendingCt) + Number(stripeChargesPendingCt),
+        giftsMissingAllocations: Number(giftsMissingAllocCt),
       },
       currentFiscalYear: currentFy,
       byFiscalYear: [currentFyMetrics, nextFyMetrics],

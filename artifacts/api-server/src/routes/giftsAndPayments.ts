@@ -33,6 +33,7 @@ import {
   donorboxEnrichmentSelect,
   donorboxEnrichmentOrNull,
 } from "../lib/donorboxEnrichment";
+import { giftWorklistConds, type GiftWorklist } from "../lib/worklists";
 
 // Gifts have no primary-contact denormalization, so the shared donor masking
 // helper (see lib/donorJoinSelect.ts) covers the full set: it masks the
@@ -295,6 +296,9 @@ router.get(
     }
     if (q.thankYouSentAtPresence === "has") filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NOT NULL`);
     else if (q.thankYouSentAtPresence === "blank") filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NULL`);
+    // Donor-lifecycle worklist preset — composite predicate shared verbatim
+    // with the dashboard worklist counts (see lib/worklists).
+    if (q.worklist) filters.push(...giftWorklistConds(q.worklist as GiftWorklist));
     const archivedFilter = activeOnlyUnlessAdmin(req, giftsAndPayments.archivedAt);
     if (archivedFilter) filters.push(archivedFilter);
     const where = filters.length ? and(...filters) : undefined;

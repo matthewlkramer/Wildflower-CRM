@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListGiftsAndPayments,
@@ -12,6 +12,7 @@ import {
   useUpdateGiftOrPayment,
   getGetGiftOrPaymentQueryOptions,
   getGetGiftOrPaymentQueryKey,
+  ListGiftsAndPaymentsWorklist,
   type ListGiftsAndPaymentsParams,
   type GiftType,
   type GiftPaymentMethod,
@@ -104,6 +105,11 @@ const PAYMENT_METHODS: GiftPaymentMethod[] = [
 ];
 
 const PAGE_SIZE = 50;
+
+// Human label for the donor-lifecycle worklist banner.
+const GIFT_WORKLIST_LABELS: Record<ListGiftsAndPaymentsWorklist, string> = {
+  missing_allocations: "Gifts missing allocations",
+};
 
 const NONE = "__none__";
 type GiftDraft = {
@@ -341,6 +347,17 @@ export default function Gifts() {
   );
   const selection = useRowSelection();
   const [, navigate] = useLocation();
+  // Donor-lifecycle worklist preset, read from the URL (?worklist=...). Set by
+  // the dashboard worklist tiles. Only values valid for this endpoint are
+  // honored; URL-driven only (not a saved-view filter), with a dismissible
+  // banner when active.
+  const urlSearch = useSearch();
+  const rawWorklist = new URLSearchParams(urlSearch).get("worklist");
+  const worklist: ListGiftsAndPaymentsWorklist | undefined =
+    rawWorklist &&
+    (Object.values(ListGiftsAndPaymentsWorklist) as string[]).includes(rawWorklist)
+      ? (rawWorklist as ListGiftsAndPaymentsWorklist)
+      : undefined;
   const { toast } = useToast();
   const isAdmin = useIsAdmin();
   const queryClient = useQueryClient();
@@ -370,6 +387,7 @@ export default function Gifts() {
     page: sortActive ? 1 : page,
     ...(isAdmin && showArchived ? { includeArchived: true } : {}),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+    ...(worklist ? { worklist } : {}),
     ...(types.length > 0 ? { type: [...types].sort() as GiftType[] } : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
     ...(fiscalYears.length > 0 ? { fiscalYear: [...fiscalYears].sort() } : {}),
@@ -844,6 +862,26 @@ export default function Gifts() {
         canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null || filtersState !== null}
         onClearAll={clearAll}
       />
+
+      {worklist && (
+        <div
+          className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          data-testid="worklist-banner"
+        >
+          <span>
+            Showing worklist: <strong>{GIFT_WORKLIST_LABELS[worklist]}</strong>
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-amber-900 hover:bg-amber-100"
+            onClick={() => navigate("/gifts")}
+            data-testid="worklist-banner-clear"
+          >
+            Clear
+          </Button>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="grow min-w-[200px]">
