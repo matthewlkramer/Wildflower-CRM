@@ -3915,10 +3915,23 @@ export const GiftMissingQbDonorKind = {
 } as const;
 
 /**
- * A gift genuinely missing a QuickBooks record — list item for the gifts-missing-QB worklist.
+ * ONE ROW PER gift_allocation for the gifts-missing-QB worklist. A gift with
+several allocations surfaces several rows (the gift header fields repeat).
+A gift that has no allocations surfaces a single row with allocationId null.
+Allocations attributed to an entity that never settles through a payment
+processor (entities.expectsPayment = false: "Direct to School" /
+"Wildflower Foundation TSNE") are excluded.
+
  */
 export interface GiftMissingQb {
+  /** Gift (gifts_and_payments) id. Repeats across the gift's allocation rows. */
   id: string;
+  /** Stable per-row key (giftId + allocationId). Unique across the list; use as the React key. */
+  rowKey: string;
+  /** gift_allocations id for this row. Null when the gift has no allocations. */
+  allocationId?: string | null;
+  /** Gift header name (used with the allocation id to label the row). */
+  giftName?: string | null;
   /** Donor display name (anonymous-masked for the viewer). */
   donorName?: string | null;
   donorKind?: GiftMissingQbDonorKind;
@@ -3926,14 +3939,27 @@ export interface GiftMissingQb {
   amount?: string | null;
   /** Amount to display: the gift header amount, falling back to the sum of the gift's allocation sub-amounts when the header is null. Null only when no amount is recorded anywhere. */
   displayAmount?: string | null;
+  /** This allocation's sub-amount (null when there is no allocation). */
+  allocationAmount?: string | null;
   /** Raw gift header date received (may be null). */
   dateReceived?: string | null;
   /** Date to display: the gift date received, falling back to the earliest allocation spending-start date when the header is null. */
   displayDate?: string | null;
   /** The donor's recorded payment method on the gift (NOT a reconciliation match). */
   paymentMethod?: GiftPaymentMethod | null;
+  /** The allocation's fund entity id. */
   entityId?: string | null;
+  /** The allocation's fund entity name. */
   entityName?: string | null;
+  intendedUsage?: IntendedUsage | null;
+  /** Denormalized human-readable usage label for the allocation. */
+  displayUsage?: string | null;
+  fundableProjectId?: string | null;
+  fundableProjectName?: string | null;
+  schoolRecipientId?: string | null;
+  schoolRecipientName?: string | null;
+  /** The allocation's fiscal year (grant_year) id. */
+  grantYear?: string | null;
   finalAmountSource?: GiftFinalAmountSource | null;
 }
 
@@ -5865,6 +5891,23 @@ export interface MergeIntoPledgeResult {
 export interface SplitGiftIntoPledgeBody {
   /** Name for the new pledge. Defaults to the gift's name. */
   name?: string | null;
+}
+
+/**
+ * Options for reverting a gift back into an opportunity. The new record inherits the gift's donor and amount; the gift's allocations are mirrored onto pledge_allocations and the gift is archived.
+ */
+export interface RevertGiftToOpportunityBody {
+  /** When true the new record is a written PLEDGE (writtenPledge=true); otherwise an open opportunity. */
+  asPledge?: boolean;
+  /** Name for the new opportunity/pledge. Defaults to the gift's name. */
+  name?: string | null;
+}
+
+export interface RevertGiftToOpportunityResult {
+  /** Id of the newly created opportunities_and_pledges row. */
+  opportunityId: string;
+  /** Whether the new record was created as a written pledge. */
+  asPledge: boolean;
 }
 
 /**

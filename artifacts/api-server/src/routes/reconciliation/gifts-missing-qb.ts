@@ -8,13 +8,14 @@ import {
   people,
   households,
   entities,
+  fundableProjects,
+  schools,
 } from "@workspace/db/schema";
-import { and, count, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { asyncHandler } from "../../lib/helpers";
 import { getViewer, maskName } from "../../lib/identityVisibility";
 import { escapeLike } from "../quickbooks/shared";
 import { qbLedgerExistsForGift } from "../../lib/paymentApplications";
-import { giftIsOffBooksExpr } from "../../lib/giftPaymentSummary";
 
 const router: IRouter = Router();
 
@@ -116,18 +117,22 @@ router.get(
       )
     )`;
 
-    // Membership = genuinely UN-reconciled, on-books gifts only:
-    //   • no QuickBooks cash-application ledger row (noQbRecord), AND
-    //   • NOT off-books / fiscal-sponsor / designated-to-school (those are exempt —
-    //     they are not expected to ever carry a QB record), AND
-    //   • NOT Stripe-tied (reconciled at the payout level).
-    // This mirrors deriveGiftQbTie's "missing" status (single source of truth), so
-    // the queue never lists a gift that is exempt or tied as if it were unreconciled.
+    // Membership = genuinely UN-reconciled, on-books gift ALLOCATIONS only. One
+    // row per gift_allocation (gifts with no allocation surface a single row with
+    // a null allocation). A row is listed when:
+    //   • the gift has no QuickBooks cash-application ledger row (noQbRecord), AND
+    //   • the gift is NOT Stripe-tied (reconciled at the payout level), AND
+    //   • the allocation is NOT attributed to an entity that never settles through
+    //     a payment processor (entities.expects_payment = false: "Direct to School"
+    //     / "Wildflower Foundation TSNE"). Gifts with no allocation, and allocations
+    //     with no entity, are kept.
+    // This mirrors deriveGiftQbTie's "missing" status at allocation granularity, so
+    // the queue never lists money that is exempt or tied as if it were unreconciled.
     const conds: SQL[] = [
       isNull(giftsAndPayments.archivedAt),
       noQbRecord,
-      sql`NOT ${giftIsOffBooksExpr()}`,
       sql`NOT ${isStripeTiedSql}`,
+      sql`(${giftAllocations.id} IS NULL OR ${giftAllocations.entityId} IS NULL OR COALESCE(${entities.expectsPayment}, true) = true)`,
     ];
 
     if (q.length >= 2) {
@@ -142,12 +147,8 @@ router.get(
       );
     }
     if (entityId) {
-      conds.push(
-        sql`EXISTS (
-          SELECT 1 FROM ${giftAllocations} ga
-          WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.entity_id = ${entityId}
-        )`,
-      );
+      // Per-allocation: only the rows attributed to this entity surface.
+      conds.push(eq(giftAllocations.entityId, entityId));
     }
     if (paymentMethod) {
       conds.push(sql`${giftsAndPayments.paymentMethod} = ${paymentMethod}`);
@@ -161,27 +162,12 @@ router.get(
 
     const where = and(...conds);
 
-    // A gift's scope (entity) lives on its allocation rows and may span several
-    // entities, so aggregate the distinct entity names for display; expose a
-    // single entityId only when the gift maps to exactly one entity.
-    const entityNamesSql = sql<string | null>`(
-      SELECT string_agg(DISTINCT e.name, ', ' ORDER BY e.name)
-      FROM ${giftAllocations} ga
-      JOIN ${entities} e ON e.id = ga.entity_id
-      WHERE ga.gift_id = ${giftsAndPayments.id}
-    )`;
-    const entityIdSql = sql<string | null>`(
-      SELECT CASE WHEN COUNT(DISTINCT ga.entity_id) = 1 THEN MIN(ga.entity_id) END
-      FROM ${giftAllocations} ga
-      WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.entity_id IS NOT NULL
-    )`;
-
-    // Amount/date to DISPLAY. The header amount/date_received can be null on
-    // imported or grant records; fall back to allocation data so the row shows
-    // meaningful values when the gift has them. Amount → sum of allocation
-    // sub-amounts; date → earliest allocation spending-start. Both stay null only
-    // when no value exists anywhere (the UI then says so explicitly). These are
-    // read-only display fields; they do NOT feed any financial total.
+    // Amount/date to DISPLAY (gift-header context, repeated across the gift's
+    // allocation rows). The header amount/date_received can be null on imported or
+    // grant records; fall back to allocation data so the row shows meaningful
+    // values when the gift has them. Amount → sum of allocation sub-amounts; date →
+    // earliest allocation spending-start. Both stay null only when no value exists
+    // anywhere. These are read-only display fields; they feed no financial total.
     const displayAmountSql = sql<string | null>`COALESCE(
       ${giftsAndPayments.amount},
       (
@@ -199,10 +185,24 @@ router.get(
       )
     )`;
 
+    // The driving table is gift_allocations (LEFT-joined onto gifts so a gift with
+    // no allocation still surfaces one row). Entity / fundable-project / school are
+    // the ALLOCATION's own scope. Keep the list and count queries in lockstep at
+    // this allocation-row granularity.
     const [rows, totalRow] = await Promise.all([
       db
         .select({
           id: giftsAndPayments.id,
+          giftName: giftsAndPayments.name,
+          allocationId: giftAllocations.id,
+          allocationAmount: giftAllocations.subAmount,
+          intendedUsage: giftAllocations.intendedUsage,
+          displayUsage: giftAllocations.displayUsage,
+          fundableProjectId: giftAllocations.fundableProjectId,
+          fundableProjectName: fundableProjects.name,
+          schoolRecipientId: giftAllocations.schoolRecipientId,
+          schoolRecipientName: schools.name,
+          grantYear: giftAllocations.grantYear,
           amount: giftsAndPayments.amount,
           displayAmount: displayAmountSql,
           dateReceived: giftsAndPayments.dateReceived,
@@ -219,10 +219,20 @@ router.get(
           personAnonymous: people.anonymous,
           personOwnerUserId: people.ownerUserId,
           householdName: households.name,
-          entityId: entityIdSql,
-          entityName: entityNamesSql,
+          entityId: giftAllocations.entityId,
+          entityName: entities.name,
         })
         .from(giftsAndPayments)
+        .leftJoin(
+          giftAllocations,
+          eq(giftAllocations.giftId, giftsAndPayments.id),
+        )
+        .leftJoin(entities, eq(entities.id, giftAllocations.entityId))
+        .leftJoin(
+          fundableProjects,
+          eq(fundableProjects.id, giftAllocations.fundableProjectId),
+        )
+        .leftJoin(schools, eq(schools.id, giftAllocations.schoolRecipientId))
         .leftJoin(
           organizations,
           eq(organizations.id, giftsAndPayments.organizationId),
@@ -233,12 +243,21 @@ router.get(
         )
         .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
         .where(where)
-        .orderBy(desc(giftsAndPayments.dateReceived), desc(giftsAndPayments.id))
+        .orderBy(
+          desc(giftsAndPayments.dateReceived),
+          desc(giftsAndPayments.id),
+          asc(giftAllocations.id),
+        )
         .limit(limit)
         .offset(offset),
       db
         .select({ value: count() })
         .from(giftsAndPayments)
+        .leftJoin(
+          giftAllocations,
+          eq(giftAllocations.giftId, giftsAndPayments.id),
+        )
+        .leftJoin(entities, eq(entities.id, giftAllocations.entityId))
         .leftJoin(
           organizations,
           eq(organizations.id, giftsAndPayments.organizationId),
@@ -281,15 +300,26 @@ router.get(
       }
       return {
         id: r.id,
+        rowKey: `${r.id}:${r.allocationId ?? "none"}`,
+        allocationId: r.allocationId,
+        giftName: r.giftName,
         donorName,
         donorKind,
         amount: r.amount,
         displayAmount: r.displayAmount,
+        allocationAmount: r.allocationAmount,
         dateReceived: r.dateReceived,
         displayDate: r.displayDate,
         paymentMethod: r.paymentMethod,
         entityId: r.entityId,
         entityName: r.entityName,
+        intendedUsage: r.intendedUsage,
+        displayUsage: r.displayUsage,
+        fundableProjectId: r.fundableProjectId,
+        fundableProjectName: r.fundableProjectName,
+        schoolRecipientId: r.schoolRecipientId,
+        schoolRecipientName: r.schoolRecipientName,
+        grantYear: r.grantYear,
         finalAmountSource: r.finalAmountSource,
       };
     });

@@ -513,15 +513,19 @@ export const SearchReconciliationQbStagedResponse = zod.object({
 
 /**
  * Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.
-no QuickBooks cash-application ledger entry exists for the gift. Gifts that are
-not expected to get a direct QB record are excluded, so the list never implies
-they are unreconciled: off-books / fiscal-sponsor / designated-to-school gifts
-(exempt) and Stripe-sourced gifts (the money lands in QuickBooks at the payout
-level, so they never carry a per-gift QB ledger link). Broad by design
-(cash / check / brokerage / imports all surface) with filters to slice. Donor
-names are anonymous-masked for the viewer. Read-only.
+no QuickBooks cash-application ledger entry exists for the gift — ONE ROW PER
+gift_allocation (a multi-allocation gift surfaces several rows; a gift with no
+allocations surfaces a single row with allocationId null). Gifts that are not
+expected to get a direct QB record are excluded, so the list never implies they
+are unreconciled: Stripe-sourced gifts (the money lands in QuickBooks at the
+payout level, so they never carry a per-gift QB ledger link) and allocations
+attributed to entities that never settle through a payment processor
+(entities.expectsPayment = false: "Direct to School" / "Wildflower Foundation
+TSNE"). Broad by design (cash / check / brokerage / imports all surface) with
+filters to slice. Pagination is at allocation-row granularity. Donor names are
+anonymous-masked for the viewer. Read-only.
 
- * @summary Gifts genuinely missing a QuickBooks record (data-quality worklist).
+ * @summary Gift allocations genuinely missing a QuickBooks record (data-quality worklist).
  */
 export const listGiftsMissingQbQueryLimitDefault = 50;
 export const listGiftsMissingQbQueryLimitMax = 200;
@@ -543,18 +547,29 @@ export const ListGiftsMissingQbQueryParams = zod.object({
 
 export const ListGiftsMissingQbResponse = zod.object({
   "data": zod.array(zod.object({
-  "id": zod.string(),
+  "id": zod.string().describe('Gift (gifts_and_payments) id. Repeats across the gift\'s allocation rows.'),
+  "rowKey": zod.string().describe('Stable per-row key (giftId + allocationId). Unique across the list; use as the React key.'),
+  "allocationId": zod.string().nullish().describe('gift_allocations id for this row. Null when the gift has no allocations.'),
+  "giftName": zod.string().nullish().describe('Gift header name (used with the allocation id to label the row).'),
   "donorName": zod.string().nullish().describe('Donor display name (anonymous-masked for the viewer).'),
   "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
   "amount": zod.string().nullish().describe('Raw gift header amount (may be null).'),
   "displayAmount": zod.string().nullish().describe('Amount to display: the gift header amount, falling back to the sum of the gift\'s allocation sub-amounts when the header is null. Null only when no amount is recorded anywhere.'),
+  "allocationAmount": zod.string().nullish().describe('This allocation\'s sub-amount (null when there is no allocation).'),
   "dateReceived": zod.string().date().nullish().describe('Raw gift header date received (may be null).'),
   "displayDate": zod.string().date().nullish().describe('Date to display: the gift date received, falling back to the earliest allocation spending-start date when the header is null.'),
   "paymentMethod": zod.enum(['ach', 'check', 'wire', 'stock', 'donor_box', 'daf_ach', 'daf_check', 'daf_bill_com']).nullish().describe('The donor\'s recorded payment method on the gift (NOT a reconciliation match).'),
-  "entityId": zod.string().nullish(),
-  "entityName": zod.string().nullish(),
+  "entityId": zod.string().nullish().describe('The allocation\'s fund entity id.'),
+  "entityName": zod.string().nullish().describe('The allocation\'s fund entity name.'),
+  "intendedUsage": zod.enum(['gen_ops', 'growth', 'school_startup', 'teacher_training', 'project']).nullish(),
+  "displayUsage": zod.string().nullish().describe('Denormalized human-readable usage label for the allocation.'),
+  "fundableProjectId": zod.string().nullish(),
+  "fundableProjectName": zod.string().nullish(),
+  "schoolRecipientId": zod.string().nullish(),
+  "schoolRecipientName": zod.string().nullish(),
+  "grantYear": zod.string().nullish().describe('The allocation\'s fiscal year (grant_year) id.'),
   "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).nullish().describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.')
-}).describe('A gift genuinely missing a QuickBooks record — list item for the gifts-missing-QB worklist.')),
+}).describe('ONE ROW PER gift_allocation for the gifts-missing-QB worklist. A gift with\nseveral allocations surfaces several rows (the gift header fields repeat).\nA gift that has no allocations surfaces a single row with allocationId null.\nAllocations attributed to an entity that never settles through a payment\nprocessor (entities.expectsPayment = false: \"Direct to School\" \/\n\"Wildflower Foundation TSNE\") are excluded.\n')),
   "pagination": zod.object({
   "page": zod.number(),
   "limit": zod.number(),

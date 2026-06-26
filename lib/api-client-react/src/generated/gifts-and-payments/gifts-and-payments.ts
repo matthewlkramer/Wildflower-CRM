@@ -39,6 +39,8 @@ import type {
   MergeIntoPledgeResult,
   MergeResult,
   NotFoundResponse,
+  RevertGiftToOpportunityBody,
+  RevertGiftToOpportunityResult,
   SplitGiftIntoPledgeBody,
   UpdateGiftOrPaymentBody
 } from '../api.schemas';
@@ -907,6 +909,87 @@ export const useSplitGiftIntoPledge = <TError = ErrorType<BadRequestResponse | N
         TContext
       > => {
       return useMutation(getSplitGiftIntoPledgeMutationOptions(options));
+    }
+    /**
+ * Treats the recorded gift as money that did NOT actually land: mints a fresh
+opportunities_and_pledges row from the gift (donor + amount inherited, its
+allocations mirrored onto pledge_allocations) and ARCHIVES the gift
+(non-destructive — the gift and its allocations are retained, soft-deleted).
+With asPledge=true the new record is a written PLEDGE (a documented but
+still-unpaid commitment); otherwise it is an open OPPORTUNITY back in the
+pipeline. Derived opportunity fields (status/stage) are recomputed afterward
+— never written by hand. Returns 409 when the gift is archived, already pays
+a pledge, or is linked to a QuickBooks staged payment (resolve that first).
+
+ * @summary Revert a recorded gift back into a pipeline opportunity (or a pledge).
+ */
+export const getRevertGiftToOpportunityUrl = (id: string,) => {
+
+
+  
+
+  return `/api/gifts-and-payments/${id}/revert-to-opportunity`
+}
+
+export const revertGiftToOpportunity = async (id: string,
+    revertGiftToOpportunityBody?: RevertGiftToOpportunityBody, options?: RequestInit): Promise<RevertGiftToOpportunityResult> => {
+  
+  return customFetch<RevertGiftToOpportunityResult>(getRevertGiftToOpportunityUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      revertGiftToOpportunityBody,)
+  }
+);}
+  
+
+
+
+export const getRevertGiftToOpportunityMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertGiftToOpportunity>>, TError,{id: string;data: BodyType<RevertGiftToOpportunityBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revertGiftToOpportunity>>, TError,{id: string;data: BodyType<RevertGiftToOpportunityBody>}, TContext> => {
+
+const mutationKey = ['revertGiftToOpportunity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revertGiftToOpportunity>>, {id: string;data: BodyType<RevertGiftToOpportunityBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  revertGiftToOpportunity(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevertGiftToOpportunityMutationResult = NonNullable<Awaited<ReturnType<typeof revertGiftToOpportunity>>>
+    export type RevertGiftToOpportunityMutationBody = BodyType<RevertGiftToOpportunityBody>
+    export type RevertGiftToOpportunityMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Revert a recorded gift back into a pipeline opportunity (or a pledge).
+ */
+export const useRevertGiftToOpportunity = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertGiftToOpportunity>>, TError,{id: string;data: BodyType<RevertGiftToOpportunityBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revertGiftToOpportunity>>,
+        TError,
+        {id: string;data: BodyType<RevertGiftToOpportunityBody>},
+        TContext
+      > => {
+      return useMutation(getRevertGiftToOpportunityMutationOptions(options));
     }
     export const getBulkUpdateGiftsAndPaymentsUrl = () => {
 

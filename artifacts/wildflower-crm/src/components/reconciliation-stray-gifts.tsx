@@ -1,15 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useListGiftsMissingQb,
   useListEntities,
   getListEntitiesQueryKey,
+  useSearchReconciliationQbStaged,
+  getSearchReconciliationQbStagedQueryKey,
+  useReconcileStagedPayment,
+  useUpdateGiftAllocation,
+  useRevertGiftToOpportunity,
   GiftPaymentMethod,
+  type GiftMissingQb,
   type ListGiftsMissingQbParams,
+  type SearchReconciliationQbStagedParams,
+  type UpdateGiftAllocationBody,
 } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -25,24 +35,65 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import { useDebounce } from "@/hooks/use-debounce";
+import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
+import { Loader2, MoreHorizontal } from "lucide-react";
 
 /* ────────────────────────────────────────────────────────────────────────
- * Worklist 3 of 3 — "Gifts missing a QuickBooks record".
+ * CRM-only worklist — "Gift allocations missing a QuickBooks record".
  *
- * Surfaces only gifts that are GENUINELY un-reconciled with QuickBooks so they
- * can be investigated. Gifts that are not expected to carry a per-gift QB record
- * are excluded server-side, so nothing here reads as unreconciled when it isn't:
- * off-books / fiscal-sponsor / designated-to-school gifts (exempt), and
- * Stripe-sourced gifts (the money lands in QuickBooks at the payout level).
+ * One row PER gift_allocation (not per gift): a gift with three allocations is
+ * three rows, each independently actionable. Gifts with no allocations still
+ * surface as a single row. Allocations whose fund entity is not expected to
+ * carry a per-gift QB record (entities.expectsPayment=false) are excluded
+ * server-side, so nothing here reads as unreconciled when it isn't.
  *
  * The "Recorded method" column is the donor's stated payment method on the gift
- * (check, DAF, etc.) — it is NOT a found payment match. Read-only — deep-link to
- * the gift to act.
+ * (check, DAF, etc.) — it is NOT a found payment match.
+ *
+ * Per-row actions (the ⋯ menu):
+ *   • Link allocation → payment   (reconcile the gift to a QuickBooks payment)
+ *   • Link gift → payment         (reconcile the gift to a QuickBooks payment)
+ *   • Edit row                    (PATCH this gift_allocation inline)
+ *   • Revert gift → opportunity   (mint an open opportunity, archive the gift)
+ *   • Revert gift → pledge        (mint a written pledge, archive the gift)
+ *   • Flag for research           (add the gift to the Cleanup Queue)
+ *
+ * NB: the data model has no allocation-level payment link — reconciliation is
+ * gift-level — so BOTH "link" actions reconcile the whole gift; they differ in
+ * framing only.
  * ──────────────────────────────────────────────────────────────────────── */
 
 const PAGE_SIZE = 50;
+const MISSING_QB_KEY_PREFIX = "/api/reconciliation/gifts-missing-qb";
 
 const PAYMENT_METHODS: GiftPaymentMethod[] = [
   "ach",
@@ -84,7 +135,8 @@ export function StrayGiftsWorklist() {
     };
     if (debouncedSearch) p.q = debouncedSearch;
     if (entityId !== ANY) p.entityId = entityId;
-    if (paymentMethod !== ANY) p.paymentMethod = paymentMethod as GiftPaymentMethod;
+    if (paymentMethod !== ANY)
+      p.paymentMethod = paymentMethod as GiftPaymentMethod;
     if (dateFrom) p.dateFrom = dateFrom;
     if (dateTo) p.dateTo = dateTo;
     return p;
@@ -152,13 +204,13 @@ export function StrayGiftsWorklist() {
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading gifts…</p>
+        <p className="text-sm text-muted-foreground">Loading allocations…</p>
       ) : isError ? (
-        <p className="text-sm text-destructive">Couldn't load gifts.</p>
+        <p className="text-sm text-destructive">Couldn't load allocations.</p>
       ) : rows.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No gifts missing a QuickBooks record for these filters.
+            No gift allocations missing a QuickBooks record for these filters.
           </CardContent>
         </Card>
       ) : (
@@ -166,51 +218,19 @@ export function StrayGiftsWorklist() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Record</TableHead>
                 <TableHead>Donor</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Recorded method</TableHead>
                 <TableHead>Entity</TableHead>
-                <TableHead>Source</TableHead>
+                <TableHead>Usage</TableHead>
+                <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((g) => (
-                <TableRow key={g.id} data-testid={`stray-gift-${g.id}`}>
-                  <TableCell>
-                    <Link
-                      href={`/gifts/${g.id}`}
-                      className="font-medium underline-offset-2 hover:underline"
-                    >
-                      {g.donorName ?? "—"}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="tabular-nums">
-                    {g.displayAmount != null ? (
-                      formatCurrency(g.displayAmount)
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        No amount recorded
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {g.displayDate != null ? (
-                      formatDateShort(g.displayDate)
-                    ) : (
-                      <span className="text-xs">No date recorded</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {g.paymentMethod ? formatEnum(g.paymentMethod) : "—"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {g.entityName ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    {g.finalAmountSource ? formatEnum(g.finalAmountSource) : "—"}
-                  </TableCell>
-                </TableRow>
+                <StrayGiftRow key={g.rowKey} g={g} entities={entities} />
               ))}
             </TableBody>
           </Table>
@@ -245,5 +265,472 @@ export function StrayGiftsWorklist() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+type EntityOption = { id: string; name: string };
+
+type RowDialog =
+  | null
+  | "link-allocation"
+  | "link-gift"
+  | "edit"
+  | "revert-opportunity"
+  | "revert-pledge"
+  | "flag";
+
+function StrayGiftRow({
+  g,
+  entities,
+}: {
+  g: GiftMissingQb;
+  entities: EntityOption[];
+}) {
+  const [dialog, setDialog] = useState<RowDialog>(null);
+  const close = () => setDialog(null);
+
+  const recordLabel = g.giftName?.trim()
+    ? g.giftName
+    : `Gift ${g.id.slice(0, 8)}`;
+
+  return (
+    <TableRow data-testid={`stray-gift-${g.rowKey}`}>
+      <TableCell>
+        <Link
+          href={`/gifts/${g.id}`}
+          className="font-medium underline-offset-2 hover:underline"
+        >
+          {recordLabel}
+        </Link>
+        <div className="text-xs text-muted-foreground">
+          {g.allocationId ? `Allocation ${g.allocationId.slice(0, 8)}` : "No allocation"}
+        </div>
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {g.donorName ?? "—"}
+      </TableCell>
+      <TableCell className="tabular-nums">
+        {g.allocationAmount != null ? (
+          formatCurrency(g.allocationAmount)
+        ) : g.displayAmount != null ? (
+          <span title="Gift header amount (allocation sub-amount not set)">
+            {formatCurrency(g.displayAmount)}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">
+            No amount recorded
+          </span>
+        )}
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {g.displayDate != null ? (
+          formatDateShort(g.displayDate)
+        ) : (
+          <span className="text-xs">No date recorded</span>
+        )}
+      </TableCell>
+      <TableCell>
+        {g.paymentMethod ? formatEnum(g.paymentMethod) : "—"}
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {g.entityName ?? "—"}
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {g.displayUsage ??
+          (g.intendedUsage ? formatEnum(g.intendedUsage) : "—")}
+      </TableCell>
+      <TableCell>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              data-testid={`stray-gift-actions-${g.rowKey}`}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+              <span className="sr-only">Row actions</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => setDialog("link-allocation")}>
+              Link allocation → payment
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setDialog("link-gift")}>
+              Link gift → payment
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!g.allocationId}
+              onSelect={() => g.allocationId && setDialog("edit")}
+            >
+              Edit row
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => setDialog("revert-opportunity")}>
+              Revert gift → opportunity
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setDialog("revert-pledge")}>
+              Revert gift → pledge
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => setDialog("flag")}>
+              Flag for research
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {(dialog === "link-allocation" || dialog === "link-gift") && (
+          <PaymentLinkDialog
+            g={g}
+            scope={dialog === "link-allocation" ? "allocation" : "gift"}
+            onClose={close}
+          />
+        )}
+        {dialog === "edit" && g.allocationId && (
+          <EditAllocationDialog g={g} entities={entities} onClose={close} />
+        )}
+        {(dialog === "revert-opportunity" || dialog === "revert-pledge") && (
+          <RevertGiftDialog
+            g={g}
+            asPledge={dialog === "revert-pledge"}
+            onClose={close}
+          />
+        )}
+        <FlagForResearchDialog
+          targetType="gift"
+          targetId={g.id}
+          recordLabel={recordLabel}
+          hideTrigger
+          open={dialog === "flag"}
+          onOpenChange={(v) => (v ? setDialog("flag") : close())}
+        />
+      </TableCell>
+    </TableRow>
+  );
+}
+
+/* ── Link to payment ──────────────────────────────────────────────────────
+ * Search QuickBooks staged payments and reconcile the GIFT to the picked one.
+ * Reconciliation is gift-level in the data model, so both the allocation- and
+ * gift-scoped menu entries land here; the scope changes the copy only.
+ * ──────────────────────────────────────────────────────────────────────── */
+function PaymentLinkDialog({
+  g,
+  scope,
+  onClose,
+}: {
+  g: GiftMissingQb;
+  scope: "allocation" | "gift";
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [q, setQ] = useState(g.donorName ?? "");
+  const debouncedQ = useDebounce(q.trim());
+
+  const amount = g.allocationAmount ?? g.displayAmount ?? undefined;
+  const date = g.displayDate ?? undefined;
+
+  const searchParams = useMemo<SearchReconciliationQbStagedParams>(() => {
+    const p: SearchReconciliationQbStagedParams = { limit: 25 };
+    if (debouncedQ) p.q = debouncedQ;
+    if (amount != null) p.amount = amount;
+    if (date != null) {
+      p.date = date;
+      p.days = 30;
+    }
+    return p;
+  }, [debouncedQ, amount, date]);
+
+  const searchQ = useSearchReconciliationQbStaged(searchParams, {
+    query: { queryKey: getSearchReconciliationQbStagedQueryKey(searchParams) },
+  });
+  const candidates = searchQ.data?.data ?? [];
+
+  const reconcile = useReconcileStagedPayment();
+
+  const link = (stagedPaymentId: string) => {
+    reconcile.mutate(
+      { id: stagedPaymentId, data: { giftId: g.id } },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({
+            queryKey: [MISSING_QB_KEY_PREFIX],
+          });
+          toast({
+            title: "Linked to payment",
+            description: "The gift is now reconciled to the QuickBooks payment.",
+          });
+          onClose();
+        },
+        onError: (err) =>
+          toast({
+            title: "Couldn't link",
+            description:
+              err instanceof Error ? err.message : "Something went wrong.",
+            variant: "destructive",
+          }),
+      },
+    );
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => (!v && !reconcile.isPending ? onClose() : undefined)}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>
+            {scope === "allocation"
+              ? "Link allocation to a payment"
+              : "Link gift to a payment"}
+          </DialogTitle>
+          <DialogDescription>
+            Find the QuickBooks payment for{" "}
+            <span className="font-medium">{g.donorName ?? "this donor"}</span>{" "}
+            and link it. Reconciliation is recorded against the whole gift.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search payer, memo, reference…"
+            data-testid="payment-link-search"
+          />
+          <div className="max-h-80 overflow-y-auto rounded-md border">
+            {searchQ.isLoading ? (
+              <p className="p-4 text-sm text-muted-foreground">Searching…</p>
+            ) : candidates.length === 0 ? (
+              <p className="p-4 text-sm text-muted-foreground">
+                No matching QuickBooks payments.
+              </p>
+            ) : (
+              <ul className="divide-y">
+                {candidates.map((c) => {
+                  const blocked = c.alreadyLinkedStagedPaymentId != null;
+                  return (
+                    <li
+                      key={c.id}
+                      className="flex items-center justify-between gap-3 p-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">
+                          {c.label}
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {[
+                            c.amount != null ? formatCurrency(c.amount) : null,
+                            c.date != null ? formatDateShort(c.date) : null,
+                            c.sublabel ?? null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={blocked || reconcile.isPending}
+                        onClick={() => link(c.id)}
+                        data-testid={`payment-link-pick-${c.id}`}
+                      >
+                        {blocked ? (
+                          "Already linked"
+                        ) : reconcile.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          "Link"
+                        )}
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={reconcile.isPending}
+          >
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ── Edit row (one gift_allocation) ───────────────────────────────────────── */
+function EditAllocationDialog({
+  g,
+  entities,
+  onClose,
+}: {
+  g: GiftMissingQb;
+  entities: EntityOption[];
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [subAmount, setSubAmount] = useState(g.allocationAmount ?? "");
+  const [allocEntityId, setAllocEntityId] = useState(g.entityId ?? ANY);
+
+  const update = useUpdateGiftAllocation();
+
+  const save = () => {
+    if (!g.allocationId) return;
+    const body: UpdateGiftAllocationBody = {
+      subAmount: subAmount.trim() === "" ? null : subAmount.trim(),
+      entityId: allocEntityId === ANY ? null : allocEntityId,
+    };
+    update.mutate(
+      { id: g.allocationId, data: body },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({
+            queryKey: [MISSING_QB_KEY_PREFIX],
+          });
+          toast({ title: "Allocation updated" });
+          onClose();
+        },
+        onError: (err) =>
+          toast({
+            title: "Couldn't update",
+            description:
+              err instanceof Error ? err.message : "Something went wrong.",
+            variant: "destructive",
+          }),
+      },
+    );
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => (!v && !update.isPending ? onClose() : undefined)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit allocation</DialogTitle>
+          <DialogDescription>
+            Update this allocation row on{" "}
+            <span className="font-medium">{g.giftName ?? "the gift"}</span>.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-alloc-amount">Sub-amount</Label>
+            <Input
+              id="edit-alloc-amount"
+              inputMode="decimal"
+              value={subAmount}
+              onChange={(e) => setSubAmount(e.target.value)}
+              placeholder="0.00"
+              data-testid="edit-alloc-amount"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Fund entity</Label>
+            <Select value={allocEntityId} onValueChange={setAllocEntityId}>
+              <SelectTrigger data-testid="edit-alloc-entity">
+                <SelectValue placeholder="Entity" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>None</SelectItem>
+                {entities.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>
+                    {e.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={update.isPending}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={update.isPending} data-testid="edit-alloc-save">
+            {update.isPending ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ── Revert gift → opportunity / pledge ───────────────────────────────────── */
+function RevertGiftDialog({
+  g,
+  asPledge,
+  onClose,
+}: {
+  g: GiftMissingQb;
+  asPledge: boolean;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const revert = useRevertGiftToOpportunity();
+
+  const target = asPledge ? "pledge" : "opportunity";
+
+  const confirm = () => {
+    revert.mutate(
+      { id: g.id, data: { asPledge } },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({
+            queryKey: [MISSING_QB_KEY_PREFIX],
+          });
+          toast({
+            title: `Reverted to ${target}`,
+            description: `The gift was archived and a new ${target} was created.`,
+          });
+          onClose();
+        },
+        onError: (err) =>
+          toast({
+            title: "Couldn't revert",
+            description:
+              err instanceof Error ? err.message : "Something went wrong.",
+            variant: "destructive",
+          }),
+      },
+    );
+  };
+
+  return (
+    <AlertDialog open onOpenChange={(v) => (!v && !revert.isPending ? onClose() : undefined)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Revert gift to {target}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This archives the gift{" "}
+            <span className="font-medium">{g.giftName ?? g.donorName ?? ""}</span>{" "}
+            and mints a new {target} with the gift's allocations carried over.
+            {asPledge
+              ? " The new pledge is marked as a written pledge."
+              : " The new opportunity is open (not yet committed)."}{" "}
+            Gifts linked to a QuickBooks payment can't be reverted.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={revert.isPending}>
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => {
+              e.preventDefault();
+              confirm();
+            }}
+            disabled={revert.isPending}
+            data-testid="revert-gift-confirm"
+          >
+            {revert.isPending ? "Reverting…" : `Revert to ${target}`}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

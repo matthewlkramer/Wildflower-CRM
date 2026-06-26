@@ -691,6 +691,35 @@ export const SplitGiftIntoPledgeResponse = zod.object({
   "created": zod.boolean().describe('True if a new pledge was created, false if an existing one was used.')
 })
 
+/**
+ * Treats the recorded gift as money that did NOT actually land: mints a fresh
+opportunities_and_pledges row from the gift (donor + amount inherited, its
+allocations mirrored onto pledge_allocations) and ARCHIVES the gift
+(non-destructive — the gift and its allocations are retained, soft-deleted).
+With asPledge=true the new record is a written PLEDGE (a documented but
+still-unpaid commitment); otherwise it is an open OPPORTUNITY back in the
+pipeline. Derived opportunity fields (status/stage) are recomputed afterward
+— never written by hand. Returns 409 when the gift is archived, already pays
+a pledge, or is linked to a QuickBooks staged payment (resolve that first).
+
+ * @summary Revert a recorded gift back into a pipeline opportunity (or a pledge).
+ */
+export const RevertGiftToOpportunityParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const revertGiftToOpportunityBodyAsPledgeDefault = false;
+
+export const RevertGiftToOpportunityBody = zod.object({
+  "asPledge": zod.boolean().default(revertGiftToOpportunityBodyAsPledgeDefault).describe('When true the new record is a written PLEDGE (writtenPledge=true); otherwise an open opportunity.'),
+  "name": zod.string().nullish().describe('Name for the new opportunity\/pledge. Defaults to the gift\'s name.')
+}).describe('Options for reverting a gift back into an opportunity. The new record inherits the gift\'s donor and amount; the gift\'s allocations are mirrored onto pledge_allocations and the gift is archived.')
+
+export const RevertGiftToOpportunityResponse = zod.object({
+  "opportunityId": zod.string().describe('Id of the newly created opportunities_and_pledges row.'),
+  "asPledge": zod.boolean().describe('Whether the new record was created as a written pledge.')
+})
+
 export const bulkUpdateGiftsAndPaymentsBodyIdsMax = 1000;
 
 

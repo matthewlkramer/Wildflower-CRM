@@ -899,15 +899,19 @@ export function useSearchReconciliationQbStaged<TData = Awaited<ReturnType<typeo
 
 /**
  * Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.
-no QuickBooks cash-application ledger entry exists for the gift. Gifts that are
-not expected to get a direct QB record are excluded, so the list never implies
-they are unreconciled: off-books / fiscal-sponsor / designated-to-school gifts
-(exempt) and Stripe-sourced gifts (the money lands in QuickBooks at the payout
-level, so they never carry a per-gift QB ledger link). Broad by design
-(cash / check / brokerage / imports all surface) with filters to slice. Donor
-names are anonymous-masked for the viewer. Read-only.
+no QuickBooks cash-application ledger entry exists for the gift — ONE ROW PER
+gift_allocation (a multi-allocation gift surfaces several rows; a gift with no
+allocations surfaces a single row with allocationId null). Gifts that are not
+expected to get a direct QB record are excluded, so the list never implies they
+are unreconciled: Stripe-sourced gifts (the money lands in QuickBooks at the
+payout level, so they never carry a per-gift QB ledger link) and allocations
+attributed to entities that never settle through a payment processor
+(entities.expectsPayment = false: "Direct to School" / "Wildflower Foundation
+TSNE"). Broad by design (cash / check / brokerage / imports all surface) with
+filters to slice. Pagination is at allocation-row granularity. Donor names are
+anonymous-masked for the viewer. Read-only.
 
- * @summary Gifts genuinely missing a QuickBooks record (data-quality worklist).
+ * @summary Gift allocations genuinely missing a QuickBooks record (data-quality worklist).
  */
 export const getListGiftsMissingQbUrl = (params?: ListGiftsMissingQbParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -969,7 +973,7 @@ export type ListGiftsMissingQbQueryError = ErrorType<BadRequestResponse>
 
 
 /**
- * @summary Gifts genuinely missing a QuickBooks record (data-quality worklist).
+ * @summary Gift allocations genuinely missing a QuickBooks record (data-quality worklist).
  */
 
 export function useListGiftsMissingQb<TData = Awaited<ReturnType<typeof listGiftsMissingQb>>, TError = ErrorType<BadRequestResponse>>(

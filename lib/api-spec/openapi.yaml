@@ -3338,6 +3338,28 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "The gift already pays a pledge, is linked to a QuickBooks staged payment, or its allocations cannot be split." }
+  /gifts-and-payments/{id}/revert-to-opportunity:
+    post:
+      operationId: revertGiftToOpportunity
+      tags: [gifts-and-payments]
+      summary: "Revert a recorded gift back into a pipeline opportunity (or a pledge)."
+      description: |
+        Treats the recorded gift as money that did NOT actually land: mints a fresh
+        opportunities_and_pledges row from the gift (donor + amount inherited, its
+        allocations mirrored onto pledge_allocations) and ARCHIVES the gift
+        (non-destructive — the gift and its allocations are retained, soft-deleted).
+        With asPledge=true the new record is a written PLEDGE (a documented but
+        still-unpaid commitment); otherwise it is an open OPPORTUNITY back in the
+        pipeline. Derived opportunity fields (status/stage) are recomputed afterward
+        — never written by hand. Returns 409 when the gift is archived, already pays
+        a pledge, or is linked to a QuickBooks staged payment (resolve that first).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: false, content: { application/json: { schema: { $ref: "#/components/schemas/RevertGiftToOpportunityBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RevertGiftToOpportunityResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The gift is archived, already pays a pledge, or is linked to a QuickBooks staged payment." }
   /households/bulk-update:
     post:
       operationId: bulkUpdateHouseholds
@@ -3988,16 +4010,20 @@ paths:
     get:
       operationId: listGiftsMissingQb
       tags: [reconciliation]
-      summary: Gifts genuinely missing a QuickBooks record (data-quality worklist).
+      summary: Gift allocations genuinely missing a QuickBooks record (data-quality worklist).
       description: |
         Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.
-        no QuickBooks cash-application ledger entry exists for the gift. Gifts that are
-        not expected to get a direct QB record are excluded, so the list never implies
-        they are unreconciled: off-books / fiscal-sponsor / designated-to-school gifts
-        (exempt) and Stripe-sourced gifts (the money lands in QuickBooks at the payout
-        level, so they never carry a per-gift QB ledger link). Broad by design
-        (cash / check / brokerage / imports all surface) with filters to slice. Donor
-        names are anonymous-masked for the viewer. Read-only.
+        no QuickBooks cash-application ledger entry exists for the gift — ONE ROW PER
+        gift_allocation (a multi-allocation gift surfaces several rows; a gift with no
+        allocations surfaces a single row with allocationId null). Gifts that are not
+        expected to get a direct QB record are excluded, so the list never implies they
+        are unreconciled: Stripe-sourced gifts (the money lands in QuickBooks at the
+        payout level, so they never carry a per-gift QB ledger link) and allocations
+        attributed to entities that never settle through a payment processor
+        (entities.expectsPayment = false: "Direct to School" / "Wildflower Foundation
+        TSNE"). Broad by design (cash / check / brokerage / imports all surface) with
+        filters to slice. Pagination is at allocation-row granularity. Donor names are
+        anonymous-masked for the viewer. Read-only.
       parameters:
         - { name: q, in: query, schema: { type: string }, description: "Free-text over donor name (organization / person / household)." }
         - { name: entityId, in: query, schema: { type: string }, description: "Filter to one Wildflower legal entity." }
@@ -6849,19 +6875,36 @@ components:
         data: { type: array, items: { $ref: "#/components/schemas/ReconciliationCandidate" } }
     GiftMissingQb:
       type: object
-      required: [id]
-      description: "A gift genuinely missing a QuickBooks record — list item for the gifts-missing-QB worklist."
+      required: [id, rowKey]
+      description: |
+        ONE ROW PER gift_allocation for the gifts-missing-QB worklist. A gift with
+        several allocations surfaces several rows (the gift header fields repeat).
+        A gift that has no allocations surfaces a single row with allocationId null.
+        Allocations attributed to an entity that never settles through a payment
+        processor (entities.expectsPayment = false: "Direct to School" /
+        "Wildflower Foundation TSNE") are excluded.
       properties:
-        id:            { type: string }
+        id:            { type: string, description: "Gift (gifts_and_payments) id. Repeats across the gift's allocation rows." }
+        rowKey:        { type: string, description: "Stable per-row key (giftId + allocationId). Unique across the list; use as the React key." }
+        allocationId:  { type: string, nullable: true, description: "gift_allocations id for this row. Null when the gift has no allocations." }
+        giftName:      { type: string, nullable: true, description: "Gift header name (used with the allocation id to label the row)." }
         donorName:     { type: string, nullable: true, description: "Donor display name (anonymous-masked for the viewer)." }
         donorKind:     { type: string, enum: [organization, person, household], nullable: true }
         amount:        { type: string, nullable: true, description: "Raw gift header amount (may be null)." }
         displayAmount: { type: string, nullable: true, description: "Amount to display: the gift header amount, falling back to the sum of the gift's allocation sub-amounts when the header is null. Null only when no amount is recorded anywhere." }
+        allocationAmount: { type: string, nullable: true, description: "This allocation's sub-amount (null when there is no allocation)." }
         dateReceived:  { type: string, format: date, nullable: true, description: "Raw gift header date received (may be null)." }
         displayDate:   { type: string, format: date, nullable: true, description: "Date to display: the gift date received, falling back to the earliest allocation spending-start date when the header is null." }
         paymentMethod: { $ref: "#/components/schemas/GiftPaymentMethod", nullable: true, description: "The donor's recorded payment method on the gift (NOT a reconciliation match)." }
-        entityId:      { type: string, nullable: true }
-        entityName:    { type: string, nullable: true }
+        entityId:      { type: string, nullable: true, description: "The allocation's fund entity id." }
+        entityName:    { type: string, nullable: true, description: "The allocation's fund entity name." }
+        intendedUsage: { $ref: "#/components/schemas/IntendedUsage", nullable: true }
+        displayUsage:  { type: string, nullable: true, description: "Denormalized human-readable usage label for the allocation." }
+        fundableProjectId:   { type: string, nullable: true }
+        fundableProjectName: { type: string, nullable: true }
+        schoolRecipientId:   { type: string, nullable: true }
+        schoolRecipientName: { type: string, nullable: true }
+        grantYear:     { type: string, nullable: true, description: "The allocation's fiscal year (grant_year) id." }
         finalAmountSource: { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
     GiftMissingQbList:
       type: object
@@ -8563,6 +8606,18 @@ components:
       description: "Optional overrides when splitting a gift into a pledge. The pledge inherits the gift's donor and uses the gift amount as its awarded amount; each gift_allocation becomes one payment gift."
       properties:
         name: { type: string, nullable: true, description: "Name for the new pledge. Defaults to the gift's name." }
+    RevertGiftToOpportunityBody:
+      type: object
+      description: "Options for reverting a gift back into an opportunity. The new record inherits the gift's donor and amount; the gift's allocations are mirrored onto pledge_allocations and the gift is archived."
+      properties:
+        asPledge: { type: boolean, default: false, description: "When true the new record is a written PLEDGE (writtenPledge=true); otherwise an open opportunity." }
+        name: { type: string, nullable: true, description: "Name for the new opportunity/pledge. Defaults to the gift's name." }
+    RevertGiftToOpportunityResult:
+      type: object
+      required: [opportunityId, asPledge]
+      properties:
+        opportunityId: { type: string, description: "Id of the newly created opportunities_and_pledges row." }
+        asPledge:      { type: boolean, description: "Whether the new record was created as a written pledge." }
     BulkArchiveBody:
       type: object
       required: [ids]

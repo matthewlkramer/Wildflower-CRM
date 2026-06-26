@@ -111,6 +111,7 @@ import {
   MergeGiftsAndPaymentsBody,
   MergeGiftsIntoPledgeBody,
   SplitGiftIntoPledgeBody,
+  RevertGiftToOpportunityBody,
   validateGiftInvariants,
   validateOppInvariants,
   giftTypeToLoanOrGrant,
@@ -1426,6 +1427,185 @@ router.post(
     await applyGiftQbTieMany(...outcome.giftIds);
     if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
     res.json({ pledgeId: outcome.pledgeId, giftIds: outcome.giftIds, created: true });
+  }),
+);
+
+// ──────────────────────────────────────────────────────────────────
+// Revert a recorded gift back into a pipeline opportunity (or a pledge)
+// ──────────────────────────────────────────────────────────────────
+// Treats the gift as money that did NOT actually land. Unlike split-into-pledge
+// (which keeps the gift as a payment), this mints a fresh opportunity from the
+// gift, mirrors its allocations onto pledge_allocations, and ARCHIVES the gift
+// (non-destructive). asPledge=true → a written PLEDGE; false → an open
+// opportunity back in the pipeline. Derived opp fields recomputed afterward.
+router.post(
+  "/gifts-and-payments/:id/revert-to-opportunity",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const body = parseOrBadRequest(RevertGiftToOpportunityBody, req.body ?? {}, res);
+    if (!body) return;
+    const asPledge = body.asPledge ?? false;
+
+    const actor = getAppUser(req);
+
+    type Outcome =
+      | { ok: true; opportunityId: string; donorOrgId: string | null }
+      | { ok: false; status: number; json: Record<string, unknown> }
+      | { ok: false; invariant: InvariantIssue[] };
+
+    const outcome = await db.transaction(async (tx): Promise<Outcome> => {
+      // Lock the gift so its allocation set can't race a concurrent edit.
+      const [gift] = await tx
+        .select()
+        .from(giftsAndPayments)
+        .where(eq(giftsAndPayments.id, id))
+        .for("update");
+      if (!gift) {
+        return { ok: false, status: 404, json: { error: "not_found", message: "Gift not found." } };
+      }
+      if (gift.archivedAt != null) {
+        return {
+          ok: false,
+          status: 409,
+          json: { error: "gift_archived", message: "Restore this gift before reverting it." },
+        };
+      }
+      if (gift.opportunityId != null) {
+        return {
+          ok: false,
+          status: 409,
+          json: {
+            error: "gift_already_on_pledge",
+            message: "This gift already pays a pledge. Detach it before reverting.",
+          },
+        };
+      }
+
+      // A gift wired into a QuickBooks staged payment must be unlinked first —
+      // reverting archives it and would falsify an approved reconciliation.
+      const qbLink = await tx
+        .select({ id: stagedPayments.id })
+        .from(stagedPayments)
+        .where(
+          or(
+            eq(stagedPayments.matchedGiftId, id),
+            eq(stagedPayments.createdGiftId, id),
+            eq(stagedPayments.groupReconciledGiftId, id),
+          ),
+        )
+        .limit(1);
+      const qbSplitLink = await tx
+        .select({ id: stagedPaymentSplits.id })
+        .from(stagedPaymentSplits)
+        .where(eq(stagedPaymentSplits.giftId, id))
+        .limit(1);
+      if (qbLink.length || qbSplitLink.length) {
+        return {
+          ok: false,
+          status: 409,
+          json: {
+            error: "quickbooks_linked",
+            message:
+              "This gift is linked to a QuickBooks staged payment. Resolve that link before reverting.",
+          },
+        };
+      }
+
+      // Lock the allocation rows too so a concurrent edit can't slip between the
+      // read and the mirror+archive below.
+      const allocs = await tx
+        .select()
+        .from(giftAllocations)
+        .where(eq(giftAllocations.giftId, id))
+        .orderBy(asc(giftAllocations.id))
+        .for("update");
+
+      // Donor (XOR) carried by the gift — reused for the new opportunity.
+      const donor = {
+        organizationId: gift.organizationId,
+        individualGiverPersonId: gift.individualGiverPersonId,
+        householdId: gift.householdId,
+      };
+      const oppIssues = validateOppInvariants(donor);
+      if (oppIssues.length) return { ok: false, invariant: oppIssues };
+
+      // 1. Mint the opportunity / pledge. Awarded = gift amount, donor inherited.
+      // Cultivation stage is a pure funnel; the commitment outcome is the
+      // writtenPledge latch. Derived fields (status/stage) are recomputed
+      // afterward — never written by hand (invariant #3).
+      const opportunityId = newId();
+      await tx.insert(opportunitiesAndPledges).values({
+        id: opportunityId,
+        name: body.name ?? gift.name ?? null,
+        organizationId: donor.organizationId,
+        individualGiverPersonId: donor.individualGiverPersonId,
+        householdId: donor.householdId,
+        awardedAmount: gift.amount,
+        stage: asPledge ? "verbal_confirmation" : "in_conversation",
+        writtenPledge: asPledge,
+        // Inherit loan-vs-grant from the source gift; keep legacy
+        // fundraising_category in lockstep with the authoritative flag.
+        fundraisingCategory: loanOrGrantToLegacyCategory(gift.loanOrGrant),
+        loanOrGrant: gift.loanOrGrant,
+      });
+
+      // 2. Mirror each gift allocation onto a pledge allocation. The gift is
+      // archived (money did not land), so these are genuine active commitments
+      // (status left at default, like a normally-created pledge). pledge_allocations
+      // collapse the gift's school column into directToSchool.
+      for (const a of allocs) {
+        await tx.insert(pledgeAllocations).values({
+          id: newId(),
+          pledgeOrOpportunityId: opportunityId,
+          subAmount: a.subAmount,
+          grantYear: a.grantYear,
+          entityId: a.entityId,
+          intendedUsage: a.intendedUsage,
+          fundableProjectId: a.fundableProjectId,
+          regionIds: a.regionIds,
+          directToSchool: a.schoolRecipientId != null,
+          regionalRestrictionType: a.regionalRestrictionType,
+          usageRestrictionType: a.usageRestrictionType,
+          timeRestrictionType: a.timeRestrictionType,
+          reimbursementType: a.reimbursementType,
+        });
+      }
+
+      // 3. Archive the source gift (non-destructive — the gift and its
+      // allocations are retained, soft-deleted).
+      await tx
+        .update(giftsAndPayments)
+        .set({ archivedAt: new Date(), updatedAt: new Date() })
+        .where(eq(giftsAndPayments.id, id));
+
+      if (actor) {
+        await tx.insert(bulkOperations).values({
+          id: newId(),
+          actorUserId: actor.id,
+          entity: "gifts-and-payments/revert-to-opportunity",
+          fields: ["archivedAt"],
+          targetIds: [id],
+          succeededIds: [id],
+          failedIds: [],
+        });
+      }
+
+      return { ok: true, opportunityId, donorOrgId: donor.organizationId };
+    });
+
+    if (!outcome.ok) {
+      if ("invariant" in outcome) return respondInvariantFailure(res, outcome.invariant);
+      res.status(outcome.status).json(outcome.json);
+      return;
+    }
+
+    // Recompute the new opportunity's derived status/stage (never written by hand).
+    await applyDerivedOppFieldsMany(outcome.opportunityId);
+    // The source gift is now archived; recompute its QB tie so it drops out of
+    // the on-books reconciliation surfaces.
+    await applyGiftQbTieMany(id);
+    if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
+    res.json({ opportunityId: outcome.opportunityId, asPledge });
   }),
 );
 

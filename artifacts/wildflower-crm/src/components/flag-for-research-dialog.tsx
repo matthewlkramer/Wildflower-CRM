@@ -33,16 +33,30 @@ export function FlagForResearchDialog({
   targetId,
   recordLabel = "this record",
   triggerTestId = "button-flag-research",
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  hideTrigger = false,
 }: {
   targetType: FlagForResearchBodyTargetType;
   targetId: string;
   /** Human label shown in the dialog (e.g. the record's name). */
   recordLabel?: string;
   triggerTestId?: string;
+  /** Controlled open state (omit to let the dialog manage its own). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Hide the built-in trigger button (use when driven from a menu). */
+  hideTrigger?: boolean;
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = (v: boolean) => {
+    if (isControlled) controlledOnOpenChange?.(v);
+    else setUncontrolledOpen(v);
+  };
   const [note, setNote] = useState("");
   const flagMut = useFlagForResearch();
 
@@ -81,14 +95,16 @@ export function FlagForResearchDialog({
         if (!flagMut.isPending) setOpen(v);
       }}
     >
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setOpen(true)}
-        data-testid={triggerTestId}
-      >
-        Flag for research
-      </Button>
+      {!hideTrigger && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setOpen(true)}
+          data-testid={triggerTestId}
+        >
+          Flag for research
+        </Button>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Flag for research</DialogTitle>

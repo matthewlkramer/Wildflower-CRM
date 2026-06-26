@@ -24,6 +24,7 @@ import {
   searchReconciliationNode,
   splitStagedPayment,
   useListGiftsAndPayments,
+  useListGiftsMissingQb,
   getListGiftsAndPaymentsQueryKey,
   getGetGiftOrPaymentQueryOptions,
   type ReconciliationCard,
@@ -263,6 +264,9 @@ export default function ReconciliationWorkbench() {
   // once and split client-side into Needs review / QBO-only buckets (see
   // `buckets` below). Research is its own server-side queue (below).
   const cardsQuery = useListReconciliationCards({ limit: 200, offset: 0 });
+  // CRM-only queue badge — total count of on-books gift allocations that don't
+  // reconcile to QuickBooks (allocation granularity, mirrors the worklist).
+  const crmCountQuery = useListGiftsMissingQb({ limit: 1, offset: 0 });
   // Research queue — pending money flagged needs_research; its own server-side
   // query so flagged rows surface regardless of the needs_review page window.
   const researchParams = { queue: "research", limit: 200, offset: 0 } as const;
@@ -935,6 +939,13 @@ export default function ReconciliationWorkbench() {
                     )}
                     {q.id === "qbo" && buckets.qbo.length > 0 && (
                       <Badge variant="secondary">{buckets.qbo.length}</Badge>
+                    )}
+                    {q.id === "crm" && (
+                      <Badge variant="secondary">
+                        {crmCountQuery.isLoading
+                          ? "…"
+                          : (crmCountQuery.data?.pagination.total ?? 0)}
+                      </Badge>
                     )}
                     {q.id === "research" && researchQuery.data && (
                       <Badge variant="secondary">
