@@ -3,8 +3,10 @@ import { db } from "@workspace/db";
 import {
   stagedPayments,
   stagedPaymentExclusionReasonEnum,
+  stripePayouts,
+  stripeStagedCharges,
 } from "@workspace/db/schema";
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { opportunitiesAndPledges } from "@workspace/db/schema";
 import { qbLedgerExistsForGiftExcludingPayment } from "../../lib/paymentApplications";
@@ -272,6 +274,15 @@ router.get(
     const limit = clampInt(req.query["limit"], 50, 1, 500);
     const offset = clampInt(req.query["offset"], 0, 0, 1_000_000);
 
+    // Per-charge expansion only applies to the live work queues (default/all,
+    // needs_review, research). The terminal queues (reconciled, excluded, done,
+    // rejected, fiscally_sponsored) keep one card per QB staged payment.
+    const shouldExpand =
+      queue === undefined ||
+      queue === "all" ||
+      queue === "needs_review" ||
+      queue === "research";
+
     const conds: SQL[] = [];
     const queueCond = reconciliationQueueWhere(queue);
     if (queueCond) conds.push(queueCond);
@@ -290,6 +301,125 @@ router.get(
     // Always collapse source groups to their representative row (one card per
     // group), in both the page and the count.
     conds.push(groupRepresentativeWhere);
+
+    // ── Per-charge expansion (LATERAL) ──────────────────────────────────────
+    // For a Stripe-payout-backed QB staged payment, expand the deposit into one
+    // row per backing Stripe charge so the reconciler matches at the charge →
+    // CRM-gift grain (the QB payer is "Stripe"; the real donor lives on each
+    // charge). The lateral correlates to the outer staged_payments row and only
+    // fires when (a) this is an expansion queue and (b) the row is NOT a manual
+    // source group (those stay one card). A non-Stripe row produces zero lateral
+    // rows, so the LEFT JOIN preserves it once with NULL charge columns.
+    //
+    // Donor name + resolved-gift facts are resolved via scalar subqueries
+    // correlated on the REAL stripe_staged_charges columns (matched/created gift,
+    // donor FKs) — never on the subquery's own aliased output columns, which
+    // would render unqualified inside a correlated subquery and bind to the wrong
+    // table.
+    const chargeSub = db
+      .select({
+        // Both source tables expose an "id" column; aliasing each subquery
+        // output to a distinct name avoids a "column reference id is ambiguous"
+        // error when the outer query references charge_unit.* (drizzle would
+        // otherwise emit two output columns both literally named "id").
+        chargeId: sql<string>`"stripe_staged_charges"."id"`.as("charge_id"),
+        payoutId: sql<string>`"stripe_payouts"."id"`.as("charge_payout_id"),
+        grossAmount:
+          sql<string | null>`${stripeStagedCharges.grossAmount}::text`.as(
+            "charge_gross",
+          ),
+        netAmount:
+          sql<string | null>`${stripeStagedCharges.netAmount}::text`.as(
+            "charge_net",
+          ),
+        feeAmount:
+          sql<string | null>`${stripeStagedCharges.feeAmount}::text`.as(
+            "charge_fee",
+          ),
+        chargeStatus: stripeStagedCharges.status,
+        matchStatus: stripeStagedCharges.matchStatus,
+        matchConfirmedAt: stripeStagedCharges.matchConfirmedAt,
+        organizationId: stripeStagedCharges.organizationId,
+        individualGiverPersonId: stripeStagedCharges.individualGiverPersonId,
+        householdId: stripeStagedCharges.householdId,
+        payerName: stripeStagedCharges.payerName,
+        donorName: sql<string | null>`COALESCE(
+          (SELECT o.name FROM organizations o WHERE o.id = ${stripeStagedCharges.organizationId}),
+          (SELECT h.name FROM households h WHERE h.id = ${stripeStagedCharges.householdId}),
+          (SELECT COALESCE(
+                    NULLIF(TRIM(pp.full_name), ''),
+                    NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), '')
+                  )
+             FROM people pp WHERE pp.id = ${stripeStagedCharges.individualGiverPersonId})
+        )`.as("charge_donor_name"),
+        resolvedGiftId:
+          sql<string | null>`COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})`.as(
+            "charge_resolved_gift_id",
+          ),
+        resolvedGiftName: sql<string | null>`(
+          SELECT g.name FROM gifts_and_payments g
+          WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+        )`.as("charge_resolved_gift_name"),
+        resolvedGiftAmount: sql<string | null>`(
+          SELECT g.amount::text FROM gifts_and_payments g
+          WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+        )`.as("charge_resolved_gift_amount"),
+        resolvedGiftDate: sql<string | null>`(
+          SELECT g.date_received::text FROM gifts_and_payments g
+          WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+        )`.as("charge_resolved_gift_date"),
+        resolvedGiftFiscalYear: sql<string | null>`(
+          SELECT g.grant_year FROM gifts_and_payments g
+          WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+        )`.as("charge_resolved_gift_fy"),
+        resolvedGiftAllocations: sql<
+          | {
+              entityName: string | null;
+              usageLabel: string | null;
+              restrictionType: string | null;
+              regionalRestriction: boolean;
+              fundUseRestriction: boolean;
+            }[]
+          | null
+        >`(
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'entityName', e.name,
+              'usageLabel', COALESCE(NULLIF(ga.display_usage, ''), ga.intended_usage::text),
+              'restrictionType', ga.restriction_type::text,
+              'regionalRestriction', ga.formal_regional_restriction,
+              'fundUseRestriction', ga.formal_fund_use_restriction
+            ) ORDER BY ga.created_at, ga.id
+          )
+          FROM gift_allocations ga
+          LEFT JOIN entities e ON e.id = ga.entity_id
+          WHERE ga.gift_id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+        )`.as("charge_resolved_gift_allocations"),
+      })
+      .from(stripePayouts)
+      .innerJoin(
+        stripeStagedCharges,
+        eq(stripeStagedCharges.stripePayoutId, stripePayouts.id),
+      )
+      .where(
+        sql`${shouldExpand ? sql`TRUE` : sql`FALSE`}
+          AND ${stagedPayments.sourceGroupId} IS NULL
+          AND (
+            ${stripePayouts.matchedQbStagedPaymentId} = ${stagedPayments.id}
+            OR ${stripePayouts.proposedQbStagedPaymentId} = ${stagedPayments.id}
+          )`,
+      )
+      .as("charge_unit");
+
+    // Only surface UNRESOLVED charges (no gift linked yet). When the lateral
+    // returns no rows (non-Stripe / non-expansion / source group) chargeId is
+    // NULL and the row is kept once; when ALL of a deposit's charges are resolved
+    // the lateral rows are all filtered out and the deposit drops from the queue
+    // ("settles when every charge is tied").
+    conds.push(
+      sql`(${chargeSub.chargeId} IS NULL OR ${chargeSub.resolvedGiftId} IS NULL)`,
+    );
+
     const where = conds.length ? and(...conds) : undefined;
 
     const rows = await withJoins(
@@ -304,6 +434,25 @@ router.get(
           sourceGroupAgg: sourceGroupAggExpr,
           recOppId: recCardOpp.id,
           recOppName: recCardOpp.name,
+          chargeId: chargeSub.chargeId,
+          chargePayoutId: chargeSub.payoutId,
+          chargeGross: chargeSub.grossAmount,
+          chargeNet: chargeSub.netAmount,
+          chargeFee: chargeSub.feeAmount,
+          chargeStatus: chargeSub.chargeStatus,
+          chargeMatchStatus: chargeSub.matchStatus,
+          chargeMatchConfirmedAt: chargeSub.matchConfirmedAt,
+          chargeOrganizationId: chargeSub.organizationId,
+          chargeIndividualGiverPersonId: chargeSub.individualGiverPersonId,
+          chargeHouseholdId: chargeSub.householdId,
+          chargePayerName: chargeSub.payerName,
+          chargeDonorName: chargeSub.donorName,
+          chargeResolvedGiftId: chargeSub.resolvedGiftId,
+          chargeResolvedGiftName: chargeSub.resolvedGiftName,
+          chargeResolvedGiftAmount: chargeSub.resolvedGiftAmount,
+          chargeResolvedGiftDate: chargeSub.resolvedGiftDate,
+          chargeResolvedGiftFiscalYear: chargeSub.resolvedGiftFiscalYear,
+          chargeResolvedGiftAllocations: chargeSub.resolvedGiftAllocations,
         })
         .from(stagedPayments)
         .$dynamic(),
@@ -312,54 +461,90 @@ router.get(
         recCardOpp,
         eq(recCardOpp.id, resolvedGift.opportunityId),
       )
+      .leftJoinLateral(chargeSub, sql`true`)
       .where(where)
-      .orderBy(...stagedOrderBy("date_desc"))
+      .orderBy(...stagedOrderBy("date_desc"), asc(chargeSub.chargeId))
       .limit(limit)
       .offset(offset);
 
     const totalRow = await db
       .select({ count: sql<number>`COUNT(*)::int` })
       .from(stagedPayments)
+      .leftJoinLateral(chargeSub, sql`true`)
       .where(where);
     const total = totalRow[0]?.count ?? 0;
 
     const data = rows.map((row) => {
+      // A per-charge card: the lateral expanded this Stripe-backed deposit into
+      // one row per backing charge. Its identity is the composite
+      // (stagedPaymentId, stripeChargeId); donor/gift/amount/lanes come from the
+      // charge, NOT the QB deposit header (whose payer is "Stripe").
+      const isCharge = row.chargeId != null;
       // A returned row carrying a sourceGroupId is, by the representative filter,
-      // the group's anchor — this card stands in for the whole group.
-      const isSourceGroup = row.sourceGroupId != null;
+      // the group's anchor — this card stands in for the whole group. A charge
+      // card is never a group (the lateral requires sourceGroupId IS NULL).
+      const isSourceGroup = !isCharge && row.sourceGroupId != null;
       const groupAgg = isSourceGroup ? row.sourceGroupAgg : null;
-      const donorId =
-        row.organizationId ??
-        row.individualGiverPersonId ??
-        row.householdId ??
-        null;
-      const donorKind = row.organizationId
-        ? "organization"
-        : row.individualGiverPersonId
-          ? "person"
-          : row.householdId
-            ? "household"
-            : null;
-      const donorName =
-        row.organizationName ??
-        row.individualGiverPersonName ??
-        row.householdName ??
-        null;
+      const donorId = isCharge
+        ? (row.chargeOrganizationId ??
+          row.chargeIndividualGiverPersonId ??
+          row.chargeHouseholdId ??
+          null)
+        : (row.organizationId ??
+          row.individualGiverPersonId ??
+          row.householdId ??
+          null);
+      const donorKind = isCharge
+        ? row.chargeOrganizationId
+          ? "organization"
+          : row.chargeIndividualGiverPersonId
+            ? "person"
+            : row.chargeHouseholdId
+              ? "household"
+              : null
+        : row.organizationId
+          ? "organization"
+          : row.individualGiverPersonId
+            ? "person"
+            : row.householdId
+              ? "household"
+              : null;
+      const donorName = isCharge
+        ? (row.chargeDonorName ?? null)
+        : (row.organizationName ??
+          row.individualGiverPersonName ??
+          row.householdName ??
+          null);
+      const matchStatus = isCharge ? row.chargeMatchStatus : row.matchStatus;
       const donorState =
         donorId == null
           ? "none"
-          : row.matchStatus === "matched"
+          : matchStatus === "matched"
             ? "determined"
             : "ambiguous";
+
+      // Resolved gift + per-charge gift facts (a charge card resolves its OWN
+      // matched/created gift; auto-gift hints apply only to non-charge,
+      // non-group rows).
+      const resolvedGiftId = isCharge
+        ? (row.chargeResolvedGiftId ?? null)
+        : (row.resolvedGiftId ?? null);
 
       let giftState: string;
       let proposedGiftId: string | null = null;
       let proposedGiftName: string | null = null;
-      if (row.resolvedGiftId) {
+      if (resolvedGiftId) {
         giftState = "determined";
-        proposedGiftId = row.resolvedGiftId;
-        proposedGiftName = row.resolvedGiftName ?? null;
-      } else if (!isSourceGroup && row.autoGiftCount === 1 && row.autoGiftPick) {
+        proposedGiftId = resolvedGiftId;
+        proposedGiftName = isCharge
+          ? (row.chargeResolvedGiftName ?? null)
+          : (row.resolvedGiftName ?? null);
+      } else if (
+        !isCharge &&
+        !isSourceGroup &&
+        row.autoGiftCount === 1 &&
+        row.autoGiftPick
+      ) {
         // Auto gift proposals are matched on a SINGLE row's amount, so they are
         // meaningless for a group (whose gift must net the combined total) —
         // suppress them; the human mints/links the group's gift explicitly.
@@ -374,11 +559,20 @@ router.get(
 
       const opportunityState = row.recOppId ? "determined" : "none";
 
+      // For a charge card the lane status follows the CHARGE's lifecycle, not
+      // the QB deposit header (which may sit at 'approved' for the whole lump).
+      const laneStatus = isCharge ? (row.chargeStatus ?? row.status) : row.status;
+      const donorConfirmed = isCharge
+        ? row.chargeMatchConfirmedAt != null
+        : row.matchConfirmedAt != null;
+
       return {
         stagedPaymentId: row.id,
+        stripeChargeId: isCharge ? row.chargeId : null,
         status: row.status,
         queue: row.queue,
-        amount: row.amount,
+        // A charge card reconciles for the charge's own gross, not the QB lump.
+        amount: isCharge ? (row.chargeGross ?? row.amount) : row.amount,
         dateReceived: row.dateReceived,
         payerName: row.payerName,
         payerEmail: row.payerEmail,
@@ -404,21 +598,47 @@ router.get(
         donorState,
         giftState,
         opportunityState,
-        hasStripeEvidence: row.stripeEvidence != null,
-        stripePayoutId: row.stripeEvidence?.payoutId ?? null,
+        // A charge card always has Stripe evidence (it IS a charge); its Stripe
+        // facts come from the charge row, not the payout-level rollup.
+        hasStripeEvidence: isCharge ? true : row.stripeEvidence != null,
+        stripePayoutId: isCharge
+          ? (row.chargePayoutId ?? null)
+          : (row.stripeEvidence?.payoutId ?? null),
         stripeChargeCount: row.stripeEvidence?.chargeCount ?? null,
         stripeReconciliationStatus:
           row.stripeEvidence?.reconciliationStatus ?? null,
-        stripeChargeDonorName: row.stripeEvidence?.charge?.payerName ?? null,
-        stripeGrossAmount: row.stripeEvidence?.charge?.grossAmount ?? null,
-        stripeNetAmount: row.stripeEvidence?.charge?.netAmount ?? null,
-        stripeFeeAmount: row.stripeEvidence?.charge?.feeAmount ?? null,
-        resolvedGiftId: row.resolvedGiftId ?? null,
-        resolvedGiftName: row.resolvedGiftName ?? null,
-        resolvedGiftAmount: row.resolvedGiftAmount ?? null,
-        resolvedGiftDate: row.resolvedGiftDate ?? null,
-        resolvedGiftFiscalYear: row.resolvedGiftFiscalYear ?? null,
-        resolvedGiftAllocations: row.resolvedGiftAllocations ?? null,
+        // The real donor — never the "Stripe" QB payer. For a charge card fall
+        // back to the charge's own payer name when no CRM donor is set yet.
+        stripeChargeDonorName: isCharge
+          ? (row.chargeDonorName ?? row.chargePayerName ?? null)
+          : (row.stripeEvidence?.charge?.payerName ?? null),
+        stripeGrossAmount: isCharge
+          ? (row.chargeGross ?? null)
+          : (row.stripeEvidence?.charge?.grossAmount ?? null),
+        stripeNetAmount: isCharge
+          ? (row.chargeNet ?? null)
+          : (row.stripeEvidence?.charge?.netAmount ?? null),
+        stripeFeeAmount: isCharge
+          ? (row.chargeFee ?? null)
+          : (row.stripeEvidence?.charge?.feeAmount ?? null),
+        resolvedGiftId: isCharge
+          ? (row.chargeResolvedGiftId ?? null)
+          : (row.resolvedGiftId ?? null),
+        resolvedGiftName: isCharge
+          ? (row.chargeResolvedGiftName ?? null)
+          : (row.resolvedGiftName ?? null),
+        resolvedGiftAmount: isCharge
+          ? (row.chargeResolvedGiftAmount ?? null)
+          : (row.resolvedGiftAmount ?? null),
+        resolvedGiftDate: isCharge
+          ? (row.chargeResolvedGiftDate ?? null)
+          : (row.resolvedGiftDate ?? null),
+        resolvedGiftFiscalYear: isCharge
+          ? (row.chargeResolvedGiftFiscalYear ?? null)
+          : (row.resolvedGiftFiscalYear ?? null),
+        resolvedGiftAllocations: isCharge
+          ? (row.chargeResolvedGiftAllocations ?? null)
+          : (row.resolvedGiftAllocations ?? null),
         finalAmountSource: row.finalAmountSource ?? null,
         fundingSource: isSourceGroup
           ? (groupAgg?.commonFundingSource ?? null)
@@ -426,7 +646,8 @@ router.get(
         fundingSourceProvenance: isSourceGroup
           ? (groupAgg?.commonProvenance ?? null)
           : (row.fundingSourceProvenance ?? null),
-        sourceGroupId: row.sourceGroupId ?? null,
+        // A charge card is a single charge, never a source group.
+        sourceGroupId: isCharge ? null : (row.sourceGroupId ?? null),
         isSourceGroup,
         sourceGroupCount: groupAgg?.count ?? null,
         sourceGroupTotalAmount: groupAgg?.totalAmount ?? null,
@@ -441,18 +662,20 @@ router.get(
               isRepresentative: m.stagedPaymentId === row.id,
             }))
           : null,
-        // A group card's readiness can't come from the single-row auto hint.
-        ready: !isSourceGroup && row.cardReady === true,
+        // A group card's readiness can't come from the single-row auto hint, and
+        // a charge card is approved through the per-charge Stripe flow (resolve →
+        // create-gift), not the one-click QB anchor approve.
+        ready: !isCharge && !isSourceGroup && row.cardReady === true,
         // Pure human-set annotation flag (orthogonal to reconcile status) —
         // surfaced so the workbench can route cards into the Research queue
         // without a second fetch.
         needsResearch: row.needsResearch === true,
         exclusionReason: row.exclusionReason ?? null,
         reconciliationLanes: deriveEvidenceLanes({
-          status: row.status,
+          status: laneStatus,
           donorPresent: donorId != null,
-          donorConfirmed: row.matchConfirmedAt != null,
-          giftLinked: row.resolvedGiftId != null,
+          donorConfirmed,
+          giftLinked: resolvedGiftId != null,
           giftProposed: giftState !== "none",
         }),
         createdAt:

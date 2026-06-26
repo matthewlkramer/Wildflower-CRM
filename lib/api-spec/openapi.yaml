@@ -6632,13 +6632,14 @@ components:
         giftState:        { $ref: "#/components/schemas/ReconciliationEdgeState" }
         opportunityState: { $ref: "#/components/schemas/ReconciliationEdgeState" }
         hasStripeEvidence: { type: boolean }
+        stripeChargeId:    { type: string, nullable: true, description: "When set, this card is ONE Stripe charge (not the whole QB deposit): the active/needs-review/research queues expand a Stripe-payout-backed deposit into one card per backing charge. The card's identity is then the composite (stagedPaymentId, stripeChargeId); approve acts on this single charge → its own CRM gift. Null for non-Stripe rows, source-group cards, and the unexpanded (terminal) queues." }
         stripePayoutId:    { type: string, nullable: true }
         stripeChargeCount: { type: integer, nullable: true }
         stripeReconciliationStatus: { type: string, nullable: true, description: "Reconciliation state of the Stripe payout backing this money (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when there is no Stripe evidence." }
-        stripeChargeDonorName: { type: string, nullable: true, description: "Payer/customer name on the single Stripe charge backing this money — the real donor, not the 'Stripe' processor name that appears as the QB payer. Null for multi-charge payouts or non-Stripe money." }
-        stripeGrossAmount: { type: string, nullable: true, description: "Gross amount (major units) of the single Stripe charge backing this money; null for multi-charge payouts or non-Stripe money." }
-        stripeNetAmount:   { type: string, nullable: true, description: "Net amount deposited (gross − processor fee) for the single backing Stripe charge; null for multi-charge payouts or non-Stripe money." }
-        stripeFeeAmount:   { type: string, nullable: true, description: "Processor fee on the single backing Stripe charge (gross − net); null for multi-charge payouts or non-Stripe money." }
+        stripeChargeDonorName: { type: string, nullable: true, description: "Payer/customer name (or resolved donor) on the Stripe charge — the real donor, not the 'Stripe' processor name that appears as the QB payer. Set for a per-charge card (stripeChargeId present) and for a single-charge payout; null for an un-expanded multi-charge payout or non-Stripe money." }
+        stripeGrossAmount: { type: string, nullable: true, description: "Gross amount (major units) of the Stripe charge for this card; set for a per-charge card or a single-charge payout, null otherwise." }
+        stripeNetAmount:   { type: string, nullable: true, description: "Net amount deposited (gross − processor fee) for the Stripe charge for this card; set for a per-charge card or a single-charge payout, null otherwise." }
+        stripeFeeAmount:   { type: string, nullable: true, description: "Processor fee on the Stripe charge for this card (gross − net); set for a per-charge card or a single-charge payout, null otherwise." }
         resolvedGiftId:     { type: string, nullable: true }
         resolvedGiftName:   { type: string, nullable: true }
         resolvedGiftAmount: { type: string, nullable: true }

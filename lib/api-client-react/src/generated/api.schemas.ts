@@ -3695,17 +3695,19 @@ export interface ReconciliationCard {
   giftState?: ReconciliationEdgeState;
   opportunityState?: ReconciliationEdgeState;
   hasStripeEvidence: boolean;
+  /** When set, this card is ONE Stripe charge (not the whole QB deposit): the active/needs-review/research queues expand a Stripe-payout-backed deposit into one card per backing charge. The card's identity is then the composite (stagedPaymentId, stripeChargeId); approve acts on this single charge → its own CRM gift. Null for non-Stripe rows, source-group cards, and the unexpanded (terminal) queues. */
+  stripeChargeId?: string | null;
   stripePayoutId?: string | null;
   stripeChargeCount?: number | null;
   /** Reconciliation state of the Stripe payout backing this money (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when there is no Stripe evidence. */
   stripeReconciliationStatus?: string | null;
-  /** Payer/customer name on the single Stripe charge backing this money — the real donor, not the 'Stripe' processor name that appears as the QB payer. Null for multi-charge payouts or non-Stripe money. */
+  /** Payer/customer name (or resolved donor) on the Stripe charge — the real donor, not the 'Stripe' processor name that appears as the QB payer. Set for a per-charge card (stripeChargeId present) and for a single-charge payout; null for an un-expanded multi-charge payout or non-Stripe money. */
   stripeChargeDonorName?: string | null;
-  /** Gross amount (major units) of the single Stripe charge backing this money; null for multi-charge payouts or non-Stripe money. */
+  /** Gross amount (major units) of the Stripe charge for this card; set for a per-charge card or a single-charge payout, null otherwise. */
   stripeGrossAmount?: string | null;
-  /** Net amount deposited (gross − processor fee) for the single backing Stripe charge; null for multi-charge payouts or non-Stripe money. */
+  /** Net amount deposited (gross − processor fee) for the Stripe charge for this card; set for a per-charge card or a single-charge payout, null otherwise. */
   stripeNetAmount?: string | null;
-  /** Processor fee on the single backing Stripe charge (gross − net); null for multi-charge payouts or non-Stripe money. */
+  /** Processor fee on the Stripe charge for this card (gross − net); set for a per-charge card or a single-charge payout, null otherwise. */
   stripeFeeAmount?: string | null;
   resolvedGiftId?: string | null;
   resolvedGiftName?: string | null;

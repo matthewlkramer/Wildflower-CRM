@@ -11,6 +11,9 @@ import {
   useReIncludeStagedPayment,
   useSetStagedPaymentNeedsResearch,
   useGroupStagedPayments,
+  useResolveStripeStagedCharge,
+  useCreateGiftFromStripeStagedCharge,
+  useRejectStripeStagedCharge,
   getGetReconciliationGraphQueryOptions,
   approveReconciliationCard,
   rejectStagedPayment,
@@ -199,6 +202,18 @@ interface StagedChange {
   splitBody?: SplitStagedPaymentBody | null;
   /** Set after a failed Apply so the row stays staged with a reason. */
   failure?: string | null;
+}
+
+/**
+ * Stable identity for a card. A Stripe-payout-backed deposit is expanded into
+ * one card per backing charge, so several cards share a `stagedPaymentId`; their
+ * unique key is the composite `(stagedPaymentId, stripeChargeId)`. Non-charge
+ * rows (and source-group cards) fall back to the bare `stagedPaymentId`.
+ */
+function cardKey(c: ReconciliationCard): string {
+  return c.stripeChargeId
+    ? `${c.stagedPaymentId}::${c.stripeChargeId}`
+    : c.stagedPaymentId;
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────
@@ -597,6 +612,12 @@ export default function ReconciliationWorkbench() {
   const reIncludeM = useReIncludeStagedPayment();
   const researchM = useSetStagedPaymentNeedsResearch();
   const groupM = useGroupStagedPayments();
+  // Per-charge actions: a Stripe-payout-backed deposit is expanded into one card
+  // per backing charge; each charge resolves/mints/rejects on its OWN Stripe
+  // charge id (not the QB deposit-level staged-payment endpoints).
+  const resolveChargeM = useResolveStripeStagedCharge();
+  const createChargeGiftM = useCreateGiftFromStripeStagedCharge();
+  const rejectChargeM = useRejectStripeStagedCharge();
 
   const actionBusy =
     resolveM.isPending ||
@@ -604,7 +625,10 @@ export default function ReconciliationWorkbench() {
     excludeM.isPending ||
     reIncludeM.isPending ||
     researchM.isPending ||
-    groupM.isPending;
+    groupM.isPending ||
+    resolveChargeM.isPending ||
+    createChargeGiftM.isPending ||
+    rejectChargeM.isPending;
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -618,6 +642,14 @@ export default function ReconciliationWorkbench() {
   const handleCreateGift = useCallback(
     async (card: ReconciliationCard) => {
       try {
+        if (card.stripeChargeId) {
+          // Per-charge card: mint the gift from this single Stripe charge
+          // (crediting GROSS) — the charge OWNS the new gift.
+          await createChargeGiftM.mutateAsync({ id: card.stripeChargeId });
+          invalidateAll();
+          toast({ title: "Gift created from Stripe charge." });
+          return;
+        }
         await createGiftM.mutateAsync({ id: card.stagedPaymentId });
         invalidateAll();
         toast({ title: "Gift created from QuickBooks payment." });
@@ -625,7 +657,23 @@ export default function ReconciliationWorkbench() {
         toast({ title: "Couldn't create gift", description: errMessage(err) });
       }
     },
-    [createGiftM, invalidateAll, toast, errMessage],
+    [createGiftM, createChargeGiftM, invalidateAll, toast, errMessage],
+  );
+
+  // Per-charge reject: applies immediately on the Stripe charge id (charge cards
+  // don't use the staging tray, which is keyed by the QB deposit's payment id).
+  const handleChargeReject = useCallback(
+    async (card: ReconciliationCard) => {
+      if (!card.stripeChargeId) return;
+      try {
+        await rejectChargeM.mutateAsync({ id: card.stripeChargeId });
+        invalidateAll();
+        toast({ title: "Stripe charge rejected." });
+      } catch (err) {
+        toast({ title: "Couldn't reject charge", description: errMessage(err) });
+      }
+    },
+    [rejectChargeM, invalidateAll, toast, errMessage],
   );
 
   // One-click Approve: derive the auto-proposal (or re-targeted gift) body and
@@ -668,7 +716,14 @@ export default function ReconciliationWorkbench() {
         householdId: donor.donorKind === "household" ? donor.id : null,
       };
       try {
-        await resolveM.mutateAsync({ id: card.stagedPaymentId, data: body });
+        if (card.stripeChargeId) {
+          await resolveChargeM.mutateAsync({
+            id: card.stripeChargeId,
+            data: body,
+          });
+        } else {
+          await resolveM.mutateAsync({ id: card.stagedPaymentId, data: body });
+        }
         invalidateAll();
         setDonorCard(null);
         toast({ title: `Donor set to ${donor.label}.` });
@@ -676,7 +731,7 @@ export default function ReconciliationWorkbench() {
         toast({ title: "Couldn't set donor", description: errMessage(err) });
       }
     },
-    [resolveM, invalidateAll, toast, errMessage],
+    [resolveM, resolveChargeM, invalidateAll, toast, errMessage],
   );
 
   const handleExclude = useCallback(
@@ -767,38 +822,48 @@ export default function ReconciliationWorkbench() {
   }, [selectedIds, groupM, invalidateAll, toast, errMessage]);
 
   // Shared card renderer for the Needs review / QBO-only / Research queues.
-  const renderReconCard = (card: ReconciliationCard) => (
-    <ReconCard
-      key={card.stagedPaymentId}
-      card={card}
-      staged={staged.find((s) => s.stagedPaymentId === card.stagedPaymentId)}
-      expanded={expanded === card.stagedPaymentId}
-      busy={busy || actionBusy || applyingCardId === card.stagedPaymentId}
-      selected={selectedIds.has(card.stagedPaymentId)}
-      onToggleSelect={() => toggleSelect(card.stagedPaymentId)}
-      onToggle={() =>
-        setExpanded((e) =>
-          e === card.stagedPaymentId ? null : card.stagedPaymentId,
-        )
-      }
-      onConfirm={() => confirmAndApply(card)}
-      onReject={() => stageReject(card)}
-      onRetarget={() => setRetargetCard(card)}
-      onCreateGift={() => handleCreateGift(card)}
-      onChangeDonor={() => setDonorCard(card)}
-      onExclude={() => setExcludeCard(card)}
-      onSplit={() => setSplitCard(card)}
-      onGroup={() => {
-        toggleSelect(card.stagedPaymentId);
-        toast({
-          title: "Selected for grouping",
-          description: "Pick another payment, then Group into one gift.",
-        });
-      }}
-      onToggleResearch={() => handleToggleResearch(card)}
-      onUnstage={() => unstage(card.stagedPaymentId)}
-    />
-  );
+  const renderReconCard = (card: ReconciliationCard) => {
+    // A Stripe-backed deposit is expanded into one card per backing charge, so
+    // several cards can share a stagedPaymentId. Their identity (React key,
+    // expand/select state) is the composite (stagedPaymentId, stripeChargeId).
+    const isCharge = !!card.stripeChargeId;
+    const key = cardKey(card);
+    return (
+      <ReconCard
+        key={key}
+        card={card}
+        // Charge cards never enter the staging tray (it is keyed by the QB
+        // deposit's payment id) — they resolve/mint/reject immediately.
+        staged={
+          isCharge
+            ? undefined
+            : staged.find((s) => s.stagedPaymentId === card.stagedPaymentId)
+        }
+        expanded={expanded === key}
+        busy={busy || actionBusy || applyingCardId === card.stagedPaymentId}
+        // Grouping is deposit-level only; charge cards are never selectable.
+        selected={!isCharge && selectedIds.has(key)}
+        onToggleSelect={() => toggleSelect(key)}
+        onToggle={() => setExpanded((e) => (e === key ? null : key))}
+        onConfirm={() => confirmAndApply(card)}
+        onReject={() => (isCharge ? handleChargeReject(card) : stageReject(card))}
+        onRetarget={() => setRetargetCard(card)}
+        onCreateGift={() => handleCreateGift(card)}
+        onChangeDonor={() => setDonorCard(card)}
+        onExclude={() => setExcludeCard(card)}
+        onSplit={() => setSplitCard(card)}
+        onGroup={() => {
+          toggleSelect(key);
+          toast({
+            title: "Selected for grouping",
+            description: "Pick another payment, then Group into one gift.",
+          });
+        }}
+        onToggleResearch={() => handleToggleResearch(card)}
+        onUnstage={() => unstage(card.stagedPaymentId)}
+      />
+    );
+  };
 
   const activeQueue = QUEUES.find((q) => q.id === queue)!;
 
@@ -1035,6 +1100,7 @@ export default function ReconciliationWorkbench() {
 function ResolveMenu({
   card,
   busy,
+  isCharge = false,
   onConfirm,
   onReject,
   onRetarget,
@@ -1047,6 +1113,8 @@ function ResolveMenu({
 }: {
   card: ReconciliationCard;
   busy: boolean;
+  /** Per-charge card: deposit-level actions (split / group / exclude) are off. */
+  isCharge?: boolean;
   onConfirm: () => void;
   onReject: () => void;
   onRetarget: () => void;
@@ -1095,20 +1163,33 @@ function ResolveMenu({
           "Change donor / payer",
           "payer-vehicle → donor; DAF / employer",
         )}
-        {MI(
-          onExclude,
-          "Exclude payment",
-          "reason: vendor, reimbursement, loan…",
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          Restructure
-        </DropdownMenuLabel>
-        {MI(onSplit, "Split payment across gifts", "one payment → many gifts")}
-        {MI(
-          onGroup,
-          "Group payments → one gift",
-          "select rows that fund one gift",
+        {/* Exclude is a deposit-level classification; a per-charge card mints
+            its own gift instead (reject the charge if it isn't a gift). */}
+        {!isCharge &&
+          MI(
+            onExclude,
+            "Exclude payment",
+            "reason: vendor, reimbursement, loan…",
+          )}
+        {/* Split / Group restructure the QB deposit; they don't apply to a
+            single Stripe charge (already the finest matching unit). */}
+        {!isCharge && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Restructure
+            </DropdownMenuLabel>
+            {MI(
+              onSplit,
+              "Split payment across gifts",
+              "one payment → many gifts",
+            )}
+            {MI(
+              onGroup,
+              "Group payments → one gift",
+              "select rows that fund one gift",
+            )}
+          </>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -1189,6 +1270,10 @@ function ReconCard({
   // so prefer the charge's payer name when this money came through Stripe.
   const qbPayerName = card.stripeChargeDonorName ?? card.payerName;
   const crmRecordLane = lanes.find((b) => b.key === "crmRecord");
+  // A per-charge card: one card for ONE Stripe charge (not the whole QB deposit).
+  // Its matching unit is the single charge → its own CRM gift, so deposit-level
+  // actions (group / split / exclude / select-for-grouping) don't apply.
+  const isCharge = !!card.stripeChargeId;
 
   return (
     <div
@@ -1198,14 +1283,17 @@ function ReconCard({
       )}
     >
       <div className="flex items-stretch gap-0">
-        {/* Select for grouping */}
+        {/* Select for grouping — deposit-level only; a per-charge card has no
+            checkbox (its matching unit is the single charge, not the deposit). */}
         <div className="flex items-start p-3 pr-0">
-          <Checkbox
-            checked={selected}
-            onCheckedChange={onToggleSelect}
-            className="mt-1"
-            aria-label="Select for grouping"
-          />
+          {!isCharge && (
+            <Checkbox
+              checked={selected}
+              onCheckedChange={onToggleSelect}
+              className="mt-1"
+              aria-label="Select for grouping"
+            />
+          )}
         </div>
 
         {/* Left: QuickBooks anchor (transaction type + id, payment method & Stripe in the header) */}
@@ -1244,6 +1332,22 @@ function ReconCard({
           <div className="text-xs text-muted-foreground">
             {card.dateReceived ?? "—"}
           </div>
+          {isCharge && (
+            <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+              {card.stripePayoutId && (
+                <div>
+                  <span className="text-muted-foreground/70">
+                    Stripe payout:{" "}
+                  </span>
+                  <span className="font-mono">{card.stripePayoutId}</span>
+                </div>
+              )}
+              <div>
+                <span className="text-muted-foreground/70">Stripe charge: </span>
+                <span className="font-mono">{card.stripeChargeId}</span>
+              </div>
+            </div>
+          )}
           {(card.qbAccountNames?.length ||
             card.qbClasses?.length ||
             card.qbLocation ||
@@ -1490,6 +1594,7 @@ function ReconCard({
               <ResolveMenu
                 card={card}
                 busy={busy}
+                isCharge={isCharge}
                 onConfirm={onConfirm}
                 onReject={onReject}
                 onRetarget={onRetarget}

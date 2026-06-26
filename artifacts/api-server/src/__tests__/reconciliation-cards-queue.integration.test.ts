@@ -53,6 +53,7 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
   stripePayouts: Db["stripePayouts"];
+  stripeStagedCharges: Db["stripeStagedCharges"];
   giftAllocations: Db["giftAllocations"];
   paymentApplications: Db["paymentApplications"];
 };
@@ -64,6 +65,7 @@ let baseUrl = "";
 const stagedIds: string[] = [];
 const giftIds: string[] = [];
 const payoutIds: string[] = [];
+const chargeIds: string[] = [];
 const allocationIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
@@ -141,6 +143,70 @@ async function seedPayoutFor(
   return id;
 }
 
+async function seedCharge(opts: {
+  payoutId: string;
+  gross: string;
+  fee: string;
+  net: string;
+  payerName: string;
+  organizationId?: string | null;
+  matchStatus?: "matched" | "unmatched";
+  matchedGiftId?: string | null;
+  createdGiftId?: string | null;
+}): Promise<string> {
+  const id = nextId("ch");
+  await db.insert(schema.stripeStagedCharges).values({
+    id,
+    stripeAccountId: ACCOUNT_ID,
+    stripePayoutId: opts.payoutId,
+    grossAmount: opts.gross,
+    feeAmount: opts.fee,
+    netAmount: opts.net,
+    dateReceived: "2026-03-15",
+    payerName: opts.payerName,
+    status: "pending",
+    matchStatus: opts.matchStatus ?? "unmatched",
+    organizationId: opts.organizationId ?? null,
+    matchedGiftId: opts.matchedGiftId ?? null,
+    createdGiftId: opts.createdGiftId ?? null,
+  });
+  chargeIds.push(id);
+  return id;
+}
+
+type Card = {
+  stagedPaymentId: string;
+  stripeChargeId?: string | null;
+  amount?: string | null;
+  payerName?: string | null;
+  stripeChargeDonorName?: string | null;
+  stripePayoutId?: string | null;
+  stripeGrossAmount?: string | null;
+  stripeNetAmount?: string | null;
+  stripeFeeAmount?: string | null;
+  resolvedGiftId?: string | null;
+  isSourceGroup?: boolean;
+  ready?: boolean;
+};
+
+// Fetch the raw card objects the endpoint returns for our run's marker.
+async function cards(queue?: string): Promise<Card[]> {
+  const q = `q=${encodeURIComponent(MARKER)}&limit=100`;
+  const path = `/api/reconciliation/cards?${q}${queue ? `&queue=${queue}` : ""}`;
+  const res = await apiGet(path);
+  expect(res.status).toBe(200);
+  return res.json.data as Card[];
+}
+
+// Total reported by the endpoint's pagination for our marker (lockstep check).
+async function cardTotal(queue?: string): Promise<number> {
+  const q = `q=${encodeURIComponent(MARKER)}&limit=100`;
+  const path = `/api/reconciliation/cards?${q}${queue ? `&queue=${queue}` : ""}`;
+  const res = await apiGet(path);
+  expect(res.status).toBe(200);
+  return res.json.pagination.total as number;
+}
+
 // Collect the stagedPaymentIds the cards endpoint returns for our run's marker.
 async function cardIds(queue?: string): Promise<Set<string>> {
   const q = `q=${encodeURIComponent(MARKER)}&limit=100`;
@@ -173,6 +239,7 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
     stripePayouts: dbMod.stripePayouts,
+    stripeStagedCharges: dbMod.stripeStagedCharges,
     giftAllocations: dbMod.giftAllocations,
     paymentApplications: dbMod.paymentApplications,
   };
@@ -201,6 +268,10 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (chargeIds.length)
+    await db
+      .delete(schema.stripeStagedCharges)
+      .where(inArrayFn(schema.stripeStagedCharges.id, chargeIds));
   if (payoutIds.length)
     await db
       .delete(schema.stripePayouts)
@@ -323,4 +394,98 @@ describe.skipIf(!HAS_DB)("Reconciliation readiness — date proximity (integrati
     expect(await readyFor(nullStaged)).toBe(false);
   }, 30_000);
 });
+
+describe.skipIf(!HAS_DB)(
+  "Reconciliation per-charge expansion — Stripe payout (integration)",
+  () => {
+    it("expands a Stripe-backed deposit into one card per unresolved charge", async () => {
+      // A QB deposit settled by a Stripe payout carrying TWO distinct charges.
+      const depositId = await seedStaged({
+        label: "stripe-deposit-2charges",
+        status: "pending",
+        amount: "500.00",
+      });
+      const payoutId = await seedPayoutFor(depositId, "matched");
+      const chA = await seedCharge({
+        payoutId,
+        gross: "300.00",
+        fee: "9.00",
+        net: "291.00",
+        payerName: "Vanguard Charitable",
+        organizationId: ORG_ID,
+      });
+      const chB = await seedCharge({
+        payoutId,
+        gross: "200.00",
+        fee: "6.00",
+        net: "194.00",
+        payerName: "Fidelity Charitable",
+        organizationId: ORG_ID,
+      });
+
+      const list = await cards();
+      const expanded = list.filter((c) => c.stagedPaymentId === depositId);
+      // One card per charge — never a single bundled deposit card.
+      expect(expanded.length).toBe(2);
+      const byCharge = new Map(expanded.map((c) => [c.stripeChargeId, c]));
+      expect(byCharge.has(chA)).toBe(true);
+      expect(byCharge.has(chB)).toBe(true);
+
+      const cardA = byCharge.get(chA)!;
+      // The charge's donor is surfaced (never "Stripe"), with its own
+      // payout id + gross/net/fee.
+      expect(cardA.stripeChargeDonorName).toBe("Reconciliation Queue Test Org " + RUN);
+      expect(cardA.stripePayoutId).toBe(payoutId);
+      expect(cardA.stripeGrossAmount).toBe("300.00");
+      expect(cardA.stripeNetAmount).toBe("291.00");
+      expect(cardA.stripeFeeAmount).toBe("9.00");
+      expect(cardA.resolvedGiftId ?? null).toBeNull();
+      expect(cardA.isSourceGroup ?? false).toBe(false);
+      // Charge cards are never bulk-approvable (per-charge action only).
+      expect(cardA.ready ?? false).toBe(false);
+
+      // Pagination total counts the expanded charge cards (lockstep).
+      const total = await cardTotal();
+      const otherMarkerCards = list.filter(
+        (c) => c.stagedPaymentId !== depositId,
+      ).length;
+      expect(total).toBe(otherMarkerCards + 2);
+    }, 30_000);
+
+    it("drops a charge once it resolves to a gift; settles the deposit when all do", async () => {
+      const depositId = await seedStaged({
+        label: "stripe-deposit-resolving",
+        status: "pending",
+        amount: "400.00",
+      });
+      const payoutId = await seedPayoutFor(depositId, "matched");
+      const giftForCharge = await seedGift("250.00", "2026-03-15");
+      // One charge already tied to a gift → resolved → filtered out.
+      await seedCharge({
+        payoutId,
+        gross: "250.00",
+        fee: "7.50",
+        net: "242.50",
+        payerName: "Resolved Charge Donor",
+        organizationId: ORG_ID,
+        matchStatus: "matched",
+        matchedGiftId: giftForCharge,
+      });
+      // One charge still open → the only card the deposit produces.
+      const openCharge = await seedCharge({
+        payoutId,
+        gross: "150.00",
+        fee: "4.50",
+        net: "145.50",
+        payerName: "Open Charge Donor",
+        organizationId: ORG_ID,
+      });
+
+      const list = await cards();
+      const expanded = list.filter((c) => c.stagedPaymentId === depositId);
+      expect(expanded.length).toBe(1);
+      expect(expanded[0]!.stripeChargeId).toBe(openCharge);
+    }, 30_000);
+  },
+);
 
