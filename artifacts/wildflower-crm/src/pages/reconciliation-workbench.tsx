@@ -1424,7 +1424,7 @@ function ReconCard({
               )}
               {card.resolvedGiftDate && (
                 <div className="text-xs text-muted-foreground">
-                  Close date: {card.resolvedGiftDate}
+                  Received: {card.resolvedGiftDate}
                 </div>
               )}
               {card.resolvedGiftFiscalYear && (

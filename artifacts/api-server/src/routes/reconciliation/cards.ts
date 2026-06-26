@@ -75,8 +75,16 @@ const autoGiftCountExpr = sql<number>`(
   SELECT COUNT(*)::int FROM gifts_and_payments g WHERE ${unlinkedDonorGiftWhere()}
 )`;
 
-const autoGiftPickExpr = sql<{ id: string; name: string | null } | null>`(
-  SELECT jsonb_build_object('id', g.id, 'name', g.name)
+const autoGiftPickExpr = sql<{
+  id: string;
+  name: string | null;
+  dateReceived: string | null;
+} | null>`(
+  SELECT jsonb_build_object(
+    'id', g.id,
+    'name', g.name,
+    'dateReceived', g.date_received::text
+  )
   FROM gifts_and_payments g WHERE ${unlinkedDonorGiftWhere()}
   ORDER BY ABS(g.amount - ${stagedPayments.amount}::numeric) ASC
   LIMIT 1
@@ -533,12 +541,20 @@ router.get(
       let giftState: string;
       let proposedGiftId: string | null = null;
       let proposedGiftName: string | null = null;
+      // The received date of the linked/proposed gift. For a genuinely linked
+      // gift it comes from the resolvedGift join (date_received); for an
+      // auto-proposed gift the resolvedGift join is null (no matched/created/
+      // group link yet) so it comes from the auto-pick payload instead.
+      let proposedGiftDate: string | null = null;
       if (resolvedGiftId) {
         giftState = "determined";
         proposedGiftId = resolvedGiftId;
         proposedGiftName = isCharge
           ? (row.chargeResolvedGiftName ?? null)
           : (row.resolvedGiftName ?? null);
+        proposedGiftDate = isCharge
+          ? (row.chargeResolvedGiftDate ?? null)
+          : (row.resolvedGiftDate ?? null);
       } else if (
         !isCharge &&
         !isSourceGroup &&
@@ -551,6 +567,7 @@ router.get(
         giftState = "determined";
         proposedGiftId = row.autoGiftPick.id;
         proposedGiftName = row.autoGiftPick.name ?? null;
+        proposedGiftDate = row.autoGiftPick.dateReceived ?? null;
       } else if (!isSourceGroup && (row.autoGiftCount ?? 0) > 1) {
         giftState = "ambiguous";
       } else {
@@ -630,9 +647,7 @@ router.get(
         resolvedGiftAmount: isCharge
           ? (row.chargeResolvedGiftAmount ?? null)
           : (row.resolvedGiftAmount ?? null),
-        resolvedGiftDate: isCharge
-          ? (row.chargeResolvedGiftDate ?? null)
-          : (row.resolvedGiftDate ?? null),
+        resolvedGiftDate: proposedGiftDate,
         resolvedGiftFiscalYear: isCharge
           ? (row.chargeResolvedGiftFiscalYear ?? null)
           : (row.resolvedGiftFiscalYear ?? null),

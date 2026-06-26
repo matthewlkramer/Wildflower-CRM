@@ -79,7 +79,7 @@ export const ListReconciliationCardsResponse = zod.object({
   "resolvedGiftId": zod.string().nullish(),
   "resolvedGiftName": zod.string().nullish(),
   "resolvedGiftAmount": zod.string().nullish(),
-  "resolvedGiftDate": zod.string().date().nullish().describe('Close\/received date of the linked (resolved) gift, shown on the card\'s CRM-gift side. Null when no gift is linked yet.'),
+  "resolvedGiftDate": zod.string().date().nullish().describe('Received date (dateReceived) of the linked or proposed gift, shown on the card\'s CRM-gift side. Null when no gift is linked\/proposed or the gift has no received date.'),
   "resolvedGiftFiscalYear": zod.string().nullish().describe('Fiscal-year slug (grantYear) of the linked gift, shown on the card\'s CRM-gift side. Null when no gift is linked or the gift has no fiscal year set.'),
   "resolvedGiftAllocations": zod.array(zod.object({
   "entityName": zod.string().nullish().describe('Wildflower legal entity the allocation is attributed to.'),

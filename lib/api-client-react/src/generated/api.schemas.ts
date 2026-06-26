@@ -3712,7 +3712,7 @@ export interface ReconciliationCard {
   resolvedGiftId?: string | null;
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;
-  /** Close/received date of the linked (resolved) gift, shown on the card's CRM-gift side. Null when no gift is linked yet. */
+  /** Received date (dateReceived) of the linked or proposed gift, shown on the card's CRM-gift side. Null when no gift is linked/proposed or the gift has no received date. */
   resolvedGiftDate?: string | null;
   /** Fiscal-year slug (grantYear) of the linked gift, shown on the card's CRM-gift side. Null when no gift is linked or the gift has no fiscal year set. */
   resolvedGiftFiscalYear?: string | null;
