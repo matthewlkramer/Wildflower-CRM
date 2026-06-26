@@ -637,6 +637,7 @@ router.get(
         qbDocNumber: row.qbDocNumber ?? null,
         qbAccountNames: row.lineAccountNames ?? null,
         qbClasses: row.lineClasses ?? null,
+        qbItemNames: row.lineItemNames ?? null,
         qbTransactionMemo: row.qbTransactionMemo ?? null,
         qbLocation: row.qbLocation ?? null,
         entityId: row.entityId,

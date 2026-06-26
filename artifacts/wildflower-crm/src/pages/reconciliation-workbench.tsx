@@ -1468,6 +1468,7 @@ function ReconCard({
           )}
           {(card.qbAccountNames?.length ||
             card.qbClasses?.length ||
+            card.qbItemNames?.length ||
             card.qbLocation ||
             card.lineDescription ||
             card.qbTransactionMemo ||
@@ -1489,6 +1490,14 @@ function ReconCard({
                 <div>
                   <span className="text-muted-foreground/70">Class: </span>
                   {card.qbClasses.join(" · ")}
+                </div>
+              )}
+              {card.qbItemNames && card.qbItemNames.length > 0 && (
+                <div>
+                  <span className="text-muted-foreground/70">
+                    Product/Service:{" "}
+                  </span>
+                  {card.qbItemNames.join(" · ")}
                 </div>
               )}
               {card.qbLocation && (

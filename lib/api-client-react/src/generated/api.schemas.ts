@@ -3766,6 +3766,8 @@ export interface ReconciliationCard {
   qbAccountNames?: string[] | null;
   /** QuickBooks class(es) tagged on the transaction line(s). Null/empty when the line(s) are unclassed. */
   qbClasses?: string[] | null;
+  /** QuickBooks Product/Service item name(s) on the transaction line(s) (e.g. 'Academic Support') — the clearest human-readable revenue-type signal. Null/empty for entities without item lines (e.g. JournalEntry-coded payments, deposits). */
+  qbItemNames?: string[] | null;
   /** QuickBooks transaction-level memo/note, distinct from the per-line description (lineDescription). */
   qbTransactionMemo?: string | null;
   /** QuickBooks Location/Department (DepartmentRef) on the transaction, e.g. 'National:Foundation Operations'. A read-only QB fact captured at pull time; null when none is tagged. */

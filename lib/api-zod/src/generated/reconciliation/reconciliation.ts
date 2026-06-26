@@ -53,6 +53,7 @@ export const ListReconciliationCardsResponse = zod.object({
   "qbDocNumber": zod.string().nullish().describe('QuickBooks document\/reference number (the \'No.\' field), human-visible; may be absent (e.g. some deposits).'),
   "qbAccountNames": zod.array(zod.string()).nullish().describe('QuickBooks GL account name(s) on the transaction line(s) — the \'object code\'. QBO bakes the numeric account number into the name as a prefix (e.g. \'4000.1 Unrestricted Donations:…\'), so this carries both the code and the label. Null\/empty when the line(s) have no account.'),
   "qbClasses": zod.array(zod.string()).nullish().describe('QuickBooks class(es) tagged on the transaction line(s). Null\/empty when the line(s) are unclassed.'),
+  "qbItemNames": zod.array(zod.string()).nullish().describe('QuickBooks Product\/Service item name(s) on the transaction line(s) (e.g. \'Academic Support\') — the clearest human-readable revenue-type signal. Null\/empty for entities without item lines (e.g. JournalEntry-coded payments, deposits).'),
   "qbTransactionMemo": zod.string().nullish().describe('QuickBooks transaction-level memo\/note, distinct from the per-line description (lineDescription).'),
   "qbLocation": zod.string().nullish().describe('QuickBooks Location\/Department (DepartmentRef) on the transaction, e.g. \'National:Foundation Operations\'. A read-only QB fact captured at pull time; null when none is tagged.'),
   "entityId": zod.string().nullish(),

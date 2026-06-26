@@ -225,6 +225,28 @@ interface QbInvoice {
   Line?: QbLine[];
 }
 
+// A QuickBooks JournalEntry line. Its coding lives on JournalEntryLineDetail:
+// a PostingType ("Debit" | "Credit"), the GL AccountRef, and an optional
+// ClassRef. The income/revenue side of a revenue journal entry is the CREDIT
+// posting; the matching DEBIT is the bank/AR offset. Journal-entry lines carry
+// an account + class but never a Product/Service item.
+interface QbJournalEntryLine {
+  Id?: string;
+  Amount?: number;
+  Description?: string;
+  DetailType?: string;
+  JournalEntryLineDetail?: {
+    PostingType?: string;
+    AccountRef?: QbRef;
+    ClassRef?: QbRef;
+  };
+}
+
+interface QbJournalEntry {
+  Id: string;
+  Line?: QbJournalEntryLine[];
+}
+
 // A QuickBooks Product/Service item. Its income account (IncomeAccountRef) is
 // the revenue coding the classifier needs for item-based SalesReceipt / invoice
 // lines, which reference the item but not the account directly.
@@ -368,6 +390,33 @@ function extractLineDetail(
   };
 }
 
+/**
+ * Extract revenue account / class names from a JournalEntry's lines. A revenue
+ * journal entry CREDITS the income account and DEBITS the bank/AR offset, so we
+ * keep only the CREDIT-side lines — those carry the "Services - Earned Income"
+ * style revenue account the card should surface. Journal-entry lines carry no
+ * Product/Service item, so itemNames stays empty.
+ */
+function extractJournalEntryRevenueDetail(
+  lines: QbJournalEntryLine[] | undefined,
+): LineDetail {
+  if (!lines || lines.length === 0) return EMPTY_LINE_DETAIL;
+  const accounts: (string | undefined)[] = [];
+  const classes: (string | undefined)[] = [];
+  for (const line of lines) {
+    const detail = line.JournalEntryLineDetail;
+    if (!detail) continue;
+    if ((detail.PostingType ?? "").toLowerCase() !== "credit") continue;
+    accounts.push(detail.AccountRef?.name);
+    classes.push(detail.ClassRef?.name);
+  }
+  return {
+    itemNames: [],
+    accountNames: uniq(accounts),
+    classes: uniq(classes),
+  };
+}
+
 function mergeLineDetail(parts: LineDetail[]): LineDetail {
   return {
     itemNames: uniq(parts.flatMap((p) => p.itemNames)),
@@ -412,6 +461,31 @@ async function fetchInvoiceLines(
     const rows = (resp.QueryResponse?.["Invoice"] ?? []) as QbInvoice[];
     for (const inv of rows) {
       map.set(inv.Id, inv.Line ?? []);
+    }
+  }
+  return map;
+}
+
+/**
+ * Batch-fetch journal entries by id (chunked) and return a map of id → its
+ * lines. Used to resolve the revenue coding for Payments applied via a
+ * JournalEntry (the sync otherwise only follows linked Invoices). Read-only.
+ */
+async function fetchJournalEntryLines(
+  accessToken: string,
+  realmId: string,
+  journalEntryIds: string[],
+): Promise<Map<string, QbJournalEntryLine[]>> {
+  const map = new Map<string, QbJournalEntryLine[]>();
+  const ids = uniq(journalEntryIds);
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    const chunk = ids.slice(i, i + IN_CHUNK);
+    const inList = chunk.map((id) => `'${id.replace(/'/g, "''")}'`).join(",");
+    const q = `SELECT * FROM JournalEntry WHERE Id IN (${inList}) MAXRESULTS ${IN_CHUNK}`;
+    const resp = await runQuery(accessToken, realmId, q);
+    const rows = (resp.QueryResponse?.["JournalEntry"] ?? []) as QbJournalEntry[];
+    for (const je of rows) {
+      map.set(je.Id, je.Line ?? []);
     }
   }
   return map;
@@ -518,7 +592,11 @@ export async function pullIncomingPayments(
     if (rows.length < PAGE_SIZE) break;
   }
 
-  const payments: { row: QbPayment; invoiceIds: string[] }[] = [];
+  const payments: {
+    row: QbPayment;
+    invoiceIds: string[];
+    journalEntryIds: string[];
+  }[] = [];
   for (let start = 1; ; start += PAGE_SIZE) {
     const q = `SELECT * FROM Payment${whereClause}${orderClause} STARTPOSITION ${start} MAXRESULTS ${PAGE_SIZE}`;
     const resp = await runQuery(accessToken, realmId, q);
@@ -531,7 +609,17 @@ export async function pullIncomingPayments(
             .map((t) => t.TxnId ?? ""),
         ),
       );
-      payments.push({ row, invoiceIds });
+      // A Payment whose coding lives on a linked JournalEntry (rather than an
+      // Invoice) — the sync follows these too so the card shows the JE's
+      // revenue account(s)/class(es).
+      const journalEntryIds = uniq(
+        (row.Line ?? []).flatMap((l) =>
+          (l.LinkedTxn ?? [])
+            .filter((t) => t.TxnType === "JournalEntry")
+            .map((t) => t.TxnId ?? ""),
+        ),
+      );
+      payments.push({ row, invoiceIds, journalEntryIds });
     }
     if (rows.length < PAGE_SIZE) break;
   }
@@ -552,6 +640,13 @@ export async function pullIncomingPayments(
   const invoiceLines = allInvoiceIds.length
     ? await fetchInvoiceLines(accessToken, realmId, allInvoiceIds)
     : new Map<string, QbLine[]>();
+
+  // Linked-journal-entry lines for Payments coded via a JournalEntry. These
+  // carry the revenue account/class on their credit-side lines.
+  const allJournalEntryIds = uniq(payments.flatMap((p) => p.journalEntryIds));
+  const journalEntryLines = allJournalEntryIds.length
+    ? await fetchJournalEntryLines(accessToken, realmId, allJournalEntryIds)
+    : new Map<string, QbJournalEntryLine[]>();
 
   // Item income accounts for every item referenced by a SalesReceipt or an
   // invoice line (the revenue coding the classifier reads).
@@ -663,13 +758,20 @@ export async function pullIncomingPayments(
   // Payment — no lines of its own. Coding comes from the linked Invoice(s)
   // (item income accounts) and, for uninvoiced payments later deposited, the
   // Deposit line that re-recorded it.
-  for (const { row, invoiceIds } of payments) {
+  for (const { row, invoiceIds, journalEntryIds } of payments) {
     const invDetail = mergeLineDetail(
       invoiceIds.map((id) => extractLineDetail(invoiceLines.get(id), itemAccounts)),
     );
+    // Revenue coding from any linked JournalEntry (credit-side lines only).
+    const jeDetail = mergeLineDetail(
+      journalEntryIds.map((id) =>
+        extractJournalEntryRevenueDetail(journalEntryLines.get(id)),
+      ),
+    );
+    const linkedDetail = mergeLineDetail([invDetail, jeDetail]);
     const coding = depositCodingByTxn.get(`Payment:${row.Id}`);
     const { detail, lineDescription } = applyDepositCoding(
-      invDetail,
+      linkedDetail,
       null,
       coding,
     );
