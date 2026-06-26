@@ -10,7 +10,6 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -30,13 +29,17 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 
 /* ────────────────────────────────────────────────────────────────────────
- * Worklist 3 of 3 — "Gifts with no QuickBooks record".
+ * Worklist 3 of 3 — "Gifts missing a QuickBooks record".
  *
- * Invariant: every gift should map to a QuickBooks money event; only some
- * (card/online) also carry Stripe. This broad, filterable table surfaces gifts
- * that carry NO QuickBooks link so they can be investigated. A gift that has a
- * Stripe charge but still no QuickBooks record is a high-priority anomaly,
- * flagged inline. Read-only — deep-link to the gift to act.
+ * Surfaces only gifts that are GENUINELY un-reconciled with QuickBooks so they
+ * can be investigated. Gifts that are not expected to carry a per-gift QB record
+ * are excluded server-side, so nothing here reads as unreconciled when it isn't:
+ * off-books / fiscal-sponsor / designated-to-school gifts (exempt), and
+ * Stripe-sourced gifts (the money lands in QuickBooks at the payout level).
+ *
+ * The "Recorded method" column is the donor's stated payment method on the gift
+ * (check, DAF, etc.) — it is NOT a found payment match. Read-only — deep-link to
+ * the gift to act.
  * ──────────────────────────────────────────────────────────────────────── */
 
 const PAGE_SIZE = 50;
@@ -53,13 +56,11 @@ const PAYMENT_METHODS: GiftPaymentMethod[] = [
 ];
 
 const ANY = "__any__";
-type StripeFilter = "any" | "yes" | "no";
 
 export function StrayGiftsWorklist() {
   const [search, setSearch] = useState("");
   const [entityId, setEntityId] = useState<string>(ANY);
   const [paymentMethod, setPaymentMethod] = useState<string>(ANY);
-  const [stripe, setStripe] = useState<StripeFilter>("any");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(0);
@@ -74,7 +75,7 @@ export function StrayGiftsWorklist() {
   // Reset paging whenever any filter changes.
   useEffect(() => {
     setPage(0);
-  }, [debouncedSearch, entityId, paymentMethod, stripe, dateFrom, dateTo]);
+  }, [debouncedSearch, entityId, paymentMethod, dateFrom, dateTo]);
 
   const params = useMemo<ListGiftsMissingQbParams>(() => {
     const p: ListGiftsMissingQbParams = {
@@ -84,12 +85,10 @@ export function StrayGiftsWorklist() {
     if (debouncedSearch) p.q = debouncedSearch;
     if (entityId !== ANY) p.entityId = entityId;
     if (paymentMethod !== ANY) p.paymentMethod = paymentMethod as GiftPaymentMethod;
-    if (stripe === "yes") p.hasStripe = true;
-    else if (stripe === "no") p.hasStripe = false;
     if (dateFrom) p.dateFrom = dateFrom;
     if (dateTo) p.dateTo = dateTo;
     return p;
-  }, [debouncedSearch, entityId, paymentMethod, stripe, dateFrom, dateTo, page]);
+  }, [debouncedSearch, entityId, paymentMethod, dateFrom, dateTo, page]);
 
   const { data, isLoading, isError } = useListGiftsMissingQb(params);
 
@@ -134,19 +133,6 @@ export function StrayGiftsWorklist() {
             ))}
           </SelectContent>
         </Select>
-        <Select
-          value={stripe}
-          onValueChange={(v) => setStripe(v as StripeFilter)}
-        >
-          <SelectTrigger className="h-9" data-testid="stray-gifts-stripe">
-            <SelectValue placeholder="Stripe evidence" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="any">Any Stripe status</SelectItem>
-            <SelectItem value="yes">Has Stripe (anomaly)</SelectItem>
-            <SelectItem value="no">No Stripe</SelectItem>
-          </SelectContent>
-        </Select>
         <Input
           type="date"
           value={dateFrom}
@@ -183,10 +169,9 @@ export function StrayGiftsWorklist() {
                 <TableHead>Donor</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Date</TableHead>
-                <TableHead>Method</TableHead>
+                <TableHead>Recorded method</TableHead>
                 <TableHead>Entity</TableHead>
                 <TableHead>Source</TableHead>
-                <TableHead>Stripe</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -201,10 +186,20 @@ export function StrayGiftsWorklist() {
                     </Link>
                   </TableCell>
                   <TableCell className="tabular-nums">
-                    {formatCurrency(g.amount)}
+                    {g.displayAmount != null ? (
+                      formatCurrency(g.displayAmount)
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        No amount recorded
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {formatDateShort(g.dateReceived)}
+                    {g.displayDate != null ? (
+                      formatDateShort(g.displayDate)
+                    ) : (
+                      <span className="text-xs">No date recorded</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {g.paymentMethod ? formatEnum(g.paymentMethod) : "—"}
@@ -214,15 +209,6 @@ export function StrayGiftsWorklist() {
                   </TableCell>
                   <TableCell>
                     {g.finalAmountSource ? formatEnum(g.finalAmountSource) : "—"}
-                  </TableCell>
-                  <TableCell>
-                    {g.hasStripeEvidence ? (
-                      <Badge variant="destructive" className="text-xs">
-                        Stripe, no QB
-                      </Badge>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
                   </TableCell>
                 </TableRow>
               ))}

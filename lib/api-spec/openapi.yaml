@@ -3972,18 +3972,20 @@ paths:
     get:
       operationId: listGiftsMissingQb
       tags: [reconciliation]
-      summary: Gifts with no QuickBooks record (data-quality worklist).
+      summary: Gifts genuinely missing a QuickBooks record (data-quality worklist).
       description: |
-        Every gift is expected to carry a QuickBooks record; this lists the gifts that
-        do not — i.e. no staged-payment row links the gift (matched / created /
-        group-reconciled) and the gift has no final-amount QB pointer. Broad by design
+        Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.
+        no QuickBooks cash-application ledger entry exists for the gift. Gifts that are
+        not expected to get a direct QB record are excluded, so the list never implies
+        they are unreconciled: off-books / fiscal-sponsor / designated-to-school gifts
+        (exempt) and Stripe-sourced gifts (the money lands in QuickBooks at the payout
+        level, so they never carry a per-gift QB ledger link). Broad by design
         (cash / check / brokerage / imports all surface) with filters to slice. Donor
         names are anonymous-masked for the viewer. Read-only.
       parameters:
         - { name: q, in: query, schema: { type: string }, description: "Free-text over donor name (organization / person / household)." }
         - { name: entityId, in: query, schema: { type: string }, description: "Filter to one Wildflower legal entity." }
-        - { name: paymentMethod, in: query, schema: { $ref: "#/components/schemas/GiftPaymentMethod" }, description: "Filter to one payment method." }
-        - { name: hasStripe, in: query, schema: { type: boolean }, description: "true: only QB-missing gifts that DO carry a Stripe charge (high-priority anomaly); false: only gifts with neither QB nor Stripe." }
+        - { name: paymentMethod, in: query, schema: { $ref: "#/components/schemas/GiftPaymentMethod" }, description: "Filter to one recorded gift payment method." }
         - { name: dateFrom, in: query, schema: { type: string, format: date } }
         - { name: dateTo, in: query, schema: { type: string, format: date } }
         - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
@@ -6830,19 +6832,20 @@ components:
         data: { type: array, items: { $ref: "#/components/schemas/ReconciliationCandidate" } }
     GiftMissingQb:
       type: object
-      required: [id, hasStripeEvidence]
-      description: "A gift with no QuickBooks record — list item for the gifts-missing-QB worklist."
+      required: [id]
+      description: "A gift genuinely missing a QuickBooks record — list item for the gifts-missing-QB worklist."
       properties:
         id:            { type: string }
         donorName:     { type: string, nullable: true, description: "Donor display name (anonymous-masked for the viewer)." }
         donorKind:     { type: string, enum: [organization, person, household], nullable: true }
-        amount:        { type: string, nullable: true }
-        dateReceived:  { type: string, format: date, nullable: true }
-        paymentMethod: { $ref: "#/components/schemas/GiftPaymentMethod", nullable: true }
+        amount:        { type: string, nullable: true, description: "Raw gift header amount (may be null)." }
+        displayAmount: { type: string, nullable: true, description: "Amount to display: the gift header amount, falling back to the sum of the gift's allocation sub-amounts when the header is null. Null only when no amount is recorded anywhere." }
+        dateReceived:  { type: string, format: date, nullable: true, description: "Raw gift header date received (may be null)." }
+        displayDate:   { type: string, format: date, nullable: true, description: "Date to display: the gift date received, falling back to the earliest allocation spending-start date when the header is null." }
+        paymentMethod: { $ref: "#/components/schemas/GiftPaymentMethod", nullable: true, description: "The donor's recorded payment method on the gift (NOT a reconciliation match)." }
         entityId:      { type: string, nullable: true }
         entityName:    { type: string, nullable: true }
         finalAmountSource: { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
-        hasStripeEvidence: { type: boolean, description: "True when a Stripe charge backs this gift even though no QB record does (a high-priority anomaly)." }
     GiftMissingQbList:
       type: object
       required: [data, pagination]

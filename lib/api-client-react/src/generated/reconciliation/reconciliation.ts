@@ -898,13 +898,16 @@ export function useSearchReconciliationQbStaged<TData = Awaited<ReturnType<typeo
 
 
 /**
- * Every gift is expected to carry a QuickBooks record; this lists the gifts that
-do not — i.e. no staged-payment row links the gift (matched / created /
-group-reconciled) and the gift has no final-amount QB pointer. Broad by design
+ * Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.
+no QuickBooks cash-application ledger entry exists for the gift. Gifts that are
+not expected to get a direct QB record are excluded, so the list never implies
+they are unreconciled: off-books / fiscal-sponsor / designated-to-school gifts
+(exempt) and Stripe-sourced gifts (the money lands in QuickBooks at the payout
+level, so they never carry a per-gift QB ledger link). Broad by design
 (cash / check / brokerage / imports all surface) with filters to slice. Donor
 names are anonymous-masked for the viewer. Read-only.
 
- * @summary Gifts with no QuickBooks record (data-quality worklist).
+ * @summary Gifts genuinely missing a QuickBooks record (data-quality worklist).
  */
 export const getListGiftsMissingQbUrl = (params?: ListGiftsMissingQbParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -966,7 +969,7 @@ export type ListGiftsMissingQbQueryError = ErrorType<BadRequestResponse>
 
 
 /**
- * @summary Gifts with no QuickBooks record (data-quality worklist).
+ * @summary Gifts genuinely missing a QuickBooks record (data-quality worklist).
  */
 
 export function useListGiftsMissingQb<TData = Awaited<ReturnType<typeof listGiftsMissingQb>>, TError = ErrorType<BadRequestResponse>>(

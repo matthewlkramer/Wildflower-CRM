@@ -3913,21 +3913,26 @@ export const GiftMissingQbDonorKind = {
 } as const;
 
 /**
- * A gift with no QuickBooks record — list item for the gifts-missing-QB worklist.
+ * A gift genuinely missing a QuickBooks record — list item for the gifts-missing-QB worklist.
  */
 export interface GiftMissingQb {
   id: string;
   /** Donor display name (anonymous-masked for the viewer). */
   donorName?: string | null;
   donorKind?: GiftMissingQbDonorKind;
+  /** Raw gift header amount (may be null). */
   amount?: string | null;
+  /** Amount to display: the gift header amount, falling back to the sum of the gift's allocation sub-amounts when the header is null. Null only when no amount is recorded anywhere. */
+  displayAmount?: string | null;
+  /** Raw gift header date received (may be null). */
   dateReceived?: string | null;
+  /** Date to display: the gift date received, falling back to the earliest allocation spending-start date when the header is null. */
+  displayDate?: string | null;
+  /** The donor's recorded payment method on the gift (NOT a reconciliation match). */
   paymentMethod?: GiftPaymentMethod | null;
   entityId?: string | null;
   entityName?: string | null;
   finalAmountSource?: GiftFinalAmountSource | null;
-  /** True when a Stripe charge backs this gift even though no QB record does (a high-priority anomaly). */
-  hasStripeEvidence: boolean;
 }
 
 export interface GiftMissingQbList {
@@ -7696,13 +7701,9 @@ q?: string;
  */
 entityId?: string;
 /**
- * Filter to one payment method.
+ * Filter to one recorded gift payment method.
  */
 paymentMethod?: GiftPaymentMethod;
-/**
- * true: only QB-missing gifts that DO carry a Stripe charge (high-priority anomaly); false: only gifts with neither QB nor Stripe.
- */
-hasStripe?: boolean;
 dateFrom?: string;
 dateTo?: string;
 /**

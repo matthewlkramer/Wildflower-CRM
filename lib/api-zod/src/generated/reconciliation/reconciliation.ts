@@ -511,13 +511,16 @@ export const SearchReconciliationQbStagedResponse = zod.object({
 })
 
 /**
- * Every gift is expected to carry a QuickBooks record; this lists the gifts that
-do not — i.e. no staged-payment row links the gift (matched / created /
-group-reconciled) and the gift has no final-amount QB pointer. Broad by design
+ * Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.
+no QuickBooks cash-application ledger entry exists for the gift. Gifts that are
+not expected to get a direct QB record are excluded, so the list never implies
+they are unreconciled: off-books / fiscal-sponsor / designated-to-school gifts
+(exempt) and Stripe-sourced gifts (the money lands in QuickBooks at the payout
+level, so they never carry a per-gift QB ledger link). Broad by design
 (cash / check / brokerage / imports all surface) with filters to slice. Donor
 names are anonymous-masked for the viewer. Read-only.
 
- * @summary Gifts with no QuickBooks record (data-quality worklist).
+ * @summary Gifts genuinely missing a QuickBooks record (data-quality worklist).
  */
 export const listGiftsMissingQbQueryLimitDefault = 50;
 export const listGiftsMissingQbQueryLimitMax = 200;
@@ -530,8 +533,7 @@ export const listGiftsMissingQbQueryOffsetMin = 0;
 export const ListGiftsMissingQbQueryParams = zod.object({
   "q": zod.coerce.string().optional().describe('Free-text over donor name (organization \/ person \/ household).'),
   "entityId": zod.coerce.string().optional().describe('Filter to one Wildflower legal entity.'),
-  "paymentMethod": zod.enum(['ach', 'check', 'wire', 'stock', 'donor_box', 'daf_ach', 'daf_check', 'daf_bill_com']).optional().describe('Filter to one payment method.'),
-  "hasStripe": zod.coerce.boolean().optional().describe('true: only QB-missing gifts that DO carry a Stripe charge (high-priority anomaly); false: only gifts with neither QB nor Stripe.'),
+  "paymentMethod": zod.enum(['ach', 'check', 'wire', 'stock', 'donor_box', 'daf_ach', 'daf_check', 'daf_bill_com']).optional().describe('Filter to one recorded gift payment method.'),
   "dateFrom": zod.coerce.string().date().optional(),
   "dateTo": zod.coerce.string().date().optional(),
   "limit": zod.coerce.number().min(1).max(listGiftsMissingQbQueryLimitMax).default(listGiftsMissingQbQueryLimitDefault),
@@ -543,14 +545,15 @@ export const ListGiftsMissingQbResponse = zod.object({
   "id": zod.string(),
   "donorName": zod.string().nullish().describe('Donor display name (anonymous-masked for the viewer).'),
   "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
-  "amount": zod.string().nullish(),
-  "dateReceived": zod.string().date().nullish(),
-  "paymentMethod": zod.enum(['ach', 'check', 'wire', 'stock', 'donor_box', 'daf_ach', 'daf_check', 'daf_bill_com']).nullish(),
+  "amount": zod.string().nullish().describe('Raw gift header amount (may be null).'),
+  "displayAmount": zod.string().nullish().describe('Amount to display: the gift header amount, falling back to the sum of the gift\'s allocation sub-amounts when the header is null. Null only when no amount is recorded anywhere.'),
+  "dateReceived": zod.string().date().nullish().describe('Raw gift header date received (may be null).'),
+  "displayDate": zod.string().date().nullish().describe('Date to display: the gift date received, falling back to the earliest allocation spending-start date when the header is null.'),
+  "paymentMethod": zod.enum(['ach', 'check', 'wire', 'stock', 'donor_box', 'daf_ach', 'daf_check', 'daf_bill_com']).nullish().describe('The donor\'s recorded payment method on the gift (NOT a reconciliation match).'),
   "entityId": zod.string().nullish(),
   "entityName": zod.string().nullish(),
-  "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).nullish().describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.'),
-  "hasStripeEvidence": zod.boolean().describe('True when a Stripe charge backs this gift even though no QB record does (a high-priority anomaly).')
-}).describe('A gift with no QuickBooks record — list item for the gifts-missing-QB worklist.')),
+  "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).nullish().describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.')
+}).describe('A gift genuinely missing a QuickBooks record — list item for the gifts-missing-QB worklist.')),
   "pagination": zod.object({
   "page": zod.number(),
   "limit": zod.number(),

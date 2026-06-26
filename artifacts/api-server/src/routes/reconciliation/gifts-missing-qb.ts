@@ -14,6 +14,7 @@ import { asyncHandler } from "../../lib/helpers";
 import { getViewer, maskName } from "../../lib/identityVisibility";
 import { escapeLike } from "../quickbooks/shared";
 import { qbLedgerExistsForGift } from "../../lib/paymentApplications";
+import { giftIsOffBooksExpr } from "../../lib/giftPaymentSummary";
 
 const router: IRouter = Router();
 
@@ -91,10 +92,6 @@ router.get(
       res.status(400).json({ error: "dateTo must be a valid YYYY-MM-DD date." });
       return;
     }
-    const hasStripeRaw =
-      typeof req.query["hasStripe"] === "string"
-        ? req.query["hasStripe"]
-        : null;
     const limit = clampInt(req.query["limit"], 50, 1, 200);
     const offset = clampInt(req.query["offset"], 0, 0, 1_000_000);
 
@@ -105,17 +102,33 @@ router.get(
     // blocks the cutover on any final-amount pointer with no ledger row).
     const noQbRecord = sql`NOT ${qbLedgerExistsForGift()}`;
 
-    // Does the gift have Stripe evidence behind it? (final-amount pointer or a
-    // staged charge linked to it.) Anomaly signal: Stripe but no QB.
-    const hasStripeSql = sql<boolean>`(
-      ${giftsAndPayments.finalAmountStripeChargeId} IS NOT NULL
+    // A gift is Stripe-tied when its money came through Stripe (a final-amount
+    // pointer or a staged charge linked to it, or final_amount_source = 'stripe').
+    // Such money lands in QuickBooks at the PAYOUT level, not per gift, so the gift
+    // never gets a per-gift QB ledger link — it is effectively reconciled, NOT a
+    // "missing QB record". Exclude it so the queue stops implying it is unreconciled.
+    const isStripeTiedSql = sql<boolean>`(
+      ${giftsAndPayments.finalAmountSource} = 'stripe'
+      OR ${giftsAndPayments.finalAmountStripeChargeId} IS NOT NULL
       OR EXISTS (
         SELECT 1 FROM ${stripeStagedCharges} sc
         WHERE sc.matched_gift_id = ${giftsAndPayments.id}
       )
     )`;
 
-    const conds: SQL[] = [isNull(giftsAndPayments.archivedAt), noQbRecord];
+    // Membership = genuinely UN-reconciled, on-books gifts only:
+    //   • no QuickBooks cash-application ledger row (noQbRecord), AND
+    //   • NOT off-books / fiscal-sponsor / designated-to-school (those are exempt —
+    //     they are not expected to ever carry a QB record), AND
+    //   • NOT Stripe-tied (reconciled at the payout level).
+    // This mirrors deriveGiftQbTie's "missing" status (single source of truth), so
+    // the queue never lists a gift that is exempt or tied as if it were unreconciled.
+    const conds: SQL[] = [
+      isNull(giftsAndPayments.archivedAt),
+      noQbRecord,
+      sql`NOT ${giftIsOffBooksExpr()}`,
+      sql`NOT ${isStripeTiedSql}`,
+    ];
 
     if (q.length >= 2) {
       const like = `%${escapeLike(q)}%`;
@@ -145,8 +158,6 @@ router.get(
     if (dateTo) {
       conds.push(sql`${giftsAndPayments.dateReceived} <= ${dateTo}::date`);
     }
-    if (hasStripeRaw === "true") conds.push(hasStripeSql);
-    else if (hasStripeRaw === "false") conds.push(sql`NOT ${hasStripeSql}`);
 
     const where = and(...conds);
 
@@ -165,12 +176,37 @@ router.get(
       WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.entity_id IS NOT NULL
     )`;
 
+    // Amount/date to DISPLAY. The header amount/date_received can be null on
+    // imported or grant records; fall back to allocation data so the row shows
+    // meaningful values when the gift has them. Amount → sum of allocation
+    // sub-amounts; date → earliest allocation spending-start. Both stay null only
+    // when no value exists anywhere (the UI then says so explicitly). These are
+    // read-only display fields; they do NOT feed any financial total.
+    const displayAmountSql = sql<string | null>`COALESCE(
+      ${giftsAndPayments.amount},
+      (
+        SELECT NULLIF(SUM(ga.sub_amount), 0)
+        FROM ${giftAllocations} ga
+        WHERE ga.gift_id = ${giftsAndPayments.id}
+      )
+    )::text`;
+    const displayDateSql = sql<string | null>`COALESCE(
+      ${giftsAndPayments.dateReceived},
+      (
+        SELECT MIN(ga.spending_start)
+        FROM ${giftAllocations} ga
+        WHERE ga.gift_id = ${giftsAndPayments.id}
+      )
+    )`;
+
     const [rows, totalRow] = await Promise.all([
       db
         .select({
           id: giftsAndPayments.id,
           amount: giftsAndPayments.amount,
+          displayAmount: displayAmountSql,
           dateReceived: giftsAndPayments.dateReceived,
+          displayDate: displayDateSql,
           paymentMethod: giftsAndPayments.paymentMethod,
           finalAmountSource: giftsAndPayments.finalAmountSource,
           organizationId: giftsAndPayments.organizationId,
@@ -185,7 +221,6 @@ router.get(
           householdName: households.name,
           entityId: entityIdSql,
           entityName: entityNamesSql,
-          hasStripeEvidence: hasStripeSql,
         })
         .from(giftsAndPayments)
         .leftJoin(
@@ -249,12 +284,13 @@ router.get(
         donorName,
         donorKind,
         amount: r.amount,
+        displayAmount: r.displayAmount,
         dateReceived: r.dateReceived,
+        displayDate: r.displayDate,
         paymentMethod: r.paymentMethod,
         entityId: r.entityId,
         entityName: r.entityName,
         finalAmountSource: r.finalAmountSource,
-        hasStripeEvidence: Boolean(r.hasStripeEvidence),
       };
     });
 
