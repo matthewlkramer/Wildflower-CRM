@@ -3643,7 +3643,7 @@ export interface ReconciliationCard {
   qbClasses?: string[] | null;
   /** QuickBooks transaction-level memo/note, distinct from the per-line description (lineDescription). */
   qbTransactionMemo?: string | null;
-  /** QuickBooks Location/Department (DepartmentRef) on the transaction, e.g. 'National:Foundation Operations'. Derived read-only from the raw QB payload; null when none is tagged. */
+  /** QuickBooks Location/Department (DepartmentRef) on the transaction, e.g. 'National:Foundation Operations'. A read-only QB fact captured at pull time; null when none is tagged. */
   qbLocation?: string | null;
   entityId?: string | null;
   entityName?: string | null;

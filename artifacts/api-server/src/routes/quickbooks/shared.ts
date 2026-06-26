@@ -214,12 +214,10 @@ export const stagedSelect = {
     ) lt
     WHERE lt->>'TxnType' = 'Deposit'
   )`.as("qb_deposit_links"),
-  // QuickBooks Location/Department (DepartmentRef) tagged on the transaction —
-  // derived READ-ONLY from the stored raw QB payload (it is not a captured
-  // column). E.g. "National:Foundation Operations". Null when none.
-  qbLocation: sql<string | null>`(
-    ${stagedPayments.qbRaw} -> 'DepartmentRef' ->> 'name'
-  )`.as("qb_location"),
+  // QuickBooks Location/Department (DepartmentRef.name) tagged on the
+  // transaction, captured at pull time as a read-only QB fact. E.g.
+  // "National:Foundation Operations". Null when none is tagged.
+  qbLocation: stagedPayments.qbLocation,
   // "Gift likely not created yet": this row has no gift of its own, and every
   // same-donor / similar-amount gift is already linked to a DIFFERENT staged
   // payment (no unlinked candidate is left to match). Signals the fundraiser to

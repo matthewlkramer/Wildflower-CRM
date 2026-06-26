@@ -140,6 +140,10 @@ export const stagedPayments = pgTable(
     // The transaction-level PrivateNote (entity memo) — distinct from
     // lineDescription, which prefers the per-line note for deposit lines.
     qbTransactionMemo: text("qb_transaction_memo"),
+    // The QB Location/Department tagged on the transaction (DepartmentRef.name),
+    // e.g. "National:Foundation Operations". A read-only QB fact captured at pull
+    // time (previously derived from qb_raw at query time). NULL when none.
+    qbLocation: text("qb_location"),
     // QB currency code (CurrencyRef.value, e.g. "USD") and the exchange rate to
     // home currency (ExchangeRate). Captured for multi-currency auditing.
     qbCurrency: text("qb_currency"),

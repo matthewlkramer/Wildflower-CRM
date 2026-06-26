@@ -93,6 +93,7 @@ describe("buildStagedLineUpsert — preserve-on-conflict coding", () => {
     "qb_doc_number",
     "qb_billing_address",
     "qb_transaction_memo",
+    "qb_location",
     "qb_currency",
     "qb_exchange_rate",
     "qb_create_time",

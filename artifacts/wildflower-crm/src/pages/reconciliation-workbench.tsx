@@ -1177,6 +1177,14 @@ function ReconCard({
   const status = deriveCardStatus(card);
   // Header id: the human "No." (qbDocNumber) if present, else the stable QB id.
   const qbIdText = card.qbDocNumber ?? card.qbEntityId;
+  // The QB raw reference (DocNumber / PaymentRefNum / deposit memo) is worth
+  // showing only when it isn't already visible as the header "No." or repeated
+  // by the memo / line description below.
+  const showReference =
+    !!card.rawReference &&
+    card.rawReference !== card.qbDocNumber &&
+    card.rawReference !== card.qbTransactionMemo &&
+    card.rawReference !== card.lineDescription;
   // Real donor on the QB side: a Stripe charge's QB payer is literally "Stripe",
   // so prefer the charge's payer name when this money came through Stripe.
   const qbPayerName = card.stripeChargeDonorName ?? card.payerName;
@@ -1240,8 +1248,15 @@ function ReconCard({
             card.qbClasses?.length ||
             card.qbLocation ||
             card.lineDescription ||
-            card.qbTransactionMemo) && (
+            card.qbTransactionMemo ||
+            showReference) && (
             <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
+              {showReference && (
+                <div>
+                  <span className="text-muted-foreground/70">Reference: </span>
+                  {card.rawReference}
+                </div>
+              )}
               {card.qbAccountNames && card.qbAccountNames.length > 0 && (
                 <div>
                   <span className="text-muted-foreground/70">Object code: </span>

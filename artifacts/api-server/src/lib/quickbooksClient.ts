@@ -74,6 +74,7 @@ export interface NormalizedQuickbooksPayment {
   qbDocNumber: string | null;
   qbBillingAddress: string | null;
   qbTransactionMemo: string | null;
+  qbLocation: string | null;
   qbCurrency: string | null;
   qbExchangeRate: string | null;
   qbCreateTime: string | null;
@@ -176,6 +177,7 @@ interface QbSalesReceipt {
   PaymentMethodRef?: QbRef;
   PaymentRefNum?: string;
   DepositToAccountRef?: QbRef;
+  DepartmentRef?: QbRef;
   CurrencyRef?: QbRef;
   ExchangeRate?: number;
   Line?: QbLine[];
@@ -197,6 +199,7 @@ interface QbPayment {
   CustomerRef?: QbRef;
   PrivateNote?: string;
   DepositToAccountRef?: QbRef;
+  DepartmentRef?: QbRef;
   CurrencyRef?: QbRef;
   ExchangeRate?: number;
   Line?: { LinkedTxn?: QbLinkedTxn[] }[];
@@ -210,6 +213,7 @@ interface QbDeposit {
   DocNumber?: string;
   PrivateNote?: string;
   DepositToAccountRef?: QbRef;
+  DepartmentRef?: QbRef;
   CurrencyRef?: QbRef;
   ExchangeRate?: number;
   Line?: QbLine[];
@@ -644,6 +648,7 @@ export async function pullIncomingPayments(
       qbDocNumber: row.DocNumber ?? null,
       qbBillingAddress: flattenAddr(row.BillAddr),
       qbTransactionMemo: row.PrivateNote ?? null,
+      qbLocation: row.DepartmentRef?.name ?? null,
       qbCurrency: row.CurrencyRef?.value ?? null,
       qbExchangeRate: rate(row.ExchangeRate),
       qbCreateTime: row.MetaData?.CreateTime ?? null,
@@ -693,6 +698,7 @@ export async function pullIncomingPayments(
       qbDocNumber: row.DocNumber ?? null,
       qbBillingAddress: null,
       qbTransactionMemo: row.PrivateNote ?? null,
+      qbLocation: row.DepartmentRef?.name ?? null,
       qbCurrency: row.CurrencyRef?.value ?? null,
       qbExchangeRate: rate(row.ExchangeRate),
       qbCreateTime: row.MetaData?.CreateTime ?? null,
@@ -761,6 +767,8 @@ export async function pullIncomingPayments(
         qbBillingAddress: null,
         // The deposit's transaction-level memo (distinct from the line note).
         qbTransactionMemo: depositMemo,
+        // Location/Department is a transaction-level field on the Deposit.
+        qbLocation: row.DepartmentRef?.name ?? null,
         qbCurrency: row.CurrencyRef?.value ?? null,
         qbExchangeRate: rate(row.ExchangeRate),
         qbCreateTime: row.MetaData?.CreateTime ?? null,

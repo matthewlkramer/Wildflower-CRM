@@ -54,7 +54,7 @@ export const ListReconciliationCardsResponse = zod.object({
   "qbAccountNames": zod.array(zod.string()).nullish().describe('QuickBooks GL account name(s) on the transaction line(s) — the \'object code\'. QBO bakes the numeric account number into the name as a prefix (e.g. \'4000.1 Unrestricted Donations:…\'), so this carries both the code and the label. Null\/empty when the line(s) have no account.'),
   "qbClasses": zod.array(zod.string()).nullish().describe('QuickBooks class(es) tagged on the transaction line(s). Null\/empty when the line(s) are unclassed.'),
   "qbTransactionMemo": zod.string().nullish().describe('QuickBooks transaction-level memo\/note, distinct from the per-line description (lineDescription).'),
-  "qbLocation": zod.string().nullish().describe('QuickBooks Location\/Department (DepartmentRef) on the transaction, e.g. \'National:Foundation Operations\'. Derived read-only from the raw QB payload; null when none is tagged.'),
+  "qbLocation": zod.string().nullish().describe('QuickBooks Location\/Department (DepartmentRef) on the transaction, e.g. \'National:Foundation Operations\'. A read-only QB fact captured at pull time; null when none is tagged.'),
   "entityId": zod.string().nullish(),
   "entityName": zod.string().nullish(),
   "proposedDonorId": zod.string().nullish(),
