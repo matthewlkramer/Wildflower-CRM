@@ -2,6 +2,7 @@ import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
 import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, organizations, households, people, tasks, type NewPledgeAllocation } from "@workspace/db/schema";
+import { giftHeaderColumns } from "./giftsAndPayments";
 import { alias } from "drizzle-orm/pg-core";
 import { and, count, desc, eq, exists, getTableColumns, ilike, inArray, isNull, notExists, or, sql, type SQL } from "drizzle-orm";
 
@@ -334,7 +335,9 @@ router.get(
     if (!row) return notFound(res, "opportunity");
     const [allocations, payments] = await Promise.all([
       db.select().from(pledgeAllocations).where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
-      db.select().from(giftsAndPayments).where(eq(giftsAndPayments.opportunityId, id)),
+      // Scrubbed header projection — the nested `payments` array must not leak
+      // the @deprecated `countsTowardGoal` column (now allocation-only).
+      db.select(giftHeaderColumns).from(giftsAndPayments).where(eq(giftsAndPayments.opportunityId, id)),
     ]);
     res.json({ ...maskOppDonorRow(row, getViewer(req)), allocations, payments });
   }),

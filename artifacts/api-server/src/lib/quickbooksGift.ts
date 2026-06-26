@@ -8,6 +8,10 @@ import type { NewGiftOrPayment } from "@workspace/db/schema";
  * Mints the gift HEADER only (no gift_allocations) — same as the manual flow;
  * a fundraiser allocates afterward. The donor XOR is the caller's
  * responsibility (validate via validateGiftInvariants before inserting).
+ *
+ * The goal-counting signal lives ONLY on gift_allocations now, so a header-only
+ * mint carries no counts-toward-goal flag; callers that also create an
+ * allocation (the sync worker's auto-create) set it on the allocation row.
  */
 export interface StagedGiftSource {
   qbEntityType: string;
@@ -21,12 +25,6 @@ export interface StagedGiftSource {
   householdId: string | null;
   /** Conduit the donor gave through, propagated onto the gift when present. */
   matchedPaymentIntermediaryId: string | null;
-  /**
-   * Whether the minted gift advances fundraising goals. Carried from the staged
-   * row (set false for government reimbursements — real money that doesn't count
-   * toward the goal). Optional so legacy callers default to true.
-   */
-  countsTowardGoal?: boolean | null;
 }
 
 export function buildGiftValuesFromStaged(
@@ -47,7 +45,6 @@ export function buildGiftValuesFromStaged(
     individualGiverPersonId: staged.individualGiverPersonId,
     householdId: staged.householdId,
     paymentIntermediaryId: staged.matchedPaymentIntermediaryId,
-    countsTowardGoal: staged.countsTowardGoal ?? true,
     details: `Imported from QuickBooks (${staged.qbEntityType} #${staged.qbEntityId}).`,
     ownerUserId,
   };

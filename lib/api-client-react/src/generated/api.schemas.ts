@@ -1871,8 +1871,6 @@ export interface GiftOrPayment {
   offBooksFiscalSponsor: boolean;
   /** When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor / designatedToSchool). Defaults true. */
   paymentExpected: boolean;
-  /** When false, this real money is excluded from goal/received analytics rollups (e.g. reimbursement grants that don't cover core expenses). Orthogonal to paymentExpected. Defaults true. */
-  countsTowardGoal: boolean;
   /** Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status / derivation / QuickBooks tie. */
   needsResearch: boolean;
   /** Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update. */
@@ -2053,6 +2051,8 @@ export interface GiftAllocation {
   formalFundUseRestriction: boolean;
   /** Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count. */
   reimbursableShare?: ReimbursableShare | null;
+  /** When false, this allocation's money is excluded from goal/received analytics rollups (e.g. government reimbursement that doesn't advance the fundraising goal). Per-allocation; defaults true. */
+  countsTowardGoal: boolean;
   schoolRecipientId?: string | null;
   spendingStart?: string | null;
   spendingEnd?: string | null;
@@ -2187,7 +2187,6 @@ export interface CreateGiftOrPaymentBody {
   designatedToSchool?: boolean;
   offBooksFiscalSponsor?: boolean;
   paymentExpected?: boolean;
-  countsTowardGoal?: boolean;
   needsResearch?: boolean;
   tags?: string;
 }
@@ -2213,7 +2212,6 @@ export interface UpdateGiftOrPaymentBody {
   designatedToSchool?: boolean;
   offBooksFiscalSponsor?: boolean;
   paymentExpected?: boolean;
-  countsTowardGoal?: boolean;
   needsResearch?: boolean;
   tags?: string | null;
 }
@@ -2783,8 +2781,6 @@ export interface StagedPayment {
   fundingSourceProvenance: StagedPaymentFundingSourceProvenance;
   /** Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via /set-needs-research with no side effects on reconcile status or matching. */
   needsResearch: boolean;
-  /** Plain human-set flag: this QuickBooks money already exists in the CRM as a gift but was missing from the QuickBooks export (a sync gap). Never auto-derived; set via /set-sync-gap with no side effects on reconcile status or matching. */
-  syncGap: boolean;
   resolvedGiftId?: string | null;
   resolvedGiftName?: string | null;
   resolvedGiftAmount?: string | null;
@@ -3684,8 +3680,6 @@ export interface ReconciliationCard {
   ready: boolean;
   /** Plain human-set 'needs research' flag (parked for later); orthogonal to reconcile status. Set via /staged-payments/{id}/set-needs-research. */
   needsResearch: boolean;
-  /** Plain human-set 'sync gap' flag — the gift exists in the CRM but was missing from the QuickBooks export; orthogonal to reconcile status. Set via /staged-payments/{id}/set-sync-gap. */
-  syncGap: boolean;
   /** Why this money was filed as a non-gift; set only when status='excluded'. Drives the Excluded queue's reason label. */
   exclusionReason?: StagedPaymentExclusionReason | null;
   /** Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor/gift state: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge. */
@@ -4346,14 +4340,6 @@ export interface SetStagedPaymentNeedsResearchBody {
 }
 
 /**
- * Set or clear the plain human 'sync gap' flag on a staged payment (the gift exists in the CRM but was missing from the QuickBooks export). A pure annotation with no side effects on reconcile status or matching.
- */
-export interface SetStagedPaymentSyncGapBody {
-  /** True to flag this row as a sync gap, false to clear it. */
-  syncGap: boolean;
-}
-
-/**
  * Mark two or more staged payments as ONE physical gift entered separately in QuickBooks (a 'same physical gift' source group). Stamps a shared sourceGroupId. Does not change donor or gift links and never reconciles by itself.
  */
 export interface GroupStagedPaymentsBody {
@@ -4432,6 +4418,7 @@ export interface CreateGiftAllocationBody {
   fundableProjectId?: string;
   formalFundUseRestriction?: boolean;
   reimbursableShare?: ReimbursableShare;
+  countsTowardGoal?: boolean;
   schoolRecipientId?: string;
   spendingStart?: string;
   spendingEnd?: string;
@@ -4456,6 +4443,7 @@ export interface UpdateGiftAllocationBody {
   fundableProjectId?: string | null;
   formalFundUseRestriction?: boolean;
   reimbursableShare?: ReimbursableShare | null;
+  countsTowardGoal?: boolean;
   schoolRecipientId?: string | null;
   spendingStart?: string | null;
   spendingEnd?: string | null;

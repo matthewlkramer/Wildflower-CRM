@@ -373,9 +373,9 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [dateReceived, setDateReceived] = useState("");
-  // Both default true — almost every gift expects a payment and counts toward goal.
+  // Defaults true — almost every gift expects a payment. (Goal-counting now
+  // lives per-allocation, set when allocating the gift, not on the header.)
   const [paymentExpected, setPaymentExpected] = useState(true);
-  const [countsTowardGoal, setCountsTowardGoal] = useState(true);
 
   // Opportunity link
   const [linkedOpp, setLinkedOpp] = useState<OpportunityOrPledge | null>(null);
@@ -424,7 +424,6 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     setAmount("");
     setDateReceived("");
     setPaymentExpected(true);
-    setCountsTowardGoal(true);
     setLinkedOpp(null);
     setDonorMode("auto");
     resetDonor();
@@ -557,7 +556,6 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
         ...(amt ? { amount: amt } : {}),
         ...(date ? { dateReceived: date } : {}),
         paymentExpected,
-        countsTowardGoal,
       },
     });
   }
@@ -570,7 +568,6 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
       setAmount("");
       setDateReceived("");
       setPaymentExpected(true);
-      setCountsTowardGoal(true);
       setLinkedOpp(null);
       setDonorMode("auto");
       resetDonor();
@@ -734,22 +731,6 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                 onCheckedChange={setPaymentExpected}
                 disabled={create.isPending}
                 data-testid="switch-new-gift-payment-expected"
-              />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <Label htmlFor="new-gift-counts-toward-goal">Counts toward goal</Label>
-                <p className="text-xs text-muted-foreground">
-                  Turn off for real money that shouldn&rsquo;t count against
-                  fundraising goals (e.g. reimbursement grants).
-                </p>
-              </div>
-              <Switch
-                id="new-gift-counts-toward-goal"
-                checked={countsTowardGoal}
-                onCheckedChange={setCountsTowardGoal}
-                disabled={create.isPending}
-                data-testid="switch-new-gift-counts-toward-goal"
               />
             </div>
 

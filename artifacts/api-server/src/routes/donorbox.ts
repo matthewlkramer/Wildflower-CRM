@@ -51,6 +51,7 @@ import {
 import { getViewer } from "../lib/identityVisibility";
 import { buildGiftValuesFromDonorbox } from "../lib/donorboxGift";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
+import { giftHeaderColumns } from "./giftsAndPayments";
 
 /**
  * Donorbox sync controls + (later) the new-money review queue and enrichment
@@ -613,7 +614,7 @@ router.post(
     await applyGiftQbTieMany(giftId);
 
     const [gift] = await db
-      .select()
+      .select(giftHeaderColumns)
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, giftId));
     res.status(201).json({ gift, donationId: id });

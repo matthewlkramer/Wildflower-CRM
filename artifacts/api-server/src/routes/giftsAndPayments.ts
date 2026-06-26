@@ -45,8 +45,21 @@ const maskGiftDonorRow = maskDonorDisplayFields;
 // three de-duplicated aggregates from gift_allocations so the gifts
 // list can render Entities / Usages / Grant years inline without
 // fanning out per-row fetches.
+// `countsTowardGoal` now lives ONLY on gift_allocations. The gifts-header column
+// is retained @deprecated in the Drizzle schema (so Publish never proposes
+// dropping it before the manual prod DROP) but must never be projected into an
+// API response. Strip it from the full column set once here and reuse the result
+// for the list/detail projection AND the create/PATCH `.returning()` below, so
+// no response surface can leak the deprecated header flag.
+const { countsTowardGoal: _deprecatedGiftCountsTowardGoal, ...giftHeaderColumns } =
+  getTableColumns(giftsAndPayments);
+// Canonical scrubbed gift-header projection — drops the @deprecated
+// `countsTowardGoal` (now allocation-only) from the gift_and_payments header.
+// Reused by the QuickBooks reconcile/mint routes (matching.ts, actions.ts) that
+// echo a gift row directly, so a raw header never leaks the dead column.
+export { giftHeaderColumns };
 const donorJoinSelect = {
-  ...getTableColumns(giftsAndPayments),
+  ...giftHeaderColumns,
   // Shared donor display names + priorities + anonymous/owner helpers
   // (see lib/donorJoinSelect.ts) — identical to the opportunities route.
   ...donorDisplayColumns,
@@ -543,7 +556,7 @@ router.post(
         // (legacy `type` stays the read source this phase).
         loanOrGrant: giftTypeToLoanOrGrant(body.type),
       })
-      .returning();
+      .returning(giftHeaderColumns);
     await applyDerivedOppFieldsMany(row?.opportunityId);
     await applyGiftQbTieMany(row?.id);
     if (row) {
@@ -592,7 +605,7 @@ router.patch(
       .update(giftsAndPayments)
       .set({ ...giftWrite, updatedAt: new Date() })
       .where(eq(giftsAndPayments.id, id))
-      .returning();
+      .returning(giftHeaderColumns);
     if (!row) return notFound(res, "gift");
     // PATCH may re-point opportunity_id — recompute on both the
     // old and the new pledge so a newly-covered target advances.
@@ -640,14 +653,25 @@ router.post(
 router.post(
   "/gifts-and-payments/:id/archive",
   asyncHandler(async (req, res) => {
-    await archiveOne(req, res, { entity: "gift", table: giftsAndPayments });
+    // Project away the @deprecated `countsTowardGoal` header so the archive
+    // response never serializes the dead column (it persists on the gift table
+    // until the manual prod DROP).
+    await archiveOne(req, res, {
+      entity: "gift",
+      table: giftsAndPayments,
+      responseColumns: giftHeaderColumns,
+    });
   }),
 );
 
 router.post(
   "/gifts-and-payments/:id/unarchive",
   asyncHandler(async (req, res) => {
-    await unarchiveOne(req, res, { entity: "gift", table: giftsAndPayments });
+    await unarchiveOne(req, res, {
+      entity: "gift",
+      table: giftsAndPayments,
+      responseColumns: giftHeaderColumns,
+    });
   }),
 );
 
@@ -1347,10 +1371,11 @@ router.post(
           paymentIntermediaryId: gift.paymentIntermediaryId,
           ownerUserId: gift.ownerUserId,
           designatedToSchool: gift.designatedToSchool || a.schoolRecipientId != null,
-          // Carry the source gift's goal/payment flags onto every split row so
-          // they aren't silently reset to their column defaults.
+          // Carry the source gift's payment-expected flag onto every split row so
+          // it isn't silently reset to the column default. (Goal-counting now
+          // lives on the allocation, which is re-pointed onto the new gift below,
+          // so it carries over automatically.)
           paymentExpected: gift.paymentExpected,
-          countsTowardGoal: gift.countsTowardGoal,
           tags: gift.tags,
         });
         // Re-point the allocation (a money-trail row — keep its id) onto the new

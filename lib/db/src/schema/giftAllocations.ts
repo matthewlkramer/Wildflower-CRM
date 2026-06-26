@@ -58,6 +58,17 @@ export const giftAllocations = pgTable("gift_allocations", {
   // both count. Never affects pledge paid-amount / opportunity-status
   // derivation (those keep summing ALL allocations). See _enums.ts.
   reimbursableShare: reimbursableShareEnum("reimbursable_share"),
+  // Per-allocation "counts toward fundraising goal" flag. When false this
+  // allocation's money is excluded from the goal/received analytics rollups
+  // (e.g. a government reimbursement that doesn't advance the fundraising
+  // goal). This is the SOLE home of the goal-counting signal — it lives at the
+  // allocation level, NOT on the gift header or the staged payment (both of
+  // those columns are deprecated; see giftsAndPayments / stagedPayments).
+  // Defaults true (ordinary money counts). For QuickBooks auto-created gifts the
+  // flag is seeded from isGovernmentReimbursement; for manual gifts a fundraiser
+  // sets it by hand. Never affects pledge paid-amount / opportunity-status
+  // derivation (those keep summing ALL allocations).
+  countsTowardGoal: boolean("counts_toward_goal").default(true).notNull(),
   // RESTRICT: see giftsAndPayments.schoolRecipientId rationale.
   schoolRecipientId: text("school_recipient_id").references(() => schools.id, {
     onDelete: "restrict",

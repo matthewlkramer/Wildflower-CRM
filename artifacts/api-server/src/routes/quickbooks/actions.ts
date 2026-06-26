@@ -20,14 +20,14 @@ import {
   SetStagedPaymentEntityBody,
   SetStagedPaymentFundingSourceBody,
   SetStagedPaymentNeedsResearchBody,
-  SetStagedPaymentSyncGapBody,
   GroupStagedPaymentsBody,
   UngroupStagedPaymentsBody,
 } from "@workspace/api-zod";
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import { applyPaymentApplication } from "../../lib/paymentApplications";
-import { respondInvariantFailure } from "./shared";
+import { respondInvariantFailure, stagedReturnColumns } from "./shared";
+import { giftHeaderColumns } from "../giftsAndPayments";
 
 const router: IRouter = Router();
 
@@ -90,7 +90,7 @@ router.post(
       .where(
         and(eq(stagedPayments.id, id), eq(stagedPayments.status, "pending")),
       )
-      .returning();
+      .returning(stagedReturnColumns);
     if (!row) {
       res.status(409).json({
         error: "not_pending",
@@ -185,7 +185,6 @@ router.post(
               individualGiverPersonId: donor.individualGiverPersonId,
               householdId: donor.householdId,
               matchedPaymentIntermediaryId: locked.matchedPaymentIntermediaryId,
-              countsTowardGoal: locked.countsTowardGoal,
             },
             user.id,
           ),
@@ -246,7 +245,7 @@ router.post(
     await applyGiftQbTieMany(giftId);
 
     const [gift] = await db
-      .select()
+      .select(giftHeaderColumns)
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, giftId));
     res.status(201).json({ gift, stagedPaymentId: id });
@@ -287,7 +286,7 @@ router.post(
       .where(
         and(eq(stagedPayments.id, id), eq(stagedPayments.status, "pending")),
       )
-      .returning();
+      .returning(stagedReturnColumns);
     if (!row) {
       res.status(409).json({
         error: "not_pending",
@@ -331,7 +330,7 @@ router.post(
       .where(
         and(eq(stagedPayments.id, id), eq(stagedPayments.status, "excluded")),
       )
-      .returning();
+      .returning(stagedReturnColumns);
     if (!row) {
       res.status(409).json({
         error: "not_excluded",
@@ -391,7 +390,7 @@ router.post(
           sql`${stagedPayments.status} IN ('pending', 'excluded')`,
         ),
       )
-      .returning();
+      .returning(stagedReturnColumns);
     if (!row) {
       res.status(409).json({
         error: "not_excludable",
@@ -454,7 +453,7 @@ router.post(
       .update(stagedPayments)
       .set({ entityId, entitySource: "manual", updatedAt: new Date() })
       .where(eq(stagedPayments.id, id))
-      .returning();
+      .returning(stagedReturnColumns);
     res.json(row);
   }),
 );
@@ -496,7 +495,7 @@ router.post(
         updatedAt: new Date(),
       })
       .where(eq(stagedPayments.id, id))
-      .returning();
+      .returning(stagedReturnColumns);
     res.json(row);
   }),
 );
@@ -532,44 +531,7 @@ router.post(
       .update(stagedPayments)
       .set({ needsResearch: parsed.data.needsResearch, updatedAt: new Date() })
       .where(eq(stagedPayments.id, id))
-      .returning();
-    res.json(row);
-  }),
-);
-
-// ─── POST /staged-payments/:id/set-sync-gap ────────────────────────────────
-// Reviewer flags (or clears) a staged payment as a "sync gap" — the money
-// already exists in the CRM as a gift but was missing from the QuickBooks
-// export, so it should be reconciled once the export catches up. A PURE
-// annotation — orthogonal to reconcile status, so allowed on a row in any
-// state, and with no side effects on matching / status / reconciliation. Never
-// auto-derived. Mirrors set-needs-research. Body: { syncGap: boolean }.
-router.post(
-  "/staged-payments/:id/set-sync-gap",
-  asyncHandler(async (req, res) => {
-    const id = paramId(req);
-    const parsed = SetStagedPaymentSyncGapBody.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "validation_error",
-        message: "Request validation failed",
-        details: parsed.error.flatten(),
-      });
-      return;
-    }
-
-    const existing = await db
-      .select({ id: stagedPayments.id })
-      .from(stagedPayments)
-      .where(eq(stagedPayments.id, id))
-      .then((r) => r[0]);
-    if (!existing) return notFound(res, "staged payment");
-
-    const [row] = await db
-      .update(stagedPayments)
-      .set({ syncGap: parsed.data.syncGap, updatedAt: new Date() })
-      .where(eq(stagedPayments.id, id))
-      .returning();
+      .returning(stagedReturnColumns);
     res.json(row);
   }),
 );

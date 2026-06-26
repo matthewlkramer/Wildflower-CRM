@@ -28,6 +28,8 @@ import {
   confirmPaymentApplicationsForPayment,
   qbLedgerExistsForGiftExcludingPayment,
 } from "../../lib/paymentApplications";
+import { stagedReturnColumns } from "./shared";
+import { giftHeaderColumns } from "../giftsAndPayments";
 
 const router: IRouter = Router();
 
@@ -80,7 +82,7 @@ router.post(
     }
 
     const gift = await db
-      .select()
+      .select(giftHeaderColumns)
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, giftId))
       .then((r) => r[0]);
@@ -281,7 +283,7 @@ router.post(
     }
 
     const gift = await db
-      .select()
+      .select(giftHeaderColumns)
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, giftId))
       .then((r) => r[0]);
@@ -758,7 +760,6 @@ router.post(
                 householdId: remainder.householdId ?? null,
                 matchedPaymentIntermediaryId:
                   locked.matchedPaymentIntermediaryId,
-                countsTowardGoal: locked.countsTowardGoal,
               },
               user.id,
             ),
@@ -1014,7 +1015,7 @@ router.post(
                  OR (${stagedPayments.status} = 'approved' AND ${stagedPayments.autoApplied} = true))`,
           ),
         )
-        .returning();
+        .returning(stagedReturnColumns);
       // Promote auto-applied (system) ledger rows for this payment to
       // system_confirmed; no-op when the row wasn't confirmable or had none.
       if (updated) {
@@ -1076,7 +1077,7 @@ router.post(
       .where(
         and(eq(stagedPayments.id, id), eq(stagedPayments.status, "pending")),
       )
-      .returning();
+      .returning(stagedReturnColumns);
     if (!row) {
       res.status(409).json({
         error: "not_pending",

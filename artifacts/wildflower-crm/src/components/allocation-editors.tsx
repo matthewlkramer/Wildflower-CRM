@@ -1183,6 +1183,7 @@ type GiftFormState = CodingFormState & {
   formalRegionalRestriction: boolean;
   formalFundUseRestriction: boolean;
   reimbursableShare: string;
+  countsTowardGoal: boolean;
   fundableProjectId: string;
   schoolRecipientId: string;
   spendingStart: string;
@@ -1200,6 +1201,7 @@ function giftStateFrom(a: GiftAllocation | null): GiftFormState {
     formalRegionalRestriction: a?.formalRegionalRestriction ?? false,
     formalFundUseRestriction: a?.formalFundUseRestriction ?? false,
     reimbursableShare: a?.reimbursableShare ?? "",
+    countsTowardGoal: a?.countsTowardGoal ?? true,
     fundableProjectId: a?.fundableProjectId ?? "",
     schoolRecipientId: a?.schoolRecipientId ?? "",
     spendingStart: a?.spendingStart ?? "",
@@ -1255,6 +1257,7 @@ function GiftAllocationDialog({
         formalRegionalRestriction: s.formalRegionalRestriction,
         formalFundUseRestriction: s.formalFundUseRestriction,
         reimbursableShare: (noneToNull(s.reimbursableShare) as ReimbursableShare | null) ?? null,
+        countsTowardGoal: s.countsTowardGoal,
         fundableProjectId: noneToNull(s.fundableProjectId),
         schoolRecipientId: emptyToNull(s.schoolRecipientId),
         spendingStart: emptyToNull(s.spendingStart),
@@ -1266,6 +1269,7 @@ function GiftAllocationDialog({
     const body: CreateGiftAllocationBody = {
       formalRegionalRestriction: s.formalRegionalRestriction,
       formalFundUseRestriction: s.formalFundUseRestriction,
+      countsTowardGoal: s.countsTowardGoal,
     };
     if (amount != null) body.subAmount = String(amount);
     if (noneToNull(s.entityId)) body.entityId = s.entityId;
@@ -1365,6 +1369,16 @@ function GiftAllocationDialog({
               options={REIMBURSABLE_SHARE_OPTIONS}
             />
             <p className="mt-1 text-xs text-muted-foreground">{REIMBURSABLE_SHARE_HINT}</p>
+          </DialogField>
+
+          <DialogField label="Goal tracking" htmlFor="ga-counts-goal">
+            <CheckboxField
+              id="ga-counts-goal"
+              checked={s.countsTowardGoal}
+              onCheckedChange={(v) => set("countsTowardGoal", v)}
+              label="Counts toward goal"
+              hint="Turn off for real money that shouldn't count against fundraising goals (e.g. government reimbursement)."
+            />
           </DialogField>
 
           <MoreDetails>

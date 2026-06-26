@@ -461,7 +461,6 @@ async function mintGiftFromEvidence(
             householdId: donor.householdId,
             matchedPaymentIntermediaryId:
               body.paymentIntermediaryId ?? staged.matchedPaymentIntermediaryId,
-            countsTowardGoal: staged.countsTowardGoal,
           },
           user.id,
         ),

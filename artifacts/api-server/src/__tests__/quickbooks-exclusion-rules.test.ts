@@ -157,7 +157,7 @@ describe("classifyStagedPayment", () => {
   });
 
   it("flags the funder 'CSP' as a government reimbursement (exact, case-insensitive)", () => {
-    // The standalone detector marks the row so its eventual gift mints with
+    // The standalone detector marks the row so the gift's allocation mints with
     // counts_toward_goal = false (real money that doesn't advance the goal).
     expect(isGovernmentReimbursement({ ...base, payerName: "CSP" })).toBe(true);
     expect(isGovernmentReimbursement({ ...base, payerName: "  csp  " })).toBe(

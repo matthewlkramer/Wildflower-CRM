@@ -73,6 +73,14 @@ export interface ArchiveOneConfig {
   /** Drizzle table (must have `id`, `archivedAt`, `updatedAt`). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   table: any;
+  /**
+   * Optional column projection for the response `.returning()`. Pass a scrubbed
+   * column map (e.g. `giftHeaderColumns`) for a table that carries an
+   * @deprecated column which must never be serialized into an API response.
+   * Defaults to all columns.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  responseColumns?: Record<string, any>;
 }
 
 /**
@@ -90,11 +98,13 @@ export async function archiveOne(
   const id = paramId(req);
   // Update + audit row commit atomically (mirrors the bulk_operations pattern).
   const row = await db.transaction(async (tx) => {
-    const [updated] = await tx
+    const upd = tx
       .update(cfg.table)
       .set({ archivedAt: now, updatedAt: now })
-      .where(eq(cfg.table.id, id))
-      .returning();
+      .where(eq(cfg.table.id, id));
+    const [updated] = cfg.responseColumns
+      ? await upd.returning(cfg.responseColumns)
+      : await upd.returning();
     if (!updated) return undefined;
     await recordAudit(tx, req, {
       action: "archive",
@@ -124,11 +134,13 @@ export async function unarchiveOne(
   const now = new Date();
   const id = paramId(req);
   const row = await db.transaction(async (tx) => {
-    const [updated] = await tx
+    const upd = tx
       .update(cfg.table)
       .set({ archivedAt: null, updatedAt: now })
-      .where(eq(cfg.table.id, id))
-      .returning();
+      .where(eq(cfg.table.id, id));
+    const [updated] = cfg.responseColumns
+      ? await upd.returning(cfg.responseColumns)
+      : await upd.returning();
     if (!updated) return undefined;
     await recordAudit(tx, req, {
       action: "unarchive",

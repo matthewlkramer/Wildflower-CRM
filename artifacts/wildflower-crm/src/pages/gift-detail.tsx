@@ -503,16 +503,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                   onSave={(next) => patch({ paymentExpected: next ?? true })}
                 />
               </Row>
-              <Row label="Counts toward goal">
-                <InlineEditBoolean
-                  label="Counts toward goal"
-                  testIdBase="gift-counts-toward-goal"
-                  value={gift.countsTowardGoal}
-                  allowNull={false}
-                  display={gift.countsTowardGoal ? "Yes" : "No"}
-                  onSave={(next) => patch({ countsTowardGoal: next ?? true })}
-                />
-              </Row>
               <Row label="Needs research">
                 <InlineEditBoolean
                   label="Needs research"

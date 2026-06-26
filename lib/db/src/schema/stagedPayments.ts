@@ -322,22 +322,19 @@ export const stagedPayments = pgTable(
     // reconcile status / matching — a pure annotation set via set-needs-research.
     needsResearch: boolean("needs_research").notNull().default(false),
 
-    // Plain human-set flag: this QuickBooks money exists in the CRM as a gift but
-    // was missing from the QuickBooks export (a "sync gap") — flagged so a
-    // reviewer can come back and reconcile once the export catches up. Like
-    // needsResearch it is a PURE annotation: never auto-derived, orthogonal to
-    // reconcile status, and with NO side effects on matching / status — set via
-    // set-sync-gap.
+    // @deprecated — the "sync gap" annotation was removed end-to-end (no API,
+    // no UI). The column is retained ONLY so dev `drizzle-kit push` stays purely
+    // additive and prod Publish never proposes a destructive auto-drop (prod
+    // invariant #7). The physical DROP ships as a reviewed, human-applied SQL
+    // file in lib/db/migrations/. No code reads or writes this column anymore.
     syncGap: boolean("sync_gap").notNull().default(false),
 
-    // Derived "doesn't count toward fundraising goal" hint. Set to false at
-    // ingest / reclassify when the money is detected as a GOVERNMENT
-    // REIMBURSEMENT (the "CSP" payer marker) — real money that flows into the
-    // queue like any other but, when a fundraiser records it as a gift, mints the
-    // gift with `counts_toward_goal = false` (reusing the existing gift flag +
-    // analytics rollups). Defaults true (ordinary money counts). Read-only
-    // derived QB attribution, not review state — the re-runnable classifier
-    // refreshes it on every `auto` row, exactly like entity / funding source.
+    // @deprecated — the "counts toward goal" signal moved to gift_allocations
+    // (per-allocation). It is no longer read or written on the staged payment;
+    // QuickBooks auto-create now seeds the new allocation's flag directly from
+    // isGovernmentReimbursement(...). Retained ONLY so dev push stays additive and
+    // prod Publish never auto-drops it (prod invariant #7); the physical DROP
+    // ships as a reviewed, human-applied SQL file in lib/db/migrations/.
     countsTowardGoal: boolean("counts_toward_goal").notNull().default(true),
 
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {

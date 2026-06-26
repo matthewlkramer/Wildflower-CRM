@@ -48,6 +48,7 @@ import {
   adjustSingleAllocationOrFlag,
 } from "../lib/giftFinalAmount";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
+import { giftHeaderColumns } from "./giftsAndPayments";
 import { logger } from "../lib/logger";
 import {
   syncStripe,
@@ -693,7 +694,7 @@ router.post(
     await applyGiftQbTieMany(giftId);
 
     const [gift] = await db
-      .select()
+      .select(giftHeaderColumns)
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, giftId));
     res.status(201).json({ gift, stagedPaymentId: id });

@@ -42,7 +42,6 @@ import type {
   SetStagedPaymentEntityBody,
   SetStagedPaymentFundingSourceBody,
   SetStagedPaymentNeedsResearchBody,
-  SetStagedPaymentSyncGapBody,
   SplitStagedPaymentBody,
   SplitStagedPaymentResponse,
   StagedGiftResponse,
@@ -798,84 +797,6 @@ export const useSetStagedPaymentNeedsResearch = <TError = ErrorType<BadRequestRe
         TContext
       > => {
       return useMutation(getSetStagedPaymentNeedsResearchMutationOptions(options));
-    }
-    /**
- * Reviewer flags a staged QuickBooks payment as a sync gap — the money
-already exists in the CRM as a gift but was missing from the QuickBooks
-export, so it should be reconciled once the export catches up. A pure
-annotation: orthogonal to reconcile status, allowed on a row in any
-state, and never auto-derived. Flipping it has no side effects on
-matching, status, or reconciliation.
-
- * @summary Set or clear the plain human "sync gap" flag on a staged payment.
- */
-export const getSetStagedPaymentSyncGapUrl = (id: string,) => {
-
-
-  
-
-  return `/api/staged-payments/${id}/set-sync-gap`
-}
-
-export const setStagedPaymentSyncGap = async (id: string,
-    setStagedPaymentSyncGapBody: SetStagedPaymentSyncGapBody, options?: RequestInit): Promise<StagedPayment> => {
-  
-  return customFetch<StagedPayment>(getSetStagedPaymentSyncGapUrl(id),
-  {      
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      setStagedPaymentSyncGapBody,)
-  }
-);}
-  
-
-
-
-export const getSetStagedPaymentSyncGapMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStagedPaymentSyncGap>>, TError,{id: string;data: BodyType<SetStagedPaymentSyncGapBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof setStagedPaymentSyncGap>>, TError,{id: string;data: BodyType<SetStagedPaymentSyncGapBody>}, TContext> => {
-
-const mutationKey = ['setStagedPaymentSyncGap'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-      
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStagedPaymentSyncGap>>, {id: string;data: BodyType<SetStagedPaymentSyncGapBody>}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  setStagedPaymentSyncGap(id,data,requestOptions)
-        }
-
-
-
-        
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type SetStagedPaymentSyncGapMutationResult = NonNullable<Awaited<ReturnType<typeof setStagedPaymentSyncGap>>>
-    export type SetStagedPaymentSyncGapMutationBody = BodyType<SetStagedPaymentSyncGapBody>
-    export type SetStagedPaymentSyncGapMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
-
-    /**
- * @summary Set or clear the plain human "sync gap" flag on a staged payment.
- */
-export const useSetStagedPaymentSyncGap = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStagedPaymentSyncGap>>, TError,{id: string;data: BodyType<SetStagedPaymentSyncGapBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof setStagedPaymentSyncGap>>,
-        TError,
-        {id: string;data: BodyType<SetStagedPaymentSyncGapBody>},
-        TContext
-      > => {
-      return useMutation(getSetStagedPaymentSyncGapMutationOptions(options));
     }
     /**
  * Human-driven counterpart to the insert-time auto-exclude: files a staged

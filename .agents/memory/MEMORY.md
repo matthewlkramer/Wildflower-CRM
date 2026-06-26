@@ -116,8 +116,6 @@
 - [Allocation school link (pledge vs gift)](allocation-school-link.md) — both carry schoolRecipientId FK; gift name via server display_usage trigger, pledge resolves client-side (no trigger by design); "School recipient" is a raw Input not a picker.
 - [Airtable→schools sync & school-recipient FK](school-sync-recipient-fk.md) — school recipient is allocation-level ONLY (no gifts_and_payments.school_recipient_id); sync upserts before stale-check so an error status can hide already-synced data; token prefers AIRTABLE_API_TOKEN.
 - [List-page default sort order](list-page-default-order.md) — server default order must mirror the displayed personDisplayName + end with an id tiebreaker (stable offset pagination).
-<<<<<<< HEAD
 - [FY Report page](fy-report-page.md) — lists records behind the dashboard goal bar; report route must mirror fyMetricsFor bucket semantics in lockstep or totals stop reconciling; entity scope from global header filter.
-=======
 - [Cleanup queue flag-for-research](cleanup-queue-flag-for-research.md) — in-app POST /cleanup-queue mints needs_research items; idempotent via natural-key onConflictDoNothing, deterministic id cleanup_nr_<targetId> shared with seed 0077.
->>>>>>> e868f75 (Add in-app "Flag for research" action (Task #437))
+- [Deprecated-column response leaks (no Zod stripping)](deprecated-column-response-leak.md) — responses are plain res.json, so a @deprecated-but-still-physical Drizzle column leaks through EVERY full-row select that reaches the client; route all response reads through ONE scrubbed projection.

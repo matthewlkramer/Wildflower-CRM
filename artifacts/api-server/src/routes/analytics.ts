@@ -179,9 +179,9 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
         // never counted as payments — keep them out of `paid` so `committed`
         // (pledged − paid) doesn't get artificially reduced by dead money.
         isNull(giftsAndPayments.archivedAt),
-        // Gifts flagged out of goal tracking neither add to `received` nor
+        // Allocations flagged out of goal tracking neither add to `received` nor
         // pay down `committed`, so the goal numbers stay internally consistent.
-        eq(giftsAndPayments.countsTowardGoal, true),
+        eq(giftAllocations.countsTowardGoal, true),
         giftAllocCountsTowardGoal,
         hasEntityFilter ? inArray(giftAllocations.entityId, entityIds!) : undefined,
       ),
@@ -245,7 +245,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
         and(
           eq(giftAllocations.grantYear, fy.id),
           isNull(giftsAndPayments.archivedAt),
-          eq(giftsAndPayments.countsTowardGoal, true),
+          eq(giftAllocations.countsTowardGoal, true),
           giftAllocCountsTowardGoal,
           hasEntityFilter
             ? inArray(giftAllocations.entityId, entityIds!)
@@ -470,11 +470,11 @@ router.get(
         .where(
           and(
             eq(giftAllocations.grantYear, fyId),
-            // Mirror the dashboard tile: archived gifts and gifts flagged out
-            // of goal tracking don't count, so the drill-down rows (and their
+            // Mirror the dashboard tile: archived gifts and allocations flagged
+            // out of goal tracking don't count, so the drill-down rows (and their
             // API-edge total) stay in agreement with the tile.
             isNull(giftsAndPayments.archivedAt),
-            eq(giftsAndPayments.countsTowardGoal, true),
+            eq(giftAllocations.countsTowardGoal, true),
             giftAllocCountsTowardGoal,
             entityIdParam ? eq(giftAllocations.entityId, entityIdParam) : undefined,
           ),
@@ -650,7 +650,7 @@ router.get(
         and(
           eq(giftAllocations.grantYear, fyId),
           isNull(giftsAndPayments.archivedAt),
-          eq(giftsAndPayments.countsTowardGoal, true),
+          eq(giftAllocations.countsTowardGoal, true),
           giftAllocCountsTowardGoal,
           hasEntityFilter ? inArray(giftAllocations.entityId, entityIds) : undefined,
         ),
@@ -689,7 +689,7 @@ router.get(
           and(
             eq(giftAllocations.grantYear, fyId),
             isNull(giftsAndPayments.archivedAt),
-            eq(giftsAndPayments.countsTowardGoal, true),
+            eq(giftAllocations.countsTowardGoal, true),
             giftAllocCountsTowardGoal,
             giftCatFilter,
             hasEntityFilter ? inArray(giftAllocations.entityId, entityIds) : undefined,
