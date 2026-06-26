@@ -50,3 +50,22 @@ up silently behind both the schema source and the hand-migrated prod DB.
    A clean additive diff lets Publish create the new tables itself — do NOT
    hand-apply the new *schema* to prod for this (only the pending *data* seeds +
    backfills run by hand afterward).
+
+## Corollary: publishing BEFORE a not-yet-applied RENAME migration is harmless when dev is equally behind
+
+A user publishing *before* running the mandatory "rename-must-precede-Publish"
+migration sounds catastrophic but is a **no-op** when the dev DB never got the
+rename either (post-merge push aborted on it). Publish diffs dev↔prod; both still
+hold the OLD column (e.g. `reimbursable_share`), so there is **nothing to diff —
+no drop+add, no data loss**. The real damage is the opposite: prod is now missing
+every column the freshly-deployed code expects, so allocation-touching endpoints
+500 while the rest of the app serves fine.
+
+**Recovery (agent can't write prod):** the deployed code is already correct — it
+just needs the columns. So (a) reconcile the **dev** DB forward by applying the
+pending idempotent migration files to dev (rename happens in place, no loss — this
+also un-breaks the dev app, which had the identical drift), and (b) have the user
+apply the SAME files to **prod by hand**, rename file FIRST. That alone un-breaks
+the live app — **no re-publish needed**. **Footgun after step (a):** dev is now
+ahead of prod, so a Publish in the gap would finally propose the destructive
+rename — tell the user NOT to re-publish until the prod SQL has run.
