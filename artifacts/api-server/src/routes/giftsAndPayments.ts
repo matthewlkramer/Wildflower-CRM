@@ -187,6 +187,15 @@ router.get(
     // Date-received window (inclusive) for the reconciler's amount/date search.
     if (q.dateAfter) filters.push(gte(giftsAndPayments.dateReceived, q.dateAfter));
     if (q.dateBefore) filters.push(lte(giftsAndPayments.dateReceived, q.dateBefore));
+    // Exact amount filter (major units) for the broad gift-search dialog —
+    // numeric equality so "480" matches a stored "480.00". A non-numeric value
+    // is silently ignored (never a 500).
+    if (q.amount != null && q.amount !== "") {
+      const amt = Number(q.amount);
+      if (Number.isFinite(amt)) {
+        filters.push(sql`(${giftsAndPayments.amount})::numeric = ${amt}::numeric`);
+      }
+    }
     // Linked-to-QuickBooks filter — whether the gift has any QuickBooks
     // cash-application ledger row (T003 cutover). Correlated EXISTS, no join.
     if (q.linkedToQuickbooks === "linked") {

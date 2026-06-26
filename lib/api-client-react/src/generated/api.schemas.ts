@@ -7076,6 +7076,10 @@ dateAfter?: string;
  */
 dateBefore?: string;
 /**
+ * Exact gift amount (major units) to filter by, e.g. `480` or `480.00`. Numeric-equality match on the gift's `amount`; non-numeric values are ignored.
+ */
+amount?: string;
+/**
  * Filter by whether a QuickBooks staged payment is reconciled to / created this gift (`linked`) or not (`unlinked`).
  */
 linkedToQuickbooks?: ListGiftsAndPaymentsLinkedToQuickbooks;

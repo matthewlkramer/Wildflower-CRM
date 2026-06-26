@@ -64,6 +64,10 @@ import {
 } from "@/components/record-layout";
 import { GiftPledgeLink, type PledgeDonorScope } from "@/components/pledge-picker";
 import { DonorboxEnrichmentPanel } from "@/components/donorbox-enrichment-panel";
+import {
+  GiftSearchDialog,
+  giftDonorName as giftRowDonorName,
+} from "@/components/gift-search-dialog";
 import { laneBadges } from "@/lib/reconciliation";
 import { type ReconciliationLanes } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -118,6 +122,16 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [splitOpen, setSplitOpen] = useState(false);
+  // "Matching gift" editor — link this gift to the gift it matches (e.g. a
+  // corporate match → the employee's original gift) via giftBeingMatchedId.
+  const [matchOpen, setMatchOpen] = useState(false);
+  const matchedGiftId = gift.giftBeingMatchedId ?? "";
+  const matchedGiftQ = useGetGiftOrPayment(matchedGiftId, {
+    query: {
+      queryKey: getGetGiftOrPaymentQueryKey(matchedGiftId),
+      enabled: !!matchedGiftId,
+    },
+  });
   const userNames = useUserNameMap();
   const ownerDisplay = gift.ownerUserId
     ? (userNames.get(gift.ownerUserId) ?? gift.ownerUserId)
@@ -712,16 +726,63 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
             />
           </RelatedCard>
 
-          {gift.giftBeingMatchedId ? (
-            <RelatedCard title="Related">
-              <RelatedRow
-                name="Matching gift"
-                href={`/gifts/${gift.giftBeingMatchedId}`}
-                tone="primary"
-                sub={gift.giftBeingMatchedId}
-              />
-            </RelatedCard>
-          ) : null}
+          <RelatedCard
+            title="Matching gift"
+            empty={false}
+            action={
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs"
+                onClick={() => setMatchOpen(true)}
+              >
+                {gift.giftBeingMatchedId ? "Change" : "Link a gift"}
+              </Button>
+            }
+          >
+            {gift.giftBeingMatchedId ? (
+              <div className="space-y-1">
+                <RelatedRow
+                  name={
+                    matchedGiftQ.data
+                      ? giftRowDonorName(matchedGiftQ.data)
+                      : "Matching gift"
+                  }
+                  href={`/gifts/${gift.giftBeingMatchedId}`}
+                  tone="primary"
+                  sub={
+                    matchedGiftQ.data
+                      ? [
+                          matchedGiftQ.data.dateReceived
+                            ? formatDate(matchedGiftQ.data.dateReceived)
+                            : null,
+                          matchedGiftQ.data.name,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || undefined
+                      : gift.giftBeingMatchedId
+                  }
+                  amount={
+                    matchedGiftQ.data
+                      ? formatCurrency(matchedGiftQ.data.amount ?? "0")
+                      : undefined
+                  }
+                />
+                <button
+                  type="button"
+                  className="px-2 text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  onClick={() => patch({ giftBeingMatchedId: null })}
+                >
+                  Clear matching gift
+                </button>
+              </div>
+            ) : (
+              <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                Not matching another gift. Link the gift this one matches — e.g.
+                a corporate match → the employee&apos;s original gift.
+              </p>
+            )}
+          </RelatedCard>
         </>
       }
     />
@@ -730,6 +791,18 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       onOpenChange={setSplitOpen}
       gift={gift}
       onDone={(pledgeId) => navigate(`/pledges/${pledgeId}`)}
+    />
+    <GiftSearchDialog
+      open={matchOpen}
+      onOpenChange={setMatchOpen}
+      excludeGiftId={gift.id}
+      title="Link a matching gift"
+      description="Find the gift this one matches — e.g. a corporate match → the employee's original gift."
+      footnote="This records that this gift matches the chosen gift. It does not move any money."
+      onPick={(g) => {
+        patch({ giftBeingMatchedId: g.id });
+        setMatchOpen(false);
+      }}
     />
     </>
   );

@@ -94,6 +94,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import {
+  GiftSearchDialog,
+  giftDonorName as giftRowDonorName,
+} from "@/components/gift-search-dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   laneBadges,
@@ -253,6 +257,10 @@ export default function ReconciliationWorkbench() {
   const [retargetCard, setRetargetCard] = useState<ReconciliationCard | null>(
     null,
   );
+  // The card whose payment is being matched to an existing gift via the broad
+  // "Search for a gift…" dialog (vs RetargetDialog's card-scoped candidates).
+  const [searchGiftCard, setSearchGiftCard] =
+    useState<ReconciliationCard | null>(null);
   const [donorCard, setDonorCard] = useState<ReconciliationCard | null>(null);
   const [splitCard, setSplitCard] = useState<ReconciliationCard | null>(null);
   const [excludeCard, setExcludeCard] = useState<ReconciliationCard | null>(
@@ -485,6 +493,7 @@ export default function ReconciliationWorkbench() {
         body: res.body,
       });
       setRetargetCard(null);
+      setSearchGiftCard(null);
     },
     [deriveConfirmBody, stage, toast],
   );
@@ -858,6 +867,7 @@ export default function ReconciliationWorkbench() {
         onConfirm={() => confirmAndApply(card)}
         onReject={() => (isCharge ? handleChargeReject(card) : stageReject(card))}
         onRetarget={() => setRetargetCard(card)}
+        onSearchGift={() => setSearchGiftCard(card)}
         onCreateGift={() => handleCreateGift(card)}
         onChangeDonor={() => setDonorCard(card)}
         onExclude={() => setExcludeCard(card)}
@@ -1045,6 +1055,28 @@ export default function ReconciliationWorkbench() {
           onPick={(gift) => stageRetarget(retargetCard, gift)}
         />
       )}
+      {searchGiftCard && (
+        <GiftSearchDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setSearchGiftCard(null);
+          }}
+          busy={busy}
+          title="Match payment to an existing gift"
+          description="Search all gifts and link this QuickBooks payment to the one recording the same money."
+          footnote="Approving will match this payment to the chosen gift (same money) and adopt that gift's donor."
+          onPick={(g) =>
+            stageRetarget(searchGiftCard, {
+              nodeType: "gift",
+              id: g.id,
+              label: giftRowDonorName(g),
+              sublabel: g.name ?? null,
+              amount: g.amount ?? null,
+              date: g.dateReceived ?? null,
+            })
+          }
+        />
+      )}
 
       {/* Split-across-gifts editor */}
       {splitCard && (
@@ -1122,6 +1154,7 @@ function ResolveMenu({
   onConfirm,
   onReject,
   onRetarget,
+  onSearchGift,
   onCreateGift,
   onChangeDonor,
   onExclude,
@@ -1136,6 +1169,7 @@ function ResolveMenu({
   onConfirm: () => void;
   onReject: () => void;
   onRetarget: () => void;
+  onSearchGift: () => void;
   onCreateGift: () => void;
   onChangeDonor: () => void;
   onExclude: () => void;
@@ -1172,6 +1206,11 @@ function ResolveMenu({
           MI(onRetarget, "Re-target match", "link to a different gift")}
         {!hasGift &&
           MI(onCreateGift, "Create gift", "build a new gift from this payment")}
+        {MI(
+          onSearchGift,
+          "Search for a gift…",
+          "match this payment to an existing gift (same money)",
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
           Classify
@@ -1240,6 +1279,7 @@ function ReconCard({
   onConfirm,
   onReject,
   onRetarget,
+  onSearchGift,
   onCreateGift,
   onChangeDonor,
   onExclude,
@@ -1259,6 +1299,7 @@ function ReconCard({
   onConfirm: () => void;
   onReject: () => void;
   onRetarget: () => void;
+  onSearchGift: () => void;
   onCreateGift: () => void;
   onChangeDonor: () => void;
   onExclude: () => void;
@@ -1713,6 +1754,7 @@ function ReconCard({
                 onConfirm={onConfirm}
                 onReject={onReject}
                 onRetarget={onRetarget}
+                onSearchGift={onSearchGift}
                 onCreateGift={onCreateGift}
                 onChangeDonor={onChangeDonor}
                 onExclude={onExclude}

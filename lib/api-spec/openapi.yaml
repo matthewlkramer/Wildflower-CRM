@@ -1420,6 +1420,7 @@ paths:
           schema: { type: array, items: { type: string } }
         - { name: dateAfter, in: query, required: false, description: "Keep gifts with dateReceived on/after this date (inclusive).", schema: { type: string, format: date } }
         - { name: dateBefore, in: query, required: false, description: "Keep gifts with dateReceived on/before this date (inclusive).", schema: { type: string, format: date } }
+        - { name: amount, in: query, required: false, description: "Exact gift amount (major units) to filter by, e.g. `480` or `480.00`. Numeric-equality match on the gift's `amount`; non-numeric values are ignored.", schema: { type: string } }
         - { name: linkedToQuickbooks, in: query, required: false, description: "Filter by whether a QuickBooks staged payment is reconciled to / created this gift (`linked`) or not (`unlinked`).", schema: { type: string, enum: [linked, unlinked] } }
         - name: quickbooksTie
           in: query
