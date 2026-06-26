@@ -79,8 +79,6 @@ const navItems: NavEntry[] = [
   { href: "/projections", label: "Projections", icon: LineChart },
   { href: "/reconciliation-workbench", label: "Reconciliation", icon: Scale },
 
-  { href: "/settings", label: "Settings", icon: Settings },
-
   { section: "Admin" },
   { href: "/admin", label: "Admin", icon: Settings },
   { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
@@ -195,6 +193,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <AvatarImage src={user?.imageUrl} />
                 <AvatarFallback>{user?.firstName?.[0] || "U"}</AvatarFallback>
               </Avatar>
+              <Button asChild variant="ghost" size="icon" title="Settings" aria-label="Settings">
+                <Link href="/settings">
+                  <Settings className="h-4 w-4 text-muted-foreground" />
+                </Link>
+              </Button>
               <Button variant="ghost" size="icon" onClick={() => signOut()} title="Sign out" aria-label="Sign out">
                 <LogOut className="h-4 w-4 text-muted-foreground" />
               </Button>
@@ -210,9 +213,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <span className="text-sm font-medium leading-none">{user?.fullName}</span>
                 </div>
               </div>
-              <Button variant="ghost" size="icon" onClick={() => signOut()}>
-                <LogOut className="h-4 w-4 text-muted-foreground" />
-              </Button>
+              <div className="flex items-center">
+                <Button asChild variant="ghost" size="icon" title="Settings" aria-label="Settings">
+                  <Link href="/settings">
+                    <Settings className="h-4 w-4 text-muted-foreground" />
+                  </Link>
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => signOut()} title="Sign out" aria-label="Sign out">
+                  <LogOut className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -256,9 +266,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       </Avatar>
                       <span className="text-sm font-medium leading-none">{user?.fullName}</span>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={() => signOut()}>
-                      <LogOut className="h-4 w-4 text-muted-foreground" />
-                    </Button>
+                    <div className="flex items-center">
+                      <Button asChild variant="ghost" size="icon" title="Settings" aria-label="Settings">
+                        <Link href="/settings" onClick={() => setMobileOpen(false)}>
+                          <Settings className="h-4 w-4 text-muted-foreground" />
+                        </Link>
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => signOut()} title="Sign out" aria-label="Sign out">
+                        <LogOut className="h-4 w-4 text-muted-foreground" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </SheetContent>
