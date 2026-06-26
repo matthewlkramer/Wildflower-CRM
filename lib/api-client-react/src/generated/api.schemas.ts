@@ -1795,6 +1795,8 @@ export interface PledgeAllocation {
   /** Scheduled (false) vs contingent (true) future payment. */
   contingent?: boolean;
   conditions?: string | null;
+  /** Date this allocation's payment is expected. Per-row (a grant year may hold multiple payments); allocations sharing a date roll up into one expected payment. Drives overdue detection. Null = unscheduled. */
+  expectedPaymentDate?: string | null;
   notes?: string | null;
   regionIds?: string[] | null;
   restrictionType?: RestrictionType | null;
@@ -2038,6 +2040,7 @@ export interface CreatePledgeAllocationBody {
   status?: PledgeAllocationStatus;
   contingent?: boolean;
   conditions?: string;
+  expectedPaymentDate?: string;
   notes?: string;
   regionIds?: string[];
   restrictionType?: RestrictionType;
@@ -2064,6 +2067,7 @@ export interface UpdatePledgeAllocationBody {
   status?: PledgeAllocationStatus | null;
   contingent?: boolean;
   conditions?: string | null;
+  expectedPaymentDate?: string | null;
   notes?: string | null;
   regionIds?: string[] | null;
   restrictionType?: RestrictionType | null;

@@ -192,6 +192,7 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "status": zod.enum(['working', 'committed', 'superseded', 'committed_with_conditions', 'superseded_by_pledge', 'superseded_by_gift', 'abandoned']).nullish(),
   "contingent": zod.boolean().optional().describe('Scheduled (false) vs contingent (true) future payment.'),
   "conditions": zod.string().nullish(),
+  "expectedPaymentDate": zod.string().date().nullish().describe('Date this allocation\'s payment is expected. Per-row (a grant year may hold multiple payments); allocations sharing a date roll up into one expected payment. Drives overdue detection. Null = unscheduled.'),
   "notes": zod.string().nullish(),
   "regionIds": zod.array(zod.string()).nullish(),
   "restrictionType": zod.enum(['unrestricted', 'purpose', 'time', 'both', 'unclear', 'na']).describe('CFO restriction taxonomy. \'unclear\' is never silently treated as unrestricted.').nullish(),

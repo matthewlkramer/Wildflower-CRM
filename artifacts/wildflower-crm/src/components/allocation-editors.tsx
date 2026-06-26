@@ -600,12 +600,22 @@ const PLEDGE_HEADERS = [
   { key: "fund", label: "Fund" },
   { key: "usage", label: "Usage" },
   { key: "fy", label: "FY" },
+  { key: "expected", label: "Expected" },
   { key: "regions", label: "Regions" },
   { key: "share", label: "Share" },
   { key: "restriction", label: "Restriction" },
 ];
 
-const GIFT_HEADERS = PLEDGE_HEADERS;
+const GIFT_HEADERS = [
+  { key: "amount", label: "Amount", align: "right" as const },
+  { key: "pct", label: "%", align: "right" as const },
+  { key: "fund", label: "Fund" },
+  { key: "usage", label: "Usage" },
+  { key: "fy", label: "FY" },
+  { key: "regions", label: "Regions" },
+  { key: "share", label: "Share" },
+  { key: "restriction", label: "Restriction" },
+];
 
 // Small badge for a direct/indirect reimbursable-share tag, or an em-dash when
 // untagged. Direct is the visually distinct one since it's excluded from goals.
@@ -652,6 +662,7 @@ type PledgeFormState = CodingFormState & {
   entityId: string;
   intendedUsage: string;
   grantYear: string;
+  expectedPaymentDate: string;
   regionIds: string[];
   formallyRestricted: boolean;
   reimbursableShare: string;
@@ -671,6 +682,7 @@ function pledgeStateFrom(a: PledgeAllocation | null): PledgeFormState {
     entityId: a?.entityId ?? "",
     intendedUsage: a?.intendedUsage ?? "",
     grantYear: a?.grantYear ?? "",
+    expectedPaymentDate: a?.expectedPaymentDate ?? "",
     regionIds: a?.regionIds ?? [],
     formallyRestricted: a?.formallyRestricted ?? false,
     reimbursableShare: a?.reimbursableShare ?? "",
@@ -728,6 +740,7 @@ function PledgeAllocationDialog({
         entityId: noneToNull(s.entityId),
         intendedUsage: (noneToNull(s.intendedUsage) as IntendedUsage | null) ?? null,
         grantYear: noneToNull(s.grantYear),
+        expectedPaymentDate: emptyToNull(s.expectedPaymentDate),
         regionIds: s.regionIds,
         formallyRestricted: s.formallyRestricted,
         reimbursableShare: (noneToNull(s.reimbursableShare) as ReimbursableShare | null) ?? null,
@@ -751,6 +764,7 @@ function PledgeAllocationDialog({
     if (noneToNull(s.entityId)) body.entityId = s.entityId;
     if (noneToNull(s.intendedUsage)) body.intendedUsage = s.intendedUsage as IntendedUsage;
     if (noneToNull(s.grantYear)) body.grantYear = s.grantYear;
+    if (emptyToNull(s.expectedPaymentDate)) body.expectedPaymentDate = s.expectedPaymentDate;
     if (s.regionIds.length) body.regionIds = s.regionIds;
     if (noneToNull(s.reimbursableShare)) body.reimbursableShare = s.reimbursableShare as ReimbursableShare;
     if (noneToNull(s.status)) body.status = s.status as PledgeAllocationStatus;
@@ -829,6 +843,19 @@ function PledgeAllocationDialog({
               onValueChange={(v) => set("grantYear", v)}
               options={fiscalYearOptions}
             />
+          </DialogField>
+          <DialogField label="Expected payment" htmlFor="pa-expected">
+            <Input
+              id="pa-expected"
+              type="date"
+              className="h-8 text-sm"
+              value={s.expectedPaymentDate}
+              onChange={(e) => set("expectedPaymentDate", e.target.value)}
+              data-testid="input-pa-expected-date"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              When this payment is expected. Allocations sharing a date roll up into one expected payment.
+            </p>
           </DialogField>
           <DialogField label="Regions" htmlFor="pa-regions">
             <RegionMultiCombobox
@@ -1119,6 +1146,9 @@ export function PledgeAllocationsEditor({
                 <TableCell>{a.entityId ? entityNameById.get(a.entityId) ?? a.entityId : "—"}</TableCell>
                 <TableCell>{usageLabel(a)}</TableCell>
                 <TableCell className="whitespace-nowrap">{a.grantYear ?? "—"}</TableCell>
+                <TableCell className="whitespace-nowrap" data-testid={`text-opp-alloc-${a.id}-expected`}>
+                  {a.expectedPaymentDate ?? "—"}
+                </TableCell>
                 <TableCell
                   className="max-w-[10rem] truncate"
                   data-testid={`text-opp-alloc-${a.id}-regions`}

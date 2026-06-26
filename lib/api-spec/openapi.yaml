@@ -5414,6 +5414,7 @@ components:
         status:                 { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
         contingent:             { type: boolean, description: "Scheduled (false) vs contingent (true) future payment." }
         conditions:             { type: string, nullable: true }
+        expectedPaymentDate:    { type: string, format: date, nullable: true, description: "Date this allocation's payment is expected. Per-row (a grant year may hold multiple payments); allocations sharing a date roll up into one expected payment. Drives overdue detection. Null = unscheduled." }
         notes:                  { type: string, nullable: true }
         regionIds:              { type: array, items: { type: string }, nullable: true }
         restrictionType:        { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true }
@@ -5452,6 +5453,7 @@ components:
         status:                { $ref: "#/components/schemas/PledgeAllocationStatus" }
         contingent:            { type: boolean }
         conditions:            { type: string }
+        expectedPaymentDate:   { type: string, format: date }
         notes:                 { type: string }
         regionIds:             { type: array, items: { type: string } }
         restrictionType:       { $ref: "#/components/schemas/RestrictionType" }
@@ -5478,6 +5480,7 @@ components:
         status:                { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
         contingent:            { type: boolean }
         conditions:            { type: string, nullable: true }
+        expectedPaymentDate:   { type: string, format: date, nullable: true }
         notes:                 { type: string, nullable: true }
         regionIds:             { type: array, items: { type: string }, nullable: true }
         restrictionType:       { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true }

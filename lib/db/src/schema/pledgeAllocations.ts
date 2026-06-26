@@ -5,6 +5,7 @@ import {
   timestamp,
   boolean,
   numeric,
+  date,
 } from "drizzle-orm/pg-core";
 import {
   pledgeAllocationStatusEnum,
@@ -70,6 +71,12 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   // The free-text `conditions` below describes the contingency when set.
   contingent: boolean("contingent").default(false).notNull(),
   conditions: text("conditions"),
+  // Per-row expected payment date (NOT tranched by grant year — a single fiscal
+  // year can hold multiple payments). Allocations sharing an
+  // expected_payment_date roll up into one "expected payment" with N
+  // allocations. Drives overdue detection on committed/partially-paid pledges.
+  // Nullable = unscheduled.
+  expectedPaymentDate: date("expected_payment_date"),
   notes: text("notes"),
   // Array of regions.id values. Array columns can't carry native FK
   // constraints; the API layer is responsible for validating writes.
@@ -99,6 +106,7 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   index("pledge_allocations_school_recipient_id_idx").on(t.schoolRecipientId),
   index("pledge_allocations_region_ids_gin_idx").using("gin", t.regionIds),
   index("pledge_allocations_grant_year_idx").on(t.grantYear),
+  index("pledge_allocations_expected_payment_date_idx").on(t.expectedPaymentDate),
 ]);
 
 export type PledgeAllocation = typeof pledgeAllocations.$inferSelect;
