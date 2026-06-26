@@ -92,6 +92,14 @@ const donorJoinSelect = {
   quickbooksStagedPaymentId: qbLedgerPaymentIdForGift().as(
     "quickbooks_staged_payment_id",
   ),
+  // Task #448 — settled amount + processor fees derived at read time from the
+  // gift's LINKED payments (QuickBooks + Stripe + non-stripe Donorbox), via the
+  // one shared {settledGross, totalFees} helper. Replaces the deprecated header
+  // processorFee / final_amount_* columns. NULL when nothing has landed yet.
+  derivedSettledAmount: derivedSettledAmountForGift().as(
+    "derived_settled_amount",
+  ),
+  derivedProcessorFee: derivedProcessorFeeForGift().as("derived_processor_fee"),
 };
 import {
   ListGiftsAndPaymentsQueryParams,
@@ -119,6 +127,10 @@ import {
   qbLedgerExistsForGift,
   qbLedgerPaymentIdForGift,
 } from "../lib/paymentApplications";
+import {
+  derivedSettledAmountForGift,
+  derivedProcessorFeeForGift,
+} from "../lib/giftPaymentSummary";
 import { deriveGiftLanes } from "../lib/reconciliationLanes";
 import { rederiveGiftAllocations } from "../lib/revenueCoding";
 import { inArray } from "drizzle-orm";

@@ -143,15 +143,18 @@ export async function stampGiftFinalAmount(
     return { oldAmount, newAmount: oldAmount, changed: false, skipped: false };
   }
 
-  // Stripe GROSS remains authoritative — overwrite the amount + snapshot the
-  // human figure (unchanged from before the ledger rollout). Stripe records the
-  // per-charge fee; the XOR pointer lands on the Stripe charge side.
+  // Stripe settlement (Task #448): the gift's settled amount is now DERIVED at
+  // read time from the linked Stripe charge (gross) + Donorbox/QB ledger — see
+  // giftPaymentSummary. So a Stripe stamp NO LONGER overwrites the human-entered
+  // `amount`; it only records the provenance pointer (deprecated, still read by
+  // transitional reconciliation code until those readers are retired). `amount`,
+  // `processor_fee`, and `original_human_crm_amount` are left untouched so the
+  // entered figure is preserved and any settled≠entered disagreement surfaces in
+  // the reconciliation queue instead of silently rescaling allocations.
+  // changed=false ⇒ callers' adjustSingleAllocationOrFlag no-ops.
   await tx
     .update(giftsAndPayments)
     .set({
-      amount: args.amount,
-      processorFee: args.processorFee ?? null,
-      originalHumanCrmAmount: gift.originalHumanCrmAmount ?? oldAmount,
       finalAmountSource: "stripe",
       finalAmountStripeChargeId: stripeChargeId,
       finalAmountQbStagedPaymentId: null,
@@ -159,12 +162,7 @@ export async function stampGiftFinalAmount(
     })
     .where(eq(giftsAndPayments.id, giftId));
 
-  return {
-    oldAmount,
-    newAmount: args.amount,
-    changed: !amountsEqual(oldAmount, args.amount),
-    skipped: false,
-  };
+  return { oldAmount, newAmount: oldAmount, changed: false, skipped: false };
 }
 
 export interface UnstampArgs {

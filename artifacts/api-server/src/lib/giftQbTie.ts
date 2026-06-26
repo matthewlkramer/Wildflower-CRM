@@ -3,6 +3,7 @@ import { giftsAndPayments } from "@workspace/db/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { amountWithinFeeBand } from "./reconciliationGate";
 import { qbLedgerExistsForGift, qbLedgerSumForGift } from "./paymentApplications";
+import { giftIsOffBooksExpr } from "./giftPaymentSummary";
 
 /**
  * Per-gift QuickBooks-tie derivation (INV-2 / INV-3 / INV-10).
@@ -93,7 +94,7 @@ export async function applyGiftQbTieMany(
     .select({
       id: giftsAndPayments.id,
       giftAmount: giftsAndPayments.amount,
-      offBooks: sql<boolean>`(${giftsAndPayments.offBooksFiscalSponsor} OR ${giftsAndPayments.designatedToSchool} OR NOT ${giftsAndPayments.paymentExpected})`,
+      offBooks: giftIsOffBooksExpr(),
       finalAmountSource: giftsAndPayments.finalAmountSource,
       qbSum: qbLedgerSumForGift(),
       hasQb: qbLedgerExistsForGift(),

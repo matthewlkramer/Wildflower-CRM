@@ -46,42 +46,39 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   dateReceived: date("date_received"),
   paymentMethod: giftPaymentMethodEnum("payment_method"),
   amount: numeric("amount", { precision: 14, scale: 2 }),
-  // Processor fee withheld from this gift (e.g. Stripe's per-charge fee). The
-  // donor is ALWAYS credited the GROSS `amount`; this column records the fee so
-  // net (= amount − processor_fee) can be DERIVED for payout / bank-deposit
-  // reconciliation. Never stored as a separate net column to avoid drift. NULL
-  // for gifts with no processor fee (checks, wires, manual entries, and
-  // QuickBooks-sourced gifts).
+  // @deprecated — the processor fee is no longer stored on the header. It is now
+  // DERIVED at read time as the SUM of the fees of a gift's linked payments
+  // (see giftPaymentSummary.ts: `derivedProcessorFee`), the same way net is
+  // derived. The header column is no longer read or written by application code.
+  // Retained ONLY so dev push stays additive and prod Publish never auto-drops it
+  // (prod invariant #7); the physical DROP ships as a reviewed, human-applied SQL
+  // file in lib/db/migrations/.
   processorFee: numeric("processor_fee", { precision: 14, scale: 2 }),
-  // ── Final-amount provenance ─────────────────────────────────────────
-  // `amount` above is the REAL, FINAL amount of this gift and remains the one
-  // field every downstream rollup reads. These columns record WHERE that final
-  // amount came from, so the CRM gift (the single source of truth) stays tied
-  // forever to its reconciliation evidence (a Stripe charge / a QuickBooks
-  // staged row) WITHOUT that evidence ever becoming a second gift.
-  //
-  // Snapshot of the human-entered amount BEFORE any processor reconciliation
-  // overwrote `amount`. Backfilled = `amount` for every pre-existing gift; NULL
-  // only for a future gift minted directly from a payment (no human amount ever
-  // existed). Lets the UI show "you entered $X, Stripe says $Y".
+  // @deprecated — final-amount provenance moved off the header. The
+  // human-entered `amount` stays the authoritative donor credit; what actually
+  // settled is DERIVED at read time from the gift's linked payments (Stripe
+  // charges / QuickBooks payment_applications / Donorbox) via
+  // giftPaymentSummary.ts (`derivedSettledAmount`). The CRM gift stays tied to
+  // its reconciliation evidence through those existing links, so these provenance
+  // columns + the XOR CHECK + the two partial-unique indexes are retired.
+  // Retained @deprecated ONLY so dev push stays additive and prod Publish never
+  // auto-drops them; the physical DROP ships as a reviewed SQL file.
   originalHumanCrmAmount: numeric("original_human_crm_amount", {
     precision: 14,
     scale: 2,
   }),
-  // Where `amount` was last sourced from (see giftFinalAmountSourceEnum). XOR
-  // with the two pointer columns below, enforced by the CHECK constraint.
+  // @deprecated — see originalHumanCrmAmount.
   finalAmountSource: giftFinalAmountSourceEnum("final_amount_source")
     .notNull()
     .default("human"),
-  // Provenance pointer: the Stripe charge this gift's amount was stamped from
-  // (gross). RESTRICT — the evidence backing a gift's amount is permanent and
-  // can't be deleted out from under the gift.
+  // @deprecated — see originalHumanCrmAmount. FK + RESTRICT kept while the
+  // column lingers; no longer written.
   finalAmountStripeChargeId: text("final_amount_stripe_charge_id").references(
     (): AnyPgColumn => stripeStagedCharges.id,
     { onDelete: "restrict" },
   ),
-  // Provenance pointer: the QuickBooks staged row this gift's amount was stamped
-  // from (only when there is no Stripe charge). RESTRICT — see above.
+  // @deprecated — see originalHumanCrmAmount. FK + RESTRICT kept while the
+  // column lingers; no longer written.
   finalAmountQbStagedPaymentId: text(
     "final_amount_qb_staged_payment_id",
   ).references((): AnyPgColumn => stagedPayments.id, { onDelete: "restrict" }),
@@ -100,6 +97,12 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   householdId: text("household_id").references(() => households.id, {
     onDelete: "restrict",
   }),
+  // @deprecated — the gift `type` is no longer stored. A gift's classification
+  // is DERIVED: pledge payment ⇐ opportunity_id, directed ⇐ advisor_person_id,
+  // matching ⇐ gift_being_matched_id, loan ⇐ loan_or_grant='loan', else standard
+  // (see deriveGiftType in @workspace/api-zod). No longer read or written by
+  // application code. Retained @deprecated so dev push stays additive and prod
+  // Publish never auto-drops it; the physical DROP ships as a reviewed SQL file.
   type: giftTypeEnum("type"),
   // Authoritative loan-vs-grant flag (see loanOrGrantEnum). Backfilled from
   // `type` (loan_fund_investment→loan, else grant) plus explicit data
@@ -121,9 +124,10 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   advisorPersonId: text("advisor_person_id").references(() => people.id, {
     onDelete: "set null",
   }),
-  // FK to fiscal_years.id (slug, e.g. 'fy2024'). Single fiscal year per
-  // gift/payment; if a single org check legitimately covers multiple FY
-  // bookings, split it across multiple gift_allocations rows.
+  // @deprecated — grant year lives only on gift_allocations.grant_year now. No
+  // longer read or written by application code. Retained @deprecated so dev push
+  // stays additive and prod Publish never auto-drops it; the physical DROP ships
+  // as a reviewed SQL file (the backfill seeds the allocation copy first).
   grantYear: text("grant_year").references(() => fiscalYears.id, {
     onDelete: "restrict",
   }),
@@ -148,22 +152,23 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   ownerUserId: text("owner_user_id").references(() => users.id, {
     onDelete: "restrict",
   }),
+  // @deprecated — "direct to school" is now expressed by the allocation entity
+  // ("Direct to School"), not a header flag. No longer read or written by
+  // application code. Retained @deprecated so dev push stays additive and prod
+  // Publish never auto-drops it; the physical DROP ships as a reviewed SQL file
+  // (the backfill moves the designation onto allocations first).
   designatedToSchool: boolean("designated_to_school").default(false).notNull(),
-  // Fiscal-sponsor-era off-books flag. When a gift was handled off our books
-  // (e.g. during the fiscal-sponsor period), it never appears in QuickBooks.
-  // Together with `designatedToSchool` (direct-to-school) it forms the
-  // "exempt from QB tie" rule: such gifts still count toward revenue goals but
-  // are not expected to reconcile to a QuickBooks record (and are excluded from
-  // the audit-reconciliation view). User-settable.
+  // @deprecated — off-books (fiscal-sponsor era) is now the "Wildflower
+  // Foundation TSNE" allocation entity, not a header flag. No longer read or
+  // written by application code. Retained @deprecated (see designatedToSchool).
   offBooksFiscalSponsor: boolean("off_books_fiscal_sponsor")
     .default(false)
     .notNull(),
-  // When false, no QuickBooks/QBO record will ever arrive for this gift (e.g.
-  // early gifts handled through the fiscal sponsor, or money paid directly to a
-  // school/charter). Folds into the "exempt from QB tie" rule alongside
-  // offBooksFiscalSponsor / designatedToSchool, so such gifts stop being flagged
-  // as "missing" QuickBooks evidence. Defaults true (almost every gift expects a
-  // payment). User-settable.
+  // @deprecated — "payment expected" is now DERIVED from the allocation entity:
+  // a gift expects payment unless ALL of its allocations sit on no-payment
+  // entities (entities.expects_payment = false, i.e. "Direct to School" /
+  // "Wildflower Foundation TSNE"). No longer read or written by application code.
+  // Retained @deprecated (see designatedToSchool).
   paymentExpected: boolean("payment_expected").default(true).notNull(),
   // @deprecated — the "counts toward goal" signal moved to gift_allocations
   // (per-allocation; see giftAllocations.countsTowardGoal). The header column is
@@ -178,10 +183,12 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // restriction, etc.) and wants to come back to it. Never auto-derived and has
   // NO side effects on status / derivation / QB tie — a pure annotation.
   needsResearch: boolean("needs_research").default(false).notNull(),
-  // Derived, persisted signal of whether this gift reconciles to a QuickBooks
-  // record (see giftQuickbooksTieEnum). Recomputed by applyGiftQbTieMany at
-  // every gift link/amount mutation; never hand-set. Defaults to 'missing'
-  // (an on-books gift with no QB evidence yet) and is corrected on first derive.
+  // @deprecated — the QuickBooks "tie" signal is retired. Reconciliation state is
+  // now expressed through the settled-vs-entered queue (derived settled amount vs
+  // entered amount, gated on derived payment-expected) and the lane model. No
+  // longer read or written by application code. Retained @deprecated so dev push
+  // stays additive and prod Publish never auto-drops it; the physical DROP ships
+  // as a reviewed SQL file.
   quickbooksTieStatus: giftQuickbooksTieEnum("quickbooks_tie_status")
     .default("missing")
     .notNull(),
@@ -221,17 +228,9 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // index on staged_payments(date_received).
   index("gifts_and_payments_date_received_idx").on(t.dateReceived),
   index("gifts_and_payments_archived_at_idx").on(t.archivedAt),
-  // Backs the missing-evidence list filter on the derived QB-tie signal.
+  // @deprecated index on the retired quickbooks_tie_status column. Kept while the
+  // column lingers (deprecate-then-drop); dropped with the column's reviewed SQL.
   index("gifts_and_payments_quickbooks_tie_status_idx").on(t.quickbooksTieStatus),
-  // Partial-UNIQUE: a Stripe charge / QB staged row is the FINAL-amount source
-  // pointer for AT MOST ONE gift (the one-evidence↔one-gift invariant). WHERE
-  // NOT NULL so the many unstamped `human` gifts (pointer NULL) are unconstrained.
-  uniqueIndex("gifts_and_payments_final_amount_stripe_charge_id_idx")
-    .on(t.finalAmountStripeChargeId)
-    .where(sql`${t.finalAmountStripeChargeId} IS NOT NULL`),
-  uniqueIndex("gifts_and_payments_final_amount_qb_staged_payment_id_idx")
-    .on(t.finalAmountQbStagedPaymentId)
-    .where(sql`${t.finalAmountQbStagedPaymentId} IS NOT NULL`),
   index("gifts_and_payments_thank_you_email_msg_idx").on(t.thankYouEmailMessageId),
   index("gifts_and_payments_thank_you_sent_at_idx").on(t.thankYouSentAt),
   // Donor exclusivity: exactly one of organization / individual-giver / household.
@@ -239,16 +238,11 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
     "gifts_and_payments_donor_xor",
     sql`num_nonnulls(${t.organizationId}, ${t.individualGiverPersonId}, ${t.householdId}) = 1`,
   ),
-  // Final-amount provenance XOR: human ⇒ no pointer; stripe ⇒ stripe pointer
-  // only; quickbooks ⇒ qb pointer only.
-  check(
-    "gifts_and_payments_final_amount_source_ptr",
-    sql`(
-      (${t.finalAmountSource} = 'human' AND ${t.finalAmountStripeChargeId} IS NULL AND ${t.finalAmountQbStagedPaymentId} IS NULL)
-      OR (${t.finalAmountSource} = 'stripe' AND ${t.finalAmountStripeChargeId} IS NOT NULL AND ${t.finalAmountQbStagedPaymentId} IS NULL)
-      OR (${t.finalAmountSource} = 'quickbooks' AND ${t.finalAmountQbStagedPaymentId} IS NOT NULL AND ${t.finalAmountStripeChargeId} IS NULL)
-    )`,
-  ),
+  // NOTE: the final-amount provenance XOR CHECK
+  // (gifts_and_payments_final_amount_source_ptr) and the two partial-unique
+  // provenance indexes were removed here as part of retiring the final-amount
+  // model (settled amount is now derived from linked payments). Publish drops
+  // them from prod (non-destructive — no data loss).
 ]);
 
 export type GiftOrPayment = typeof giftsAndPayments.$inferSelect;

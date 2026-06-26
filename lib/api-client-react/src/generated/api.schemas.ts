@@ -1844,16 +1844,36 @@ export interface GiftOrPayment {
   details?: string | null;
   dateReceived?: string | null;
   paymentMethod?: GiftPaymentMethod | null;
+  /** The human-entered gift amount. NO LONGER auto-overwritten by reconciliation (Task #448) — evidence is linked, the entered amount is preserved, and disagreements surface in the settled-vs-entered reconciliation queue. Compare against derivedSettledAmount. */
   amount?: string | null;
-  /** Processor fee withheld (e.g. Stripe per-charge fee). Donor is credited the GROSS `amount`; net = amount − processorFee. Null for gifts with no processor fee. */
+  /** Settled GROSS actually landed for this gift, derived from all linked payments (QuickBooks + Stripe + non-stripe Donorbox). Null when no payment is linked yet. The UI shows 'you entered $X, settled $Y' by comparing with `amount`. */
+  readonly derivedSettledAmount?: string | null;
+  /** Total processor fees withheld across the gift's linked payments (Stripe + Donorbox; QuickBooks carries none). Donor is credited the GROSS `amount`; net = derivedSettledAmount − derivedProcessorFee. Null when no fee-bearing payment is linked. */
+  readonly derivedProcessorFee?: string | null;
+  /**
+   * DEPRECATED (Task #448) — use derivedProcessorFee. No longer written; derived fees come from linked payments.
+   * @deprecated
+   */
   readonly processorFee?: string | null;
-  /** Snapshot of the human-entered amount before any processor reconciliation overwrote `amount`. Lets the UI show 'you entered $X, Stripe says $Y'. Null only for a gift minted directly from a payment. */
+  /**
+   * DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount.
+   * @deprecated
+   */
   readonly originalHumanCrmAmount?: string | null;
-  /** Where `amount` was last sourced from. XOR with the two pointer fields below. */
+  /**
+   * DEPRECATED (Task #448) — `amount` is always the human-entered amount now; settled money is derivedSettledAmount.
+   * @deprecated
+   */
   readonly finalAmountSource: GiftFinalAmountSource;
-  /** The Stripe charge (gross) this gift's amount was stamped from, when finalAmountSource is stripe. */
+  /**
+   * DEPRECATED (Task #448) — Stripe linkage lives on stripe_staged_charges; settled amount is derived.
+   * @deprecated
+   */
   readonly finalAmountStripeChargeId?: string | null;
-  /** The QuickBooks staged row this gift's amount was stamped from, when finalAmountSource is quickbooks. */
+  /**
+   * DEPRECATED (Task #448) — QuickBooks linkage lives on payment_applications; settled amount is derived.
+   * @deprecated
+   */
   readonly finalAmountQbStagedPaymentId?: string | null;
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
