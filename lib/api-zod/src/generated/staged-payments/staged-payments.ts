@@ -172,6 +172,25 @@ export const SearchStagedPaymentDonorsResponse = zod.object({
 })
 
 /**
+ * Duplicate guard for manual gift entry: returns the still-pending staged payments (QuickBooks) and Stripe charges already matched to the given donor, so a fundraiser doesn't hand-key a gift for money that is about to be booked via reconciliation. Read-only.
+ * @summary Pending reconciliation money (QuickBooks + Stripe) matched to a donor.
+ */
+export const GetPendingStagedMoneyForDonorQueryParams = zod.object({
+  "donorType": zod.enum(['organization', 'individual', 'household']).describe('Donor kind.'),
+  "donorId": zod.coerce.string().describe('Donor record id.')
+})
+
+export const GetPendingStagedMoneyForDonorResponse = zod.object({
+  "count": zod.number().describe('Total pending staged rows matched to this donor.'),
+  "items": zod.array(zod.object({
+  "source": zod.enum(['quickbooks', 'stripe']).describe('Where the pending money came from.'),
+  "amount": zod.string().nullable().describe('Numeric amount as a string (gross for Stripe).'),
+  "dateReceived": zod.string().nullable().describe('Date the money landed (YYYY-MM-DD), if known.'),
+  "payerName": zod.string().nullable().describe('Payer label from the source record.')
+})).describe('Up to a few recent pending rows for display.')
+})
+
+/**
  * @summary Set/fix the donor match on a pending staged payment (donor XOR).
  */
 export const ResolveStagedPaymentParams = zod.object({

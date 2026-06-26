@@ -2629,6 +2629,22 @@ paths:
         - { name: q, in: query, required: true, schema: { type: string }, description: "Search query (min 2 chars)." }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DonorSearchList" } } } }
+  /staged-payments-pending-for-donor:
+    get:
+      operationId: getPendingStagedMoneyForDonor
+      tags: [staged-payments]
+      summary: Pending reconciliation money (QuickBooks + Stripe) matched to a donor.
+      description: >-
+        Duplicate guard for manual gift entry: returns the still-pending staged
+        payments (QuickBooks) and Stripe charges already matched to the given
+        donor, so a fundraiser doesn't hand-key a gift for money that is about to
+        be booked via reconciliation. Read-only.
+      parameters:
+        - { name: donorType, in: query, required: true, schema: { type: string, enum: [organization, individual, household] }, description: "Donor kind." }
+        - { name: donorId, in: query, required: true, schema: { type: string }, description: "Donor record id." }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PendingDonorMoney" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /staged-payments/{id}/resolve:
     post:
       operationId: resolveStagedPayment
@@ -6900,6 +6916,20 @@ components:
       required: [data]
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/DonorSearchResult" } }
+    PendingDonorMoneyItem:
+      type: object
+      required: [source, amount, dateReceived, payerName]
+      properties:
+        source:       { type: string, enum: [quickbooks, stripe], description: "Where the pending money came from." }
+        amount:       { type: string, nullable: true, description: "Numeric amount as a string (gross for Stripe)." }
+        dateReceived: { type: string, nullable: true, description: "Date the money landed (YYYY-MM-DD), if known." }
+        payerName:    { type: string, nullable: true, description: "Payer label from the source record." }
+    PendingDonorMoney:
+      type: object
+      required: [count, items]
+      properties:
+        count: { type: integer, description: "Total pending staged rows matched to this donor." }
+        items: { type: array, items: { $ref: "#/components/schemas/PendingDonorMoneyItem" }, description: "Up to a few recent pending rows for display." }
     SearchHit:
       type: object
       required: [type, id, label, score]

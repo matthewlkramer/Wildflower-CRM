@@ -1,6 +1,10 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { stagedPayments, giftsAndPayments } from "@workspace/db/schema";
+import {
+  stagedPayments,
+  giftsAndPayments,
+  stripeStagedCharges,
+} from "@workspace/db/schema";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { asyncHandler, notFound, paramId } from "../../lib/helpers";
 import { donorOf } from "../../lib/quickbooksLink";
@@ -147,6 +151,90 @@ router.get(
       `)
     ).rows as Array<{ id: string; kind: string; name: string }>;
     res.json({ data: rows });
+  }),
+);
+
+// ─── GET /staged-payments-pending-for-donor ────────────────────────────────
+// Manual-entry duplicate guard (Task #454): pending reconciliation money already
+// matched to a donor, across BOTH sources (QuickBooks staged_payments + Stripe
+// staged_charges). Surfaced in the manual gift form so a fundraiser doesn't
+// hand-key a gift for money that's about to be booked via reconciliation.
+router.get(
+  "/staged-payments-pending-for-donor",
+  asyncHandler(async (req, res) => {
+    const donorType =
+      typeof req.query["donorType"] === "string" ? req.query["donorType"] : "";
+    const donorId =
+      typeof req.query["donorId"] === "string"
+        ? req.query["donorId"].trim()
+        : "";
+    if (
+      !donorId ||
+      (donorType !== "organization" &&
+        donorType !== "individual" &&
+        donorType !== "household")
+    ) {
+      res.status(400).json({
+        error: "bad_request",
+        message: "donorType (organization|individual|household) and donorId required.",
+      });
+      return;
+    }
+
+    const stagedDonor =
+      donorType === "organization"
+        ? eq(stagedPayments.organizationId, donorId)
+        : donorType === "individual"
+          ? eq(stagedPayments.individualGiverPersonId, donorId)
+          : eq(stagedPayments.householdId, donorId);
+    const chargeDonor =
+      donorType === "organization"
+        ? eq(stripeStagedCharges.organizationId, donorId)
+        : donorType === "individual"
+          ? eq(stripeStagedCharges.individualGiverPersonId, donorId)
+          : eq(stripeStagedCharges.householdId, donorId);
+
+    const [qbRows, stripeRows] = await Promise.all([
+      db
+        .select({
+          amount: stagedPayments.amount,
+          dateReceived: stagedPayments.dateReceived,
+          payerName: stagedPayments.payerName,
+        })
+        .from(stagedPayments)
+        .where(and(eq(stagedPayments.status, "pending"), stagedDonor))
+        .orderBy(desc(stagedPayments.dateReceived))
+        .limit(25),
+      db
+        .select({
+          amount: stripeStagedCharges.grossAmount,
+          chargeCreated: stripeStagedCharges.chargeCreated,
+          payerName: stripeStagedCharges.payerName,
+        })
+        .from(stripeStagedCharges)
+        .where(and(eq(stripeStagedCharges.status, "pending"), chargeDonor))
+        .orderBy(desc(stripeStagedCharges.chargeCreated))
+        .limit(25),
+    ]);
+
+    const items = [
+      ...qbRows.map((r) => ({
+        source: "quickbooks" as const,
+        amount: r.amount,
+        dateReceived: r.dateReceived,
+        payerName: r.payerName,
+      })),
+      ...stripeRows.map((r) => ({
+        source: "stripe" as const,
+        amount: r.amount,
+        dateReceived: r.chargeCreated
+          ? r.chargeCreated.toISOString().slice(0, 10)
+          : null,
+        payerName: r.payerName,
+      })),
+    ];
+
+    res.json({ count: items.length, items: items.slice(0, 8) });
   }),
 );
 

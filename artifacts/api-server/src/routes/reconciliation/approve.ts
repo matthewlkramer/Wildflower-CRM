@@ -3,6 +3,8 @@ import { db } from "@workspace/db";
 import {
   stagedPayments,
   giftsAndPayments,
+  giftAllocations,
+  pledgeAllocations,
   opportunitiesAndPledges,
   stripeStagedCharges,
   stripePayouts,
@@ -94,6 +96,84 @@ type GroupMintContext = {
   memberIds: string[];
   total: string;
 };
+
+/**
+ * Forward gift intake: seed the newly-minted gift's allocations from the
+ * opportunity/pledge's allocation lines (Task #454), so a payment booked against
+ * a pledge inherits its scope (entity / fiscal year / region / intended usage /
+ * restriction axes / school recipient) instead of landing as an unscoped
+ * header-only gift. The fundraiser can still edit the result in gift detail.
+ *
+ * PROPORTIONAL by design: a payment is often a single installment of a larger
+ * pledge, so each line's sub_amount is scaled by giftAmount / pledgeTotal. To
+ * avoid rounding drift the LAST line absorbs the remainder, so the copied
+ * allocations sum EXACTLY to the gift amount (the header == sum(allocations)
+ * invariant). When the pledge has no allocations (or no positive total, or the
+ * gift amount is unknown) we copy nothing / 1:1 — never inventing scope.
+ *
+ * Only columns shared by both tables are copied; pledge-only fields (conditions,
+ * conditional, contingent, expected_payment_date, status, direct_to_school) and
+ * the @deprecated coding snapshot are intentionally dropped. display_usage is
+ * left for its DB trigger to compute.
+ */
+async function copyPledgeAllocationsToGift(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  opportunityId: string,
+  giftId: string,
+  giftAmount: string | null,
+): Promise<void> {
+  const allocs = await tx
+    .select()
+    .from(pledgeAllocations)
+    .where(eq(pledgeAllocations.pledgeOrOpportunityId, opportunityId))
+    .orderBy(pledgeAllocations.id);
+  if (allocs.length === 0) return;
+
+  const pledgeTotal = allocs.reduce(
+    (acc, a) => acc + Number(a.subAmount ?? 0),
+    0,
+  );
+  const giftNum = Number(giftAmount ?? 0);
+  // Scale to the payment only when both the pledge total and the gift amount are
+  // positive and they actually differ; otherwise copy the line amounts 1:1.
+  const scale =
+    pledgeTotal > 0 && Number.isFinite(giftNum) && giftNum > 0
+      ? giftNum / pledgeTotal
+      : 1;
+  const willScale = scale !== 1 && Number.isFinite(giftNum) && giftNum > 0;
+
+  let running = 0;
+  const rows = allocs.map((a, i) => {
+    let subAmount: string | null = a.subAmount;
+    if (willScale) {
+      if (i === allocs.length - 1) {
+        // Last line absorbs the remainder so the copy sums to the gift exactly.
+        subAmount = (giftNum - running).toFixed(2);
+      } else {
+        const scaled = Number((Number(a.subAmount ?? 0) * scale).toFixed(2));
+        running += scaled;
+        subAmount = scaled.toFixed(2);
+      }
+    }
+    return {
+      id: newId(),
+      giftId,
+      subAmount,
+      grantYear: a.grantYear,
+      entityId: a.entityId,
+      intendedUsage: a.intendedUsage,
+      fundableProjectId: a.fundableProjectId,
+      schoolRecipientId: a.schoolRecipientId,
+      regionalRestrictionType: a.regionalRestrictionType,
+      usageRestrictionType: a.usageRestrictionType,
+      timeRestrictionType: a.timeRestrictionType,
+      reimbursementType: a.reimbursementType,
+      regionIds: a.regionIds,
+      purposeVerbatim: a.purposeVerbatim,
+    } satisfies typeof giftAllocations.$inferInsert;
+  });
+  await tx.insert(giftAllocations).values(rows);
+}
 
 /**
  * Shared in-tx mint path for the three create-* approve outcomes (create_gift,
@@ -480,6 +560,13 @@ async function mintGiftFromEvidence(
             }),
         originalHumanCrmAmount: null,
       });
+
+      // Forward gift intake (Task #454): seed the gift's allocations from the
+      // pledge it pays against, scaled to this payment. Only on the opportunity
+      // outcomes (opp loaded); plain create_gift has no opp and stays header-only.
+      if (opp) {
+        await copyPledgeAllocationsToGift(tx, opp.id, newGiftId, evidenceAmount);
+      }
 
       // The QB anchor OWNS the mint (createdGiftId, not auto-applied → protected
       // from casual revert). Adopt the chosen donor onto the evidence row. Guarded

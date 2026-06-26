@@ -25,6 +25,7 @@ import type {
   ConfirmStagedPaymentMatchesResponse,
   DonorSearchList,
   ExcludeStagedPaymentBody,
+  GetPendingStagedMoneyForDonorParams,
   GiftCandidateList,
   GroupReconcileStagedPaymentsBody,
   GroupReconcileStagedPaymentsResponse,
@@ -33,6 +34,7 @@ import type {
   ListStagedPaymentGiftWindowParams,
   ListStagedPaymentsParams,
   NotFoundResponse,
+  PendingDonorMoney,
   QuickbooksStagedPaymentSummary,
   ReconcileStagedPaymentBody,
   ResolveStagedPaymentBody,
@@ -279,6 +281,88 @@ export function useSearchStagedPaymentDonors<TData = Awaited<ReturnType<typeof s
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getSearchStagedPaymentDonorsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Duplicate guard for manual gift entry: returns the still-pending staged payments (QuickBooks) and Stripe charges already matched to the given donor, so a fundraiser doesn't hand-key a gift for money that is about to be booked via reconciliation. Read-only.
+ * @summary Pending reconciliation money (QuickBooks + Stripe) matched to a donor.
+ */
+export const getGetPendingStagedMoneyForDonorUrl = (params: GetPendingStagedMoneyForDonorParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/staged-payments-pending-for-donor?${stringifiedParams}` : `/api/staged-payments-pending-for-donor`
+}
+
+export const getPendingStagedMoneyForDonor = async (params: GetPendingStagedMoneyForDonorParams, options?: RequestInit): Promise<PendingDonorMoney> => {
+  
+  return customFetch<PendingDonorMoney>(getGetPendingStagedMoneyForDonorUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetPendingStagedMoneyForDonorQueryKey = (params?: GetPendingStagedMoneyForDonorParams,) => {
+    return [
+    `/api/staged-payments-pending-for-donor`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getGetPendingStagedMoneyForDonorQueryOptions = <TData = Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>, TError = ErrorType<BadRequestResponse>>(params: GetPendingStagedMoneyForDonorParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPendingStagedMoneyForDonorQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>> = ({ signal }) => getPendingStagedMoneyForDonor(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPendingStagedMoneyForDonorQueryResult = NonNullable<Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>>
+export type GetPendingStagedMoneyForDonorQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Pending reconciliation money (QuickBooks + Stripe) matched to a donor.
+ */
+
+export function useGetPendingStagedMoneyForDonor<TData = Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>, TError = ErrorType<BadRequestResponse>>(
+ params: GetPendingStagedMoneyForDonorParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPendingStagedMoneyForDonorQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

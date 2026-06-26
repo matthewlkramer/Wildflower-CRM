@@ -30,6 +30,7 @@ import {
   households,
   stripePayouts,
   stripeStagedCharges,
+  pledgeAllocations,
 } from "@workspace/db/schema";
 import {
   and,
@@ -461,6 +462,8 @@ const oppCols = {
   householdId: opportunitiesAndPledges.householdId,
   askAmount: opportunitiesAndPledges.askAmount,
   awardedAmount: opportunitiesAndPledges.awardedAmount,
+  writtenPledge: opportunitiesAndPledges.writtenPledge,
+  status: opportunitiesAndPledges.status,
 };
 type OppRow = {
   id: string;
@@ -470,6 +473,8 @@ type OppRow = {
   householdId: string | null;
   askAmount: string | null;
   awardedAmount: string | null;
+  writtenPledge: boolean | null;
+  status: string | null;
 };
 
 function oppDonorPair(o: OppRow): { kind: RecDonorKind; id: string } | null {
@@ -481,6 +486,7 @@ function oppToCandidate(
   displays: Map<string, DonorDisplay>,
   viewer: Viewer,
   source: RecCandidateSource,
+  confidence: number | null = null,
 ): RecCandidate {
   const pair = oppDonorPair(o);
   const masked = maskDonorDisplay(
@@ -493,6 +499,7 @@ function oppToCandidate(
     label: masked.hidden ? ANON_LABEL : (o.name ?? "(untitled opportunity)"),
     sublabel: masked.name,
     amount: o.awardedAmount ?? o.askAmount ?? null,
+    confidence,
     source,
     donorKind: pair?.kind ?? null,
     donorId: pair?.id ?? null,
@@ -508,25 +515,156 @@ async function loadOpp(id: string): Promise<OppRow | null> {
     .then((r) => (r[0] as OppRow | undefined) ?? null);
 }
 
+interface ScoredOpp {
+  opp: OppRow;
+  /** Amount-fit confidence (50–100) of the incoming payment against this opp, or
+   *  null when the evidence amount is unknown. */
+  confidence: number | null;
+}
+
+// Donor-derived opportunity SUGGESTIONS for the gift's "is this a payment on a
+// pledge?" node. Two layers of plausibility keep the list to MATERIALLY LIKELY
+// matches instead of every open opp for the donor:
+//
+//   1. Status filter — only still-COLLECTIBLE opps (exclude fully-paid `cash_in`,
+//      `dormant`, `lost`) so closed records are never offered.
+//   2. Amount/date discipline (mirrors gift matching) — a payment can't exceed
+//      what's still collectible (awarded − paid) beyond the processor-fee
+//      tolerance, so over-large payments are dropped. Survivors are ranked by how
+//      well the payment fits: a final/full payment (≈ remaining or ≈ awarded)
+//      scores highest, a partial installment lower but still plausible; written
+//      pledges (the prime payment-on-pledge target) come first, then amount-fit,
+//      then nearest expected-payment date, then name. Date is a soft RANKING
+//      signal only — installments legitimately span time, so it's never a hard
+//      filter. Opps not yet awarded can't be amount-assessed, so they're kept as
+//      lower-ranked first-payment candidates.
+//
+// A reviewer who needs a closed/other opp can still find it via manual search.
 async function loadDonorOpps(
   donor: { kind: RecDonorKind; id: string },
+  anchorAmount: string | null,
+  paymentDate: string | null,
   limit: number,
-): Promise<OppRow[]> {
-  return db
+): Promise<ScoredOpp[]> {
+  const rows = (await db
     .select(oppCols)
     .from(opportunitiesAndPledges)
     .where(
       and(
         isNull(opportunitiesAndPledges.archivedAt),
+        sql`(${opportunitiesAndPledges.status} IS NULL OR ${opportunitiesAndPledges.status} NOT IN ('cash_in', 'dormant', 'lost'))`,
         donor.kind === "organization"
           ? eq(opportunitiesAndPledges.organizationId, donor.id)
           : donor.kind === "person"
             ? eq(opportunitiesAndPledges.individualGiverPersonId, donor.id)
             : eq(opportunitiesAndPledges.householdId, donor.id),
       ),
+    )) as OppRow[];
+  if (rows.length === 0) return [];
+
+  const ids = rows.map((r) => r.id);
+
+  // paid-so-far per opp (SUM of linked non-archived gift amounts — mirrors the
+  // `paid` rollup that drives cash_in derivation in pledgeStage.ts).
+  const paidRows = await db
+    .select({
+      opportunityId: giftsAndPayments.opportunityId,
+      paid: sql<string>`COALESCE(SUM(${giftsAndPayments.amount}), 0)::text`,
+    })
+    .from(giftsAndPayments)
+    .where(
+      and(
+        inArray(giftsAndPayments.opportunityId, ids),
+        isNull(giftsAndPayments.archivedAt),
+      ),
     )
-    .orderBy(asc(opportunitiesAndPledges.name))
-    .limit(limit) as Promise<OppRow[]>;
+    .groupBy(giftsAndPayments.opportunityId);
+  const paidByOpp = new Map<string, number>();
+  for (const r of paidRows) {
+    if (r.opportunityId) paidByOpp.set(r.opportunityId, Number(r.paid) || 0);
+  }
+
+  // nearest expected-payment date per opp (pledge-allocation level) — a soft
+  // ranking signal only (smaller day-distance = sooner-due installment).
+  const dateDiffByOpp = new Map<string, number>();
+  if (paymentDate) {
+    const dateRows = await db
+      .select({
+        opportunityId: pledgeAllocations.pledgeOrOpportunityId,
+        diffDays: sql<number>`MIN(ABS(${pledgeAllocations.expectedPaymentDate} - ${paymentDate}::date))`,
+      })
+      .from(pledgeAllocations)
+      .where(
+        and(
+          inArray(pledgeAllocations.pledgeOrOpportunityId, ids),
+          sql`${pledgeAllocations.expectedPaymentDate} IS NOT NULL`,
+        ),
+      )
+      .groupBy(pledgeAllocations.pledgeOrOpportunityId);
+    for (const r of dateRows) {
+      if (r.opportunityId && r.diffDays != null)
+        dateDiffByOpp.set(r.opportunityId, Number(r.diffDays));
+    }
+  }
+
+  const A = anchorAmount != null ? Number(anchorAmount) : null;
+  const haveAmount = A != null && Number.isFinite(A) && A > 0;
+
+  const scored: ScoredOpp[] = [];
+  for (const opp of rows) {
+    const awarded =
+      opp.awardedAmount != null ? Number(opp.awardedAmount) : null;
+    const ask = opp.askAmount != null ? Number(opp.askAmount) : null;
+    const target =
+      awarded != null && awarded > 0
+        ? awarded
+        : ask != null && ask > 0
+          ? ask
+          : null;
+    const paid = paidByOpp.get(opp.id) ?? 0;
+    // collectible balance is only knowable once an amount has been awarded.
+    const remaining =
+      awarded != null && awarded > 0 ? Math.max(0, awarded - paid) : null;
+
+    // Amount plausibility FILTER: a payment can't exceed what's still
+    // collectible, beyond the processor-fee tolerance. Enforced only when both
+    // the incoming amount and a known remaining balance exist.
+    if (haveAmount && remaining != null) {
+      if (remaining <= 0 || (A as number) > remaining * 1.1 + 1) continue;
+    }
+
+    // Amount-fit confidence: best fit of the payment to the remaining balance
+    // (final payment) or the full target (single full payment); a smaller
+    // installment that still fits keeps a plausible baseline.
+    let confidence: number | null = null;
+    if (haveAmount) {
+      const fits: number[] = [];
+      if (remaining != null && remaining > 0)
+        fits.push(amountConfidence(String(remaining), anchorAmount));
+      if (target != null) fits.push(amountConfidence(String(target), anchorAmount));
+      confidence = fits.length ? Math.max(...fits) : 70;
+      const collectible = remaining ?? target ?? null;
+      if (collectible != null && (A as number) <= collectible * 1.1 + 1)
+        confidence = Math.max(confidence, 65);
+    }
+    scored.push({ opp, confidence });
+  }
+
+  scored.sort((a, b) => {
+    const wp =
+      Number(b.opp.writtenPledge ?? false) - Number(a.opp.writtenPledge ?? false);
+    if (wp !== 0) return wp;
+    const ca = a.confidence ?? -1;
+    const cb = b.confidence ?? -1;
+    if (cb !== ca) return cb - ca;
+    const da = dateDiffByOpp.get(a.opp.id);
+    const dbb = dateDiffByOpp.get(b.opp.id);
+    if (da != null && dbb != null && da !== dbb) return da - dbb;
+    if ((da == null) !== (dbb == null)) return da == null ? 1 : -1;
+    return (a.opp.name ?? "").localeCompare(b.opp.name ?? "");
+  });
+
+  return scored.slice(0, limit);
 }
 
 // ─── Build the read-only graph ───────────────────────────────────────────────
@@ -801,14 +939,25 @@ export async function buildReconciliationGraph(
       oppLocked = true;
     }
   } else if (selectedDonor) {
-    const opps = await loadDonorOpps(selectedDonor, 25);
+    const scored = await loadDonorOpps(
+      selectedDonor,
+      anchorAmount,
+      staged.dateReceived,
+      25,
+    );
     const displays = await loadDonorDisplays(
-      opps
-        .map(oppDonorPair)
+      scored
+        .map((s) => oppDonorPair(s.opp))
         .filter((x): x is { kind: RecDonorKind; id: string } => x != null),
     );
-    oppCandidates = opps.map((o) =>
-      oppToCandidate(o, displays, viewer, "manual"),
+    oppCandidates = scored.map((s) =>
+      oppToCandidate(
+        s.opp,
+        displays,
+        viewer,
+        s.opp.writtenPledge ? "payment_on_pledge" : "manual",
+        s.confidence,
+      ),
     );
     oppState = oppCandidates.length ? "filter_only" : "none";
   }

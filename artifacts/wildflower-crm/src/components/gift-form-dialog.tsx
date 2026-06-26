@@ -6,6 +6,8 @@ import {
   useCreateOrganization,
   useUpdateOpportunityOrPledge,
   useListOpportunitiesAndPledges,
+  useGetPendingStagedMoneyForDonor,
+  getGetPendingStagedMoneyForDonorQueryKey,
   getListGiftsAndPaymentsQueryKey,
   getListOrganizationsQueryKey,
   getListOpportunitiesAndPledgesQueryKey,
@@ -391,6 +393,25 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     initialDonor?.id ?? null,
   );
 
+  // Duplicate guard: when the fundraiser hand-picks a donor (no linked opp),
+  // surface any reconciliation money (QuickBooks/Stripe) already staged for that
+  // donor so they don't double-enter money that's about to be booked.
+  const dupGuardActive =
+    open && linkedOpp === null && donorMode === "manual" && !!donorId;
+  const pendingMoney = useGetPendingStagedMoneyForDonor(
+    { donorType, donorId: donorId ?? "" },
+    {
+      query: {
+        enabled: dupGuardActive,
+        queryKey: getGetPendingStagedMoneyForDonorQueryKey({
+          donorType,
+          donorId: donorId ?? "",
+        }),
+      },
+    },
+  );
+  const pendingCount = dupGuardActive ? (pendingMoney.data?.count ?? 0) : 0;
+
   // Follow-up state — set after creation when the linked opp was "open"
   const [followUpOpp, setFollowUpOpp] = useState<{
     id: string;
@@ -677,6 +698,38 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                     this payment is from.
                   </p>
                 )}
+                {pendingCount > 0 ? (
+                  <div
+                    className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+                    data-testid="warning-pending-staged-money"
+                  >
+                    <p className="font-medium">
+                      {pendingCount} pending payment
+                      {pendingCount === 1 ? "" : "s"} for this donor are awaiting
+                      reconciliation.
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {(pendingMoney.data?.items ?? []).map((it, i) => (
+                        <li key={i} className="flex justify-between gap-2">
+                          <span className="truncate">
+                            {it.payerName || "—"}
+                            <span className="ml-1 uppercase text-amber-700/70">
+                              {it.source}
+                            </span>
+                          </span>
+                          <span className="whitespace-nowrap tabular-nums">
+                            {it.amount ? `$${it.amount}` : "—"}
+                            {it.dateReceived ? ` · ${it.dateReceived}` : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1 text-amber-700">
+                      This money may already be on its way in via Finance
+                      Reconciliation — only enter a new gift if it's separate.
+                    </p>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 

@@ -4015,6 +4015,35 @@ export interface DonorSearchList {
   data: DonorSearchResult[];
 }
 
+/**
+ * Where the pending money came from.
+ */
+export type PendingDonorMoneyItemSource = typeof PendingDonorMoneyItemSource[keyof typeof PendingDonorMoneyItemSource];
+
+
+export const PendingDonorMoneyItemSource = {
+  quickbooks: 'quickbooks',
+  stripe: 'stripe',
+} as const;
+
+export interface PendingDonorMoneyItem {
+  /** Where the pending money came from. */
+  source: PendingDonorMoneyItemSource;
+  /** Numeric amount as a string (gross for Stripe). */
+  amount: string | null;
+  /** Date the money landed (YYYY-MM-DD), if known. */
+  dateReceived: string | null;
+  /** Payer label from the source record. */
+  payerName: string | null;
+}
+
+export interface PendingDonorMoney {
+  /** Total pending staged rows matched to this donor. */
+  count: number;
+  /** Up to a few recent pending rows for display. */
+  items: PendingDonorMoneyItem[];
+}
+
 export type SearchHitType = typeof SearchHitType[keyof typeof SearchHitType];
 
 
@@ -7436,6 +7465,26 @@ export type SearchStagedPaymentDonorsParams = {
  */
 q: string;
 };
+
+export type GetPendingStagedMoneyForDonorParams = {
+/**
+ * Donor kind.
+ */
+donorType: GetPendingStagedMoneyForDonorDonorType;
+/**
+ * Donor record id.
+ */
+donorId: string;
+};
+
+export type GetPendingStagedMoneyForDonorDonorType = typeof GetPendingStagedMoneyForDonorDonorType[keyof typeof GetPendingStagedMoneyForDonorDonorType];
+
+
+export const GetPendingStagedMoneyForDonorDonorType = {
+  organization: 'organization',
+  individual: 'individual',
+  household: 'household',
+} as const;
 
 export type ListStagedPaymentGiftWindowParams = {
 /**
