@@ -80,16 +80,19 @@ import { Loader2, MoreHorizontal } from "lucide-react";
  * (check, DAF, etc.) — it is NOT a found payment match.
  *
  * Per-row actions (the ⋯ menu):
- *   • Link allocation → payment   (reconcile the gift to a QuickBooks payment)
- *   • Link gift → payment         (reconcile the gift to a QuickBooks payment)
+ *   • Link allocation → payment   (reconcile the gift AND record this allocation
+ *                                  onto the cash-application ledger row)
+ *   • Link gift → payment         (reconcile the gift; header-only, no allocation)
  *   • Edit row                    (PATCH this gift_allocation inline)
  *   • Revert gift → opportunity   (mint an open opportunity, archive the gift)
  *   • Revert gift → pledge        (mint a written pledge, archive the gift)
  *   • Flag for research           (add the gift to the Cleanup Queue)
  *
- * NB: the data model has no allocation-level payment link — reconciliation is
- * gift-level — so BOTH "link" actions reconcile the whole gift; they differ in
- * framing only.
+ * NB: reconciliation (the tie/book-once math) is still gift-level — a payment
+ * settles a GIFT. "Link allocation → payment" additionally stamps the chosen
+ * gift_allocation onto the ledger row as a narrowing pointer, so the reviewer's
+ * intent is recorded; "Link gift → payment" leaves that pointer null. The
+ * allocation pointer is only sent when the row actually has an allocation.
  * ──────────────────────────────────────────────────────────────────────── */
 
 const PAGE_SIZE = 50;
@@ -450,9 +453,19 @@ function PaymentLinkDialog({
 
   const reconcile = useReconcileStagedPayment();
 
+  // "Link allocation → payment" records the chosen allocation onto the ledger
+  // row; "Link gift → payment" links the header only (no allocation pointer).
+  const allocationLink = scope === "allocation" && g.allocationId != null;
+
   const link = (stagedPaymentId: string) => {
     reconcile.mutate(
-      { id: stagedPaymentId, data: { giftId: g.id } },
+      {
+        id: stagedPaymentId,
+        data: {
+          giftId: g.id,
+          ...(allocationLink ? { allocationId: g.allocationId } : {}),
+        },
+      },
       {
         onSuccess: () => {
           void queryClient.invalidateQueries({
@@ -460,7 +473,9 @@ function PaymentLinkDialog({
           });
           toast({
             title: "Linked to payment",
-            description: "The gift is now reconciled to the QuickBooks payment.",
+            description: allocationLink
+              ? "This allocation is now linked to the QuickBooks payment."
+              : "The gift is now reconciled to the QuickBooks payment.",
           });
           onClose();
         },
@@ -487,7 +502,10 @@ function PaymentLinkDialog({
           <DialogDescription>
             Find the QuickBooks payment for{" "}
             <span className="font-medium">{g.donorName ?? "this donor"}</span>{" "}
-            and link it. Reconciliation is recorded against the whole gift.
+            and link it.{" "}
+            {allocationLink
+              ? "The link is recorded against this allocation."
+              : "The link is recorded against the whole gift."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">

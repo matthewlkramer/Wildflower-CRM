@@ -4412,10 +4412,12 @@ export interface GiftCandidateList {
 }
 
 /**
- * Reconcile the staged payment to an existing gifts_and_payments row.
+ * Reconcile the staged payment to an existing gifts_and_payments row. Optionally narrow the link to one of that gift's allocations.
  */
 export interface ReconcileStagedPaymentBody {
   giftId: string;
+  /** Optional gift_allocation id to record the link against. Must belong to giftId. NULL/omitted = link the whole gift header (the default). Recorded as a narrowing pointer on the cash-application ledger row; it never changes the tie/book-once math (those stay per-gift). */
+  allocationId?: string | null;
 }
 
 /**

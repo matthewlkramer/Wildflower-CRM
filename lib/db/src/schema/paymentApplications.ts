@@ -11,6 +11,7 @@ import {
 import { sql } from "drizzle-orm";
 import { stagedPayments } from "./stagedPayments";
 import { giftsAndPayments } from "./giftsAndPayments";
+import { giftAllocations } from "./giftAllocations";
 import { stripeStagedCharges } from "./stripeStagedCharges";
 import { donorboxDonations } from "./donorboxDonations";
 import { users } from "./users";
@@ -55,10 +56,22 @@ export const paymentApplications = pgTable(
     paymentId: text("payment_id")
       .notNull()
       .references(() => stagedPayments.id, { onDelete: "restrict" }),
-    // The CRM gift this cash was applied to (header, not allocation).
+    // The CRM gift this cash was applied to. The ledger SUM that the tie deriver
+    // reads is per-GIFT, so this is always the header (the authoritative grain).
     giftId: text("gift_id")
       .notNull()
       .references(() => giftsAndPayments.id, { onDelete: "restrict" }),
+    // Optional NARROWING pointer to the specific gift_allocation a reviewer chose
+    // when linking (the CRM-only worklist's "Link allocation → payment" action).
+    // NULL = the application is recorded against the whole gift header (the
+    // historical/default behavior, and what a "Link gift → payment" produces).
+    // This NEVER changes the tie math — that stays per-gift on amount_applied —
+    // it only records WHICH allocation the human intended. ON DELETE SET NULL so
+    // dropping an allocation degrades the row gracefully to header-level.
+    giftAllocationId: text("gift_allocation_id").references(
+      () => giftAllocations.id,
+      { onDelete: "set null" },
+    ),
     // The portion of the payment applied to this gift (> 0, enforced by CHECK).
     amountApplied: numeric("amount_applied", { precision: 14, scale: 2 }).notNull(),
     evidenceSource: paymentApplicationEvidenceSourceEnum("evidence_source").notNull(),
@@ -93,6 +106,7 @@ export const paymentApplications = pgTable(
       t.giftId,
     ),
     index("payment_applications_gift_id_idx").on(t.giftId),
+    index("payment_applications_gift_allocation_id_idx").on(t.giftAllocationId),
     index("payment_applications_payment_id_idx").on(t.paymentId),
     index("payment_applications_stripe_charge_id_idx").on(t.stripeChargeId),
     index("payment_applications_donorbox_donation_id_idx").on(

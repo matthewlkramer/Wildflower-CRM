@@ -1219,7 +1219,9 @@ export function useListStagedPaymentGiftWindow<TData = Awaited<ReturnType<typeof
 setting matchedGiftId. Marks the row approved (autoApplied=false). If the
 staged row has no donor yet it adopts the gift's donor; otherwise the
 donors must match. The gift must not already be linked to another staged
-payment.
+payment. An optional allocationId narrows the link to one of the gift's
+allocations (recorded on the cash-application ledger row); it must belong
+to giftId and never changes the per-gift tie/book-once math.
 
  * @summary Reconcile a staged payment to an existing gift (no new gift is created).
  */

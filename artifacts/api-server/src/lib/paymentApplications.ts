@@ -95,6 +95,13 @@ export class PaymentOverApplicationError extends Error {
 export interface ApplyPaymentApplicationArgs {
   paymentId: string;
   giftId: string;
+  /**
+   * Optional NARROWING pointer to the specific gift_allocation a reviewer chose
+   * when linking. NULL/undefined = the application is recorded against the whole
+   * gift header (the default). Never affects the book-once / tie math (those stay
+   * per-gift); it only records which allocation the human intended.
+   */
+  giftAllocationId?: string | null;
   /** Numeric string ( > 0 ). */
   amountApplied: string;
   evidenceSource: PaymentApplicationEvidenceSource;
@@ -169,6 +176,7 @@ export async function applyPaymentApplication(
   const values = {
     paymentId: args.paymentId,
     giftId: args.giftId,
+    giftAllocationId: args.giftAllocationId ?? null,
     amountApplied: args.amountApplied,
     evidenceSource: args.evidenceSource,
     stripeChargeId: args.stripeChargeId ?? null,

@@ -4,6 +4,7 @@ import {
   stagedPayments,
   stagedPaymentSplits,
   giftsAndPayments,
+  giftAllocations,
   paymentApplications,
 } from "@workspace/db/schema";
 import { and, eq, inArray, notInArray, or, sql } from "drizzle-orm";
@@ -57,7 +58,7 @@ router.post(
       });
       return;
     }
-    const { giftId } = parsed.data;
+    const { giftId, allocationId } = parsed.data;
 
     const existing = await db
       .select()
@@ -110,6 +111,38 @@ router.post(
       return;
     }
     const finalDonor = giftDonor;
+
+    // Optional allocation-scoping: a reviewer can narrow the link to one of the
+    // gift's allocations (the CRM-only worklist's "Link allocation → payment"
+    // action). The allocation must belong to this gift; otherwise it is a stale
+    // / cross-gift id and we refuse rather than record a meaningless pointer.
+    if (allocationId != null) {
+      const alloc = await db
+        .select({ id: giftAllocations.id })
+        .from(giftAllocations)
+        .where(
+          and(
+            eq(giftAllocations.id, allocationId),
+            eq(giftAllocations.giftId, giftId),
+          ),
+        )
+        .then((r) => r[0]);
+      if (!alloc) {
+        res.status(400).json({
+          error: "link_invalid",
+          message: "Cannot reconcile this staged payment to that allocation.",
+          details: {
+            issues: [
+              {
+                path: ["allocationId"],
+                message: "The allocation does not belong to the selected gift.",
+              },
+            ],
+          },
+        });
+        return;
+      }
+    }
 
     // Atomic: only succeeds if still pending AND no other staged row has grabbed
     // this gift (matched, created, group-reconciled OR split-linked) since the
@@ -189,6 +222,7 @@ router.post(
             await applyPaymentApplication(tx, {
               paymentId: id,
               giftId,
+              giftAllocationId: allocationId ?? null,
               amountApplied: existing.amount,
               evidenceSource: "quickbooks",
               matchMethod: "human",

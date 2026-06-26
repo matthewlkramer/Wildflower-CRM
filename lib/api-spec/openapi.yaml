@@ -2835,7 +2835,9 @@ paths:
         setting matchedGiftId. Marks the row approved (autoApplied=false). If the
         staged row has no donor yet it adopts the gift's donor; otherwise the
         donors must match. The gift must not already be linked to another staged
-        payment.
+        payment. An optional allocationId narrows the link to one of the gift's
+        allocations (recorded on the cash-application ledger row); it must belong
+        to giftId and never changes the per-gift tie/book-once math.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       requestBody:
         required: true
@@ -7179,9 +7181,13 @@ components:
     ReconcileStagedPaymentBody:
       type: object
       required: [giftId]
-      description: "Reconcile the staged payment to an existing gifts_and_payments row."
+      description: "Reconcile the staged payment to an existing gifts_and_payments row. Optionally narrow the link to one of that gift's allocations."
       properties:
         giftId: { type: string }
+        allocationId:
+          type: string
+          nullable: true
+          description: "Optional gift_allocation id to record the link against. Must belong to giftId. NULL/omitted = link the whole gift header (the default). Recorded as a narrowing pointer on the cash-application ledger row; it never changes the tie/book-once math (those stay per-gift)."
     SplitStagedPaymentBody:
       type: object
       required: [giftIds]

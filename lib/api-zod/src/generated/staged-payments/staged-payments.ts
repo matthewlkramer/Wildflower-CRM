@@ -1287,7 +1287,9 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
 setting matchedGiftId. Marks the row approved (autoApplied=false). If the
 staged row has no donor yet it adopts the gift's donor; otherwise the
 donors must match. The gift must not already be linked to another staged
-payment.
+payment. An optional allocationId narrows the link to one of the gift's
+allocations (recorded on the cash-application ledger row); it must belong
+to giftId and never changes the per-gift tie/book-once math.
 
  * @summary Reconcile a staged payment to an existing gift (no new gift is created).
  */
@@ -1296,8 +1298,9 @@ export const ReconcileStagedPaymentParams = zod.object({
 })
 
 export const ReconcileStagedPaymentBody = zod.object({
-  "giftId": zod.string()
-}).describe('Reconcile the staged payment to an existing gifts_and_payments row.')
+  "giftId": zod.string(),
+  "allocationId": zod.string().nullish().describe('Optional gift_allocation id to record the link against. Must belong to giftId. NULL\/omitted = link the whole gift header (the default). Recorded as a narrowing pointer on the cash-application ledger row; it never changes the tie\/book-once math (those stay per-gift).')
+}).describe('Reconcile the staged payment to an existing gifts_and_payments row. Optionally narrow the link to one of that gift\'s allocations.')
 
 export const ReconcileStagedPaymentResponse = zod.object({
   "gift": zod.object({
