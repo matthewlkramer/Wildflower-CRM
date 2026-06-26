@@ -60,13 +60,21 @@ export function useRowSelection() {
 
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
 
-  return {
-    selectedIds,
-    count: selected.size,
-    isSelected,
-    toggle,
-    toggleVisible,
-    clear,
-    removeMany,
-  };
+  // Memoize the returned object so its identity is stable across renders
+  // (it only changes when `selected` does). Pages depend on this object in
+  // their effect deps; an unmemoized object churns every render and, when
+  // those effects also call selection setters, produces an infinite update
+  // loop that blanks the page.
+  return useMemo(
+    () => ({
+      selectedIds,
+      count: selected.size,
+      isSelected,
+      toggle,
+      toggleVisible,
+      clear,
+      removeMany,
+    }),
+    [selectedIds, selected.size, isSelected, toggle, toggleVisible, clear, removeMany],
+  );
 }
