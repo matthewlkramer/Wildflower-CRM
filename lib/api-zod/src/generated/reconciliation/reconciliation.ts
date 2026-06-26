@@ -79,6 +79,7 @@ export const ListReconciliationCardsResponse = zod.object({
   "resolvedGiftId": zod.string().nullish(),
   "resolvedGiftName": zod.string().nullish(),
   "resolvedGiftAmount": zod.string().nullish(),
+  "resolvedGiftDonorName": zod.string().nullish().describe('Display name of the donor the LINKED gift is recorded under (its organization\/individual\/household), shown on the card\'s CRM-gift side. Distinct from proposedDonorName (the staged payment\'s payer-side donor): surfaces a payer-vs-gift-donor difference before approval. Null when no gift is linked.'),
   "resolvedGiftDate": zod.string().date().nullish().describe('Received date (dateReceived) of the linked or proposed gift, shown on the card\'s CRM-gift side. Null when no gift is linked\/proposed or the gift has no received date.'),
   "resolvedGiftFiscalYear": zod.string().nullish().describe('Fiscal-year slug (grantYear) of the linked gift, shown on the card\'s CRM-gift side. Null when no gift is linked or the gift has no fiscal year set.'),
   "resolvedGiftAllocations": zod.array(zod.object({

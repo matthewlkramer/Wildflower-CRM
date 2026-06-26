@@ -601,9 +601,31 @@ export async function buildReconciliationGraph(
     };
   }
 
+  // When this QB anchor is part of a human-stamped source group ("these
+  // separately-entered records are really ONE physical gift"), the unit that
+  // reconciles to a gift is the GROUP, not the lone representative row. So the
+  // amount the gift is compared against — both the candidate search and the
+  // amount-band blocker below — must be the group's COMBINED total, not this
+  // member's slice; otherwise a group whose members correctly SUM to the gift
+  // (e.g. $65k + $15k → $80k) is wrongly flagged as an amount mismatch. Mirrors
+  // the mint path (approve.ts) and the group-reconcile gate (matching.ts).
+  let sourceGroupTotal: string | null = null;
+  if (staged.sourceGroupId != null) {
+    const agg = await db
+      .select({
+        total: sql<string>`COALESCE(SUM(${stagedPayments.amount}), 0)::text`,
+      })
+      .from(stagedPayments)
+      .where(eq(stagedPayments.sourceGroupId, staged.sourceGroupId))
+      .then((r) => r[0]);
+    sourceGroupTotal = agg?.total ?? null;
+  }
+
   // The reconciliation anchor amount: Stripe GROSS takes precedence over the
-  // QB net when a single charge backs the same money (matches the stamp rule).
-  const anchorAmount = stripeEvidence?.grossAmount ?? staged.amount;
+  // QB net when a single charge backs the same money (matches the stamp rule);
+  // for a source group, the combined member total stands in for the lone row.
+  const anchorAmount =
+    stripeEvidence?.grossAmount ?? sourceGroupTotal ?? staged.amount;
 
   // ── Donor node ──
   const qbScore = await scoreStagedPayment({

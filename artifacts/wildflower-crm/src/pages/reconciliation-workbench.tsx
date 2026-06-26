@@ -1278,6 +1278,30 @@ function ReconCard({
   // Real donor on the QB side: a Stripe charge's QB payer is literally "Stripe",
   // so prefer the charge's payer name when this money came through Stripe.
   const qbPayerName = card.stripeChargeDonorName ?? card.payerName;
+  // The donor the LINKED gift is actually recorded under (NOT proposedDonorName,
+  // which is the payer-side proposed donor). This is what approval adopts by
+  // default, so it's the right side of the payer-vs-gift-donor comparison.
+  const giftDonorName = card.resolvedGiftDonorName ?? null;
+  // Surface a payer-vs-gift-donor difference BEFORE approval so the reviewer is
+  // never surprised which donor the approved gift ends up with. Only meaningful
+  // when an EXISTING gift is linked (resolvedGiftId); an auto-proposed gift has
+  // no independent donor to disagree with. Approving keeps the gift's donor by
+  // default; re-pointing it to the payer stays an explicit, confirmed choice via
+  // "Change donor / payer".
+  const donorMismatch =
+    !!card.resolvedGiftId &&
+    !!qbPayerName &&
+    !!giftDonorName &&
+    qbPayerName.trim().toLowerCase() !== giftDonorName.trim().toLowerCase();
+  // For a grouped card, the gift reconciles for the members' COMBINED total —
+  // show whether they add up to the gift (same fee-band tolerance as the gate).
+  const groupTotalNum = num(card.sourceGroupTotalAmount);
+  const giftAmountNum = num(card.resolvedGiftAmount);
+  const groupMatchesGift =
+    groupTotalNum != null &&
+    giftAmountNum != null &&
+    giftAmountNum >= groupTotalNum - 0.01 &&
+    giftAmountNum <= groupTotalNum * 1.1 + 1;
   const crmRecordLane = lanes.find((b) => b.key === "crmRecord");
   // A per-charge card: one card for ONE Stripe charge (not the whole QB deposit).
   // Its matching unit is the single charge → its own CRM gift, so deposit-level
@@ -1324,7 +1348,40 @@ function ReconCard({
             )}
           </div>
           <div className="font-medium">{qbPayerName ?? "Unknown payer"}</div>
-          {card.stripeGrossAmount != null ? (
+          {card.isSourceGroup && card.sourceGroupTotalAmount != null ? (
+            <>
+              <div className="text-lg font-semibold tabular-nums">
+                {money(card.sourceGroupTotalAmount)}
+                <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                  group total ·{" "}
+                  {card.sourceGroupCount ??
+                    card.sourceGroupMembers?.length ??
+                    0}{" "}
+                  payments
+                </span>
+              </div>
+              {card.sourceGroupMembers &&
+                card.sourceGroupMembers.length > 0 && (
+                  <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+                    {card.sourceGroupMembers.map((m) => (
+                      <div
+                        key={m.stagedPaymentId}
+                        className="flex items-baseline justify-between gap-2"
+                      >
+                        <span className="truncate">
+                          {m.payerName ?? "—"}
+                          {m.qbDocNumber ? ` (#${m.qbDocNumber})` : ""}
+                          {m.dateReceived ? ` · ${m.dateReceived}` : ""}
+                        </span>
+                        <span className="shrink-0 tabular-nums">
+                          {money(m.amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+            </>
+          ) : card.stripeGrossAmount != null ? (
             <div className="text-sm font-semibold tabular-nums">
               {money(card.stripeGrossAmount)} gross
               <span className="font-normal text-muted-foreground">
@@ -1419,7 +1476,12 @@ function ReconCard({
           {hasGift ? (
             <>
               <div className="font-medium">
-                {card.proposedDonorName ?? card.proposedDonorKind ?? "Donor"}
+                {(card.resolvedGiftId
+                  ? card.resolvedGiftDonorName
+                  : card.proposedDonorName) ??
+                  card.proposedDonorName ??
+                  card.proposedDonorKind ??
+                  "Donor"}
               </div>
               {linkedGiftName && (
                 <div className="text-xs text-muted-foreground">
@@ -1429,6 +1491,33 @@ function ReconCard({
               {num(card.resolvedGiftAmount) != null && (
                 <div className="text-lg font-semibold tabular-nums">
                   {money(card.resolvedGiftAmount)}
+                </div>
+              )}
+              {card.isSourceGroup &&
+                card.sourceGroupTotalAmount != null &&
+                giftAmountNum != null && (
+                  <div className="text-[11px]">
+                    {groupMatchesGift ? (
+                      <span className="text-emerald-700">
+                        Group total {money(card.sourceGroupTotalAmount)} matches
+                        this gift {money(card.resolvedGiftAmount)}.
+                      </span>
+                    ) : (
+                      <span className="text-amber-700">
+                        Group total {money(card.sourceGroupTotalAmount)} vs gift{" "}
+                        {money(card.resolvedGiftAmount)} — still off beyond the
+                        fee-band tolerance.
+                      </span>
+                    )}
+                  </div>
+                )}
+              {donorMismatch && (
+                <div className="mt-1 rounded border border-amber-300 bg-amber-50 p-1.5 text-[11px] text-amber-800">
+                  <span className="font-medium">Payer ≠ gift donor.</span> This
+                  payment is from {qbPayerName}, but the linked gift is recorded
+                  under {giftDonorName}. Approving keeps the gift’s donor (
+                  {giftDonorName}); use “Change donor / payer” to re-point it to{" "}
+                  {qbPayerName} (a separately confirmed choice).
                 </div>
               )}
               {card.resolvedGiftDate && (

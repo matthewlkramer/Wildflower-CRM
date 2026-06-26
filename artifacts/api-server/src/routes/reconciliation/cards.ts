@@ -368,6 +368,19 @@ router.get(
           SELECT g.name FROM gifts_and_payments g
           WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
         )`.as("charge_resolved_gift_name"),
+        resolvedGiftDonorName: sql<string | null>`(
+          SELECT COALESCE(
+            (SELECT o.name FROM organizations o WHERE o.id = g.organization_id),
+            (SELECT h.name FROM households h WHERE h.id = g.household_id),
+            (SELECT COALESCE(
+                      NULLIF(TRIM(pp.full_name), ''),
+                      NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), '')
+                    )
+               FROM people pp WHERE pp.id = g.individual_giver_person_id)
+          )
+          FROM gifts_and_payments g
+          WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+        )`.as("charge_resolved_gift_donor_name"),
         resolvedGiftAmount: sql<string | null>`(
           SELECT g.amount::text FROM gifts_and_payments g
           WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
@@ -434,6 +447,28 @@ router.get(
       db
         .select({
           ...stagedSelect,
+          // Donor the LINKED gift is recorded under. Correlated on the staged
+          // row's gift-link COLUMNS (matched/created/group) — NOT the resolvedGift
+          // alias — to avoid a bare aliased column rendering unqualified inside a
+          // correlated subquery. Distinct from proposedDonorName (the payer-side
+          // donor) so the card can surface a payer-vs-gift-donor difference.
+          resolvedGiftDonorName: sql<string | null>`(
+            SELECT COALESCE(
+              (SELECT o.name FROM organizations o WHERE o.id = g.organization_id),
+              (SELECT h.name FROM households h WHERE h.id = g.household_id),
+              (SELECT COALESCE(
+                        NULLIF(TRIM(pp.full_name), ''),
+                        NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), '')
+                      )
+                 FROM people pp WHERE pp.id = g.individual_giver_person_id)
+            )
+            FROM gifts_and_payments g
+            WHERE g.id = COALESCE(
+              ${stagedPayments.matchedGiftId},
+              ${stagedPayments.createdGiftId},
+              ${stagedPayments.groupReconciledGiftId}
+            )
+          )`,
           finalAmountSource: resolvedGift.finalAmountSource,
           autoGiftCount: autoGiftCountExpr,
           autoGiftPick: autoGiftPickExpr,
@@ -457,6 +492,7 @@ router.get(
           chargeDonorName: chargeSub.donorName,
           chargeResolvedGiftId: chargeSub.resolvedGiftId,
           chargeResolvedGiftName: chargeSub.resolvedGiftName,
+          chargeResolvedGiftDonorName: chargeSub.resolvedGiftDonorName,
           chargeResolvedGiftAmount: chargeSub.resolvedGiftAmount,
           chargeResolvedGiftDate: chargeSub.resolvedGiftDate,
           chargeResolvedGiftFiscalYear: chargeSub.resolvedGiftFiscalYear,
@@ -644,6 +680,9 @@ router.get(
         resolvedGiftName: isCharge
           ? (row.chargeResolvedGiftName ?? null)
           : (row.resolvedGiftName ?? null),
+        resolvedGiftDonorName: isCharge
+          ? (row.chargeResolvedGiftDonorName ?? null)
+          : (row.resolvedGiftDonorName ?? null),
         resolvedGiftAmount: isCharge
           ? (row.chargeResolvedGiftAmount ?? null)
           : (row.resolvedGiftAmount ?? null),
