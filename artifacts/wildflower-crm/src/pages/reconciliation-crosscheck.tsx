@@ -2,10 +2,12 @@ import { useMemo, useState } from "react";
 import {
   useGetReconciliationCrosscheck,
   getGetReconciliationCrosscheckQueryKey,
+  getReconciliationCrosscheck,
   type ReconciliationCrosscheckSource,
   type ReconciliationClassification,
   type ReconciliationCrosscheckRow,
 } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { formatCurrency, formatDateShort } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
@@ -84,14 +86,18 @@ const CSV_COLUMNS: {
   { header: "Match basis", get: (r) => r.matchBasis },
 ];
 
+const EXPORT_PAGE_SIZE = 1000;
+
 export default function ReconciliationCrosscheck() {
   const isAdmin = useIsAdmin();
+  const { toast } = useToast();
   const [source, setSource] = useState<ReconciliationCrosscheckSource | typeof ALL>(ALL);
   const [classification, setClassification] = useState<
     ReconciliationClassification | typeof ALL
   >(ALL);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [isExporting, setIsExporting] = useState(false);
 
   const params = useMemo(
     () => ({
@@ -135,21 +141,63 @@ export default function ReconciliationCrosscheck() {
     0,
   );
 
-  function exportCsv() {
-    const header = CSV_COLUMNS.map((c) => csvCell(c.header)).join(",");
-    const body = rows
-      .map((r) => CSV_COLUMNS.map((c) => csvCell(c.get(r))).join(","))
-      .join("\n");
-    const csv = `${header}\n${body}`;
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `reconciliation-crosscheck-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  async function exportCsv() {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      // Fetch every row matching the active filters (across all pages) rather
+      // than just the visible page. We loop paginated requests so the export
+      // stays correct even if the dataset grows past the server's page cap.
+      const filters = {
+        ...(source !== ALL ? { source } : {}),
+        ...(classification !== ALL ? { classification } : {}),
+        ...(search.trim() ? { search: search.trim() } : {}),
+      };
+      const allRows: ReconciliationCrosscheckRow[] = [];
+      let exportPage = 1;
+      for (;;) {
+        const result = await getReconciliationCrosscheck({
+          ...filters,
+          limit: EXPORT_PAGE_SIZE,
+          page: exportPage,
+        });
+        allRows.push(...result.data);
+        const fetchedTotal = result.pagination.total;
+        if (allRows.length >= fetchedTotal || result.data.length === 0) break;
+        exportPage += 1;
+      }
+
+      if (allRows.length === 0) {
+        toast({
+          title: "Nothing to export",
+          description: "No rows match the current filters.",
+        });
+        return;
+      }
+
+      const header = CSV_COLUMNS.map((c) => csvCell(c.header)).join(",");
+      const body = allRows
+        .map((r) => CSV_COLUMNS.map((c) => csvCell(c.get(r))).join(","))
+        .join("\n");
+      const csv = `${header}\n${body}`;
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `reconciliation-crosscheck-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({
+        title: "Export failed",
+        description: (err as Error)?.message ?? "Could not export the report.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   function resetPageAnd<T>(setter: (v: T) => void) {
@@ -266,11 +314,11 @@ export default function ReconciliationCrosscheck() {
         <Button
           variant="outline"
           onClick={exportCsv}
-          disabled={rows.length === 0}
+          disabled={total === 0 || isExporting}
           data-testid="button-export-csv"
         >
           <Download className="mr-2 h-4 w-4" />
-          Export CSV (page)
+          {isExporting ? "Exporting…" : "Export CSV (all)"}
         </Button>
       </div>
 
