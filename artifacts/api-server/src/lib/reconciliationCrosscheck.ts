@@ -85,6 +85,25 @@ const AMOUNT_TOLERANCE = 0.01;
 const DATE_WINDOW_DAYS = 45;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// PROD VERIFICATION (read-only pass against the live money records — see
+// .agents/memory/reconciliation-crosscheck-prod-verification.md). Against prod the
+// report is broadly trustworthy: all 39 Stripe rows match by charge id and the 84
+// QBO name+amount+date matches spot-check clean. Three accuracy gaps were found,
+// each worth tuning before the team fully relies on the gap totals:
+//   1. DATE_WINDOW_DAYS = 45 is too tight — it produced the lone "missing" row
+//      (Chia Rodeski $7,000): the real CRM gift exists 54 days from the sheet
+//      date. The live reconciler uses 60–90d windows; widen this to ~60–90.
+//   2. The "amount + date only" path (uncorroborated name) yielded 16 weak QBO
+//      matches (~$1.18M abs), 14 with a blank sheet donor; it grabs the first
+//      same-amount CRM record (often an unrelated donor) and even matched a $0
+//      row and an abs()'d -$500k reclassification. Guard zero/negative amounts
+//      and treat amount-only hits as a distinct "weak/uncertain" bucket, not
+//      "matched".
+//   3. No one-to-one consumption: 27 CRM records were each claimed by >=2 sheet
+//      rows. Most are genuine sheet self-duplicates (one Stripe transfer listed
+//      twice), so the sheet total double-counts and the matched COUNT overstates
+//      distinct reconciled money.
+
 interface CrmCandidate {
   kind: "gift" | "staged_payment";
   id: string;
