@@ -1965,6 +1965,14 @@ export interface GiftOrPayment {
   /** Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses. */
   readonly reconciliationLanes?: ReconciliationLanes;
   tags?: string | null;
+  /** Raw 'circle / coding' label from the donation coding form (e.g. fund/hub/track). Reference only. */
+  readonly codingFormCircle?: string | null;
+  /** Raw 'stand-alone vs multi-series' value from the donation coding form. Reference only. */
+  readonly codingFormSeries?: string | null;
+  /** Raw 'additional notes' free text from the donation coding form. Reference only. */
+  readonly codingFormAdditionalNotes?: string | null;
+  /** Raw 'internal memo' free text from the donation coding form. Reference only. */
+  readonly codingFormMemo?: string | null;
   /** Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time. */
   thankYouSentAt?: string | null;
   /** FK to the email_messages row that was identified as the thank-you. Read-only; set via /link-thank-you-email or the thank_you_acknowledgment proposal accept. */
@@ -4518,6 +4526,10 @@ export const CodingFormCrossCheckAttribute = {
   usageRestriction: 'usageRestriction',
   intendedUsage: 'intendedUsage',
   address: 'address',
+  circle: 'circle',
+  seriesType: 'seriesType',
+  additionalNotes: 'additionalNotes',
+  internalMemo: 'internalMemo',
 } as const;
 
 /**

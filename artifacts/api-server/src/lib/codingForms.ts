@@ -39,7 +39,13 @@ export type CodingFormAttribute =
   | "purposeVerbatim"
   | "usageRestriction"
   | "intendedUsage"
-  | "address";
+  | "address"
+  // Raw coding-form reference values stamped on the matched gift "for looking
+  // at later" (no structured home). See crossChecksFor / applyRow.
+  | "circle"
+  | "seriesType"
+  | "additionalNotes"
+  | "internalMemo";
 
 export interface CrossCheck {
   attribute: CodingFormAttribute;
@@ -60,41 +66,27 @@ export interface NeedsDecisionItem {
   value: string | null;
 }
 
-/** Spreadsheet attributes with no existing schema home (per row). */
+/**
+ * Spreadsheet attributes with no existing schema home (per row).
+ *
+ * All eight original coding-form "needs a decision" attributes have now been
+ * resolved, so this list is intentionally empty:
+ *   - donorType / stripeFees / class (QuickBooks Class) / depositDate → DROPPED:
+ *     already captured or derived elsewhere in the CRM (donor type remains a
+ *     matching hint only; fees / class / deposit date come from the QuickBooks +
+ *     Stripe reconciliation pipeline). The raw values are still retained on
+ *     coding_form_rows for provenance — they're just no longer flagged.
+ *   - circle / seriesType / additionalNotes / internalMemo → RE-HOMED as raw,
+ *     read-only reference copies on the MATCHED GIFT, applied through the normal
+ *     compare-don't-clobber cross-check pipeline (see crossChecksFor / applyRow).
+ *
+ * The mechanism is retained for any genuinely homeless future attribute.
+ */
 const NEEDS_DECISION_FIELDS: Array<{
   attribute: string;
   label: string;
   get: (r: CodingFormRowSelect) => string | null;
-}> = [
-  { attribute: "donorType", label: "Donor type", get: (r) => r.donorTypeRaw },
-  {
-    attribute: "seriesType",
-    label: "Stand-alone vs multi-series",
-    get: (r) => r.seriesTypeRaw,
-  },
-  { attribute: "circle", label: "Circle / coding", get: (r) => r.circleRaw },
-  {
-    attribute: "additionalNotes",
-    label: "Additional notes",
-    get: (r) => r.additionalNotes,
-  },
-  {
-    attribute: "stripeFees",
-    label: "Stripe fees",
-    get: (r) => r.stripeFeesRaw,
-  },
-  { attribute: "class", label: "QuickBooks Class", get: (r) => r.classRaw },
-  {
-    attribute: "depositDate",
-    label: "Deposit date",
-    get: (r) => (r.depositDate ? String(r.depositDate) : null),
-  },
-  {
-    attribute: "internalMemo",
-    label: "Internal memo",
-    get: (r) => r.internalMemo,
-  },
-];
+}> = [];
 
 export const NEEDS_DECISION_ATTRIBUTES = NEEDS_DECISION_FIELDS.map(
   (f) => f.attribute,
@@ -107,16 +99,7 @@ export const NEEDS_DECISION_ATTRIBUTES = NEEDS_DECISION_FIELDS.map(
 export const NEEDS_DECISION_FIELDS_META: Array<{
   attribute: string;
   nonEmpty: SQL;
-}> = [
-  { attribute: "donorType", nonEmpty: sql`NULLIF(TRIM(${codingFormRows.donorTypeRaw}), '') IS NOT NULL` },
-  { attribute: "seriesType", nonEmpty: sql`NULLIF(TRIM(${codingFormRows.seriesTypeRaw}), '') IS NOT NULL` },
-  { attribute: "circle", nonEmpty: sql`NULLIF(TRIM(${codingFormRows.circleRaw}), '') IS NOT NULL` },
-  { attribute: "additionalNotes", nonEmpty: sql`NULLIF(TRIM(${codingFormRows.additionalNotes}), '') IS NOT NULL` },
-  { attribute: "stripeFees", nonEmpty: sql`NULLIF(TRIM(${codingFormRows.stripeFeesRaw}), '') IS NOT NULL` },
-  { attribute: "class", nonEmpty: sql`NULLIF(TRIM(${codingFormRows.classRaw}), '') IS NOT NULL` },
-  { attribute: "depositDate", nonEmpty: sql`${codingFormRows.depositDate} IS NOT NULL` },
-  { attribute: "internalMemo", nonEmpty: sql`NULLIF(TRIM(${codingFormRows.internalMemo}), '') IS NOT NULL` },
-];
+}> = [];
 
 export function needsDecisionFor(row: CodingFormRowSelect): NeedsDecisionItem[] {
   const out: NeedsDecisionItem[] = [];
@@ -580,6 +563,107 @@ export async function crossChecksFor(
     });
   }
 
+  // 6. Coding-form reference attributes (circle / series / additional notes /
+  //    internal memo) → raw copies stamped on the MATCHED GIFT, kept read-only
+  //    "for looking at later". These have no structured CRM home; compare —
+  //    don't clobber — against the gift's current stored reference value, and
+  //    block when there is no matched gift to attach them to.
+  {
+    const refSpecs: Array<{
+      attribute: CodingFormAttribute;
+      label: string;
+      sheet: string | null;
+      col:
+        | "codingFormCircle"
+        | "codingFormSeries"
+        | "codingFormAdditionalNotes"
+        | "codingFormMemo";
+    }> = [
+      {
+        attribute: "circle",
+        label: "Circle / coding",
+        sheet: row.circleRaw,
+        col: "codingFormCircle",
+      },
+      {
+        attribute: "seriesType",
+        label: "Stand-alone vs multi-series",
+        sheet: row.seriesTypeRaw,
+        col: "codingFormSeries",
+      },
+      {
+        attribute: "additionalNotes",
+        label: "Additional notes",
+        sheet: row.additionalNotes,
+        col: "codingFormAdditionalNotes",
+      },
+      {
+        attribute: "internalMemo",
+        label: "Internal memo",
+        sheet: row.internalMemo,
+        col: "codingFormMemo",
+      },
+    ];
+    const anyPresent = refSpecs.some(
+      (s) => s.sheet != null && s.sheet.trim().length > 0,
+    );
+    let giftRef: Pick<
+      typeof giftsAndPayments.$inferSelect,
+      | "codingFormCircle"
+      | "codingFormSeries"
+      | "codingFormAdditionalNotes"
+      | "codingFormMemo"
+    > | null = null;
+    if (anyPresent && row.matchedGiftId) {
+      const [g] = await db
+        .select({
+          codingFormCircle: giftsAndPayments.codingFormCircle,
+          codingFormSeries: giftsAndPayments.codingFormSeries,
+          codingFormAdditionalNotes: giftsAndPayments.codingFormAdditionalNotes,
+          codingFormMemo: giftsAndPayments.codingFormMemo,
+        })
+        .from(giftsAndPayments)
+        .where(eq(giftsAndPayments.id, row.matchedGiftId))
+        .limit(1);
+      giftRef = g ?? null;
+    }
+    for (const s of refSpecs) {
+      const applicable = !!(s.sheet && s.sheet.trim().length > 0);
+      let status: CrossCheckStatus = "na";
+      let crmValue: string | null = null;
+      let blockedReason: string | null = null;
+      if (applicable) {
+        if (!row.matchedGiftId) {
+          blockedReason =
+            "no matched gift to attach the coding-form reference to";
+          status = "na";
+        } else if (!giftRef) {
+          // matchedGiftId points at a gift that no longer exists (no FK on the
+          // staging table). Block instead of silently treating it as "new".
+          blockedReason = "matched gift no longer exists";
+          status = "na";
+        } else {
+          crmValue = giftRef[s.col];
+          if (!crmValue || crmValue.trim().length === 0) status = "new";
+          else if (eqText(crmValue, s.sheet)) status = "same";
+          else status = "conflict";
+        }
+      }
+      out.push({
+        attribute: s.attribute,
+        label: s.label,
+        status,
+        applicable,
+        sheetValue: s.sheet,
+        crmValue,
+        targetType: "gift",
+        targetId: row.matchedGiftId,
+        decision: dec(s.attribute),
+        blockedReason,
+      });
+    }
+  }
+
   return out;
 }
 
@@ -803,6 +887,42 @@ export async function applyRow(
       appliedAddressId = id;
       applied.push("address");
     }
+  }
+
+  // 6. Coding-form reference attributes → raw copies on the matched gift.
+  //    Compare-don't-clobber already happened in the cross-check; here we just
+  //    write the reviewer-approved actionable ones onto the gift row.
+  const refApply: Array<{
+    attr: CodingFormAttribute;
+    col:
+      | "codingFormCircle"
+      | "codingFormSeries"
+      | "codingFormAdditionalNotes"
+      | "codingFormMemo";
+    value: string | null;
+  }> = [
+    { attr: "circle", col: "codingFormCircle", value: row.circleRaw },
+    { attr: "seriesType", col: "codingFormSeries", value: row.seriesTypeRaw },
+    {
+      attr: "additionalNotes",
+      col: "codingFormAdditionalNotes",
+      value: row.additionalNotes,
+    },
+    { attr: "internalMemo", col: "codingFormMemo", value: row.internalMemo },
+  ];
+  const refToApply = refApply.filter((r) => want(r.attr));
+  if (refToApply.length > 0 && row.matchedGiftId) {
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    for (const r of refToApply) patch[r.col] = r.value;
+    // Self-verifying write: if the matched gift vanished between the cross-check
+    // and here, the update touches zero rows — mark skipped, never applied.
+    const updated = await db
+      .update(giftsAndPayments)
+      .set(patch)
+      .where(eq(giftsAndPayments.id, row.matchedGiftId))
+      .returning({ id: giftsAndPayments.id });
+    if (updated.length > 0) applied.push(...refToApply.map((r) => r.attr));
+    else skipped.push(...refToApply.map((r) => r.attr));
   }
 
   // Persist merged decisions + applied artifact ids + status.

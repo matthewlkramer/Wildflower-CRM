@@ -55,7 +55,7 @@ export const ListCodingFormRowsResponse = zod.object({
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -159,7 +159,7 @@ export const GetCodingFormRowResponse = zod.object({
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -235,7 +235,7 @@ export const SetCodingFormMatchResponse = zod.object({
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -303,7 +303,7 @@ export const RematchCodingFormRowResponse = zod.object({
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -376,7 +376,7 @@ export const ApplyCodingFormRowResponse = zod.object({
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -447,7 +447,7 @@ export const SkipCodingFormRowResponse = zod.object({
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -520,7 +520,7 @@ export const PullGrantAgreementResponse = zod.object({
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),

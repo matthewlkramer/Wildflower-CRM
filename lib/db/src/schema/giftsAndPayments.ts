@@ -207,6 +207,16 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   thankYouEmailMessageId: text("thank_you_email_message_id"),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
+  // ── Coding-form reference (one-time Donation Revenue Coding Form import) ──
+  // Raw, read-only copies of the form attributes that have no structured CRM
+  // home, stamped onto the matched gift by the coding-form apply step purely
+  // "for looking at later". Provisional — may be dropped if the team decides
+  // they aren't worth keeping. NEVER set via the gift create/update API and
+  // never read by derivation / analytics / QuickBooks-tie logic.
+  codingFormCircle: text("coding_form_circle"),
+  codingFormSeries: text("coding_form_series"),
+  codingFormAdditionalNotes: text("coding_form_additional_notes"),
+  codingFormMemo: text("coding_form_memo"),
   // Soft-delete: non-null = archived (hidden from non-admins). Financial
   // records aren't hard-deleted; archiving hides them from default views.
   archivedAt: timestamp("archived_at"),
