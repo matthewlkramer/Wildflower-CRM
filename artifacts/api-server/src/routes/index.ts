@@ -57,6 +57,7 @@ import financialCorrectionsRouter from "./financialCorrections";
 import cleanupQueueRouter from "./cleanupQueue";
 import adminReassignRouter from "./adminReassign";
 import reconciliationRouter from "./reconciliation";
+import reconciliationCrosscheckRouter from "./reconciliationCrosscheck";
 
 const router: IRouter = Router();
 
@@ -128,5 +129,6 @@ router.use("/financial-corrections", financialCorrectionsRouter);
 router.use(cleanupQueueRouter);
 router.use(adminReassignRouter);
 router.use(reconciliationRouter);
+router.use(reconciliationCrosscheckRouter);
 
 export default router;

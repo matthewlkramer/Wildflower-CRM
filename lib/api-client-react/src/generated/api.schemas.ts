@@ -4355,6 +4355,104 @@ export interface CleanupItemList {
 }
 
 /**
+ * Which historical spreadsheet sheet a row came from.
+ */
+export type ReconciliationCrosscheckSource = typeof ReconciliationCrosscheckSource[keyof typeof ReconciliationCrosscheckSource];
+
+
+export const ReconciliationCrosscheckSource = {
+  stripe_donorbox: 'stripe_donorbox',
+  stripe_815: 'stripe_815',
+  qbo_fy25: 'qbo_fy25',
+} as const;
+
+/**
+ * How a spreadsheet row compares to the CRM's synced records.
+ */
+export type ReconciliationClassification = typeof ReconciliationClassification[keyof typeof ReconciliationClassification];
+
+
+export const ReconciliationClassification = {
+  matched: 'matched',
+  amount_mismatch: 'amount_mismatch',
+  missing: 'missing',
+} as const;
+
+/**
+ * Which CRM record matched, if any.
+ */
+export type ReconciliationCrosscheckRowCrmRecordKind = typeof ReconciliationCrosscheckRowCrmRecordKind[keyof typeof ReconciliationCrosscheckRowCrmRecordKind] | null;
+
+
+export const ReconciliationCrosscheckRowCrmRecordKind = {
+  stripe_charge: 'stripe_charge',
+  gift: 'gift',
+  staged_payment: 'staged_payment',
+} as const;
+
+export interface ReconciliationCrosscheckRow {
+  source: ReconciliationCrosscheckSource;
+  /** Stable per-row id (source + sheet row index). */
+  rowRef: string;
+  classification: ReconciliationClassification;
+  /** Human-readable explanation of how (or why not) the row was matched. */
+  matchBasis: string;
+  /** Sheet transaction date (ISO yyyy-mm-dd). */
+  date?: string | null;
+  donorName?: string | null;
+  donorEmail?: string | null;
+  /** Sheet gross amount (dollars). */
+  grossAmount?: number | null;
+  feeAmount?: number | null;
+  netAmount?: number | null;
+  stripeChargeId?: string | null;
+  /** QuickBooks transaction type (QBO rows only). */
+  qboType?: string | null;
+  qboNum?: string | null;
+  /** QuickBooks GL account section (QBO rows only). */
+  qboAccount?: string | null;
+  qboLocation?: string | null;
+  qboMemo?: string | null;
+  /** The CRM amount compared against (when a record was found). */
+  crmAmount?: number | null;
+  /** Which CRM record matched, if any. */
+  crmRecordKind?: ReconciliationCrosscheckRowCrmRecordKind;
+  /** Id of the matched CRM record. */
+  crmRecordId?: string | null;
+}
+
+export interface ReconciliationSourceSummary {
+  source: ReconciliationCrosscheckSource;
+  total: number;
+  matched: number;
+  amountMismatch: number;
+  missing: number;
+  /** Sum of sheet gross over all rows of this source. */
+  sheetTotalAmount: number;
+  /** Sum of sheet gross over missing rows (the unreconciled gap). */
+  missingAmount: number;
+  /** Sum of sheet gross over amount_mismatch rows. */
+  mismatchAmount: number;
+}
+
+export interface ReconciliationGapBucket {
+  source: ReconciliationCrosscheckSource;
+  /** yyyy-mm of the sheet date, or 'unknown'. */
+  month: string;
+  missingCount: number;
+  missingAmount: number;
+}
+
+export interface ReconciliationCrosscheckResult {
+  data: ReconciliationCrosscheckRow[];
+  pagination: Pagination;
+  /** Per-source counts and amounts over the FULL dataset (not just the page). */
+  bySource: ReconciliationSourceSummary[];
+  /** Month-by-month missing-row breakdown over the FULL dataset. */
+  gaps: ReconciliationGapBucket[];
+}
+
+/**
  * Kind of record being flagged.
  */
 export type FlagForResearchBodyTargetType = typeof FlagForResearchBodyTargetType[keyof typeof FlagForResearchBodyTargetType];
@@ -6413,6 +6511,30 @@ export type ListCleanupQueueParams = {
  * Filter by status. Omit to get open items only.
  */
 status?: CleanupQueueStatus;
+/**
+ * @minimum 1
+ * @maximum 10000
+ */
+limit?: LimitParameter;
+/**
+ * @minimum 1
+ */
+page?: PageParameter;
+};
+
+export type GetReconciliationCrosscheckParams = {
+/**
+ * Restrict to one source sheet.
+ */
+source?: ReconciliationCrosscheckSource;
+/**
+ * Restrict to one classification bucket.
+ */
+classification?: ReconciliationClassification;
+/**
+ * Case-insensitive substring over donor name, email, and Stripe charge id.
+ */
+search?: string;
 /**
  * @minimum 1
  * @maximum 10000

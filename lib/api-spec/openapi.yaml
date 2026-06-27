@@ -208,6 +208,30 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Item is no longer open (already resolved or dismissed)." }
 
+  # ─── Historical transaction reconciliation cross-check (admin, read-only) ────
+  /reconciliation-crosscheck:
+    get:
+      operationId: getReconciliationCrosscheck
+      tags: [reconciliation-crosscheck]
+      summary: >-
+        Admin-only, strictly READ-ONLY. Cross-checks three historical
+        transaction spreadsheet exports (Stripe/Donorbox donations, raw Stripe
+        charges, and a QuickBooks Statement of Activity) against the CRM's
+        already-synced money records, classifying every spreadsheet row as
+        matched / amount_mismatch / missing. Never mints, imports, or modifies
+        any gift, staged payment, charge, or payout — it only reports gaps.
+        Returns the (filtered, paginated) rows plus a per-source summary and an
+        aggregate month-by-month gap breakdown computed over the FULL dataset.
+      parameters:
+        - { name: source, in: query, schema: { $ref: "#/components/schemas/ReconciliationCrosscheckSource" }, description: "Restrict to one source sheet." }
+        - { name: classification, in: query, schema: { $ref: "#/components/schemas/ReconciliationClassification" }, description: "Restrict to one classification bucket." }
+        - { name: search, in: query, schema: { type: string }, description: "Case-insensitive substring over donor name, email, and Stripe charge id." }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationCrosscheckResult" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   # ─── Email intelligence proposals ──────────────────────────────────────────
   /email-proposals:
     get:
@@ -7140,6 +7164,65 @@ components:
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/CleanupItem" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+    ReconciliationCrosscheckSource:
+      type: string
+      enum: [stripe_donorbox, stripe_815, qbo_fy25]
+      description: "Which historical spreadsheet sheet a row came from."
+    ReconciliationClassification:
+      type: string
+      enum: [matched, amount_mismatch, missing]
+      description: "How a spreadsheet row compares to the CRM's synced records."
+    ReconciliationCrosscheckRow:
+      type: object
+      required: [source, rowRef, classification, matchBasis]
+      properties:
+        source:         { $ref: "#/components/schemas/ReconciliationCrosscheckSource" }
+        rowRef:         { type: string, description: "Stable per-row id (source + sheet row index)." }
+        classification: { $ref: "#/components/schemas/ReconciliationClassification" }
+        matchBasis:     { type: string, description: "Human-readable explanation of how (or why not) the row was matched." }
+        date:           { type: string, nullable: true, description: "Sheet transaction date (ISO yyyy-mm-dd)." }
+        donorName:      { type: string, nullable: true }
+        donorEmail:     { type: string, nullable: true }
+        grossAmount:    { type: number, nullable: true, description: "Sheet gross amount (dollars)." }
+        feeAmount:      { type: number, nullable: true }
+        netAmount:      { type: number, nullable: true }
+        stripeChargeId: { type: string, nullable: true }
+        qboType:        { type: string, nullable: true, description: "QuickBooks transaction type (QBO rows only)." }
+        qboNum:         { type: string, nullable: true }
+        qboAccount:     { type: string, nullable: true, description: "QuickBooks GL account section (QBO rows only)." }
+        qboLocation:    { type: string, nullable: true }
+        qboMemo:        { type: string, nullable: true }
+        crmAmount:      { type: number, nullable: true, description: "The CRM amount compared against (when a record was found)." }
+        crmRecordKind:  { type: string, nullable: true, enum: [stripe_charge, gift, staged_payment], description: "Which CRM record matched, if any." }
+        crmRecordId:    { type: string, nullable: true, description: "Id of the matched CRM record." }
+    ReconciliationSourceSummary:
+      type: object
+      required: [source, total, matched, amountMismatch, missing, sheetTotalAmount, missingAmount, mismatchAmount]
+      properties:
+        source:           { $ref: "#/components/schemas/ReconciliationCrosscheckSource" }
+        total:            { type: integer }
+        matched:          { type: integer }
+        amountMismatch:   { type: integer }
+        missing:          { type: integer }
+        sheetTotalAmount: { type: number, description: "Sum of sheet gross over all rows of this source." }
+        missingAmount:    { type: number, description: "Sum of sheet gross over missing rows (the unreconciled gap)." }
+        mismatchAmount:   { type: number, description: "Sum of sheet gross over amount_mismatch rows." }
+    ReconciliationGapBucket:
+      type: object
+      required: [source, month, missingCount, missingAmount]
+      properties:
+        source:       { $ref: "#/components/schemas/ReconciliationCrosscheckSource" }
+        month:        { type: string, description: "yyyy-mm of the sheet date, or 'unknown'." }
+        missingCount: { type: integer }
+        missingAmount: { type: number }
+    ReconciliationCrosscheckResult:
+      type: object
+      required: [data, pagination, bySource, gaps]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/ReconciliationCrosscheckRow" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+        bySource:   { type: array, items: { $ref: "#/components/schemas/ReconciliationSourceSummary" }, description: "Per-source counts and amounts over the FULL dataset (not just the page)." }
+        gaps:       { type: array, items: { $ref: "#/components/schemas/ReconciliationGapBucket" }, description: "Month-by-month missing-row breakdown over the FULL dataset." }
     FlagForResearchBody:
       type: object
       required: [targetType, targetId, note]

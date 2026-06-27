@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "cleanup:test-users": "tsx ./src/cleanup-test-users.ts",
+    "parse:reconciliation-sheets": "tsx ./src/parse-reconciliation-sheets.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -13,6 +14,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "tsx": "catalog:"
+    "tsx": "catalog:",
+    "xlsx": "^0.18.5"
   }
 }
