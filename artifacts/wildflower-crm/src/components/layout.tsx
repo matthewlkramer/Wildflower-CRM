@@ -31,6 +31,7 @@ import {
   ScrollText,
   CopyCheck,
   ListChecks,
+  FileSpreadsheet,
 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
@@ -86,6 +87,7 @@ const navItems: NavEntry[] = [
   { href: "/potential-duplicates", label: "Potential Duplicates", icon: CopyCheck, adminOnly: true },
   { href: "/reconciliation-crosscheck", label: "Reconciliation Cross-Check", icon: FileSearch, adminOnly: true },
   { href: "/cleanup-queue", label: "Cleanup Queue", icon: ListChecks },
+  { href: "/coding-form-import", label: "Coding Form Import", icon: FileSpreadsheet, adminOnly: true },
 ];
 
 const SIDEBAR_COLLAPSED_KEY = "wf-sidebar-collapsed";

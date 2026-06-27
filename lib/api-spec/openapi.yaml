@@ -55,6 +55,7 @@ tags:
   - { name: reconciliation }
   - { name: grant-leads }
   - { name: cleanup-queue }
+  - { name: coding-form-rows }
   - { name: admin }
   - { name: search }
 
@@ -231,6 +232,104 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationCrosscheckResult" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
+  # ─── Coding-form import (one-time donation coding-form reconciliation) ───────
+  /coding-form-rows:
+    get:
+      operationId: listCodingFormRows
+      tags: [coding-form-rows]
+      summary: >-
+        Parsed donation coding-form rows for the one-time import review. Each row
+        carries its proposed donor + opportunity/gift match and a LIVE
+        per-attribute cross-check (new/same/conflict) against current CRM state.
+        Admin only.
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/CodingFormRowStatus" }, description: "Filter by apply status. Omit for all." }
+        - { name: source, in: query, schema: { type: string, enum: [fy24, fy25, fy26, girasol] }, description: "Filter by source sheet." }
+        - { name: matchTier, in: query, schema: { type: string, enum: [high, suggested, none] }, description: "Filter by match confidence tier." }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormRowList" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /coding-form-rows-summary:
+    get:
+      operationId: getCodingFormSummary
+      tags: [coding-form-rows]
+      summary: >-
+        Aggregate counts by status and source plus the "needs a decision" summary
+        — spreadsheet attributes with no existing schema home, with row counts.
+        Admin only.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormSummary" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /coding-form-rows/{id}:
+    get:
+      operationId: getCodingFormRow
+      tags: [coding-form-rows]
+      summary: One parsed coding-form row with its full live cross-check. Admin only.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormRow" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /coding-form-rows/{id}/match:
+    patch:
+      operationId: setCodingFormMatch
+      tags: [coding-form-rows]
+      summary: >-
+        Set or override the donor (XOR — at most one donor FK) and the matched
+        opportunity/gift for a row. Stamps matchConfirmedAt. Admin only.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SetCodingFormMatchBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormRow" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /coding-form-rows/{id}/rematch:
+    post:
+      operationId: rematchCodingFormRow
+      tags: [coding-form-rows]
+      summary: >-
+        Recompute the proposed donor/opportunity/gift match from the matcher,
+        clearing any prior human confirmation. Admin only.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormRow" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /coding-form-rows/{id}/apply:
+    post:
+      operationId: applyCodingFormRow
+      tags: [coding-form-rows]
+      summary: >-
+        Apply approved attributes for a row through the normal create/update paths
+        (reporting-deadline task, allocation restriction/intended-usage/purpose,
+        donor address). Compare-don't-clobber: only fills missing or
+        reviewer-approved conflicts. Idempotent — re-running never duplicates.
+        Admin only.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ApplyCodingFormRowBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormApplyResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Row cannot be applied (e.g. no confirmed donor match)." }
+  /coding-form-rows/{id}/skip:
+    post:
+      operationId: skipCodingFormRow
+      tags: [coding-form-rows]
+      summary: Mark a row as skipped (intentionally not imported). Admin only.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormRow" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Email intelligence proposals ──────────────────────────────────────────
   /email-proposals:
@@ -7232,6 +7331,116 @@ components:
         targetType: { type: string, enum: [opportunity, pledge, organization, person, gift], description: "Kind of record being flagged." }
         targetId:   { type: string, minLength: 1, description: "Id of the record being flagged." }
         note:       { type: string, minLength: 1, description: "What needs research / follow-up on this record." }
+    CodingFormRowStatus:
+      type: string
+      enum: [pending, applied, skipped]
+    CrossCheckStatus:
+      type: string
+      enum: [new, same, conflict, na]
+      description: "new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute."
+    CodingFormCrossCheck:
+      type: object
+      required: [attribute, label, status, applicable]
+      properties:
+        attribute:  { type: string, enum: [reportDeadline, purposeVerbatim, usageRestriction, intendedUsage, address], description: "Which importable attribute this row describes." }
+        label:      { type: string, description: "Human-readable attribute name." }
+        status:     { $ref: "#/components/schemas/CrossCheckStatus" }
+        applicable: { type: boolean, description: "False when the sheet has nothing to import for this attribute." }
+        sheetValue: { type: string, nullable: true, description: "The spreadsheet value (display form)." }
+        crmValue:   { type: string, nullable: true, description: "The current CRM value (display form)." }
+        targetType: { type: string, nullable: true, description: "What an apply would write to (task / allocation / address)." }
+        targetId:   { type: string, nullable: true, description: "Id of the existing target, when one was resolved." }
+        decision:   { type: string, nullable: true, enum: [apply, skip], description: "The reviewer's stored decision for this attribute, if any." }
+        blockedReason: { type: string, nullable: true, description: "Why this attribute can't be auto-applied (e.g. ambiguous allocation, no confirmed match)." }
+    CodingFormNeedsDecision:
+      type: object
+      required: [attribute, label]
+      properties:
+        attribute: { type: string }
+        label:     { type: string }
+        value:     { type: string, nullable: true, description: "The captured spreadsheet value with no schema home." }
+    CodingFormRow:
+      type: object
+      required: [id, source, sourceRowIndex, status, crossChecks, needsDecision, createdAt, updatedAt]
+      properties:
+        id:               { type: string }
+        source:           { type: string }
+        sourceRowIndex:   { type: integer }
+        status:           { $ref: "#/components/schemas/CodingFormRowStatus" }
+        donorNameRaw:     { type: string, nullable: true }
+        internalMemo:     { type: string, nullable: true }
+        amount:           { type: string, nullable: true }
+        donationDate:     { type: string, nullable: true }
+        restrictionLanguage: { type: string, nullable: true }
+        donorNameAddressRaw: { type: string, nullable: true }
+        reportRequired:   { type: boolean, nullable: true }
+        reportDueDate:    { type: string, nullable: true }
+        intendedUsageSuggested: { type: string, nullable: true }
+        driveLink:        { type: string, nullable: true }
+        organizationId:          { type: string, nullable: true }
+        individualGiverPersonId: { type: string, nullable: true }
+        householdId:             { type: string, nullable: true }
+        donorName:        { type: string, nullable: true, description: "Resolved display name of the matched donor." }
+        matchedOpportunityId:   { type: string, nullable: true }
+        matchedOpportunityName: { type: string, nullable: true }
+        matchedGiftId:    { type: string, nullable: true }
+        matchScore:       { type: integer, nullable: true }
+        matchMethod:      { type: string, nullable: true }
+        matchTier:        { type: string, nullable: true }
+        matchConfirmedAt: { type: string, nullable: true }
+        crossChecks:      { type: array, items: { $ref: "#/components/schemas/CodingFormCrossCheck" } }
+        needsDecision:    { type: array, items: { $ref: "#/components/schemas/CodingFormNeedsDecision" } }
+        appliedAt:        { type: string, nullable: true }
+        appliedTaskId:    { type: string, nullable: true }
+        appliedAddressId: { type: string, nullable: true }
+        appliedAllocationId: { type: string, nullable: true }
+        createdAt:        { type: string }
+        updatedAt:        { type: string }
+    CodingFormRowList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/CodingFormRow" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CodingFormCount:
+      type: object
+      required: [key, count]
+      properties:
+        key:   { type: string }
+        count: { type: integer }
+    CodingFormSummary:
+      type: object
+      required: [total, byStatus, bySource, needsDecision]
+      properties:
+        total:     { type: integer }
+        byStatus:  { type: array, items: { $ref: "#/components/schemas/CodingFormCount" } }
+        bySource:  { type: array, items: { $ref: "#/components/schemas/CodingFormCount" } }
+        needsDecision: { type: array, items: { $ref: "#/components/schemas/CodingFormCount" }, description: "Spreadsheet attributes with no existing schema home, with the number of rows carrying a value for each." }
+    SetCodingFormMatchBody:
+      type: object
+      description: "Set the donor (XOR — at most one of the three donor FKs) and optionally the matched opportunity/gift. Null clears a field."
+      properties:
+        organizationId:          { type: string, nullable: true }
+        individualGiverPersonId: { type: string, nullable: true }
+        householdId:             { type: string, nullable: true }
+        matchedOpportunityId:    { type: string, nullable: true }
+        matchedGiftId:           { type: string, nullable: true }
+    ApplyCodingFormRowBody:
+      type: object
+      required: [decisions]
+      description: "Per-attribute apply/skip decisions. Only attributes set to 'apply' are written; everything else is left untouched."
+      properties:
+        decisions:
+          type: object
+          additionalProperties: { type: string, enum: [apply, skip] }
+          description: "Map of cross-check attribute → apply | skip."
+    CodingFormApplyResult:
+      type: object
+      required: [row, applied, skipped]
+      properties:
+        row:     { $ref: "#/components/schemas/CodingFormRow" }
+        applied: { type: array, items: { type: string }, description: "Attributes written in this apply." }
+        skipped: { type: array, items: { type: string }, description: "Attributes intentionally left untouched (same / skip / blocked)." }
     ResolveStagedPaymentBody:
       type: object
       description: "Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary."

@@ -4484,6 +4484,169 @@ export interface FlagForResearchBody {
   note: string;
 }
 
+export type CodingFormRowStatus = typeof CodingFormRowStatus[keyof typeof CodingFormRowStatus];
+
+
+export const CodingFormRowStatus = {
+  pending: 'pending',
+  applied: 'applied',
+  skipped: 'skipped',
+} as const;
+
+/**
+ * new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.
+ */
+export type CrossCheckStatus = typeof CrossCheckStatus[keyof typeof CrossCheckStatus];
+
+
+export const CrossCheckStatus = {
+  new: 'new',
+  same: 'same',
+  conflict: 'conflict',
+  na: 'na',
+} as const;
+
+/**
+ * Which importable attribute this row describes.
+ */
+export type CodingFormCrossCheckAttribute = typeof CodingFormCrossCheckAttribute[keyof typeof CodingFormCrossCheckAttribute];
+
+
+export const CodingFormCrossCheckAttribute = {
+  reportDeadline: 'reportDeadline',
+  purposeVerbatim: 'purposeVerbatim',
+  usageRestriction: 'usageRestriction',
+  intendedUsage: 'intendedUsage',
+  address: 'address',
+} as const;
+
+/**
+ * The reviewer's stored decision for this attribute, if any.
+ */
+export type CodingFormCrossCheckDecision = typeof CodingFormCrossCheckDecision[keyof typeof CodingFormCrossCheckDecision] | null;
+
+
+export const CodingFormCrossCheckDecision = {
+  apply: 'apply',
+  skip: 'skip',
+} as const;
+
+export interface CodingFormCrossCheck {
+  /** Which importable attribute this row describes. */
+  attribute: CodingFormCrossCheckAttribute;
+  /** Human-readable attribute name. */
+  label: string;
+  status: CrossCheckStatus;
+  /** False when the sheet has nothing to import for this attribute. */
+  applicable: boolean;
+  /** The spreadsheet value (display form). */
+  sheetValue?: string | null;
+  /** The current CRM value (display form). */
+  crmValue?: string | null;
+  /** What an apply would write to (task / allocation / address). */
+  targetType?: string | null;
+  /** Id of the existing target, when one was resolved. */
+  targetId?: string | null;
+  /** The reviewer's stored decision for this attribute, if any. */
+  decision?: CodingFormCrossCheckDecision;
+  /** Why this attribute can't be auto-applied (e.g. ambiguous allocation, no confirmed match). */
+  blockedReason?: string | null;
+}
+
+export interface CodingFormNeedsDecision {
+  attribute: string;
+  label: string;
+  /** The captured spreadsheet value with no schema home. */
+  value?: string | null;
+}
+
+export interface CodingFormRow {
+  id: string;
+  source: string;
+  sourceRowIndex: number;
+  status: CodingFormRowStatus;
+  donorNameRaw?: string | null;
+  internalMemo?: string | null;
+  amount?: string | null;
+  donationDate?: string | null;
+  restrictionLanguage?: string | null;
+  donorNameAddressRaw?: string | null;
+  reportRequired?: boolean | null;
+  reportDueDate?: string | null;
+  intendedUsageSuggested?: string | null;
+  driveLink?: string | null;
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+  /** Resolved display name of the matched donor. */
+  donorName?: string | null;
+  matchedOpportunityId?: string | null;
+  matchedOpportunityName?: string | null;
+  matchedGiftId?: string | null;
+  matchScore?: number | null;
+  matchMethod?: string | null;
+  matchTier?: string | null;
+  matchConfirmedAt?: string | null;
+  crossChecks: CodingFormCrossCheck[];
+  needsDecision: CodingFormNeedsDecision[];
+  appliedAt?: string | null;
+  appliedTaskId?: string | null;
+  appliedAddressId?: string | null;
+  appliedAllocationId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CodingFormRowList {
+  data: CodingFormRow[];
+  pagination: Pagination;
+}
+
+export interface CodingFormCount {
+  key: string;
+  count: number;
+}
+
+export interface CodingFormSummary {
+  total: number;
+  byStatus: CodingFormCount[];
+  bySource: CodingFormCount[];
+  /** Spreadsheet attributes with no existing schema home, with the number of rows carrying a value for each. */
+  needsDecision: CodingFormCount[];
+}
+
+/**
+ * Set the donor (XOR — at most one of the three donor FKs) and optionally the matched opportunity/gift. Null clears a field.
+ */
+export interface SetCodingFormMatchBody {
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+  matchedOpportunityId?: string | null;
+  matchedGiftId?: string | null;
+}
+
+/**
+ * Map of cross-check attribute → apply | skip.
+ */
+export type ApplyCodingFormRowBodyDecisions = {[key: string]: 'apply' | 'skip'};
+
+/**
+ * Per-attribute apply/skip decisions. Only attributes set to 'apply' are written; everything else is left untouched.
+ */
+export interface ApplyCodingFormRowBody {
+  /** Map of cross-check attribute → apply | skip. */
+  decisions: ApplyCodingFormRowBodyDecisions;
+}
+
+export interface CodingFormApplyResult {
+  row: CodingFormRow;
+  /** Attributes written in this apply. */
+  applied: string[];
+  /** Attributes intentionally left untouched (same / skip / blocked). */
+  skipped: string[];
+}
+
 /**
  * Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary.
  */
@@ -6545,6 +6708,49 @@ limit?: LimitParameter;
  */
 page?: PageParameter;
 };
+
+export type ListCodingFormRowsParams = {
+/**
+ * Filter by apply status. Omit for all.
+ */
+status?: CodingFormRowStatus;
+/**
+ * Filter by source sheet.
+ */
+source?: ListCodingFormRowsSource;
+/**
+ * Filter by match confidence tier.
+ */
+matchTier?: ListCodingFormRowsMatchTier;
+/**
+ * @minimum 1
+ * @maximum 10000
+ */
+limit?: LimitParameter;
+/**
+ * @minimum 1
+ */
+page?: PageParameter;
+};
+
+export type ListCodingFormRowsSource = typeof ListCodingFormRowsSource[keyof typeof ListCodingFormRowsSource];
+
+
+export const ListCodingFormRowsSource = {
+  fy24: 'fy24',
+  fy25: 'fy25',
+  fy26: 'fy26',
+  girasol: 'girasol',
+} as const;
+
+export type ListCodingFormRowsMatchTier = typeof ListCodingFormRowsMatchTier[keyof typeof ListCodingFormRowsMatchTier];
+
+
+export const ListCodingFormRowsMatchTier = {
+  high: 'high',
+  suggested: 'suggested',
+  none: 'none',
+} as const;
 
 export type ListEmailProposalsParams = {
 kind?: EmailProposalKind;

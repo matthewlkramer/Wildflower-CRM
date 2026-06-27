@@ -62,6 +62,7 @@ export * from "./grantLeads";
 export * from "./auditLog";
 export * from "./duplicateDismissals";
 export * from "./cleanupQueue";
+export * from "./codingFormRows";
 export * from "./giftAmountAllocationReview";
 export * from "./giftEvidenceLinks";
 export * from "./financialCorrectionDismissals";

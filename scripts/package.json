@@ -7,14 +7,15 @@
     "hello": "tsx ./src/hello.ts",
     "cleanup:test-users": "tsx ./src/cleanup-test-users.ts",
     "parse:reconciliation-sheets": "tsx ./src/parse-reconciliation-sheets.ts",
+    "import:coding-forms": "tsx ./src/import-coding-forms.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@workspace/db": "workspace:*"
+    "@workspace/db": "workspace:*",
+    "xlsx": "0.18.5"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "tsx": "catalog:",
-    "xlsx": "^0.18.5"
+    "tsx": "catalog:"
   }
 }

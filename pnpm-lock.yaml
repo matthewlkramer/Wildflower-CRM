@@ -750,6 +750,9 @@ importers:
       '@workspace/db':
         specifier: workspace:*
         version: link:../lib/db
+      xlsx:
+        specifier: 0.18.5
+        version: 0.18.5
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -757,9 +760,6 @@ importers:
       tsx:
         specifier: 'catalog:'
         version: 4.21.0
-      xlsx:
-        specifier: ^0.18.5
-        version: 0.18.5
 
 packages:
 

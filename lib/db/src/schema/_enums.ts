@@ -889,3 +889,18 @@ export const cleanupQueueStatusEnum = pgEnum("cleanup_queue_status", [
   "resolved",
   "dismissed",
 ]);
+
+// ──────────────────────────────────────────────────────────────────
+// Donation Coding Form import (one-time FY24/FY25/FY26 + Girasol Act-60)
+// ──────────────────────────────────────────────────────────────────
+
+// Lifecycle of a parsed coding-form row in the admin import review queue.
+//   pending  — parsed + matched; awaiting human review/apply (default)
+//   applied  — the reviewer applied the approved values into the CRM
+//   skipped  — the reviewer dismissed the row (nothing to apply)
+// Re-running the importer never resets a row out of applied/skipped.
+export const codingFormRowStatusEnum = pgEnum("coding_form_row_status", [
+  "pending",
+  "applied",
+  "skipped",
+]);

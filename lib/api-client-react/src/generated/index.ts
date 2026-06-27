@@ -9,6 +9,7 @@ export * from "./audit-log/audit-log";
 export * from "./calendar-events/calendar-events";
 export * from "./calendar-meeting-filters/calendar-meeting-filters";
 export * from "./cleanup-queue/cleanup-queue";
+export * from "./coding-form-rows/coding-form-rows";
 export * from "./correspondents/correspondents";
 export * from "./donor-payment-intermediaries/donor-payment-intermediaries";
 export * from "./donorbox/donorbox";
