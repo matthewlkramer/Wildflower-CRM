@@ -4560,6 +4560,39 @@ export interface CodingFormNeedsDecision {
   value?: string | null;
 }
 
+/**
+ * na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch/upload attempt errored (see error).
+ */
+export type CodingFormGrantAgreementStatus = typeof CodingFormGrantAgreementStatus[keyof typeof CodingFormGrantAgreementStatus];
+
+
+export const CodingFormGrantAgreementStatus = {
+  na: 'na',
+  no_match: 'no_match',
+  ready: 'ready',
+  imported: 'imported',
+  conflict: 'conflict',
+  failed: 'failed',
+} as const;
+
+/**
+ * Derived (live) grant-agreement backfill view for a coding-form row.
+ */
+export interface CodingFormGrantAgreement {
+  status: CodingFormGrantAgreementStatus;
+  /** File id extracted from the captured Drive link. */
+  driveFileId?: string | null;
+  /** Object-storage url of the PDF this backfill attached. */
+  importedUrl?: string | null;
+  importedFilename?: string | null;
+  importedAt?: string | null;
+  /** The matched opportunity's current grant-letter url (for conflict/imported display). */
+  oppExistingUrl?: string | null;
+  oppExistingFilename?: string | null;
+  /** Last recorded fetch/upload error for this row. */
+  error?: string | null;
+}
+
 export interface CodingFormRow {
   id: string;
   source: string;
@@ -4589,6 +4622,7 @@ export interface CodingFormRow {
   matchConfirmedAt?: string | null;
   crossChecks: CodingFormCrossCheck[];
   needsDecision: CodingFormNeedsDecision[];
+  grantAgreement?: CodingFormGrantAgreement;
   appliedAt?: string | null;
   appliedTaskId?: string | null;
   appliedAddressId?: string | null;
@@ -4645,6 +4679,43 @@ export interface CodingFormApplyResult {
   applied: string[];
   /** Attributes intentionally left untouched (same / skip / blocked). */
   skipped: string[];
+}
+
+/**
+ * Pull the Drive PDF onto the matched opportunity. Set replace=true to overwrite an existing grant letter.
+ */
+export interface PullGrantAgreementBody {
+  /** Overwrite an existing grant letter (resolve a conflict). Defaults to false. */
+  replace?: boolean;
+}
+
+/**
+ * imported = attached now; already_imported = idempotent noop; failed = fetch/upload error (see error).
+ */
+export type PullGrantAgreementResultOutcome = typeof PullGrantAgreementResultOutcome[keyof typeof PullGrantAgreementResultOutcome];
+
+
+export const PullGrantAgreementResultOutcome = {
+  imported: 'imported',
+  already_imported: 'already_imported',
+  failed: 'failed',
+} as const;
+
+export interface PullGrantAgreementResult {
+  row: CodingFormRow;
+  /** imported = attached now; already_imported = idempotent noop; failed = fetch/upload error (see error). */
+  outcome: PullGrantAgreementResultOutcome;
+  /** True when an existing grant letter was overwritten. */
+  replaced: boolean;
+  /** Human-readable failure reason when outcome=failed. */
+  error?: string | null;
+}
+
+export interface CodingFormGrantAgreementsSummary {
+  /** Rows carrying a grant-agreement Drive link. */
+  totalWithLink: number;
+  /** Count per derived grant-agreement status. */
+  byStatus: CodingFormCount[];
 }
 
 /**
@@ -6722,6 +6793,10 @@ source?: ListCodingFormRowsSource;
  * Filter by match confidence tier.
  */
 matchTier?: ListCodingFormRowsMatchTier;
+/**
+ * When true, only rows carrying a grant-agreement Drive link (the grant-agreement backfill queue).
+ */
+hasDriveLink?: boolean;
 /**
  * @minimum 1
  * @maximum 10000

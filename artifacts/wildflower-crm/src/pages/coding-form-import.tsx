@@ -5,11 +5,15 @@ import {
   useListCodingFormRows,
   getListCodingFormRowsQueryKey,
   useGetCodingFormSummary,
+  useGetCodingFormGrantAgreementsSummary,
+  getGetCodingFormGrantAgreementsSummaryQueryKey,
+  usePullGrantAgreement,
   useSetCodingFormMatch,
   useApplyCodingFormRow,
   useSkipCodingFormRow,
   useRematchCodingFormRow,
   CodingFormRowStatus,
+  CodingFormGrantAgreementStatus,
   ListCodingFormRowsSource,
   ListCodingFormRowsMatchTier,
   useListOpportunitiesAndPledges,
@@ -22,6 +26,7 @@ import {
   getGetGiftOrPaymentQueryKey,
   type CodingFormRow,
   type CodingFormCrossCheck,
+  type CodingFormGrantAgreement,
   type ListCodingFormRowsParams,
   type ApplyCodingFormRowBodyDecisions,
 } from "@workspace/api-client-react";
@@ -79,6 +84,29 @@ const SOURCE_LABEL: Record<string, string> = {
   fy25: "FY25",
   fy26: "FY26",
   girasol: "Girasol",
+};
+
+type GrantAgreementStatus = CodingFormGrantAgreement["status"];
+
+const GA_STATUS_LABEL: Record<GrantAgreementStatus, string> = {
+  na: "No link",
+  no_match: "No opportunity",
+  ready: "Ready",
+  imported: "Imported",
+  conflict: "Conflict",
+  failed: "Failed",
+};
+
+const GA_STATUS_VARIANT: Record<
+  GrantAgreementStatus,
+  "default" | "secondary" | "destructive" | "outline"
+> = {
+  na: "outline",
+  no_match: "outline",
+  ready: "default",
+  imported: "secondary",
+  conflict: "destructive",
+  failed: "destructive",
 };
 
 type DonorKind = "organization" | "individual" | "household";
@@ -609,7 +637,317 @@ function RowCard({ row }: { row: CodingFormRow }) {
   );
 }
 
+/** One grant-agreement backfill row: status, links, before/after, Pull/Replace. */
+function GrantAgreementRow({
+  row,
+  busy,
+  onPull,
+}: {
+  row: CodingFormRow;
+  busy: boolean;
+  onPull: (row: CodingFormRow, replace: boolean) => void;
+}) {
+  const ga = row.grantAgreement;
+  const status: GrantAgreementStatus = ga?.status ?? "na";
+  const oppName = useOpportunityName(row.matchedOpportunityId ?? null);
+
+  return (
+    <div
+      className="rounded-lg border p-4 space-y-2"
+      data-testid={`ga-row-${row.id}`}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">
+          {SOURCE_LABEL[row.source] ?? row.source}
+        </Badge>
+        <Badge variant="outline">row {row.sourceRowIndex}</Badge>
+        <Badge
+          variant={GA_STATUS_VARIANT[status]}
+          data-testid={`ga-status-${row.id}`}
+        >
+          {GA_STATUS_LABEL[status]}
+        </Badge>
+        <span className="ml-auto text-sm text-muted-foreground">
+          {row.amount ? `$${row.amount}` : "—"}
+          {row.donationDate ? ` · ${formatDateShort(row.donationDate)}` : ""}
+        </span>
+      </div>
+
+      <div className="text-sm">
+        <span className="font-medium">{row.donorNameRaw ?? "(no name)"}</span>
+      </div>
+
+      {/* Opportunity link / no-match notice */}
+      {row.matchedOpportunityId ? (
+        <Link
+          href={`/opportunities/${row.matchedOpportunityId}`}
+          className="text-xs text-primary underline-offset-2 hover:underline"
+          data-testid={`ga-link-opp-${row.id}`}
+        >
+          {oppName ?? "Open opportunity"} ↗
+        </Link>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          No matched opportunity — match one in the coding-form view first.
+        </p>
+      )}
+
+      {/* Drive link */}
+      {row.driveLink ? (
+        <div>
+          <a
+            href={row.driveLink}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-primary underline-offset-2 hover:underline"
+            data-testid={`ga-drive-${row.id}`}
+          >
+            Grant agreement (Drive) ↗
+          </a>
+        </div>
+      ) : null}
+
+      {/* Before / after */}
+      {ga?.oppExistingUrl ? (
+        <p className="text-xs text-muted-foreground">
+          Existing letter on opportunity:{" "}
+          <a
+            href={ga.oppExistingUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            {ga.oppExistingFilename ?? "view"} ↗
+          </a>
+        </p>
+      ) : null}
+      {ga?.importedUrl ? (
+        <p className="text-xs text-muted-foreground">
+          Imported:{" "}
+          <a
+            href={ga.importedUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            {ga.importedFilename ?? "view"} ↗
+          </a>
+          {ga.importedAt ? ` · ${formatDateShort(ga.importedAt)}` : ""}
+        </p>
+      ) : null}
+      {status === "failed" && ga?.error ? (
+        <p className="text-xs text-destructive" data-testid={`ga-error-${row.id}`}>
+          {ga.error}
+        </p>
+      ) : null}
+
+      {/* Actions */}
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        {status === "ready" ? (
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => onPull(row, false)}
+            data-testid={`button-pull-${row.id}`}
+          >
+            Pull onto opportunity
+          </Button>
+        ) : null}
+        {status === "failed" ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => onPull(row, false)}
+            data-testid={`button-retry-${row.id}`}
+          >
+            Retry
+          </Button>
+        ) : null}
+        {status === "conflict" ? (
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={busy}
+            onClick={() => onPull(row, true)}
+            data-testid={`button-replace-${row.id}`}
+          >
+            Replace existing letter
+          </Button>
+        ) : null}
+        {status === "imported" ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => onPull(row, true)}
+            data-testid={`button-repull-${row.id}`}
+          >
+            Re-pull
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Grant-agreement backfill view: pull ~270 Drive PDFs onto matched opps. */
+function GrantAgreementsView() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [bulkRunning, setBulkRunning] = useState(false);
+
+  const params: ListCodingFormRowsParams = { hasDriveLink: true, limit: 500 };
+  const { data, isLoading, isError } = useListCodingFormRows(params, {
+    query: { queryKey: getListCodingFormRowsQueryKey(params) },
+  });
+  const { data: summary } = useGetCodingFormGrantAgreementsSummary({
+    query: { queryKey: getGetCodingFormGrantAgreementsSummaryQueryKey() },
+  });
+
+  const pullMut = usePullGrantAgreement();
+  const rows = data?.data ?? [];
+
+  const invalidate = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: [CODING_KEY_PREFIX] }),
+      queryClient.invalidateQueries({
+        queryKey: getGetCodingFormGrantAgreementsSummaryQueryKey(),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["/api/opportunities-and-pledges"],
+      }),
+    ]);
+
+  const pullOne = (id: string, replace: boolean) =>
+    pullMut.mutateAsync({ id, data: { replace } });
+
+  const handlePull = async (row: CodingFormRow, replace: boolean) => {
+    setBusyId(row.id);
+    try {
+      const res = await pullOne(row.id, replace);
+      await invalidate();
+      if (res.outcome === "failed") {
+        toast({
+          title: "Pull failed",
+          description: res.error ?? "Could not fetch the Drive file.",
+          variant: "destructive",
+        });
+      } else if (res.outcome === "already_imported") {
+        toast({ title: "Already imported" });
+      } else {
+        toast({
+          title: res.replaced ? "Replaced grant letter" : "Grant letter attached",
+        });
+      }
+    } catch (e) {
+      toast({
+        title: "Pull failed",
+        description: e instanceof Error ? e.message : "Request failed.",
+        variant: "destructive",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Sequential client-side import of every "ready" row (no overwrites).
+  const handleImportAllReady = async () => {
+    const ready = rows.filter((r) => r.grantAgreement?.status === "ready");
+    if (ready.length === 0) return;
+    setBulkRunning(true);
+    let ok = 0;
+    let failed = 0;
+    for (const r of ready) {
+      setBusyId(r.id);
+      try {
+        const res = await pullOne(r.id, false);
+        if (res.outcome === "failed") failed += 1;
+        else ok += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setBusyId(null);
+    setBulkRunning(false);
+    await invalidate();
+    toast({
+      title: "Import all ready — done",
+      description: `${ok} attached${failed ? `, ${failed} failed` : ""}.`,
+      variant: failed ? "destructive" : undefined,
+    });
+  };
+
+  const readyCount =
+    summary?.byStatus.find((s) => s.key === "ready")?.count ?? 0;
+
+  return (
+    <div className="space-y-6">
+      {summary ? (
+        <div className="rounded-lg border p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-xs uppercase text-muted-foreground">
+              Grant agreements ({summary.totalWithLink} with a Drive link)
+            </div>
+            <Button
+              size="sm"
+              className="ml-auto"
+              disabled={bulkRunning || readyCount === 0}
+              onClick={handleImportAllReady}
+              data-testid="button-import-all-ready"
+            >
+              {bulkRunning
+                ? "Importing…"
+                : `Import all ready (${readyCount})`}
+            </Button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {summary.byStatus.map((s) => (
+              <Badge
+                key={s.key}
+                variant={
+                  GA_STATUS_VARIANT[s.key as GrantAgreementStatus] ?? "outline"
+                }
+              >
+                {GA_STATUS_LABEL[s.key as GrantAgreementStatus] ?? s.key}:{" "}
+                {s.count}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground py-8 text-center">
+          Loading grant-agreement rows…
+        </p>
+      ) : isError ? (
+        <p className="text-sm text-destructive py-8 text-center">
+          Failed to load grant-agreement rows.
+        </p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-8 text-center">
+          No rows carry a grant-agreement Drive link.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {rows.map((row) => (
+            <GrantAgreementRow
+              key={row.id}
+              row={row}
+              busy={busyId === row.id || bulkRunning}
+              onPull={handlePull}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CodingFormImportPage() {
+  const [view, setView] = useState<"coding" | "grants">("coding");
   const [status, setStatus] = useState<CodingFormRowStatus | "all">("pending");
   const [source, setSource] = useState<ListCodingFormRowsSource | "all">("all");
   const [matchTier, setMatchTier] = useState<
@@ -644,6 +982,30 @@ export default function CodingFormImportPage() {
         </p>
       </div>
 
+      {/* View toggle */}
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant={view === "coding" ? "default" : "outline"}
+          onClick={() => setView("coding")}
+          data-testid="view-coding"
+        >
+          Coding form
+        </Button>
+        <Button
+          size="sm"
+          variant={view === "grants" ? "default" : "outline"}
+          onClick={() => setView("grants")}
+          data-testid="view-grants"
+        >
+          Grant agreements
+        </Button>
+      </div>
+
+      {view === "grants" ? <GrantAgreementsView /> : null}
+
+      {view === "coding" ? (
+        <>
       {/* Summary */}
       {summary ? (
         <div className="grid gap-3 sm:grid-cols-3">
@@ -756,6 +1118,8 @@ export default function CodingFormImportPage() {
           ))}
         </div>
       )}
+        </>
+      ) : null}
     </div>
   );
 }

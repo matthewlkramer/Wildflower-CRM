@@ -23,12 +23,15 @@ import type {
   ApplyCodingFormRowBody,
   BadRequestResponse,
   CodingFormApplyResult,
+  CodingFormGrantAgreementsSummary,
   CodingFormRow,
   CodingFormRowList,
   CodingFormSummary,
   ForbiddenResponse,
   ListCodingFormRowsParams,
   NotFoundResponse,
+  PullGrantAgreementBody,
+  PullGrantAgreementResult,
   SetCodingFormMatchBody
 } from '../api.schemas';
 
@@ -116,6 +119,80 @@ export function useListCodingFormRows<TData = Awaited<ReturnType<typeof listCodi
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListCodingFormRowsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * @summary Grant-agreement backfill progress — counts by derived grant-agreement status (na / no_match / ready / imported / conflict / failed) across the rows that carry a Drive link. Admin only.
+ */
+export const getGetCodingFormGrantAgreementsSummaryUrl = () => {
+
+
+  
+
+  return `/api/coding-form-grant-agreements-summary`
+}
+
+export const getCodingFormGrantAgreementsSummary = async ( options?: RequestInit): Promise<CodingFormGrantAgreementsSummary> => {
+  
+  return customFetch<CodingFormGrantAgreementsSummary>(getGetCodingFormGrantAgreementsSummaryUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetCodingFormGrantAgreementsSummaryQueryKey = () => {
+    return [
+    `/api/coding-form-grant-agreements-summary`
+    ] as const;
+    }
+
+    
+export const getGetCodingFormGrantAgreementsSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getCodingFormGrantAgreementsSummary>>, TError = ErrorType<ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCodingFormGrantAgreementsSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCodingFormGrantAgreementsSummaryQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCodingFormGrantAgreementsSummary>>> = ({ signal }) => getCodingFormGrantAgreementsSummary({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCodingFormGrantAgreementsSummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCodingFormGrantAgreementsSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getCodingFormGrantAgreementsSummary>>>
+export type GetCodingFormGrantAgreementsSummaryQueryError = ErrorType<ForbiddenResponse>
+
+
+/**
+ * @summary Grant-agreement backfill progress — counts by derived grant-agreement status (na / no_match / ready / imported / conflict / failed) across the rows that carry a Drive link. Admin only.
+ */
+
+export function useGetCodingFormGrantAgreementsSummary<TData = Awaited<ReturnType<typeof getCodingFormGrantAgreementsSummary>>, TError = ErrorType<ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCodingFormGrantAgreementsSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCodingFormGrantAgreementsSummaryQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -552,5 +629,76 @@ export const useSkipCodingFormRow = <TError = ErrorType<ForbiddenResponse | NotF
         TContext
       > => {
       return useMutation(getSkipCodingFormRowMutationOptions(options));
+    }
+    /**
+ * @summary Pull this row's grant-agreement PDF from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
+ */
+export const getPullGrantAgreementUrl = (id: string,) => {
+
+
+  
+
+  return `/api/coding-form-rows/${id}/pull-grant-agreement`
+}
+
+export const pullGrantAgreement = async (id: string,
+    pullGrantAgreementBody?: PullGrantAgreementBody, options?: RequestInit): Promise<PullGrantAgreementResult> => {
+  
+  return customFetch<PullGrantAgreementResult>(getPullGrantAgreementUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      pullGrantAgreementBody,)
+  }
+);}
+  
+
+
+
+export const getPullGrantAgreementMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pullGrantAgreement>>, TError,{id: string;data: BodyType<PullGrantAgreementBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pullGrantAgreement>>, TError,{id: string;data: BodyType<PullGrantAgreementBody>}, TContext> => {
+
+const mutationKey = ['pullGrantAgreement'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pullGrantAgreement>>, {id: string;data: BodyType<PullGrantAgreementBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  pullGrantAgreement(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PullGrantAgreementMutationResult = NonNullable<Awaited<ReturnType<typeof pullGrantAgreement>>>
+    export type PullGrantAgreementMutationBody = BodyType<PullGrantAgreementBody>
+    export type PullGrantAgreementMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Pull this row's grant-agreement PDF from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
+ */
+export const usePullGrantAgreement = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pullGrantAgreement>>, TError,{id: string;data: BodyType<PullGrantAgreementBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pullGrantAgreement>>,
+        TError,
+        {id: string;data: BodyType<PullGrantAgreementBody>},
+        TContext
+      > => {
+      return useMutation(getPullGrantAgreementMutationOptions(options));
     }
     

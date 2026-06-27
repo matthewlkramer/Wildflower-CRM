@@ -246,10 +246,22 @@ paths:
         - { name: status, in: query, schema: { $ref: "#/components/schemas/CodingFormRowStatus" }, description: "Filter by apply status. Omit for all." }
         - { name: source, in: query, schema: { type: string, enum: [fy24, fy25, fy26, girasol] }, description: "Filter by source sheet." }
         - { name: matchTier, in: query, schema: { type: string, enum: [high, suggested, none] }, description: "Filter by match confidence tier." }
+        - { name: hasDriveLink, in: query, schema: { type: boolean }, description: "When true, only rows carrying a grant-agreement Drive link (the grant-agreement backfill queue)." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormRowList" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /coding-form-grant-agreements-summary:
+    get:
+      operationId: getCodingFormGrantAgreementsSummary
+      tags: [coding-form-rows]
+      summary: >-
+        Grant-agreement backfill progress — counts by derived grant-agreement
+        status (na / no_match / ready / imported / conflict / failed) across the
+        rows that carry a Drive link. Admin only.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormGrantAgreementsSummary" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
   /coding-form-rows-summary:
     get:
@@ -330,6 +342,26 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormRow" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /coding-form-rows/{id}/pull-grant-agreement:
+    post:
+      operationId: pullGrantAgreement
+      tags: [coding-form-rows]
+      summary: >-
+        Pull this row's grant-agreement PDF from Google Drive and attach it to the
+        matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent
+        (already-imported → noop). Never silently overwrites an existing grant
+        letter — a different existing letter is a 409 conflict unless replace=true.
+        A Drive fetch failure is recorded on the row and returned as a `failed`
+        outcome (200). Admin only.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/PullGrantAgreementBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PullGrantAgreementResult" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "No Drive link, no matched opportunity, or an existing grant letter would be overwritten without replace=true." }
 
   # ─── Email intelligence proposals ──────────────────────────────────────────
   /email-proposals:
@@ -7390,6 +7422,7 @@ components:
         matchConfirmedAt: { type: string, nullable: true }
         crossChecks:      { type: array, items: { $ref: "#/components/schemas/CodingFormCrossCheck" } }
         needsDecision:    { type: array, items: { $ref: "#/components/schemas/CodingFormNeedsDecision" } }
+        grantAgreement:   { $ref: "#/components/schemas/CodingFormGrantAgreement" }
         appliedAt:        { type: string, nullable: true }
         appliedTaskId:    { type: string, nullable: true }
         appliedAddressId: { type: string, nullable: true }
@@ -7441,6 +7474,46 @@ components:
         row:     { $ref: "#/components/schemas/CodingFormRow" }
         applied: { type: array, items: { type: string }, description: "Attributes written in this apply." }
         skipped: { type: array, items: { type: string }, description: "Attributes intentionally left untouched (same / skip / blocked)." }
+    CodingFormGrantAgreementStatus:
+      type: string
+      enum: [na, no_match, ready, imported, conflict, failed]
+      description: >-
+        na = no Drive link; no_match = link but no matched opportunity;
+        ready = will attach; imported = already attached by this backfill;
+        conflict = the matched opportunity already has a DIFFERENT grant letter;
+        failed = the last fetch/upload attempt errored (see error).
+    CodingFormGrantAgreement:
+      type: object
+      required: [status]
+      description: "Derived (live) grant-agreement backfill view for a coding-form row."
+      properties:
+        status:              { $ref: "#/components/schemas/CodingFormGrantAgreementStatus" }
+        driveFileId:         { type: string, nullable: true, description: "File id extracted from the captured Drive link." }
+        importedUrl:         { type: string, nullable: true, description: "Object-storage url of the PDF this backfill attached." }
+        importedFilename:    { type: string, nullable: true }
+        importedAt:          { type: string, nullable: true }
+        oppExistingUrl:      { type: string, nullable: true, description: "The matched opportunity's current grant-letter url (for conflict/imported display)." }
+        oppExistingFilename: { type: string, nullable: true }
+        error:               { type: string, nullable: true, description: "Last recorded fetch/upload error for this row." }
+    PullGrantAgreementBody:
+      type: object
+      description: "Pull the Drive PDF onto the matched opportunity. Set replace=true to overwrite an existing grant letter."
+      properties:
+        replace: { type: boolean, description: "Overwrite an existing grant letter (resolve a conflict). Defaults to false." }
+    PullGrantAgreementResult:
+      type: object
+      required: [row, outcome, replaced]
+      properties:
+        row:      { $ref: "#/components/schemas/CodingFormRow" }
+        outcome:  { type: string, enum: [imported, already_imported, failed], description: "imported = attached now; already_imported = idempotent noop; failed = fetch/upload error (see error)." }
+        replaced: { type: boolean, description: "True when an existing grant letter was overwritten." }
+        error:    { type: string, nullable: true, description: "Human-readable failure reason when outcome=failed." }
+    CodingFormGrantAgreementsSummary:
+      type: object
+      required: [totalWithLink, byStatus]
+      properties:
+        totalWithLink: { type: integer, description: "Rows carrying a grant-agreement Drive link." }
+        byStatus:      { type: array, items: { $ref: "#/components/schemas/CodingFormCount" }, description: "Count per derived grant-agreement status." }
     ResolveStagedPaymentBody:
       type: object
       description: "Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary."

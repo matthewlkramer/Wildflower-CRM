@@ -18,6 +18,10 @@ Confirmed-empty-in-dev examples (all present in prod):
 - **Recently opened/closed/renamed records** — e.g. a school that opened then
   closed, or was renamed, may be in prod's `schools` (sourced from the Airtable
   "crm files" base import, PK = Airtable rec id) but missing from a stale dev DB.
+- **`coding_form_rows`** — the one-time coding-form xlsx staging (incl. the
+  `drive_link` grant-agreement links) is prod-only; dev has 0 rows with a link.
+  Any feature that reads/backfills from those rows can only be exercised against
+  prod, so the actual run is human-driven, not a dev e2e.
 
 **How to apply:** for any "find the payment date / deposit / QBO fact" or
 "verify a record exists" task, query **prod read-only** (database skill with

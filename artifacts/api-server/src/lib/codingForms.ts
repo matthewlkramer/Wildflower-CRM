@@ -586,11 +586,16 @@ export async function crossChecksFor(
 // ── Serialization ────────────────────────────────────────────────────────────
 
 export async function serializeRow(row: CodingFormRowSelect) {
-  const [crossChecks, dName, oppName] = await Promise.all([
+  const { loadOppGrantLetter, deriveGrantAgreement } = await import(
+    "./grantAgreements"
+  );
+  const [crossChecks, dName, oppName, oppGrant] = await Promise.all([
     crossChecksFor(row),
     donorName(row),
     opportunityName(row.matchedOpportunityId),
+    loadOppGrantLetter(row.matchedOpportunityId),
   ]);
+  const grantAgreement = deriveGrantAgreement(row, oppGrant);
   return {
     id: row.id,
     source: row.source,
@@ -619,6 +624,7 @@ export async function serializeRow(row: CodingFormRowSelect) {
     matchConfirmedAt: row.matchConfirmedAt?.toISOString() ?? null,
     crossChecks,
     needsDecision: needsDecisionFor(row),
+    grantAgreement,
     appliedAt: row.appliedAt?.toISOString() ?? null,
     appliedTaskId: row.appliedTaskId,
     appliedAddressId: row.appliedAddressId,

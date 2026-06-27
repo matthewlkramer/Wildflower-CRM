@@ -46,8 +46,13 @@ import { codingFormRowStatusEnum, intendedUsageEnum } from "./_enums";
  *      apply step created (`appliedTaskId`, `appliedAddressId`,
  *      `appliedAllocationId`) so re-applying is idempotent.
  *
- * Out of scope (captured but not fetched here): the grant-agreement Drive link
- * is stored in `driveLink` for a downstream PDF-ingestion task.
+ * Grant-agreement PDF ingestion (Task #485): the captured `driveLink` is
+ * resolved through the Google Drive connector, the PDF is uploaded to object
+ * storage and attached to the matched opportunity/pledge via the normal
+ * grant-letter flow. The `grantLetterImported*` columns record what we attached
+ * (and the matched opp's url) so re-runs are idempotent and a fetch failure is
+ * surfaced per-row instead of silently lost. Grant letters live on opportunities
+ * /pledges, never on gifts.
  */
 export const codingFormRows = pgTable(
   "coding_form_rows",
@@ -124,6 +129,17 @@ export const codingFormRows = pgTable(
     appliedTaskId: text("applied_task_id"),
     appliedAddressId: text("applied_address_id"),
     appliedAllocationId: text("applied_allocation_id"),
+
+    // ── 6. Grant-agreement PDF import state (idempotency) ───────────────────
+    // The object-storage url + filename we attached to the matched opportunity
+    // from the Drive link, the timestamp, and the last fetch/upload error. A
+    // re-run is a no-op when the matched opp's grant_letter_url still equals
+    // `grantLetterImportedUrl`; a fetch failure is recorded here so the reviewer
+    // can see which links failed without re-fetching.
+    grantLetterImportedUrl: text("grant_letter_imported_url"),
+    grantLetterImportedFilename: text("grant_letter_imported_filename"),
+    grantLetterImportedAt: timestamp("grant_letter_imported_at"),
+    grantLetterImportError: text("grant_letter_import_error"),
 
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

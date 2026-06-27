@@ -6,7 +6,9 @@ import {
   ListCodingFormRowsQueryParams,
   SetCodingFormMatchBody,
   ApplyCodingFormRowBody,
+  PullGrantAgreementBody,
 } from "@workspace/api-zod";
+import { pullGrantAgreement } from "../lib/grantAgreements";
 import { requireAuth } from "../middlewares/requireAuth";
 import { requireAdmin } from "../lib/archive";
 import { getAppUser } from "../lib/appRequest";
@@ -59,6 +61,8 @@ router.get(
     if (q.source) filters.push(eq(codingFormRows.source, q.source));
     if (q.status) filters.push(eq(codingFormRows.status, q.status));
     if (q.matchTier) filters.push(eq(codingFormRows.matchTier, q.matchTier));
+    if (q.hasDriveLink === true)
+      filters.push(sql`NULLIF(TRIM(${codingFormRows.driveLink}), '') IS NOT NULL`);
     const where = filters.length ? and(...filters) : undefined;
 
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
@@ -248,6 +252,97 @@ router.post(
       .where(eq(codingFormRows.id, id))
       .returning();
     res.json(await serializeRow(updated));
+  }),
+);
+
+// Grant-agreement backfill (Task #485) — pull the row's Drive PDF and attach it
+// to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent
+// (already-imported → 200 noop); never silently overwrites an existing letter
+// (conflict → 409 unless `replace: true`); a Drive fetch failure is recorded on
+// the row and returned as a `failed` outcome (200) so the reviewer sees it.
+router.post(
+  "/coding-form-rows/:id/pull-grant-agreement",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const id = paramId(req);
+    const body = parseOrBadRequest(PullGrantAgreementBody, req.body, res);
+    if (!body) return;
+    const row = await loadRow(id);
+    if (!row) return notFound(res, "coding form row");
+
+    const user = await getAppUser(req);
+    const result = await pullGrantAgreement(row, {
+      replace: body.replace === true,
+      userId: user?.id ?? null,
+    });
+
+    if (result.kind === "no_link") {
+      res
+        .status(409)
+        .json({ error: "This row has no grant-agreement Drive link." });
+      return;
+    }
+    if (result.kind === "no_match") {
+      res.status(409).json({
+        error:
+          "This row has no matched opportunity to attach the grant agreement to.",
+      });
+      return;
+    }
+    if (result.kind === "conflict") {
+      res.status(409).json({
+        error:
+          "The matched opportunity already has a grant letter. Re-send with replace=true to overwrite it.",
+        code: "grant_letter_conflict",
+      });
+      return;
+    }
+
+    const updated = await loadRow(id);
+    res.json({
+      row: await serializeRow(updated!),
+      outcome: result.kind,
+      replaced: result.kind === "imported" ? result.replaced : false,
+      error: result.kind === "failed" ? result.error : null,
+    });
+  }),
+);
+
+// Grant-agreement backfill progress — counts by derived grant-agreement status
+// across the rows that carry a Drive link (the before/after the reviewer sees).
+router.get(
+  "/coding-form-grant-agreements-summary",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+
+    const rows = await db
+      .select()
+      .from(codingFormRows)
+      .where(sql`NULLIF(TRIM(${codingFormRows.driveLink}), '') IS NOT NULL`);
+
+    const { loadOppGrantLetter, deriveGrantAgreement } = await import(
+      "../lib/grantAgreements"
+    );
+    const counts: Record<string, number> = {
+      na: 0,
+      no_match: 0,
+      ready: 0,
+      imported: 0,
+      conflict: 0,
+      failed: 0,
+    };
+    for (const row of rows) {
+      const opp = await loadOppGrantLetter(row.matchedOpportunityId);
+      const { status } = deriveGrantAgreement(row, opp);
+      counts[status] = (counts[status] ?? 0) + 1;
+    }
+
+    res.json({
+      totalWithLink: rows.length,
+      byStatus: Object.entries(counts)
+        .filter(([, count]) => count > 0)
+        .map(([key, count]) => ({ key, count })),
+    });
   }),
 );
 
