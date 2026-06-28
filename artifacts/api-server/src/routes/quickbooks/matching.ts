@@ -31,6 +31,7 @@ import {
 } from "../../lib/paymentApplications";
 import { stagedReturnColumns } from "./shared";
 import { giftHeaderColumns } from "../giftsAndPayments";
+import { isStagedApprovable } from "../../lib/reconciliationGate";
 
 const router: IRouter = Router();
 
@@ -373,8 +374,17 @@ router.post(
           .for("update");
 
         for (const row of locked) {
+          // "Open for reconciliation" mirrors the unified reconciler's
+          // isStagedApprovable: a row is groupable while it is `pending` OR a
+          // legacy `approved` row that carries NO gift link. An approved row
+          // whose gift was later deleted is stranded here (the gift-link FKs are
+          // ON DELETE SET NULL, so the link clears but the status stays
+          // `approved`); it is still real work and must group, exactly as the
+          // single-row reconciler already allows. Terminal rows
+          // (`reconciled`/`excluded`) or any row that still points at a gift
+          // (matched/created/group-reconciled) are genuinely resolved → reject.
           if (
-            row.status !== "pending" ||
+            !isStagedApprovable(row.status) ||
             row.matchedGiftId != null ||
             row.createdGiftId != null ||
             row.groupReconciledGiftId != null

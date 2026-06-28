@@ -125,7 +125,7 @@ async function seedStaged(
   amount: string,
   opts: {
     depositId: string | null;
-    status?: "pending" | "approved" | "rejected";
+    status?: "pending" | "approved" | "rejected" | "reconciled";
     matchedGiftId?: string | null;
     groupReconciledGiftId?: string | null;
     payerName?: string | null;
@@ -604,16 +604,19 @@ describe.skipIf(!HAS_DB)(
       await expectUntouchedPending(bId);
     }, 30_000);
 
-    it("rejects when a row is already resolved with 409 not_pending and changes nothing", async () => {
+    it("rejects when a member is already linked to a gift with 409 not_pending and changes nothing", async () => {
       const giftId = await seedGift("100.00");
+      const otherGiftId = await seedGift("50.00");
       const depositId = `${RUN}_dep_np`;
       const pendingId = await seedStaged(giftId, "a", "50.00", { depositId });
-      // Already approved (resolved) — the not_pending guard runs before the
-      // deposit/tolerance guards, so a shared deposit + matching total prove the
-      // rejection is specifically because this row isn't pending.
+      // An approvable status (approved) is no longer enough to reject on its own
+      // — a row is rejected because it already carries a gift link. The
+      // not_pending guard runs before the deposit/tolerance guards, so a shared
+      // deposit + matching total prove the rejection is specifically the link.
       const resolvedId = await seedStaged(giftId, "b", "50.00", {
         depositId,
         status: "approved",
+        groupReconciledGiftId: otherGiftId,
       });
 
       const res = await api("/api/staged-payments/group-reconcile", {
@@ -626,10 +629,44 @@ describe.skipIf(!HAS_DB)(
 
       // The still-pending row is untouched.
       await expectUntouchedPending(pendingId);
-      // The already-resolved row is left exactly as seeded.
+      // The already-linked row is left exactly as seeded.
       const resolved = await readStaged(resolvedId);
       expect(resolved.status).toBe("approved");
-      expect(resolved.groupReconciledGiftId).toBeNull();
+      expect(resolved.groupReconciledGiftId).toBe(otherGiftId);
+    }, 30_000);
+
+    it("accepts a legacy approved row with no gift link (FK-stranded) and reconciles the whole group", async () => {
+      // Repro of the prod bug: a member was auto-matched to a gift (→ approved),
+      // then that gift was deleted, and the gift-link FK's ON DELETE SET NULL
+      // cleared the link — stranding the row at status='approved' with all three
+      // gift links null. Such a row is still real work (mirrors the reconciler's
+      // isStagedApprovable = pending OR approved) and must be groupable, not
+      // rejected with 409 not_pending.
+      const giftId = await seedGift("100.00");
+      const depositId = `${RUN}_dep_legacy_ok`;
+      const pendingId = await seedStaged(giftId, "a", "50.00", { depositId });
+      const strandedId = await seedStaged(giftId, "b", "50.00", {
+        depositId,
+        status: "approved",
+      });
+
+      const res = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [pendingId, strandedId],
+      });
+
+      expect(res.status).toBe(200);
+
+      // Both members flip to reconciled and tie to the group's gift; the
+      // representative (smallest id — "a") additionally carries matchedGiftId.
+      const a = await readStaged(pendingId);
+      const b = await readStaged(strandedId);
+      expect(a.status).toBe("reconciled");
+      expect(b.status).toBe("reconciled");
+      expect(a.groupReconciledGiftId).toBe(giftId);
+      expect(b.groupReconciledGiftId).toBe(giftId);
+      expect(a.matchedGiftId).toBe(giftId);
+      expect(b.matchedGiftId).toBeNull();
     }, 30_000);
 
     it("rejects when the gift is already linked outside the group with 409 link_conflict", async () => {
