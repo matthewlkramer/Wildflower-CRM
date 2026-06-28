@@ -917,14 +917,16 @@ export interface QuickbooksRematchSummary {
 const REMATCH_CONCURRENCY = 8;
 
 /**
- * On-demand backfill: re-score still-`pending` + `unmatched` + donor-less rows
- * with the latest matching logic and record any donor hint it finds (matched /
- * suggested). DONOR-ONLY by design — it never mints or reconciles a gift (that
- * auto-apply happens only on fresh ingestion), so a manual "rematch" button can
- * never bulk-write the ledger by surprise. Purely additive: each write is a
- * guarded conditional UPDATE (still pending + unmatched + donor-less), so a
- * concurrent human resolve is never clobbered. Advisory-locked under the shared
- * QuickBooks key.
+ * On-demand backfill: re-score still-`pending`, donor-less rows whose match is
+ * `unmatched` OR `suggested` with the latest matching logic and record any donor
+ * hint it finds (matched / suggested). Including donor-less `suggested` rows
+ * catches historical rows that surfaced a hint but never persisted a donor FK.
+ * DONOR-ONLY by design — it never mints or reconciles a gift (that auto-apply
+ * happens only on fresh ingestion), so a manual "rematch" button can never
+ * bulk-write the ledger by surprise. Purely additive: each write is a guarded
+ * conditional UPDATE (still pending, donor-less, match `unmatched`/`suggested`),
+ * so a concurrent human resolve is never clobbered. Advisory-locked under the
+ * shared QuickBooks key.
  */
 export async function rematchStagedPayments(): Promise<QuickbooksRematchSummary> {
   const outcome = await withSyncLock(QB_LOCK_KEY, "quickbooks", async () => {
@@ -942,7 +944,7 @@ export async function rematchStagedPayments(): Promise<QuickbooksRematchSummary>
       .where(
         and(
           eq(stagedPayments.status, "pending"),
-          eq(stagedPayments.matchStatus, "unmatched"),
+          inArray(stagedPayments.matchStatus, ["unmatched", "suggested"]),
           isNull(stagedPayments.organizationId),
           isNull(stagedPayments.individualGiverPersonId),
           isNull(stagedPayments.householdId),
@@ -981,7 +983,7 @@ export async function rematchStagedPayments(): Promise<QuickbooksRematchSummary>
               and(
                 eq(stagedPayments.id, row.id),
                 eq(stagedPayments.status, "pending"),
-                eq(stagedPayments.matchStatus, "unmatched"),
+                inArray(stagedPayments.matchStatus, ["unmatched", "suggested"]),
                 isNull(stagedPayments.organizationId),
                 isNull(stagedPayments.individualGiverPersonId),
                 isNull(stagedPayments.householdId),

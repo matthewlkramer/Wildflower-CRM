@@ -25,6 +25,7 @@ import {
   splitStagedPayment,
   useListGiftsAndPayments,
   useListGiftsMissingQb,
+  useRematchStagedPayments,
   getListGiftsAndPaymentsQueryKey,
   getGetGiftOrPaymentQueryOptions,
   type ReconciliationCard,
@@ -47,6 +48,7 @@ import {
   Layers,
   Loader2,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
   Split,
@@ -100,6 +102,7 @@ import {
   giftDonorName as giftRowDonorName,
 } from "@/components/gift-search-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 import {
   laneBadges,
   deriveCardStatus,
@@ -233,6 +236,50 @@ function cardKey(c: ReconciliationCard): string {
 export default function ReconciliationWorkbench() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const isAdmin = useIsAdmin();
+  const rematchDonors = useRematchStagedPayments();
+
+  // Admin-only: re-run donor auto-match over the still-unmatched/suggested,
+  // donor-less back-catalog. DONOR-ONLY — it only proposes a donor (so rows move
+  // into "Needs review" and surface gift suggestions); it never creates or links
+  // a gift. Matching runs at ingest time, so historical rows staged before their
+  // CRM donor existed stay donor-less until this pass picks them up.
+  const handleRematchDonors = () => {
+    rematchDonors.mutate(undefined, {
+      onSuccess: (summary) => {
+        if (!summary.ran) {
+          toast({
+            title: "Re-match skipped",
+            description:
+              "A sync or re-match is already running — try again shortly.",
+          });
+        } else {
+          toast({
+            title: `Re-matched ${summary.matched} of ${summary.scanned} unmatched payment${summary.scanned === 1 ? "" : "s"}.`,
+            description:
+              summary.matched > 0
+                ? "Newly matched payments now appear under Needs review."
+                : "No new donor matches were found.",
+          });
+        }
+        void queryClient.invalidateQueries({
+          predicate: (q) => {
+            const key = q.queryKey?.[0];
+            return (
+              typeof key === "string" &&
+              key.startsWith("/api/reconciliation/cards")
+            );
+          },
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/staged-payments"],
+        });
+      },
+      onError: (err) => {
+        toast({ title: "Couldn't re-match", description: errMessage(err) });
+      },
+    });
+  };
 
   // Old reconciliation routes redirect here with `?queue=<id>` so the matching
   // queue is preselected. Read once on mount; the rail drives state thereafter.
@@ -905,20 +952,37 @@ export default function ReconciliationWorkbench() {
                 Donorbox.
               </p>
             </div>
-            {queue === "review" && (
-              <Button
-                onClick={approveAllHighConfidence}
-                disabled={busy || readyCount === 0}
-                className="shrink-0"
-              >
-                {busy ? (
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="mr-1 h-4 w-4" />
-                )}
-                Approve all high-confidence ({readyCount})
-              </Button>
-            )}
+            <div className="flex shrink-0 items-center gap-2">
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  onClick={handleRematchDonors}
+                  disabled={rematchDonors.isPending}
+                  title="Re-run donor auto-match over unmatched payments. Proposes donors only — never creates or links a gift."
+                  data-testid="button-rematch-donors"
+                >
+                  {rematchDonors.isPending ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-1 h-4 w-4" />
+                  )}
+                  Re-match donors
+                </Button>
+              )}
+              {queue === "review" && (
+                <Button
+                  onClick={approveAllHighConfidence}
+                  disabled={busy || readyCount === 0}
+                >
+                  {busy ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-1 h-4 w-4" />
+                  )}
+                  Approve all high-confidence ({readyCount})
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Queue nav (moved here from above the workbench) + search */}
