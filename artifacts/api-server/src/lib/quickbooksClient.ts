@@ -506,12 +506,26 @@ async function fetchItemIncomeAccounts(
   for (let i = 0; i < ids.length; i += IN_CHUNK) {
     const chunk = ids.slice(i, i + IN_CHUNK);
     const inList = chunk.map((id) => `'${id.replace(/'/g, "''")}'`).join(",");
-    const q = `SELECT * FROM Item WHERE Id IN (${inList}) MAXRESULTS ${IN_CHUNK}`;
-    const resp = await runQuery(accessToken, realmId, q);
-    const rows = (resp.QueryResponse?.["Item"] ?? []) as QbItem[];
-    for (const item of rows) {
-      const acct = item.IncomeAccountRef?.name?.trim();
-      if (item.Id && acct) map.set(item.Id, acct);
+    // QBO's query endpoint silently filters to Active=true unless we override
+    // it. A Product/Service item that was "deleted" in QuickBooks is really
+    // just inactivated (its name gets a "(deleted)" suffix) but it KEEPS its
+    // IncomeAccountRef. So a paid invoice line that used a since-deleted
+    // service item would resolve no income account and the payment would look
+    // uncoded in the reconciliation queue. Run a second pass for inactive
+    // items so the revenue coding (e.g. "4020 Services - Earned Income") still
+    // resolves for them. Both WHERE forms are valid QBO syntax; the second is
+    // additive and never regresses the active path.
+    for (const where of [
+      `WHERE Id IN (${inList})`,
+      `WHERE Active = false AND Id IN (${inList})`,
+    ]) {
+      const q = `SELECT * FROM Item ${where} MAXRESULTS ${IN_CHUNK}`;
+      const resp = await runQuery(accessToken, realmId, q);
+      const rows = (resp.QueryResponse?.["Item"] ?? []) as QbItem[];
+      for (const item of rows) {
+        const acct = item.IncomeAccountRef?.name?.trim();
+        if (item.Id && acct) map.set(item.Id, acct);
+      }
     }
   }
   return map;

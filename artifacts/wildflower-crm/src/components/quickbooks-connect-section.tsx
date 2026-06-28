@@ -4,7 +4,10 @@ import {
   useGetQuickbooksOauthStatus,
   useDisconnectQuickbooksOauth,
   useRunQuickbooksSync,
+  useResyncQuickbooksFull,
+  useGetQuickbooksResyncStatus,
   getGetQuickbooksOauthStatusQueryKey,
+  getGetQuickbooksResyncStatusQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -75,6 +78,42 @@ export default function QuickbooksConnectSection({
     },
   });
 
+  // Background, non-destructive full re-pull: re-fetches and re-enriches every
+  // historical staged row (preserving review state) so capture-field
+  // improvements — e.g. income accounts on older invoiced service payments
+  // whose Product/Service item was later deleted in QuickBooks — backfill onto
+  // existing rows. The incremental "Sync now" only pulls since the watermark
+  // and never re-touches old transactions, so this is the only way to backfill.
+  const resyncStatusQ = useGetQuickbooksResyncStatus({
+    query: {
+      queryKey: getGetQuickbooksResyncStatusQueryKey(),
+      enabled: statusQ.data?.connected === true,
+      refetchInterval: (query) =>
+        query.state.data?.status === "running" ? 4000 : false,
+    },
+  });
+  const resyncFull = useResyncQuickbooksFull({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({
+          queryKey: getGetQuickbooksResyncStatusQueryKey(),
+        });
+        toast({
+          title: "Full re-pull started",
+          description:
+            "Re-enriching all QuickBooks records in the background. This can take a few minutes.",
+        });
+      },
+      onError: (e: unknown) => {
+        toast({
+          title: "Could not start re-pull",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
   // Surface ?quickbooks_oauth=connected|denied from the callback redirect.
   useMemo(() => {
     if (typeof window === "undefined") return null;
@@ -99,6 +138,8 @@ export default function QuickbooksConnectSection({
   }, [toast]);
 
   const status = statusQ.data;
+  const resync = resyncStatusQ.data;
+  const resyncRunning = resync?.status === "running" || resyncFull.isPending;
   const handleConnect = () => {
     // Browser navigation — the start route 302s to Intuit's consent screen,
     // which must be a top-level navigation (not a fetch).
@@ -179,7 +220,50 @@ export default function QuickbooksConnectSection({
               >
                 Reconnect
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => resyncFull.mutate()}
+                disabled={resyncRunning}
+                data-testid="quickbooks-resync-full"
+                title="Re-pull and re-enrich every historical QuickBooks record (e.g. income accounts on older invoiced service payments whose item was later deleted). Runs in the background; non-destructive and preserves review state."
+              >
+                {resyncRunning ? "Re-pulling all…" : "Full re-pull"}
+              </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              "Sync now" only pulls payments since the last sync. Use "Full
+              re-pull" to re-enrich older records (for example, income accounts
+              on past invoiced service payments) — it runs in the background and
+              keeps all review state.
+            </p>
+            {resync && resync.status !== "idle" ? (
+              <div className="text-sm" data-testid="quickbooks-resync-status">
+                {resync.status === "running" ? (
+                  <span className="text-muted-foreground">
+                    Re-pulling all records…
+                    {resync.startedAt
+                      ? ` (started ${new Date(
+                          resync.startedAt,
+                        ).toLocaleTimeString()})`
+                      : null}
+                  </span>
+                ) : resync.status === "error" ? (
+                  <span className="text-red-700">
+                    Full re-pull failed: {resync.error ?? "Unknown error"}
+                  </span>
+                ) : resync.status === "done" ? (
+                  <span className="text-muted-foreground">
+                    Last full re-pull
+                    {resync.finishedAt
+                      ? ` ${new Date(resync.finishedAt).toLocaleString()}`
+                      : null}
+                    {resync.summary
+                      ? ` — pulled ${resync.summary.pulled}, staged ${resync.summary.staged} new.`
+                      : "."}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="space-y-3">
