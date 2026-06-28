@@ -3005,6 +3005,8 @@ export interface StripeSyncSummary {
   matched: number;
   /** Newly-staged charges auto-reconciled to an existing gift at high confidence (never mints). */
   autoApplied: number;
+  /** Refund/chargeback proposals raised against already-booked gifts this run (propose-then-confirm; never auto-applied). */
+  refundProposals: number;
 }
 
 export interface StripeRematchSummary {
@@ -3032,6 +3034,30 @@ export interface StripeHistoricalProposalSummary {
   alreadyResolved: number;
   /** Payouts with no QB deposit candidate. */
   unmatched: number;
+}
+
+/**
+ * Lifecycle of the background full Stripe re-pull. 'idle' = none has run since boot; 'running' = in progress; 'done'/'error' = last run outcome.
+ */
+export type StripeResyncStatusStatus = typeof StripeResyncStatusStatus[keyof typeof StripeResyncStatusStatus];
+
+
+export const StripeResyncStatusStatus = {
+  idle: 'idle',
+  running: 'running',
+  done: 'done',
+  error: 'error',
+} as const;
+
+export interface StripeResyncStatus {
+  /** Lifecycle of the background full Stripe re-pull. 'idle' = none has run since boot; 'running' = in progress; 'done'/'error' = last run outcome. */
+  status: StripeResyncStatusStatus;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** Result of the last completed run (null while running / before any run). */
+  summary: StripeSyncSummary | null;
+  /** Error message when status is 'error'. */
+  error: string | null;
 }
 
 export interface StripeSyncStatus {

@@ -16,7 +16,8 @@ export const RunStripeSyncResponse = zod.object({
   "payouts": zod.number().describe('Stripe payouts seen this run.'),
   "staged": zod.number().describe('Newly staged charges this run.'),
   "matched": zod.number().describe('Newly staged charges given a donor hint.'),
-  "autoApplied": zod.number().describe('Newly-staged charges auto-reconciled to an existing gift at high confidence (never mints).')
+  "autoApplied": zod.number().describe('Newly-staged charges auto-reconciled to an existing gift at high confidence (never mints).'),
+  "refundProposals": zod.number().describe('Refund\/chargeback proposals raised against already-booked gifts this run (propose-then-confirm; never auto-applied).')
 })
 
 /**
@@ -38,6 +39,42 @@ export const GetStripeSyncStatusResponse = zod.object({
   "lastError": zod.string().nullable(),
   "consecutiveErrors": zod.number().describe('Consecutive errored runs (cursor held); 0 after a clean run.'),
   "payoutCreatedWatermark": zod.string().datetime({}).nullable().describe('Only payouts created at\/after this instant are pulled.')
+})
+
+/**
+ * @summary Start a non-destructive full Stripe re-pull in the background (returns immediately). Lifts the per-account watermark floor to backfill the entire payout back-catalogue (e.g. historical payouts the ongoing sync never pulled), preserving all review state. Poll /stripe/resync-status for progress.
+ */
+export const ResyncStripeFullResponse = zod.object({
+  "status": zod.enum(['idle', 'running', 'done', 'error']).describe('Lifecycle of the background full Stripe re-pull. \'idle\' = none has run since boot; \'running\' = in progress; \'done\'\/\'error\' = last run outcome.'),
+  "startedAt": zod.string().datetime({}).nullable(),
+  "finishedAt": zod.string().datetime({}).nullable(),
+  "summary": zod.object({
+  "ran": zod.boolean().describe('False when the sync was skipped (lock contended, or the Stripe connector\/account was unavailable).'),
+  "payouts": zod.number().describe('Stripe payouts seen this run.'),
+  "staged": zod.number().describe('Newly staged charges this run.'),
+  "matched": zod.number().describe('Newly staged charges given a donor hint.'),
+  "autoApplied": zod.number().describe('Newly-staged charges auto-reconciled to an existing gift at high confidence (never mints).'),
+  "refundProposals": zod.number().describe('Refund\/chargeback proposals raised against already-booked gifts this run (propose-then-confirm; never auto-applied).')
+}).nullable().describe('Result of the last completed run (null while running \/ before any run).'),
+  "error": zod.string().nullable().describe('Error message when status is \'error\'.')
+})
+
+/**
+ * @summary Poll the state of the background full Stripe re-pull started by /stripe/resync-full.
+ */
+export const GetStripeResyncStatusResponse = zod.object({
+  "status": zod.enum(['idle', 'running', 'done', 'error']).describe('Lifecycle of the background full Stripe re-pull. \'idle\' = none has run since boot; \'running\' = in progress; \'done\'\/\'error\' = last run outcome.'),
+  "startedAt": zod.string().datetime({}).nullable(),
+  "finishedAt": zod.string().datetime({}).nullable(),
+  "summary": zod.object({
+  "ran": zod.boolean().describe('False when the sync was skipped (lock contended, or the Stripe connector\/account was unavailable).'),
+  "payouts": zod.number().describe('Stripe payouts seen this run.'),
+  "staged": zod.number().describe('Newly staged charges this run.'),
+  "matched": zod.number().describe('Newly staged charges given a donor hint.'),
+  "autoApplied": zod.number().describe('Newly-staged charges auto-reconciled to an existing gift at high confidence (never mints).'),
+  "refundProposals": zod.number().describe('Refund\/chargeback proposals raised against already-booked gifts this run (propose-then-confirm; never auto-applied).')
+}).nullable().describe('Result of the last completed run (null while running \/ before any run).'),
+  "error": zod.string().nullable().describe('Error message when status is \'error\'.')
 })
 
 /**

@@ -551,6 +551,87 @@ async function stagePayoutAndCharges(
   return { staged, matched, autoApplied, refundProposals };
 }
 
+// ── Background full re-pull ("backfill all payouts") ──────────────────────
+//
+// The ongoing syncStripe() only pulls payouts created at/after the per-account
+// watermark, and the first-ever run seeds that watermark to "now" — so the
+// historical back-catalogue (e.g. 2019–2021 payouts that predate when the sync
+// was first switched on) was never pulled. A full re-pull lifts the watermark
+// floor and re-walks every payout from the account's beginning, backfilling the
+// missing payout + charge records non-destructively (review state preserved). It
+// can take several minutes, so it runs in the background and the UI polls the
+// status below — mirrors the QuickBooks full re-pull pattern.
+
+export type StripeFullResyncStatus = "idle" | "running" | "done" | "error";
+
+export interface StripeFullResyncState {
+  status: StripeFullResyncStatus;
+  startedAt: string | null;
+  finishedAt: string | null;
+  summary: StripeSyncSummary | null;
+  error: string | null;
+}
+
+let stripeFullResyncState: StripeFullResyncState = {
+  status: "idle",
+  startedAt: null,
+  finishedAt: null,
+  summary: null,
+  error: null,
+};
+
+export function getStripeFullResyncState(): StripeFullResyncState {
+  return stripeFullResyncState;
+}
+
+/**
+ * Start a full Stripe re-pull in the background and return the current state
+ * immediately. If one is already running this is a no-op that returns the
+ * in-progress state (the per-account advisory lock is the real guard against
+ * concurrent Stripe pulls; this only keeps the UI from launching a second
+ * poller).
+ */
+export function startStripeFullResync(): StripeFullResyncState {
+  if (stripeFullResyncState.status === "running") return stripeFullResyncState;
+
+  const startedAt = new Date().toISOString();
+  stripeFullResyncState = {
+    status: "running",
+    startedAt,
+    finishedAt: null,
+    summary: null,
+    error: null,
+  };
+
+  void (async () => {
+    try {
+      const summary = await syncStripe({ fullResync: true });
+      stripeFullResyncState = {
+        status: "done",
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        summary,
+        error: null,
+      };
+      logger.info(
+        { payouts: summary.payouts, staged: summary.staged },
+        "Stripe full re-pull (background) complete",
+      );
+    } catch (e) {
+      stripeFullResyncState = {
+        status: "error",
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        summary: null,
+        error: e instanceof Error ? e.message : "Stripe full re-pull failed",
+      };
+      logger.error({ err: e }, "Stripe full re-pull (background) failed");
+    }
+  })();
+
+  return stripeFullResyncState;
+}
+
 // ── Sync worker ───────────────────────────────────────────────────────────
 
 /**
@@ -595,6 +676,7 @@ export async function syncStripe(
       .then((r) => r[0]);
 
     if (!state) {
+      // First-ever run for this account: seed the cursor.
       await db
         .insert(stripeSyncState)
         .values({
@@ -605,15 +687,28 @@ export async function syncStripe(
           consecutiveErrors: 0,
         })
         .onConflictDoNothing();
+      // The ongoing (incremental) path stops here and stages nothing — the
+      // historical back-catalogue is intentionally not reprocessed on first cut.
+      // A fullResync, however, exists PRECISELY to backfill that history, so it
+      // must NOT short-circuit: it falls through to walk every payout below
+      // (watermark lifted). The cursor just inserted is overwritten at the end of
+      // the walk with the newest payout seen, so subsequent incremental syncs
+      // continue correctly from there.
+      if (!fullResync) {
+        logger.info(
+          { accountId },
+          "Stripe sync: seeded watermark to now (ongoing-only); first run stages nothing",
+        );
+        return { payouts: 0, staged: 0, matched: 0, autoApplied: 0, refundProposals: 0 };
+      }
       logger.info(
         { accountId },
-        "Stripe sync: seeded watermark to now (ongoing-only); first run stages nothing",
+        "Stripe full re-pull: no prior cursor; seeded one and walking the full payout history",
       );
-      return { payouts: 0, staged: 0, matched: 0, autoApplied: 0, refundProposals: 0 };
     }
 
-    const watermark = fullResync ? null : (state.payoutCreatedWatermark ?? null);
-    let maxCreated: number | null = state.payoutCreatedWatermark
+    const watermark = fullResync ? null : (state?.payoutCreatedWatermark ?? null);
+    let maxCreated: number | null = state?.payoutCreatedWatermark
       ? Math.floor(state.payoutCreatedWatermark.getTime() / 1000)
       : null;
 

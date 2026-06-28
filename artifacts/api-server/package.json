@@ -14,6 +14,7 @@
     "sync:schools": "tsx src/scripts/sync-schools.ts",
     "sync:donorbox": "tsx src/scripts/sync-donorbox.ts",
     "resync:quickbooks": "tsx src/scripts/resync-quickbooks.ts",
+    "resync:stripe": "tsx src/scripts/resync-stripe.ts",
     "backfill:flodesk": "tsx src/scripts/backfill-flodesk.ts",
     "backfill:derived-opps": "tsx src/scripts/backfill-derived-opp-fields.ts",
     "backfill:gift-qb-tie": "tsx src/scripts/backfill-gift-qb-tie.ts",

@@ -53,6 +53,8 @@ import { logger } from "../lib/logger";
 import {
   syncStripe,
   rematchStripeCharges,
+  startStripeFullResync,
+  getStripeFullResyncState,
 } from "../lib/stripeSync";
 import {
   confirmRefundPropagation,
@@ -1159,6 +1161,37 @@ router.post(
           e instanceof Error ? e.message : "Historical reconciliation failed",
       });
     }
+  }),
+);
+
+// ─── POST /stripe/resync-full ──────────────────────────────────────────────
+// Admin-gated NON-destructive full re-pull. Lifts the per-account watermark
+// floor to re-walk the entire payout back-catalogue (e.g. historical 2019–2021
+// payouts the ongoing sync never pulled because its first run seeds the
+// watermark to "now") and backfill the missing payout + charge records. Review
+// state is preserved (the upsert refreshes only read-only Stripe facts). Runs in
+// the background — the browser/proxy would time out long before a multi-minute
+// re-walk finishes; the UI polls GET /stripe/resync-status.
+router.post(
+  "/stripe/resync-full",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const state = startStripeFullResync();
+    req.log.info(
+      { status: state.status },
+      "Stripe full re-pull (background) requested",
+    );
+    res.json(state);
+  }),
+);
+
+// ─── GET /stripe/resync-status ─────────────────────────────────────────────
+// Admin-gated progress for the background full re-pull started above.
+router.get(
+  "/stripe/resync-status",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json(getStripeFullResyncState());
   }),
 );
 

@@ -23,6 +23,7 @@ import type {
   ForbiddenResponse,
   StripeHistoricalProposalSummary,
   StripeRematchSummary,
+  StripeResyncStatus,
   StripeSyncStatus,
   StripeSyncSummary
 } from '../api.schemas';
@@ -242,6 +243,149 @@ export function useGetStripeSyncStatus<TData = Awaited<ReturnType<typeof getStri
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetStripeSyncStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * @summary Start a non-destructive full Stripe re-pull in the background (returns immediately). Lifts the per-account watermark floor to backfill the entire payout back-catalogue (e.g. historical payouts the ongoing sync never pulled), preserving all review state. Poll /stripe/resync-status for progress.
+ */
+export const getResyncStripeFullUrl = () => {
+
+
+  
+
+  return `/api/stripe/resync-full`
+}
+
+export const resyncStripeFull = async ( options?: RequestInit): Promise<StripeResyncStatus> => {
+  
+  return customFetch<StripeResyncStatus>(getResyncStripeFullUrl(),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getResyncStripeFullMutationOptions = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resyncStripeFull>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resyncStripeFull>>, TError,void, TContext> => {
+
+const mutationKey = ['resyncStripeFull'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resyncStripeFull>>, void> = () => {
+          
+
+          return  resyncStripeFull(requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResyncStripeFullMutationResult = NonNullable<Awaited<ReturnType<typeof resyncStripeFull>>>
+    
+    export type ResyncStripeFullMutationError = ErrorType<ForbiddenResponse>
+
+    /**
+ * @summary Start a non-destructive full Stripe re-pull in the background (returns immediately). Lifts the per-account watermark floor to backfill the entire payout back-catalogue (e.g. historical payouts the ongoing sync never pulled), preserving all review state. Poll /stripe/resync-status for progress.
+ */
+export const useResyncStripeFull = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resyncStripeFull>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resyncStripeFull>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getResyncStripeFullMutationOptions(options));
+    }
+    /**
+ * @summary Poll the state of the background full Stripe re-pull started by /stripe/resync-full.
+ */
+export const getGetStripeResyncStatusUrl = () => {
+
+
+  
+
+  return `/api/stripe/resync-status`
+}
+
+export const getStripeResyncStatus = async ( options?: RequestInit): Promise<StripeResyncStatus> => {
+  
+  return customFetch<StripeResyncStatus>(getGetStripeResyncStatusUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetStripeResyncStatusQueryKey = () => {
+    return [
+    `/api/stripe/resync-status`
+    ] as const;
+    }
+
+    
+export const getGetStripeResyncStatusQueryOptions = <TData = Awaited<ReturnType<typeof getStripeResyncStatus>>, TError = ErrorType<ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStripeResyncStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStripeResyncStatusQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStripeResyncStatus>>> = ({ signal }) => getStripeResyncStatus({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStripeResyncStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStripeResyncStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getStripeResyncStatus>>>
+export type GetStripeResyncStatusQueryError = ErrorType<ForbiddenResponse>
+
+
+/**
+ * @summary Poll the state of the background full Stripe re-pull started by /stripe/resync-full.
+ */
+
+export function useGetStripeResyncStatus<TData = Awaited<ReturnType<typeof getStripeResyncStatus>>, TError = ErrorType<ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStripeResyncStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStripeResyncStatusQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

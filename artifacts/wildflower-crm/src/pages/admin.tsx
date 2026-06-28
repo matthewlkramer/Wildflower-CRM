@@ -95,6 +95,7 @@ import {
 } from "@/components/entity-picker";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import QuickbooksConnectSection from "@/components/quickbooks-connect-section";
+import StripeSyncSection from "@/components/stripe-sync-section";
 import { userDisplayName, hasUsableIdentity } from "@/components/user-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -197,6 +198,7 @@ export default function Admin() {
             <AdminSyncSection />
             <SchoolSyncSection />
             <QuickbooksConnectSection returnTo="/admin" />
+            <StripeSyncSection />
           </TabsContent>
         )}
 
