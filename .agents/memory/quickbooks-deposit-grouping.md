@@ -80,6 +80,29 @@ the WHOLE group (checked FIRST in the revert route).
 **Why:** avoids inventing a new "linked" signal and a parallel revert path —
 the representative re-uses everything the single-match flow already does.
 
+## Workbench: grouped link-to-existing-gift must use group-reconcile (409 trap)
+The per-row approve endpoint REJECTS `link_existing_gift` on a row that is part
+of a source group — it 409s "this payment is part of a group, link the whole
+group" and points at `/staged-payments/group-reconcile`. So the reconciliation
+WORKBENCH (separate page from staged-payments.tsx) must detect
+`card.isSourceGroup && outcome==="link_existing_gift"` and route through
+group-reconcile for EVERY entry path (stage-confirm, re-target-to-gift,
+bulk approve-all-high-confidence, one-click confirm-and-apply); non-grouped or
+non-link outcomes still use the per-row approve. A shared
+`buildGroupedLinkPayload(card, giftId, giftAmount)` returns null for non-group/
+<2-member cards and otherwise sets `confirmMultiDate:true` (members lack
+`qbDepositId`, so multi-deposit can't be detected client-side — auto-pass is OK
+for source groups only) and `confirmAmountMismatch:false`.
+**Money safety:** never auto-confirm a group-total↔gift amount mismatch — the
+single-card stage/retarget paths open a confirm dialog (then resend with
+`confirmAmountMismatch:true`); bulk SKIPS mismatches; one-click apply refuses and
+sends the operator to Re-target. When staging a grouped link into the tray, clear
+any pending staged change keyed on ANY member's stagedPaymentId (not just the
+representative) so a member isn't double-applied alongside the group reconcile.
+**Why:** without this the operator literally cannot link a grouped card to an
+existing gift from the workbench (hard 409); the original report was an $850k
+4-payment group.
+
 ## qb_deposit_id preserve-on-conflict
 `qb_deposit_id` is folded onto SR/Payment lines at pull time (first-deposit-wins
 back-index) and onto direct deposit lines (= deposit row Id). The upsert MUST

@@ -20,6 +20,7 @@ import {
   useGetGiftAllocationCodingPreview,
   getGetReconciliationGraphQueryOptions,
   approveReconciliationCard,
+  groupReconcileStagedPayments,
   rejectStagedPayment,
   searchReconciliationNode,
   splitStagedPayment,
@@ -37,6 +38,7 @@ import {
   type GiftOrPaymentDetail,
   type SetStagedPaymentCodingBody,
   type DeferredRevenue,
+  type GroupReconcileStagedPaymentsBody,
 } from "@workspace/api-client-react";
 import {
   AlertCircle,
@@ -156,6 +158,60 @@ function money(v: string | null | undefined): string {
   });
 }
 
+/**
+ * Mirror of the server group-reconcile fee-band tolerance (matching.ts): the
+ * gift may be a hair under the combined total (rounding) and at most ~10% + $1
+ * over (processor fees withheld before deposit).
+ */
+function groupTotalWithinGiftBand(
+  groupTotal: number,
+  giftAmount: number,
+): boolean {
+  return giftAmount >= groupTotal - 0.01 && giftAmount <= groupTotal * 1.1 + 1;
+}
+
+/**
+ * For a grouped ("same physical gift" source group) card being linked to an
+ * EXISTING gift, build the /staged-payments/group-reconcile payload. Returns
+ * null when the card is not a source group (the caller uses the per-row approve
+ * path). `confirmMultiDate` is always true for a source group: forming the
+ * group was already the human assertion that these rows are one physical gift
+ * (groups span dates/deposits by design), and the client can't see member
+ * deposit ids to detect multi-deposit anyway. `amountMismatch` is true when the
+ * members' combined total sits OUTSIDE the gift's fee-band — the caller must get
+ * explicit human confirmation before sending confirmAmountMismatch.
+ */
+function buildGroupedLinkPayload(
+  card: ReconciliationCard,
+  giftId: string,
+  giftAmount: number | null,
+): {
+  memberIds: string[];
+  amountMismatch: boolean;
+  payload: GroupReconcileStagedPaymentsBody;
+} | null {
+  if (!card.isSourceGroup) return null;
+  const memberIds = (card.sourceGroupMembers ?? [])
+    .map((m) => m.stagedPaymentId)
+    .filter((id): id is string => !!id);
+  if (memberIds.length < 2) return null;
+  const groupTotal = num(card.sourceGroupTotalAmount);
+  const amountMismatch =
+    groupTotal == null ||
+    giftAmount == null ||
+    !groupTotalWithinGiftBand(groupTotal, giftAmount);
+  return {
+    memberIds,
+    amountMismatch,
+    payload: {
+      stagedPaymentIds: memberIds,
+      giftId,
+      confirmMultiDate: true,
+      confirmAmountMismatch: false,
+    },
+  };
+}
+
 type Confidence = "high" | "med" | "weak";
 
 /**
@@ -215,6 +271,14 @@ interface StagedChange {
   body: ApproveCompleteMatchBody | null;
   /** Split body for kind === "split"; null otherwise. */
   splitBody?: SplitStagedPaymentBody | null;
+  /**
+   * Set for a grouped ("same physical gift" source group) card linked to an
+   * EXISTING gift: applied via /staged-payments/group-reconcile (which ties the
+   * whole group to one gift) instead of the per-row approve endpoint, which
+   * 409s a grouped link. `body` is null for these; `stagedPaymentId` is the
+   * group's representative member.
+   */
+  groupReconcile?: GroupReconcileStagedPaymentsBody | null;
   /** Set after a failed Apply so the row stays staged with a reason. */
   failure?: string | null;
 }
@@ -314,6 +378,16 @@ export default function ReconciliationWorkbench() {
   const [excludeCard, setExcludeCard] = useState<ReconciliationCard | null>(
     null,
   );
+  // A grouped card whose chosen gift's amount is OUTSIDE the group total's
+  // fee-band: hold the intended group-reconcile here and make the operator
+  // explicitly confirm the amount mismatch before staging it.
+  const [groupLinkConfirm, setGroupLinkConfirm] = useState<{
+    card: ReconciliationCard;
+    giftLabel: string;
+    giftAmount: number | null;
+    groupTotal: number | null;
+    payload: GroupReconcileStagedPaymentsBody;
+  } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Needs-review queue = the active work queue (omit `queue` param). Loaded
@@ -441,6 +515,38 @@ export default function ReconciliationWorkbench() {
     );
   }, []);
 
+  /**
+   * Stage a grouped link-to-existing-gift (whole source group → one gift),
+   * applied via /staged-payments/group-reconcile. Drops any pending change for
+   * the representative OR any other group member, so a per-member action can't
+   * coexist with the whole-group link.
+   */
+  const stageGroupedLink = useCallback(
+    (
+      card: ReconciliationCard,
+      giftLabel: string,
+      payload: GroupReconcileStagedPaymentsBody,
+    ) => {
+      const members = new Set(payload.stagedPaymentIds);
+      const change: StagedChange = {
+        key: card.stagedPaymentId,
+        kind: "retarget",
+        stagedPaymentId: card.stagedPaymentId,
+        label: card.payerName ?? "QuickBooks payment",
+        detail: `Re-target group (${payload.stagedPaymentIds.length} payments) → ${giftLabel}`,
+        body: null,
+        groupReconcile: payload,
+      };
+      setStaged((prev) => [
+        ...prev.filter((s) => !members.has(s.stagedPaymentId)),
+        change,
+      ]);
+      setRetargetCard(null);
+      setSearchGiftCard(null);
+    },
+    [],
+  );
+
   /** Stage a split-across-gifts (+ optional remainder) change into the tray. */
   const stageSplit = useCallback(
     (
@@ -497,6 +603,34 @@ export default function ReconciliationWorkbench() {
         toast({ title: "Can't confirm yet", description: res });
         return;
       }
+      // A grouped card linking to an EXISTING gift must go through
+      // group-reconcile, not the per-row approve endpoint (it 409s).
+      if (
+        card.isSourceGroup &&
+        res.body.outcome === "link_existing_gift" &&
+        res.body.giftId
+      ) {
+        const grouped = buildGroupedLinkPayload(
+          card,
+          res.body.giftId,
+          num(card.resolvedGiftAmount),
+        );
+        if (grouped) {
+          const giftLabel = card.resolvedGiftName ?? "the matched gift";
+          if (grouped.amountMismatch) {
+            setGroupLinkConfirm({
+              card,
+              giftLabel,
+              giftAmount: num(card.resolvedGiftAmount),
+              groupTotal: num(card.sourceGroupTotalAmount),
+              payload: grouped.payload,
+            });
+            return;
+          }
+          stageGroupedLink(card, giftLabel, grouped.payload);
+          return;
+        }
+      }
       stage({
         key: card.stagedPaymentId,
         kind: "confirm",
@@ -506,7 +640,7 @@ export default function ReconciliationWorkbench() {
         body: res.body,
       });
     },
-    [deriveConfirmBody, stage, toast],
+    [deriveConfirmBody, stage, stageGroupedLink, toast],
   );
 
   const stageReject = useCallback(
@@ -525,6 +659,26 @@ export default function ReconciliationWorkbench() {
 
   const stageRetarget = useCallback(
     async (card: ReconciliationCard, gift: ReconciliationCandidate) => {
+      // Grouped ("same physical gift") cards can't link to an existing gift via
+      // the per-row approve endpoint (it 409s "link the whole group"); route
+      // them through /staged-payments/group-reconcile instead.
+      const grouped = buildGroupedLinkPayload(card, gift.id, num(gift.amount));
+      if (grouped) {
+        if (grouped.amountMismatch) {
+          setGroupLinkConfirm({
+            card,
+            giftLabel: gift.label,
+            giftAmount: num(gift.amount),
+            groupTotal: num(card.sourceGroupTotalAmount),
+            payload: grouped.payload,
+          });
+          setRetargetCard(null);
+          setSearchGiftCard(null);
+          return;
+        }
+        stageGroupedLink(card, gift.label, grouped.payload);
+        return;
+      }
       setBusy(true);
       const res = await deriveConfirmBody(card, gift);
       setBusy(false);
@@ -543,7 +697,7 @@ export default function ReconciliationWorkbench() {
       setRetargetCard(null);
       setSearchGiftCard(null);
     },
-    [deriveConfirmBody, stage, toast],
+    [deriveConfirmBody, stage, stageGroupedLink, toast],
   );
 
   const approveAllHighConfidence = useCallback(async () => {
@@ -566,6 +720,32 @@ export default function ReconciliationWorkbench() {
         skipped += 1;
         continue;
       }
+      if (
+        card.isSourceGroup &&
+        res.body.outcome === "link_existing_gift" &&
+        res.body.giftId
+      ) {
+        const grouped = buildGroupedLinkPayload(
+          card,
+          res.body.giftId,
+          num(card.resolvedGiftAmount),
+        );
+        if (grouped) {
+          // Never auto-confirm an amount mismatch in a bulk action — leave it
+          // for the reviewer to confirm individually via Re-target.
+          if (grouped.amountMismatch) {
+            skipped += 1;
+            continue;
+          }
+          stageGroupedLink(
+            card,
+            card.resolvedGiftName ?? "the matched gift",
+            grouped.payload,
+          );
+          stagedOk += 1;
+          continue;
+        }
+      }
       stage({
         key: card.stagedPaymentId,
         kind: "confirm",
@@ -584,7 +764,14 @@ export default function ReconciliationWorkbench() {
           ? `${skipped} couldn't be staged (changed state) and were skipped.`
           : "Review the tray, then Apply to CRM.",
     });
-  }, [buckets.review, stagedIds, deriveConfirmBody, stage, toast]);
+  }, [
+    buckets.review,
+    stagedIds,
+    deriveConfirmBody,
+    stage,
+    stageGroupedLink,
+    toast,
+  ]);
 
   /** Apply each staged action individually through its existing guarded endpoint. */
   const applyToCrm = useCallback(async () => {
@@ -602,6 +789,8 @@ export default function ReconciliationWorkbench() {
             continue;
           }
           await splitStagedPayment(change.stagedPaymentId, change.splitBody);
+        } else if (change.groupReconcile) {
+          await groupReconcileStagedPayments(change.groupReconcile);
         } else if (change.body) {
           await approveReconciliationCard(change.stagedPaymentId, change.body);
         } else {
@@ -758,6 +947,44 @@ export default function ReconciliationWorkbench() {
         if (typeof res === "string") {
           toast({ title: "Can't confirm yet", description: res });
           return;
+        }
+        // A grouped card linking to an EXISTING gift must go through
+        // group-reconcile, not the per-row approve endpoint (it 409s).
+        if (
+          card.isSourceGroup &&
+          res.body.outcome === "link_existing_gift" &&
+          res.body.giftId
+        ) {
+          const giftAmount = giftOverride
+            ? num(giftOverride.amount)
+            : num(card.resolvedGiftAmount);
+          const grouped = buildGroupedLinkPayload(
+            card,
+            res.body.giftId,
+            giftAmount,
+          );
+          if (grouped) {
+            // One-click apply can't gather a confirmation; on a mismatch, open
+            // Re-target (which prompts for explicit confirmation) instead of
+            // guessing.
+            if (grouped.amountMismatch) {
+              setRetargetCard(card);
+              toast({
+                title: "Confirm the amount first",
+                description:
+                  "The grouped payments don’t total the gift amount. Re-pick the gift to review and confirm linking the whole group.",
+              });
+              return;
+            }
+            await groupReconcileStagedPayments(grouped.payload);
+            invalidateAll();
+            setRetargetCard(null);
+            toast({
+              title: "Approved",
+              description: "Linked the group to the gift.",
+            });
+            return;
+          }
         }
         await approveReconciliationCard(card.stagedPaymentId, res.body);
         invalidateAll();
@@ -1140,6 +1367,19 @@ export default function ReconciliationWorkbench() {
               date: g.dateReceived ?? null,
             })
           }
+        />
+      )}
+      {groupLinkConfirm && (
+        <GroupLinkAmountDialog
+          info={groupLinkConfirm}
+          onCancel={() => setGroupLinkConfirm(null)}
+          onConfirm={() => {
+            stageGroupedLink(groupLinkConfirm.card, groupLinkConfirm.giftLabel, {
+              ...groupLinkConfirm.payload,
+              confirmAmountMismatch: true,
+            });
+            setGroupLinkConfirm(null);
+          }}
         />
       )}
 
@@ -2341,6 +2581,55 @@ function CodingPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Grouped-link amount-mismatch confirm ─────────────────────────────────────
+
+/**
+ * Shown before staging a grouped link-to-existing-gift when the group total
+ * sits outside the gift's fee-band. The operator must explicitly confirm the
+ * mismatch (→ confirmAmountMismatch) before the group is reconciled to the gift.
+ */
+function GroupLinkAmountDialog({
+  info,
+  onCancel,
+  onConfirm,
+}: {
+  info: {
+    giftLabel: string;
+    giftAmount: number | null;
+    groupTotal: number | null;
+    payload: GroupReconcileStagedPaymentsBody;
+  };
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Amounts don’t match</DialogTitle>
+          <DialogDescription>
+            The {info.payload.stagedPaymentIds.length} grouped payments total{" "}
+            <span className="font-medium tabular-nums">
+              {money(info.groupTotal?.toString())}
+            </span>
+            , but “{info.giftLabel}” is{" "}
+            <span className="font-medium tabular-nums">
+              {money(info.giftAmount?.toString())}
+            </span>
+            . Link the whole group to this gift anyway?
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button onClick={onConfirm}>Link group anyway</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
