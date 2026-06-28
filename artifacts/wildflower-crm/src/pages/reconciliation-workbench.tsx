@@ -77,6 +77,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Table,
   TableBody,
@@ -2777,27 +2778,34 @@ function ExcludeDialog({
             CRM it is not a gift. You can re-include it later.
           </DialogDescription>
         </DialogHeader>
-        <Select
+        <RadioGroup
           value={reason}
           onValueChange={(v) => setReason(v as StagedPaymentExclusionReason)}
           disabled={busy}
+          aria-label="Exclusion reason"
+          className="max-h-[50vh] gap-0 overflow-y-auto rounded-md border"
         >
-          <SelectTrigger>
-            <SelectValue placeholder="Choose a reason…" />
-          </SelectTrigger>
-          <SelectContent>
-            {MANUAL_EXCLUSION_FAMILIES.map((group) => (
-              <SelectGroup key={group.family}>
-                <SelectLabel>{group.family}</SelectLabel>
-                {group.reasons.map((value) => (
-                  <SelectItem key={value} value={value}>
-                    {EXCLUSION_REASON_LABELS[value]}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            ))}
-          </SelectContent>
-        </Select>
+          {MANUAL_EXCLUSION_FAMILIES.map((group) => (
+            <div key={group.family}>
+              <div className="sticky top-0 z-10 bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                {group.family}
+              </div>
+              {group.reasons.map((value) => (
+                <label
+                  key={value}
+                  htmlFor={`exclude-reason-${value}`}
+                  className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-accent has-[:focus-visible]:bg-accent"
+                >
+                  <RadioGroupItem
+                    id={`exclude-reason-${value}`}
+                    value={value}
+                  />
+                  {EXCLUSION_REASON_LABELS[value]}
+                </label>
+              ))}
+            </div>
+          ))}
+        </RadioGroup>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
