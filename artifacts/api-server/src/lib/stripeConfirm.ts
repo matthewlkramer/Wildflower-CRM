@@ -9,6 +9,14 @@ import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { candidateGiftId } from "./stripeReconcile";
 
 /**
+ * A transaction handle, matching `db.transaction`'s callback argument. Exported
+ * so callers (e.g. the settlement-bundle confirm) can fold the `*InTx`
+ * transitions below into their OWN atomic transaction — the same committed
+ * money-write primitives, never a parallel money path.
+ */
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
  * R4 — human-confirmed payout ↔ QuickBooks-deposit reconciliation transitions.
  *
  * The proposal pass (stripeReconcile.ts) only ever SUGGESTS a match (sets a
@@ -82,7 +90,7 @@ export interface ConfirmRevertArgs {
   userId: string | null;
 }
 
-class TransitionError extends Error {
+export class TransitionError extends Error {
   constructor(
     public code: ConfirmRevertErrorCode,
     message: string,
@@ -99,7 +107,9 @@ function appendAudit(existing: string | null, note: string, at: Date): string {
 }
 
 async function runTransition(
-  fn: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<ConfirmRevertOk>,
+  fn: (
+    tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  ) => Promise<ConfirmRevertOk>,
 ): Promise<ConfirmRevertResult> {
   try {
     return await db.transaction(fn);
@@ -119,92 +129,113 @@ async function runTransition(
 export function confirmPendingQbDeposit(
   args: ConfirmRevertArgs,
 ): Promise<ConfirmRevertResult> {
+  return runTransition((tx) => confirmPendingQbDepositInTx(tx, args));
+}
+
+/**
+ * Tx-safe core of {@link confirmPendingQbDeposit}: the guarded payout
+ * `proposed` → `confirmed_reconciled` + deposit `pending` → `reconciled`
+ * transition, runnable inside a caller-supplied transaction so the settlement
+ * bundle confirm can fold the payout↔deposit tie into ONE atomic commit (no
+ * parallel money path). Throws {@link TransitionError} on a drifted prior state;
+ * the caller's transaction wrapper maps it (see {@link runTransition}).
+ */
+export async function confirmPendingQbDepositInTx(
+  tx: Tx,
+  args: ConfirmRevertArgs,
+): Promise<ConfirmRevertOk> {
   const { payoutId, userId } = args;
-  return runTransition(async (tx) => {
-    const now = new Date();
-    const payout = await tx
-      .select()
-      .from(stripePayouts)
-      .where(eq(stripePayouts.id, payoutId))
-      .for("update")
-      .then((r) => r[0]);
-    if (!payout) throw new TransitionError("not_found", "Payout not found.");
-    if (payout.qbReconciliationStatus !== "proposed") {
-      throw new TransitionError(
-        "invalid_transition",
-        "Only a proposed payout can be confirmed as excluded.",
-      );
-    }
-    const depositId = payout.proposedQbStagedPaymentId;
-    if (!depositId) {
-      throw new TransitionError(
-        "invalid_transition",
-        "Payout has no proposed QuickBooks deposit to confirm.",
-      );
-    }
-    const deposit = await tx
-      .select()
-      .from(stagedPayments)
-      .where(eq(stagedPayments.id, depositId))
-      .for("update")
-      .then((r) => r[0]);
-    if (!deposit) {
-      throw new TransitionError("not_found", "Proposed QuickBooks deposit not found.");
-    }
-    if (deposit.qbEntityType !== "deposit" || deposit.status !== "pending") {
-      throw new TransitionError(
-        "invalid_transition",
-        "The proposed QuickBooks deposit is no longer pending. Refresh and retry.",
-      );
-    }
+  const now = new Date();
+  const payout = await tx
+    .select()
+    .from(stripePayouts)
+    .where(eq(stripePayouts.id, payoutId))
+    .for("update")
+    .then((r) => r[0]);
+  if (!payout) throw new TransitionError("not_found", "Payout not found.");
+  if (payout.qbReconciliationStatus !== "proposed") {
+    throw new TransitionError(
+      "invalid_transition",
+      "Only a proposed payout can be confirmed as excluded.",
+    );
+  }
+  const depositId = payout.proposedQbStagedPaymentId;
+  if (!depositId) {
+    throw new TransitionError(
+      "invalid_transition",
+      "Payout has no proposed QuickBooks deposit to confirm.",
+    );
+  }
+  const deposit = await tx
+    .select()
+    .from(stagedPayments)
+    .where(eq(stagedPayments.id, depositId))
+    .for("update")
+    .then((r) => r[0]);
+  if (!deposit) {
+    throw new TransitionError(
+      "not_found",
+      "Proposed QuickBooks deposit not found.",
+    );
+  }
+  if (deposit.qbEntityType !== "deposit" || deposit.status !== "pending") {
+    throw new TransitionError(
+      "invalid_transition",
+      "The proposed QuickBooks deposit is no longer pending. Refresh and retry.",
+    );
+  }
 
-    const reconciled = await tx
-      .update(stagedPayments)
-      .set({
-        status: "reconciled",
-        classificationSource: "manual",
-        updatedAt: now,
-      })
-      .where(and(eq(stagedPayments.id, depositId), eq(stagedPayments.status, "pending")))
-      .returning({ id: stagedPayments.id });
-    if (!reconciled.length) {
-      throw new TransitionError(
-        "invalid_transition",
-        "The proposed QuickBooks deposit is no longer pending. Refresh and retry.",
-      );
-    }
+  const reconciled = await tx
+    .update(stagedPayments)
+    .set({
+      status: "reconciled",
+      classificationSource: "manual",
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(stagedPayments.id, depositId),
+        eq(stagedPayments.status, "pending"),
+      ),
+    )
+    .returning({ id: stagedPayments.id });
+  if (!reconciled.length) {
+    throw new TransitionError(
+      "invalid_transition",
+      "The proposed QuickBooks deposit is no longer pending. Refresh and retry.",
+    );
+  }
 
-    const updated = await tx
-      .update(stripePayouts)
-      .set({
-        qbReconciliationStatus: "confirmed_reconciled",
-        matchedQbStagedPaymentId: depositId,
-        proposedQbStagedPaymentId: null,
-        qbReconciliationConfirmedByUserId: userId,
-        qbReconciliationConfirmedAt: now,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(stripePayouts.id, payoutId),
-          eq(stripePayouts.qbReconciliationStatus, "proposed"),
-        ),
-      )
-      .returning({ id: stripePayouts.id });
-    if (!updated.length) {
-      throw new TransitionError(
-        "invalid_transition",
-        "This payout is no longer proposed. Refresh and retry.",
-      );
-    }
+  const updated = await tx
+    .update(stripePayouts)
+    .set({
+      qbReconciliationStatus: "confirmed_reconciled",
+      matchedQbStagedPaymentId: depositId,
+      proposedQbStagedPaymentId: null,
+      qbReconciliationConfirmedByUserId: userId,
+      qbReconciliationConfirmedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(stripePayouts.id, payoutId),
+        eq(stripePayouts.qbReconciliationStatus, "proposed"),
+      ),
+    )
+    .returning({ id: stripePayouts.id });
+  if (!updated.length) {
+    throw new TransitionError(
+      "invalid_transition",
+      "This payout is no longer proposed. Refresh and retry.",
+    );
+  }
 
-    return {
-      ok: true,
-      kind: "confirmed_reconciled",
-      payoutId,
-      stagedPaymentId: depositId,
-    };
-  });
+  return {
+    ok: true,
+    kind: "confirmed_reconciled",
+    payoutId,
+    stagedPaymentId: depositId,
+  };
 }
 
 // ─── CONFIRM-KEEP (approved/reconciled QB deposit) ─────────────────────────
@@ -216,79 +247,95 @@ export function confirmPendingQbDeposit(
 export function confirmKeepApprovedQbGift(
   args: ConfirmRevertArgs,
 ): Promise<ConfirmRevertResult> {
+  return runTransition((tx) => confirmKeepApprovedQbGiftInTx(tx, args));
+}
+
+/**
+ * Tx-safe core of {@link confirmKeepApprovedQbGift}: the guarded payout
+ * `conflict_approved` → `confirmed_reconciled` linkage-only transition (the
+ * already-booked deposit + gift are KEPT untouched as terminal evidence),
+ * runnable inside a caller-supplied transaction so the settlement bundle confirm
+ * can fold the payout↔deposit tie into ONE atomic commit. Throws
+ * {@link TransitionError} on a drifted prior state.
+ */
+export async function confirmKeepApprovedQbGiftInTx(
+  tx: Tx,
+  args: ConfirmRevertArgs,
+): Promise<ConfirmRevertOk> {
   const { payoutId, userId } = args;
-  return runTransition(async (tx) => {
-    const now = new Date();
-    const payout = await tx
-      .select()
-      .from(stripePayouts)
-      .where(eq(stripePayouts.id, payoutId))
-      .for("update")
-      .then((r) => r[0]);
-    if (!payout) throw new TransitionError("not_found", "Payout not found.");
-    if (payout.qbReconciliationStatus !== "conflict_approved") {
-      throw new TransitionError(
-        "invalid_transition",
-        "Only a conflicting (already-approved) payout can be kept.",
-      );
-    }
-    const depositId = payout.qbConflictStagedPaymentId;
-    if (!depositId) {
-      throw new TransitionError(
-        "invalid_transition",
-        "Payout has no conflicting QuickBooks deposit to keep.",
-      );
-    }
-    const deposit = await tx
-      .select()
-      .from(stagedPayments)
-      .where(eq(stagedPayments.id, depositId))
-      .for("update")
-      .then((r) => r[0]);
-    if (!deposit) {
-      throw new TransitionError("not_found", "Conflicting QuickBooks deposit not found.");
-    }
-    if (deposit.status !== "approved" && deposit.status !== "reconciled") {
-      throw new TransitionError(
-        "invalid_transition",
-        "The conflicting QuickBooks deposit is no longer booked into a gift. Refresh and retry.",
-      );
-    }
+  const now = new Date();
+  const payout = await tx
+    .select()
+    .from(stripePayouts)
+    .where(eq(stripePayouts.id, payoutId))
+    .for("update")
+    .then((r) => r[0]);
+  if (!payout) throw new TransitionError("not_found", "Payout not found.");
+  if (payout.qbReconciliationStatus !== "conflict_approved") {
+    throw new TransitionError(
+      "invalid_transition",
+      "Only a conflicting (already-approved) payout can be kept.",
+    );
+  }
+  const depositId = payout.qbConflictStagedPaymentId;
+  if (!depositId) {
+    throw new TransitionError(
+      "invalid_transition",
+      "Payout has no conflicting QuickBooks deposit to keep.",
+    );
+  }
+  const deposit = await tx
+    .select()
+    .from(stagedPayments)
+    .where(eq(stagedPayments.id, depositId))
+    .for("update")
+    .then((r) => r[0]);
+  if (!deposit) {
+    throw new TransitionError(
+      "not_found",
+      "Conflicting QuickBooks deposit not found.",
+    );
+  }
+  if (deposit.status !== "approved" && deposit.status !== "reconciled") {
+    throw new TransitionError(
+      "invalid_transition",
+      "The conflicting QuickBooks deposit is no longer booked into a gift. Refresh and retry.",
+    );
+  }
 
-    // Touch neither the deposit nor the gift — they are already terminal evidence.
-    // Preserve qbConflictStagedPaymentId + qbConflictGiftId as revert/audit
-    // pointers (qbConflictGiftId being set is the revert discriminator for "keep").
-    const updated = await tx
-      .update(stripePayouts)
-      .set({
-        qbReconciliationStatus: "confirmed_reconciled",
-        matchedQbStagedPaymentId: depositId,
-        proposedQbStagedPaymentId: null,
-        qbReconciliationConfirmedByUserId: userId,
-        qbReconciliationConfirmedAt: now,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(stripePayouts.id, payoutId),
-          eq(stripePayouts.qbReconciliationStatus, "conflict_approved"),
-        ),
-      )
-      .returning({ id: stripePayouts.id });
-    if (!updated.length) {
-      throw new TransitionError(
-        "invalid_transition",
-        "This payout is no longer in conflict. Refresh and retry.",
-      );
-    }
+  // Touch neither the deposit nor the gift — they are already terminal evidence.
+  // Preserve qbConflictStagedPaymentId + qbConflictGiftId as revert/audit
+  // pointers (qbConflictGiftId being set is the revert discriminator for "keep").
+  const updated = await tx
+    .update(stripePayouts)
+    .set({
+      qbReconciliationStatus: "confirmed_reconciled",
+      matchedQbStagedPaymentId: depositId,
+      proposedQbStagedPaymentId: null,
+      qbReconciliationConfirmedByUserId: userId,
+      qbReconciliationConfirmedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(stripePayouts.id, payoutId),
+        eq(stripePayouts.qbReconciliationStatus, "conflict_approved"),
+      ),
+    )
+    .returning({ id: stripePayouts.id });
+  if (!updated.length) {
+    throw new TransitionError(
+      "invalid_transition",
+      "This payout is no longer in conflict. Refresh and retry.",
+    );
+  }
 
-    return {
-      ok: true,
-      kind: "confirmed_reconciled",
-      payoutId,
-      stagedPaymentId: depositId,
-    };
-  });
+  return {
+    ok: true,
+    kind: "confirmed_reconciled",
+    payoutId,
+    stagedPaymentId: depositId,
+  };
 }
 
 // ─── CONFIRM-REPLACE — RETIRED (D4) ────────────────────────────────────────
@@ -375,7 +422,12 @@ export function revertPayoutQbConfirmation(
             "This payout has changed. Refresh and retry.",
           );
         }
-        return { ok: true, kind: "reverted", payoutId, stagedPaymentId: depositId };
+        return {
+          ok: true,
+          kind: "reverted",
+          payoutId,
+          stagedPaymentId: depositId,
+        };
       }
 
       // qbConflictGiftId null ⇒ this was a pending-deposit confirm: the deposit
@@ -387,7 +439,11 @@ export function revertPayoutQbConfirmation(
         .where(eq(stagedPayments.id, depositId))
         .for("update")
         .then((r) => r[0]);
-      if (!deposit) throw new TransitionError("not_found", "Linked QuickBooks deposit not found.");
+      if (!deposit)
+        throw new TransitionError(
+          "not_found",
+          "Linked QuickBooks deposit not found.",
+        );
       const reverted = await tx
         .update(stagedPayments)
         .set({
@@ -395,7 +451,12 @@ export function revertPayoutQbConfirmation(
           classificationSource: "manual",
           updatedAt: now,
         })
-        .where(and(eq(stagedPayments.id, depositId), eq(stagedPayments.status, "reconciled")))
+        .where(
+          and(
+            eq(stagedPayments.id, depositId),
+            eq(stagedPayments.status, "reconciled"),
+          ),
+        )
         .returning({ id: stagedPayments.id });
       if (!reverted.length) {
         throw new TransitionError(
@@ -426,12 +487,20 @@ export function revertPayoutQbConfirmation(
           "This payout has changed. Refresh and retry.",
         );
       }
-      return { ok: true, kind: "reverted", payoutId, stagedPaymentId: depositId };
+      return {
+        ok: true,
+        kind: "reverted",
+        payoutId,
+        stagedPaymentId: depositId,
+      };
     }
 
     if (status === "confirmed_excluded") {
       if (!depositId) {
-        throw new TransitionError("invalid_transition", "Payout has no linked deposit to revert.");
+        throw new TransitionError(
+          "invalid_transition",
+          "Payout has no linked deposit to revert.",
+        );
       }
       const deposit = await tx
         .select()
@@ -439,7 +508,11 @@ export function revertPayoutQbConfirmation(
         .where(eq(stagedPayments.id, depositId))
         .for("update")
         .then((r) => r[0]);
-      if (!deposit) throw new TransitionError("not_found", "Linked QuickBooks deposit not found.");
+      if (!deposit)
+        throw new TransitionError(
+          "not_found",
+          "Linked QuickBooks deposit not found.",
+        );
       const reincluded = await tx
         .update(stagedPayments)
         .set({
@@ -448,7 +521,12 @@ export function revertPayoutQbConfirmation(
           classificationSource: "manual",
           updatedAt: now,
         })
-        .where(and(eq(stagedPayments.id, depositId), eq(stagedPayments.status, "excluded")))
+        .where(
+          and(
+            eq(stagedPayments.id, depositId),
+            eq(stagedPayments.status, "excluded"),
+          ),
+        )
         .returning({ id: stagedPayments.id });
       if (!reincluded.length) {
         throw new TransitionError(
@@ -474,14 +552,25 @@ export function revertPayoutQbConfirmation(
         )
         .returning({ id: stripePayouts.id });
       if (!updated.length) {
-        throw new TransitionError("invalid_transition", "This payout has changed. Refresh and retry.");
+        throw new TransitionError(
+          "invalid_transition",
+          "This payout has changed. Refresh and retry.",
+        );
       }
-      return { ok: true, kind: "reverted", payoutId, stagedPaymentId: depositId };
+      return {
+        ok: true,
+        kind: "reverted",
+        payoutId,
+        stagedPaymentId: depositId,
+      };
     }
 
     if (status === "confirmed_keep") {
       if (!depositId) {
-        throw new TransitionError("invalid_transition", "Payout has no linked deposit to revert.");
+        throw new TransitionError(
+          "invalid_transition",
+          "Payout has no linked deposit to revert.",
+        );
       }
       // KEEP touched nothing but the payout, so revert restores the payout only.
       const updated = await tx
@@ -502,9 +591,17 @@ export function revertPayoutQbConfirmation(
         )
         .returning({ id: stripePayouts.id });
       if (!updated.length) {
-        throw new TransitionError("invalid_transition", "This payout has changed. Refresh and retry.");
+        throw new TransitionError(
+          "invalid_transition",
+          "This payout has changed. Refresh and retry.",
+        );
       }
-      return { ok: true, kind: "reverted", payoutId, stagedPaymentId: depositId };
+      return {
+        ok: true,
+        kind: "reverted",
+        payoutId,
+        stagedPaymentId: depositId,
+      };
     }
 
     if (status === "confirmed_replace") {
@@ -541,7 +638,11 @@ export function revertPayoutQbConfirmation(
         .where(eq(stagedPayments.id, depositId))
         .for("update")
         .then((r) => r[0]);
-      if (!deposit) throw new TransitionError("not_found", "Linked QuickBooks deposit not found.");
+      if (!deposit)
+        throw new TransitionError(
+          "not_found",
+          "Linked QuickBooks deposit not found.",
+        );
 
       const gift = await tx
         .select()
@@ -549,7 +650,11 @@ export function revertPayoutQbConfirmation(
         .where(eq(giftsAndPayments.id, conflictGiftId))
         .for("update")
         .then((r) => r[0]);
-      if (!gift) throw new TransitionError("not_found", "Archived QuickBooks-derived gift not found.");
+      if (!gift)
+        throw new TransitionError(
+          "not_found",
+          "Archived QuickBooks-derived gift not found.",
+        );
 
       const reincluded = await tx
         .update(stagedPayments)
@@ -559,7 +664,12 @@ export function revertPayoutQbConfirmation(
           classificationSource: "manual",
           updatedAt: now,
         })
-        .where(and(eq(stagedPayments.id, depositId), eq(stagedPayments.status, "excluded")))
+        .where(
+          and(
+            eq(stagedPayments.id, depositId),
+            eq(stagedPayments.status, "excluded"),
+          ),
+        )
         .returning({ id: stagedPayments.id });
       if (!reincluded.length) {
         throw new TransitionError(
@@ -579,7 +689,12 @@ export function revertPayoutQbConfirmation(
           ),
           updatedAt: now,
         })
-        .where(and(eq(giftsAndPayments.id, conflictGiftId), isNotNull(giftsAndPayments.archivedAt)))
+        .where(
+          and(
+            eq(giftsAndPayments.id, conflictGiftId),
+            isNotNull(giftsAndPayments.archivedAt),
+          ),
+        )
         .returning({ id: giftsAndPayments.id });
       if (!unarchived.length) {
         throw new TransitionError(
@@ -606,7 +721,10 @@ export function revertPayoutQbConfirmation(
         )
         .returning({ id: stripePayouts.id });
       if (!updated.length) {
-        throw new TransitionError("invalid_transition", "This payout has changed. Refresh and retry.");
+        throw new TransitionError(
+          "invalid_transition",
+          "This payout has changed. Refresh and retry.",
+        );
       }
       return {
         ok: true,

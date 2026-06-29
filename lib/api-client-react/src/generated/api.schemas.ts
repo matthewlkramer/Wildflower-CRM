@@ -4058,6 +4058,440 @@ export interface ReconciliationApproveResult {
   createdPledge: boolean;
 }
 
+/**
+ * The settlement anchor a bundle reconciles: a QuickBooks deposit (staged_payments) or a Stripe payout (stripe_payouts).
+ */
+export type BundleAnchorType = typeof BundleAnchorType[keyof typeof BundleAnchorType];
+
+
+export const BundleAnchorType = {
+  qb_staged_payment: 'qb_staged_payment',
+  stripe_payout: 'stripe_payout',
+} as const;
+
+/**
+ * Draft lifecycle. open: editable. confirmed: committed (terminal). superseded: the anchor changed shape and the draft was reset.
+ */
+export type BundleProposalStatus = typeof BundleProposalStatus[keyof typeof BundleProposalStatus];
+
+
+export const BundleProposalStatus = {
+  open: 'open',
+  confirmed: 'confirmed',
+  superseded: 'superseded',
+} as const;
+
+/**
+ * Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).
+ */
+export type BundleConfidenceTier = typeof BundleConfidenceTier[keyof typeof BundleConfidenceTier];
+
+
+export const BundleConfidenceTier = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+  none: 'none',
+} as const;
+
+/**
+ * How the current value was set. auto: server best-guess. override: a human edited this row. sync: refreshed from a processor sync.
+ */
+export type BundleProvenance = typeof BundleProvenance[keyof typeof BundleProvenance];
+
+
+export const BundleProvenance = {
+  auto: 'auto',
+  override: 'override',
+  sync: 'sync',
+} as const;
+
+/**
+ * info: FYI. warning: review advised, still confirmable (with allowWarnings). blocker: prevents confirm until resolved.
+ */
+export type BundleWarningSeverity = typeof BundleWarningSeverity[keyof typeof BundleWarningSeverity];
+
+
+export const BundleWarningSeverity = {
+  info: 'info',
+  warning: 'warning',
+  blocker: 'blocker',
+} as const;
+
+export interface BundleWarning {
+  /** Stable machine code (amount_mismatch, donor_ambiguous, gift_already_linked, donor_required, payer_vs_gift_donor, tie_conflict, ...). */
+  code: string;
+  /** Human-readable explanation. */
+  message: string;
+  severity: BundleWarningSeverity;
+}
+
+export type BundleNewDonorDraftKind = typeof BundleNewDonorDraftKind[keyof typeof BundleNewDonorDraftKind];
+
+
+export const BundleNewDonorDraftKind = {
+  organization: 'organization',
+  person: 'person',
+  household: 'household',
+} as const;
+
+/**
+ * A donor to MINT on confirm when no existing record fits (product decision 1a: propose-new-donor).
+ */
+export interface BundleNewDonorDraft {
+  kind: BundleNewDonorDraftKind;
+  /** Org/household name, or a person's full name when first/last aren't split. */
+  name: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+}
+
+export type BundleDonorProposalKind = typeof BundleDonorProposalKind[keyof typeof BundleDonorProposalKind];
+
+
+export const BundleDonorProposalKind = {
+  existing: 'existing',
+  new: 'new',
+  unresolved: 'unresolved',
+} as const;
+
+export type BundleDonorProposalDonorKind = typeof BundleDonorProposalDonorKind[keyof typeof BundleDonorProposalDonorKind] | null;
+
+
+export const BundleDonorProposalDonorKind = {
+  organization: 'organization',
+  person: 'person',
+  household: 'household',
+} as const;
+
+/**
+ * The proposed donor for a bundle row. existing: link an existing record. new: mint one on confirm. unresolved: no confident proposal (needs a human).
+ */
+export interface BundleDonorProposal {
+  kind: BundleDonorProposalKind;
+  /** Set when kind=existing. */
+  donorId?: string | null;
+  donorKind?: BundleDonorProposalDonorKind;
+  /** Display label (anonymous-masked for the viewer). */
+  donorName?: string | null;
+  /** Set when kind=new. */
+  newDonor?: BundleNewDonorDraft | null;
+  /** Optional DAF / giving-platform conduit the donor gave through. */
+  paymentIntermediaryId?: string | null;
+  /** 0–100 match confidence for the proposed donor. */
+  confidence?: number | null;
+  confidenceTier: BundleConfidenceTier;
+  source?: ReconciliationCandidateSource | null;
+  /** Scored alternative donors for the picker. */
+  candidates: ReconciliationCandidate[];
+}
+
+/**
+ * Header values for a gift to MINT on confirm (product decision 1a: propose-new-gift). Allocations are derived by the existing minting primitive; this carries only the header preview.
+ */
+export interface BundleGiftMintDraft {
+  /** Final amount to credit the donor (Stripe GROSS when a charge backs it, else the QB amount), major units. */
+  amount: string | null;
+  dateReceived?: string | null;
+  paymentMethod?: GiftPaymentMethod | null;
+  finalAmountSource?: GiftFinalAmountSource | null;
+}
+
+export type BundleGiftProposalKind = typeof BundleGiftProposalKind[keyof typeof BundleGiftProposalKind];
+
+
+export const BundleGiftProposalKind = {
+  match: 'match',
+  mint: 'mint',
+  research: 'research',
+  exclude: 'exclude',
+} as const;
+
+/**
+ * What to do with this row's money on the CRM-gift side.
+match: link an existing gift (giftId). mint: create a new gift from the evidence (mintDraft). research: park for later (no gift). exclude: file as a non-gift (exclusionReason).
+
+ */
+export interface BundleGiftProposal {
+  kind: BundleGiftProposalKind;
+  /** Set when kind=match. */
+  giftId?: string | null;
+  giftName?: string | null;
+  /** The matched gift's recorded amount, for the amount-mismatch check. */
+  giftAmount?: string | null;
+  /** Donor the matched gift is recorded under (surfaces a payer-vs-gift-donor difference). */
+  giftDonorName?: string | null;
+  /** Set when kind=mint. */
+  mintDraft?: BundleGiftMintDraft | null;
+  /** Set when kind=exclude. */
+  exclusionReason?: StagedPaymentExclusionReason | null;
+  /** 0–100 match confidence for the proposed gift. */
+  confidence?: number | null;
+  confidenceTier: BundleConfidenceTier;
+  source?: ReconciliationCandidateSource | null;
+  /** Scored alternative gifts for the picker (already-linked gifts flagged via alreadyLinkedStagedPaymentId). */
+  candidates: ReconciliationCandidate[];
+}
+
+/**
+ * One reconcilable unit of money in the bundle — a Stripe charge behind the
+payout, or (for pure-QB money) the deposit line itself. Carries the source
+facts plus the proposed donor + gift end-state, with the warnings and
+readiness that drive the reactive UI.
+
+ */
+export interface BundleChargeRow {
+  /** Stable id for this row within the bundle (the Stripe charge id, or the staged_payments id for QB-only money). Override edits are keyed on it. */
+  rowKey: string;
+  stripeChargeId?: string | null;
+  /** The QB staged_payments row backing this money, when one exists. */
+  stagedPaymentId?: string | null;
+  /** The amount this row reconciles for (Stripe GROSS when a charge backs it, else the QB amount), major units. */
+  amount?: string | null;
+  /** Processor fee (Stripe), when known. */
+  feeAmount?: string | null;
+  /** Net deposited (gross − fee), when known. */
+  netAmount?: string | null;
+  dateReceived?: string | null;
+  payerName?: string | null;
+  payerEmail?: string | null;
+  donor: BundleDonorProposal;
+  gift: BundleGiftProposal;
+  provenance: BundleProvenance;
+  warnings: BundleWarning[];
+  /** True when this row's proposal passes the consistency gate (confident, non-conflicting) so it can be confirmed without manual disambiguation. */
+  ready: boolean;
+}
+
+/**
+ * What confirm will do: confirm_tie stamps the payout↔deposit reconciliation; none = nothing to tie; conflict = the deposit is already a gift, needs a keep/replace decision first.
+ */
+export type BundleTieProposalAction = typeof BundleTieProposalAction[keyof typeof BundleTieProposalAction];
+
+
+export const BundleTieProposalAction = {
+  confirm_tie: 'confirm_tie',
+  none: 'none',
+  conflict: 'conflict',
+} as const;
+
+/**
+ * The payout↔deposit relationship for the bundle. Mirrors the existing
+propose-then-confirm Stripe-payout reconciliation; the bundle confirm
+stamps the tie via the same primitive.
+
+ */
+export interface BundleTieProposal {
+  /** The Stripe payout (po_...) backing this bundle, when one exists. */
+  payoutId?: string | null;
+  /** The QB deposit lump (staged_payments) tied to the payout. */
+  depositStagedPaymentId?: string | null;
+  /** Current payout↔deposit reconciliation status; null for pure-QB money with no payout. */
+  status: StripePayoutReconciliationStatus | null;
+  /** What confirm will do: confirm_tie stamps the payout↔deposit reconciliation; none = nothing to tie; conflict = the deposit is already a gift, needs a keep/replace decision first. */
+  action: BundleTieProposalAction;
+  payoutNetAmount?: string | null;
+  depositAmount?: string | null;
+  chargeCount?: number | null;
+  warnings: BundleWarning[];
+}
+
+/**
+ * Rollup counts for the bundle, for the header + a confirm-readiness check.
+ */
+export interface BundleProposalSummary {
+  rowCount: number;
+  /** Rows whose gift proposal is match. */
+  matchCount: number;
+  /** Rows whose gift proposal is mint. */
+  mintCount: number;
+  researchCount: number;
+  excludeCount: number;
+  /** Rows that will mint a new donor on confirm. */
+  newDonorCount: number;
+  warningCount: number;
+  /** Warnings of severity=blocker across the bundle + tie. */
+  blockerCount: number;
+  /** True when every non-research/non-exclude row is ready and no blocker remains, so Confirm can run. */
+  ready: boolean;
+}
+
+/**
+ * The COMPLETE proposed end-state for a settlement anchor, server-derived and
+reactive: edit any row via /derive and the rest is recomputed. Confirm
+commits the whole bundle atomically through the shared money-write
+primitives.
+
+ */
+export interface ReconciliationBundleProposal {
+  draftId: string;
+  anchorType: BundleAnchorType;
+  anchorId: string;
+  status: BundleProposalStatus;
+  /** Bumped on every derive; pass it to confirm for idempotency. */
+  revision: number;
+  /** Hash of the underlying source rows; lets the client tell when a sync refreshed the bundle. */
+  sourceFingerprint?: string | null;
+  /** True when the live source rows drifted from the persisted snapshot (a refresh is recommended). Always false right after assemble/derive. */
+  stale: boolean;
+  /** The payout↔deposit tie; null for pure-QB money with no Stripe payout. */
+  tie?: BundleTieProposal | null;
+  rows: BundleChargeRow[];
+  summary: BundleProposalSummary;
+  generatedAt: string;
+}
+
+/**
+ * Identify the settlement anchor to assemble (or load) a bundle for.
+ */
+export interface BundleAnchorInput {
+  anchorType: BundleAnchorType;
+  /** staged_payments.id (qb deposit) or stripe_payouts.id (po_...). */
+  anchorId: string;
+  /** When true, re-derive from live source even if a fresh snapshot exists (overrides are always preserved). */
+  refresh?: boolean | null;
+}
+
+/**
+ * Switch the donor proposal mode.
+ */
+export type BundleRowOverrideDonorKind = typeof BundleRowOverrideDonorKind[keyof typeof BundleRowOverrideDonorKind] | null;
+
+
+export const BundleRowOverrideDonorKind = {
+  existing: 'existing',
+  new: 'new',
+  unresolved: 'unresolved',
+} as const;
+
+export type BundleRowOverrideDonorRecordKind = typeof BundleRowOverrideDonorRecordKind[keyof typeof BundleRowOverrideDonorRecordKind] | null;
+
+
+export const BundleRowOverrideDonorRecordKind = {
+  organization: 'organization',
+  person: 'person',
+  household: 'household',
+} as const;
+
+/**
+ * Switch the gift outcome.
+ */
+export type BundleRowOverrideGiftKind = typeof BundleRowOverrideGiftKind[keyof typeof BundleRowOverrideGiftKind] | null;
+
+
+export const BundleRowOverrideGiftKind = {
+  match: 'match',
+  mint: 'mint',
+  research: 'research',
+  exclude: 'exclude',
+} as const;
+
+/**
+ * A human edit to one bundle row. Only the provided fields change; the server re-derives the rest. Omitted fields keep their current (auto or prior-override) value.
+ */
+export interface BundleRowOverride {
+  rowKey: string;
+  /** Switch the donor proposal mode. */
+  donorKind?: BundleRowOverrideDonorKind;
+  /** Pick an existing donor (with donorRecordKind). Null clears the pick. */
+  donorId?: string | null;
+  donorRecordKind?: BundleRowOverrideDonorRecordKind;
+  /** Set/replace the new-donor draft (when donorKind=new). */
+  newDonor?: BundleNewDonorDraft | null;
+  paymentIntermediaryId?: string | null;
+  /** Switch the gift outcome. */
+  giftKind?: BundleRowOverrideGiftKind;
+  /** Pick an existing gift to match (when giftKind=match). */
+  giftId?: string | null;
+  /** Override the minted gift's amount (when giftKind=mint). */
+  mintAmount?: string | null;
+  /** Reason (when giftKind=exclude). */
+  exclusionReason?: StagedPaymentExclusionReason | null;
+  /** Acknowledge + clear an amount-mismatch warning for this row. */
+  overrideAmountMismatchReason?: string | null;
+  /** When true, drop this row's override entirely and fall back to the auto-derivation. */
+  clear?: boolean | null;
+}
+
+/**
+ * Force the tie action (or clear it back to auto).
+ */
+export type BundleTieOverrideAction = typeof BundleTieOverrideAction[keyof typeof BundleTieOverrideAction] | null;
+
+
+export const BundleTieOverrideAction = {
+  confirm_tie: 'confirm_tie',
+  none: 'none',
+} as const;
+
+/**
+ * A human edit to the payout↔deposit tie.
+ */
+export interface BundleTieOverride {
+  /** Force the tie action (or clear it back to auto). */
+  action?: BundleTieOverrideAction;
+  /** Pin the QB deposit lump for the payout. */
+  depositStagedPaymentId?: string | null;
+  clear?: boolean | null;
+}
+
+/**
+ * The set of human edits to apply, then re-derive. Empty re-derives with the existing overrides (a plain refresh).
+ */
+export interface BundleOverridesInput {
+  rows?: BundleRowOverride[];
+  tie?: BundleTieOverride | null;
+}
+
+/**
+ * Commit the whole bundle. Idempotent by (draftId, expectedRevision).
+ */
+export interface BundleConfirmInput {
+  /** The revision the client is confirming; rejected (409) if the draft has since been re-derived. */
+  expectedRevision?: number | null;
+  /** Proceed despite non-blocker warnings. Blockers always reject. */
+  allowWarnings?: boolean | null;
+}
+
+export type BundleConfirmResultRowOutcome = typeof BundleConfirmResultRowOutcome[keyof typeof BundleConfirmResultRowOutcome];
+
+
+export const BundleConfirmResultRowOutcome = {
+  matched_gift: 'matched_gift',
+  minted_gift: 'minted_gift',
+  researched: 'researched',
+  excluded: 'excluded',
+  skipped: 'skipped',
+} as const;
+
+export interface BundleConfirmResultRow {
+  rowKey: string;
+  outcome: BundleConfirmResultRowOutcome;
+  /** The gift linked or minted for this row. */
+  giftId?: string | null;
+  /** The donor minted for this row, when the donor proposal was new. */
+  createdDonorId?: string | null;
+}
+
+/**
+ * Outcome of an atomic bundle confirm.
+ */
+export interface ReconciliationBundleConfirmResult {
+  ok: boolean;
+  draftId: string;
+  /** The revision that was committed. */
+  revision: number;
+  /** True when the payout↔deposit tie was stamped. */
+  tieConfirmed: boolean;
+  rows: BundleConfirmResultRow[];
+  giftsCreated: number;
+  giftsMatched: number;
+  donorsCreated: number;
+  /** True when the draft was already confirmed at this revision (idempotent replay). */
+  alreadyConfirmed?: boolean;
+}
+
 export type DonorSearchResultKind = typeof DonorSearchResultKind[keyof typeof DonorSearchResultKind];
 
 

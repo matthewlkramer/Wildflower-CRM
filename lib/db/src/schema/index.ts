@@ -50,6 +50,7 @@ export * from "./quickbooksHandlingRules";
 export * from "./stagedPayments";
 export * from "./stagedPaymentSplits";
 export * from "./reconciliationProposals";
+export * from "./reconciliationBundleDrafts";
 export * from "./stripeSyncState";
 export * from "./stripePayouts";
 export * from "./stripeStagedCharges";

@@ -12,6 +12,7 @@ import { getUncachableStripeClient } from "./stripeClient";
 import { scoreStripeCharge } from "./stripeMatch";
 import { runProposalPass } from "./stripeReconcile";
 import { deriveRefundProposal } from "./stripeRefund";
+import { ensureBundleDraftsForAnchors } from "./reconciliationBundleSync";
 
 function isUniqueViolation(e: unknown): boolean {
   return (
@@ -717,6 +718,7 @@ export async function syncStripe(
     let matched = 0;
     let autoApplied = 0;
     let refundProposals = 0;
+    const seenPayoutIds: string[] = [];
 
     try {
       const params: Stripe.PayoutListParams = { limit: 100 };
@@ -728,6 +730,7 @@ export async function syncStripe(
 
       for await (const payout of stripe.payouts.list(params)) {
         payoutsSeen += 1;
+        seenPayoutIds.push(payout.id);
         if (
           payout.created &&
           (maxCreated === null || payout.created > maxCreated)
@@ -757,6 +760,15 @@ export async function syncStripe(
           updatedAt: new Date(),
         })
         .where(eq(stripeSyncState.stripeAccountId, accountId));
+
+      // Generate/refresh settlement-bundle drafts for the payouts we touched
+      // (best-effort: never throws, never clobbers human overrides).
+      await ensureBundleDraftsForAnchors(
+        seenPayoutIds.map((id) => ({
+          anchorType: "stripe_payout" as const,
+          anchorId: id,
+        })),
+      );
 
       return { payouts: payoutsSeen, staged, matched, autoApplied, refundProposals };
     } catch (e) {

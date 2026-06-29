@@ -4209,6 +4209,85 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftMissingQbList" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /reconciliation/bundle-proposals:
+    post:
+      operationId: assembleReconciliationBundle
+      tags: [reconciliation]
+      summary: Assemble (or load) the reactive settlement-bundle draft for one anchor.
+      description: |
+        Returns the COMPLETE proposed end-state for a settlement anchor — one
+        Stripe payout and/or one QB deposit plus all its charges — as a persisted
+        draft: the payout↔deposit tie plus, per charge/line, the proposed donor
+        (existing | new) and gift (match | mint | research | exclude) with
+        confidence, provenance and warnings. Creates the draft on first call and
+        re-derives from live source on every call (human overrides are always
+        preserved). Server-authoritative — UI-supplied locks are never trusted.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BundleAnchorInput" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationBundleProposal" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/bundle-proposals/{draftId}:
+    get:
+      operationId: getReconciliationBundle
+      tags: [reconciliation]
+      summary: Load a persisted settlement-bundle draft, re-derived against live state.
+      description: |
+        Reloads one bundle draft by id, re-deriving the proposal from current CRM +
+        processor state with the draft's stored overrides applied. `stale` is true
+        when the live source rows drifted from the cached snapshot.
+      parameters:
+        - { name: draftId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationBundleProposal" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/bundle-proposals/{draftId}/derive:
+    post:
+      operationId: deriveReconciliationBundle
+      tags: [reconciliation]
+      summary: Apply human edits to a bundle and re-derive the rest (reactive).
+      description: |
+        Persists the supplied row/tie overrides, then RE-DERIVES the whole bundle
+        server-side so a single edit (picking a donor, flipping mint↔match,
+        excluding a row) reactively updates dependent rows, warnings and readiness.
+        Bumps the draft revision. Never clobbers other rows' overrides.
+      parameters:
+        - { name: draftId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BundleOverridesInput" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationBundleProposal" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The draft is already confirmed (no further edits)." }
+  /reconciliation/bundle-proposals/{draftId}/confirm:
+    post:
+      operationId: confirmReconciliationBundle
+      tags: [reconciliation]
+      summary: Atomically commit the whole settlement bundle.
+      description: |
+        Re-derives and re-validates the entire bundle from current DB under row
+        locks, runs the consistency gates (Donor XOR, double-book guards,
+        amount/date fee-band, Stripe-GROSS precedence), then commits all of it in
+        ONE transaction via the SAME money-write primitives used by manual
+        approve/reconcile: mints proposed new donors + gifts, links matched gifts,
+        stamps the payout↔deposit tie (processor_payout supersede), recomputes the
+        gift↔QB tie status and re-derives affected opportunities, and writes the
+        audit trail. All-or-nothing; idempotent by (draftId, expectedRevision).
+        research/excluded rows mint nothing.
+      parameters:
+        - { name: draftId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BundleConfirmInput" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationBundleConfirmResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Revision mismatch, blocker warnings present, or a row's gift/donor is no longer valid (re-derive and retry)." }
 
 components:
   parameters:
@@ -7147,6 +7226,225 @@ components:
         opportunityId:   { type: string, nullable: true }
         createdGift:     { type: boolean, description: "True when a new gift was minted." }
         createdPledge:   { type: boolean, description: "True when an opportunity was latched into a pledge." }
+    # ── Reactive settlement-bundle reconciliation ──────────────────────────────
+    BundleAnchorType:
+      type: string
+      enum: [qb_staged_payment, stripe_payout]
+      description: "The settlement anchor a bundle reconciles: a QuickBooks deposit (staged_payments) or a Stripe payout (stripe_payouts)."
+    BundleProposalStatus:
+      type: string
+      enum: [open, confirmed, superseded]
+      description: "Draft lifecycle. open: editable. confirmed: committed (terminal). superseded: the anchor changed shape and the draft was reset."
+    BundleConfidenceTier:
+      type: string
+      enum: [high, medium, low, none]
+      description: "Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate)."
+    BundleProvenance:
+      type: string
+      enum: [auto, override, sync]
+      description: "How the current value was set. auto: server best-guess. override: a human edited this row. sync: refreshed from a processor sync."
+    BundleWarningSeverity:
+      type: string
+      enum: [info, warning, blocker]
+      description: "info: FYI. warning: review advised, still confirmable (with allowWarnings). blocker: prevents confirm until resolved."
+    BundleWarning:
+      type: object
+      required: [code, message, severity]
+      properties:
+        code:     { type: string, description: "Stable machine code (amount_mismatch, donor_ambiguous, gift_already_linked, donor_required, payer_vs_gift_donor, tie_conflict, ...)." }
+        message:  { type: string, description: "Human-readable explanation." }
+        severity: { $ref: "#/components/schemas/BundleWarningSeverity" }
+    BundleNewDonorDraft:
+      type: object
+      required: [kind, name]
+      description: "A donor to MINT on confirm when no existing record fits (product decision 1a: propose-new-donor)."
+      properties:
+        kind:      { type: string, enum: [organization, person, household] }
+        name:      { type: string, description: "Org/household name, or a person's full name when first/last aren't split." }
+        firstName: { type: string, nullable: true }
+        lastName:  { type: string, nullable: true }
+        email:     { type: string, nullable: true }
+    BundleDonorProposal:
+      type: object
+      required: [kind, confidenceTier, candidates]
+      description: "The proposed donor for a bundle row. existing: link an existing record. new: mint one on confirm. unresolved: no confident proposal (needs a human)."
+      properties:
+        kind:           { type: string, enum: [existing, new, unresolved] }
+        donorId:        { type: string, nullable: true, description: "Set when kind=existing." }
+        donorKind:      { type: string, enum: [organization, person, household], nullable: true }
+        donorName:      { type: string, nullable: true, description: "Display label (anonymous-masked for the viewer)." }
+        newDonor:       { allOf: [ { $ref: "#/components/schemas/BundleNewDonorDraft" } ], nullable: true, description: "Set when kind=new." }
+        paymentIntermediaryId: { type: string, nullable: true, description: "Optional DAF / giving-platform conduit the donor gave through." }
+        confidence:     { type: integer, nullable: true, description: "0–100 match confidence for the proposed donor." }
+        confidenceTier: { $ref: "#/components/schemas/BundleConfidenceTier" }
+        source:         { allOf: [ { $ref: "#/components/schemas/ReconciliationCandidateSource" } ], nullable: true }
+        candidates:     { type: array, items: { $ref: "#/components/schemas/ReconciliationCandidate" }, description: "Scored alternative donors for the picker." }
+    BundleGiftMintDraft:
+      type: object
+      required: [amount]
+      description: "Header values for a gift to MINT on confirm (product decision 1a: propose-new-gift). Allocations are derived by the existing minting primitive; this carries only the header preview."
+      properties:
+        amount:            { type: string, nullable: true, description: "Final amount to credit the donor (Stripe GROSS when a charge backs it, else the QB amount), major units." }
+        dateReceived:      { type: string, format: date, nullable: true }
+        paymentMethod:     { allOf: [ { $ref: "#/components/schemas/GiftPaymentMethod" } ], nullable: true }
+        finalAmountSource: { allOf: [ { $ref: "#/components/schemas/GiftFinalAmountSource" } ], nullable: true }
+    BundleGiftProposal:
+      type: object
+      required: [kind, confidenceTier, candidates]
+      description: |
+        What to do with this row's money on the CRM-gift side.
+        match: link an existing gift (giftId). mint: create a new gift from the evidence (mintDraft). research: park for later (no gift). exclude: file as a non-gift (exclusionReason).
+      properties:
+        kind:            { type: string, enum: [match, mint, research, exclude] }
+        giftId:          { type: string, nullable: true, description: "Set when kind=match." }
+        giftName:        { type: string, nullable: true }
+        giftAmount:      { type: string, nullable: true, description: "The matched gift's recorded amount, for the amount-mismatch check." }
+        giftDonorName:   { type: string, nullable: true, description: "Donor the matched gift is recorded under (surfaces a payer-vs-gift-donor difference)." }
+        mintDraft:       { allOf: [ { $ref: "#/components/schemas/BundleGiftMintDraft" } ], nullable: true, description: "Set when kind=mint." }
+        exclusionReason: { allOf: [ { $ref: "#/components/schemas/StagedPaymentExclusionReason" } ], nullable: true, description: "Set when kind=exclude." }
+        confidence:      { type: integer, nullable: true, description: "0–100 match confidence for the proposed gift." }
+        confidenceTier:  { $ref: "#/components/schemas/BundleConfidenceTier" }
+        source:          { allOf: [ { $ref: "#/components/schemas/ReconciliationCandidateSource" } ], nullable: true }
+        candidates:      { type: array, items: { $ref: "#/components/schemas/ReconciliationCandidate" }, description: "Scored alternative gifts for the picker (already-linked gifts flagged via alreadyLinkedStagedPaymentId)." }
+    BundleChargeRow:
+      type: object
+      required: [rowKey, donor, gift, provenance, warnings, ready]
+      description: |
+        One reconcilable unit of money in the bundle — a Stripe charge behind the
+        payout, or (for pure-QB money) the deposit line itself. Carries the source
+        facts plus the proposed donor + gift end-state, with the warnings and
+        readiness that drive the reactive UI.
+      properties:
+        rowKey:          { type: string, description: "Stable id for this row within the bundle (the Stripe charge id, or the staged_payments id for QB-only money). Override edits are keyed on it." }
+        stripeChargeId:  { type: string, nullable: true }
+        stagedPaymentId: { type: string, nullable: true, description: "The QB staged_payments row backing this money, when one exists." }
+        amount:          { type: string, nullable: true, description: "The amount this row reconciles for (Stripe GROSS when a charge backs it, else the QB amount), major units." }
+        feeAmount:       { type: string, nullable: true, description: "Processor fee (Stripe), when known." }
+        netAmount:       { type: string, nullable: true, description: "Net deposited (gross − fee), when known." }
+        dateReceived:    { type: string, format: date, nullable: true }
+        payerName:       { type: string, nullable: true }
+        payerEmail:      { type: string, nullable: true }
+        donor:           { $ref: "#/components/schemas/BundleDonorProposal" }
+        gift:            { $ref: "#/components/schemas/BundleGiftProposal" }
+        provenance:      { $ref: "#/components/schemas/BundleProvenance" }
+        warnings:        { type: array, items: { $ref: "#/components/schemas/BundleWarning" } }
+        ready:           { type: boolean, description: "True when this row's proposal passes the consistency gate (confident, non-conflicting) so it can be confirmed without manual disambiguation." }
+    BundleTieProposal:
+      type: object
+      required: [status, action, warnings]
+      description: |
+        The payout↔deposit relationship for the bundle. Mirrors the existing
+        propose-then-confirm Stripe-payout reconciliation; the bundle confirm
+        stamps the tie via the same primitive.
+      properties:
+        payoutId:               { type: string, nullable: true, description: "The Stripe payout (po_...) backing this bundle, when one exists." }
+        depositStagedPaymentId: { type: string, nullable: true, description: "The QB deposit lump (staged_payments) tied to the payout." }
+        status:                 { allOf: [ { $ref: "#/components/schemas/StripePayoutReconciliationStatus" } ], nullable: true, description: "Current payout↔deposit reconciliation status; null for pure-QB money with no payout." }
+        action:                 { type: string, enum: [confirm_tie, none, conflict], description: "What confirm will do: confirm_tie stamps the payout↔deposit reconciliation; none = nothing to tie; conflict = the deposit is already a gift, needs a keep/replace decision first." }
+        payoutNetAmount:        { type: string, nullable: true }
+        depositAmount:          { type: string, nullable: true }
+        chargeCount:            { type: integer, nullable: true }
+        warnings:               { type: array, items: { $ref: "#/components/schemas/BundleWarning" } }
+    BundleProposalSummary:
+      type: object
+      required: [rowCount, matchCount, mintCount, researchCount, excludeCount, newDonorCount, warningCount, blockerCount, ready]
+      description: "Rollup counts for the bundle, for the header + a confirm-readiness check."
+      properties:
+        rowCount:      { type: integer }
+        matchCount:    { type: integer, description: "Rows whose gift proposal is match." }
+        mintCount:     { type: integer, description: "Rows whose gift proposal is mint." }
+        researchCount: { type: integer }
+        excludeCount:  { type: integer }
+        newDonorCount: { type: integer, description: "Rows that will mint a new donor on confirm." }
+        warningCount:  { type: integer }
+        blockerCount:  { type: integer, description: "Warnings of severity=blocker across the bundle + tie." }
+        ready:         { type: boolean, description: "True when every non-research/non-exclude row is ready and no blocker remains, so Confirm can run." }
+    ReconciliationBundleProposal:
+      type: object
+      required: [draftId, anchorType, anchorId, status, revision, stale, rows, summary, generatedAt]
+      description: |
+        The COMPLETE proposed end-state for a settlement anchor, server-derived and
+        reactive: edit any row via /derive and the rest is recomputed. Confirm
+        commits the whole bundle atomically through the shared money-write
+        primitives.
+      properties:
+        draftId:           { type: string }
+        anchorType:        { $ref: "#/components/schemas/BundleAnchorType" }
+        anchorId:          { type: string }
+        status:            { $ref: "#/components/schemas/BundleProposalStatus" }
+        revision:          { type: integer, description: "Bumped on every derive; pass it to confirm for idempotency." }
+        sourceFingerprint: { type: string, nullable: true, description: "Hash of the underlying source rows; lets the client tell when a sync refreshed the bundle." }
+        stale:             { type: boolean, description: "True when the live source rows drifted from the persisted snapshot (a refresh is recommended). Always false right after assemble/derive." }
+        tie:               { allOf: [ { $ref: "#/components/schemas/BundleTieProposal" } ], nullable: true, description: "The payout↔deposit tie; null for pure-QB money with no Stripe payout." }
+        rows:              { type: array, items: { $ref: "#/components/schemas/BundleChargeRow" } }
+        summary:           { $ref: "#/components/schemas/BundleProposalSummary" }
+        generatedAt:       { type: string, format: date-time }
+    BundleAnchorInput:
+      type: object
+      required: [anchorType, anchorId]
+      description: "Identify the settlement anchor to assemble (or load) a bundle for."
+      properties:
+        anchorType: { $ref: "#/components/schemas/BundleAnchorType" }
+        anchorId:   { type: string, description: "staged_payments.id (qb deposit) or stripe_payouts.id (po_...)." }
+        refresh:    { type: boolean, nullable: true, description: "When true, re-derive from live source even if a fresh snapshot exists (overrides are always preserved)." }
+    BundleRowOverride:
+      type: object
+      required: [rowKey]
+      description: "A human edit to one bundle row. Only the provided fields change; the server re-derives the rest. Omitted fields keep their current (auto or prior-override) value."
+      properties:
+        rowKey:          { type: string }
+        donorKind:       { type: string, enum: [existing, new, unresolved], nullable: true, description: "Switch the donor proposal mode." }
+        donorId:         { type: string, nullable: true, description: "Pick an existing donor (with donorRecordKind). Null clears the pick." }
+        donorRecordKind: { type: string, enum: [organization, person, household], nullable: true }
+        newDonor:        { allOf: [ { $ref: "#/components/schemas/BundleNewDonorDraft" } ], nullable: true, description: "Set/replace the new-donor draft (when donorKind=new)." }
+        paymentIntermediaryId: { type: string, nullable: true }
+        giftKind:        { type: string, enum: [match, mint, research, exclude], nullable: true, description: "Switch the gift outcome." }
+        giftId:          { type: string, nullable: true, description: "Pick an existing gift to match (when giftKind=match)." }
+        mintAmount:      { type: string, nullable: true, description: "Override the minted gift's amount (when giftKind=mint)." }
+        exclusionReason: { allOf: [ { $ref: "#/components/schemas/StagedPaymentExclusionReason" } ], nullable: true, description: "Reason (when giftKind=exclude)." }
+        overrideAmountMismatchReason: { type: string, nullable: true, description: "Acknowledge + clear an amount-mismatch warning for this row." }
+        clear:           { type: boolean, nullable: true, description: "When true, drop this row's override entirely and fall back to the auto-derivation." }
+    BundleTieOverride:
+      type: object
+      description: "A human edit to the payout↔deposit tie."
+      properties:
+        action:                 { type: string, enum: [confirm_tie, none], nullable: true, description: "Force the tie action (or clear it back to auto)." }
+        depositStagedPaymentId: { type: string, nullable: true, description: "Pin the QB deposit lump for the payout." }
+        clear:                  { type: boolean, nullable: true }
+    BundleOverridesInput:
+      type: object
+      description: "The set of human edits to apply, then re-derive. Empty re-derives with the existing overrides (a plain refresh)."
+      properties:
+        rows: { type: array, items: { $ref: "#/components/schemas/BundleRowOverride" } }
+        tie:  { allOf: [ { $ref: "#/components/schemas/BundleTieOverride" } ], nullable: true }
+    BundleConfirmInput:
+      type: object
+      description: "Commit the whole bundle. Idempotent by (draftId, expectedRevision)."
+      properties:
+        expectedRevision: { type: integer, nullable: true, description: "The revision the client is confirming; rejected (409) if the draft has since been re-derived." }
+        allowWarnings:    { type: boolean, nullable: true, description: "Proceed despite non-blocker warnings. Blockers always reject." }
+    BundleConfirmResultRow:
+      type: object
+      required: [rowKey, outcome]
+      properties:
+        rowKey:         { type: string }
+        outcome:        { type: string, enum: [matched_gift, minted_gift, researched, excluded, skipped] }
+        giftId:         { type: string, nullable: true, description: "The gift linked or minted for this row." }
+        createdDonorId: { type: string, nullable: true, description: "The donor minted for this row, when the donor proposal was new." }
+    ReconciliationBundleConfirmResult:
+      type: object
+      required: [ok, draftId, revision, tieConfirmed, rows, giftsCreated, giftsMatched, donorsCreated]
+      description: "Outcome of an atomic bundle confirm."
+      properties:
+        ok:               { type: boolean, enum: [true] }
+        draftId:          { type: string }
+        revision:         { type: integer, description: "The revision that was committed." }
+        tieConfirmed:     { type: boolean, description: "True when the payout↔deposit tie was stamped." }
+        rows:             { type: array, items: { $ref: "#/components/schemas/BundleConfirmResultRow" } }
+        giftsCreated:     { type: integer }
+        giftsMatched:     { type: integer }
+        donorsCreated:    { type: integer }
+        alreadyConfirmed: { type: boolean, description: "True when the draft was already confirmed at this revision (idempotent replay)." }
     DonorSearchResult:
       type: object
       required: [id, kind, name]

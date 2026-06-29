@@ -578,3 +578,458 @@ export const ListGiftsMissingQbResponse = zod.object({
 })
 })
 
+/**
+ * Returns the COMPLETE proposed end-state for a settlement anchor — one
+Stripe payout and/or one QB deposit plus all its charges — as a persisted
+draft: the payout↔deposit tie plus, per charge/line, the proposed donor
+(existing | new) and gift (match | mint | research | exclude) with
+confidence, provenance and warnings. Creates the draft on first call and
+re-derives from live source on every call (human overrides are always
+preserved). Server-authoritative — UI-supplied locks are never trusted.
+
+ * @summary Assemble (or load) the reactive settlement-bundle draft for one anchor.
+ */
+export const AssembleReconciliationBundleBody = zod.object({
+  "anchorType": zod.enum(['qb_staged_payment', 'stripe_payout']).describe('The settlement anchor a bundle reconciles: a QuickBooks deposit (staged_payments) or a Stripe payout (stripe_payouts).'),
+  "anchorId": zod.string().describe('staged_payments.id (qb deposit) or stripe_payouts.id (po_...).'),
+  "refresh": zod.boolean().nullish().describe('When true, re-derive from live source even if a fresh snapshot exists (overrides are always preserved).')
+}).describe('Identify the settlement anchor to assemble (or load) a bundle for.')
+
+export const AssembleReconciliationBundleResponse = zod.object({
+  "draftId": zod.string(),
+  "anchorType": zod.enum(['qb_staged_payment', 'stripe_payout']).describe('The settlement anchor a bundle reconciles: a QuickBooks deposit (staged_payments) or a Stripe payout (stripe_payouts).'),
+  "anchorId": zod.string(),
+  "status": zod.enum(['open', 'confirmed', 'superseded']).describe('Draft lifecycle. open: editable. confirmed: committed (terminal). superseded: the anchor changed shape and the draft was reset.'),
+  "revision": zod.number().describe('Bumped on every derive; pass it to confirm for idempotency.'),
+  "sourceFingerprint": zod.string().nullish().describe('Hash of the underlying source rows; lets the client tell when a sync refreshed the bundle.'),
+  "stale": zod.boolean().describe('True when the live source rows drifted from the persisted snapshot (a refresh is recommended). Always false right after assemble\/derive.'),
+  "tie": zod.object({
+  "payoutId": zod.string().nullish().describe('The Stripe payout (po_...) backing this bundle, when one exists.'),
+  "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit lump (staged_payments) tied to the payout.'),
+  "status": zod.enum(['unmatched', 'proposed', 'conflict_approved', 'confirmed_reconciled', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace']).describe('Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep\/replace. confirmed_reconciled: the current model — on confirm the per-charge Stripe gifts are stamped as the source of truth and the QB deposit lump is marked reconciled (kept, never archived). confirmed_excluded\/keep\/replace: legacy decisions retained for history.').nullable().describe('Current payout↔deposit reconciliation status; null for pure-QB money with no payout.'),
+  "action": zod.enum(['confirm_tie', 'none', 'conflict']).describe('What confirm will do: confirm_tie stamps the payout↔deposit reconciliation; none = nothing to tie; conflict = the deposit is already a gift, needs a keep\/replace decision first.'),
+  "payoutNetAmount": zod.string().nullish(),
+  "depositAmount": zod.string().nullish(),
+  "chargeCount": zod.number().nullish(),
+  "warnings": zod.array(zod.object({
+  "code": zod.string().describe('Stable machine code (amount_mismatch, donor_ambiguous, gift_already_linked, donor_required, payer_vs_gift_donor, tie_conflict, ...).'),
+  "message": zod.string().describe('Human-readable explanation.'),
+  "severity": zod.enum(['info', 'warning', 'blocker']).describe('info: FYI. warning: review advised, still confirmable (with allowWarnings). blocker: prevents confirm until resolved.')
+}))
+}).describe('The payout↔deposit relationship for the bundle. Mirrors the existing\npropose-then-confirm Stripe-payout reconciliation; the bundle confirm\nstamps the tie via the same primitive.\n').nullish().describe('The payout↔deposit tie; null for pure-QB money with no Stripe payout.'),
+  "rows": zod.array(zod.object({
+  "rowKey": zod.string().describe('Stable id for this row within the bundle (the Stripe charge id, or the staged_payments id for QB-only money). Override edits are keyed on it.'),
+  "stripeChargeId": zod.string().nullish(),
+  "stagedPaymentId": zod.string().nullish().describe('The QB staged_payments row backing this money, when one exists.'),
+  "amount": zod.string().nullish().describe('The amount this row reconciles for (Stripe GROSS when a charge backs it, else the QB amount), major units.'),
+  "feeAmount": zod.string().nullish().describe('Processor fee (Stripe), when known.'),
+  "netAmount": zod.string().nullish().describe('Net deposited (gross − fee), when known.'),
+  "dateReceived": zod.string().date().nullish(),
+  "payerName": zod.string().nullish(),
+  "payerEmail": zod.string().nullish(),
+  "donor": zod.object({
+  "kind": zod.enum(['existing', 'new', 'unresolved']),
+  "donorId": zod.string().nullish().describe('Set when kind=existing.'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "donorName": zod.string().nullish().describe('Display label (anonymous-masked for the viewer).'),
+  "newDonor": zod.object({
+  "kind": zod.enum(['organization', 'person', 'household']),
+  "name": zod.string().describe('Org\/household name, or a person\'s full name when first\/last aren\'t split.'),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "email": zod.string().nullish()
+}).describe('A donor to MINT on confirm when no existing record fits (product decision 1a: propose-new-donor).').nullish().describe('Set when kind=new.'),
+  "paymentIntermediaryId": zod.string().nullish().describe('Optional DAF \/ giving-platform conduit the donor gave through.'),
+  "confidence": zod.number().nullish().describe('0–100 match confidence for the proposed donor.'),
+  "confidenceTier": zod.enum(['high', 'medium', 'low', 'none']).describe('Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).'),
+  "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).describe('How a candidate was derived (audit + UI badge).').nullish(),
+  "candidates": zod.array(zod.object({
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "id": zod.string(),
+  "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
+  "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
+  "amount": zod.string().nullish(),
+  "date": zod.string().date().nullish(),
+  "confidence": zod.number().nullish().describe('0–100 match confidence; null for filter-only candidates.'),
+  "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).nullish().describe('How a candidate was derived (audit + UI badge).'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
+  "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already reconciled\/created\/group\/split-linked by another staged payment (UI disables linking to avoid double-counting).'),
+  "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
+})).describe('Scored alternative donors for the picker.')
+}).describe('The proposed donor for a bundle row. existing: link an existing record. new: mint one on confirm. unresolved: no confident proposal (needs a human).'),
+  "gift": zod.object({
+  "kind": zod.enum(['match', 'mint', 'research', 'exclude']),
+  "giftId": zod.string().nullish().describe('Set when kind=match.'),
+  "giftName": zod.string().nullish(),
+  "giftAmount": zod.string().nullish().describe('The matched gift\'s recorded amount, for the amount-mismatch check.'),
+  "giftDonorName": zod.string().nullish().describe('Donor the matched gift is recorded under (surfaces a payer-vs-gift-donor difference).'),
+  "mintDraft": zod.object({
+  "amount": zod.string().nullable().describe('Final amount to credit the donor (Stripe GROSS when a charge backs it, else the QB amount), major units.'),
+  "dateReceived": zod.string().date().nullish(),
+  "paymentMethod": zod.enum(['ach', 'check', 'wire', 'stock', 'donor_box', 'daf_ach', 'daf_check', 'daf_bill_com']).nullish(),
+  "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.').nullish()
+}).describe('Header values for a gift to MINT on confirm (product decision 1a: propose-new-gift). Allocations are derived by the existing minting primitive; this carries only the header preview.').nullish().describe('Set when kind=mint.'),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish().describe('Set when kind=exclude.'),
+  "confidence": zod.number().nullish().describe('0–100 match confidence for the proposed gift.'),
+  "confidenceTier": zod.enum(['high', 'medium', 'low', 'none']).describe('Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).'),
+  "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).describe('How a candidate was derived (audit + UI badge).').nullish(),
+  "candidates": zod.array(zod.object({
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "id": zod.string(),
+  "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
+  "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
+  "amount": zod.string().nullish(),
+  "date": zod.string().date().nullish(),
+  "confidence": zod.number().nullish().describe('0–100 match confidence; null for filter-only candidates.'),
+  "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).nullish().describe('How a candidate was derived (audit + UI badge).'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
+  "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already reconciled\/created\/group\/split-linked by another staged payment (UI disables linking to avoid double-counting).'),
+  "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
+})).describe('Scored alternative gifts for the picker (already-linked gifts flagged via alreadyLinkedStagedPaymentId).')
+}).describe('What to do with this row\'s money on the CRM-gift side.\nmatch: link an existing gift (giftId). mint: create a new gift from the evidence (mintDraft). research: park for later (no gift). exclude: file as a non-gift (exclusionReason).\n'),
+  "provenance": zod.enum(['auto', 'override', 'sync']).describe('How the current value was set. auto: server best-guess. override: a human edited this row. sync: refreshed from a processor sync.'),
+  "warnings": zod.array(zod.object({
+  "code": zod.string().describe('Stable machine code (amount_mismatch, donor_ambiguous, gift_already_linked, donor_required, payer_vs_gift_donor, tie_conflict, ...).'),
+  "message": zod.string().describe('Human-readable explanation.'),
+  "severity": zod.enum(['info', 'warning', 'blocker']).describe('info: FYI. warning: review advised, still confirmable (with allowWarnings). blocker: prevents confirm until resolved.')
+})),
+  "ready": zod.boolean().describe('True when this row\'s proposal passes the consistency gate (confident, non-conflicting) so it can be confirmed without manual disambiguation.')
+}).describe('One reconcilable unit of money in the bundle — a Stripe charge behind the\npayout, or (for pure-QB money) the deposit line itself. Carries the source\nfacts plus the proposed donor + gift end-state, with the warnings and\nreadiness that drive the reactive UI.\n')),
+  "summary": zod.object({
+  "rowCount": zod.number(),
+  "matchCount": zod.number().describe('Rows whose gift proposal is match.'),
+  "mintCount": zod.number().describe('Rows whose gift proposal is mint.'),
+  "researchCount": zod.number(),
+  "excludeCount": zod.number(),
+  "newDonorCount": zod.number().describe('Rows that will mint a new donor on confirm.'),
+  "warningCount": zod.number(),
+  "blockerCount": zod.number().describe('Warnings of severity=blocker across the bundle + tie.'),
+  "ready": zod.boolean().describe('True when every non-research\/non-exclude row is ready and no blocker remains, so Confirm can run.')
+}).describe('Rollup counts for the bundle, for the header + a confirm-readiness check.'),
+  "generatedAt": zod.string().datetime({})
+}).describe('The COMPLETE proposed end-state for a settlement anchor, server-derived and\nreactive: edit any row via \/derive and the rest is recomputed. Confirm\ncommits the whole bundle atomically through the shared money-write\nprimitives.\n')
+
+/**
+ * Reloads one bundle draft by id, re-deriving the proposal from current CRM +
+processor state with the draft's stored overrides applied. `stale` is true
+when the live source rows drifted from the cached snapshot.
+
+ * @summary Load a persisted settlement-bundle draft, re-derived against live state.
+ */
+export const GetReconciliationBundleParams = zod.object({
+  "draftId": zod.coerce.string()
+})
+
+export const GetReconciliationBundleResponse = zod.object({
+  "draftId": zod.string(),
+  "anchorType": zod.enum(['qb_staged_payment', 'stripe_payout']).describe('The settlement anchor a bundle reconciles: a QuickBooks deposit (staged_payments) or a Stripe payout (stripe_payouts).'),
+  "anchorId": zod.string(),
+  "status": zod.enum(['open', 'confirmed', 'superseded']).describe('Draft lifecycle. open: editable. confirmed: committed (terminal). superseded: the anchor changed shape and the draft was reset.'),
+  "revision": zod.number().describe('Bumped on every derive; pass it to confirm for idempotency.'),
+  "sourceFingerprint": zod.string().nullish().describe('Hash of the underlying source rows; lets the client tell when a sync refreshed the bundle.'),
+  "stale": zod.boolean().describe('True when the live source rows drifted from the persisted snapshot (a refresh is recommended). Always false right after assemble\/derive.'),
+  "tie": zod.object({
+  "payoutId": zod.string().nullish().describe('The Stripe payout (po_...) backing this bundle, when one exists.'),
+  "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit lump (staged_payments) tied to the payout.'),
+  "status": zod.enum(['unmatched', 'proposed', 'conflict_approved', 'confirmed_reconciled', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace']).describe('Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep\/replace. confirmed_reconciled: the current model — on confirm the per-charge Stripe gifts are stamped as the source of truth and the QB deposit lump is marked reconciled (kept, never archived). confirmed_excluded\/keep\/replace: legacy decisions retained for history.').nullable().describe('Current payout↔deposit reconciliation status; null for pure-QB money with no payout.'),
+  "action": zod.enum(['confirm_tie', 'none', 'conflict']).describe('What confirm will do: confirm_tie stamps the payout↔deposit reconciliation; none = nothing to tie; conflict = the deposit is already a gift, needs a keep\/replace decision first.'),
+  "payoutNetAmount": zod.string().nullish(),
+  "depositAmount": zod.string().nullish(),
+  "chargeCount": zod.number().nullish(),
+  "warnings": zod.array(zod.object({
+  "code": zod.string().describe('Stable machine code (amount_mismatch, donor_ambiguous, gift_already_linked, donor_required, payer_vs_gift_donor, tie_conflict, ...).'),
+  "message": zod.string().describe('Human-readable explanation.'),
+  "severity": zod.enum(['info', 'warning', 'blocker']).describe('info: FYI. warning: review advised, still confirmable (with allowWarnings). blocker: prevents confirm until resolved.')
+}))
+}).describe('The payout↔deposit relationship for the bundle. Mirrors the existing\npropose-then-confirm Stripe-payout reconciliation; the bundle confirm\nstamps the tie via the same primitive.\n').nullish().describe('The payout↔deposit tie; null for pure-QB money with no Stripe payout.'),
+  "rows": zod.array(zod.object({
+  "rowKey": zod.string().describe('Stable id for this row within the bundle (the Stripe charge id, or the staged_payments id for QB-only money). Override edits are keyed on it.'),
+  "stripeChargeId": zod.string().nullish(),
+  "stagedPaymentId": zod.string().nullish().describe('The QB staged_payments row backing this money, when one exists.'),
+  "amount": zod.string().nullish().describe('The amount this row reconciles for (Stripe GROSS when a charge backs it, else the QB amount), major units.'),
+  "feeAmount": zod.string().nullish().describe('Processor fee (Stripe), when known.'),
+  "netAmount": zod.string().nullish().describe('Net deposited (gross − fee), when known.'),
+  "dateReceived": zod.string().date().nullish(),
+  "payerName": zod.string().nullish(),
+  "payerEmail": zod.string().nullish(),
+  "donor": zod.object({
+  "kind": zod.enum(['existing', 'new', 'unresolved']),
+  "donorId": zod.string().nullish().describe('Set when kind=existing.'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "donorName": zod.string().nullish().describe('Display label (anonymous-masked for the viewer).'),
+  "newDonor": zod.object({
+  "kind": zod.enum(['organization', 'person', 'household']),
+  "name": zod.string().describe('Org\/household name, or a person\'s full name when first\/last aren\'t split.'),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "email": zod.string().nullish()
+}).describe('A donor to MINT on confirm when no existing record fits (product decision 1a: propose-new-donor).').nullish().describe('Set when kind=new.'),
+  "paymentIntermediaryId": zod.string().nullish().describe('Optional DAF \/ giving-platform conduit the donor gave through.'),
+  "confidence": zod.number().nullish().describe('0–100 match confidence for the proposed donor.'),
+  "confidenceTier": zod.enum(['high', 'medium', 'low', 'none']).describe('Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).'),
+  "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).describe('How a candidate was derived (audit + UI badge).').nullish(),
+  "candidates": zod.array(zod.object({
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "id": zod.string(),
+  "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
+  "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
+  "amount": zod.string().nullish(),
+  "date": zod.string().date().nullish(),
+  "confidence": zod.number().nullish().describe('0–100 match confidence; null for filter-only candidates.'),
+  "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).nullish().describe('How a candidate was derived (audit + UI badge).'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
+  "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already reconciled\/created\/group\/split-linked by another staged payment (UI disables linking to avoid double-counting).'),
+  "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
+})).describe('Scored alternative donors for the picker.')
+}).describe('The proposed donor for a bundle row. existing: link an existing record. new: mint one on confirm. unresolved: no confident proposal (needs a human).'),
+  "gift": zod.object({
+  "kind": zod.enum(['match', 'mint', 'research', 'exclude']),
+  "giftId": zod.string().nullish().describe('Set when kind=match.'),
+  "giftName": zod.string().nullish(),
+  "giftAmount": zod.string().nullish().describe('The matched gift\'s recorded amount, for the amount-mismatch check.'),
+  "giftDonorName": zod.string().nullish().describe('Donor the matched gift is recorded under (surfaces a payer-vs-gift-donor difference).'),
+  "mintDraft": zod.object({
+  "amount": zod.string().nullable().describe('Final amount to credit the donor (Stripe GROSS when a charge backs it, else the QB amount), major units.'),
+  "dateReceived": zod.string().date().nullish(),
+  "paymentMethod": zod.enum(['ach', 'check', 'wire', 'stock', 'donor_box', 'daf_ach', 'daf_check', 'daf_bill_com']).nullish(),
+  "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.').nullish()
+}).describe('Header values for a gift to MINT on confirm (product decision 1a: propose-new-gift). Allocations are derived by the existing minting primitive; this carries only the header preview.').nullish().describe('Set when kind=mint.'),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish().describe('Set when kind=exclude.'),
+  "confidence": zod.number().nullish().describe('0–100 match confidence for the proposed gift.'),
+  "confidenceTier": zod.enum(['high', 'medium', 'low', 'none']).describe('Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).'),
+  "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).describe('How a candidate was derived (audit + UI badge).').nullish(),
+  "candidates": zod.array(zod.object({
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "id": zod.string(),
+  "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
+  "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
+  "amount": zod.string().nullish(),
+  "date": zod.string().date().nullish(),
+  "confidence": zod.number().nullish().describe('0–100 match confidence; null for filter-only candidates.'),
+  "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).nullish().describe('How a candidate was derived (audit + UI badge).'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
+  "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already reconciled\/created\/group\/split-linked by another staged payment (UI disables linking to avoid double-counting).'),
+  "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
+})).describe('Scored alternative gifts for the picker (already-linked gifts flagged via alreadyLinkedStagedPaymentId).')
+}).describe('What to do with this row\'s money on the CRM-gift side.\nmatch: link an existing gift (giftId). mint: create a new gift from the evidence (mintDraft). research: park for later (no gift). exclude: file as a non-gift (exclusionReason).\n'),
+  "provenance": zod.enum(['auto', 'override', 'sync']).describe('How the current value was set. auto: server best-guess. override: a human edited this row. sync: refreshed from a processor sync.'),
+  "warnings": zod.array(zod.object({
+  "code": zod.string().describe('Stable machine code (amount_mismatch, donor_ambiguous, gift_already_linked, donor_required, payer_vs_gift_donor, tie_conflict, ...).'),
+  "message": zod.string().describe('Human-readable explanation.'),
+  "severity": zod.enum(['info', 'warning', 'blocker']).describe('info: FYI. warning: review advised, still confirmable (with allowWarnings). blocker: prevents confirm until resolved.')
+})),
+  "ready": zod.boolean().describe('True when this row\'s proposal passes the consistency gate (confident, non-conflicting) so it can be confirmed without manual disambiguation.')
+}).describe('One reconcilable unit of money in the bundle — a Stripe charge behind the\npayout, or (for pure-QB money) the deposit line itself. Carries the source\nfacts plus the proposed donor + gift end-state, with the warnings and\nreadiness that drive the reactive UI.\n')),
+  "summary": zod.object({
+  "rowCount": zod.number(),
+  "matchCount": zod.number().describe('Rows whose gift proposal is match.'),
+  "mintCount": zod.number().describe('Rows whose gift proposal is mint.'),
+  "researchCount": zod.number(),
+  "excludeCount": zod.number(),
+  "newDonorCount": zod.number().describe('Rows that will mint a new donor on confirm.'),
+  "warningCount": zod.number(),
+  "blockerCount": zod.number().describe('Warnings of severity=blocker across the bundle + tie.'),
+  "ready": zod.boolean().describe('True when every non-research\/non-exclude row is ready and no blocker remains, so Confirm can run.')
+}).describe('Rollup counts for the bundle, for the header + a confirm-readiness check.'),
+  "generatedAt": zod.string().datetime({})
+}).describe('The COMPLETE proposed end-state for a settlement anchor, server-derived and\nreactive: edit any row via \/derive and the rest is recomputed. Confirm\ncommits the whole bundle atomically through the shared money-write\nprimitives.\n')
+
+/**
+ * Persists the supplied row/tie overrides, then RE-DERIVES the whole bundle
+server-side so a single edit (picking a donor, flipping mint↔match,
+excluding a row) reactively updates dependent rows, warnings and readiness.
+Bumps the draft revision. Never clobbers other rows' overrides.
+
+ * @summary Apply human edits to a bundle and re-derive the rest (reactive).
+ */
+export const DeriveReconciliationBundleParams = zod.object({
+  "draftId": zod.coerce.string()
+})
+
+export const DeriveReconciliationBundleBody = zod.object({
+  "rows": zod.array(zod.object({
+  "rowKey": zod.string(),
+  "donorKind": zod.enum(['existing', 'new', 'unresolved']).nullish().describe('Switch the donor proposal mode.'),
+  "donorId": zod.string().nullish().describe('Pick an existing donor (with donorRecordKind). Null clears the pick.'),
+  "donorRecordKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "newDonor": zod.object({
+  "kind": zod.enum(['organization', 'person', 'household']),
+  "name": zod.string().describe('Org\/household name, or a person\'s full name when first\/last aren\'t split.'),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "email": zod.string().nullish()
+}).describe('A donor to MINT on confirm when no existing record fits (product decision 1a: propose-new-donor).').nullish().describe('Set\/replace the new-donor draft (when donorKind=new).'),
+  "paymentIntermediaryId": zod.string().nullish(),
+  "giftKind": zod.enum(['match', 'mint', 'research', 'exclude']).nullish().describe('Switch the gift outcome.'),
+  "giftId": zod.string().nullish().describe('Pick an existing gift to match (when giftKind=match).'),
+  "mintAmount": zod.string().nullish().describe('Override the minted gift\'s amount (when giftKind=mint).'),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish().describe('Reason (when giftKind=exclude).'),
+  "overrideAmountMismatchReason": zod.string().nullish().describe('Acknowledge + clear an amount-mismatch warning for this row.'),
+  "clear": zod.boolean().nullish().describe('When true, drop this row\'s override entirely and fall back to the auto-derivation.')
+}).describe('A human edit to one bundle row. Only the provided fields change; the server re-derives the rest. Omitted fields keep their current (auto or prior-override) value.')).optional(),
+  "tie": zod.object({
+  "action": zod.enum(['confirm_tie', 'none']).nullish().describe('Force the tie action (or clear it back to auto).'),
+  "depositStagedPaymentId": zod.string().nullish().describe('Pin the QB deposit lump for the payout.'),
+  "clear": zod.boolean().nullish()
+}).describe('A human edit to the payout↔deposit tie.').nullish()
+}).describe('The set of human edits to apply, then re-derive. Empty re-derives with the existing overrides (a plain refresh).')
+
+export const DeriveReconciliationBundleResponse = zod.object({
+  "draftId": zod.string(),
+  "anchorType": zod.enum(['qb_staged_payment', 'stripe_payout']).describe('The settlement anchor a bundle reconciles: a QuickBooks deposit (staged_payments) or a Stripe payout (stripe_payouts).'),
+  "anchorId": zod.string(),
+  "status": zod.enum(['open', 'confirmed', 'superseded']).describe('Draft lifecycle. open: editable. confirmed: committed (terminal). superseded: the anchor changed shape and the draft was reset.'),
+  "revision": zod.number().describe('Bumped on every derive; pass it to confirm for idempotency.'),
+  "sourceFingerprint": zod.string().nullish().describe('Hash of the underlying source rows; lets the client tell when a sync refreshed the bundle.'),
+  "stale": zod.boolean().describe('True when the live source rows drifted from the persisted snapshot (a refresh is recommended). Always false right after assemble\/derive.'),
+  "tie": zod.object({
+  "payoutId": zod.string().nullish().describe('The Stripe payout (po_...) backing this bundle, when one exists.'),
+  "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit lump (staged_payments) tied to the payout.'),
+  "status": zod.enum(['unmatched', 'proposed', 'conflict_approved', 'confirmed_reconciled', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace']).describe('Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep\/replace. confirmed_reconciled: the current model — on confirm the per-charge Stripe gifts are stamped as the source of truth and the QB deposit lump is marked reconciled (kept, never archived). confirmed_excluded\/keep\/replace: legacy decisions retained for history.').nullable().describe('Current payout↔deposit reconciliation status; null for pure-QB money with no payout.'),
+  "action": zod.enum(['confirm_tie', 'none', 'conflict']).describe('What confirm will do: confirm_tie stamps the payout↔deposit reconciliation; none = nothing to tie; conflict = the deposit is already a gift, needs a keep\/replace decision first.'),
+  "payoutNetAmount": zod.string().nullish(),
+  "depositAmount": zod.string().nullish(),
+  "chargeCount": zod.number().nullish(),
+  "warnings": zod.array(zod.object({
+  "code": zod.string().describe('Stable machine code (amount_mismatch, donor_ambiguous, gift_already_linked, donor_required, payer_vs_gift_donor, tie_conflict, ...).'),
+  "message": zod.string().describe('Human-readable explanation.'),
+  "severity": zod.enum(['info', 'warning', 'blocker']).describe('info: FYI. warning: review advised, still confirmable (with allowWarnings). blocker: prevents confirm until resolved.')
+}))
+}).describe('The payout↔deposit relationship for the bundle. Mirrors the existing\npropose-then-confirm Stripe-payout reconciliation; the bundle confirm\nstamps the tie via the same primitive.\n').nullish().describe('The payout↔deposit tie; null for pure-QB money with no Stripe payout.'),
+  "rows": zod.array(zod.object({
+  "rowKey": zod.string().describe('Stable id for this row within the bundle (the Stripe charge id, or the staged_payments id for QB-only money). Override edits are keyed on it.'),
+  "stripeChargeId": zod.string().nullish(),
+  "stagedPaymentId": zod.string().nullish().describe('The QB staged_payments row backing this money, when one exists.'),
+  "amount": zod.string().nullish().describe('The amount this row reconciles for (Stripe GROSS when a charge backs it, else the QB amount), major units.'),
+  "feeAmount": zod.string().nullish().describe('Processor fee (Stripe), when known.'),
+  "netAmount": zod.string().nullish().describe('Net deposited (gross − fee), when known.'),
+  "dateReceived": zod.string().date().nullish(),
+  "payerName": zod.string().nullish(),
+  "payerEmail": zod.string().nullish(),
+  "donor": zod.object({
+  "kind": zod.enum(['existing', 'new', 'unresolved']),
+  "donorId": zod.string().nullish().describe('Set when kind=existing.'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "donorName": zod.string().nullish().describe('Display label (anonymous-masked for the viewer).'),
+  "newDonor": zod.object({
+  "kind": zod.enum(['organization', 'person', 'household']),
+  "name": zod.string().describe('Org\/household name, or a person\'s full name when first\/last aren\'t split.'),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "email": zod.string().nullish()
+}).describe('A donor to MINT on confirm when no existing record fits (product decision 1a: propose-new-donor).').nullish().describe('Set when kind=new.'),
+  "paymentIntermediaryId": zod.string().nullish().describe('Optional DAF \/ giving-platform conduit the donor gave through.'),
+  "confidence": zod.number().nullish().describe('0–100 match confidence for the proposed donor.'),
+  "confidenceTier": zod.enum(['high', 'medium', 'low', 'none']).describe('Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).'),
+  "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).describe('How a candidate was derived (audit + UI badge).').nullish(),
+  "candidates": zod.array(zod.object({
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "id": zod.string(),
+  "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
+  "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
+  "amount": zod.string().nullish(),
+  "date": zod.string().date().nullish(),
+  "confidence": zod.number().nullish().describe('0–100 match confidence; null for filter-only candidates.'),
+  "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).nullish().describe('How a candidate was derived (audit + UI badge).'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
+  "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already reconciled\/created\/group\/split-linked by another staged payment (UI disables linking to avoid double-counting).'),
+  "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
+})).describe('Scored alternative donors for the picker.')
+}).describe('The proposed donor for a bundle row. existing: link an existing record. new: mint one on confirm. unresolved: no confident proposal (needs a human).'),
+  "gift": zod.object({
+  "kind": zod.enum(['match', 'mint', 'research', 'exclude']),
+  "giftId": zod.string().nullish().describe('Set when kind=match.'),
+  "giftName": zod.string().nullish(),
+  "giftAmount": zod.string().nullish().describe('The matched gift\'s recorded amount, for the amount-mismatch check.'),
+  "giftDonorName": zod.string().nullish().describe('Donor the matched gift is recorded under (surfaces a payer-vs-gift-donor difference).'),
+  "mintDraft": zod.object({
+  "amount": zod.string().nullable().describe('Final amount to credit the donor (Stripe GROSS when a charge backs it, else the QB amount), major units.'),
+  "dateReceived": zod.string().date().nullish(),
+  "paymentMethod": zod.enum(['ach', 'check', 'wire', 'stock', 'donor_box', 'daf_ach', 'daf_check', 'daf_bill_com']).nullish(),
+  "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.').nullish()
+}).describe('Header values for a gift to MINT on confirm (product decision 1a: propose-new-gift). Allocations are derived by the existing minting primitive; this carries only the header preview.').nullish().describe('Set when kind=mint.'),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish().describe('Set when kind=exclude.'),
+  "confidence": zod.number().nullish().describe('0–100 match confidence for the proposed gift.'),
+  "confidenceTier": zod.enum(['high', 'medium', 'low', 'none']).describe('Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).'),
+  "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).describe('How a candidate was derived (audit + UI badge).').nullish(),
+  "candidates": zod.array(zod.object({
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "id": zod.string(),
+  "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
+  "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
+  "amount": zod.string().nullish(),
+  "date": zod.string().date().nullish(),
+  "confidence": zod.number().nullish().describe('0–100 match confidence; null for filter-only candidates.'),
+  "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).nullish().describe('How a candidate was derived (audit + UI badge).'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
+  "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already reconciled\/created\/group\/split-linked by another staged payment (UI disables linking to avoid double-counting).'),
+  "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
+})).describe('Scored alternative gifts for the picker (already-linked gifts flagged via alreadyLinkedStagedPaymentId).')
+}).describe('What to do with this row\'s money on the CRM-gift side.\nmatch: link an existing gift (giftId). mint: create a new gift from the evidence (mintDraft). research: park for later (no gift). exclude: file as a non-gift (exclusionReason).\n'),
+  "provenance": zod.enum(['auto', 'override', 'sync']).describe('How the current value was set. auto: server best-guess. override: a human edited this row. sync: refreshed from a processor sync.'),
+  "warnings": zod.array(zod.object({
+  "code": zod.string().describe('Stable machine code (amount_mismatch, donor_ambiguous, gift_already_linked, donor_required, payer_vs_gift_donor, tie_conflict, ...).'),
+  "message": zod.string().describe('Human-readable explanation.'),
+  "severity": zod.enum(['info', 'warning', 'blocker']).describe('info: FYI. warning: review advised, still confirmable (with allowWarnings). blocker: prevents confirm until resolved.')
+})),
+  "ready": zod.boolean().describe('True when this row\'s proposal passes the consistency gate (confident, non-conflicting) so it can be confirmed without manual disambiguation.')
+}).describe('One reconcilable unit of money in the bundle — a Stripe charge behind the\npayout, or (for pure-QB money) the deposit line itself. Carries the source\nfacts plus the proposed donor + gift end-state, with the warnings and\nreadiness that drive the reactive UI.\n')),
+  "summary": zod.object({
+  "rowCount": zod.number(),
+  "matchCount": zod.number().describe('Rows whose gift proposal is match.'),
+  "mintCount": zod.number().describe('Rows whose gift proposal is mint.'),
+  "researchCount": zod.number(),
+  "excludeCount": zod.number(),
+  "newDonorCount": zod.number().describe('Rows that will mint a new donor on confirm.'),
+  "warningCount": zod.number(),
+  "blockerCount": zod.number().describe('Warnings of severity=blocker across the bundle + tie.'),
+  "ready": zod.boolean().describe('True when every non-research\/non-exclude row is ready and no blocker remains, so Confirm can run.')
+}).describe('Rollup counts for the bundle, for the header + a confirm-readiness check.'),
+  "generatedAt": zod.string().datetime({})
+}).describe('The COMPLETE proposed end-state for a settlement anchor, server-derived and\nreactive: edit any row via \/derive and the rest is recomputed. Confirm\ncommits the whole bundle atomically through the shared money-write\nprimitives.\n')
+
+/**
+ * Re-derives and re-validates the entire bundle from current DB under row
+locks, runs the consistency gates (Donor XOR, double-book guards,
+amount/date fee-band, Stripe-GROSS precedence), then commits all of it in
+ONE transaction via the SAME money-write primitives used by manual
+approve/reconcile: mints proposed new donors + gifts, links matched gifts,
+stamps the payout↔deposit tie (processor_payout supersede), recomputes the
+gift↔QB tie status and re-derives affected opportunities, and writes the
+audit trail. All-or-nothing; idempotent by (draftId, expectedRevision).
+research/excluded rows mint nothing.
+
+ * @summary Atomically commit the whole settlement bundle.
+ */
+export const ConfirmReconciliationBundleParams = zod.object({
+  "draftId": zod.coerce.string()
+})
+
+export const ConfirmReconciliationBundleBody = zod.object({
+  "expectedRevision": zod.number().nullish().describe('The revision the client is confirming; rejected (409) if the draft has since been re-derived.'),
+  "allowWarnings": zod.boolean().nullish().describe('Proceed despite non-blocker warnings. Blockers always reject.')
+}).describe('Commit the whole bundle. Idempotent by (draftId, expectedRevision).')
+
+export const ConfirmReconciliationBundleResponse = zod.object({
+  "ok": zod.literal(true),
+  "draftId": zod.string(),
+  "revision": zod.number().describe('The revision that was committed.'),
+  "tieConfirmed": zod.boolean().describe('True when the payout↔deposit tie was stamped.'),
+  "rows": zod.array(zod.object({
+  "rowKey": zod.string(),
+  "outcome": zod.enum(['matched_gift', 'minted_gift', 'researched', 'excluded', 'skipped']),
+  "giftId": zod.string().nullish().describe('The gift linked or minted for this row.'),
+  "createdDonorId": zod.string().nullish().describe('The donor minted for this row, when the donor proposal was new.')
+})),
+  "giftsCreated": zod.number(),
+  "giftsMatched": zod.number(),
+  "donorsCreated": zod.number(),
+  "alreadyConfirmed": zod.boolean().optional().describe('True when the draft was already confirmed at this revision (idempotent replay).')
+}).describe('Outcome of an atomic bundle confirm.')
+

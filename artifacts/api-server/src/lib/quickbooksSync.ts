@@ -30,6 +30,7 @@ import {
 } from "./quickbooksRules";
 import { buildGiftValuesFromStaged } from "./quickbooksGift";
 import { applyGiftQbTieMany } from "./giftQbTie";
+import { refreshOpenBundleDrafts } from "./reconciliationBundleSync";
 import {
   applyPaymentApplication,
   qbLedgerExistsForGiftExcludingPayment,
@@ -814,6 +815,10 @@ export async function syncQuickbooks(
         updatedAt: new Date(),
       })
       .where(eq(quickbooksConnections.realmId, conn.realmId));
+
+    // A QB pull can change deposit amounts / ties behind existing settlement
+    // bundles. Refresh open, un-overridden drafts (best-effort; keeps overrides).
+    await refreshOpenBundleDrafts();
 
     return { pulled: pulled.length, staged, matched, autoApplied };
   });

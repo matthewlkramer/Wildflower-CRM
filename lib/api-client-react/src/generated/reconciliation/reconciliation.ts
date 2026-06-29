@@ -22,6 +22,9 @@ import type {
 import type {
   ApproveCompleteMatchBody,
   BadRequestResponse,
+  BundleAnchorInput,
+  BundleConfirmInput,
+  BundleOverridesInput,
   BundleTieResult,
   CreateReconciliationProposalBody,
   GiftMissingQbList,
@@ -30,6 +33,8 @@ import type {
   ListReconciliationProposalsParams,
   NotFoundResponse,
   ReconciliationApproveResult,
+  ReconciliationBundleConfirmResult,
+  ReconciliationBundleProposal,
   ReconciliationCardList,
   ReconciliationGraph,
   ReconciliationMatchNodeType,
@@ -991,3 +996,317 @@ export function useListGiftsMissingQb<TData = Awaited<ReturnType<typeof listGift
 
 
 
+/**
+ * Returns the COMPLETE proposed end-state for a settlement anchor — one
+Stripe payout and/or one QB deposit plus all its charges — as a persisted
+draft: the payout↔deposit tie plus, per charge/line, the proposed donor
+(existing | new) and gift (match | mint | research | exclude) with
+confidence, provenance and warnings. Creates the draft on first call and
+re-derives from live source on every call (human overrides are always
+preserved). Server-authoritative — UI-supplied locks are never trusted.
+
+ * @summary Assemble (or load) the reactive settlement-bundle draft for one anchor.
+ */
+export const getAssembleReconciliationBundleUrl = () => {
+
+
+  
+
+  return `/api/reconciliation/bundle-proposals`
+}
+
+export const assembleReconciliationBundle = async (bundleAnchorInput: BundleAnchorInput, options?: RequestInit): Promise<ReconciliationBundleProposal> => {
+  
+  return customFetch<ReconciliationBundleProposal>(getAssembleReconciliationBundleUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      bundleAnchorInput,)
+  }
+);}
+  
+
+
+
+export const getAssembleReconciliationBundleMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof assembleReconciliationBundle>>, TError,{data: BodyType<BundleAnchorInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof assembleReconciliationBundle>>, TError,{data: BodyType<BundleAnchorInput>}, TContext> => {
+
+const mutationKey = ['assembleReconciliationBundle'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof assembleReconciliationBundle>>, {data: BodyType<BundleAnchorInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  assembleReconciliationBundle(data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AssembleReconciliationBundleMutationResult = NonNullable<Awaited<ReturnType<typeof assembleReconciliationBundle>>>
+    export type AssembleReconciliationBundleMutationBody = BodyType<BundleAnchorInput>
+    export type AssembleReconciliationBundleMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Assemble (or load) the reactive settlement-bundle draft for one anchor.
+ */
+export const useAssembleReconciliationBundle = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof assembleReconciliationBundle>>, TError,{data: BodyType<BundleAnchorInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof assembleReconciliationBundle>>,
+        TError,
+        {data: BodyType<BundleAnchorInput>},
+        TContext
+      > => {
+      return useMutation(getAssembleReconciliationBundleMutationOptions(options));
+    }
+    /**
+ * Reloads one bundle draft by id, re-deriving the proposal from current CRM +
+processor state with the draft's stored overrides applied. `stale` is true
+when the live source rows drifted from the cached snapshot.
+
+ * @summary Load a persisted settlement-bundle draft, re-derived against live state.
+ */
+export const getGetReconciliationBundleUrl = (draftId: string,) => {
+
+
+  
+
+  return `/api/reconciliation/bundle-proposals/${draftId}`
+}
+
+export const getReconciliationBundle = async (draftId: string, options?: RequestInit): Promise<ReconciliationBundleProposal> => {
+  
+  return customFetch<ReconciliationBundleProposal>(getGetReconciliationBundleUrl(draftId),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetReconciliationBundleQueryKey = (draftId: string,) => {
+    return [
+    `/api/reconciliation/bundle-proposals/${draftId}`
+    ] as const;
+    }
+
+    
+export const getGetReconciliationBundleQueryOptions = <TData = Awaited<ReturnType<typeof getReconciliationBundle>>, TError = ErrorType<NotFoundResponse>>(draftId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReconciliationBundle>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetReconciliationBundleQueryKey(draftId);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReconciliationBundle>>> = ({ signal }) => getReconciliationBundle(draftId, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(draftId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReconciliationBundle>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetReconciliationBundleQueryResult = NonNullable<Awaited<ReturnType<typeof getReconciliationBundle>>>
+export type GetReconciliationBundleQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Load a persisted settlement-bundle draft, re-derived against live state.
+ */
+
+export function useGetReconciliationBundle<TData = Awaited<ReturnType<typeof getReconciliationBundle>>, TError = ErrorType<NotFoundResponse>>(
+ draftId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReconciliationBundle>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetReconciliationBundleQueryOptions(draftId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Persists the supplied row/tie overrides, then RE-DERIVES the whole bundle
+server-side so a single edit (picking a donor, flipping mint↔match,
+excluding a row) reactively updates dependent rows, warnings and readiness.
+Bumps the draft revision. Never clobbers other rows' overrides.
+
+ * @summary Apply human edits to a bundle and re-derive the rest (reactive).
+ */
+export const getDeriveReconciliationBundleUrl = (draftId: string,) => {
+
+
+  
+
+  return `/api/reconciliation/bundle-proposals/${draftId}/derive`
+}
+
+export const deriveReconciliationBundle = async (draftId: string,
+    bundleOverridesInput: BundleOverridesInput, options?: RequestInit): Promise<ReconciliationBundleProposal> => {
+  
+  return customFetch<ReconciliationBundleProposal>(getDeriveReconciliationBundleUrl(draftId),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      bundleOverridesInput,)
+  }
+);}
+  
+
+
+
+export const getDeriveReconciliationBundleMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deriveReconciliationBundle>>, TError,{draftId: string;data: BodyType<BundleOverridesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deriveReconciliationBundle>>, TError,{draftId: string;data: BodyType<BundleOverridesInput>}, TContext> => {
+
+const mutationKey = ['deriveReconciliationBundle'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deriveReconciliationBundle>>, {draftId: string;data: BodyType<BundleOverridesInput>}> = (props) => {
+          const {draftId,data} = props ?? {};
+
+          return  deriveReconciliationBundle(draftId,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeriveReconciliationBundleMutationResult = NonNullable<Awaited<ReturnType<typeof deriveReconciliationBundle>>>
+    export type DeriveReconciliationBundleMutationBody = BodyType<BundleOverridesInput>
+    export type DeriveReconciliationBundleMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Apply human edits to a bundle and re-derive the rest (reactive).
+ */
+export const useDeriveReconciliationBundle = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deriveReconciliationBundle>>, TError,{draftId: string;data: BodyType<BundleOverridesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deriveReconciliationBundle>>,
+        TError,
+        {draftId: string;data: BodyType<BundleOverridesInput>},
+        TContext
+      > => {
+      return useMutation(getDeriveReconciliationBundleMutationOptions(options));
+    }
+    /**
+ * Re-derives and re-validates the entire bundle from current DB under row
+locks, runs the consistency gates (Donor XOR, double-book guards,
+amount/date fee-band, Stripe-GROSS precedence), then commits all of it in
+ONE transaction via the SAME money-write primitives used by manual
+approve/reconcile: mints proposed new donors + gifts, links matched gifts,
+stamps the payout↔deposit tie (processor_payout supersede), recomputes the
+gift↔QB tie status and re-derives affected opportunities, and writes the
+audit trail. All-or-nothing; idempotent by (draftId, expectedRevision).
+research/excluded rows mint nothing.
+
+ * @summary Atomically commit the whole settlement bundle.
+ */
+export const getConfirmReconciliationBundleUrl = (draftId: string,) => {
+
+
+  
+
+  return `/api/reconciliation/bundle-proposals/${draftId}/confirm`
+}
+
+export const confirmReconciliationBundle = async (draftId: string,
+    bundleConfirmInput: BundleConfirmInput, options?: RequestInit): Promise<ReconciliationBundleConfirmResult> => {
+  
+  return customFetch<ReconciliationBundleConfirmResult>(getConfirmReconciliationBundleUrl(draftId),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      bundleConfirmInput,)
+  }
+);}
+  
+
+
+
+export const getConfirmReconciliationBundleMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmReconciliationBundle>>, TError,{draftId: string;data: BodyType<BundleConfirmInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof confirmReconciliationBundle>>, TError,{draftId: string;data: BodyType<BundleConfirmInput>}, TContext> => {
+
+const mutationKey = ['confirmReconciliationBundle'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmReconciliationBundle>>, {draftId: string;data: BodyType<BundleConfirmInput>}> = (props) => {
+          const {draftId,data} = props ?? {};
+
+          return  confirmReconciliationBundle(draftId,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConfirmReconciliationBundleMutationResult = NonNullable<Awaited<ReturnType<typeof confirmReconciliationBundle>>>
+    export type ConfirmReconciliationBundleMutationBody = BodyType<BundleConfirmInput>
+    export type ConfirmReconciliationBundleMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Atomically commit the whole settlement bundle.
+ */
+export const useConfirmReconciliationBundle = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmReconciliationBundle>>, TError,{draftId: string;data: BodyType<BundleConfirmInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof confirmReconciliationBundle>>,
+        TError,
+        {draftId: string;data: BodyType<BundleConfirmInput>},
+        TContext
+      > => {
+      return useMutation(getConfirmReconciliationBundleMutationOptions(options));
+    }
+    

@@ -45,6 +45,14 @@ pointer and returns `changed:false`, so every caller's
 surface in the reconciliation queue, not silently rescale allocations. Auto-minted
 Stripe gifts are still BORN with amount=gross (no human figure to overwrite).
 
+**Stale-red tests (not a regression):** two `reconciliation-approve.integration.test.ts`
+cases under "single-source-of-truth invariants" still assert the OLD
+stamp-rewrites-to-gross amount and fail on an unmodified HEAD.
+**Why:** they were never updated when confirm stopped rewriting `gift.amount`, so
+edits to the approve/commit path get wrongly blamed for them.
+**How to apply:** before treating an approve/commit test failure as your own
+regression, confirm the same case already fails on unmodified HEAD.
+
 ## Still header-resident (not yet migrated as of this writing)
 - `type` (giftTypeEnum) — still read/written in giftsAndPayments routes via
   `giftTypeToLoanOrGrant`; intended to be DERIVED (pledge_payment⇐opportunityId,

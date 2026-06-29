@@ -122,12 +122,21 @@ import {
 } from "@/components/gift-merge-dialogs";
 import { DonorFieldPicker, type DonorType } from "@/components/entity-picker";
 import FinancialCorrectionsPage from "@/pages/financial-corrections";
+import { BundleQueue } from "@/components/reconciliation-bundles/BundleQueue";
 
 // ─── Shell config (mockup structure, corrected to our money model) ──────────
 
-type QueueId = "review" | "qbo" | "crm" | "research" | "confirmed" | "excluded";
+type QueueId =
+  | "bundle"
+  | "review"
+  | "qbo"
+  | "crm"
+  | "research"
+  | "confirmed"
+  | "excluded";
 
 const QUEUES: { id: QueueId; name: string; dot: string; live: boolean }[] = [
+  { id: "bundle", name: "Settlement bundles", dot: "#2f6f8f", live: true },
   { id: "review", name: "Needs review", dot: "#9a6b00", live: true },
   { id: "qbo", name: "QBO-only", dot: "#b23b2e", live: true },
   { id: "crm", name: "CRM-only", dot: "#b23b2e", live: true },
@@ -1279,7 +1288,9 @@ export default function ReconciliationWorkbench() {
         </header>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-28 pr-1">
-          {queue === "crm" ? (
+          {queue === "bundle" ? (
+            <BundleQueue />
+          ) : queue === "crm" ? (
             <StrayGiftsWorklist />
           ) : queue === "confirmed" ? (
             <ComingSoon name={activeQueue.name} />

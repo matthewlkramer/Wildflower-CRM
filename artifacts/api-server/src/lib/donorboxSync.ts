@@ -7,6 +7,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
+import { refreshOpenBundleDrafts } from "./reconciliationBundleSync";
 import {
   isDonorboxConfigured,
   listDonations,
@@ -354,6 +355,10 @@ export async function syncDonorbox(
             updatedAt: new Date(),
           })
           .where(eq(donorboxSyncState.id, DONORBOX_SYNC_STATE_ID));
+
+        // Donorbox enriches charges that settle inside Stripe payouts; refresh
+        // open, un-overridden settlement-bundle drafts (best-effort; keeps overrides).
+        await refreshOpenBundleDrafts();
 
         logger.info(
           { pages, upserted, inserted, enrichment, newMoney, fullResync },
