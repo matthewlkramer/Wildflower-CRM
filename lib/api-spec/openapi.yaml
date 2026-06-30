@@ -4209,6 +4209,30 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftMissingQbList" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /reconciliation/bundle-anchors:
+    get:
+      operationId: listReconciliationBundleAnchors
+      tags: [reconciliation]
+      summary: List every settlement anchor the bundle workbench can reconcile — Stripe payouts AND standalone QuickBooks deposits/payments.
+      description: |
+        The unified anchor queue for the reactive settlement-bundle workbench. Returns
+        BOTH anchor kinds in one deduped, paginated list so reconciliation can start
+        from ANY anchor point:
+          • Stripe payouts — the per-charge GROSS source of truth.
+          • Standalone QuickBooks deposits/payments — a staged_payments row with NO
+            tied Stripe payout (checks, ACH, wires, direct gifts).
+        A QB deposit that IS tied to a Stripe payout is deliberately OMITTED: it
+        reconciles THROUGH the payout's bundle (assemble canonicalizes a tied QB id to
+        its payout), so listing it separately would double-book the same money. Rows
+        already grouped (source_group_id) stay in the existing group-reconcile flow and
+        are omitted here. Rejected/excluded QB rows are not anchors. Read-only.
+      parameters:
+        - { name: queue, in: query, schema: { $ref: "#/components/schemas/BundleAnchorQueue" }, description: "Which bucket to list (default needs_review)." }
+        - { name: source, in: query, schema: { $ref: "#/components/schemas/BundleAnchorType" }, description: "Restrict to one anchor source. Omit to list both." }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BundleAnchorListResponse" } } } }
   /reconciliation/bundle-proposals:
     post:
       operationId: assembleReconciliationBundle
@@ -7387,6 +7411,36 @@ components:
         anchorType: { $ref: "#/components/schemas/BundleAnchorType" }
         anchorId:   { type: string, description: "staged_payments.id (qb deposit) or stripe_payouts.id (po_...)." }
         refresh:    { type: boolean, nullable: true, description: "When true, re-derive from live source even if a fresh snapshot exists (overrides are always preserved)." }
+    BundleAnchorQueue:
+      type: string
+      enum: [needs_review, confirmed, all]
+      description: |
+        Anchor-centric triage bucket for the unified bundle-anchor list (NOT the
+        Stripe-only propose/conflict tie states). needs_review: anchors awaiting
+        reconciliation (Stripe payouts not yet confirmed — unmatched/proposed/conflict;
+        QB deposits still pending). confirmed: already reconciled (Stripe confirmed_*;
+        QB approved/reconciled). all: every eligible anchor.
+    BundleAnchor:
+      type: object
+      required: [anchorType, anchorId, statusLabel]
+      description: |
+        One selectable settlement anchor for the workbench. anchorType discriminates a
+        Stripe payout from a standalone QB deposit; the remaining fields are a normalized
+        display projection over both sources.
+      properties:
+        anchorType:  { $ref: "#/components/schemas/BundleAnchorType" }
+        anchorId:    { type: string, description: "stripe_payouts.id (po_...) or staged_payments.id." }
+        amount:      { type: string, nullable: true, description: "Net deposited (Stripe net_total, falling back to payout amount) or the QB staged amount, major units." }
+        date:        { type: string, format: date, nullable: true, description: "Stripe arrival date, or the QB date received." }
+        payerName:   { type: string, nullable: true, description: "QB payer name (the tied/candidate deposit's payer for a Stripe payout, or the staged row's payer for QB-only money)." }
+        chargeCount: { type: integer, nullable: true, description: "Stripe charges behind the payout; null for QB-only money." }
+        statusLabel: { type: string, description: "Raw source status for the display badge: the Stripe payout's qbReconciliationStatus, or the QB staged-payment status." }
+    BundleAnchorListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/BundleAnchor" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
     BundleRowOverride:
       type: object
       required: [rowKey]

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import {
-  useListStripePayoutReconciliations,
-  type StripePayoutReconciliationQueue,
+  useListReconciliationBundleAnchors,
+  type BundleAnchorQueue,
+  type BundleAnchorType,
 } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -16,28 +17,33 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { shortId } from "./bundle-ui";
 
-const QUEUE_OPTIONS: { id: StripePayoutReconciliationQueue; label: string }[] = [
-  { id: "proposed", label: "Proposed" },
-  { id: "unmatched", label: "Unmatched" },
-  { id: "conflict", label: "Conflicts" },
+const QUEUE_OPTIONS: { id: BundleAnchorQueue; label: string }[] = [
+  { id: "needs_review", label: "Needs review" },
   { id: "confirmed", label: "Confirmed" },
   { id: "all", label: "All" },
 ];
 
+const SOURCE_LABEL: Record<BundleAnchorType, string> = {
+  stripe_payout: "Stripe",
+  qb_staged_payment: "QuickBooks",
+};
+
 /**
- * The master list of settlement anchors (Stripe payouts) to reconcile as a
- * bundle. Reuses the existing payout-reconciliation list endpoint — no new
- * enumeration route. Selecting a payout loads its draft in the detail pane.
+ * The master list of settlement anchors to reconcile as a bundle. Unified across
+ * BOTH sources — Stripe payouts AND standalone QuickBooks deposits/payments — via
+ * the deduped /reconciliation/bundle-anchors endpoint (a QB deposit tied to a
+ * payout is omitted; it flows through the payout's bundle). Selecting an anchor
+ * loads its draft in the detail pane.
  */
 export function BundleAnchorList({
-  selectedId,
+  selectedKey,
   onSelect,
 }: {
-  selectedId: string | null;
-  onSelect: (anchorId: string) => void;
+  selectedKey: string | null;
+  onSelect: (anchorType: BundleAnchorType, anchorId: string) => void;
 }) {
-  const [queue, setQueue] = useState<StripePayoutReconciliationQueue>("proposed");
-  const { data, isLoading, isError } = useListStripePayoutReconciliations({
+  const [queue, setQueue] = useState<BundleAnchorQueue>("needs_review");
+  const { data, isLoading, isError } = useListReconciliationBundleAnchors({
     queue,
     limit: 200,
   });
@@ -50,12 +56,7 @@ export function BundleAnchorList({
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Settlement anchors
         </span>
-        <Select
-          value={queue}
-          onValueChange={(v) =>
-            setQueue(v as StripePayoutReconciliationQueue)
-          }
-        >
+        <Select value={queue} onValueChange={(v) => setQueue(v as BundleAnchorQueue)}>
           <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-bundle-queue">
             <SelectValue />
           </SelectTrigger>
@@ -76,50 +77,53 @@ export function BundleAnchorList({
           </div>
         ) : isError ? (
           <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
-            <AlertCircle className="h-4 w-4" /> Couldn't load payouts.
+            <AlertCircle className="h-4 w-4" /> Couldn't load anchors.
           </div>
         ) : rows.length === 0 ? (
           <div className="py-10 text-center text-sm text-muted-foreground">
-            No payouts in this queue.
+            No anchors in this queue.
           </div>
         ) : (
-          rows.map((p) => {
-            const selected = p.id === selectedId;
+          rows.map((a) => {
+            const key = `${a.anchorType}:${a.anchorId}`;
+            const selected = key === selectedKey;
             return (
               <button
-                key={p.id}
+                key={key}
                 type="button"
-                onClick={() => onSelect(p.id)}
+                onClick={() => onSelect(a.anchorType, a.anchorId)}
                 className={cn(
                   "w-full rounded-md border p-2 text-left text-sm transition-colors",
-                  selected
-                    ? "border-primary bg-primary/5"
-                    : "hover:bg-muted/50",
+                  selected ? "border-primary bg-primary/5" : "hover:bg-muted/50",
                 )}
-                data-testid={`button-bundle-anchor-${p.id}`}
+                data-testid={`button-bundle-anchor-${a.anchorId}`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{shortId(p.id)}</span>
+                  <span className="flex items-center gap-1.5">
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] font-normal"
+                    >
+                      {SOURCE_LABEL[a.anchorType]}
+                    </Badge>
+                    <span className="font-medium">{shortId(a.anchorId)}</span>
+                  </span>
                   <span className="font-semibold">
-                    {p.netTotal != null
-                      ? formatCurrency(p.netTotal)
-                      : p.amount != null
-                        ? formatCurrency(p.amount)
-                        : "—"}
+                    {a.amount != null ? formatCurrency(a.amount) : "—"}
                   </span>
                 </div>
                 <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                   <span>
-                    {p.arrivalDate ? formatDate(p.arrivalDate) : "—"}
-                    {p.chargeCount != null ? ` · ${p.chargeCount} charges` : ""}
+                    {a.date ? formatDate(a.date) : "—"}
+                    {a.chargeCount != null ? ` · ${a.chargeCount} charges` : ""}
                   </span>
                   <Badge variant="outline" className="text-[10px]">
-                    {p.qbReconciliationStatus}
+                    {a.statusLabel}
                   </Badge>
                 </div>
-                {p.depositPayerName && (
+                {a.payerName && (
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {p.depositPayerName}
+                    {a.payerName}
                   </div>
                 )}
               </button>

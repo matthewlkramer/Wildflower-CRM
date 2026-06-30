@@ -314,6 +314,12 @@ export interface TieBase {
   payoutNetAmount: string | null;
   depositAmount: string | null;
   chargeCount: number;
+  /**
+   * For a `conflict_approved` payout, the gift its QuickBooks deposit was already
+   * approved into (the gift a `keep` confirm preserves as the single source of
+   * truth). Used to gate any per-charge gift that would double-book it.
+   */
+  qbConflictGiftId: string | null;
 }
 
 export interface BundleBase {
@@ -756,6 +762,21 @@ function deriveTie(base: TieBase | null, override: BundleTieOverride | null | un
     }
   }
 
+  // Money-safety invariant — INDEPENDENT of any tie action override: a keep
+  // confirm preserves the deposit's gift as the single source of truth, so
+  // downstream per-charge mint guards skip it. If we don't know WHICH gift that
+  // is (a legacy/malformed conflict with no recorded gift), we can't prove a
+  // per-charge gift wouldn't double-book it — so block, even if a client
+  // supplies an explicit tie action, keeping the pure layer's readiness honest.
+  if (base.status === "conflict_approved" && !base.qbConflictGiftId) {
+    warnings.push({
+      code: "tie_conflict_missing_gift",
+      message:
+        "This conflicting QuickBooks deposit has no recorded gift to keep. Resolve it in QuickBooks review before confirming.",
+      severity: "blocker",
+    });
+  }
+
   return {
     payoutId: base.payoutId,
     depositStagedPaymentId: depositId,
@@ -786,10 +807,52 @@ export function deriveProposal(base: BundleBase, overrides: StoredBundleOverride
   let blockerCount = 0;
   let allReady = true;
 
+  // Derive the tie up front: a `conflict_approved` payout's QuickBooks deposit was
+  // ALREADY approved into a (coarse) gift, which confirming KEEPS as the single
+  // source of truth. Minting/matching its per-charge Stripe rows on top of that
+  // kept gift would double-book the same money, so those money-writing rows must
+  // be gated out (the reviewer can still defer them to research or exclude them).
+  const tie = deriveTie(base.tie, overrides.tie);
+  const conflictKeep = tie?.status === "conflict_approved";
+  const keptGiftId = base.tie?.qbConflictGiftId ?? null;
+
   for (const b of base.rows) {
     const ov = rowOverrides[b.rowKey];
     const eff = resolveRow(b, ov, base.facts);
-    const { warnings, ready } = rowWarnings(b, eff, ov, base.facts);
+    const { warnings, ready: rowReadyBase } = rowWarnings(b, eff, ov, base.facts);
+    let ready = rowReadyBase;
+
+    if (conflictKeep) {
+      if (
+        !eff.alreadyCommitted &&
+        (eff.gift.kind === "match" || eff.gift.kind === "mint")
+      ) {
+        // The kept QB gift is the single source of truth; minting/matching this
+        // charge on top of it would double-book the same money.
+        warnings.push({
+          code: "conflict_keep_no_new_gift",
+          message:
+            "This payout's deposit was already approved into a kept gift; defer this charge to research or exclude it instead of booking a new gift.",
+          severity: "blocker",
+        });
+        ready = false;
+      } else if (
+        eff.alreadyCommitted &&
+        b.committedGiftId &&
+        b.committedGiftId !== keptGiftId
+      ) {
+        // A charge already booked into a DIFFERENT gift is a pre-existing
+        // double-book; keeping the QB gift would silently bless it. Force the
+        // reviewer to resolve it out of band before confirming.
+        warnings.push({
+          code: "conflict_keep_foreign_gift",
+          message:
+            "This charge is already booked into a different gift than the kept QuickBooks gift. Resolve the duplicate before confirming.",
+          severity: "blocker",
+        });
+        ready = false;
+      }
+    }
 
     const row: BundleChargeRow = {
       rowKey: b.rowKey,
@@ -833,7 +896,6 @@ export function deriveProposal(base: BundleBase, overrides: StoredBundleOverride
     }
   }
 
-  const tie = deriveTie(base.tie, overrides.tie);
   const tieBlockers = (tie?.warnings ?? []).filter((w) => w.severity === "blocker").length;
   blockerCount += tieBlockers;
   warningCount += tie?.warnings.length ?? 0;
@@ -1242,6 +1304,8 @@ export async function loadBundleBase(opts: {
         status: PayoutReconciliationStatus;
         matchedQbStagedPaymentId: string | null;
         proposedQbStagedPaymentId: string | null;
+        qbConflictStagedPaymentId: string | null;
+        qbConflictGiftId: string | null;
       }
     | null = null;
 
@@ -1255,6 +1319,8 @@ export async function loadBundleBase(opts: {
         status: stripePayouts.qbReconciliationStatus,
         matchedQbStagedPaymentId: stripePayouts.matchedQbStagedPaymentId,
         proposedQbStagedPaymentId: stripePayouts.proposedQbStagedPaymentId,
+        qbConflictStagedPaymentId: stripePayouts.qbConflictStagedPaymentId,
+        qbConflictGiftId: stripePayouts.qbConflictGiftId,
       })
       .from(stripePayouts)
       .where(eq(stripePayouts.id, opts.anchorId));
@@ -1271,12 +1337,19 @@ export async function loadBundleBase(opts: {
         status: stripePayouts.qbReconciliationStatus,
         matchedQbStagedPaymentId: stripePayouts.matchedQbStagedPaymentId,
         proposedQbStagedPaymentId: stripePayouts.proposedQbStagedPaymentId,
+        qbConflictStagedPaymentId: stripePayouts.qbConflictStagedPaymentId,
+        qbConflictGiftId: stripePayouts.qbConflictGiftId,
       })
       .from(stripePayouts)
       .where(
         or(
           eq(stripePayouts.matchedQbStagedPaymentId, opts.anchorId),
           eq(stripePayouts.proposedQbStagedPaymentId, opts.anchorId),
+          // Defense in depth: a conflict tie also means this deposit belongs to
+          // the payout bundle, never standalone QB. Callers should canonicalize
+          // first, but detect it here too so a tied QB anchor can never assemble
+          // as pure-QB money.
+          eq(stripePayouts.qbConflictStagedPaymentId, opts.anchorId),
         ),
       );
     payout = p ?? null;
@@ -1288,7 +1361,13 @@ export async function loadBundleBase(opts: {
 
   if (payout) {
     // Stripe-backed bundle: rows = the payout's charges; tie = payout↔deposit.
-    const depositId = payout.matchedQbStagedPaymentId ?? payout.proposedQbStagedPaymentId;
+    // conflict_approved keeps the deposit in qbConflictStagedPaymentId (not
+    // matched/proposed), so include it or the conflict tie can't be confirmed
+    // through the workbench (deriveTie needs a depositId to emit confirm_tie).
+    const depositId =
+      payout.matchedQbStagedPaymentId ??
+      payout.proposedQbStagedPaymentId ??
+      payout.qbConflictStagedPaymentId;
     let depositAmount: string | null = null;
     if (depositId) {
       const [d] = await conn
@@ -1326,6 +1405,7 @@ export async function loadBundleBase(opts: {
       payoutNetAmount: payout.amount ?? payout.netTotal,
       depositAmount,
       chargeCount: charges.length,
+      qbConflictGiftId: payout.qbConflictGiftId,
     };
     fpParts.push({
       payout: {

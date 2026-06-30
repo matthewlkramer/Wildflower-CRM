@@ -303,6 +303,29 @@ export async function confirmKeepApprovedQbGiftInTx(
     );
   }
 
+  // Money-safety: a keep preserves the deposit's gift as the single source of
+  // truth, so downstream per-charge mint guards skip it. We MUST therefore know
+  // WHICH gift that is, and it must still be the gift the deposit is booked into.
+  // A well-formed conflict records this at propose time
+  // (qbConflictGiftId = candidateGiftId(deposit)); a null value is a
+  // legacy/malformed row and a mismatch is post-propose drift — in either case
+  // we cannot prove a per-charge gift wouldn't double-book it, so we refuse the
+  // keep instead of risking it. This also guards the legacy standalone
+  // confirm-keep route, which never passes through the bundle re-derive gate.
+  const keptGiftId = payout.qbConflictGiftId;
+  if (!keptGiftId) {
+    throw new TransitionError(
+      "invalid_transition",
+      "This conflicting payout has no recorded gift to keep. Resolve it in QuickBooks review before confirming.",
+    );
+  }
+  if (candidateGiftId(deposit) !== keptGiftId) {
+    throw new TransitionError(
+      "invalid_transition",
+      "The conflicting QuickBooks deposit's gift changed since this conflict was detected. Refresh and retry.",
+    );
+  }
+
   // Touch neither the deposit nor the gift — they are already terminal evidence.
   // Preserve qbConflictStagedPaymentId + qbConflictGiftId as revert/audit
   // pointers (qbConflictGiftId being set is the revert discriminator for "keep").

@@ -579,6 +579,52 @@ export const ListGiftsMissingQbResponse = zod.object({
 })
 
 /**
+ * The unified anchor queue for the reactive settlement-bundle workbench. Returns
+BOTH anchor kinds in one deduped, paginated list so reconciliation can start
+from ANY anchor point:
+  • Stripe payouts — the per-charge GROSS source of truth.
+  • Standalone QuickBooks deposits/payments — a staged_payments row with NO
+    tied Stripe payout (checks, ACH, wires, direct gifts).
+A QB deposit that IS tied to a Stripe payout is deliberately OMITTED: it
+reconciles THROUGH the payout's bundle (assemble canonicalizes a tied QB id to
+its payout), so listing it separately would double-book the same money. Rows
+already grouped (source_group_id) stay in the existing group-reconcile flow and
+are omitted here. Rejected/excluded QB rows are not anchors. Read-only.
+
+ * @summary List every settlement anchor the bundle workbench can reconcile — Stripe payouts AND standalone QuickBooks deposits/payments.
+ */
+export const listReconciliationBundleAnchorsQueryLimitDefault = 50;
+export const listReconciliationBundleAnchorsQueryLimitMax = 10000;
+
+export const listReconciliationBundleAnchorsQueryPageDefault = 1;
+
+
+
+export const ListReconciliationBundleAnchorsQueryParams = zod.object({
+  "queue": zod.enum(['needs_review', 'confirmed', 'all']).optional().describe('Which bucket to list (default needs_review).'),
+  "source": zod.enum(['qb_staged_payment', 'stripe_payout']).optional().describe('Restrict to one anchor source. Omit to list both.'),
+  "limit": zod.coerce.number().min(1).max(listReconciliationBundleAnchorsQueryLimitMax).default(listReconciliationBundleAnchorsQueryLimitDefault),
+  "page": zod.coerce.number().min(1).default(listReconciliationBundleAnchorsQueryPageDefault)
+})
+
+export const ListReconciliationBundleAnchorsResponse = zod.object({
+  "data": zod.array(zod.object({
+  "anchorType": zod.enum(['qb_staged_payment', 'stripe_payout']).describe('The settlement anchor a bundle reconciles: a QuickBooks deposit (staged_payments) or a Stripe payout (stripe_payouts).'),
+  "anchorId": zod.string().describe('stripe_payouts.id (po_...) or staged_payments.id.'),
+  "amount": zod.string().nullish().describe('Net deposited (Stripe net_total, falling back to payout amount) or the QB staged amount, major units.'),
+  "date": zod.string().date().nullish().describe('Stripe arrival date, or the QB date received.'),
+  "payerName": zod.string().nullish().describe('QB payer name (the tied\/candidate deposit\'s payer for a Stripe payout, or the staged row\'s payer for QB-only money).'),
+  "chargeCount": zod.number().nullish().describe('Stripe charges behind the payout; null for QB-only money.'),
+  "statusLabel": zod.string().describe('Raw source status for the display badge: the Stripe payout\'s qbReconciliationStatus, or the QB staged-payment status.')
+}).describe('One selectable settlement anchor for the workbench. anchorType discriminates a\nStripe payout from a standalone QB deposit; the remaining fields are a normalized\ndisplay projection over both sources.\n')),
+  "pagination": zod.object({
+  "page": zod.number(),
+  "limit": zod.number(),
+  "total": zod.number()
+})
+})
+
+/**
  * Returns the COMPLETE proposed end-state for a settlement anchor — one
 Stripe payout and/or one QB deposit plus all its charges — as a persisted
 draft: the payout↔deposit tie plus, per charge/line, the proposed donor

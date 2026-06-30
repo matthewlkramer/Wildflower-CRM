@@ -4354,6 +4354,50 @@ export interface BundleAnchorInput {
 }
 
 /**
+ * Anchor-centric triage bucket for the unified bundle-anchor list (NOT the
+Stripe-only propose/conflict tie states). needs_review: anchors awaiting
+reconciliation (Stripe payouts not yet confirmed — unmatched/proposed/conflict;
+QB deposits still pending). confirmed: already reconciled (Stripe confirmed_*;
+QB approved/reconciled). all: every eligible anchor.
+
+ */
+export type BundleAnchorQueue = typeof BundleAnchorQueue[keyof typeof BundleAnchorQueue];
+
+
+export const BundleAnchorQueue = {
+  needs_review: 'needs_review',
+  confirmed: 'confirmed',
+  all: 'all',
+} as const;
+
+/**
+ * One selectable settlement anchor for the workbench. anchorType discriminates a
+Stripe payout from a standalone QB deposit; the remaining fields are a normalized
+display projection over both sources.
+
+ */
+export interface BundleAnchor {
+  anchorType: BundleAnchorType;
+  /** stripe_payouts.id (po_...) or staged_payments.id. */
+  anchorId: string;
+  /** Net deposited (Stripe net_total, falling back to payout amount) or the QB staged amount, major units. */
+  amount?: string | null;
+  /** Stripe arrival date, or the QB date received. */
+  date?: string | null;
+  /** QB payer name (the tied/candidate deposit's payer for a Stripe payout, or the staged row's payer for QB-only money). */
+  payerName?: string | null;
+  /** Stripe charges behind the payout; null for QB-only money. */
+  chargeCount?: number | null;
+  /** Raw source status for the display badge: the Stripe payout's qbReconciliationStatus, or the QB staged-payment status. */
+  statusLabel: string;
+}
+
+export interface BundleAnchorListResponse {
+  data: BundleAnchor[];
+  pagination: Pagination;
+}
+
+/**
  * Switch the donor proposal mode.
  */
 export type BundleRowOverrideDonorKind = typeof BundleRowOverrideDonorKind[keyof typeof BundleRowOverrideDonorKind] | null;
@@ -8692,5 +8736,25 @@ limit?: number;
  * @minimum 0
  */
 offset?: number;
+};
+
+export type ListReconciliationBundleAnchorsParams = {
+/**
+ * Which bucket to list (default needs_review).
+ */
+queue?: BundleAnchorQueue;
+/**
+ * Restrict to one anchor source. Omit to list both.
+ */
+source?: BundleAnchorType;
+/**
+ * @minimum 1
+ * @maximum 10000
+ */
+limit?: LimitParameter;
+/**
+ * @minimum 1
+ */
+page?: PageParameter;
 };
 

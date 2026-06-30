@@ -23,12 +23,14 @@ import type {
   ApproveCompleteMatchBody,
   BadRequestResponse,
   BundleAnchorInput,
+  BundleAnchorListResponse,
   BundleConfirmInput,
   BundleOverridesInput,
   BundleTieResult,
   CreateReconciliationProposalBody,
   GiftMissingQbList,
   ListGiftsMissingQbParams,
+  ListReconciliationBundleAnchorsParams,
   ListReconciliationCardsParams,
   ListReconciliationProposalsParams,
   NotFoundResponse,
@@ -987,6 +989,99 @@ export function useListGiftsMissingQb<TData = Awaited<ReturnType<typeof listGift
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListGiftsMissingQbQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * The unified anchor queue for the reactive settlement-bundle workbench. Returns
+BOTH anchor kinds in one deduped, paginated list so reconciliation can start
+from ANY anchor point:
+  • Stripe payouts — the per-charge GROSS source of truth.
+  • Standalone QuickBooks deposits/payments — a staged_payments row with NO
+    tied Stripe payout (checks, ACH, wires, direct gifts).
+A QB deposit that IS tied to a Stripe payout is deliberately OMITTED: it
+reconciles THROUGH the payout's bundle (assemble canonicalizes a tied QB id to
+its payout), so listing it separately would double-book the same money. Rows
+already grouped (source_group_id) stay in the existing group-reconcile flow and
+are omitted here. Rejected/excluded QB rows are not anchors. Read-only.
+
+ * @summary List every settlement anchor the bundle workbench can reconcile — Stripe payouts AND standalone QuickBooks deposits/payments.
+ */
+export const getListReconciliationBundleAnchorsUrl = (params?: ListReconciliationBundleAnchorsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reconciliation/bundle-anchors?${stringifiedParams}` : `/api/reconciliation/bundle-anchors`
+}
+
+export const listReconciliationBundleAnchors = async (params?: ListReconciliationBundleAnchorsParams, options?: RequestInit): Promise<BundleAnchorListResponse> => {
+  
+  return customFetch<BundleAnchorListResponse>(getListReconciliationBundleAnchorsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getListReconciliationBundleAnchorsQueryKey = (params?: ListReconciliationBundleAnchorsParams,) => {
+    return [
+    `/api/reconciliation/bundle-anchors`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getListReconciliationBundleAnchorsQueryOptions = <TData = Awaited<ReturnType<typeof listReconciliationBundleAnchors>>, TError = ErrorType<unknown>>(params?: ListReconciliationBundleAnchorsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReconciliationBundleAnchors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListReconciliationBundleAnchorsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listReconciliationBundleAnchors>>> = ({ signal }) => listReconciliationBundleAnchors(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listReconciliationBundleAnchors>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListReconciliationBundleAnchorsQueryResult = NonNullable<Awaited<ReturnType<typeof listReconciliationBundleAnchors>>>
+export type ListReconciliationBundleAnchorsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List every settlement anchor the bundle workbench can reconcile — Stripe payouts AND standalone QuickBooks deposits/payments.
+ */
+
+export function useListReconciliationBundleAnchors<TData = Awaited<ReturnType<typeof listReconciliationBundleAnchors>>, TError = ErrorType<unknown>>(
+ params?: ListReconciliationBundleAnchorsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReconciliationBundleAnchors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListReconciliationBundleAnchorsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

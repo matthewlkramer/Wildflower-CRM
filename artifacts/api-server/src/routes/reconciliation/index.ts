@@ -8,6 +8,7 @@ import proposalsRouter from "./proposals";
 import lineageRouter from "./lineage";
 import bundlesRouter from "./bundles";
 import bundleProposalsRouter from "./bundleProposals";
+import bundleAnchorsRouter from "./bundleAnchors";
 
 /**
  * Unified "complete-match" reconciler. One card per money event, anchored on a
@@ -31,5 +32,6 @@ router.use(proposalsRouter);
 router.use(lineageRouter);
 router.use(bundlesRouter);
 router.use(bundleProposalsRouter);
+router.use(bundleAnchorsRouter);
 
 export default router;

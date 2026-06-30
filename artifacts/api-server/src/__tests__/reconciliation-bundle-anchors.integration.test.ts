@@ -1,0 +1,873 @@
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import type { AddressInfo } from "node:net";
+import type { Server } from "node:http";
+
+/**
+ * DB-backed coverage for the UNIFIED settlement-anchor surface of the reactive
+ * bundle workbench:
+ *   - GET  /api/reconciliation/bundle-anchors  (enumeration + dedup + queue)
+ *   - POST /api/reconciliation/bundle-proposals (anchor canonicalization)
+ *   - the pure-QB (standalone deposit) assemble → derive → confirm lifecycle.
+ *
+ * The point of the feature: ANY anchor flows through ONE workbench — Stripe
+ * payouts AND standalone QuickBooks deposits/payments — without ever turning the
+ * same money into two anchors. So these tests assert:
+ *   - the list returns BOTH anchor kinds, and OMITS a QB row that is tied to a
+ *     Stripe payout (matched / proposed / conflict), already grouped, or in a
+ *     non-anchor status (rejected / excluded, incl. processor_payout),
+ *   - the `confirmed` queue and the `source` filter bucket correctly,
+ *   - assembling from a TIED QB id canonicalizes to the payout's single draft
+ *     (no duplicate draft / no double-book),
+ *   - a STANDALONE QB deposit still mints / matches / excludes on confirm via the
+ *     same money-write primitives (no parallel money path).
+ *
+ * Same seam as the sibling bundle-confirm suite: only `requireAuth` is mocked to
+ * inject a seeded admin user; the SQL, the gates, and the guarded writes are real
+ * production code. Skips automatically when no real DATABASE_URL is configured.
+ *
+ * Seeded anchors use far-FUTURE dates so they sort to the TOP of the (date-desc)
+ * list — making both presence AND absence assertions reliable against the shared
+ * dev DB regardless of how many real anchors already exist.
+ */
+
+const RAW_DB_URL = process.env.DATABASE_URL;
+const HAS_DB =
+  !!RAW_DB_URL && !/test:test@localhost:5432\/test/.test(RAW_DB_URL);
+
+const { TEST_USER_ID } = vi.hoisted(() => ({
+  TEST_USER_ID: `recon_anchor_user_${Date.now()}`,
+}));
+
+vi.mock("../middlewares/requireAuth", () => ({
+  requireAuth: (
+    req: { appUser?: { id: string } },
+    _res: unknown,
+    next: () => void,
+  ) => {
+    req.appUser = { id: TEST_USER_ID };
+    next();
+  },
+}));
+
+const RUN = `reconanchor_${Date.now()}`;
+const ORG_ID = `${RUN}_org`;
+const REALM_ID = `${RUN}_realm`;
+const ACCOUNT_ID = `${RUN}_acct`;
+
+type Db = typeof import("@workspace/db");
+let db: Db["db"];
+let schema: {
+  users: Db["users"];
+  organizations: Db["organizations"];
+  people: Db["people"];
+  households: Db["households"];
+  emails: Db["emails"];
+  giftsAndPayments: Db["giftsAndPayments"];
+  giftAllocations: Db["giftAllocations"];
+  stripePayouts: Db["stripePayouts"];
+  stripeStagedCharges: Db["stripeStagedCharges"];
+  stagedPayments: Db["stagedPayments"];
+  paymentApplications: Db["paymentApplications"];
+  reconciliationBundleDrafts: Db["reconciliationBundleDrafts"];
+};
+let eqFn: (typeof import("drizzle-orm"))["eq"];
+let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
+let server: Server;
+let baseUrl = "";
+
+const draftIds: string[] = [];
+const payoutIds: string[] = [];
+const chargeIds: string[] = [];
+const stagedIds: string[] = [];
+const seededGiftIds: string[] = [];
+const createdGiftIds: string[] = [];
+const createdDonorIds: string[] = [];
+let seq = 0;
+const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
+// A far-future date keeps a fresh seed at the very top of the date-desc list.
+const futureDate = () => `2099-12-${String((seq % 27) + 1).padStart(2, "0")}`;
+
+async function post(
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; json: any }> {
+  const res = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let json: unknown = null;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+  return { status: res.status, json };
+}
+
+async function getJson(path: string): Promise<{ status: number; json: any }> {
+  const res = await fetch(`${baseUrl}${path}`);
+  let json: unknown = null;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+  return { status: res.status, json };
+}
+
+async function listAnchors(
+  queue: "needs_review" | "confirmed" | "all",
+  source?: "stripe_payout" | "qb_staged_payment",
+): Promise<Map<string, any>> {
+  const qs = new URLSearchParams({ queue, limit: "500" });
+  if (source) qs.set("source", source);
+  const { status, json } = await getJson(
+    `/api/reconciliation/bundle-anchors?${qs.toString()}`,
+  );
+  expect(status).toBe(200);
+  const map = new Map<string, any>();
+  for (const r of json.data as any[]) map.set(`${r.anchorType}:${r.anchorId}`, r);
+  return map;
+}
+
+async function seedPayout(opts: {
+  status: string;
+  matched?: string;
+  proposed?: string;
+  conflict?: string;
+  conflictGift?: string;
+}): Promise<string> {
+  const id = nextId("po");
+  await db.insert(schema.stripePayouts).values({
+    id,
+    stripeAccountId: ACCOUNT_ID,
+    amount: "100.00",
+    netTotal: "96.80",
+    arrivalDate: futureDate(),
+    chargeCount: 1,
+    qbReconciliationStatus: opts.status as never,
+    matchedQbStagedPaymentId: opts.matched ?? null,
+    proposedQbStagedPaymentId: opts.proposed ?? null,
+    qbConflictStagedPaymentId: opts.conflict ?? null,
+    qbConflictGiftId: opts.conflictGift ?? null,
+  });
+  payoutIds.push(id);
+  return id;
+}
+
+async function seedCharge(
+  payoutId: string,
+  opts: { matchedGiftId?: string } = {},
+): Promise<string> {
+  const id = nextId("ch");
+  await db.insert(schema.stripeStagedCharges).values({
+    id,
+    stripeAccountId: ACCOUNT_ID,
+    stripePayoutId: payoutId,
+    grossAmount: "100.00",
+    feeAmount: "3.20",
+    netAmount: "96.80",
+    dateReceived: futureDate(),
+    payerName: `Zztest Anchor Charge ${RUN}`,
+    payerEmail: `${RUN}-charge@example.invalid`,
+    // A charge already booked into a gift is `reconciled` evidence.
+    status: (opts.matchedGiftId ? "reconciled" : "pending") as never,
+    matchedGiftId: opts.matchedGiftId ?? null,
+  });
+  chargeIds.push(id);
+  return id;
+}
+
+async function seedStaged(opts: {
+  status: string;
+  group?: string | null;
+  exclusionReason?: string | null;
+  amount?: string;
+  payerName?: string;
+  createdGiftId?: string | null;
+}): Promise<string> {
+  const id = nextId("sp");
+  await db.insert(schema.stagedPayments).values({
+    id,
+    realmId: REALM_ID,
+    qbEntityType: "payment",
+    qbEntityId: id,
+    qbLineId: "",
+    amount: opts.amount ?? "75.00",
+    dateReceived: futureDate(),
+    payerName: opts.payerName ?? `Zztest Anchor Payer ${RUN}`,
+    status: opts.status as never,
+    sourceGroupId: opts.group ?? null,
+    exclusionReason: (opts.exclusionReason ?? null) as never,
+    // A booked QB deposit/payment carries the gift it was minted into. A real
+    // conflict_approved deposit is always linked (that link is where
+    // qbConflictGiftId came from), so tests that confirm-keep must wire it.
+    createdGiftId: opts.createdGiftId ?? null,
+  });
+  stagedIds.push(id);
+  return id;
+}
+
+async function seedGift(): Promise<string> {
+  const id = nextId("gift");
+  await db.insert(schema.giftsAndPayments).values({
+    id,
+    organizationId: ORG_ID,
+    ownerUserId: TEST_USER_ID,
+    amount: "75.00",
+    dateReceived: futureDate(),
+  });
+  seededGiftIds.push(id);
+  return id;
+}
+
+async function readStaged(id: string) {
+  const [row] = await db
+    .select()
+    .from(schema.stagedPayments)
+    .where(eqFn(schema.stagedPayments.id, id));
+  return row;
+}
+async function readGift(id: string) {
+  const [row] = await db
+    .select()
+    .from(schema.giftsAndPayments)
+    .where(eqFn(schema.giftsAndPayments.id, id));
+  return row;
+}
+
+function trackConfirm(json: any): void {
+  for (const r of json?.rows ?? []) {
+    if (r.giftId) createdGiftIds.push(r.giftId);
+    if (r.createdDonorId) createdDonorIds.push(r.createdDonorId);
+  }
+}
+
+async function assemble(
+  anchorType: "stripe_payout" | "qb_staged_payment",
+  anchorId: string,
+): Promise<{ draftId: string; revision: number; rowKey: string; json: any }> {
+  const res = await post("/api/reconciliation/bundle-proposals", {
+    anchorType,
+    anchorId,
+  });
+  expect(res.status).toBe(200);
+  draftIds.push(res.json.draftId);
+  return {
+    draftId: res.json.draftId as string,
+    revision: res.json.revision as number,
+    rowKey: res.json.rows?.[0]?.rowKey as string,
+    json: res.json,
+  };
+}
+
+beforeAll(async () => {
+  if (!HAS_DB) return;
+  const dbMod = await import("@workspace/db");
+  const drizzle = await import("drizzle-orm");
+  db = dbMod.db;
+  schema = {
+    users: dbMod.users,
+    organizations: dbMod.organizations,
+    people: dbMod.people,
+    households: dbMod.households,
+    emails: dbMod.emails,
+    giftsAndPayments: dbMod.giftsAndPayments,
+    giftAllocations: dbMod.giftAllocations,
+    stripePayouts: dbMod.stripePayouts,
+    stripeStagedCharges: dbMod.stripeStagedCharges,
+    stagedPayments: dbMod.stagedPayments,
+    paymentApplications: dbMod.paymentApplications,
+    reconciliationBundleDrafts: dbMod.reconciliationBundleDrafts,
+  };
+  eqFn = drizzle.eq;
+  inArrayFn = drizzle.inArray;
+
+  await db.insert(schema.users).values({
+    id: TEST_USER_ID,
+    clerkId: `clerk_${TEST_USER_ID}`,
+    email: `${TEST_USER_ID}@wildflowerschools.org`,
+    role: "admin",
+  });
+  await db.insert(schema.organizations).values({
+    id: ORG_ID,
+    name: `Reconciliation Anchor Test Org ${RUN}`,
+  });
+
+  const { default: app } = await import("../app");
+  server = await new Promise<Server>((resolve) => {
+    const s = app.listen(0, () => resolve(s));
+  });
+  const addr = server.address() as AddressInfo;
+  baseUrl = `http://127.0.0.1:${addr.port}`;
+}, 60_000);
+
+afterAll(async () => {
+  if (!HAS_DB) return;
+  if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+
+  const allGiftIds = [...createdGiftIds, ...seededGiftIds];
+  // Release gift→charge/staged final-amount pointers (RESTRICT FK) before deleting
+  // the evidence rows; reset source to `human` to keep the source↔pointer XOR.
+  if (allGiftIds.length)
+    await db
+      .update(schema.giftsAndPayments)
+      .set({
+        finalAmountSource: "human",
+        finalAmountStripeChargeId: null,
+        finalAmountQbStagedPaymentId: null,
+      })
+      .where(inArrayFn(schema.giftsAndPayments.id, allGiftIds));
+  // Release staged → gift pointers so gifts can be deleted.
+  if (stagedIds.length)
+    await db
+      .update(schema.stagedPayments)
+      .set({
+        matchedGiftId: null,
+        createdGiftId: null,
+        groupReconciledGiftId: null,
+      })
+      .where(inArrayFn(schema.stagedPayments.id, stagedIds));
+  if (allGiftIds.length)
+    await db
+      .delete(schema.giftAllocations)
+      .where(inArrayFn(schema.giftAllocations.giftId, allGiftIds));
+  // A QB mint books a cash-application ledger row (RESTRICT FK → gift).
+  if (allGiftIds.length)
+    await db
+      .delete(schema.paymentApplications)
+      .where(inArrayFn(schema.paymentApplications.giftId, allGiftIds));
+  if (allGiftIds.length)
+    await db
+      .delete(schema.giftsAndPayments)
+      .where(inArrayFn(schema.giftsAndPayments.id, allGiftIds));
+  if (draftIds.length)
+    await db
+      .delete(schema.reconciliationBundleDrafts)
+      .where(inArrayFn(schema.reconciliationBundleDrafts.id, draftIds));
+  if (chargeIds.length)
+    await db
+      .delete(schema.stripeStagedCharges)
+      .where(inArrayFn(schema.stripeStagedCharges.id, chargeIds));
+  if (payoutIds.length)
+    await db
+      .delete(schema.stripePayouts)
+      .where(inArrayFn(schema.stripePayouts.id, payoutIds));
+  if (stagedIds.length)
+    await db
+      .delete(schema.stagedPayments)
+      .where(inArrayFn(schema.stagedPayments.id, stagedIds));
+  if (createdDonorIds.length) {
+    await db
+      .delete(schema.emails)
+      .where(inArrayFn(schema.emails.personId, createdDonorIds));
+    await db
+      .delete(schema.emails)
+      .where(inArrayFn(schema.emails.organizationId, createdDonorIds));
+    await db
+      .delete(schema.people)
+      .where(inArrayFn(schema.people.id, createdDonorIds));
+    await db
+      .delete(schema.households)
+      .where(inArrayFn(schema.households.id, createdDonorIds));
+    await db
+      .delete(schema.organizations)
+      .where(inArrayFn(schema.organizations.id, createdDonorIds));
+  }
+  // Sweep every org/person still owned by this run's user (ORG_ID plus any donor
+  // minted during a confirm) so the user delete can't trip the owner_user_id FK.
+  // TEST_USER_ID is unique per run, so this only ever touches this suite's rows.
+  await db
+    .delete(schema.people)
+    .where(eqFn(schema.people.ownerUserId, TEST_USER_ID));
+  await db
+    .delete(schema.organizations)
+    .where(eqFn(schema.organizations.ownerUserId, TEST_USER_ID));
+  await db.delete(schema.users).where(eqFn(schema.users.id, TEST_USER_ID));
+}, 60_000);
+
+beforeEach(() => {
+  if (!HAS_DB) {
+    console.warn(
+      "[reconciliation-bundle-anchors] skipped: no live DATABASE_URL configured",
+    );
+  }
+});
+
+describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () => {
+  it("lists both sources in needs_review and omits tied/grouped/non-anchor QB rows", async () => {
+    // Eligible anchors (should appear).
+    const pEligible = await seedPayout({ status: "unmatched" });
+    await seedCharge(pEligible);
+    const sStandalone = await seedStaged({ status: "pending" });
+
+    // QB rows tied to a payout (matched / proposed / conflict) → OMITTED; their
+    // payouts are the anchor instead.
+    const sMatched = await seedStaged({ status: "pending" });
+    const pMatched = await seedPayout({ status: "proposed", matched: sMatched });
+    const sProposed = await seedStaged({ status: "pending" });
+    const pProposed = await seedPayout({
+      status: "proposed",
+      proposed: sProposed,
+    });
+    const sConflict = await seedStaged({ status: "pending" });
+    const pConflict = await seedPayout({
+      status: "conflict_approved",
+      conflict: sConflict,
+    });
+
+    // Already grouped, and non-anchor statuses (incl. processor_payout) → OMITTED.
+    const sGrouped = await seedStaged({
+      status: "pending",
+      group: `grp_${RUN}`,
+    });
+    const sRejected = await seedStaged({ status: "rejected" });
+    const sProcessorPayout = await seedStaged({
+      status: "excluded",
+      exclusionReason: "processor_payout",
+    });
+
+    const map = await listAnchors("needs_review");
+
+    // Present.
+    expect(map.has(`stripe_payout:${pEligible}`)).toBe(true);
+    expect(map.has(`qb_staged_payment:${sStandalone}`)).toBe(true);
+    expect(map.has(`stripe_payout:${pMatched}`)).toBe(true);
+    expect(map.has(`stripe_payout:${pProposed}`)).toBe(true);
+    expect(map.has(`stripe_payout:${pConflict}`)).toBe(true);
+
+    // Omitted.
+    expect(map.has(`qb_staged_payment:${sMatched}`)).toBe(false);
+    expect(map.has(`qb_staged_payment:${sProposed}`)).toBe(false);
+    expect(map.has(`qb_staged_payment:${sConflict}`)).toBe(false);
+    expect(map.has(`qb_staged_payment:${sGrouped}`)).toBe(false);
+    expect(map.has(`qb_staged_payment:${sRejected}`)).toBe(false);
+    expect(map.has(`qb_staged_payment:${sProcessorPayout}`)).toBe(false);
+
+    // Normalized projection on the standalone QB anchor.
+    const row = map.get(`qb_staged_payment:${sStandalone}`);
+    expect(row.anchorType).toBe("qb_staged_payment");
+    expect(Number(row.amount)).toBeCloseTo(75, 2);
+    expect(row.statusLabel).toBe("pending");
+    expect(row.chargeCount).toBeNull();
+    expect(row.date).toBeTruthy();
+  });
+
+  it("confirmed queue lists settled rows and omits pending ones", async () => {
+    const sApproved = await seedStaged({ status: "approved" });
+    const sReconciled = await seedStaged({ status: "reconciled" });
+    const sPending = await seedStaged({ status: "pending" });
+    const pConfirmed = await seedPayout({ status: "confirmed_reconciled" });
+    const pUnmatched = await seedPayout({ status: "unmatched" });
+
+    const map = await listAnchors("confirmed");
+
+    expect(map.has(`qb_staged_payment:${sApproved}`)).toBe(true);
+    expect(map.has(`qb_staged_payment:${sReconciled}`)).toBe(true);
+    expect(map.has(`stripe_payout:${pConfirmed}`)).toBe(true);
+
+    expect(map.has(`qb_staged_payment:${sPending}`)).toBe(false);
+    expect(map.has(`stripe_payout:${pUnmatched}`)).toBe(false);
+  });
+
+  it("the source filter returns only the requested anchor kind", async () => {
+    const p = await seedPayout({ status: "unmatched" });
+    await seedCharge(p);
+    const s = await seedStaged({ status: "pending" });
+
+    const qbOnly = await listAnchors("needs_review", "qb_staged_payment");
+    for (const r of qbOnly.values())
+      expect(r.anchorType).toBe("qb_staged_payment");
+    expect(qbOnly.has(`qb_staged_payment:${s}`)).toBe(true);
+    expect(qbOnly.has(`stripe_payout:${p}`)).toBe(false);
+
+    const stripeOnly = await listAnchors("needs_review", "stripe_payout");
+    for (const r of stripeOnly.values())
+      expect(r.anchorType).toBe("stripe_payout");
+    expect(stripeOnly.has(`stripe_payout:${p}`)).toBe(true);
+    expect(stripeOnly.has(`qb_staged_payment:${s}`)).toBe(false);
+  });
+});
+
+describe.skipIf(!HAS_DB)("Tied-anchor canonicalization (integration)", () => {
+  it("assembling a matched-tied QB id yields the payout's single draft", async () => {
+    const staged = await seedStaged({ status: "pending" });
+    const payout = await seedPayout({ status: "proposed", matched: staged });
+    await seedCharge(payout);
+
+    // Entry A: from the tied QB id → rewritten to the payout.
+    const fromQb = await assemble("qb_staged_payment", staged);
+    expect(fromQb.json.anchorType).toBe("stripe_payout");
+    expect(fromQb.json.anchorId).toBe(payout);
+
+    // Entry B: from the payout directly → SAME draft (no duplicate / no double-book).
+    const fromPayout = await assemble("stripe_payout", payout);
+    expect(fromPayout.draftId).toBe(fromQb.draftId);
+  });
+
+  it("a conflict-tied QB id also canonicalizes to its payout", async () => {
+    const staged = await seedStaged({ status: "pending" });
+    const payout = await seedPayout({
+      status: "conflict_approved",
+      conflict: staged,
+    });
+    await seedCharge(payout);
+
+    const fromQb = await assemble("qb_staged_payment", staged);
+    expect(fromQb.json.anchorType).toBe("stripe_payout");
+    expect(fromQb.json.anchorId).toBe(payout);
+  });
+
+  it("assembling a conflict_approved payout directly surfaces a confirmable conflict tie", async () => {
+    // The QB deposit was already approved into a gift (conflict); the canonical
+    // anchor is the payout. Assembling it directly must surface the conflict tie
+    // as confirm_tie with the conflict deposit id — otherwise a conflict anchor
+    // can never be reconciled through the workbench.
+    const staged = await seedStaged({ status: "approved" });
+    const payout = await seedPayout({
+      status: "conflict_approved",
+      conflict: staged,
+    });
+    await seedCharge(payout);
+
+    const a = await assemble("stripe_payout", payout);
+    expect(a.json.anchorType).toBe("stripe_payout");
+    expect(a.json.anchorId).toBe(payout);
+    expect(a.json.tie).toBeTruthy();
+    expect(a.json.tie.status).toBe("conflict_approved");
+    expect(a.json.tie.action).toBe("confirm_tie");
+    expect(a.json.tie.depositStagedPaymentId).toBe(staged);
+  });
+
+  it("refuses to derive a standalone QB draft once a payout ties it (proposed)", async () => {
+    const staged = await seedStaged({ status: "pending" });
+    // Assemble standalone FIRST — a pure-QB draft persists.
+    const a = await assemble("qb_staged_payment", staged);
+    expect(a.json.anchorType).toBe("qb_staged_payment");
+
+    // A Stripe payout now claims the same deposit.
+    await seedPayout({ status: "proposed", proposed: staged });
+
+    // Editing the stale QB draft is refused (must reconcile via the payout).
+    const derived = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/derive`,
+      {
+        rows: [
+          {
+            rowKey: staged,
+            giftKind: "mint",
+            donorKind: "existing",
+            donorId: ORG_ID,
+            donorRecordKind: "organization",
+          },
+        ],
+      },
+    );
+    expect(derived.status).toBe(409);
+    expect(derived.json.error).toBe("anchor_superseded");
+  });
+
+  it("refuses to confirm a standalone QB draft once a payout ties it (conflict)", async () => {
+    const staged = await seedStaged({ status: "pending" });
+    const a = await assemble("qb_staged_payment", staged);
+    expect(a.json.anchorType).toBe("qb_staged_payment");
+
+    // Make the draft ready WHILE still standalone.
+    const derived = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/derive`,
+      {
+        rows: [
+          {
+            rowKey: staged,
+            giftKind: "mint",
+            donorKind: "existing",
+            donorId: ORG_ID,
+            donorRecordKind: "organization",
+          },
+        ],
+      },
+    );
+    expect(derived.status).toBe(200);
+    expect(derived.json.summary.ready).toBe(true);
+
+    // A conflict tie appears AFTER the draft was derived.
+    await seedPayout({ status: "conflict_approved", conflict: staged });
+
+    const confirm = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/confirm`,
+      { expectedRevision: derived.json.revision, allowWarnings: true },
+    );
+    trackConfirm(confirm.json);
+    expect(confirm.status).toBe(409);
+    expect(confirm.json.error).toBe("anchor_superseded");
+    // The money was NOT booked as pure-QB.
+    expect((await readStaged(staged))?.status).toBe("pending");
+  });
+});
+
+describe.skipIf(!HAS_DB)("Standalone QB anchor confirm (integration)", () => {
+  it("mints a gift from a standalone QB deposit to an existing donor", async () => {
+    const staged = await seedStaged({ status: "pending" });
+
+    const a = await assemble("qb_staged_payment", staged);
+    expect(a.json.anchorType).toBe("qb_staged_payment");
+    expect(a.json.rows).toHaveLength(1);
+    expect(a.rowKey).toBe(staged);
+
+    const derived = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/derive`,
+      {
+        rows: [
+          {
+            rowKey: a.rowKey,
+            giftKind: "mint",
+            donorKind: "existing",
+            donorId: ORG_ID,
+            donorRecordKind: "organization",
+          },
+        ],
+      },
+    );
+    expect(derived.status).toBe(200);
+    expect(derived.json.summary.ready).toBe(true);
+
+    const confirm = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/confirm`,
+      { expectedRevision: derived.json.revision },
+    );
+    trackConfirm(confirm.json);
+    expect(confirm.status).toBe(200);
+    expect(confirm.json.giftsCreated).toBe(1);
+    expect(confirm.json.rows[0].outcome).toBe("minted_gift");
+
+    const giftId = confirm.json.rows[0].giftId as string;
+    expect((await readGift(giftId))?.organizationId).toBe(ORG_ID);
+    const sp = await readStaged(staged);
+    expect(sp?.status).toBe("reconciled");
+    expect(sp?.createdGiftId).toBe(giftId);
+  });
+
+  it("matches a standalone QB deposit to an existing gift", async () => {
+    const gift = await seedGift();
+    const staged = await seedStaged({ status: "pending" });
+
+    const a = await assemble("qb_staged_payment", staged);
+    const derived = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/derive`,
+      { rows: [{ rowKey: a.rowKey, giftKind: "match", giftId: gift }] },
+    );
+    expect(derived.status).toBe(200);
+    expect(derived.json.summary.ready).toBe(true);
+
+    // The seeded gift's donor (ORG) intentionally differs from the staged
+    // payer name, so the re-assemble raises a NON-blocking donor warning —
+    // accept it with allowWarnings (ready is still true).
+    const confirm = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/confirm`,
+      { expectedRevision: derived.json.revision, allowWarnings: true },
+    );
+    expect(confirm.status).toBe(200);
+    expect(confirm.json.giftsMatched).toBe(1);
+    expect(confirm.json.rows[0].outcome).toBe("matched_gift");
+    expect((await readStaged(staged))?.matchedGiftId).toBe(gift);
+  });
+
+  it("excludes a standalone QB deposit with a reason", async () => {
+    const staged = await seedStaged({ status: "pending" });
+
+    const a = await assemble("qb_staged_payment", staged);
+    const derived = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/derive`,
+      { rows: [{ rowKey: a.rowKey, giftKind: "exclude", exclusionReason: "membership" }] },
+    );
+    expect(derived.status).toBe(200);
+    expect(derived.json.summary.ready).toBe(true);
+
+    const confirm = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/confirm`,
+      { expectedRevision: derived.json.revision },
+    );
+    expect(confirm.status).toBe(200);
+    expect(confirm.json.giftsCreated).toBe(0);
+    expect(confirm.json.rows[0].outcome).toBe("excluded");
+    const sp = await readStaged(staged);
+    expect(sp?.status).toBe("excluded");
+    expect(sp?.exclusionReason).toBe("membership");
+  });
+});
+
+describe.skipIf(!HAS_DB)("Conflict-approved payout double-book gate", () => {
+  it("blocks minting a pending charge on top of a kept conflict gift", async () => {
+    const keptGift = await seedGift();
+    const deposit = await seedStaged({ status: "approved", createdGiftId: keptGift });
+    const payout = await seedPayout({
+      status: "conflict_approved",
+      conflict: deposit,
+      conflictGift: keptGift,
+    });
+    const charge = await seedCharge(payout);
+
+    // Confirming a conflict_approved payout KEEPS the coarse QB gift as the single
+    // source of truth. The default auto-resolution would mint a per-charge gift on
+    // top of it (double-book), so the bundle must NOT be ready and the charge row
+    // must carry the gate blocker until the reviewer defers/excludes it.
+    const a = await assemble("stripe_payout", payout);
+    expect(a.json.tie?.status).toBe("conflict_approved");
+    expect(a.json.summary?.ready).toBe(false);
+    expect(a.json.summary?.blockerCount).toBeGreaterThanOrEqual(1);
+
+    const chargeRow = (a.json.rows ?? []).find((r: any) => r.rowKey === charge);
+    expect(chargeRow?.gift?.kind).toBe("mint");
+    expect(chargeRow?.ready).toBe(false);
+    expect(
+      (chargeRow?.warnings ?? []).some(
+        (w: any) => w.code === "conflict_keep_no_new_gift" && w.severity === "blocker",
+      ),
+    ).toBe(true);
+  });
+
+  it("lets the reviewer defer the charge to research and confirm the kept tie", async () => {
+    const keptGift = await seedGift();
+    const deposit = await seedStaged({ status: "approved", createdGiftId: keptGift });
+    const payout = await seedPayout({
+      status: "conflict_approved",
+      conflict: deposit,
+      conflictGift: keptGift,
+    });
+    const charge = await seedCharge(payout);
+
+    const a = await assemble("stripe_payout", payout);
+    const derived = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/derive`,
+      { rows: [{ rowKey: charge, giftKind: "research" }] },
+    );
+    expect(derived.status).toBe(200);
+    expect(derived.json.summary.ready).toBe(true);
+    expect(derived.json.summary.blockerCount).toBe(0);
+
+    const confirm = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/confirm`,
+      { expectedRevision: derived.json.revision, allowWarnings: true },
+    );
+    expect(confirm.status).toBe(200);
+    // The kept QB gift is the only gift; the deferred charge mints nothing.
+    expect(confirm.json.giftsCreated).toBe(0);
+  });
+
+  it("blocks confirming when a charge is already booked into a DIFFERENT gift than the kept QB gift", async () => {
+    const keptGift = await seedGift();
+    const foreignGift = await seedGift();
+    const deposit = await seedStaged({ status: "approved" });
+    const payout = await seedPayout({
+      status: "conflict_approved",
+      conflict: deposit,
+      conflictGift: keptGift,
+    });
+    // The charge is already reconciled into a gift that is NOT the kept QB gift —
+    // a pre-existing double-book. Confirming the keep must NOT silently bless it.
+    const charge = await seedCharge(payout, { matchedGiftId: foreignGift });
+
+    const a = await assemble("stripe_payout", payout);
+    expect(a.json.tie?.status).toBe("conflict_approved");
+    expect(a.json.summary?.ready).toBe(false);
+    expect(a.json.summary?.blockerCount).toBeGreaterThanOrEqual(1);
+
+    const chargeRow = (a.json.rows ?? []).find((r: any) => r.rowKey === charge);
+    // Committed rows surface their existing gift link as a reflected match.
+    expect(chargeRow?.gift?.giftId).toBe(foreignGift);
+    expect(
+      (chargeRow?.warnings ?? []).some(
+        (w: any) =>
+          w.code === "conflict_keep_foreign_gift" && w.severity === "blocker",
+      ),
+    ).toBe(true);
+
+    // The confirm route must reject the not-ready bundle (no double-book blessed).
+    const confirm = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/confirm`,
+      { expectedRevision: a.json.revision, allowWarnings: true },
+    );
+    expect(confirm.status).toBe(409);
+  });
+
+  it("allows confirming when the charge is already booked into the SAME kept QB gift", async () => {
+    const keptGift = await seedGift();
+    const deposit = await seedStaged({ status: "approved", createdGiftId: keptGift });
+    const payout = await seedPayout({
+      status: "conflict_approved",
+      conflict: deposit,
+      conflictGift: keptGift,
+    });
+    // The charge is reconciled into the very gift the keep preserves — the
+    // legitimate non-double-booked state, so the bundle stays confirmable.
+    const charge = await seedCharge(payout, { matchedGiftId: keptGift });
+
+    const a = await assemble("stripe_payout", payout);
+    expect(a.json.tie?.status).toBe("conflict_approved");
+
+    const chargeRow = (a.json.rows ?? []).find((r: any) => r.rowKey === charge);
+    // Committed into the kept gift: reflected as a match to that same gift, with
+    // no foreign-gift blocker (and ready=true proves it wasn't treated as a mint).
+    expect(chargeRow?.gift?.giftId).toBe(keptGift);
+    expect(
+      (chargeRow?.warnings ?? []).some(
+        (w: any) => w.code === "conflict_keep_foreign_gift",
+      ),
+    ).toBe(false);
+    expect(a.json.summary?.ready).toBe(true);
+    expect(a.json.summary?.blockerCount).toBe(0);
+
+    const confirm = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/confirm`,
+      { expectedRevision: a.json.revision, allowWarnings: true },
+    );
+    expect(confirm.status).toBe(200);
+    // The kept QB gift is the only gift; the already-committed charge mints nothing.
+    expect(confirm.json.giftsCreated).toBe(0);
+  });
+
+  it("blocks confirming a conflict_approved payout that has no recorded gift to keep", async () => {
+    // A legacy/malformed conflict: the deposit is booked, but the payout has no
+    // recorded qbConflictGiftId, so we can't identify the gift a keep preserves.
+    // Even with the only charge deferred to research (no row-level blocker), the
+    // tie itself must block — otherwise a later per-charge mint could double-book.
+    const deposit = await seedStaged({ status: "approved" });
+    const payout = await seedPayout({
+      status: "conflict_approved",
+      conflict: deposit,
+    });
+    const charge = await seedCharge(payout);
+
+    const a = await assemble("stripe_payout", payout);
+    expect(a.json.tie?.status).toBe("conflict_approved");
+    expect(
+      (a.json.tie?.warnings ?? []).some(
+        (w: any) =>
+          w.code === "tie_conflict_missing_gift" && w.severity === "blocker",
+      ),
+    ).toBe(true);
+
+    const derived = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/derive`,
+      { rows: [{ rowKey: charge, giftKind: "research" }] },
+    );
+    expect(derived.status).toBe(200);
+    expect(derived.json.summary.ready).toBe(false);
+    expect(derived.json.summary.blockerCount).toBeGreaterThanOrEqual(1);
+
+    const confirm = await post(
+      `/api/reconciliation/bundle-proposals/${a.draftId}/confirm`,
+      { expectedRevision: derived.json.revision, allowWarnings: true },
+    );
+    expect(confirm.status).toBe(409);
+  });
+});

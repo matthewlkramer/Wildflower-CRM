@@ -4,9 +4,10 @@ import {
   reconciliationBundleDrafts,
   stripeStagedCharges,
   stagedPayments,
+  stripePayouts,
   giftsAndPayments,
 } from "@workspace/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { asyncHandler, notFound, parseOrBadRequest, newId } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { getViewer } from "../../lib/identityVisibility";
@@ -25,6 +26,7 @@ import {
   type BundleOverridesInput,
   type DerivedBundle,
   type DonorRecordKind,
+  type BundleAnchorType,
 } from "../../lib/reconciliationBundleProposal";
 import {
   ReconcileAbort,
@@ -155,6 +157,39 @@ function lockGift(tx: Tx, id: string) {
     .then((r) => r[0]);
 }
 
+/**
+ * Canonicalize a settlement anchor. A QuickBooks staged payment that a Stripe
+ * payout references (matched / proposed / conflict) reconciles THROUGH the
+ * payout's bundle — the payout is the per-charge GROSS source of truth — never
+ * as standalone QB money. Rewriting the tied QB id to its payout keeps ONE
+ * canonical draft per unit of money; assembling, deriving, or confirming the QB
+ * id directly would double-book. Checks all THREE tie fields so a conflict tie
+ * can't slip through. Applied at EVERY draft entry point (assemble/derive/
+ * confirm), not just first assemble, so a draft created standalone BEFORE a tie
+ * was added can't later be booked as pure-QB money.
+ */
+async function canonicalizeAnchor(
+  conn: typeof db | Tx,
+  anchorType: BundleAnchorType,
+  anchorId: string,
+): Promise<{ anchorType: BundleAnchorType; anchorId: string }> {
+  if (anchorType !== "qb_staged_payment") return { anchorType, anchorId };
+  const tied = await conn
+    .select({ id: stripePayouts.id })
+    .from(stripePayouts)
+    .where(
+      or(
+        eq(stripePayouts.matchedQbStagedPaymentId, anchorId),
+        eq(stripePayouts.proposedQbStagedPaymentId, anchorId),
+        eq(stripePayouts.qbConflictStagedPaymentId, anchorId),
+      ),
+    )
+    .then((r) => r[0]);
+  return tied
+    ? { anchorType: "stripe_payout" as const, anchorId: tied.id }
+    : { anchorType, anchorId };
+}
+
 // ─── POST /reconciliation/bundle-proposals — assemble (or load) by anchor ───
 router.post(
   "/reconciliation/bundle-proposals",
@@ -168,21 +203,30 @@ router.post(
     if (!body) return;
     const viewer = getViewer(req);
 
+    // Canonicalize a tied QB anchor to its Stripe payout BEFORE any draft lookup
+    // or create (see canonicalizeAnchor). Assembling the tied QB id directly
+    // would mint a duplicate draft for the same money and risk a double-book.
+    const { anchorType, anchorId } = await canonicalizeAnchor(
+      db,
+      body.anchorType,
+      body.anchorId,
+    );
+
     const existing = await db
       .select()
       .from(reconciliationBundleDrafts)
       .where(
         and(
-          eq(reconciliationBundleDrafts.anchorType, body.anchorType),
-          eq(reconciliationBundleDrafts.anchorId, body.anchorId),
+          eq(reconciliationBundleDrafts.anchorType, anchorType),
+          eq(reconciliationBundleDrafts.anchorId, anchorId),
         ),
       )
       .then((r) => r[0]);
 
     const overrides = (existing?.overrides ?? {}) as StoredBundleOverrides;
     const assembled = await assembleBundleProposal({
-      anchorType: body.anchorType,
-      anchorId: body.anchorId,
+      anchorType,
+      anchorId,
       overrides,
       viewer,
     });
@@ -198,8 +242,8 @@ router.post(
         .insert(reconciliationBundleDrafts)
         .values({
           id: newId(),
-          anchorType: body.anchorType,
-          anchorId: body.anchorId,
+          anchorType,
+          anchorId,
           overrides,
           derivedProposal: proposal,
           sourceFingerprint: proposal.sourceFingerprint,
@@ -298,6 +342,27 @@ router.post(
       res.status(409).json({
         error: "not_open",
         message: "This bundle is already confirmed; no further edits.",
+      });
+      return;
+    }
+
+    // Money-safety: refuse a standalone QB draft whose deposit a Stripe payout
+    // now claims — it must be reconciled THROUGH the payout bundle, not edited
+    // toward a pure-QB confirm. Re-assembling against the payout reaches its
+    // canonical draft.
+    const canonical = await canonicalizeAnchor(
+      db,
+      draft.anchorType,
+      draft.anchorId,
+    );
+    if (
+      canonical.anchorType !== draft.anchorType ||
+      canonical.anchorId !== draft.anchorId
+    ) {
+      res.status(409).json({
+        error: "anchor_superseded",
+        message:
+          "A Stripe payout now claims this deposit; reconcile it through the payout bundle.",
       });
       return;
     }
@@ -426,6 +491,27 @@ router.post(
             message:
               "This bundle changed since you loaded it. Re-derive and retry.",
             revision: draft.revision,
+          });
+        }
+
+        // Money-safety: a standalone QB draft created BEFORE a Stripe payout tie
+        // was added must NOT confirm as pure-QB money — the payout is now the
+        // canonical anchor for that money. Refuse so the client re-assembles
+        // against the payout bundle (under the draft lock, so the check is
+        // consistent with the commit that follows).
+        const canonical = await canonicalizeAnchor(
+          tx,
+          draft.anchorType,
+          draft.anchorId,
+        );
+        if (
+          canonical.anchorType !== draft.anchorType ||
+          canonical.anchorId !== draft.anchorId
+        ) {
+          throw new ReconcileAbort(409, {
+            error: "anchor_superseded",
+            message:
+              "A Stripe payout now claims this deposit; reconcile it through the payout bundle.",
           });
         }
 

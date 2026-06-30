@@ -372,6 +372,7 @@ describe("deriveProposal — tie", () => {
         payoutNetAmount: "100.00",
         depositAmount: "100.00",
         chargeCount: 1,
+        qbConflictGiftId: null,
       },
       facts: { donors: {}, gifts: {} },
       sourceFingerprint: "fp",

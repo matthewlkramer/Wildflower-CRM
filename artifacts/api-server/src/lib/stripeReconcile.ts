@@ -1,6 +1,17 @@
 import { db } from "@workspace/db";
 import { stripePayouts, stagedPayments } from "@workspace/db/schema";
-import { and, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNotNull,
+  lte,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { getUncachableStripeClient } from "./stripeClient";
@@ -308,6 +319,31 @@ export async function runProposalPass(
       (best.c.status === "approved" || best.c.status === "reconciled") &&
       giftId != null;
 
+    // Money-safety guard: this pass scored `best.c` from a read taken BEFORE the
+    // write, and a concurrent standalone-QB confirm (bundle workbench or staged
+    // approve queue) can mint a gift onto that same deposit in between. Re-check
+    // the candidate's committed gift-state at UPDATE time so we never stamp a
+    // non-conflict `proposed` tie onto a deposit that just became a pure-QB
+    // gift (which would let the payout be confirmed as a separate anchor = a
+    // double-book). If the state moved, the UPDATE is a no-op and the next pass
+    // re-scores it as a (human-gated) conflict instead.
+    const candidateHasGift = db
+      .select({ x: sql<number>`1` })
+      .from(stagedPayments)
+      .where(
+        and(
+          eq(stagedPayments.id, best.c.id),
+          or(
+            isNotNull(stagedPayments.createdGiftId),
+            isNotNull(stagedPayments.matchedGiftId),
+            isNotNull(stagedPayments.groupReconciledGiftId),
+          ),
+        ),
+      );
+    const candidateStateGuard = isConflict
+      ? exists(candidateHasGift)
+      : notExists(candidateHasGift);
+
     const upd = await db
       .update(stripePayouts)
       .set({
@@ -321,6 +357,7 @@ export async function runProposalPass(
         and(
           eq(stripePayouts.id, p.id),
           inArray(stripePayouts.qbReconciliationStatus, [...REPROPOSABLE]),
+          candidateStateGuard,
         ),
       )
       .returning({ id: stripePayouts.id });
