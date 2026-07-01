@@ -415,6 +415,12 @@ export function BundleRowEditor({
                   ? ` · ${gift.mintDraft.finalAmountSource}`
                   : ""}
               </p>
+              {row.provenance !== "override" && (
+                <p className="text-xs text-muted-foreground">
+                  No existing gift matched, so a new one will be created. Switch
+                  to Match to link an existing gift instead.
+                </p>
+              )}
             </div>
           )}
 
