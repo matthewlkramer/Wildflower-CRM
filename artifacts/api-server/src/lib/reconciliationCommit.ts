@@ -159,7 +159,17 @@ export interface MintGiftInTxArgs {
   /** The create-* outcome, echoed into the audit metadata. */
   outcome: string;
   /** Source-group context (all members locked + approvable) or null (single row). */
-  group: { memberIds: string[] } | null;
+  group: {
+    memberIds: string[];
+    /** Per-member rows used to seed one allocation per subcomponent. */
+    members?: { id: string; amount: string | null; entityId: string | null }[];
+    /**
+     * When true (plain create_gift only), seed one gift allocation per grouped
+     * staged payment (sub_amount = that member's amount) instead of a header-only
+     * lump. Ignored when an opportunity seeds the allocations.
+     */
+    splitIntoAllocations?: boolean;
+  } | null;
   /** App user id stamped as the confirmer / mint owner. */
   userId: string;
   /** Request used for audit attribution. */
@@ -264,6 +274,25 @@ export async function mintGiftInTx(
   // loaded); plain create_gift has no opp and stays header-only.
   if (opp) {
     await copyPledgeAllocationsToGift(tx, opp.id, newGiftId, evidenceAmount);
+  } else if (
+    group?.splitIntoAllocations &&
+    group.members &&
+    group.members.length > 0
+  ) {
+    // Grouped create_gift, "split subcomponents into allocation rows": each
+    // grouped staged payment becomes one allocation (sub_amount = that member's
+    // amount, entity from its attributed entityId). The member amounts sum to
+    // the gift total (evidenceAmount) by construction, so no scaling is needed;
+    // scope beyond entity is left for the fundraiser to refine. The restriction
+    // axes / counts-toward-goal columns fall back to their NOT-NULL defaults.
+    await tx.insert(giftAllocations).values(
+      group.members.map((m) => ({
+        id: newId(),
+        giftId: newGiftId,
+        subAmount: m.amount,
+        entityId: m.entityId,
+      })),
+    );
   }
 
   // The QB anchor OWNS the mint (createdGiftId, not auto-applied → protected from

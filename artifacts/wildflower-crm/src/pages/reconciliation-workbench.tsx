@@ -397,6 +397,14 @@ export default function ReconciliationWorkbench() {
     groupTotal: number | null;
     payload: GroupReconcileStagedPaymentsBody;
   } | null>(null);
+  // Creating a gift from a multi-payment group: hold the derived approve body
+  // here and ask whether each grouped subcomponent should become its own
+  // allocation row on the new gift (or a single header-only lump).
+  const [groupCreateGift, setGroupCreateGift] = useState<{
+    card: ReconciliationCard;
+    body: ApproveCompleteMatchBody;
+    memberCount: number;
+  } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Needs-review queue = the active work queue (omit `queue` param). Loaded
@@ -915,6 +923,42 @@ export default function ReconciliationWorkbench() {
           toast({ title: "Gift created from Stripe charge." });
           return;
         }
+        // A grouped card (several staged payments a fundraiser grouped into one
+        // physical gift) can't mint through the per-row create-gift endpoint —
+        // it 409s on any group member. Route it through the group-aware card
+        // approve path (`outcome: create_gift`), which mints ONE gift summing
+        // every member, tied to the card's matched donor. Reuse the same
+        // proposal-derived body as the confirm/link flows so the donor comes
+        // from the matched proposal.
+        if (card.isSourceGroup) {
+          setApplyingCardId(card.stagedPaymentId);
+          try {
+            const res = await deriveConfirmBody(card);
+            if (typeof res === "string") {
+              toast({ title: "Can't create gift yet", description: res });
+              return;
+            }
+            if (res.body.outcome !== "create_gift") {
+              toast({
+                title: "Can't create gift",
+                description:
+                  "This grouped payment already matches a gift — link the whole group to it from its card instead.",
+              });
+              return;
+            }
+            // Ask whether each grouped subcomponent should become its own
+            // allocation row on the new gift. The mint fires from the dialog.
+            setGroupCreateGift({
+              card,
+              body: res.body,
+              memberCount:
+                card.sourceGroupCount ?? card.sourceGroupMembers?.length ?? 0,
+            });
+          } finally {
+            setApplyingCardId(null);
+          }
+          return;
+        }
         await createGiftM.mutateAsync({ id: card.stagedPaymentId });
         invalidateAll();
         toast({ title: "Gift created from QuickBooks payment." });
@@ -922,7 +966,43 @@ export default function ReconciliationWorkbench() {
         toast({ title: "Couldn't create gift", description: errMessage(err) });
       }
     },
-    [createGiftM, createChargeGiftM, invalidateAll, toast, errMessage],
+    [
+      createGiftM,
+      createChargeGiftM,
+      deriveConfirmBody,
+      invalidateAll,
+      toast,
+      errMessage,
+    ],
+  );
+
+  // Fires the grouped create-gift the operator confirmed in the dialog. `split`
+  // true → one allocation row per grouped payment; false → a single header-only
+  // gift. Either way the gift amount is the group total.
+  const applyGroupCreateGift = useCallback(
+    async (split: boolean) => {
+      if (!groupCreateGift) return;
+      const { card, body } = groupCreateGift;
+      setApplyingCardId(card.stagedPaymentId);
+      try {
+        await approveReconciliationCard(card.stagedPaymentId, {
+          ...body,
+          splitGroupIntoAllocations: split,
+        });
+        invalidateAll();
+        toast({
+          title: split
+            ? "Gift created with one allocation per grouped payment."
+            : "Gift created for the whole group.",
+        });
+        setGroupCreateGift(null);
+      } catch (err) {
+        toast({ title: "Couldn't create gift", description: errMessage(err) });
+      } finally {
+        setApplyingCardId(null);
+      }
+    },
+    [groupCreateGift, invalidateAll, toast, errMessage],
   );
 
   // Per-charge reject: applies immediately on the Stripe charge id (charge cards
@@ -1391,6 +1471,15 @@ export default function ReconciliationWorkbench() {
             });
             setGroupLinkConfirm(null);
           }}
+        />
+      )}
+      {groupCreateGift && (
+        <GroupCreateGiftDialog
+          memberCount={groupCreateGift.memberCount}
+          total={groupCreateGift.card.sourceGroupTotalAmount ?? null}
+          busy={applyingCardId === groupCreateGift.card.stagedPaymentId}
+          onCancel={() => setGroupCreateGift(null)}
+          onChoose={applyGroupCreateGift}
         />
       )}
 
@@ -2638,6 +2727,63 @@ function GroupLinkAmountDialog({
             Cancel
           </Button>
           <Button onClick={onConfirm}>Link group anyway</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Grouped create-gift: split subcomponents into allocations? ───────────────
+
+/**
+ * Shown when the operator clicks "Create gift" on a source-group card. A grouped
+ * gift can either be a single header-only lump, or carry one allocation row per
+ * grouped staged payment (each subcomponent's amount + attributed entity). The
+ * member amounts already sum to the group total, so splitting never changes the
+ * gift's amount — only how it's apportioned.
+ */
+function GroupCreateGiftDialog({
+  memberCount,
+  total,
+  busy,
+  onCancel,
+  onChoose,
+}: {
+  memberCount: number;
+  total: string | null;
+  busy: boolean;
+  onCancel: () => void;
+  onChoose: (split: boolean) => void;
+}) {
+  return (
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Split into allocation rows?</DialogTitle>
+          <DialogDescription>
+            This creates one gift of{" "}
+            <span className="font-medium tabular-nums">{money(total)}</span>
+            {memberCount > 0 ? ` from ${memberCount} grouped payments` : ""}. Do
+            you want each grouped payment to become its own allocation row on the
+            new gift, or a single header-only gift you can apportion later?
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2 sm:justify-between">
+          <Button variant="outline" onClick={onCancel} disabled={busy}>
+            Cancel
+          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => onChoose(false)}
+              disabled={busy}
+            >
+              Single gift line
+            </Button>
+            <Button onClick={() => onChoose(true)} disabled={busy}>
+              One allocation per payment
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

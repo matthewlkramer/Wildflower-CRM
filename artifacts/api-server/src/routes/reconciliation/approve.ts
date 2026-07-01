@@ -46,6 +46,7 @@ type MintBody = Partial<DonorXor> & {
   stripeChargeId?: string | null;
   paymentIntermediaryId?: string | null;
   overrideAmountMismatchReason?: string | null;
+  splitGroupIntoAllocations?: boolean | null;
 };
 
 interface MintOpts {
@@ -72,6 +73,11 @@ type GroupMintContext = {
   representativeId: string;
   memberIds: string[];
   total: string;
+  /**
+   * Per-member rows (id, amount, attributed entity), used to seed one allocation
+   * per subcomponent when the operator opts into `splitGroupIntoAllocations`.
+   */
+  members: { id: string; amount: string | null; entityId: string | null }[];
 };
 
 
@@ -409,7 +415,13 @@ async function mintGiftFromEvidence(
         paymentIntermediaryId: body.paymentIntermediaryId ?? null,
         convert: opts.convert,
         outcome: opts.outcome,
-        group: group ? { memberIds: group.memberIds } : null,
+        group: group
+          ? {
+              memberIds: group.memberIds,
+              members: group.members,
+              splitIntoAllocations: body.splitGroupIntoAllocations === true,
+            }
+          : null,
         userId: user.id,
         auditReq: req,
       });
@@ -520,7 +532,11 @@ router.post(
       // Build the group context: all members, a deterministic representative
       // (min id) that owns the mint, and the combined total.
       const members = await db
-        .select({ id: stagedPayments.id, amount: stagedPayments.amount })
+        .select({
+          id: stagedPayments.id,
+          amount: stagedPayments.amount,
+          entityId: stagedPayments.entityId,
+        })
         .from(stagedPayments)
         .where(eq(stagedPayments.sourceGroupId, groupRow.sourceGroupId));
       const memberIds = members.map((m) => m.id).sort();
@@ -552,7 +568,12 @@ router.post(
         return;
       }
 
-      const group: GroupMintContext = { representativeId, memberIds, total };
+      const group: GroupMintContext = {
+        representativeId,
+        memberIds,
+        total,
+        members,
+      };
       if (body.outcome === "create_gift") {
         await mintGiftFromEvidence(
           req,

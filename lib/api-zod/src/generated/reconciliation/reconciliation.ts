@@ -374,7 +374,8 @@ export const ApproveReconciliationCardBody = zod.object({
   "paymentIntermediaryId": zod.string().nullish().describe('Optional DAF \/ giving-platform conduit the donor gave through.'),
   "switchGiftDonor": zod.boolean().nullish().describe('For link_existing_gift ONLY: when true, re-point the existing gift\'s donor to the single donor FK supplied in this body (after explicit human confirmation in the UI). Blocked (409 gift_pledge_donor_conflict) when the gift is a payment on a pledge\/opportunity owned by a different donor — fix the pledge first.'),
   "stripeChargeId": zod.string().nullish().describe('The Stripe charge whose GROSS becomes the gift\'s final amount (Stripe precedence). Omit for QB-only money (brokerage\/check).'),
-  "overrideAmountMismatchReason": zod.string().nullish().describe('Required to approve when the evidence amount and the gift amount fall outside the fee-band tolerance.')
+  "overrideAmountMismatchReason": zod.string().nullish().describe('Required to approve when the evidence amount and the gift amount fall outside the fee-band tolerance.'),
+  "splitGroupIntoAllocations": zod.boolean().nullish().describe('For a SOURCE GROUP create_gift ONLY: when true, seed one gift allocation per grouped staged payment (sub_amount = that member\'s amount, entity from its attributed entityId) so the subcomponents become allocation rows summing to the gift total. When false\/omitted the gift is header-only. Ignored for single (non-group) cards and for the opportunity outcomes (those seed allocations from the pledge).')
 }).describe('Approve a reconciliation card. The server re-derives and re-validates the entire graph and runs the consistency gate before committing; it never trusts UI-supplied locks.')
 
 export const ApproveReconciliationCardResponse = zod.object({

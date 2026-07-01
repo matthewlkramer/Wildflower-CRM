@@ -4043,6 +4043,8 @@ export interface ApproveCompleteMatchBody {
   stripeChargeId?: string | null;
   /** Required to approve when the evidence amount and the gift amount fall outside the fee-band tolerance. */
   overrideAmountMismatchReason?: string | null;
+  /** For a SOURCE GROUP create_gift ONLY: when true, seed one gift allocation per grouped staged payment (sub_amount = that member's amount, entity from its attributed entityId) so the subcomponents become allocation rows summing to the gift total. When false/omitted the gift is header-only. Ignored for single (non-group) cards and for the opportunity outcomes (those seed allocations from the pledge). */
+  splitGroupIntoAllocations?: boolean | null;
 }
 
 export interface ReconciliationApproveResult {

@@ -7246,6 +7246,7 @@ components:
         switchGiftDonor: { type: boolean, nullable: true, description: "For link_existing_gift ONLY: when true, re-point the existing gift's donor to the single donor FK supplied in this body (after explicit human confirmation in the UI). Blocked (409 gift_pledge_donor_conflict) when the gift is a payment on a pledge/opportunity owned by a different donor — fix the pledge first." }
         stripeChargeId: { type: string, nullable: true, description: "The Stripe charge whose GROSS becomes the gift's final amount (Stripe precedence). Omit for QB-only money (brokerage/check)." }
         overrideAmountMismatchReason: { type: string, nullable: true, description: "Required to approve when the evidence amount and the gift amount fall outside the fee-band tolerance." }
+        splitGroupIntoAllocations: { type: boolean, nullable: true, description: "For a SOURCE GROUP create_gift ONLY: when true, seed one gift allocation per grouped staged payment (sub_amount = that member's amount, entity from its attributed entityId) so the subcomponents become allocation rows summing to the gift total. When false/omitted the gift is header-only. Ignored for single (non-group) cards and for the opportunity outcomes (those seed allocations from the pledge)." }
     ReconciliationApproveResult:
       type: object
       required: [ok, stagedPaymentId, outcome, giftId, createdGift, createdPledge]
