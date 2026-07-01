@@ -319,10 +319,11 @@ export function BundleRowEditor({
           </div>
 
           {gift.kind === "match" &&
-            (row.stagedPaymentId ? (
+            (row.stagedPaymentId || row.stripeChargeId ? (
               <ReconciliationNodeTypeahead
                 nodeType="gift"
-                stagedPaymentId={row.stagedPaymentId}
+                stagedPaymentId={row.stagedPaymentId ?? undefined}
+                stripeChargeId={row.stripeChargeId ?? undefined}
                 donorId={donor.donorId ?? undefined}
                 value={matchedAsCandidate}
                 disabled={disabled}

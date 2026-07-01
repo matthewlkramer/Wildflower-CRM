@@ -286,10 +286,15 @@ export const ConfirmBundleCrossProcessorTiesResponse = zod.object({
 }).describe('Outcome of persisting a settlement bundle\'s cross-processor ties — counts of link fields newly filled (idempotent: re-running yields zeros).')
 
 /**
- * Powers the four cross-filtering search boxes. Always scoped to a card
-(stagedPaymentId) so amount/date windows come from the QB anchor; pass
+ * Powers the cross-filtering search boxes. Scoped to a money event so
+amount/date windows come from that anchor. Pass EXACTLY ONE of
+stagedPaymentId (a QuickBooks card anchor) or stripeChargeId (a Stripe
+charge anchor, e.g. a settlement-bundle charge row that has no staged
+payment); a Stripe charge anchors on its GROSS amount + date. Pass
 donorId to cross-filter gift/opportunity candidates to a chosen donor
-(the FILTER edge). nodeType is donor / gift / opportunity / qb.
+(the FILTER edge). nodeType is donor / gift / opportunity / qb — a Stripe
+charge anchor supports only donor and gift (opportunity/qb require a
+stagedPaymentId).
 
  * @summary Scoped, cross-filtering search for one node of a card.
  */
@@ -306,7 +311,8 @@ export const searchReconciliationNodeQueryLimitMax = 100;
 
 
 export const SearchReconciliationNodeQueryParams = zod.object({
-  "stagedPaymentId": zod.coerce.string().describe('Anchor card; scopes amount\/date windows and cross-filtering.'),
+  "stagedPaymentId": zod.coerce.string().optional().describe('QuickBooks card anchor; scopes amount\/date windows and cross-filtering. Provide exactly one of stagedPaymentId or stripeChargeId.'),
+  "stripeChargeId": zod.coerce.string().optional().describe('Stripe charge anchor (its GROSS amount + date scope the window); for donor\/gift search on a charge that has no staged payment. Provide exactly one of stagedPaymentId or stripeChargeId.'),
   "q": zod.coerce.string().optional().describe('Free-text query (donor\/gift name, payer, reference).'),
   "donorId": zod.coerce.string().optional().describe('Cross-filter gift\/opportunity candidates to this donor (FILTER edge).'),
   "days": zod.coerce.number().min(1).max(searchReconciliationNodeQueryDaysMax).default(searchReconciliationNodeQueryDaysDefault).describe('± days around the anchor date for amount\/date windows.'),

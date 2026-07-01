@@ -35,10 +35,12 @@ function useDebounced<T>(value: T, ms = 250): T {
 }
 
 /**
- * Card-scoped, cross-filtering typeahead for one reconciliation node
- * (donor / gift / opportunity). Backed by the search endpoint so amount/date
- * windows come from the QB anchor; pass `donorId` to filter gift/opportunity
- * candidates to a chosen donor (the FILTER edge).
+ * Cross-filtering typeahead for one reconciliation node (donor / gift /
+ * opportunity), anchored to a money event so amount/date windows and the gift
+ * pool stay tied to it. Pass EXACTLY ONE anchor: `stagedPaymentId` (a QuickBooks
+ * card) or `stripeChargeId` (a settlement-bundle Stripe charge row that has no
+ * staged payment — a charge supports only donor/gift). Pass `donorId` to filter
+ * gift/opportunity candidates to a chosen donor (the FILTER edge).
  *
  * The selected value is the full candidate (not just an id) so the trigger can
  * render its label even when it isn't in the current search results (e.g. the
@@ -47,6 +49,7 @@ function useDebounced<T>(value: T, ms = 250): T {
 export function ReconciliationNodeTypeahead({
   nodeType,
   stagedPaymentId,
+  stripeChargeId,
   donorId,
   value,
   onChange,
@@ -56,7 +59,8 @@ export function ReconciliationNodeTypeahead({
   testId,
 }: {
   nodeType: ReconciliationMatchNodeType;
-  stagedPaymentId: string;
+  stagedPaymentId?: string | null;
+  stripeChargeId?: string | null;
   donorId?: string | null;
   value: ReconciliationCandidate | null;
   onChange: (next: ReconciliationCandidate | null) => void;
@@ -70,7 +74,8 @@ export function ReconciliationNodeTypeahead({
   const debounced = useDebounced(query);
 
   const searchParams = {
-    stagedPaymentId,
+    stagedPaymentId: stagedPaymentId ?? undefined,
+    stripeChargeId: stripeChargeId ?? undefined,
     q: debounced.trim() || undefined,
     donorId: donorId ?? undefined,
     days,

@@ -392,15 +392,20 @@ export const useConfirmBundleCrossProcessorTies = <TError = ErrorType<NotFoundRe
       return useMutation(getConfirmBundleCrossProcessorTiesMutationOptions(options));
     }
     /**
- * Powers the four cross-filtering search boxes. Always scoped to a card
-(stagedPaymentId) so amount/date windows come from the QB anchor; pass
+ * Powers the cross-filtering search boxes. Scoped to a money event so
+amount/date windows come from that anchor. Pass EXACTLY ONE of
+stagedPaymentId (a QuickBooks card anchor) or stripeChargeId (a Stripe
+charge anchor, e.g. a settlement-bundle charge row that has no staged
+payment); a Stripe charge anchors on its GROSS amount + date. Pass
 donorId to cross-filter gift/opportunity candidates to a chosen donor
-(the FILTER edge). nodeType is donor / gift / opportunity / qb.
+(the FILTER edge). nodeType is donor / gift / opportunity / qb — a Stripe
+charge anchor supports only donor and gift (opportunity/qb require a
+stagedPaymentId).
 
  * @summary Scoped, cross-filtering search for one node of a card.
  */
 export const getSearchReconciliationNodeUrl = (nodeType: ReconciliationMatchNodeType,
-    params: SearchReconciliationNodeParams,) => {
+    params?: SearchReconciliationNodeParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -416,7 +421,7 @@ export const getSearchReconciliationNodeUrl = (nodeType: ReconciliationMatchNode
 }
 
 export const searchReconciliationNode = async (nodeType: ReconciliationMatchNodeType,
-    params: SearchReconciliationNodeParams, options?: RequestInit): Promise<ReconciliationSearchList> => {
+    params?: SearchReconciliationNodeParams, options?: RequestInit): Promise<ReconciliationSearchList> => {
   
   return customFetch<ReconciliationSearchList>(getSearchReconciliationNodeUrl(nodeType,params),
   {      
@@ -440,7 +445,7 @@ export const getSearchReconciliationNodeQueryKey = (nodeType: ReconciliationMatc
 
     
 export const getSearchReconciliationNodeQueryOptions = <TData = Awaited<ReturnType<typeof searchReconciliationNode>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(nodeType: ReconciliationMatchNodeType,
-    params: SearchReconciliationNodeParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationNode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+    params?: SearchReconciliationNodeParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationNode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -468,7 +473,7 @@ export type SearchReconciliationNodeQueryError = ErrorType<BadRequestResponse | 
 
 export function useSearchReconciliationNode<TData = Awaited<ReturnType<typeof searchReconciliationNode>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
  nodeType: ReconciliationMatchNodeType,
-    params: SearchReconciliationNodeParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationNode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+    params?: SearchReconciliationNodeParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationNode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
   
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 

@@ -32,11 +32,15 @@ function isValidIsoDate(s: string): boolean {
 }
 
 // ─── GET /reconciliation/search/:nodeType ─────────────────────────────────
-// Scoped, cross-filtering search for one node of a card's graph. Always anchored
-// to a staged payment (?stagedPaymentId=) so amount/date windows and the gift
-// pool stay tied to the money event. `donor` matches a trigram name search;
-// `gift`/`opportunity` accept an optional donorId to narrow by donor; `qb` finds
-// other staged rows by free text. All labels are anonymous-masked for the viewer.
+// Scoped, cross-filtering search for one node of a card's graph. Anchored to a
+// money event — EXACTLY ONE of ?stagedPaymentId= (a QuickBooks card) or
+// ?stripeChargeId= (a settlement-bundle Stripe charge row that has no staged
+// payment) — so amount/date windows and the gift pool stay tied to that money.
+// A Stripe charge anchors gift search on its GROSS amount + date and supports
+// only `donor`/`gift` (opp/qb genuinely need the staged anchor). `donor` matches
+// a trigram name search; `gift`/`opportunity` accept an optional donorId to
+// narrow by donor; `qb` finds other staged rows by free text. All labels are
+// anonymous-masked for the viewer.
 router.get(
   "/reconciliation/search/:nodeType",
   asyncHandler(async (req, res) => {
@@ -51,10 +55,21 @@ router.get(
       typeof req.query["stagedPaymentId"] === "string"
         ? req.query["stagedPaymentId"]
         : "";
-    if (!stagedPaymentId) {
+    const stripeChargeId =
+      typeof req.query["stripeChargeId"] === "string"
+        ? req.query["stripeChargeId"]
+        : "";
+    if (Boolean(stagedPaymentId) === Boolean(stripeChargeId)) {
       res.status(400).json({
         error: "validation_error",
-        message: "stagedPaymentId is required",
+        message: "provide exactly one of stagedPaymentId or stripeChargeId",
+      });
+      return;
+    }
+    if (stripeChargeId && nodeType !== "donor" && nodeType !== "gift") {
+      res.status(400).json({
+        error: "validation_error",
+        message: "a stripeChargeId anchor supports only donor and gift search",
       });
       return;
     }
@@ -68,6 +83,7 @@ router.get(
     const data = await searchReconciliationNode({
       nodeType: nodeType as RecNodeType,
       stagedPaymentId,
+      stripeChargeId: stripeChargeId || null,
       q,
       donorId,
       days,

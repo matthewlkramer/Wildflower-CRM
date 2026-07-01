@@ -144,7 +144,10 @@ export interface RecGraph {
 
 export interface RecSearchParams {
   nodeType: RecNodeType;
+  /** QB staged-payment anchor; "" when anchored on a Stripe charge instead. */
   stagedPaymentId: string;
+  /** Stripe charge anchor (its GROSS amount + date); null for a QB anchor. */
+  stripeChargeId: string | null;
   q: string | null;
   donorId: string | null;
   days: number;
@@ -1053,6 +1056,39 @@ export async function buildReconciliationGraph(
 export async function searchReconciliationNode(
   p: RecSearchParams,
 ): Promise<RecCandidate[] | null> {
+  // A Stripe charge anchor (settlement-bundle charge row with no staged
+  // payment). It anchors gift search on its GROSS amount + date (matching the
+  // confirm rule "Stripe GROSS wins") and supports only donor/gift — opp/qb
+  // genuinely require a staged anchor and are rejected upstream in the route.
+  if (p.stripeChargeId) {
+    const charge = await db
+      .select({
+        grossAmount: stripeStagedCharges.grossAmount,
+        dateReceived: stripeStagedCharges.dateReceived,
+      })
+      .from(stripeStagedCharges)
+      .where(eq(stripeStagedCharges.id, p.stripeChargeId))
+      .then((r) => r[0]);
+    if (!charge) return null;
+    switch (p.nodeType) {
+      case "donor":
+        return searchDonors(p);
+      case "gift":
+        // No staged row to exclude (the charge's double-link is guarded at
+        // confirm time by linkChargeToGiftInTx); "" excludes nothing.
+        return searchGifts(
+          {
+            amount: charge.grossAmount,
+            date: charge.dateReceived,
+            excludeStagedId: "",
+          },
+          p,
+        );
+      default:
+        return [];
+    }
+  }
+
   const staged = await db
     .select()
     .from(stagedPayments)
@@ -1064,7 +1100,14 @@ export async function searchReconciliationNode(
     case "donor":
       return searchDonors(p);
     case "gift":
-      return searchGifts(staged, p);
+      return searchGifts(
+        {
+          amount: staged.amount,
+          date: staged.dateReceived,
+          excludeStagedId: p.stagedPaymentId,
+        },
+        p,
+      );
     case "opportunity":
       return searchOpps(p);
     case "qb":
@@ -1072,6 +1115,14 @@ export async function searchReconciliationNode(
     default:
       return [];
   }
+}
+
+/** The resolved money-event anchor for gift search (QB staged OR Stripe charge). */
+interface GiftSearchAnchor {
+  amount: string | null;
+  date: string | null;
+  /** Staged-payment id to exclude from the "already linked" flag; "" = none. */
+  excludeStagedId: string;
 }
 
 async function searchDonors(p: RecSearchParams): Promise<RecCandidate[]> {
@@ -1126,23 +1177,23 @@ async function searchDonors(p: RecSearchParams): Promise<RecCandidate[]> {
 }
 
 async function searchGifts(
-  staged: typeof stagedPayments.$inferSelect,
+  anchor: GiftSearchAnchor,
   p: RecSearchParams,
 ): Promise<RecCandidate[]> {
-  if (staged.amount == null) return [];
+  if (anchor.amount == null) return [];
   const donorFilter = p.donorId
     ? sql`(${giftsAndPayments.organizationId} = ${p.donorId} OR ${giftsAndPayments.individualGiverPersonId} = ${p.donorId} OR ${giftsAndPayments.householdId} = ${p.donorId})`
     : undefined;
   const rows = (await fetchGiftCandidates({
-    excludeStagedId: p.stagedPaymentId,
+    excludeStagedId: anchor.excludeStagedId,
     donorFilter,
-    amount: staged.amount,
-    date: staged.dateReceived,
+    amount: anchor.amount,
+    date: anchor.date,
     days: p.days,
     limit: p.limit,
     q: p.q,
   })) as NonNullable<RecGiftRow>[];
-  return rows.map((g) => giftRowToCandidate(g, staged.amount, p.viewer));
+  return rows.map((g) => giftRowToCandidate(g, anchor.amount, p.viewer));
 }
 
 async function searchOpps(p: RecSearchParams): Promise<RecCandidate[]> {

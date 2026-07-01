@@ -8646,9 +8646,13 @@ offset?: number;
 
 export type SearchReconciliationNodeParams = {
 /**
- * Anchor card; scopes amount/date windows and cross-filtering.
+ * QuickBooks card anchor; scopes amount/date windows and cross-filtering. Provide exactly one of stagedPaymentId or stripeChargeId.
  */
-stagedPaymentId: string;
+stagedPaymentId?: string;
+/**
+ * Stripe charge anchor (its GROSS amount + date scope the window); for donor/gift search on a charge that has no staged payment. Provide exactly one of stagedPaymentId or stripeChargeId.
+ */
+stripeChargeId?: string;
 /**
  * Free-text query (donor/gift name, payer, reference).
  */

@@ -4058,13 +4058,19 @@ paths:
       tags: [reconciliation]
       summary: Scoped, cross-filtering search for one node of a card.
       description: |
-        Powers the four cross-filtering search boxes. Always scoped to a card
-        (stagedPaymentId) so amount/date windows come from the QB anchor; pass
+        Powers the cross-filtering search boxes. Scoped to a money event so
+        amount/date windows come from that anchor. Pass EXACTLY ONE of
+        stagedPaymentId (a QuickBooks card anchor) or stripeChargeId (a Stripe
+        charge anchor, e.g. a settlement-bundle charge row that has no staged
+        payment); a Stripe charge anchors on its GROSS amount + date. Pass
         donorId to cross-filter gift/opportunity candidates to a chosen donor
-        (the FILTER edge). nodeType is donor / gift / opportunity / qb.
+        (the FILTER edge). nodeType is donor / gift / opportunity / qb — a Stripe
+        charge anchor supports only donor and gift (opportunity/qb require a
+        stagedPaymentId).
       parameters:
         - { name: nodeType, in: path, required: true, schema: { $ref: "#/components/schemas/ReconciliationMatchNodeType" } }
-        - { name: stagedPaymentId, in: query, required: true, schema: { type: string }, description: "Anchor card; scopes amount/date windows and cross-filtering." }
+        - { name: stagedPaymentId, in: query, schema: { type: string }, description: "QuickBooks card anchor; scopes amount/date windows and cross-filtering. Provide exactly one of stagedPaymentId or stripeChargeId." }
+        - { name: stripeChargeId, in: query, schema: { type: string }, description: "Stripe charge anchor (its GROSS amount + date scope the window); for donor/gift search on a charge that has no staged payment. Provide exactly one of stagedPaymentId or stripeChargeId." }
         - { name: q, in: query, schema: { type: string }, description: "Free-text query (donor/gift name, payer, reference)." }
         - { name: donorId, in: query, schema: { type: string }, description: "Cross-filter gift/opportunity candidates to this donor (FILTER edge)." }
         - { name: days, in: query, schema: { type: integer, default: 30, minimum: 1, maximum: 365 }, description: "± days around the anchor date for amount/date windows." }
