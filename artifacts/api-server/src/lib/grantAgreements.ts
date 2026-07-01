@@ -11,8 +11,8 @@ import {
 import { logger } from "./logger";
 
 /**
- * Grant-agreement PDF backfill (Task #485). Resolves the Drive link captured on
- * a coding-form row, validates + uploads the PDF to object storage, and attaches
+ * Grant-agreement document backfill (Task #485). Resolves the Drive link captured
+ * on a coding-form row, validates + uploads the file to object storage, and attaches
  * it to the matched OPPORTUNITY/PLEDGE through the normal grant-letter flow
  * (`applyDerivedOppFields`, which re-derives status / the written-pledge latch).
  * Grant letters live on opportunities/pledges — NEVER on gifts.
@@ -113,13 +113,14 @@ const ERROR_LABELS: Record<string, string> = {
   permission:
     "The connected Google account can't read this file (permission denied).",
   trashed: "The Drive file is in the trash.",
-  not_pdf: "The Drive file is not a PDF.",
+  unsupported_type:
+    "The Drive file isn't a supported document type (PDF, image, or Word).",
   empty: "The Drive file downloaded as empty.",
   fetch_failed: "Couldn't fetch the Drive file (transient error).",
 };
 
 /**
- * Pull one row's grant-agreement PDF and attach it to the matched opportunity.
+ * Pull one row's grant-agreement file and attach it to the matched opportunity.
  * Returns a discriminated result the route maps to HTTP codes. A Drive fetch
  * failure is recorded on the row and returned as `failed` (not thrown) so the
  * reviewer can see it inline; only a missing connector / unexpected error
@@ -158,7 +159,7 @@ export async function pullGrantAgreement(
     };
   }
 
-  // Fetch + validate the PDF (recoverable per-row errors are recorded).
+  // Fetch + validate the document (recoverable per-row errors are recorded).
   let file;
   try {
     file = await fetchDriveFile(fileId);
@@ -222,7 +223,7 @@ export async function pullGrantAgreement(
 
   logger.info(
     { rowId: row.id, oppId: row.matchedOpportunityId, replaced: replacing },
-    "Attached grant-agreement PDF to opportunity",
+    "Attached grant-agreement file to opportunity",
   );
   return { kind: "imported", replaced: replacing };
 }

@@ -347,8 +347,9 @@ paths:
       operationId: pullGrantAgreement
       tags: [coding-form-rows]
       summary: >-
-        Pull this row's grant-agreement PDF from Google Drive and attach it to the
-        matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent
+        Pull this row's grant-agreement file (PDF, image, or Word doc) from Google
+        Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal
+        grant-letter flow. Idempotent
         (already-imported → noop). Never silently overwrites an existing grant
         letter — a different existing letter is a 409 conflict unless replace=true.
         A Drive fetch failure is recorded on the row and returned as a `failed`
@@ -7888,7 +7889,7 @@ components:
       properties:
         status:              { $ref: "#/components/schemas/CodingFormGrantAgreementStatus" }
         driveFileId:         { type: string, nullable: true, description: "File id extracted from the captured Drive link." }
-        importedUrl:         { type: string, nullable: true, description: "Object-storage url of the PDF this backfill attached." }
+        importedUrl:         { type: string, nullable: true, description: "Object-storage url of the file this backfill attached." }
         importedFilename:    { type: string, nullable: true }
         importedAt:          { type: string, nullable: true }
         oppExistingUrl:      { type: string, nullable: true, description: "The matched opportunity's current grant-letter url (for conflict/imported display)." }
@@ -7896,7 +7897,7 @@ components:
         error:               { type: string, nullable: true, description: "Last recorded fetch/upload error for this row." }
     PullGrantAgreementBody:
       type: object
-      description: "Pull the Drive PDF onto the matched opportunity. Set replace=true to overwrite an existing grant letter."
+      description: "Pull the Drive file onto the matched opportunity. Set replace=true to overwrite an existing grant letter."
       properties:
         replace: { type: boolean, description: "Overwrite an existing grant letter (resolve a conflict). Defaults to false." }
     PullGrantAgreementResult:

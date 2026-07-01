@@ -255,7 +255,7 @@ router.post(
   }),
 );
 
-// Grant-agreement backfill (Task #485) — pull the row's Drive PDF and attach it
+// Grant-agreement backfill (Task #485) — pull the row's Drive file and attach it
 // to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent
 // (already-imported → 200 noop); never silently overwrites an existing letter
 // (conflict → 409 unless `replace: true`); a Drive fetch failure is recorded on

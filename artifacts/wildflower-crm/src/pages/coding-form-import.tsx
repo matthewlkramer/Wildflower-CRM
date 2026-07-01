@@ -791,7 +791,7 @@ function GrantAgreementRow({
   );
 }
 
-/** Grant-agreement backfill view: pull ~270 Drive PDFs onto matched opps. */
+/** Grant-agreement backfill view: pull ~270 Drive documents onto matched opps. */
 function GrantAgreementsView() {
   const { toast } = useToast();
   const queryClient = useQueryClient();

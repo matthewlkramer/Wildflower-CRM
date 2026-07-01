@@ -5098,7 +5098,7 @@ export interface CodingFormGrantAgreement {
   status: CodingFormGrantAgreementStatus;
   /** File id extracted from the captured Drive link. */
   driveFileId?: string | null;
-  /** Object-storage url of the PDF this backfill attached. */
+  /** Object-storage url of the file this backfill attached. */
   importedUrl?: string | null;
   importedFilename?: string | null;
   importedAt?: string | null;
@@ -5198,7 +5198,7 @@ export interface CodingFormApplyResult {
 }
 
 /**
- * Pull the Drive PDF onto the matched opportunity. Set replace=true to overwrite an existing grant letter.
+ * Pull the Drive file onto the matched opportunity. Set replace=true to overwrite an existing grant letter.
  */
 export interface PullGrantAgreementBody {
   /** Overwrite an existing grant letter (resolve a conflict). Defaults to false. */

@@ -74,7 +74,7 @@ export const ListCodingFormRowsResponse = zod.object({
   "grantAgreement": zod.object({
   "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
-  "importedUrl": zod.string().nullish().describe('Object-storage url of the PDF this backfill attached.'),
+  "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
   "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
@@ -178,7 +178,7 @@ export const GetCodingFormRowResponse = zod.object({
   "grantAgreement": zod.object({
   "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
-  "importedUrl": zod.string().nullish().describe('Object-storage url of the PDF this backfill attached.'),
+  "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
   "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
@@ -254,7 +254,7 @@ export const SetCodingFormMatchResponse = zod.object({
   "grantAgreement": zod.object({
   "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
-  "importedUrl": zod.string().nullish().describe('Object-storage url of the PDF this backfill attached.'),
+  "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
   "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
@@ -322,7 +322,7 @@ export const RematchCodingFormRowResponse = zod.object({
   "grantAgreement": zod.object({
   "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
-  "importedUrl": zod.string().nullish().describe('Object-storage url of the PDF this backfill attached.'),
+  "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
   "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
@@ -395,7 +395,7 @@ export const ApplyCodingFormRowResponse = zod.object({
   "grantAgreement": zod.object({
   "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
-  "importedUrl": zod.string().nullish().describe('Object-storage url of the PDF this backfill attached.'),
+  "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
   "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
@@ -466,7 +466,7 @@ export const SkipCodingFormRowResponse = zod.object({
   "grantAgreement": zod.object({
   "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
-  "importedUrl": zod.string().nullish().describe('Object-storage url of the PDF this backfill attached.'),
+  "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
   "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
@@ -482,7 +482,7 @@ export const SkipCodingFormRowResponse = zod.object({
 })
 
 /**
- * @summary Pull this row's grant-agreement PDF from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
+ * @summary Pull this row's grant-agreement file (PDF, image, or Word doc) from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
  */
 export const PullGrantAgreementParams = zod.object({
   "id": zod.coerce.string()
@@ -490,7 +490,7 @@ export const PullGrantAgreementParams = zod.object({
 
 export const PullGrantAgreementBody = zod.object({
   "replace": zod.boolean().optional().describe('Overwrite an existing grant letter (resolve a conflict). Defaults to false.')
-}).describe('Pull the Drive PDF onto the matched opportunity. Set replace=true to overwrite an existing grant letter.')
+}).describe('Pull the Drive file onto the matched opportunity. Set replace=true to overwrite an existing grant letter.')
 
 export const PullGrantAgreementResponse = zod.object({
   "row": zod.object({
@@ -539,7 +539,7 @@ export const PullGrantAgreementResponse = zod.object({
   "grantAgreement": zod.object({
   "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
-  "importedUrl": zod.string().nullish().describe('Object-storage url of the PDF this backfill attached.'),
+  "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
   "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),

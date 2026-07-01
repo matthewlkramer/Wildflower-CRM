@@ -10,8 +10,8 @@ import { logger } from "./logger";
  * resolves the org's authorized Google account and rotates tokens
  * automatically. The token is never logged; only HTTP status / file ids are.
  *
- * Pull-only: used by the one-time grant-agreement PDF backfill (Task #485). We
- * never write to Drive.
+ * Pull-only: used by the one-time grant-agreement document backfill (Task #485).
+ * We never write to Drive.
  */
 
 const DRIVE_API_BASE =
@@ -31,7 +31,7 @@ export type DriveLinkErrorReason =
   | "not_found" // 404 — file id does not exist
   | "permission" // 403 / 401 — the connected account can't read this file
   | "trashed" // the file is in the owner's trash
-  | "not_pdf" // the file is not a PDF (e.g. a Google Doc or an image)
+  | "unsupported_type" // not an attachable document (Google-native doc / unknown type)
   | "empty" // the download returned no bytes
   | "fetch_failed"; // transient/unexpected HTTP or network error
 
@@ -149,18 +149,81 @@ interface DriveMetadata {
   size?: string;
 }
 
-function isPdf(meta: DriveMetadata, bytes: Buffer): boolean {
-  const byMime = meta.mimeType === "application/pdf";
-  const byName = /\.pdf$/i.test(meta.name ?? "");
-  // Validate the actual bytes — a `%PDF` magic header — so a mislabeled or
-  // truncated download is caught even when the metadata claims PDF.
-  const byMagic =
-    bytes.length >= 4 && bytes.subarray(0, 4).toString("latin1") === "%PDF";
-  return (byMime || byName) && byMagic;
+/**
+ * Attachable grant-letter document types — mirrors the manual grant-letter
+ * upload's accept list (`application/pdf, image/*, .doc, .docx`). Real coding-form
+ * uploads are frequently phone photos / screenshots of a signed agreement, not
+ * PDFs, so the importer accepts the same set the UI does.
+ */
+const ALLOWED_DOC_MIME = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+const ALLOWED_DOC_EXT = /\.(pdf|jpe?g|png|gif|webp|hei[cf]|bmp|tiff?|docx?)$/i;
+
+function mimeFromExtension(name: string): string {
+  const ext = name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  switch (ext) {
+    case "pdf":
+      return "application/pdf";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "heic":
+    case "heif":
+      return "image/heif";
+    case "bmp":
+      return "image/bmp";
+    case "tif":
+    case "tiff":
+      return "image/tiff";
+    case "doc":
+      return "application/msword";
+    case "docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 /**
- * Fetch a Drive file's metadata and bytes by id, validating it is a real PDF.
+ * Decide whether a downloaded Drive file is an attachable document and resolve
+ * the content-type to store it under. Trusts Drive's mimeType / filename (the
+ * manual upload does no content sniffing either); only a PDF-claiming file is
+ * magic-checked, so a corrupt/truncated PDF is still caught.
+ */
+function classifyDocument(
+  meta: DriveMetadata,
+  bytes: Buffer,
+): { ok: boolean; contentType: string } {
+  const mime = meta.mimeType ?? "";
+  const name = meta.name ?? "";
+  if (mime.startsWith("image/")) return { ok: true, contentType: mime };
+  if (ALLOWED_DOC_MIME.has(mime)) {
+    if (mime === "application/pdf") {
+      const byMagic =
+        bytes.length >= 4 && bytes.subarray(0, 4).toString("latin1") === "%PDF";
+      if (!byMagic) return { ok: false, contentType: mime };
+    }
+    return { ok: true, contentType: mime };
+  }
+  // Drive sometimes reports a generic/empty mime — fall back to the extension.
+  if (ALLOWED_DOC_EXT.test(name)) {
+    return { ok: true, contentType: mime || mimeFromExtension(name) };
+  }
+  return { ok: false, contentType: mime };
+}
+
+/**
+ * Fetch a Drive file's metadata and bytes by id, validating it is an attachable
+ * document (PDF, image, or Word doc — mirrors the manual grant-letter upload).
  * Throws `DriveLinkError` (with a `reason`) for recoverable per-row problems and
  * `DriveNotConfiguredError` when the connector itself is unavailable.
  */
@@ -192,12 +255,12 @@ export async function fetchDriveFile(fileId: string): Promise<DriveFile> {
   if (meta.trashed) {
     throw new DriveLinkError("trashed", `Drive file ${fileId} is in the trash`);
   }
-  // Google-native formats (Docs/Sheets/Slides) can't be fetched with alt=media
-  // and are not PDFs — reject early with a clear reason.
+  // Google-native formats (Docs/Sheets/Slides) can't be fetched with alt=media —
+  // reject early with a clear reason.
   if (meta.mimeType && meta.mimeType.startsWith("application/vnd.google-apps")) {
     throw new DriveLinkError(
-      "not_pdf",
-      `Drive file ${fileId} is a Google-native ${meta.mimeType}, not a PDF`,
+      "unsupported_type",
+      `Drive file ${fileId} is a Google-native ${meta.mimeType} and can't be downloaded`,
     );
   }
 
@@ -225,17 +288,19 @@ export async function fetchDriveFile(fileId: string): Promise<DriveFile> {
   if (bytes.length === 0) {
     throw new DriveLinkError("empty", `Drive file ${fileId} downloaded 0 bytes`);
   }
-  if (!isPdf(meta, bytes)) {
+  const { ok, contentType } = classifyDocument(meta, bytes);
+  if (!ok) {
     throw new DriveLinkError(
-      "not_pdf",
-      `Drive file ${fileId} (${meta.mimeType}) is not a valid PDF`,
+      "unsupported_type",
+      `Drive file ${fileId} (${meta.mimeType || "unknown type"}) is not an attachable document`,
     );
   }
 
-  const filename = /\.pdf$/i.test(meta.name ?? "")
-    ? meta.name
-    : `${meta.name || fileId}.pdf`;
+  const filename = meta.name?.trim() || fileId;
 
-  logger.info({ fileId, size: bytes.length }, "Fetched Drive grant-agreement PDF");
-  return { fileId, filename, contentType: "application/pdf", bytes };
+  logger.info(
+    { fileId, size: bytes.length, contentType },
+    "Fetched Drive grant-agreement file",
+  );
+  return { fileId, filename, contentType, bytes };
 }

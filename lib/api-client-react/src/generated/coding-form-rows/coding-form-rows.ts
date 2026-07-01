@@ -631,7 +631,7 @@ export const useSkipCodingFormRow = <TError = ErrorType<ForbiddenResponse | NotF
       return useMutation(getSkipCodingFormRowMutationOptions(options));
     }
     /**
- * @summary Pull this row's grant-agreement PDF from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
+ * @summary Pull this row's grant-agreement file (PDF, image, or Word doc) from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
  */
 export const getPullGrantAgreementUrl = (id: string,) => {
 
@@ -689,7 +689,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type PullGrantAgreementMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | void>
 
     /**
- * @summary Pull this row's grant-agreement PDF from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
+ * @summary Pull this row's grant-agreement file (PDF, image, or Word doc) from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
  */
 export const usePullGrantAgreement = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pullGrantAgreement>>, TError,{id: string;data: BodyType<PullGrantAgreementBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
