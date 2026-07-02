@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  baseRowFrom,
   deriveProposal,
   mergeOverrides,
   proposeNewDonor,
@@ -7,8 +8,10 @@ import {
   type BundleBase,
   type BaseChargeRow,
   type BundleFacts,
+  type ScoredSourceRow,
   type StoredBundleOverrides,
 } from "../lib/reconciliationBundleProposal";
+import type { ScoredMatch } from "../lib/quickbooksMatch";
 
 /**
  * Pure reactive boundary — no DB. We construct a BundleBase (the DB-loaded
@@ -484,5 +487,112 @@ describe("mergeOverrides", () => {
     expect(set.tie).toMatchObject({ action: "confirm_tie", depositStagedPaymentId: "sp_2" });
     const cleared = mergeOverrides(set, { tie: { clear: true } });
     expect(cleared.tie).toBeNull();
+  });
+});
+
+/**
+ * baseRowFrom is the pure DB→proposal mapping that turns a scored source row into
+ * the auto gift outcome. Its gift-kind decision is the guard against the reported
+ * bug: a settlement bundle must NOT auto-mint when the donor already has plausible
+ * existing gifts (they may be the very money waiting to be matched) — it must fall
+ * to "research" so a human links or mints deliberately.
+ */
+describe("baseRowFrom — auto gift outcome", () => {
+  const scored = (over: Partial<ScoredMatch> = {}): ScoredMatch => ({
+    donor: {
+      organizationId: null,
+      individualGiverPersonId: null,
+      householdId: null,
+    },
+    intermediaryId: null,
+    matchedGiftId: null,
+    giftCandidateCount: 0,
+    score: 0,
+    method: null,
+    tier: "none",
+    ...over,
+  });
+
+  const scoredRow = (over: Partial<ScoredSourceRow> = {}): ScoredSourceRow => ({
+    rowKey: "ch_1",
+    stripeChargeId: "ch_1",
+    stagedPaymentId: null,
+    amount: "100.00",
+    feeAmount: "3.20",
+    netAmount: "96.80",
+    dateReceived: "2026-02-01",
+    payerName: "Jane Donor",
+    payerEmail: "jane@example.com",
+    status: "pending",
+    exclusionReason: null,
+    committedGiftId: null,
+    match: scored(),
+    ...over,
+  });
+
+  it("mints when the donor is resolved and has NO existing candidate gifts", () => {
+    const row = baseRowFrom(
+      scoredRow({
+        match: scored({
+          donor: { organizationId: "org_1", individualGiverPersonId: null, householdId: null },
+          method: "name",
+          giftCandidateCount: 0,
+        }),
+      }),
+    );
+    expect(row.autoDonorKind).toBe("existing");
+    expect(row.autoGiftKind).toBe("mint");
+  });
+
+  it("researches (never mints) when candidate gifts exist but none is an unambiguous target", () => {
+    const row = baseRowFrom(
+      scoredRow({
+        match: scored({
+          donor: { organizationId: "org_1", individualGiverPersonId: null, householdId: null },
+          method: "name",
+          matchedGiftId: null,
+          // The donor already has same-amount gifts in the window — the money may
+          // already be recorded, so this must NOT auto-mint.
+          giftCandidateCount: 2,
+        }),
+      }),
+    );
+    expect(row.autoDonorKind).toBe("existing");
+    expect(row.autoGiftKind).toBe("research");
+  });
+
+  it("matches when the scorer found an unambiguous existing gift", () => {
+    const row = baseRowFrom(
+      scoredRow({
+        match: scored({
+          donor: { organizationId: "org_1", individualGiverPersonId: null, householdId: null },
+          method: "name",
+          matchedGiftId: "g_1",
+          giftCandidateCount: 1,
+        }),
+      }),
+    );
+    expect(row.autoGiftKind).toBe("match");
+    expect(row.autoGiftId).toBe("g_1");
+  });
+
+  it("also researches a proposed NEW donor when candidate gifts exist", () => {
+    // No existing donor match, but payer facts propose a new donor. Even here, a
+    // plausible existing gift blocks the auto-mint.
+    const row = baseRowFrom(
+      scoredRow({
+        match: scored({ method: null, matchedGiftId: null, giftCandidateCount: 1 }),
+      }),
+    );
+    expect(row.autoDonorKind).toBe("new");
+    expect(row.autoGiftKind).toBe("research");
+  });
+
+  it("researches when the donor is unresolved (no payer facts)", () => {
+    const row = baseRowFrom(
+      scoredRow({ payerName: null, payerEmail: null, match: scored() }),
+    );
+    expect(row.autoDonorKind).toBe("unresolved");
+    expect(row.autoGiftKind).toBe("research");
   });
 });

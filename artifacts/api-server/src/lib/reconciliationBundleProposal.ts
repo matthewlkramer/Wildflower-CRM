@@ -988,7 +988,7 @@ export function mergeOverrides(
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type DbLike = typeof db | Tx;
 
-interface ScoredSourceRow {
+export interface ScoredSourceRow {
   rowKey: string;
   stripeChargeId: string | null;
   stagedPaymentId: string | null;
@@ -1004,7 +1004,7 @@ interface ScoredSourceRow {
   match: ScoredMatch;
 }
 
-function baseRowFrom(src: ScoredSourceRow): BaseChargeRow {
+export function baseRowFrom(src: ScoredSourceRow): BaseChargeRow {
   const m = src.match;
   const donorId =
     m.donor.organizationId ?? m.donor.individualGiverPersonId ?? m.donor.householdId ?? null;
@@ -1050,11 +1050,14 @@ function baseRowFrom(src: ScoredSourceRow): BaseChargeRow {
     autoGiftKind = "match";
     autoGiftId = m.matchedGiftId;
     autoGiftSource = "amount_date";
-  } else if (autoDonorKind !== "unresolved") {
+  } else if (autoDonorKind !== "unresolved" && m.giftCandidateCount === 0) {
     autoGiftKind = "mint";
     autoMintFinalSource = src.stripeChargeId ? "stripe" : "quickbooks";
     autoGiftSource = methodToSource(m.method);
   } else {
+    // Either the donor is unresolved, or plausible existing gifts exist but none
+    // is an unambiguous target — never auto-mint over money that may already be
+    // recorded; surface it for a human to match or mint deliberately.
     autoGiftKind = "research";
   }
 

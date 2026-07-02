@@ -12,10 +12,12 @@ import { scoreStagedPayment, type ScoredMatch } from "./quickbooksMatch";
  *   lineDescription ← charge statement descriptor
  *   amount          ← GROSS charge amount (donors are credited gross)
  *
- * The existing-gift window the matcher uses already excludes gifts claimed by
- * another staged_payments OR stripe_staged_charges row (see giftsInWindow), so
- * a Stripe charge never proposes reconciling to a gift another channel owns.
- * Pure of write side-effects — never mints a gift.
+ * The matcher is told this row is a Stripe charge (`evidenceKind: "charge"`), so
+ * its existing-gift window excludes only gifts already owned by ANOTHER Stripe
+ * charge — a gift a QuickBooks staged payment already booked stays a valid
+ * reconcile target (Stripe and QB are parallel evidence for the same money,
+ * deduped by the book-once ledger, not by hiding the gift). Pure of write
+ * side-effects — never mints a gift.
  */
 export interface StripeMatchInput {
   payerName: string | null;
@@ -37,5 +39,6 @@ export function scoreStripeCharge(
     lineDescription: input.statementDescriptor,
     amount: input.grossAmount,
     dateReceived: input.dateReceived,
+    evidenceKind: "charge",
   });
 }

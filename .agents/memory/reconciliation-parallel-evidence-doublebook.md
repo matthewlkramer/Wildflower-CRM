@@ -40,3 +40,31 @@ fix to one without the others just moves the false positive downstream:
    `linkGiftInTx` checks only the QB ledger.
 4. **Discriminator:** a bundle row sets exactly one of
    `{stripeChargeId, stagedPaymentId}`; use `stripeChargeId ? charge : staged`.
+
+## The candidate-DISCOVERY window is a fifth layer (not just the guard)
+
+The same parallel-evidence blindness also hid the gift from the MATCHER, one step
+earlier than the "already linked" guard. `giftsInWindow` (quickbooksMatch.ts)
+excluded any gift claimed by EITHER a staged_payment OR a stripe_staged_charge,
+regardless of which channel was scoring. So a Stripe charge whose exact same-amount
+gift was already booked from QuickBooks found ZERO candidates → the settlement
+bundle auto-MINTED a duplicate. Symptom: "every bundle proposes to mint a new gift
+even though the existing gift is obviously in the system waiting to be matched."
+
+- `giftsInWindow` now takes an `EvidenceKind` (`"staged"` default | `"charge"`).
+  `"staged"` excludes BOTH channels (QB sync-worker safety — never re-link a gift
+  its own channel owns). `"charge"` drops ONLY the staged-payment exclusion, so a
+  QB-booked gift stays a valid Stripe reconcile target. Threaded via
+  `ScoreInput.evidenceKind`; `stripeMatch.ts` passes `"charge"`.
+- The bundle-proposal auto outcome (`baseRowFrom`) must gate mint on
+  `giftCandidateCount === 0`; any candidates ⇒ `"research"` (never mint over
+  possibly-already-recorded money), for BOTH existing and newly-proposed donors.
+- `reconcileTarget` takes `GiftWindowCandidate[]` + an `anchorDate`: with ≥2
+  same-amount gifts it picks the one whose `dateReceived` matches the payment day,
+  else null (ambiguous). Recurring donors otherwise looked permanently ambiguous.
+
+**Deliberately NOT loosened:** `stripeAutoApply`'s cross-kind write guard stays
+strict — a high-tier charge match onto a QB-owned gift no-ops and surfaces for
+human review rather than auto-linking. Cross-processor ties are a book-once
+decision confirmed in the Workbench; only loosen it once book-once dedupe lives on
+the ledger.

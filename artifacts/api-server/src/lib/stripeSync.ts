@@ -349,6 +349,14 @@ function buildStagedChargeUpsert(
  * matched (never mints). Guards that no other staged_payments OR
  * stripe_staged_charges row already claims the gift; the partial-unique index
  * backstops a true race. Leaves the row pending on contention.
+ *
+ * NOTE: this guard is DELIBERATELY cross-kind — it will not auto-link even to a
+ * gift only a QuickBooks staged payment owns, despite the matcher now treating
+ * QB and Stripe as parallel evidence (giftsInWindow "charge" kind). Auto-apply
+ * stays conservative on purpose: a cross-processor tie is a book-once decision a
+ * human confirms in the Reconciliation Workbench, so here the update simply
+ * no-ops and the row surfaces for review. Do NOT loosen this to honor parallel
+ * evidence without moving the book-once dedupe onto the ledger first.
  */
 async function stripeAutoApply(
   chargeId: string,

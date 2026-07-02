@@ -215,32 +215,58 @@ function donorWhere(donor: DonorMatch) {
 }
 
 /**
- * Result of the existing-gift lookup for a resolved donor:
- *   - `exact`         — ids of gifts whose amount equals the staged amount
- *                       (within a cent). Exactly one of these is an auto-reconcile
- *                       target; that gift adopts no fee assumption.
- *   - `plausible`     — ids of gifts in the wider amount band (the CRM gross
- *                       gift can sit just above the QB net deposit by a processor
- *                       fee). Gates auto-create (we mint only when NONE exist) and,
+ * Result of the existing-gift lookup for a resolved donor (each candidate carries
+ * its date_received for the reconcile-target tiebreak):
+ *   - `exact`         — gifts whose amount equals the staged amount (within a
+ *                       cent). A single one — or, among several, a single one on
+ *                       the payment's own date — is the auto-reconcile target;
+ *                       that gift adopts no fee assumption.
+ *   - `plausible`     — gifts in the wider amount band (the CRM gross gift can
+ *                       sit just above the QB net deposit by a processor fee).
+ *                       Gates auto-create (we mint only when NONE exist) and,
  *                       when there is exactly one and no exact match, is the
  *                       fee-band auto-reconcile target. Includes the exact ids.
- * Both exclude gifts already linked to another staged payment, so a gift claimed
- * elsewhere never counts as a reconcile target or as a reason to skip minting.
+ * Exclusion is evidence-kind-aware (see giftsInWindow): a gift already owned by
+ * the SAME channel never counts, but a gift the OTHER channel booked stays a
+ * valid target (parallel evidence for the same money).
  */
+/**
+ * The kind of money evidence being scored. Stripe charges and QuickBooks staged
+ * payments are PARALLEL evidence for the same gift, so "already linked" is only a
+ * conflict within the SAME kind (see giftsInWindow).
+ */
+export type EvidenceKind = "staged" | "charge";
+
+/** A candidate gift with the date needed for the reconcile-target tiebreak. */
+export interface GiftWindowCandidate {
+  id: string;
+  dateReceived: string | null;
+}
+
 interface GiftWindowResult {
-  exact: string[];
-  plausible: string[];
+  exact: GiftWindowCandidate[];
+  plausible: GiftWindowCandidate[];
 }
 
 /**
  * Gifts for a donor within ±GIFT_WINDOW_DAYS of the staged date whose amount is
  * at or just above the staged amount (the fee band), ordered by amount then date
- * proximity. Excludes gifts already linked to/created by another staged payment.
+ * proximity.
+ *
+ * A gift already claimed by another money event is only excluded when that event
+ * is the SAME evidence kind, because Stripe and QuickBooks are PARALLEL evidence
+ * for one gift: a Stripe charge may legitimately reconcile to a gift a QuickBooks
+ * payment already booked (the same money seen through two channels, resolved by
+ * the book-once ledger), and vice versa — but never to a gift its OWN channel
+ * already owns. Mirrors the anchor-kind-aware ownership the search path uses.
+ * `evidenceKind` "staged" (default) keeps the status-quo behaviour of excluding
+ * both channels; "charge" drops only the staged-payment exclusion.
  */
 async function giftsInWindow(
   donor: DonorMatch,
   amount: string,
   dateReceived: string | null,
+  evidenceKind: EvidenceKind = "staged",
 ): Promise<GiftWindowResult> {
   const where = donorWhere(donor);
   if (!where) return { exact: [], plausible: [] };
@@ -250,46 +276,68 @@ async function giftsInWindow(
   const dateClause = dateReceived
     ? sql`AND (date_received IS NULL OR ABS(date_received - ${dateReceived}::date) <= ${GIFT_WINDOW_DAYS})`
     : sql``;
+  const notOwnedByCharge = sql`AND NOT EXISTS (
+          SELECT 1 FROM stripe_staged_charges sc
+          WHERE sc.matched_gift_id = g.id OR sc.created_gift_id = g.id
+        )`;
+  const notOwnedByStaged = sql`AND NOT EXISTS (
+          SELECT 1 FROM staged_payments sp
+          WHERE sp.matched_gift_id = g.id OR sp.created_gift_id = g.id
+        )`;
+  const ownershipClause =
+    evidenceKind === "charge"
+      ? notOwnedByCharge
+      : sql`${notOwnedByStaged} ${notOwnedByCharge}`;
   const rows = (
     await db.execute(sql`
-      SELECT id, amount FROM gifts_and_payments g
+      SELECT id, amount, date_received::text AS date_received
+      FROM gifts_and_payments g
       WHERE ${where}
         AND amount >= ${amount}::numeric - 0.01
         AND amount <= ${amount}::numeric * 1.10 + 1
         ${dateClause}
-        AND NOT EXISTS (
-          SELECT 1 FROM staged_payments sp
-          WHERE sp.matched_gift_id = g.id OR sp.created_gift_id = g.id
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM stripe_staged_charges sc
-          WHERE sc.matched_gift_id = g.id OR sc.created_gift_id = g.id
-        )
+        ${ownershipClause}
       ${order}
       LIMIT 10
     `)
-  ).rows as Array<{ id: string; amount: string }>;
+  ).rows as Array<{ id: string; amount: string; date_received: string | null }>;
   const target = Number(amount);
+  const toCandidate = (r: {
+    id: string;
+    date_received: string | null;
+  }): GiftWindowCandidate => ({ id: r.id, dateReceived: r.date_received });
   const exact = rows
     .filter((r) => Math.abs(Number(r.amount) - target) <= 0.01)
-    .map((r) => r.id);
-  return { exact, plausible: rows.map((r) => r.id) };
+    .map(toCandidate);
+  return { exact, plausible: rows.map(toCandidate) };
 }
 
 /**
  * The unambiguous auto-reconcile target among a donor's in-window gifts, or null
  * when ambiguous. Prefer a single EXACT-amount gift; when there is no exact
  * match, fall back to a single FEE-BAND gift (its gross sits just above the QB
- * net deposit by a processor fee). Any other shape — multiple exact, multiple
+ * net deposit by a processor fee).
+ *
+ * When SEVERAL exact-amount gifts exist (a recurring donor giving the same amount
+ * month after month), the set is not blindly ambiguous: if exactly ONE of them
+ * falls on the payment's own date (`anchorDate`), that is the unmistakable gift
+ * to reconcile against — its siblings pair with their own months' payments. Any
+ * other shape — several exact but none (or more than one) on the date, multiple
  * fee-band, or none — is ambiguous and yields null (a human picks, or a gift is
  * minted when there are none). `plausible` includes the exact ids.
  */
 export function reconcileTarget(
-  exact: string[],
-  plausible: string[],
+  exact: GiftWindowCandidate[],
+  plausible: GiftWindowCandidate[],
+  anchorDate: string | null = null,
 ): string | null {
-  if (exact.length === 1) return exact[0];
-  if (exact.length === 0 && plausible.length === 1) return plausible[0];
+  if (exact.length === 1) return exact[0].id;
+  if (exact.length === 0 && plausible.length === 1) return plausible[0].id;
+  if (exact.length >= 2 && anchorDate) {
+    const day = anchorDate.slice(0, 10);
+    const sameDate = exact.filter((g) => (g.dateReceived ?? "").slice(0, 10) === day);
+    if (sameDate.length === 1) return sameDate[0].id;
+  }
   return null;
 }
 
@@ -348,6 +396,14 @@ export interface ScoreInput {
   lineDescription: string | null;
   amount: string | null;
   dateReceived: string | null;
+  /**
+   * The channel this row came from. "staged" (default) = a QuickBooks staged
+   * payment — a candidate gift already claimed by ANOTHER staged payment OR by a
+   * Stripe charge is off-limits. "charge" = a Stripe charge — only a gift owned
+   * by another Stripe charge is off-limits; a gift a QuickBooks payment already
+   * booked is parallel evidence for the same money and remains a valid target.
+   */
+  evidenceKind?: EvidenceKind;
 }
 
 const NO_SCORE: ScoredMatch = {
@@ -419,12 +475,18 @@ export async function scoreStagedPayment(
   let matchedGiftId: string | null = null;
   let giftCandidateCount = 0;
   if (method && input.amount) {
-    const gifts = await giftsInWindow(donor, input.amount, input.dateReceived);
+    const gifts = await giftsInWindow(
+      donor,
+      input.amount,
+      input.dateReceived,
+      input.evidenceKind ?? "staged",
+    );
     // Mint-gate uses the full plausible (fee-band) set; the reconcile target is a
     // single exact-amount gift, or — when there is no exact match — a single
     // fee-band gift (the QB net deposit is the gift gross minus a processor fee).
+    // The payment's own date breaks ties among several same-amount gifts.
     giftCandidateCount = gifts.plausible.length;
-    matchedGiftId = reconcileTarget(gifts.exact, gifts.plausible);
+    matchedGiftId = reconcileTarget(gifts.exact, gifts.plausible, input.dateReceived);
     // Amount+date corroboration strengthens a name hit into name_amount_date.
     if (
       giftCandidateCount >= 1 &&
