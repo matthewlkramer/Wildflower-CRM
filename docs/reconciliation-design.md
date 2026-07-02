@@ -131,7 +131,7 @@ Target columns (evolution of today's `payment_applications`):
 | `evidence_source` | `quickbooks` \| `stripe` \| `donorbox` — already exists |
 | `source_id` | **new polymorphic unit ref** (points at `staged_payments.id`, `stripe_staged_charges.id`, or `donorbox_donations.id` per `evidence_source`). Replaces today's `payment_id` (NOT NULL → QB-only) + the parallel `stripe_charge_id` / `donorbox_donation_id` columns. See Decision 1 for why the current shape blocks Stripe units. |
 | `gift_id` | unchanged (RESTRICT; header grain — the tie SUM is per-gift) |
-| `gift_allocation_id` | unchanged (optional narrowing pointer; never changes tie math) |
+| `gift_allocation_id` | unchanged (optional annotation; **not** required or used by tie math — ties are gift-grain, see Decision 6) |
 | `amount_applied` | unchanged (> 0) |
 | `link_role` | **new:** `counted` \| `corroborating`. Only `counted` rows enter the book-once SUM and the tie/settled derivations. `corroborating` folds in `gift_evidence_links` (Decision 2). |
 | `lifecycle` | **new:** `proposed` \| `confirmed` \| `exempt`. Replaces the "is it applied yet" signal that today is smeared across `status`/`match_confirmed_at`/`auto_applied`. |
@@ -188,10 +188,17 @@ persisted.
   - This replaces `quickbooks_tie_status`'s `tied/amount_mismatch/missing` with a
     source-agnostic vocabulary; the Stripe "tied at payout level" shortcut is no
     longer a special case because Stripe charges now have their own counted rows.
-- **Unit (Plane 2)** → `excluded` \| `linked` \| `proposed` \| `orphan`
+- **Unit (Plane 2)** → `excluded` \| `linked` \| `partial` \| `proposed` \| `orphan`
+  (symmetric with the gift side — a unit can be fractionally applied just as a gift
+  can be fractionally funded).
   - `excluded` if the unit is classified noise (status `excluded`/`rejected`).
-  - `linked` if a `confirmed`, `counted` ledger row exists.
-  - `proposed` if only a `proposed` row (or a suggested donor/gift) exists.
+  - else let `u = SUM(amount_applied)` over `confirmed`, `counted` ledger rows for
+    the unit:
+    - `u` within fee band of the unit's own value → `linked`;
+    - `0 < u` below that band → `partial` (money left unapplied — e.g. one big
+      deposit split across gifts over time, not yet fully distributed).
+  - `proposed` if `u == 0` and only a `proposed` row (or a suggested donor/gift)
+    exists.
   - else `orphan` (donor not credited).
 - **Batch (Plane 1)** → `settled` \| `proposed` \| `orphan`
   - `settled` if a `confirmed` settlement link exists.
@@ -287,6 +294,23 @@ read cutover is only safe once **prod** parity runs (dev parity ≠ prod), and a
 fixture that seeds a legacy-only link must dual-write the ledger row until the
 legacy columns are dropped.
 
+### Decision 6 — Allocation-grain ties & restriction-level reconciliation? → **Tie at the gift (header) grain; split gifts when restriction-level ties are needed.**
+A unit↔gift ledger row ties at the **gift** grain. `gift_allocation_id` stays an
+optional annotation and is **not** required, populated, or used by tie math for now,
+so the tie SUM (and book-once) is purely per-gift and per-unit.
+
+When a single QB payment — or a wire the donor sent as one lump that QB then booked
+as several restriction-specific payments — must reconcile *by restriction*, the
+fundraiser **splits the CRM gift by allocation into separate one-restriction gifts**
+and ties each unit to its own gift. Header-grain tie math is then automatically
+restriction-correct, because one gift = one restriction — no per-allocation
+derivation is needed.
+
+*Why:* per-allocation tie math is real added complexity for a case the existing
+gift-split already expresses cleanly. Deferring it keeps the ledger's SUM purely
+per-gift and per-unit and avoids a second grain of "reconciled." Revisit only if
+manual splitting proves too costly in practice.
+
 ---
 
 ## 6. Correctness checklist (scenarios the model must express)
@@ -296,7 +320,8 @@ legacy columns are dropped.
 | **Stock / brokerage gift** (many QB units → one gift, amounts differ, different dates) | group-reconcile "representative + `group_reconciled_gift_id`" + `confirmAmountMismatch` override | **N counted ledger rows** → one gift, each with its own `amount_applied`; fee/mismatch tolerance in the service layer. No representative, no second pointer column. |
 | **Donorbox pay-by-check → QB unit** (cross-source dedupe) | ad-hoc linked/excluded | QB record is the **counted** unit; the Donorbox row is a **corroborating** ledger row (or excluded `already_booked`). Same logical gift signalled by Donorbox, settled by QB, counted once. |
 | **Donorbox PayPal → new-money unit** (no batch leg) | non-Stripe new-money worklist row | first-class **counted** unit that mints/links a gift. Flagged: PayPal units have **no Plane-1 settlement leg** (only Stripe payouts↔QB deposits are batch-reconciled) — they tie to the books only via an eventual QB deposit, if at all. A known gap, not solved here. |
-| **Bulk deposit** (one QB unit → many gifts) | `gift_evidence_links` corroboration | **N counted ledger rows** from one deposit unit to many gifts (M:N in the other direction); the deposit's own `amount_applied` sums across them within book-once. |
+| **Bulk deposit** (one QB unit → many gifts) | `gift_evidence_links` corroboration | **N counted ledger rows** from one deposit unit to many gifts (M:N in the other direction); the deposit's own `amount_applied` sums across them within book-once. The deposit unit reads `partial` until its applied sum reaches its value, then `linked` (§4.4). |
+| **Restriction-split wire** (one $1M wire QB-booked as several restricted payments) | ad-hoc grouping | Two supported shapes, both **gift-grain** (Decision 6): (a) one multi-allocation CRM gift — tie all the QB payments to that single gift, reconciled when the SUM hits the gift total (no per-restriction check); (b, preferred when restriction-level ties matter) split into **several one-restriction gifts** and tie each QB payment 1:1 to its gift, which makes header-grain tie math restriction-correct for free. |
 
 ---
 
