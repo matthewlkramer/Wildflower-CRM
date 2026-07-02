@@ -132,8 +132,6 @@
 - [Grant-agreement Drive backfill](grant-agreement-drive-backfill.md) — pull coding_form_rows.drive_link PDFs onto matched OPPS (never gifts) via grant-letter flow; per-row idempotent, conflict never auto-overwrites, status derived; Drive client = connector-token proxy (no googleapis pkg).
 - [Select-in-Dialog scroll trap](select-in-dialog-scroll-trap.md) — a long shadcn Select nested in a modal Dialog overflows + can't scroll; use an inline scrollable RadioGroup instead; page-level filter Selects are fine as-is.
 - [Conflict-keep double-book gate](reconciliation-conflict-keep-gate.md) — a conflict_approved "keep" is safe only if the kept gift is known & == the deposit's gift link; enforce at BOTH the pure derive blocker and the tx write boundary (legacy confirm bypasses re-derive).
-<<<<<<< HEAD
 - [Double-book guard is anchor-kind-aware](reconciliation-parallel-evidence-doublebook.md) — a gift's "already linked" guard counts only SAME-kind evidence (QB+Stripe = parallel evidence for one gift); fix all 4 layers (search flag/derive+confirm/tx guard) or the false positive just moves downstream.
-=======
 - [Reconciliation gift search modes](reconciliation-gift-search-modes.md) — one endpoint, two windows via `split` flag: 1:1 match = near-equal to full amount; split = fractions (drop lower floor, relax date, no confidence); never fold them.
->>>>>>> 6bcf9fd (Add split mode to gift search for reconciliation workbench)
+- [Bundle confirm cache invalidation](reconciliation-bundle-confirm-invalidation.md) — confirming a settlement bundle reconciles the SAME staged/charge/gift rows the workbench's other queues render; invalidate cards + staged-payments + gifts + gifts-missing-qb, not just the anchor list.

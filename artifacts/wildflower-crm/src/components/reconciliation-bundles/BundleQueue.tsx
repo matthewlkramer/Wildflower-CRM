@@ -30,9 +30,29 @@ export function BundleQueue() {
   );
 
   const handleConfirmed = useCallback(() => {
-    // Prefix-match invalidation across every queue variant (full "/api" key).
-    queryClient.invalidateQueries({
+    // Refresh the settlement-anchor list so the just-committed anchor drops out
+    // of its queue (prefix-match across every queue variant, full "/api" key).
+    void queryClient.invalidateQueries({
       queryKey: getListReconciliationBundleAnchorsQueryKey(),
+    });
+    // A bundle confirm reconciles the same staged payments / charges / gifts the
+    // rest of the workbench renders, so the other queues must refresh too —
+    // otherwise the just-confirmed money lingers in "Needs review" / QBO-only
+    // until a hard reload. Mirrors the workbench's post-apply invalidation set.
+    void queryClient.invalidateQueries({
+      predicate: (query) => {
+        const key = query.queryKey?.[0];
+        return (
+          typeof key === "string" && key.startsWith("/api/reconciliation/cards")
+        );
+      },
+    });
+    void queryClient.invalidateQueries({ queryKey: ["/api/staged-payments"] });
+    void queryClient.invalidateQueries({ queryKey: ["/api/gifts-and-payments"] });
+    // A bundle confirm that matches an existing stray gift resolves it, so the
+    // CRM-only "gifts missing QuickBooks" list + badge must refresh too.
+    void queryClient.invalidateQueries({
+      queryKey: ["/api/reconciliation/gifts-missing-qb"],
     });
   }, [queryClient]);
 
