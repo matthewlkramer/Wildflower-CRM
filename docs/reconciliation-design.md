@@ -58,7 +58,12 @@ pointer columns and `payment_applications` (`reconciliationCommit.ts`:
   link" (`giftsAndPayments.ts` exposes `quickbooksStagedPaymentId` via
   `qbLedgerPaymentIdForGift()`), the reconciliation guards in
   `reconciliation/cards.ts` and `quickbooks/shared.ts`, and `reconciliationGraph.ts`.
-- **Still legacy:** `coding-form-import.tsx` reads/writes `matchedGiftId`;
+- **NOT a cash-application surface (was mis-listed here):** `coding-form-import.tsx`
+  reads/writes `matchedGiftId`, but that is `coding_form_rows.matched_gift_id` — a
+  coding-import *staging* pointer (spreadsheet row ↔ gift), **not** a
+  `staged_payments`/`stripe_staged_charges` reconciliation link. It is orthogonal to
+  the unit↔gift ledger and needs **no** read-flip in Phase 2/3. Leave as-is.
+- **Still legacy:**
   Plane 1 settlement is **100% legacy** (`stripe_payouts.qb_reconciliation_status`,
   a 7-value enum, plus `qbSupersedeStatus` + `proposed/matched/conflict` pointer
   columns). The ledger has **no rows** for Stripe charge↔gift or payout↔deposit.
@@ -467,9 +472,14 @@ task** — this task delivers only the ratified design (Phase 1).
    INV-A…INV-G. No code behavior change.
 
 2. **Finish the QB unit↔gift read-flip.** Move the remaining legacy-column reads
-   (`coding-form-import.tsx`, any residual "current link" rendering) onto the
-   ledger. Keep dual-write for rollback. Gate on a green **prod** parity run
-   (`parity-reconciliation-guards.ts`: legacy-linked == ledger-linked per anchor).
+   onto the ledger — the last cash-application read surface is
+   `reconciliation/gifts-missing-qb.ts`'s Stripe-tied predicate (now
+   `stripeLedgerExistsForGift()` / `donorboxLedgerExistsForGift()`). (The gift-tie
+   deriver `giftQbTie.ts` is already source-agnostic over counted ledger rows.)
+   `coding-form-import.tsx`'s `matchedGiftId` is a coding-import staging pointer,
+   NOT a cash-application link — out of scope (see §2). Keep dual-write for rollback.
+   Gate on a green **prod** parity run (`parity-reconciliation-guards.ts`:
+   legacy-linked == ledger-linked per anchor).
 
 3. **Bring all remaining unit↔gift links into the ledger.** Add the polymorphic
    `source_id` + `link_role` + `lifecycle` + `provenance` columns (§4.2). Write

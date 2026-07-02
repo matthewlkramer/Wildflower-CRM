@@ -5,7 +5,7 @@ description: Domain rules and gotchas for the opportunity/pledge & gift allocati
 
 # Allocation editors (pledge + gift)
 
-## Restriction model is THREE AXES (Task #449 — replaced the old flags)
+## Restriction model is THREE AXES (replaced the old flags)
 - Both `pledge_allocations` AND `gift_allocations` now carry three independent
   `restriction_axis` columns: `regionalRestrictionType` / `usageRestrictionType` /
   `timeRestrictionType`, each `donor_restricted | wf_restricted | unrestricted`

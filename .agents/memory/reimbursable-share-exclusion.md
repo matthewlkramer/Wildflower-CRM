@@ -7,7 +7,7 @@ description: How direct-tagged reimbursable allocation lines are excluded from g
 
 Allocation lines (pledge + gift) carry a nullable `reimbursementType`
 (`direct` | `indirect`) tag — **renamed from `reimbursableShare`** (pg type
-`reimbursable_share` → `reimbursement_type`, Task #449). Full
+`reimbursable_share` → `reimbursement_type`). Full
 award/reimbursement amounts are always recorded; goal analytics EXCLUDE only
 DIRECT-tagged lines. Untagged (null) and indirect both still count.
 

@@ -1,5 +1,5 @@
 ---
-name: Gift scope → allocation migration (Task #448)
+name: Gift scope → allocation migration
 description: Moving gift scope/reconciliation state off the gifts_and_payments header onto allocations or read-time derivation; what's derived, what's still deprecated-but-present.
 ---
 
@@ -36,7 +36,7 @@ disagreeing about "what settled" / "is this exempt".
 exemption stays correct for rows not yet migrated by the Step-12 prod backfill.
 Validated on dev: derived off-books == legacy off-books (49==49).
 
-## stamp no longer rewrites amount (Task #448 Step 4)
+## stamp no longer rewrites amount
 `stampGiftFinalAmount` (giftFinalAmount.ts) no longer overwrites the human-entered
 `amount`/`processor_fee`/`original_human_crm_amount` — neither the QB path (Phase-2
 ledger) nor now the Stripe path. It only records the (deprecated) provenance

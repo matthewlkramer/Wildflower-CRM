@@ -547,6 +547,62 @@ export function qbLedgerSumForGift(
   )`;
 }
 
+// ─── Per-source counted readers (source-agnostic gift-tie derivation) ────────
+//
+// Identical in shape to the QuickBooks readers above, one per non-QB evidence
+// source, each constrained to `link_role = 'counted'`. `applyGiftQbTieMany`
+// combines the three by PER-SOURCE PRECEDENCE (QB sum wins, else Stripe, else
+// Donorbox) — deliberately NOT a cross-source SUM. A gift settled by BOTH a
+// coarse QB deposit line AND its per-charge Stripe rows carries a counted row of
+// EACH source (migration 0086 does not, and must not, dedupe across sources);
+// summing them would double-count the gift (~2× ⇒ false amount_mismatch, §4.3).
+// Precedence counts exactly one source. The pure all-source SUM is deferred to
+// Phase 4, when settlement_links reclassifies the coarse QB row to
+// link_role='corroborating'. Same bare-column footgun rule — pass a
+// pre-qualified gift-id expression.
+
+/** EXISTS a Stripe counted cash-application ledger row for the gift. */
+export function stripeLedgerExistsForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+  )`;
+}
+
+/** SUM(amount_applied) of the gift's Stripe counted ledger rows, as text. */
+export function stripeLedgerSumForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<string> {
+  return sql<string>`(
+    SELECT COALESCE(SUM(pa.amount_applied), 0)::text
+    FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+  )`;
+}
+
+/** EXISTS a Donorbox counted cash-application ledger row for the gift. */
+export function donorboxLedgerExistsForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox' AND pa.link_role = 'counted'
+  )`;
+}
+
+/** SUM(amount_applied) of the gift's Donorbox counted ledger rows, as text. */
+export function donorboxLedgerSumForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<string> {
+  return sql<string>`(
+    SELECT COALESCE(SUM(pa.amount_applied), 0)::text
+    FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox' AND pa.link_role = 'counted'
+  )`;
+}
+
 /**
  * One staged-payment id linked to the gift via the QuickBooks ledger (LIMIT 1),
  * or null. Preserves the meaning of the legacy `quickbooks_staged_payment_id`

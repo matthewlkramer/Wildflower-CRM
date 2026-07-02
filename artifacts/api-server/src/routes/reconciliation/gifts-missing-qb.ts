@@ -3,7 +3,6 @@ import { db } from "@workspace/db";
 import {
   giftsAndPayments,
   giftAllocations,
-  stripeStagedCharges,
   organizations,
   people,
   households,
@@ -15,7 +14,11 @@ import { and, asc, count, desc, eq, ilike, isNull, or, sql, type SQL } from "dri
 import { asyncHandler } from "../../lib/helpers";
 import { getViewer, maskName } from "../../lib/identityVisibility";
 import { escapeLike } from "../quickbooks/shared";
-import { qbLedgerExistsForGift } from "../../lib/paymentApplications";
+import {
+  qbLedgerExistsForGift,
+  stripeLedgerExistsForGift,
+  donorboxLedgerExistsForGift,
+} from "../../lib/paymentApplications";
 
 const router: IRouter = Router();
 
@@ -103,18 +106,17 @@ router.get(
     // blocks the cutover on any final-amount pointer with no ledger row).
     const noQbRecord = sql`NOT ${qbLedgerExistsForGift()}`;
 
-    // A gift is Stripe-tied when its money came through Stripe (a final-amount
-    // pointer or a staged charge linked to it, or final_amount_source = 'stripe').
-    // Such money lands in QuickBooks at the PAYOUT level, not per gift, so the gift
-    // never gets a per-gift QB ledger link — it is effectively reconciled, NOT a
-    // "missing QB record". Exclude it so the queue stops implying it is unreconciled.
-    const isStripeTiedSql = sql<boolean>`(
-      ${giftsAndPayments.finalAmountSource} = 'stripe'
-      OR ${giftsAndPayments.finalAmountStripeChargeId} IS NOT NULL
-      OR EXISTS (
-        SELECT 1 FROM ${stripeStagedCharges} sc
-        WHERE sc.matched_gift_id = ${giftsAndPayments.id}
-      )
+    // A gift is settled through a non-QB processor when it has a COUNTED Stripe or
+    // Donorbox cash-application ledger row (T003 cutover — the authoritative link
+    // signal, replacing the legacy final-amount pointer + staged_charges.matched_gift_id
+    // reads). Such money lands in QuickBooks at the PAYOUT level, not per gift, so the
+    // gift never gets a per-gift QB ledger link — it is effectively reconciled, NOT a
+    // "missing QB record". Excluding it keeps this worklist an exact mirror of
+    // deriveGiftQbTie's "missing" (on-books gift with NO counted evidence of ANY
+    // source), so the queue never lists a gift the tie badge already calls tied.
+    const isProcessorSettledSql = sql<boolean>`(
+      ${stripeLedgerExistsForGift()}
+      OR ${donorboxLedgerExistsForGift()}
     )`;
 
     // Membership = genuinely UN-reconciled, on-books gift ALLOCATIONS only. One
@@ -131,7 +133,7 @@ router.get(
     const conds: SQL[] = [
       isNull(giftsAndPayments.archivedAt),
       noQbRecord,
-      sql`NOT ${isStripeTiedSql}`,
+      sql`NOT ${isProcessorSettledSql}`,
       sql`(${giftAllocations.id} IS NULL OR ${giftAllocations.entityId} IS NULL OR COALESCE(${entities.expectsPayment}, true) = true)`,
     ];
 

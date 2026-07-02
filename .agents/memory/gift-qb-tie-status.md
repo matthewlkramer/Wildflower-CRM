@@ -32,6 +32,28 @@ route as needing one.
   (money lands in QB at the payout level, not per-charge).
 - On-books with no QB evidence ⇒ `missing`.
 
+**Source-agnostic ledger cutover (reconciliation redesign Phase 2/3 reads):**
+The deriver (`giftQbTie.ts`) no longer reads legacy pointer columns; it reads
+`payment_applications` `link_role='counted'` rows. `applyGiftQbTieMany` combines
+sources by **PER-SOURCE PRECEDENCE (qb > stripe > donorbox), NOT an all-source
+SUM.**
+**Why:** a gift settled by BOTH a coarse QB deposit line AND its per-charge Stripe
+rows carries a counted row of EACH source (migration 0086 does not, and must not,
+dedupe across sources). Summing them ~2×'s the linked amount → false
+`amount_mismatch`. A read-only prod parity confirmed this: 0 tie changes but 15
+cross-source pairs that a naive SUM would have broken.
+**When the all-source SUM becomes correct:** Phase 4, once `settlement_links`
+reclassifies the coarse QB row to `link_role='corroborating'` so only one counted
+row per unit of money remains.
+**How to apply:** use the per-source counted helpers in `paymentApplications.ts`
+(`{qb,stripe,donorbox}LedgerExistsForGift` / `…SumForGift`); each takes a
+pre-qualified gift-id SQL expression (bare-column footgun — see
+`drizzle-sql-template-bare-column.md`). The `gifts-missing-qb.ts` "processor
+settled" predicate is `stripeLedgerExistsForGift() OR donorboxLedgerExistsForGift()`
+(was legacy `isStripeTiedSql` over `final_amount_source`/`stripe_staged_charges`).
+`coding-form-import.tsx`'s `matchedGiftId` is a coding-import STAGING pointer
+(`coding_form_rows.matched_gift_id`), NOT a cash-application link — leave it.
+
 **Audit view:** off-books (exempt) gifts are EXCLUDED from the
 `/audit-reconciliation` read view — return early with `auditExcluded:true` and no
 trail, do not compute donor/QB-records/restrictions for them.

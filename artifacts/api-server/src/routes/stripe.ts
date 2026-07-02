@@ -720,7 +720,9 @@ router.post(
     }
 
     // Stripe-sourced gift (no direct QB link) ties at the payout level — persist
-    // its tie status (deriver returns 'tied' for finalAmountSource='stripe').
+    // its tie status. The deriver is source-agnostic: it ties via the dual-written
+    // Stripe counted payment_applications row (per-source precedence), not the
+    // legacy finalAmountSource shortcut.
     await applyGiftQbTieMany(giftId);
 
     const [gift] = await db

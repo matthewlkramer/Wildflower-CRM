@@ -257,9 +257,8 @@ async function main(): Promise<void> {
     const legacyStatus = deriveGiftQbTie({
       offBooks: r.off_books,
       giftAmount: r.gift_amount,
-      hasQbLink: legacyHasQbLink,
-      qbAmount: legacyAmt,
-      finalAmountSource: r.final_amount_source,
+      hasLink: legacyHasQbLink,
+      linkAmount: legacyAmt,
     });
 
     const ledgerHasQbLink = r.has_ledger_qb;
@@ -267,9 +266,8 @@ async function main(): Promise<void> {
     const ledgerStatus = deriveGiftQbTie({
       offBooks: r.off_books,
       giftAmount: r.gift_amount,
-      hasQbLink: ledgerHasQbLink,
-      qbAmount: ledgerAmt,
-      finalAmountSource: r.final_amount_source,
+      hasLink: ledgerHasQbLink,
+      linkAmount: ledgerAmt,
     });
 
     if (legacyHasQbLink) legacyLinked++;
