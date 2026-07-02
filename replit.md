@@ -233,6 +233,9 @@ mid-run as noise (retry), not a blocker.
   archived, and the QB staged row is excluded with reason `processor_payout` (set
   ONLY on human confirm) so the same money is never booked twice. Key files:
   `stripeSync.ts`, `stripeReconcile.ts`, `stripeMatch.ts`, `stripeConfirm.ts`.
+  The ratified target-state simplification (two planes, one unit↔gift ledger +
+  one settlement-link table, derived statuses, two three-column reports, and the
+  prod-safe phased path) is in [`docs/reconciliation-design.md`](docs/reconciliation-design.md).
 - **Allocation restriction (three axes)** — restriction is captured per allocation on
   three independent axes (`regional` / `usage` / `time`), each a `restriction_axis`
   enum (`donor_restricted` / `wf_restricted` / `unrestricted`, default `unrestricted`).
