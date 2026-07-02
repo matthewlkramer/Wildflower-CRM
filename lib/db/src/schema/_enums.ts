@@ -382,6 +382,29 @@ export const paymentApplicationMatchMethodEnum = pgEnum(
   ["system", "system_confirmed", "human"],
 );
 
+// Whether a ledger row COUNTS toward donor credit or merely corroborates it.
+//   counted       — the money trail; included in the book-once SUM and every tie
+//                   derivation (today's only kind).
+//   corroborating — a non-counted audit annotation (the future home of
+//                   gift_evidence_links, Decision 2); never enters the SUM.
+// Additive now (final-shaped schema); only `counted` rows are written/backfilled
+// this phase. The corroborating fold is a later human-gated task.
+export const paymentApplicationLinkRoleEnum = pgEnum(
+  "payment_application_link_role",
+  ["counted", "corroborating"],
+);
+
+// The application's confirmation lifecycle.
+//   proposed  — a suggested (not yet human-confirmed) application.
+//   confirmed — an application that stands (auto-applied high-confidence or
+//               human-confirmed). All rows written this phase are `confirmed`
+//               (mirrors today's behavior: a ledger row is only booked on a
+//               settle/mint/link, never on a mere proposal).
+export const paymentApplicationLifecycleEnum = pgEnum(
+  "payment_application_lifecycle",
+  ["proposed", "confirmed"],
+);
+
 // ---- Schools enums (mirrored from Airtable "Schools" base) ----
 export const schoolStatusEnum = pgEnum("school_status", [
   "emerging",

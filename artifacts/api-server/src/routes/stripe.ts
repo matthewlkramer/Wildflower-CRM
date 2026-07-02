@@ -46,7 +46,11 @@ import {
   ExcludeStagedPaymentBody,
 } from "@workspace/api-zod";
 import { buildGiftValuesFromStripeCharge } from "../lib/stripeGift";
-import { removePaymentApplicationsForGift } from "../lib/paymentApplications";
+import {
+  bookStripeChargeApplication,
+  removePaymentApplicationsForGift,
+  removePaymentApplicationsForStripeCharge,
+} from "../lib/paymentApplications";
 import {
   unstampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
@@ -680,6 +684,18 @@ router.post(
             updatedAt: new Date(),
           })
           .where(eq(stripeStagedCharges.id, id));
+        // Dual-write (Phase 2): this charge MINTED the gift
+        // (createdTheGift:true). Book the charge → gift ledger row;
+        // delete-by-anchor keeps it idempotent.
+        await bookStripeChargeApplication(tx, {
+          stripeChargeId: locked.id,
+          grossAmount: locked.grossAmount,
+          giftId,
+          matchMethod: "human",
+          confirmedByUserId: user.id,
+          confirmedAt: new Date(),
+          createdTheGift: true,
+        });
       });
     } catch (e) {
       if (e instanceof Error && e.message === NOT_PENDING) {
@@ -932,6 +948,9 @@ router.post(
           const giftId = locked.matchedGiftId;
           // The surviving matched gift loses this Stripe evidence — recompute.
           survivingGiftId = giftId;
+          // Drop this charge's ledger row by ANCHOR (leave any parallel QB row
+          // for the same gift intact).
+          await removePaymentApplicationsForStripeCharge(tx, locked.id);
           const unstamped = await unstampGiftFinalAmount(tx, giftId, {
             source: "stripe",
             stripeChargeId: locked.id,

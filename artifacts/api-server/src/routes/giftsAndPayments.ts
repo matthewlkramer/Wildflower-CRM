@@ -857,10 +857,10 @@ router.post(
           ),
         )
         .then((r) => r[0]);
-      // Block, too, if a loser carries a QuickBooks cash-application ledger row
-      // (payment_applications.gift_id is RESTRICT). The ledger is empty in
-      // Phase 1, so this changes no behaviour yet; it keeps the merge guard
-      // correct once the ledger becomes the QB linkage authority.
+      // Block, too, if a loser carries any cash-application ledger row
+      // (payment_applications.gift_id is RESTRICT). The ledger is now
+      // dual-written for QuickBooks, Stripe, and Donorbox, so deleting the
+      // loser would hit the RESTRICT FK; this guard keeps the merge safe.
       const ledgerLink = await tx
         .select({ giftId: paymentApplications.giftId })
         .from(paymentApplications)
@@ -873,7 +873,7 @@ router.post(
           json: {
             error: "quickbooks_linked",
             message:
-              "One of the duplicate gifts is linked to a QuickBooks staged payment. Unlink it in QuickBooks Review before merging.",
+              "One of the duplicate gifts is linked to reconciled payment evidence (QuickBooks, Stripe, or Donorbox). Resolve that link before merging.",
           },
         };
       }

@@ -19,6 +19,7 @@ import {
   adjustSingleAllocationOrFlag,
 } from "./giftFinalAmount";
 import { ReconcileAbort, type Tx, type DonorXor } from "./reconciliationCommit";
+import { bookStripeChargeApplication } from "./paymentApplications";
 import {
   seedInitialGiftAllocation,
   assertGiftHasAllocations,
@@ -165,6 +166,18 @@ export async function createGiftFromChargeInTx(
     });
   }
 
+  // Dual-write (Phase 2): the charge MINTED this gift (createdTheGift:true).
+  // Book the charge → gift ledger row; delete-by-anchor keeps it idempotent.
+  await bookStripeChargeApplication(tx, {
+    stripeChargeId: charge.id,
+    grossAmount: charge.grossAmount,
+    giftId: newGiftId,
+    matchMethod: "human",
+    confirmedByUserId: userId,
+    confirmedAt: new Date(),
+    createdTheGift: true,
+  });
+
   await recordAudit(tx, auditReq, {
     action: "create",
     entityType: "gift",
@@ -309,6 +322,18 @@ export async function linkChargeToGiftInTx(
   if (stamp.changed && gift.opportunityId) {
     rederivePledgeIds.push(gift.opportunityId);
   }
+
+  // Dual-write (Phase 2): book the charge → existing-gift ledger row (GROSS
+  // source, createdTheGift:false). Delete-by-anchor keeps re-links idempotent.
+  await bookStripeChargeApplication(tx, {
+    stripeChargeId: charge.id,
+    grossAmount: charge.grossAmount,
+    giftId,
+    matchMethod: "human",
+    confirmedByUserId: userId,
+    confirmedAt: new Date(),
+    createdTheGift: false,
+  });
 
   await recordAudit(tx, auditReq, {
     action: "update",

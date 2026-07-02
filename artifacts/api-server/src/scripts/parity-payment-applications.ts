@@ -34,8 +34,21 @@
  * backfill:gift-qb-tie run that follows the deriver flip. Its count + ids land
  * in the report so the cutover has an auditable before/after list.
  *
+ * STRIPE / DONORBOX ANCHOR PARITY (also BLOCKING): the Stripe and Donorbox
+ * readers are NOT flipped in this phase, so instead of re-deriving a status the
+ * gate proves the ledger rows are a faithful mirror of the legacy per-processor
+ * gift pointers — the invariant the future Stripe/Donorbox read-flip depends on.
+ * Per ANCHOR (a stripe_staged_charge / donorbox_donation), both directions must
+ * hold:
+ *   - legacy_no_ledger : a settled charge/donation (matched_gift_id OR
+ *     created_gift_id, amount > 0, gift exists) with NO matching ledger row.
+ *   - ledger_no_legacy : a ledger row whose anchor no longer points at that gift
+ *     (a stale row a revert/merge failed to clear).
+ * Both must be zero (a revert clears the pointer AND the ledger row together, so
+ * they stay in lockstep).
+ *
  * Exit 0 only when there are no status mismatches, no link-presence mismatches,
- * and no uncovered final-amount pointers.
+ * no uncovered final-amount pointers, and no Stripe/Donorbox anchor orphans.
  *
  * Run: pnpm --filter @workspace/api-server run parity:payment-applications
  *      (optional `--out <path>` writes the full machine-readable report)
@@ -72,12 +85,125 @@ interface Mismatch {
   ledger: { hasQbLink: boolean; qbAmount: string | null; status: GiftQbTie };
 }
 
+interface AnchorOrphan {
+  source: "stripe" | "donorbox";
+  direction: "legacy_no_ledger" | "ledger_no_legacy";
+  anchorId: string | null;
+  giftId: string | null;
+}
+
 function legacyQbAmount(r: RawRow): string | null {
   // split > group > direct (matches the applier's precedence exactly).
   if (r.has_split) return r.split_amount;
   if (r.has_group) return r.group_amount;
   if (r.has_direct) return r.direct_amount;
   return null;
+}
+
+/**
+ * Bidirectional per-anchor parity for the two non-QB evidence sources whose
+ * legacy signal is a single settled gift pointer on the processor row itself
+ * (`matched_gift_id` OR `created_gift_id`), NOT a scattered set — so this is an
+ * anchor↔ledger set-equality check, not a re-derivation. Donorbox is limited to
+ * its human link/mint pointers (the sync's enrich / suggested-donor paths never
+ * set a gift link), exactly what the dual-write books.
+ */
+async function collectAnchorParity(): Promise<AnchorOrphan[]> {
+  const orphans: AnchorOrphan[] = [];
+
+  // STRIPE — settled charge (amount > 0, gift exists) with NO ledger row.
+  for (const row of (
+    await db.execute(sql`
+      SELECT sc.id AS anchor_id,
+             COALESCE(sc.matched_gift_id, sc.created_gift_id) AS gift_id
+      FROM stripe_staged_charges sc
+      JOIN gifts_and_payments g
+        ON g.id = COALESCE(sc.matched_gift_id, sc.created_gift_id)
+      WHERE (sc.matched_gift_id IS NOT NULL OR sc.created_gift_id IS NOT NULL)
+        AND sc.gross_amount IS NOT NULL AND sc.gross_amount > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM payment_applications pa
+          WHERE pa.stripe_charge_id = sc.id
+            AND pa.link_role = 'counted'
+            AND pa.gift_id = COALESCE(sc.matched_gift_id, sc.created_gift_id))
+    `)
+  ).rows as unknown as { anchor_id: string; gift_id: string }[]) {
+    orphans.push({
+      source: "stripe",
+      direction: "legacy_no_ledger",
+      anchorId: row.anchor_id,
+      giftId: row.gift_id,
+    });
+  }
+
+  // STRIPE — ledger row whose charge no longer points at that gift (stale).
+  for (const row of (
+    await db.execute(sql`
+      SELECT pa.stripe_charge_id AS anchor_id, pa.gift_id
+      FROM payment_applications pa
+      WHERE pa.evidence_source = 'stripe'
+        AND pa.link_role = 'counted'
+        AND NOT EXISTS (
+          SELECT 1 FROM stripe_staged_charges sc
+          WHERE sc.id = pa.stripe_charge_id
+            AND COALESCE(sc.matched_gift_id, sc.created_gift_id) = pa.gift_id)
+    `)
+  ).rows as unknown as { anchor_id: string | null; gift_id: string }[]) {
+    orphans.push({
+      source: "stripe",
+      direction: "ledger_no_legacy",
+      anchorId: row.anchor_id,
+      giftId: row.gift_id,
+    });
+  }
+
+  // DONORBOX — settled donation (human link/mint pointer, amount > 0) w/o ledger.
+  for (const row of (
+    await db.execute(sql`
+      SELECT dd.id AS anchor_id,
+             COALESCE(dd.matched_gift_id, dd.created_gift_id) AS gift_id
+      FROM donorbox_donations dd
+      JOIN gifts_and_payments g
+        ON g.id = COALESCE(dd.matched_gift_id, dd.created_gift_id)
+      WHERE (dd.matched_gift_id IS NOT NULL OR dd.created_gift_id IS NOT NULL)
+        AND dd.amount IS NOT NULL AND dd.amount > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM payment_applications pa
+          WHERE pa.donorbox_donation_id = dd.id
+            AND pa.link_role = 'counted'
+            AND pa.gift_id = COALESCE(dd.matched_gift_id, dd.created_gift_id))
+    `)
+  ).rows as unknown as { anchor_id: string; gift_id: string }[]) {
+    orphans.push({
+      source: "donorbox",
+      direction: "legacy_no_ledger",
+      anchorId: row.anchor_id,
+      giftId: row.gift_id,
+    });
+  }
+
+  // DONORBOX — ledger row whose donation no longer points at that gift (stale).
+  for (const row of (
+    await db.execute(sql`
+      SELECT pa.donorbox_donation_id AS anchor_id, pa.gift_id
+      FROM payment_applications pa
+      WHERE pa.evidence_source = 'donorbox'
+        AND pa.link_role = 'counted'
+        AND NOT EXISTS (
+          SELECT 1 FROM donorbox_donations dd
+          WHERE dd.id = pa.donorbox_donation_id
+            AND COALESCE(dd.matched_gift_id, dd.created_gift_id) = pa.gift_id)
+    `)
+  ).rows as unknown as { anchor_id: string | null; gift_id: string }[]) {
+    orphans.push({
+      source: "donorbox",
+      direction: "ledger_no_legacy",
+      anchorId: row.anchor_id,
+      giftId: row.gift_id,
+    });
+  }
+
+  return orphans;
 }
 
 async function main(): Promise<void> {
@@ -105,9 +231,11 @@ async function main(): Promise<void> {
         EXISTS (SELECT 1 FROM staged_payment_splits spl
            WHERE spl.gift_id = g.id) AS has_split,
         (SELECT SUM(pa.amount_applied)::text FROM payment_applications pa
-           WHERE pa.gift_id = g.id AND pa.evidence_source = 'quickbooks') AS ledger_qb_sum,
+           WHERE pa.gift_id = g.id AND pa.evidence_source = 'quickbooks'
+             AND pa.link_role = 'counted') AS ledger_qb_sum,
         EXISTS (SELECT 1 FROM payment_applications pa
-           WHERE pa.gift_id = g.id AND pa.evidence_source = 'quickbooks') AS has_ledger_qb,
+           WHERE pa.gift_id = g.id AND pa.evidence_source = 'quickbooks'
+             AND pa.link_role = 'counted') AS has_ledger_qb,
         (g.final_amount_qb_staged_payment_id IS NOT NULL) AS has_faq
       FROM gifts_and_payments g
     `)
@@ -181,6 +309,8 @@ async function main(): Promise<void> {
     }
   }
 
+  const anchorOrphans = await collectAnchorParity();
+
   const report = {
     generatedAt: new Date().toISOString(),
     totalGifts: rows.length,
@@ -193,11 +323,13 @@ async function main(): Promise<void> {
       linkMismatches: linkMismatches.length,
       persistedDrift: persistedDrift.length,
       faqUncovered: faqUncovered.length,
+      anchorOrphans: anchorOrphans.length,
     },
     statusMismatches,
     linkMismatches,
     persistedDrift,
     faqUncovered,
+    anchorOrphans,
   };
 
   if (outPath) {
@@ -232,12 +364,24 @@ async function main(): Promise<void> {
   console.log(
     `\nPersisted-vs-legacy drift (informational, repaired by backfill:gift-qb-tie): ${persistedDrift.length}`,
   );
+  const anchorSample = anchorOrphans
+    .slice(0, 25)
+    .map(
+      (o) =>
+        `    ${o.source}/${o.direction}  anchor=${o.anchorId ?? "—"}  gift=${o.giftId ?? "—"}`,
+    )
+    .join("\n");
+  console.log(
+    `\nStripe/Donorbox anchor orphans (BLOCKING): ${anchorOrphans.length}` +
+      (anchorOrphans.length ? `\n${anchorSample}` : ""),
+  );
   if (outPath) console.log(`\nFull report written to ${outPath}`);
 
   const failed =
     statusMismatches.length > 0 ||
     linkMismatches.length > 0 ||
-    faqUncovered.length > 0;
+    faqUncovered.length > 0 ||
+    anchorOrphans.length > 0;
   console.log(`\nGATE: ${failed ? "FAIL" : "PASS"}`);
   process.exit(failed ? 1 : 0);
 }

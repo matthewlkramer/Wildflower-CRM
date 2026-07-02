@@ -72,6 +72,38 @@ audit couldn't tell auto-from-confirmed. The backfill CASE must mirror this exac
 (`auto_applied AND match_confirmed_at` ⇒ `system_confirmed`), or historical rows
 disagree with live writes.
 
+## Extended to Stripe + Donorbox (polymorphic anchor, still QB-read-only)
+The ledger is now dual-written for three evidence sources (`evidence_source`
+enum: `quickbooks` | `stripe` | `donorbox`), each with its own anchor column
+(`payment_id` / `stripe_charge_id` / `donorbox_donation_id`). **Only the QB
+readers were flipped to read the ledger** — Stripe/Donorbox rows are written for
+parity/future-read but not yet read. Provenance rules: every Stripe settle sets
+exactly one of matched/created gift ptr (nulls the other) and revert clears both
++ removes ledger rows, so anchor↔ledger stay lockstep; the Donorbox gift ptr is
+set ONLY by the two human routes (link/mint) — enrich/suggest never set it, so
+enrich-only donations are correctly excluded from the ledger.
+
+## Backfill provenance (Stripe/Donorbox, one-time SQL)
+gift = `COALESCE(matched_gift_id, created_gift_id)`; amount = stripe `gross_amount`
+/ donorbox `amount`; `created_the_gift` = `created_gift_id IS NOT NULL`;
+`match_method` = `human` (Donorbox) or auto→`system`/else`human` (Stripe, no
+confirm-promotion in the Stripe model). Idempotent via `ON CONFLICT (anchor, gift_id)
+DO NOTHING`. Backfill is **one-time** — rows created AFTER it (e.g. new test
+fixtures) have no ledger row until the dual-write runs.
+
+## Parity gate exits 1 on DEV purely from vitest fixtures — NOT a regression
+`parity-payment-applications.ts` (the dedicated ledger gate; blocking) reports
+real-data parity clean but the overall gate exits 1 on dev because leftover
+epoch-timestamped vitest fixtures (`qbsplit_*` / `reconanchor_*` / `reconapv_*`)
+`db.insert` charge/donation gift-pointers directly, bypassing the dual-write
+applier — so they legitimately have a pointer with no ledger row. **Re-running
+vitest injects fresh anchor orphans.** On prod (no fixtures) the one-time backfill
+covers all existing settled anchors and the dual-write covers new ones, so the
+gate is clean there. Don't chase these as bugs; clean/exclude fixtures if the
+noise ever masks a real dev regression. The gate's own raw ledger SQL filters
+`link_role='counted'` to stay aligned with the readers once Phase-5 corroborating
+rows land.
+
 ## Untouched by design
 `pledgeStage.ts` pledge `paid_amount` (SUM of `gifts_and_payments.amount` on the
 pledge, excluding archived) is a separate 1:N and is NOT folded into the ledger.

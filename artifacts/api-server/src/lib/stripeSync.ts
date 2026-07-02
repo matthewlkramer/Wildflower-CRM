@@ -13,6 +13,10 @@ import { scoreStripeCharge } from "./stripeMatch";
 import { runProposalPass } from "./stripeReconcile";
 import { deriveRefundProposal } from "./stripeRefund";
 import { ensureBundleDraftsForAnchors } from "./reconciliationBundleSync";
+import {
+  bookStripeChargeApplication,
+  PaymentOverApplicationError,
+} from "./paymentApplications";
 
 function isUniqueViolation(e: unknown): boolean {
   return (
@@ -363,34 +367,54 @@ async function stripeAutoApply(
   giftId: string,
 ): Promise<boolean> {
   try {
-    const upd = await db
-      .update(stripeStagedCharges)
-      .set({
-        status: "approved",
-        matchStatus: "matched",
-        matchedGiftId: giftId,
-        autoApplied: true,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(stripeStagedCharges.id, chargeId),
-          eq(stripeStagedCharges.status, "pending"),
-          sql`NOT EXISTS (
+    return await db.transaction(async (tx) => {
+      const upd = await tx
+        .update(stripeStagedCharges)
+        .set({
+          status: "approved",
+          matchStatus: "matched",
+          matchedGiftId: giftId,
+          autoApplied: true,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(stripeStagedCharges.id, chargeId),
+            eq(stripeStagedCharges.status, "pending"),
+            sql`NOT EXISTS (
             SELECT 1 FROM staged_payments sp
             WHERE sp.matched_gift_id = ${giftId} OR sp.created_gift_id = ${giftId}
           )`,
-          sql`NOT EXISTS (
+            sql`NOT EXISTS (
             SELECT 1 FROM stripe_staged_charges sc2
             WHERE (sc2.matched_gift_id = ${giftId} OR sc2.created_gift_id = ${giftId})
               AND sc2.id <> ${chargeId}
           )`,
-        ),
-      )
-      .returning({ id: stripeStagedCharges.id });
-    return upd.length > 0;
+          ),
+        )
+        .returning({
+          id: stripeStagedCharges.id,
+          grossAmount: stripeStagedCharges.grossAmount,
+        });
+      if (upd.length === 0) return false;
+      // Dual-write (Phase 2): book the charge → gift ledger row. Worker
+      // auto-apply is `system` provenance and TERMINAL-until-revert — no
+      // confirm-promotion path (a human revert deletes the row; a later human
+      // re-reconcile writes a fresh `human` row via delete-by-anchor).
+      await bookStripeChargeApplication(tx, {
+        stripeChargeId: chargeId,
+        grossAmount: upd[0]!.grossAmount,
+        giftId,
+        matchMethod: "system",
+        createdTheGift: false,
+      });
+      return true;
+    });
   } catch (e) {
+    // A concurrent tie (partial-unique 23505) or an over-application leaves the
+    // charge pending for human review — never a hard failure of the sync run.
     if (isUniqueViolation(e)) return false;
+    if (e instanceof PaymentOverApplicationError) return false;
     throw e;
   }
 }

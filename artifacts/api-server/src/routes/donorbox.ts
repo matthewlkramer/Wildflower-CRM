@@ -54,6 +54,7 @@ import {
 } from "../lib/donorJoinSelect";
 import { getViewer } from "../lib/identityVisibility";
 import { buildGiftValuesFromDonorbox } from "../lib/donorboxGift";
+import { bookDonorboxDonationApplication } from "../lib/paymentApplications";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { giftHeaderColumns } from "./giftsAndPayments";
 
@@ -402,33 +403,62 @@ router.post(
       .then((r) => r[0]);
     if (!gift) return notFound(res, "gift");
 
+    const NOT_PENDING = "__donorbox_link_not_pending__";
     try {
-      const [row] = await db
-        .update(donorboxDonations)
-        .set({
-          // Adopt the linked gift's donor (explicit human match wins).
-          organizationId: gift.organizationId,
-          individualGiverPersonId: gift.individualGiverPersonId,
-          householdId: gift.householdId,
-          matchedGiftId: giftId,
-          createdGiftId: null,
-          status: "reconciled",
-          matchStatus: "matched",
-          matchMethod: "manual",
-          matchConfirmedByUserId: user.id,
-          matchConfirmedAt: new Date(),
-          approvedByUserId: user.id,
-          approvedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(donorboxDonations.id, id),
-            eq(donorboxDonations.status, "pending"),
-          ),
-        )
-        .returning({ id: donorboxDonations.id });
-      if (!row) {
+      await db.transaction(async (tx) => {
+        // Lock the donation row so concurrent linkers serialize; read its amount
+        // for the ledger booking.
+        const locked = await tx
+          .select({
+            status: donorboxDonations.status,
+            amount: donorboxDonations.amount,
+          })
+          .from(donorboxDonations)
+          .where(eq(donorboxDonations.id, id))
+          .for("update")
+          .then((r) => r[0]);
+        if (!locked || locked.status !== "pending") {
+          throw new Error(NOT_PENDING);
+        }
+        const [row] = await tx
+          .update(donorboxDonations)
+          .set({
+            // Adopt the linked gift's donor (explicit human match wins).
+            organizationId: gift.organizationId,
+            individualGiverPersonId: gift.individualGiverPersonId,
+            householdId: gift.householdId,
+            matchedGiftId: giftId,
+            createdGiftId: null,
+            status: "reconciled",
+            matchStatus: "matched",
+            matchMethod: "manual",
+            matchConfirmedByUserId: user.id,
+            matchConfirmedAt: new Date(),
+            approvedByUserId: user.id,
+            approvedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(donorboxDonations.id, id),
+              eq(donorboxDonations.status, "pending"),
+            ),
+          )
+          .returning({ id: donorboxDonations.id });
+        if (!row) throw new Error(NOT_PENDING);
+        // Dual-write (Phase 2): book the donation → gift ledger row. Donorbox
+        // links are always human; delete-by-anchor keeps re-links idempotent.
+        await bookDonorboxDonationApplication(tx, {
+          donorboxDonationId: id,
+          amount: locked.amount,
+          giftId,
+          confirmedByUserId: user.id,
+          confirmedAt: new Date(),
+          createdTheGift: false,
+        });
+      });
+    } catch (e) {
+      if (e instanceof Error && e.message === NOT_PENDING) {
         res.status(409).json({
           error: "not_pending",
           message:
@@ -436,7 +466,6 @@ router.post(
         });
         return;
       }
-    } catch (e) {
       // Unique partial index on matched_gift_id — that gift is already linked.
       if (e instanceof Error && /23505|unique/i.test(e.message)) {
         res.status(409).json({
@@ -606,6 +635,16 @@ router.post(
             updatedAt: new Date(),
           })
           .where(eq(donorboxDonations.id, id));
+        // Dual-write (Phase 2): this donation MINTED the gift
+        // (createdTheGift:true). Book the donation → gift ledger row.
+        await bookDonorboxDonationApplication(tx, {
+          donorboxDonationId: id,
+          amount: locked.amount,
+          giftId,
+          confirmedByUserId: user.id,
+          confirmedAt: new Date(),
+          createdTheGift: true,
+        });
       });
     } catch (e) {
       if (e instanceof Error && e.message === NOT_PENDING) {

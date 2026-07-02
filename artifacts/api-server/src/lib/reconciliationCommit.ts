@@ -14,6 +14,7 @@ import { newId } from "./helpers";
 import { buildGiftValuesFromStaged } from "./quickbooksGift";
 import {
   applyPaymentApplication,
+  bookStripeChargeApplication,
   qbLedgerExistsForGiftExcludingPayment,
 } from "./paymentApplications";
 import { recordAudit } from "./audit";
@@ -436,6 +437,19 @@ export async function mintGiftInTx(
         })
         .where(eq(stripePayouts.id, charge.stripePayoutId));
     }
+    // Dual-write (Phase 2): book the Stripe charge as parallel evidence. The QB
+    // anchor OWNS the mint (createdTheGift:true on its row); this Stripe row is
+    // the GROSS source, so createdTheGift:false. Delete-by-anchor keeps it
+    // idempotent + re-tie-safe.
+    await bookStripeChargeApplication(tx, {
+      stripeChargeId: charge.id,
+      grossAmount: charge.grossAmount,
+      giftId: newGiftId,
+      matchMethod: "human",
+      confirmedByUserId: userId,
+      confirmedAt: new Date(),
+      createdTheGift: false,
+    });
   }
 
   // Dual-write (Phase 2): book the QB cash-application ledger. The anchor staged
@@ -677,6 +691,18 @@ export async function linkGiftInTx(
         })
         .where(eq(stripePayouts.id, charge.stripePayoutId));
     }
+    // Dual-write (Phase 2): book the Stripe charge as parallel evidence (GROSS
+    // source). The QB row already recorded the QB-settled amount above; this is
+    // a separate stripe-anchored row. Delete-by-anchor keeps it re-tie-safe.
+    await bookStripeChargeApplication(tx, {
+      stripeChargeId: charge.id,
+      grossAmount: charge.grossAmount,
+      giftId,
+      matchMethod: "human",
+      confirmedByUserId: userId,
+      confirmedAt: new Date(),
+      createdTheGift: false,
+    });
   }
 
   // A changed gift amount shifts the paid total of the pledge it's already on
