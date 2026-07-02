@@ -60,6 +60,10 @@ import {
   escapeLike,
 } from "../routes/quickbooks/shared";
 import {
+  DEFAULT_GIFT_ID_SQL,
+  chargeIdOwningGiftExcludingCharge,
+} from "./paymentApplications";
+import {
   ANON_LABEL,
   canSeeIdentity,
   maskName,
@@ -330,9 +334,36 @@ function maskDonorDisplay(
 
 // ─── Gift candidates (donor names + anon/owner for masking) ──────────────────
 
-function recGiftSelect(excludeStagedId: string) {
+/**
+ * Which anchor is searching for a gift to link to. This picks WHICH existing
+ * link counts as an already-owned ("linked elsewhere") gift the UI disables:
+ *
+ *   - `staged`: a QuickBooks staged payment. A gift already tied to ANOTHER
+ *     staged payment via the QB cash-application ledger is owned. (default)
+ *   - `charge`: a Stripe charge. A gift's QB ledger row is EXPECTED here (same
+ *     money, parallel evidence) so only ANOTHER Stripe charge already owning the
+ *     gift disqualifies it — never the QB ledger.
+ */
+type GiftLinkAnchor =
+  | { kind: "staged"; excludeStagedId: string }
+  | { kind: "charge"; excludeChargeId: string };
+
+function recGiftSelect(link: GiftLinkAnchor) {
   return {
-    ...giftCandidateSelect(excludeStagedId),
+    ...giftCandidateSelect(
+      link.kind === "staged" ? link.excludeStagedId : "",
+    ),
+    // For a Stripe-charge anchor, the QB-ledger disable is wrong (QB + Stripe
+    // are parallel evidence for one gift). Override it with the charge-ownership
+    // guard: only another charge already tied to the gift disqualifies it.
+    ...(link.kind === "charge"
+      ? {
+          alreadyLinkedStagedPaymentId: chargeIdOwningGiftExcludingCharge(
+            DEFAULT_GIFT_ID_SQL,
+            sql`${link.excludeChargeId}`,
+          ),
+        }
+      : {}),
     // Override raw full_name with the COALESCE display name.
     individualGiverPersonName: personNameSql,
     organizationAnonymous: organizations.anonymous,
@@ -345,7 +376,7 @@ function recGiftSelect(excludeStagedId: string) {
 type RecGiftRow = Awaited<ReturnType<typeof fetchGiftById>>;
 
 async function fetchGiftCandidates(opts: {
-  excludeStagedId: string;
+  link: GiftLinkAnchor;
   donorFilter?: SQL;
   amount: string | null;
   date: string | null;
@@ -377,16 +408,16 @@ async function fetchGiftCandidates(opts: {
     );
 
   return giftCandidateJoins(
-    db.select(recGiftSelect(opts.excludeStagedId)).from(giftsAndPayments).$dynamic(),
+    db.select(recGiftSelect(opts.link)).from(giftsAndPayments).$dynamic(),
   )
     .where(and(...conds))
     .orderBy(...orderBy, desc(giftsAndPayments.dateReceived))
     .limit(opts.limit);
 }
 
-async function fetchGiftById(id: string, excludeStagedId: string) {
+async function fetchGiftById(id: string, link: GiftLinkAnchor) {
   return giftCandidateJoins(
-    db.select(recGiftSelect(excludeStagedId)).from(giftsAndPayments).$dynamic(),
+    db.select(recGiftSelect(link)).from(giftsAndPayments).$dynamic(),
   )
     .where(eq(giftsAndPayments.id, id))
     .limit(1)
@@ -881,7 +912,10 @@ export async function buildReconciliationGraph(
   let selectedGiftRow: NonNullable<RecGiftRow> | null = null;
 
   if (resolvedGiftId) {
-    const g = await fetchGiftById(resolvedGiftId, stagedPaymentId);
+    const g = await fetchGiftById(resolvedGiftId, {
+      kind: "staged",
+      excludeStagedId: stagedPaymentId,
+    });
     if (g) {
       giftRows = [g];
       giftCandidates = [giftRowToCandidate(g, anchorAmount, viewer)];
@@ -894,7 +928,7 @@ export async function buildReconciliationGraph(
     }
   } else {
     giftRows = (await fetchGiftCandidates({
-      excludeStagedId: stagedPaymentId,
+      link: { kind: "staged", excludeStagedId: stagedPaymentId },
       donorFilter: giftDonorFilter ? donorEqGift(giftDonorFilter) : undefined,
       amount: anchorAmount,
       date: staged.dateReceived,
@@ -1074,13 +1108,14 @@ export async function searchReconciliationNode(
       case "donor":
         return searchDonors(p);
       case "gift":
-        // No staged row to exclude (the charge's double-link is guarded at
-        // confirm time by linkChargeToGiftInTx); "" excludes nothing.
+        // Stripe-charge anchor: a candidate gift's QB ledger row is EXPECTED
+        // (same money, parallel evidence), so the "already linked" flag must
+        // reflect ownership by ANOTHER Stripe charge — never the QB ledger.
         return searchGifts(
           {
             amount: charge.grossAmount,
             date: charge.dateReceived,
-            excludeStagedId: "",
+            link: { kind: "charge", excludeChargeId: p.stripeChargeId },
           },
           p,
         );
@@ -1104,7 +1139,7 @@ export async function searchReconciliationNode(
         {
           amount: staged.amount,
           date: staged.dateReceived,
-          excludeStagedId: p.stagedPaymentId,
+          link: { kind: "staged", excludeStagedId: p.stagedPaymentId },
         },
         p,
       );
@@ -1121,8 +1156,12 @@ export async function searchReconciliationNode(
 interface GiftSearchAnchor {
   amount: string | null;
   date: string | null;
-  /** Staged-payment id to exclude from the "already linked" flag; "" = none. */
-  excludeStagedId: string;
+  /**
+   * Which existing link disqualifies a candidate gift ("already linked"). QB
+   * staged anchors exclude by the QB ledger; Stripe-charge anchors exclude by
+   * ownership from another charge (a QB ledger row is expected, not a conflict).
+   */
+  link: GiftLinkAnchor;
 }
 
 async function searchDonors(p: RecSearchParams): Promise<RecCandidate[]> {
@@ -1185,7 +1224,7 @@ async function searchGifts(
     ? sql`(${giftsAndPayments.organizationId} = ${p.donorId} OR ${giftsAndPayments.individualGiverPersonId} = ${p.donorId} OR ${giftsAndPayments.householdId} = ${p.donorId})`
     : undefined;
   const rows = (await fetchGiftCandidates({
-    excludeStagedId: anchor.excludeStagedId,
+    link: anchor.link,
     donorFilter,
     amount: anchor.amount,
     date: anchor.date,

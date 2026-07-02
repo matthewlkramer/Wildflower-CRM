@@ -268,9 +268,24 @@ export interface GiftFact {
   donorKind: DonorRecordKind | null;
   donorId: string | null;
   donorName: string | null;
-  /** A staged_payments / stripe_staged_charges row OUTSIDE this bundle already
-   * linked to the gift (so matching to it would double-book). */
-  linkedElsewhere: string | null;
+  /** A QB staged_payments row OUTSIDE this bundle already linked to the gift. */
+  linkedByStagedPaymentId: string | null;
+  /** A stripe_staged_charges row OUTSIDE this bundle already linked to the gift. */
+  linkedByChargeId: string | null;
+}
+
+/**
+ * PURE: the row OUTSIDE this bundle whose linking to `fact`'s gift would
+ * double-book, given the anchor row's kind. QuickBooks and Stripe are PARALLEL
+ * evidence for one gift, so a Stripe charge only double-books against ANOTHER
+ * charge, and a QB staged payment only against ANOTHER staged payment — a
+ * cross-kind link (a charge onto a QB-reconciled gift, or vice versa) is
+ * expected parallel evidence and must NOT block.
+ */
+function linkedElsewhereFor(base: BaseChargeRow, fact: GiftFact): string | null {
+  return base.stripeChargeId
+    ? fact.linkedByChargeId
+    : fact.linkedByStagedPaymentId;
 }
 
 export interface BundleFacts {
@@ -448,7 +463,12 @@ function donorCandidate(
   };
 }
 
-function giftCandidate(id: string, fact: GiftFact, confidence: number | null): ReconciliationCandidate {
+function giftCandidate(
+  id: string,
+  fact: GiftFact,
+  confidence: number | null,
+  base: BaseChargeRow,
+): ReconciliationCandidate {
   return {
     nodeType: "gift",
     id,
@@ -459,7 +479,7 @@ function giftCandidate(id: string, fact: GiftFact, confidence: number | null): R
     source: "amount_date",
     donorKind: fact.donorKind ?? null,
     donorId: fact.donorId ?? null,
-    alreadyLinkedStagedPaymentId: fact.linkedElsewhere ?? null,
+    alreadyLinkedStagedPaymentId: linkedElsewhereFor(base, fact),
   };
 }
 
@@ -511,7 +531,7 @@ function resolveRow(
         confidence: null,
         confidenceTier: "none",
         source: null,
-        candidates: gf ? [giftCandidate(base.committedGiftId, gf, null)] : [],
+        candidates: gf ? [giftCandidate(base.committedGiftId, gf, null, base)] : [],
       },
       provenance: "auto",
       alreadyCommitted: true,
@@ -591,7 +611,7 @@ function resolveRow(
       confidence,
       confidenceTier: tierFromScore(confidence),
       source,
-      candidates: id && fact ? [giftCandidate(id, fact, confidence)] : [],
+      candidates: id && fact ? [giftCandidate(id, fact, confidence, base)] : [],
     };
   } else if (giftKind === "mint") {
     const amount = override?.mintAmount ?? base.autoMintAmount ?? base.amount;
@@ -666,7 +686,7 @@ function rowWarnings(
         severity: "blocker",
       });
       ready = false;
-    } else if (fact?.linkedElsewhere) {
+    } else if (fact && linkedElsewhereFor(base, fact)) {
       warnings.push({
         code: "gift_already_linked",
         message: "This gift is already reconciled to other settlement money.",
@@ -1116,7 +1136,11 @@ async function loadFacts(
       .where(inArray(giftsAndPayments.id, [...giftIds]));
 
     // Which of these gifts are linked OUTSIDE this bundle (double-book guard).
-    const linkedById = new Map<string, string>();
+    // Tracked per evidence kind: QuickBooks and Stripe are PARALLEL evidence for
+    // one gift, so a cross-kind link is expected and must not block (see
+    // linkedElsewhereFor).
+    const linkedByStaged = new Map<string, string>();
+    const linkedByCharge = new Map<string, string>();
     const stagedLinks = await conn
       .select({
         gid: sql<string>`coalesce(${stagedPayments.createdGiftId}, ${stagedPayments.matchedGiftId}, ${stagedPayments.groupReconciledGiftId})`,
@@ -1131,7 +1155,8 @@ async function loadFacts(
         ),
       );
     for (const r of stagedLinks) {
-      if (r.gid && !bundleStagedIds.includes(r.sid)) linkedById.set(r.gid, r.sid);
+      if (r.gid && !bundleStagedIds.includes(r.sid))
+        linkedByStaged.set(r.gid, r.sid);
     }
     const chargeLinks = await conn
       .select({
@@ -1146,7 +1171,8 @@ async function loadFacts(
         ),
       );
     for (const r of chargeLinks) {
-      if (r.gid && !bundleChargeIds.includes(r.cid)) linkedById.set(r.gid, r.cid);
+      if (r.gid && !bundleChargeIds.includes(r.cid))
+        linkedByCharge.set(r.gid, r.cid);
     }
 
     for (const g of giftRows) {
@@ -1165,7 +1191,8 @@ async function loadFacts(
               : null,
         donorId: g.organizationId ?? g.individualGiverPersonId ?? g.householdId ?? null,
         donorName: null,
-        linkedElsewhere: linkedById.get(g.id) ?? null,
+        linkedByStagedPaymentId: linkedByStaged.get(g.id) ?? null,
+        linkedByChargeId: linkedByCharge.get(g.id) ?? null,
       };
     }
   }

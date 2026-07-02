@@ -373,6 +373,32 @@ export function qbLedgerPaymentIdForGiftExcludingPayment(
   )`;
 }
 
+/**
+ * One Stripe charge id (other than the excluded one) that already owns the gift
+ * as permanent reconciled EVIDENCE — either it created the gift (auto-mint,
+ * `created_gift_id`) or it is matched to it (`matched_gift_id`) — or null.
+ *
+ * The Stripe-charge-anchor analogue of `qbLedgerPaymentIdForGiftExcludingPayment`.
+ * When a Stripe charge is the search anchor, a gift's QuickBooks cash-application
+ * is EXPECTED (the same money reaches the ledger at the deposit/payout level —
+ * QB and Stripe are parallel evidence for one gift) and must NOT disable the
+ * match. Only ANOTHER charge already owning the gift is a genuine double-book,
+ * so this looks at `stripe_staged_charges`, never the QB ledger. Mirrors the
+ * settlement-bundle proposal's charge-links "linked elsewhere" guard. Same
+ * bare-column footgun rule for the correlation — pass a pre-qualified gift id.
+ */
+export function chargeIdOwningGiftExcludingCharge(
+  giftIdSql: SQL,
+  excludeChargeIdSql: SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT c.id FROM stripe_staged_charges c
+    WHERE (c.matched_gift_id = ${giftIdSql} OR c.created_gift_id = ${giftIdSql})
+      AND c.id <> ${excludeChargeIdSql}
+    LIMIT 1
+  )`;
+}
+
 // ─── Payment-side helper — "is this staged payment already applied?" ─────────
 //
 // The inverse of the gift-side helpers: given a staged QuickBooks payment, is it

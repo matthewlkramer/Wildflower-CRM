@@ -161,7 +161,8 @@ describe("deriveProposal — mint ↔ match", () => {
         donorKind: "person",
         donorId: "p_1",
         donorName: "Jane Donor",
-        linkedElsewhere: null,
+        linkedByStagedPaymentId: null,
+        linkedByChargeId: null,
       },
     },
   };
@@ -222,7 +223,8 @@ describe("deriveProposal — amount-mismatch warning", () => {
         donorKind: "person",
         donorId: "p_1",
         donorName: "Jane Donor",
-        linkedElsewhere: null,
+        linkedByStagedPaymentId: null,
+        linkedByChargeId: null,
       },
     },
   };
@@ -280,7 +282,10 @@ describe("deriveProposal — amount-mismatch warning", () => {
           donorKind: "person",
           donorId: "p_1",
           donorName: "Jane Donor",
-          linkedElsewhere: "sp_other",
+          // The anchor row is a Stripe charge, so ANOTHER charge owning the gift
+          // is the double-book (a QB staged link would be parallel evidence).
+          linkedByStagedPaymentId: null,
+          linkedByChargeId: "ch_other",
         },
       },
     };
@@ -294,6 +299,70 @@ describe("deriveProposal — amount-mismatch warning", () => {
     expect(proposal.rows[0].ready).toBe(false);
     expect(proposal.summary.ready).toBe(false);
     expect(proposal.summary.blockerCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does NOT block a Stripe charge from a gift only QB-reconciled (parallel evidence)", () => {
+    // QuickBooks and Stripe are parallel evidence for one gift: a charge landing
+    // on a gift already tied to a QB staged payment is expected, not a double-book.
+    const linkedFacts: BundleFacts = {
+      donors: {},
+      gifts: {
+        g_qb: {
+          amount: "100.00",
+          name: "$100.00",
+          donorKind: "person",
+          donorId: "p_1",
+          donorName: "Jane Donor",
+          linkedByStagedPaymentId: "sp_other",
+          linkedByChargeId: null,
+        },
+      },
+    };
+    const base = makeBase(
+      [baseRow({ autoGiftKind: "match", autoGiftId: "g_qb" })],
+      linkedFacts,
+    );
+    const { proposal } = deriveProposal(base, {});
+    expect(
+      proposal.rows[0].warnings.find((w) => w.code === "gift_already_linked"),
+    ).toBeUndefined();
+    expect(proposal.rows[0].ready).toBe(true);
+  });
+
+  it("does NOT block a QB staged row from a gift only Stripe-linked (parallel evidence)", () => {
+    const linkedFacts: BundleFacts = {
+      donors: {},
+      gifts: {
+        g_stripe: {
+          amount: "100.00",
+          name: "$100.00",
+          donorKind: "person",
+          donorId: "p_1",
+          donorName: "Jane Donor",
+          linkedByStagedPaymentId: null,
+          linkedByChargeId: "ch_other",
+        },
+      },
+    };
+    const base = makeBase(
+      [
+        baseRow({
+          rowKey: "sp_1",
+          stripeChargeId: null,
+          stagedPaymentId: "sp_1",
+          autoGiftKind: "match",
+          autoGiftId: "g_stripe",
+        }),
+      ],
+      linkedFacts,
+    );
+    const { proposal } = deriveProposal(base, {
+      rows: { sp_1: { rowKey: "sp_1", giftKind: "match", giftId: "g_stripe" } },
+    });
+    expect(
+      proposal.rows[0].warnings.find((w) => w.code === "gift_already_linked"),
+    ).toBeUndefined();
+    expect(proposal.rows[0].ready).toBe(true);
   });
 });
 
@@ -340,7 +409,8 @@ describe("deriveProposal — already-committed rows are locked + skipped", () =>
           donorKind: "person",
           donorId: "p_1",
           donorName: "Jane Donor",
-          linkedElsewhere: null,
+          linkedByStagedPaymentId: null,
+          linkedByChargeId: null,
         },
       },
     };

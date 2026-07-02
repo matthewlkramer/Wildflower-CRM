@@ -47,6 +47,15 @@ const ACCOUNT_ID = `${RUN}_acct`;
 const PAYOUT_ID = `${RUN}_po`;
 const CHARGE_ID = `${RUN}_ch`;
 const GIFT_ID = `${RUN}_gift`;
+// A gift linked ONLY via the QuickBooks cash-application ledger (no charge).
+const GIFT_QB_ID = `${RUN}_gift_qb`;
+const STAGED_ID = `${RUN}_staged`; // the QB payment that owns GIFT_QB_ID
+const STAGED_ANCHOR_ID = `${RUN}_staged_anchor`; // a separate QB search anchor
+const PAYAPP_ID = `${RUN}_payapp`;
+// A gift already owned by ANOTHER Stripe charge (matched).
+const GIFT_CH_ID = `${RUN}_gift_ch`;
+const CHARGE_B_ID = `${RUN}_ch_b`;
+const REALM_ID = `${RUN}_realm`;
 // A far-future date keeps the anchor window clear of any real gifts.
 const ANCHOR_DATE = "2099-12-15";
 
@@ -58,12 +67,19 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
+  stagedPayments: Db["stagedPayments"];
+  paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let server: Server;
 let baseUrl = "";
 
-type Candidate = { nodeType: string; id: string; label: string };
+type Candidate = {
+  nodeType: string;
+  id: string;
+  label: string;
+  alreadyLinkedStagedPaymentId?: string | null;
+};
 
 async function searchNode(
   nodeType: string,
@@ -92,6 +108,8 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
+    stagedPayments: dbMod.stagedPayments,
+    paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
 
@@ -135,6 +153,58 @@ beforeAll(async () => {
     status: "pending" as never,
   });
 
+  // A gift in the same window linked ONLY via the QuickBooks cash-application
+  // ledger (a QB staged payment applied to it) — no Stripe charge owns it.
+  await db.insert(schema.giftsAndPayments).values({
+    id: GIFT_QB_ID,
+    organizationId: ORG_ID,
+    ownerUserId: TEST_USER_ID,
+    amount: "100.00",
+    dateReceived: ANCHOR_DATE,
+  });
+  for (const id of [STAGED_ID, STAGED_ANCHOR_ID]) {
+    await db.insert(schema.stagedPayments).values({
+      id,
+      realmId: REALM_ID,
+      qbEntityType: "payment",
+      qbEntityId: id,
+      qbLineId: "",
+      amount: "100.00",
+      dateReceived: ANCHOR_DATE,
+      payerName: `Zztest QB Payer ${RUN}`,
+      status: "pending" as never,
+    });
+  }
+  await db.insert(schema.paymentApplications).values({
+    id: PAYAPP_ID,
+    paymentId: STAGED_ID,
+    giftId: GIFT_QB_ID,
+    amountApplied: "100.00",
+    evidenceSource: "quickbooks" as never,
+  });
+
+  // A gift in the same window already owned by ANOTHER Stripe charge (matched).
+  await db.insert(schema.giftsAndPayments).values({
+    id: GIFT_CH_ID,
+    organizationId: ORG_ID,
+    ownerUserId: TEST_USER_ID,
+    amount: "100.00",
+    dateReceived: ANCHOR_DATE,
+  });
+  await db.insert(schema.stripeStagedCharges).values({
+    id: CHARGE_B_ID,
+    stripeAccountId: ACCOUNT_ID,
+    stripePayoutId: PAYOUT_ID,
+    grossAmount: "100.00",
+    feeAmount: "3.20",
+    netAmount: "96.80",
+    dateReceived: ANCHOR_DATE,
+    payerName: `Zztest Owning Charge ${RUN}`,
+    payerEmail: `${RUN}-charge-b@example.invalid`,
+    status: "reconciled" as never,
+    matchedGiftId: GIFT_CH_ID,
+  });
+
   const { default: app } = await import("../app");
   server = await new Promise<Server>((resolve) => {
     const s = app.listen(0, () => resolve(s));
@@ -146,15 +216,29 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  // payment_applications FKs (gift + staged payment) are ON DELETE RESTRICT, so
+  // the ledger row must go before its anchors.
   await db
-    .delete(schema.stripeStagedCharges)
-    .where(eqFn(schema.stripeStagedCharges.id, CHARGE_ID));
+    .delete(schema.paymentApplications)
+    .where(eqFn(schema.paymentApplications.id, PAYAPP_ID));
+  for (const id of [CHARGE_ID, CHARGE_B_ID]) {
+    await db
+      .delete(schema.stripeStagedCharges)
+      .where(eqFn(schema.stripeStagedCharges.id, id));
+  }
+  for (const id of [STAGED_ID, STAGED_ANCHOR_ID]) {
+    await db
+      .delete(schema.stagedPayments)
+      .where(eqFn(schema.stagedPayments.id, id));
+  }
   await db
     .delete(schema.stripePayouts)
     .where(eqFn(schema.stripePayouts.id, PAYOUT_ID));
-  await db
-    .delete(schema.giftsAndPayments)
-    .where(eqFn(schema.giftsAndPayments.id, GIFT_ID));
+  for (const id of [GIFT_ID, GIFT_QB_ID, GIFT_CH_ID]) {
+    await db
+      .delete(schema.giftsAndPayments)
+      .where(eqFn(schema.giftsAndPayments.id, id));
+  }
   await db
     .delete(schema.organizations)
     .where(eqFn(schema.organizations.id, ORG_ID));
@@ -207,5 +291,43 @@ describe.skipIf(!HAS_DB)("reconciliation search charge anchor (integration)", ()
     const hit = (json.data ?? []).find((c) => c.id === GIFT_ID);
     expect(hit).toBeDefined();
     expect(hit!.nodeType).toBe("gift");
+  });
+
+  it("from a charge anchor, a gift linked ONLY by a QB payment stays selectable", async () => {
+    // The regression: QB + Stripe are parallel evidence for one gift, so a
+    // gift's QuickBooks cash-application must NOT disable linking a Stripe
+    // charge to it.
+    const { status, json } = await searchNode(
+      "gift",
+      `stripeChargeId=${CHARGE_ID}`,
+    );
+    expect(status).toBe(200);
+    const hit = (json.data ?? []).find((c) => c.id === GIFT_QB_ID);
+    expect(hit).toBeDefined();
+    expect(hit!.alreadyLinkedStagedPaymentId ?? null).toBeNull();
+  });
+
+  it("from a charge anchor, a gift owned by ANOTHER charge is flagged", async () => {
+    const { status, json } = await searchNode(
+      "gift",
+      `stripeChargeId=${CHARGE_ID}`,
+    );
+    expect(status).toBe(200);
+    const hit = (json.data ?? []).find((c) => c.id === GIFT_CH_ID);
+    expect(hit).toBeDefined();
+    expect(hit!.alreadyLinkedStagedPaymentId).toBe(CHARGE_B_ID);
+  });
+
+  it("from a QB staged anchor, a QB-ledger-linked gift stays flagged (unchanged)", async () => {
+    // The staged-anchor path must keep disabling gifts already tied via the QB
+    // ledger to a DIFFERENT staged payment.
+    const { status, json } = await searchNode(
+      "gift",
+      `stagedPaymentId=${STAGED_ANCHOR_ID}`,
+    );
+    expect(status).toBe(200);
+    const hit = (json.data ?? []).find((c) => c.id === GIFT_QB_ID);
+    expect(hit).toBeDefined();
+    expect(hit!.alreadyLinkedStagedPaymentId).toBe(STAGED_ID);
   });
 });

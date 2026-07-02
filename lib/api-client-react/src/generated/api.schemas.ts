@@ -3558,7 +3558,7 @@ export interface ReconciliationCandidate {
   donorKind?: ReconciliationCandidateDonorKind;
   /** For gift/opportunity candidates: the record id of the candidate's CURRENT donor (organization/person/household), so the client can detect when a picked donor differs from the gift's existing donor. */
   donorId?: string | null;
-  /** For gift candidates: set when the gift is already reconciled/created/group/split-linked by another staged payment (UI disables linking to avoid double-counting). */
+  /** For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting. */
   alreadyLinkedStagedPaymentId?: string | null;
   /** Why this candidate conflicts with a locked node (set only when state=conflict). */
   conflictReason?: string | null;
@@ -5255,7 +5255,7 @@ export type GiftCandidate = GiftOrPayment & ({
   organizationName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
-  /** Set when this gift is already reconciled/created/group-reconciled/split-linked by a staged payment. The UI disables linking to it to avoid double-counting. */
+  /** Set when this gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to it to avoid double-counting. */
   alreadyLinkedStagedPaymentId?: string | null;
 });
 

@@ -1176,7 +1176,7 @@ export const ListStagedPaymentGiftCandidatesResponse = zod.object({
   "organizationName": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
-  "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('Set when this gift is already reconciled\/created\/group-reconciled\/split-linked by a staged payment. The UI disables linking to it to avoid double-counting.')
+  "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('Set when this gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to it to avoid double-counting.')
 })))
 })
 
@@ -1286,7 +1286,7 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
   "organizationName": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
-  "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('Set when this gift is already reconciled\/created\/group-reconciled\/split-linked by a staged payment. The UI disables linking to it to avoid double-counting.')
+  "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('Set when this gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to it to avoid double-counting.')
 })))
 })
 

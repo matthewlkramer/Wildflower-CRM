@@ -9,7 +9,7 @@ import {
   households,
   emails,
 } from "@workspace/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { newId } from "./helpers";
 import { buildGiftValuesFromStripeCharge } from "./stripeGift";
 import { recordAudit } from "./audit";
@@ -202,6 +202,31 @@ export async function linkChargeToGiftInTx(
     auditReq,
   } = args;
   const rederivePledgeIds: string[] = [];
+
+  // Reject if ANOTHER Stripe charge already owns this gift as evidence. The
+  // partial-unique on matched_gift_id covers a second MATCH (23505), but not the
+  // case where another charge already CREATED (auto-minted) the gift — this
+  // closes that gap with a clean 409 instead of a silent double-tie.
+  const ownedByOtherCharge = await tx
+    .select({ id: stripeStagedCharges.id })
+    .from(stripeStagedCharges)
+    .where(
+      and(
+        ne(stripeStagedCharges.id, charge.id),
+        or(
+          eq(stripeStagedCharges.matchedGiftId, giftId),
+          eq(stripeStagedCharges.createdGiftId, giftId),
+        ),
+      ),
+    )
+    .limit(1);
+  if (ownedByOtherCharge.length > 0) {
+    throw new ReconcileAbort(409, {
+      error: "link_conflict",
+      message:
+        "That gift is already tied to another Stripe charge. Refresh and try again.",
+    });
+  }
 
   // Tie the charge to the gift. Guarded on still-pending; the partial-unique on
   // matched_gift_id also makes a gift claimable by at most ONE charge (23505 →
