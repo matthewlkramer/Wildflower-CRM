@@ -21,10 +21,17 @@ pages**.
 - FE pattern: list pages archive DIRECTLY (no confirm dialog) — see
   `funding-entities.tsx`; payment-intermediaries mirrors it. Anyone can archive.
 
-## The ONLY hard-delete exceptions (user-confirmed — keep them)
-- **Gift merge / consolidation** still hard-deletes the merged-away gift.
+## The ONLY hard-delete exception (user-confirmed — keep it)
 - **QuickBooks staged-payment revert** still hard-deletes its staged rows.
-Do NOT convert these two to archive unless the user explicitly asks.
+Do NOT convert this to archive unless the user explicitly asks.
+
+## Gift merge NOW archives losers (changed — was a hard-delete exception)
+- `POST /gifts-and-payments/merge` no longer hard-deletes the merged-away gifts.
+  It first ABSORBS each loser's reconciled payment evidence onto the survivor
+  (see gift-merge-evidence-combine.md) and then ARCHIVES the losers
+  (`archived_at`). Because the losers now PERSIST, the merge tx MUST reject any
+  already-archived participant — otherwise a replay or merging an archived
+  reconciliation-derived gift re-sums money into the survivor.
 
 ## Admin gating is LIST-only by design
 - "Show archived" + unarchive is admin-only and **server-enforced**, but only on

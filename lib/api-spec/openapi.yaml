@@ -3480,7 +3480,7 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MergeResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
-        "409": { description: "A duplicate gift is linked to a QuickBooks staged payment; resolve that first." }
+        "409": { description: "The merge can't proceed: either a participant is already archived (a replay, or an archived reconciliation-derived gift), or a duplicate gift is linked to reconciled payment evidence that can't be combined automatically (a staged-payment split, or two or more Stripe/Donorbox charges landing on one gift); resolve that first." }
   /gifts-and-payments/merge-into-pledge:
     post:
       operationId: mergeGiftsIntoPledge

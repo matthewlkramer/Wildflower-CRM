@@ -129,6 +129,7 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
+import { absorbGiftEvidenceIntoSurvivor } from "../lib/giftCombine";
 import {
   qbLedgerExistsForGift,
   qbLedgerPaymentIdForGift,
@@ -806,6 +807,24 @@ router.post(
         };
       }
 
+      // Reject any already-archived participant. Losers are now ARCHIVED (not
+      // hard-deleted), so without this guard a replayed request (double-click /
+      // retry) would re-sum the still-present loser amounts onto the survivor,
+      // and an archived coarse QB-derived gift (which Stripe reconciliation
+      // archives precisely so its money never re-enters totals) could be
+      // resurrected into a live survivor. Keeps the merge idempotent.
+      const archived = allIds.filter((id) => byId.get(id)?.archivedAt != null);
+      if (archived.length) {
+        return {
+          ok: false,
+          status: 409,
+          json: {
+            error: "archived_gift",
+            message: `gift(s) already archived, cannot merge: ${archived.join(", ")}`,
+          },
+        };
+      }
+
       // Donor XOR. When the selected gifts disagree on donor the caller MUST
       // resolve it explicitly — guessing is out of scope and a data-integrity
       // risk. Otherwise default to the survivor's own (locked) donor.
@@ -838,42 +857,27 @@ router.post(
       const issues = validateGiftInvariants(donor);
       if (issues.length) return { ok: false, invariant: issues };
 
-      // Block if any LOSER is linked to a QuickBooks staged payment (split,
-      // matched, created, or group-reconciled). Those FKs are SET NULL, so
-      // deleting the loser would silently sever QB reconciliation history.
-      const splitLink = await tx
-        .select({ giftId: stagedPaymentSplits.giftId })
-        .from(stagedPaymentSplits)
-        .where(inArray(stagedPaymentSplits.giftId, loserIds))
-        .then((r) => r[0]);
-      const stagedLink = await tx
-        .select({ id: stagedPayments.id })
-        .from(stagedPayments)
-        .where(
-          or(
-            inArray(stagedPayments.matchedGiftId, loserIds),
-            inArray(stagedPayments.createdGiftId, loserIds),
-            inArray(stagedPayments.groupReconciledGiftId, loserIds),
-          ),
-        )
-        .then((r) => r[0]);
-      // Block, too, if a loser carries any cash-application ledger row
-      // (payment_applications.gift_id is RESTRICT). The ledger is now
-      // dual-written for QuickBooks, Stripe, and Donorbox, so deleting the
-      // loser would hit the RESTRICT FK; this guard keeps the merge safe.
-      const ledgerLink = await tx
-        .select({ giftId: paymentApplications.giftId })
-        .from(paymentApplications)
-        .where(inArray(paymentApplications.giftId, loserIds))
-        .then((r) => r[0]);
-      if (splitLink || stagedLink || ledgerLink) {
+      // Absorb every loser's reconciled payment evidence — the QuickBooks
+      // staged pointers, the Stripe/Donorbox pointers, the cash-application
+      // ledger, and corroborating evidence links — onto the survivor. This runs
+      // BEFORE any other write so a genuinely unrepresentable link shape (a
+      // staged-payment split, or two+ Stripe/Donorbox charges landing on one
+      // gift) 409s with a clean, no-op rollback instead of a half-applied merge.
+      const absorb = await absorbGiftEvidenceIntoSurvivor(tx, primaryId, loserIds);
+      if (absorb.collision) {
+        const detail =
+          absorb.collision.kind === "split_link"
+            ? "a staged-payment split"
+            : absorb.collision.kind === "stripe_charge"
+              ? "two or more Stripe charges"
+              : "two or more Donorbox donations";
         return {
           ok: false,
           status: 409,
           json: {
-            error: "quickbooks_linked",
-            message:
-              "One of the duplicate gifts is linked to reconciled payment evidence (QuickBooks, Stripe, or Donorbox). Resolve that link before merging.",
+            error: "reconciled_evidence_conflict",
+            conflict: absorb.collision.kind,
+            message: `One of the duplicate gifts is linked to reconciled payment evidence that can't be combined automatically (${detail}). Resolve that link before merging.`,
           },
         };
       }
@@ -904,10 +908,20 @@ router.post(
         })
         .where(eq(giftsAndPayments.id, primaryId));
 
-      // Delete the losers. giftBeingMatchedId references (including the
-      // survivor's) are SET NULL by the DB on delete.
+      // Clear any gift_being_matched_id that points at a loser. On the old
+      // hard-delete path the DB SET these NULL for us; losers are now archived
+      // (soft-deleted), so we must clear the self-reference ourselves.
       await tx
-        .delete(giftsAndPayments)
+        .update(giftsAndPayments)
+        .set({ giftBeingMatchedId: null, updatedAt: new Date() })
+        .where(inArray(giftsAndPayments.giftBeingMatchedId, loserIds));
+
+      // Archive the losers (soft-delete — the app-wide default) instead of
+      // hard-deleting: their reconciled payment evidence now lives on the
+      // survivor and the archived tombstones preserve the merge lineage.
+      await tx
+        .update(giftsAndPayments)
+        .set({ archivedAt: new Date(), updatedAt: new Date() })
         .where(inArray(giftsAndPayments.id, loserIds));
 
       if (actor) {
@@ -932,8 +946,9 @@ router.post(
     }
 
     await applyDerivedOppFieldsMany(...outcome.pledges);
-    // The surviving gift may absorb the losers' QB linkage — recompute its tie.
-    await applyGiftQbTieMany(primaryId);
+    // The survivor absorbs the losers' payment evidence and the losers are now
+    // archived tombstones with none — recompute the tie status on all of them.
+    await applyGiftQbTieMany(primaryId, ...loserIds);
     if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
     res.json({ primaryId, mergedIds: loserIds });
   }),

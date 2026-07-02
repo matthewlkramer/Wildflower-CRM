@@ -69,6 +69,7 @@ let schema: {
   pledgeAllocations: Db["pledgeAllocations"];
   stagedPayments: Db["stagedPayments"];
   stagedPaymentSplits: Db["stagedPaymentSplits"];
+  paymentApplications: Db["paymentApplications"];
   fiscalYears: Db["fiscalYears"];
   bulkOperations: Db["bulkOperations"];
 };
@@ -187,6 +188,13 @@ async function allocationsFor(giftId: string) {
     .where(eqFn(schema.giftAllocations.giftId, giftId));
 }
 
+async function ledgerFor(giftId: string) {
+  return db
+    .select()
+    .from(schema.paymentApplications)
+    .where(eqFn(schema.paymentApplications.giftId, giftId));
+}
+
 beforeAll(async () => {
   if (!HAS_DB) return;
   const dbMod = await import("@workspace/db");
@@ -202,6 +210,7 @@ beforeAll(async () => {
     pledgeAllocations: dbMod.pledgeAllocations,
     stagedPayments: dbMod.stagedPayments,
     stagedPaymentSplits: dbMod.stagedPaymentSplits,
+    paymentApplications: dbMod.paymentApplications,
     fiscalYears: dbMod.fiscalYears,
     bulkOperations: dbMod.bulkOperations,
   };
@@ -299,7 +308,7 @@ beforeEach(() => {
 });
 
 describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
-  it("rolls up allocations + amount onto the survivor and deletes losers", async () => {
+  it("rolls up allocations + amount onto the survivor and archives losers", async () => {
     const a = await seedGiftWithAllocation("100.00");
     const b = await seedGiftWithAllocation("50.00");
     const c = await seedGiftWithAllocation("25.00");
@@ -321,9 +330,32 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
     const allocs = await allocationsFor(a);
     expect(allocs.length).toBe(3);
 
-    // Losers are gone.
-    expect(await readGift(b)).toBeUndefined();
-    expect(await readGift(c)).toBeUndefined();
+    // Losers are archived (soft-deleted), not hard-deleted.
+    expect((await readGift(b)).archivedAt).not.toBeNull();
+    expect((await readGift(c)).archivedAt).not.toBeNull();
+  }, 30_000);
+
+  it("is idempotent: replaying a merge rejects (409) and leaves the survivor amount unchanged", async () => {
+    const a = await seedGiftWithAllocation("100.00");
+    const b = await seedGiftWithAllocation("50.00");
+
+    const first = await api("/api/gifts-and-payments/merge", {
+      primaryId: a,
+      mergeIds: [b],
+    });
+    expect(first.status).toBe(200);
+    expect(Number((await readGift(a)).amount)).toBeCloseTo(150);
+    expect((await readGift(b)).archivedAt).not.toBeNull();
+
+    // Replaying the same request (double-click / retry) must NOT re-sum the
+    // archived loser's amount onto the survivor.
+    const second = await api("/api/gifts-and-payments/merge", {
+      primaryId: a,
+      mergeIds: [b],
+    });
+    expect(second.status).toBe(409);
+    expect(second.json.error).toBe("archived_gift");
+    expect(Number((await readGift(a)).amount)).toBeCloseTo(150);
   }, 30_000);
 
   it("resolves a mixed donor to the explicitly chosen donor (XOR)", async () => {
@@ -381,11 +413,12 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
     expect(await readGift(b)).toBeDefined();
   }, 30_000);
 
-  it("blocks the merge (409) when a loser is linked to a QuickBooks staged payment", async () => {
+  it("absorbs a loser's QuickBooks staged match onto the survivor", async () => {
     const a = await seedGiftWithAllocation("100.00");
     const b = await seedGiftWithAllocation("100.00");
+    const sp = nextId("sp");
     await db.insert(schema.stagedPayments).values({
-      id: nextId("sp"),
+      id: sp,
       realmId: REALM_ID,
       qbEntityType: "payment",
       qbEntityId: nextId("qbe"),
@@ -394,16 +427,114 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
       organizationId: ORG_ID,
       matchedGiftId: b,
     });
+    await db.insert(schema.paymentApplications).values({
+      id: nextId("pa"),
+      paymentId: sp,
+      giftId: b,
+      amountApplied: "100.00",
+      evidenceSource: "quickbooks",
+    });
 
     const res = await api("/api/gifts-and-payments/merge", {
       primaryId: a,
       mergeIds: [b],
     });
 
-    expect(res.status).toBe(409);
-    expect(res.json.error).toBe("quickbooks_linked");
-    // The loser must still exist.
-    expect(await readGift(b)).toBeDefined();
+    expect(res.status).toBe(200);
+    // The loser is archived; its evidence is re-homed onto the survivor.
+    expect((await readGift(b)).archivedAt).not.toBeNull();
+
+    // The staged payment now points at the survivor as a clean direct match.
+    const [staged] = await db
+      .select()
+      .from(schema.stagedPayments)
+      .where(eqFn(schema.stagedPayments.id, sp));
+    expect(staged.matchedGiftId).toBe(a);
+    expect(staged.createdGiftId).toBeNull();
+    expect(staged.groupReconciledGiftId).toBeNull();
+
+    // The ledger row moved to the survivor; none remain on the loser.
+    const survivorLedger = await ledgerFor(a);
+    expect(survivorLedger.length).toBe(1);
+    expect(Number(survivorLedger[0].amountApplied)).toBeCloseTo(100);
+    expect((await ledgerFor(b)).length).toBe(0);
+  }, 30_000);
+
+  it("combines two QB-matched gifts into one grouped survivor (ledger SUM preserved)", async () => {
+    const a = await seedGiftWithAllocation("100.00");
+    const b = await seedGiftWithAllocation("60.00");
+    const sp1 = nextId("sp");
+    const sp2 = nextId("sp");
+    await db.insert(schema.stagedPayments).values([
+      {
+        id: sp1,
+        realmId: REALM_ID,
+        qbEntityType: "payment",
+        qbEntityId: nextId("qbe"),
+        amount: "100.00",
+        status: "approved",
+        organizationId: ORG_ID,
+        matchedGiftId: a,
+      },
+      {
+        id: sp2,
+        realmId: REALM_ID,
+        qbEntityType: "payment",
+        qbEntityId: nextId("qbe"),
+        amount: "60.00",
+        status: "approved",
+        organizationId: ORG_ID,
+        matchedGiftId: b,
+      },
+    ]);
+    await db.insert(schema.paymentApplications).values([
+      {
+        id: nextId("pa"),
+        paymentId: sp1,
+        giftId: a,
+        amountApplied: "100.00",
+        evidenceSource: "quickbooks",
+      },
+      {
+        id: nextId("pa"),
+        paymentId: sp2,
+        giftId: b,
+        amountApplied: "60.00",
+        evidenceSource: "quickbooks",
+      },
+    ]);
+
+    const res = await api("/api/gifts-and-payments/merge", {
+      primaryId: a,
+      mergeIds: [b],
+    });
+
+    expect(res.status).toBe(200);
+    expect(Number((await readGift(a)).amount)).toBeCloseTo(160);
+    expect((await readGift(b)).archivedAt).not.toBeNull();
+
+    // Both staged payments now belong to the survivor as a GROUP: both carry
+    // groupReconciledGiftId = survivor, exactly one is the matched representative,
+    // and neither still points at the loser.
+    const staged = await db
+      .select()
+      .from(schema.stagedPayments)
+      .where(inArrayFn(schema.stagedPayments.id, [sp1, sp2]));
+    expect(staged.every((s) => s.groupReconciledGiftId === a)).toBe(true);
+    expect(staged.filter((s) => s.matchedGiftId === a).length).toBe(1);
+    expect(
+      staged.some((s) => s.matchedGiftId === b || s.createdGiftId === b),
+    ).toBe(false);
+
+    // Both ledger rows moved to the survivor; their SUM is preserved.
+    const survivorLedger = await ledgerFor(a);
+    expect(survivorLedger.length).toBe(2);
+    const sum = survivorLedger.reduce(
+      (acc, r) => acc + Number(r.amountApplied),
+      0,
+    );
+    expect(sum).toBeCloseTo(160);
+    expect((await ledgerFor(b)).length).toBe(0);
   }, 30_000);
 
   it("returns 400 when mergeIds has no gift distinct from primaryId", async () => {
