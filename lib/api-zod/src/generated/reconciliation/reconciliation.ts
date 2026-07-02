@@ -302,6 +302,7 @@ export const SearchReconciliationNodeParams = zod.object({
   "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity'])
 })
 
+export const searchReconciliationNodeQuerySplitDefault = false;
 export const searchReconciliationNodeQueryDaysDefault = 30;
 export const searchReconciliationNodeQueryDaysMax = 365;
 
@@ -315,6 +316,7 @@ export const SearchReconciliationNodeQueryParams = zod.object({
   "stripeChargeId": zod.coerce.string().optional().describe('Stripe charge anchor (its GROSS amount + date scope the window); for donor\/gift search on a charge that has no staged payment. Provide exactly one of stagedPaymentId or stripeChargeId.'),
   "q": zod.coerce.string().optional().describe('Free-text query (donor\/gift name, payer, reference).'),
   "donorId": zod.coerce.string().optional().describe('Cross-filter gift\/opportunity candidates to this donor (FILTER edge).'),
+  "split": zod.coerce.boolean().default(searchReconciliationNodeQuerySplitDefault).describe('Split mode (gift search only): candidate gifts are FRACTIONS of the payment, not near-equal to it. Drops the lower amount bound (returns gifts with amount > 0 up to the payment total within fee-band tolerance), relaxes the date window, and orders by date proximity\/recency instead of proximity to the full amount.'),
   "days": zod.coerce.number().min(1).max(searchReconciliationNodeQueryDaysMax).default(searchReconciliationNodeQueryDaysDefault).describe('± days around the anchor date for amount\/date windows.'),
   "limit": zod.coerce.number().min(1).max(searchReconciliationNodeQueryLimitMax).default(searchReconciliationNodeQueryLimitDefault)
 })

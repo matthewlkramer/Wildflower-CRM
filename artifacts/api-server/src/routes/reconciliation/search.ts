@@ -77,6 +77,9 @@ router.get(
     const q = typeof req.query["q"] === "string" ? req.query["q"] : null;
     const donorId =
       typeof req.query["donorId"] === "string" ? req.query["donorId"] : null;
+    // Split mode (gift search only): candidate gifts are fractions of the
+    // payment, not near-equal to it. Accept the standard truthy spellings.
+    const split = req.query["split"] === "true" || req.query["split"] === "1";
     const days = clampInt(req.query["days"], 30, 1, 365);
     const limit = clampInt(req.query["limit"], 25, 1, 100);
 
@@ -86,6 +89,7 @@ router.get(
       stripeChargeId: stripeChargeId || null,
       q,
       donorId,
+      split,
       days,
       limit,
       viewer: getViewer(req),

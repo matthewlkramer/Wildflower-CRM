@@ -8664,6 +8664,10 @@ q?: string;
  */
 donorId?: string;
 /**
+ * Split mode (gift search only): candidate gifts are FRACTIONS of the payment, not near-equal to it. Drops the lower amount bound (returns gifts with amount > 0 up to the payment total within fee-band tolerance), relaxes the date window, and orders by date proximity/recency instead of proximity to the full amount.
+ */
+split?: boolean;
+/**
  * ± days around the anchor date for amount/date windows.
  * @minimum 1
  * @maximum 365

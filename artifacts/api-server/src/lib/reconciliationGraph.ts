@@ -154,6 +154,12 @@ export interface RecSearchParams {
   stripeChargeId: string | null;
   q: string | null;
   donorId: string | null;
+  /**
+   * Split mode (gift search only): candidate gifts are FRACTIONS of the payment,
+   * not near-equal to it. Drops the lower amount bound, relaxes the date window,
+   * and orders by date proximity/recency instead of proximity to the full amount.
+   */
+  split: boolean;
   days: number;
   limit: number;
   viewer: Viewer;
@@ -383,15 +389,30 @@ async function fetchGiftCandidates(opts: {
   days: number;
   limit: number;
   q?: string | null;
+  split?: boolean;
 }) {
   if (opts.amount == null) return [];
-  const conds: SQL[] = [
-    sql`${giftsAndPayments.amount} >= ${opts.amount}::numeric - 0.01`,
-    sql`${giftsAndPayments.amount} <= ${opts.amount}::numeric * 1.10 + 1`,
-    isNull(giftsAndPayments.archivedAt),
-  ];
+  const split = opts.split === true;
+  // Split mode: candidate gifts are FRACTIONS of the payment, so the whole-match
+  // lower bound (>= payment − 0.01) would exclude every real candidate. Instead
+  // accept any positive gift up to the payment total (upper fee-band tolerance
+  // only). Non-split (1:1 match) keeps the near-equal window around the amount.
+  const conds: SQL[] = split
+    ? [
+        sql`${giftsAndPayments.amount} > 0`,
+        sql`${giftsAndPayments.amount} <= ${opts.amount}::numeric * 1.10 + 1`,
+        isNull(giftsAndPayments.archivedAt),
+      ]
+    : [
+        sql`${giftsAndPayments.amount} >= ${opts.amount}::numeric - 0.01`,
+        sql`${giftsAndPayments.amount} <= ${opts.amount}::numeric * 1.10 + 1`,
+        isNull(giftsAndPayments.archivedAt),
+      ];
   if (opts.donorFilter) conds.push(opts.donorFilter);
-  if (opts.date)
+  // A lump payment routinely covers gifts booked across many months, so a tight
+  // ± days window would hide legitimate split candidates. Relax the date window
+  // in split mode (order by recency below instead); keep it in 1:1 match mode.
+  if (opts.date && !split)
     conds.push(
       sql`(${giftsAndPayments.dateReceived} IS NULL OR ABS(${giftsAndPayments.dateReceived} - ${opts.date}::date) <= ${opts.days})`,
     );
@@ -399,9 +420,14 @@ async function fetchGiftCandidates(opts: {
   if (q.length >= 2)
     conds.push(ilike(giftsAndPayments.name, `%${escapeLike(q)}%`));
 
-  const orderBy: SQL[] = [
-    sql`ABS(${giftsAndPayments.amount} - ${opts.amount}::numeric) ASC`,
-  ];
+  // 1:1 match: cluster by proximity to the full amount. Split: proximity to the
+  // full amount is meaningless (candidates are fractions), so prefer date
+  // proximity to the payment, then recency.
+  const orderBy: SQL[] = [];
+  if (!split)
+    orderBy.push(
+      sql`ABS(${giftsAndPayments.amount} - ${opts.amount}::numeric) ASC`,
+    );
   if (opts.date)
     orderBy.push(
       sql`ABS(${giftsAndPayments.dateReceived} - ${opts.date}::date) ASC NULLS LAST`,
@@ -468,6 +494,7 @@ function giftRowToCandidate(
   g: NonNullable<RecGiftRow>,
   anchorAmount: string | null,
   viewer: Viewer,
+  split = false,
 ): RecCandidate {
   const hidden = giftDonorHidden(g, viewer);
   const donor = donorPickFromStaged(g);
@@ -478,7 +505,9 @@ function giftRowToCandidate(
     sublabel: giftDonorSublabel(g, viewer),
     amount: g.amount ?? null,
     date: g.dateReceived ?? null,
-    confidence: amountConfidence(anchorAmount, g.amount ?? null),
+    // Split candidates are fractions of the payment; an amount-confidence score
+    // against the full payment is meaningless, so leave it null.
+    confidence: split ? null : amountConfidence(anchorAmount, g.amount ?? null),
     source: "amount_date",
     donorKind: donor?.kind ?? null,
     donorId: donor?.id ?? null,
@@ -1231,8 +1260,14 @@ async function searchGifts(
     days: p.days,
     limit: p.limit,
     q: p.q,
+    split: p.split,
   })) as NonNullable<RecGiftRow>[];
-  return rows.map((g) => giftRowToCandidate(g, anchor.amount, p.viewer));
+  // In split mode each candidate is a fraction of the payment, so an
+  // amount-confidence score against the FULL payment would be misleadingly low —
+  // suppress it (the amount is still shown; the score is not meaningful here).
+  return rows.map((g) =>
+    giftRowToCandidate(g, p.split ? null : anchor.amount, p.viewer, p.split),
+  );
 }
 
 async function searchOpps(p: RecSearchParams): Promise<RecCandidate[]> {

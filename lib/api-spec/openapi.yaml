@@ -4074,6 +4074,7 @@ paths:
         - { name: stripeChargeId, in: query, schema: { type: string }, description: "Stripe charge anchor (its GROSS amount + date scope the window); for donor/gift search on a charge that has no staged payment. Provide exactly one of stagedPaymentId or stripeChargeId." }
         - { name: q, in: query, schema: { type: string }, description: "Free-text query (donor/gift name, payer, reference)." }
         - { name: donorId, in: query, schema: { type: string }, description: "Cross-filter gift/opportunity candidates to this donor (FILTER edge)." }
+        - { name: split, in: query, schema: { type: boolean, default: false }, description: "Split mode (gift search only): candidate gifts are FRACTIONS of the payment, not near-equal to it. Drops the lower amount bound (returns gifts with amount > 0 up to the payment total within fee-band tolerance), relaxes the date window, and orders by date proximity/recency instead of proximity to the full amount." }
         - { name: days, in: query, schema: { type: integer, default: 30, minimum: 1, maximum: 365 }, description: "± days around the anchor date for amount/date windows." }
         - { name: limit, in: query, schema: { type: integer, default: 25, minimum: 1, maximum: 100 } }
       responses:

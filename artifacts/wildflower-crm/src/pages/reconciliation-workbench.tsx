@@ -3394,6 +3394,7 @@ function SplitEditorDialog({
       const res = await searchReconciliationNode("gift", {
         stagedPaymentId: card.stagedPaymentId,
         q: q.trim() || undefined,
+        split: true,
         limit: 20,
       });
       setResults(res.data ?? []);
