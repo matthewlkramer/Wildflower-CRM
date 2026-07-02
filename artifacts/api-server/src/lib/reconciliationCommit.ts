@@ -23,6 +23,10 @@ import {
   adjustSingleAllocationOrFlag,
 } from "./giftFinalAmount";
 import { donorOf, type LinkDonor } from "./quickbooksLink";
+import {
+  seedInitialGiftAllocation,
+  assertGiftHasAllocations,
+} from "./giftAllocationSeed";
 
 /**
  * The committed money-write primitives shared by the manual reconciliation
@@ -293,7 +297,34 @@ export async function mintGiftInTx(
         entityId: m.entityId,
       })),
     );
+  } else {
+    // Plain create_gift (no opp) or a grouped mint without allocation split:
+    // still seed ONE default full-amount allocation carrying the staged row's
+    // attributed entity, so the gift never lands scope-less. The fiscal year is
+    // derived from the payment date; other scope is left for the fundraiser.
+    await seedInitialGiftAllocation(tx, {
+      giftId: newGiftId,
+      amount: evidenceAmount,
+      dateReceived: staged.dateReceived,
+      entityId: staged.entityId ?? null,
+    });
   }
+  // Safety net: the opp branch copies the pledge's allocations, but a pledge
+  // with zero allocations would leave this gift scope-less and trip the
+  // invariant below. Seed a default full-amount line when no branch produced one.
+  const [{ n: seededAllocations }] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(giftAllocations)
+    .where(eq(giftAllocations.giftId, newGiftId));
+  if (!seededAllocations) {
+    await seedInitialGiftAllocation(tx, {
+      giftId: newGiftId,
+      amount: evidenceAmount,
+      dateReceived: staged.dateReceived,
+      entityId: staged.entityId ?? null,
+    });
+  }
+  await assertGiftHasAllocations(tx, newGiftId);
 
   // The QB anchor OWNS the mint (createdGiftId, not auto-applied → protected from
   // casual revert). Adopt the chosen donor onto the evidence row. Guarded on

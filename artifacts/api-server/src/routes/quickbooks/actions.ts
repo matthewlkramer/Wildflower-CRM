@@ -12,6 +12,11 @@ import {
   notFound,
   paramId,
 } from "../../lib/helpers";
+import {
+  seedInitialGiftAllocation,
+  assertGiftHasAllocations,
+} from "../../lib/giftAllocationSeed";
+import { isGovernmentReimbursement } from "../../lib/quickbooksExclusionRules";
 import { getAppUser } from "../../lib/appRequest";
 import { validateGiftInvariants, type InvariantIssue } from "@workspace/api-zod";
 import {
@@ -197,6 +202,17 @@ router.post(
           finalAmountStripeChargeId: null,
           originalHumanCrmAmount: null,
         });
+        // Every gift needs at least one allocation (the sole home of money
+        // scope). Seed a default full-amount line carrying the staged row's
+        // attributed entity + goal-counting signal (mirrors the auto-create rule).
+        await seedInitialGiftAllocation(tx, {
+          giftId,
+          amount: locked.amount,
+          dateReceived: locked.dateReceived,
+          entityId: locked.entityId,
+          countsTowardGoal: !isGovernmentReimbursement(locked),
+        });
+        await assertGiftHasAllocations(tx, giftId);
         await tx
           .update(stagedPayments)
           .set({

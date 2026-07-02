@@ -19,6 +19,10 @@ import {
   adjustSingleAllocationOrFlag,
 } from "./giftFinalAmount";
 import { ReconcileAbort, type Tx, type DonorXor } from "./reconciliationCommit";
+import {
+  seedInitialGiftAllocation,
+  assertGiftHasAllocations,
+} from "./giftAllocationSeed";
 import type {
   BundleNewDonorDraft,
   StagedPaymentExclusionReason,
@@ -118,6 +122,15 @@ export async function createGiftFromChargeInTx(
       userId,
     ),
   );
+
+  // Every gift needs at least one allocation (the sole home of money scope).
+  // Seed a default full-amount line; fundraiser refines scope later.
+  await seedInitialGiftAllocation(tx, {
+    giftId: newGiftId,
+    amount: charge.grossAmount,
+    dateReceived: charge.dateReceived,
+  });
+  await assertGiftHasAllocations(tx, newGiftId);
 
   // The charge OWNS the mint (createdGiftId, not auto-applied → protected from
   // casual revert). Adopt the chosen donor onto the evidence row. Guarded on

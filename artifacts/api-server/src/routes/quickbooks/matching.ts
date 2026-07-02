@@ -21,6 +21,11 @@ import { donorOf, hasExactlyOneDonor } from "../../lib/quickbooksLink";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import {
+  seedInitialGiftAllocation,
+  assertGiftHasAllocations,
+} from "../../lib/giftAllocationSeed";
+import { isGovernmentReimbursement } from "../../lib/quickbooksExclusionRules";
+import {
   stampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
 } from "../../lib/giftFinalAmount";
@@ -813,6 +818,19 @@ router.post(
             finalAmountStripeChargeId: null,
             originalHumanCrmAmount: null,
           });
+          // Every gift needs at least one allocation (the sole home of money
+          // scope). The staged_payment_splits rows above are QB link records, NOT
+          // allocations — seed a default full-amount line so the remainder gift is
+          // never scope-less. Carries the staged row's attributed entity + goal
+          // signal (mirrors the QuickBooks create-gift path).
+          await seedInitialGiftAllocation(tx, {
+            giftId: createdGiftId,
+            amount: remainder.amount,
+            dateReceived: locked.dateReceived,
+            entityId: locked.entityId,
+            countsTowardGoal: !isGovernmentReimbursement(locked),
+          });
+          await assertGiftHasAllocations(tx, createdGiftId);
         }
 
         // Insert one split link per gift (sub_amount = that gift's own gross),

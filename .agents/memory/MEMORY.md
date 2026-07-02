@@ -137,3 +137,4 @@
 - [Reconciliation gift search modes](reconciliation-gift-search-modes.md) — one endpoint, two windows via `split` flag: 1:1 match = near-equal to full amount; split = fractions (drop lower floor, relax date, no confidence); never fold them.
 - [Bundle confirm cache invalidation](reconciliation-bundle-confirm-invalidation.md) — confirming a settlement bundle reconciles the SAME staged/charge/gift rows the workbench's other queues render; invalidate cards + staged-payments + gifts + gifts-missing-qb, not just the anchor list.
 - [Reconciliation target-state design](reconciliation-target-design.md) — ratified two-plane/one-ledger simplification lives in docs/reconciliation-design.md; the 5 open decisions are resolved there.
+- [Gift must always have >=1 allocation](gift-allocation-seed-invariant.md) — all 6 mint paths seed a starter allocation via giftAllocationSeed.ts; guard app-level by decision (invariant #7); grant_year set only if the fiscal_years FK row exists.

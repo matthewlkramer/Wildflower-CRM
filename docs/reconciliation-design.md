@@ -128,7 +128,9 @@ These carry over unchanged and constrain every phase:
 - **Evidence** from external money systems, in two grains:
   - *batch:* Stripe payout, QB deposit.
   - *unit:* Stripe charge, QB payment line (SalesReceipt / Payment / deposit line),
-    Donorbox donation.
+    Donorbox donation — **plus their reversals** (a QB Refund Receipt / credit /
+    negative-deposit line, a Stripe refund / dispute), which are ingested as
+    unit-grain evidence rows too (§4.2a).
 - **CRM gifts** — the single source of truth for donor credit (INV-A).
 
 ### 4.2 One link ledger for the unit↔gift plane
@@ -146,7 +148,7 @@ Target columns (evolution of today's `payment_applications`):
 | `source_id` | **new polymorphic unit ref** (points at `staged_payments.id`, `stripe_staged_charges.id`, or `donorbox_donations.id` per `evidence_source`). Replaces today's `payment_id` (NOT NULL → QB-only) + the parallel `stripe_charge_id` / `donorbox_donation_id` columns. See Decision 1 for why the current shape blocks Stripe units. |
 | `gift_id` | unchanged (RESTRICT; header grain — the tie SUM is per-gift) |
 | `gift_allocation_id` | unchanged (optional annotation; **not** required or used by tie math — ties are gift-grain, see Decision 6) |
-| `amount_applied` | unchanged (> 0) |
+| `amount_applied` | unchanged (> 0), **except** the §4.2a reversing refund row, which carries the opposite sign so a refund nets its original to zero |
 | `link_role` | **new:** `counted` \| `corroborating`. Only `counted` rows enter the book-once SUM and the tie/settled derivations. `corroborating` folds in `gift_evidence_links` (Decision 2). |
 | `lifecycle` | **new:** `proposed` \| `confirmed` \| `exempt`. Replaces the "is it applied yet" signal that today is smeared across `status`/`match_confirmed_at`/`auto_applied`. |
 | `provenance` | **new:** `system` \| `system_confirmed` \| `human`. Generalizes today's `match_method` + `auto_applied`. |
@@ -165,6 +167,25 @@ This single table **retires**: all six evidence→gift pointer columns
 table, `gift_evidence_links`, and `gifts_and_payments.final_amount_*` (already
 `@deprecated`). The stock "representative + `group_reconciled_gift_id`" dance
 collapses into plain **N counted ledger rows → one gift**.
+
+### 4.2a Refunds & chargebacks net to zero in the ledger
+
+Refund detection is **first-class** and extended to **both** sources: today only
+Stripe refunds/disputes are propagated; QB refunds (a Refund Receipt / credit /
+negative-deposit line) are detected the same way. A detected refund is booked into
+the *same* ledger as the money it reverses — a **reversing counted row** on the
+refund unit, pointed at the same gift — so the original `+X` and the refund `−X`
+**cancel each other out**. The gift's `SUM(counted amount_applied)` then returns to
+`0` and it derives `unreconciled` — it reads as **no payment at all** (§4.4),
+instead of a reconciled gift silently going stale. (This is the one place the
+`amount_applied > 0` invariant is relaxed to allow the reversing sign; the reversal
+stays in the ledger so book-once (INV-B) and every derived status remain correct
+without a side channel.) A partial refund nets partially → the gift drops to
+`partial`; a full refund or chargeback nets to zero and the emptied gift follows the
+existing propagation subsystem's archive rules. The refund itself is a real ingested
+unit-grain evidence row (per source, §4.1), so the reversing ledger row has a
+concrete `source_id` to hang on — it is an ordinary unit whose only application is
+the reversal.
 
 ### 4.3 A small settlement-link table for Plane 1
 
@@ -191,6 +212,18 @@ the vestigial `confirmed_keep` / `confirmed_replace` / `conflict_approved` paths
 (already partly retired under D4). The payout's settlement status becomes a pure
 derivation (§4.4).
 
+**One count across the settlement boundary.** A confirmed settlement link says the
+deposit *is* the Stripe payout landing, so the deposit and its constituent charges
+are the **same dollars** at two grains. Book-once (INV-B) is per-unit, so it does not
+by itself stop both grains from being counted; the model adds the rule explicitly:
+when the per-charge Stripe units carry `counted` unit→gift rows, any coarse
+deposit→gift `counted` link for that same money is **superseded** (downgraded to
+`corroborating`, and a coarse deposit-derived gift archived) so Plane 2 credits the
+donor once. This is the durable replacement for today's `processor_payout` exclusion
++ coarse-gift archive (retired above). If there are no per-charge counted units, the
+coarse deposit gift simply *stays* the counted record (the old "keep") — either way,
+exactly one counted representation per dollar.
+
 ### 4.4 One derived status per record per plane (no new stored columns)
 
 All statuses are pure functions over the two link tables (the
@@ -205,6 +238,11 @@ persisted.
   - This replaces `quickbooks_tie_status`'s `tied/amount_mismatch/missing` with a
     source-agnostic vocabulary; the Stripe "tied at payout level" shortcut is no
     longer a special case because Stripe charges now have their own counted rows.
+  - **No amount-mismatch override.** When a human confirms a match whose amounts
+    differ beyond the fee band, the resolution is to **correct the gift amount** to
+    what actually landed — the SUM then reconciles — not a `confirmAmountMismatch`
+    flag (B1). Money that is genuinely *reversed* (a refund) is handled by netting in
+    the ledger (§4.2a), never by editing the gift amount.
 - **Unit (Plane 2)** → `excluded` \| `linked` \| `partial` \| `proposed` \| `orphan`
   (symmetric with the gift side — a unit can be fractionally applied just as a gift
   can be fractionally funded).
@@ -406,14 +444,15 @@ already-reconciled over-splits — the common real case — without severing his
 
 | Scenario | Today | Target |
 | --- | --- | --- |
-| **Stock / brokerage gift** (many QB units → one gift, amounts differ, different dates) | group-reconcile "representative + `group_reconciled_gift_id`" + `confirmAmountMismatch` override | **N counted ledger rows** → one gift, each with its own `amount_applied`; fee/mismatch tolerance in the service layer. No representative, no second pointer column. |
+| **Stock / brokerage gift** (many QB units → one gift, amounts differ, different dates) | group-reconcile "representative + `group_reconciled_gift_id`" + `confirmAmountMismatch` override | **N counted ledger rows** → one gift, each with its own `amount_applied`; within the fee band it reconciles automatically. Beyond the band (brokerage fees, a write-off) there is **no mismatch override** — the human corrects the gift amount to what actually landed and the SUM reconciles (B1). No representative, no second pointer column. |
 | **Donorbox donation duplicating another source** (cross-source dedupe) | ad-hoc linked/excluded | the *settling* record is the **counted** unit — the QB payment for a pay-by-check, or the **Stripe charge** for a Donorbox-through-Stripe donation (clean 1:1 via `donation.stripe_charge_id`) — while the Donorbox row is a **corroborating** ledger row (or excluded `already_booked`). Same money signalled by Donorbox, counted once. |
 | **Donorbox PayPal → new-money unit** (no batch leg) | non-Stripe new-money worklist row | first-class **counted** unit that mints/links a gift. Flagged: PayPal units have **no Plane-1 settlement leg** (only Stripe payouts↔QB deposits are batch-reconciled) — they tie to the books only via an eventual QB deposit, if at all. A known gap, not solved here. |
 | **Bulk deposit** (one QB unit → many gifts) | `gift_evidence_links` corroboration | **N counted ledger rows** from one deposit unit to many gifts (M:N in the other direction); the deposit's own `amount_applied` sums across them within book-once. The deposit unit reads `partial` until its applied sum reaches its value, then `linked` (§4.4). |
 | **Restriction-split wire** (one $1M wire QB-booked as several restricted payments) | ad-hoc grouping | Two supported shapes, both **gift-grain** (Decision 6): (a) one multi-allocation CRM gift — tie all the QB payments to that single gift, reconciled when the SUM hits the gift total (no per-restriction check); (b, preferred when restriction-level ties matter) split into **several one-restriction gifts** and tie each QB payment 1:1 to its gift, which makes header-grain tie math restriction-correct for free. |
-| **Stripe payout matches an already-booked QB deposit** (old `conflict_approved` / conflict-keep) | payout flagged `conflict_approved`; a `confirmed_keep` path + a double-book gate guard the deposit's existing gift; per-track status so it doesn't read as a discrepancy | **dissolves:** the settlement link is **Plane 1 only** (payout↔deposit, no gift), so confirming it can't double-book donor credit — whether the deposit already carries a Plane-2 gift is orthogonal. Confirm the settlement; the gift is untouched. No conflict enum, no keep/replace, no gate. |
+| **Stripe payout matches an already-booked QB deposit** (old `conflict_approved` / conflict-keep) | payout flagged `conflict_approved`; a `confirmed_keep` path + a double-book gate guard the deposit's existing gift; per-track status so it doesn't read as a discrepancy | the *settlement* confirm is **Plane 1 only** (payout↔deposit, no gift) — no conflict enum, no keep/replace path. The real hazard (the deposit's coarse gift and the payout's per-charge Stripe gifts counting the same dollars twice) is handled by the **one-count-across-the-settlement-boundary** rule (§4.3): per-charge counted units supersede the coarse deposit→gift link (else the coarse gift stays the counted record). |
 | **Over-split CRM gift** (one grant entered as several gifts) | `/gifts-and-payments/merge` moves allocations + sums, but hard-deletes losers & 409s on any QB/Stripe link | ledger-aware **combine** (§4.6a): re-point each loser's counted/corroborating ledger rows onto the survivor, re-check book-once, recompute tie; one gift with N allocation rows; absorbed gifts archived, evidence untouched. |
 | **Over-split QB deposit** (one deposit booked as several restriction payments) | `source_group_id` + representative `group_reconciled_gift_id` mint | durable **`unit_groups`** association (§4.6b, polymorphic membership); matching the group writes one counted ledger row per member → one gift; QB rows never edited (INV-G). |
+| **Refunded / charged-back payment** (a QB refund record, or a Stripe refund/dispute) | Stripe-only propose-then-confirm reduces/archives the gift; QB refunds not detected | refund detection is first-class on **both** sources; the refund is a **reversing counted ledger row** that cancels its original (§4.2a), so the gift's counted SUM returns to 0 and it reads as **no payment at all**. Partial refund → `partial`; full refund/chargeback → `unreconciled` + archive per the propagation subsystem. |
 
 ---
 
@@ -477,8 +516,10 @@ task** — this task delivers only the ratified design (Phase 1).
 - Changing the **matching heuristics** (email/name/amount/date/fee-band scoring,
   thresholds, intermediary/memo parsing). This is about the *link model and
   surfaces*, not matcher accuracy.
-- Refund / chargeback propagation redesign (its own subsystem —
-  `stripe-refund-propagation`).
+- Refund / chargeback **detection heuristics** — *how* a refund is spotted and
+  paired to its original (the `stripe-refund-propagation` subsystem, now extended to
+  QB refund records). Tuning the detector is out of scope; the model **does** cover
+  the *ledger effect* — a detected refund nets its original to zero (§4.2a).
 - Pledge `paid_amount` derivation (a separate 1:N, intentionally not in the
   ledger).
 - Ingestion / classification (funding source, entity attribution, exclusion rules,

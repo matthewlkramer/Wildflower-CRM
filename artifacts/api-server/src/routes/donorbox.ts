@@ -33,6 +33,10 @@ import {
   paramId,
   parsePagination,
 } from "../lib/helpers";
+import {
+  seedInitialGiftAllocation,
+  assertGiftHasAllocations,
+} from "../lib/giftAllocationSeed";
 import { getAppUser } from "../lib/appRequest";
 import { logger } from "../lib/logger";
 import { syncDonorbox } from "../lib/donorboxSync";
@@ -575,6 +579,14 @@ router.post(
             user.id,
           ),
         );
+        // Every gift needs at least one allocation (the sole home of money
+        // scope). Seed a default full-amount line; fundraiser refines scope later.
+        await seedInitialGiftAllocation(tx, {
+          giftId,
+          amount: locked.amount,
+          dateReceived: locked.dateReceived,
+        });
+        await assertGiftHasAllocations(tx, giftId);
         await tx
           .update(donorboxDonations)
           .set({

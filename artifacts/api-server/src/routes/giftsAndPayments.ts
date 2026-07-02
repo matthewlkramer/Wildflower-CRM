@@ -120,6 +120,10 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
+import {
+  seedInitialGiftAllocation,
+  assertGiftHasAllocations,
+} from "../lib/giftAllocationSeed";
 import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
@@ -572,16 +576,34 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateGiftOrPaymentBodyRefined, req.body, res);
     if (!body) return;
-    const [row] = await db
-      .insert(giftsAndPayments)
-      .values({
-        id: newId(),
-        ...body,
-        // Dual-write the authoritative loan_or_grant flag from the gift type
-        // (legacy `type` stays the read source this phase).
-        loanOrGrant: giftTypeToLoanOrGrant(body.type),
-      })
-      .returning(giftHeaderColumns);
+    // Wrap in a transaction so the header + its seeded allocation land together:
+    // every gift MUST have at least one allocation (the sole home of money scope).
+    const [row] = await db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(giftsAndPayments)
+        .values({
+          id: newId(),
+          ...body,
+          // Dual-write the authoritative loan_or_grant flag from the gift type
+          // (legacy `type` stays the read source this phase).
+          loanOrGrant: giftTypeToLoanOrGrant(body.type),
+        })
+        .returning(giftHeaderColumns);
+      const created = inserted[0];
+      if (created) {
+        // Seed a single full-amount allocation (fiscal year from the gift date,
+        // or the explicit grantYear if the body carried one) so the new gift is
+        // never scope-less. The fundraiser refines entity / restriction later.
+        await seedInitialGiftAllocation(tx, {
+          giftId: created.id,
+          amount: created.amount,
+          dateReceived: created.dateReceived,
+          grantYear: body.grantYear,
+        });
+        await assertGiftHasAllocations(tx, created.id);
+      }
+      return inserted;
+    });
     await applyDerivedOppFieldsMany(row?.opportunityId);
     await applyGiftQbTieMany(row?.id);
     if (row) {
