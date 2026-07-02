@@ -104,6 +104,25 @@ noise ever masks a real dev regression. The gate's own raw ledger SQL filters
 `link_role='counted'` to stay aligned with the readers once Phase-5 corroborating
 rows land.
 
+## Prod schema lagged dev (push-only cols) — needed a hand-applied prep file
+The polymorphic-ledger deltas — `link_role`, `lifecycle` (+ their enums),
+`payment_id` DROP NOT NULL, and the PARTIAL UNIQUE book-once indexes on
+`(stripe_charge_id,gift_id)` / `(donorbox_donation_id,gift_id)` — reached DEV
+only via `drizzle-kit push` with **no reviewed migration SQL file**. 0065
+(`CREATE TABLE IF NOT EXISTS`) can't retrofit an existing prod table, so prod
+still had `payment_id NOT NULL` and none of the above. Two hard consequences:
+the deployed readers filter `link_role='counted'` (missing column ⇒ 500) and
+0086's `ON CONFLICT (<anchor>,gift_id)` needs the partial unique index to exist
+(missing ⇒ "no unique or exclusion constraint matching the ON CONFLICT spec").
+Fix: a hand-applied idempotent prep file (0087) applied to prod BEFORE Publish
+and BEFORE 0086. **Prod deploy order for this feature: 0087 (schema prep) →
+Publish (code) → 0086 (backfill).**
+**Why:** every ledger column that lives only in the Drizzle schema is invisible
+to prod until a reviewed SQL file ships it; the Publish diff is distrusted here
+(0065's own header). **How to apply:** before telling anyone a backfill is
+"runnable on prod," verify each column/index it depends on actually exists in
+prod (read-only query), don't assume drizzle push == prod.
+
 ## Untouched by design
 `pledgeStage.ts` pledge `paid_amount` (SUM of `gifts_and_payments.amount` on the
 pledge, excluding archived) is a separate 1:N and is NOT folded into the ledger.
