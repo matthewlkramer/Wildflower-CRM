@@ -45,9 +45,9 @@ recorded on the row (no 5xx). Dev state fully snapshotted + restored after.
 
 **BLOCKER 1 (RESOLVED by user) — Drive file visibility.** The grant-agreement
 links are Google-Form file-upload responses in the form owner's "(File
-responses)" folder. Originally the connected account
-(matthew.kramer@wildflowerschools.org) got **404 for all 264 file ids**; after the
-user fixed sharing (same connected account) a read-only recheck showed **241/264
+responses)" folder. Originally the connected admin account got **404 for all 264
+file ids**; after the user fixed sharing (same connected account) a read-only
+recheck showed **241/264
 now reachable** (143 PDF, 53 jpeg, 43 png, 1 heic, 1 docx) with **23 still
 http_404** + 4 unparseable placeholder links. Decision: proceed and let the 23
 record as `not_found` to chase individually. Drive 404 (not 403) = no-access.

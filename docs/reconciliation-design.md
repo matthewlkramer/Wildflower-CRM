@@ -104,6 +104,16 @@ These carry over unchanged and constrain every phase:
   Schema/code ship via Publish; every prod **data** change is a reviewed, idempotent
   SQL file in `lib/db/migrations/`, applied by a human. Every phase is additive →
   dual-write → backfill → **prod parity** → flip reads → deprecate → drop much later.
+- **INV-G — Sync owns evidence; CRM associations are additive.** Every external
+  evidence row (Stripe payout / charge, QB deposit / payment line, Donorbox
+  donation) is a mirror of source data **owned by the sync**: its source facts
+  (amount, date, entity, ids, raw payload) are re-asserted on every pull and must
+  never be mutated, split, or deleted by the reconciliation UI to express a
+  relationship. All CRM-side associations — unit↔gift links (`payment_applications`),
+  batch↔batch links (`settlement_links`), unit↔unit groups (§4.6), and gift-combine
+  provenance — live in **separate CRM columns or tables**. The two cleanup
+  operations (§4.6) are therefore *re-associations*, never edits to the source
+  mirror; anything the sync can re-derive from source stays sync-owned.
 
 ---
 
@@ -232,6 +242,64 @@ classification (exclusion reason, funding source, entity, coding snapshot) are
 **orthogonal to matching** (INV-E) — kept, but decoupled from the match state
 machine.
 
+### 4.6 Two non-destructive cleanup operations
+
+Real data arrives mis-coded in two symmetric ways, and the interface must let a
+fundraiser repair both **without ever touching the sync-owned evidence** (INV-G).
+The two errors are duals — one on the gift side, one on the evidence side:
+
+**(a) CRM over-split → combine gifts.** When one real gift was entered as several
+gifts (e.g. one grant typed in once per restriction), collapse them into **one gift
+with several allocation rows.**
+- *Today:* `POST /gifts-and-payments/merge` already moves every loser's allocation
+  rows onto the survivor and sums the amount — but it **hard-deletes** the losers
+  and **blocks (409) when any loser is QB / Stripe / ledger-linked**, precisely to
+  avoid severing reconciliation history.
+- *Target:* combine becomes ledger-aware. Instead of blocking a linked loser, it
+  **re-points that loser's counted (and corroborating) ledger rows onto the
+  survivor** inside the merge tx and recomputes the survivor's derived tie status
+  (§4.4). Evidence rows are untouched — only `payment_applications.gift_id` moves.
+  Book-once (INV-B) is a per-*unit* SUM, so re-pointing changes no unit's total on
+  its own; the one hazard is a **key collision** — when the survivor and a loser each
+  already hold a `counted` row for the *same* unit (one deposit split across the very
+  gifts being combined — the classic over-split), a naïve re-point violates
+  `UNIQUE(evidence_source, source_id, gift_id)`. Resolve by **coalescing**: fold the
+  colliding rows into one, **sum their `amount_applied`**, and keep the survivor row's
+  identity (its `lifecycle` / `provenance` / gift-creating flag win). Corroborating
+  rows have no unique key, so **dedupe on re-point**. The survivor ends as one gift
+  with N allocation rows and its counted rows summing to its combined amount: the
+  ordinary "N units → one gift" shape (§6). Donor is resolved exactly as today's
+  `/merge` does — explicit choice required when the gifts disagree (INV-C). Absorbed
+  gifts are **archived, not hard-deleted** (the app-wide default supersedes the
+  current merge hard-delete exception). This is the exact inverse of the Decision-6
+  split (one gift → several one-restriction gifts).
+
+**(b) QB over-split → group units.** When one real deposit was booked in QB as
+several payments (to show different restrictions on parts of one gift), link those
+payment **units** together as a single group and match the group as one — without
+editing the QB rows.
+- *Today:* `staged_payments.source_group_id` already groups QB rows; group-approve
+  mints one gift via a "representative + `group_reconciled_gift_id`" pointer dance.
+- *Target:* promote grouping into a first-class, durable, sync-safe association: a
+  small **`unit_groups`** record (id, optional label, `created_by`, `created_at`,
+  note) with **polymorphic `(evidence_source, source_id)` membership** — the same
+  shape the ledger uses — so it never needs a grouping column on three different
+  evidence tables. The group is a pure CRM annotation: the sync re-asserts each
+  member's source facts untouched (INV-G). **Membership is exclusive** — a unit
+  belongs to at most one group and, once grouped, matches *only* via its group (a
+  member is never matched individually). Matching a grouped set to a gift writes
+  **one counted ledger row per member unit** → the gift, each with `amount_applied` =
+  that member's own value and the fee-band tolerance (INV-D) applied to the group
+  **total**; no representative, no `group_reconciled_gift_id`, so the group reduces to
+  the same "N units → one gift" shape and book-once (INV-B) spans the members
+  automatically. A group not yet matched reads as one logical unit in the Gift
+  report. (Membership is single-source in practice; a cross-source group would need a
+  Plane-1 double-count guard and is not built in Phase 3.)
+
+Both operations are re-associations over immutable evidence, so both fit the
+prod-safe additive path (§7): the combine's ledger re-point (a) and the
+`unit_groups` table (b) are new writes, never destructive rewrites of synced rows.
+
 ---
 
 ## 5. Open decisions — resolved
@@ -311,6 +379,20 @@ gift-split already expresses cleanly. Deferring it keeps the ledger's SUM purely
 per-gift and per-unit and avoids a second grain of "reconciled." Revisit only if
 manual splitting proves too costly in practice.
 
+### Decision 7 — How do we model the two cleanup ops (combine gifts / group units)? → **Group via a durable `unit_groups` table; combine via a ledger-aware merge; both additive over immutable evidence.**
+Unit grouping becomes a first-class `unit_groups` record + polymorphic membership
+(§4.6b), generalizing today's `staged_payments.source_group_id`. Gift combine
+re-points the losers' ledger rows onto the survivor rather than blocking on a
+QB / Stripe link (§4.6a). Neither ever mutates or deletes an evidence row (INV-G).
+
+*Why:* the two data errors are duals (over-split gift vs over-split deposit), and
+each already has a partial mechanism in the code (`/merge`, `source_group_id`).
+Making grouping a durable table — not an ad-hoc string that exists only to seed a
+mint — lets a group persist and display as one logical unit before and after
+matching, while keeping the evidence rows pristine for the sync to re-own.
+Re-pointing the ledger on combine (instead of today's 409) is what lets us clean up
+already-reconciled over-splits — the common real case — without severing history.
+
 ---
 
 ## 6. Correctness checklist (scenarios the model must express)
@@ -322,6 +404,8 @@ manual splitting proves too costly in practice.
 | **Donorbox PayPal → new-money unit** (no batch leg) | non-Stripe new-money worklist row | first-class **counted** unit that mints/links a gift. Flagged: PayPal units have **no Plane-1 settlement leg** (only Stripe payouts↔QB deposits are batch-reconciled) — they tie to the books only via an eventual QB deposit, if at all. A known gap, not solved here. |
 | **Bulk deposit** (one QB unit → many gifts) | `gift_evidence_links` corroboration | **N counted ledger rows** from one deposit unit to many gifts (M:N in the other direction); the deposit's own `amount_applied` sums across them within book-once. The deposit unit reads `partial` until its applied sum reaches its value, then `linked` (§4.4). |
 | **Restriction-split wire** (one $1M wire QB-booked as several restricted payments) | ad-hoc grouping | Two supported shapes, both **gift-grain** (Decision 6): (a) one multi-allocation CRM gift — tie all the QB payments to that single gift, reconciled when the SUM hits the gift total (no per-restriction check); (b, preferred when restriction-level ties matter) split into **several one-restriction gifts** and tie each QB payment 1:1 to its gift, which makes header-grain tie math restriction-correct for free. |
+| **Over-split CRM gift** (one grant entered as several gifts) | `/gifts-and-payments/merge` moves allocations + sums, but hard-deletes losers & 409s on any QB/Stripe link | ledger-aware **combine** (§4.6a): re-point each loser's counted/corroborating ledger rows onto the survivor, re-check book-once, recompute tie; one gift with N allocation rows; absorbed gifts archived, evidence untouched. |
+| **Over-split QB deposit** (one deposit booked as several restriction payments) | `source_group_id` + representative `group_reconciled_gift_id` mint | durable **`unit_groups`** association (§4.6b, polymorphic membership); matching the group writes one counted ledger row per member → one gift; QB rows never edited (INV-G). |
 
 ---
 
@@ -333,7 +417,7 @@ later), and is its own human-gated task. **Phases 2–7 are out of scope for thi
 task** — this task delivers only the ratified design (Phase 1).
 
 1. **Ratify the spec** *(this task)*. Commit this document as the target. Lock
-   INV-A…INV-F. No code behavior change.
+   INV-A…INV-G. No code behavior change.
 
 2. **Finish the QB unit↔gift read-flip.** Move the remaining legacy-column reads
    (`coding-form-import.tsx`, any residual "current link" rendering) onto the
@@ -346,7 +430,11 @@ task** — this task delivers only the ratified design (Phase 1).
    dual-write with the legacy pointer columns; backfill; **prod parity**; flip
    reads. Collapse the stock group-reconcile mechanism into plain N counted ledger
    rows. After this the entire unit↔gift plane is ledger-backed across all three
-   unit sources.
+   unit sources. Two cleanup ops (§4.6) land on this ledger foundation: make gift
+   **combine** ledger-aware (re-point the losers' rows onto the survivor instead of
+   409-ing on QB/Stripe links; archive absorbed gifts rather than hard-delete), and
+   add the `unit_groups` table + polymorphic membership, backfilled from today's
+   `source_group_id`, so a grouped set matches as one counted ledger row per member.
 
 4. **Model Plane 1 settlement as links.** Add `settlement_links` (§4.3). Backfill
    from `stripe_payouts.qb_reconciliation_status` (map `confirmed_*` → a
@@ -361,7 +449,11 @@ task** — this task delivers only the ratified design (Phase 1).
 6. **Collapse the UI to two three-column reports** (Decision 4 / §4.5). Re-group
    the existing components under the Settlement report and the Gift report (with the
    funding-source filter). Retire the cards / bundles / six-queue *derivations*;
-   "needs review" and "excluded" become filters.
+   "needs review" and "excluded" become filters. Surface the two §4.6 cleanup actions
+   in the **Gift report** (the unit/gift-grain surface): **combine** selected gifts
+   and **group** selected units — each a re-association over immutable evidence
+   (INV-G). (Plane-1 batch↔batch grouping is out of scope; the Settlement report
+   stays payout↔deposit.)
 
 7. **Deprecate, then (much later, human-gated) drop legacy.** Mark the retired
    pointer columns, `staged_payment_splits`, `gift_evidence_links`, and dead enum
