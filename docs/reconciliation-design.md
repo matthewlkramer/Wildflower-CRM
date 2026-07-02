@@ -106,14 +106,18 @@ These carry over unchanged and constrain every phase:
   dual-write → backfill → **prod parity** → flip reads → deprecate → drop much later.
 - **INV-G — Sync owns evidence; CRM associations are additive.** Every external
   evidence row (Stripe payout / charge, QB deposit / payment line, Donorbox
-  donation) is a mirror of source data **owned by the sync**: its source facts
-  (amount, date, entity, ids, raw payload) are re-asserted on every pull and must
-  never be mutated, split, or deleted by the reconciliation UI to express a
-  relationship. All CRM-side associations — unit↔gift links (`payment_applications`),
-  batch↔batch links (`settlement_links`), unit↔unit groups (§4.6), and gift-combine
-  provenance — live in **separate CRM columns or tables**. The two cleanup
-  operations (§4.6) are therefore *re-associations*, never edits to the source
-  mirror; anything the sync can re-derive from source stays sync-owned.
+  donation) is a mirror of source data **owned by the sync**: its immutable source
+  facts (amount, date, source ids, raw payload) are re-asserted on every pull and
+  must never be mutated, split, or deleted by the reconciliation UI to express a
+  relationship. **Classification fields are the deliberate exception:** `entity_id`,
+  `funding_source`, and the exclusion reason carry an `auto | manual` provenance, and
+  a **manual** value is a CRM annotation the sync must *preserve* across re-pull
+  (today's preserve-on-conflict upsert) — it is a human override, not a source fact.
+  All CRM-side associations — unit↔gift links (`payment_applications`), batch↔batch
+  links (`settlement_links`), unit↔unit groups (§4.6), and gift-combine provenance —
+  live in **separate CRM columns or tables**. The two cleanup operations (§4.6) are
+  therefore *re-associations*, never edits to the source mirror; anything the sync
+  can re-derive from source (and no human has manually overridden) stays sync-owned.
 
 ---
 
@@ -180,9 +184,12 @@ Give batch↔batch its own purpose-built table (Decision 1) — call it
 This **retires** `stripe_payouts.qb_reconciliation_status` (7-value enum),
 `qb_supersede_status`, `proposed_qb_staged_payment_id`,
 `matched_qb_staged_payment_id`, `qb_conflict_staged_payment_id`,
-`qb_conflict_gift_id`, and the vestigial `confirmed_keep` / `confirmed_replace` /
-`conflict_approved` paths (already partly retired under D4). The payout's
-settlement status becomes a pure derivation (§4.4).
+`qb_conflict_gift_id`, the direct charge→deposit pointer
+`stripe_staged_charges.linked_qb_staged_payment_id` (a Stripe charge now reaches QB
+*through* its payout's settlement link, §1 — not a per-charge deposit pointer), and
+the vestigial `confirmed_keep` / `confirmed_replace` / `conflict_approved` paths
+(already partly retired under D4). The payout's settlement status becomes a pure
+derivation (§4.4).
 
 ### 4.4 One derived status per record per plane (no new stored columns)
 
@@ -400,10 +407,11 @@ already-reconciled over-splits — the common real case — without severing his
 | Scenario | Today | Target |
 | --- | --- | --- |
 | **Stock / brokerage gift** (many QB units → one gift, amounts differ, different dates) | group-reconcile "representative + `group_reconciled_gift_id`" + `confirmAmountMismatch` override | **N counted ledger rows** → one gift, each with its own `amount_applied`; fee/mismatch tolerance in the service layer. No representative, no second pointer column. |
-| **Donorbox pay-by-check → QB unit** (cross-source dedupe) | ad-hoc linked/excluded | QB record is the **counted** unit; the Donorbox row is a **corroborating** ledger row (or excluded `already_booked`). Same logical gift signalled by Donorbox, settled by QB, counted once. |
+| **Donorbox donation duplicating another source** (cross-source dedupe) | ad-hoc linked/excluded | the *settling* record is the **counted** unit — the QB payment for a pay-by-check, or the **Stripe charge** for a Donorbox-through-Stripe donation (clean 1:1 via `donation.stripe_charge_id`) — while the Donorbox row is a **corroborating** ledger row (or excluded `already_booked`). Same money signalled by Donorbox, counted once. |
 | **Donorbox PayPal → new-money unit** (no batch leg) | non-Stripe new-money worklist row | first-class **counted** unit that mints/links a gift. Flagged: PayPal units have **no Plane-1 settlement leg** (only Stripe payouts↔QB deposits are batch-reconciled) — they tie to the books only via an eventual QB deposit, if at all. A known gap, not solved here. |
 | **Bulk deposit** (one QB unit → many gifts) | `gift_evidence_links` corroboration | **N counted ledger rows** from one deposit unit to many gifts (M:N in the other direction); the deposit's own `amount_applied` sums across them within book-once. The deposit unit reads `partial` until its applied sum reaches its value, then `linked` (§4.4). |
 | **Restriction-split wire** (one $1M wire QB-booked as several restricted payments) | ad-hoc grouping | Two supported shapes, both **gift-grain** (Decision 6): (a) one multi-allocation CRM gift — tie all the QB payments to that single gift, reconciled when the SUM hits the gift total (no per-restriction check); (b, preferred when restriction-level ties matter) split into **several one-restriction gifts** and tie each QB payment 1:1 to its gift, which makes header-grain tie math restriction-correct for free. |
+| **Stripe payout matches an already-booked QB deposit** (old `conflict_approved` / conflict-keep) | payout flagged `conflict_approved`; a `confirmed_keep` path + a double-book gate guard the deposit's existing gift; per-track status so it doesn't read as a discrepancy | **dissolves:** the settlement link is **Plane 1 only** (payout↔deposit, no gift), so confirming it can't double-book donor credit — whether the deposit already carries a Plane-2 gift is orthogonal. Confirm the settlement; the gift is untouched. No conflict enum, no keep/replace, no gate. |
 | **Over-split CRM gift** (one grant entered as several gifts) | `/gifts-and-payments/merge` moves allocations + sums, but hard-deletes losers & 409s on any QB/Stripe link | ledger-aware **combine** (§4.6a): re-point each loser's counted/corroborating ledger rows onto the survivor, re-check book-once, recompute tie; one gift with N allocation rows; absorbed gifts archived, evidence untouched. |
 | **Over-split QB deposit** (one deposit booked as several restriction payments) | `source_group_id` + representative `group_reconciled_gift_id` mint | durable **`unit_groups`** association (§4.6b, polymorphic membership); matching the group writes one counted ledger row per member → one gift; QB rows never edited (INV-G). |
 
@@ -456,10 +464,11 @@ task** — this task delivers only the ratified design (Phase 1).
    stays payout↔deposit.)
 
 7. **Deprecate, then (much later, human-gated) drop legacy.** Mark the retired
-   pointer columns, `staged_payment_splits`, `gift_evidence_links`, and dead enum
-   values `@deprecated`; scrub them from API responses (one scrubbed projection —
-   see memory `deprecated-column-response-leak`); schedule the physical DROP as
-   reviewed SQL only once no live code or prod read touches them.
+   pointer columns, `staged_payment_splits`, `staged_payments.source_group_id`
+   (superseded by `unit_groups`, §4.6b), `gift_evidence_links`, and dead enum values
+   `@deprecated`; scrub them from API responses (one scrubbed projection — see memory
+   `deprecated-column-response-leak`); schedule the physical DROP as reviewed SQL only
+   once no live code or prod read touches them.
 
 ---
 
