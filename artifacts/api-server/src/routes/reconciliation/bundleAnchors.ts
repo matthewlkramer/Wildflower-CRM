@@ -28,12 +28,31 @@ type AnchorSource = "stripe_payout" | "qb_staged_payment";
 
 // Stripe payout buckets (over qb_reconciliation_status). `all` = every payout is
 // a valid anchor (even a stray unmatched one — its charges can still mint gifts).
+//
+// A payout only NEEDS review when there is actionable work in this workbench:
+//   • its QB-deposit tie is awaiting a human decision (proposed/conflict_approved), OR
+//   • it is still `unmatched` AND at least one of its charges has not yet been
+//     reconciled/excluded/rejected (i.e. a gift still needs to be minted/matched).
+// An `unmatched` payout whose charges are ALL settled has nothing to do here —
+// there is no QB deposit to tie — so it must NOT linger in needs_review (the
+// per-charge gifts have already been confirmed). It still shows under `all`, and
+// re-enters needs_review as `proposed` if the admin propose-all tie pass runs.
 function stripeWhere(queue: AnchorQueue): SQL {
   switch (queue) {
     case "confirmed":
       return sql`sp.qb_reconciliation_status IN ('confirmed_reconciled','confirmed_excluded','confirmed_keep','confirmed_replace')`;
     case "needs_review":
-      return sql`sp.qb_reconciliation_status IN ('unmatched','proposed','conflict_approved')`;
+      return sql`(
+        sp.qb_reconciliation_status IN ('proposed','conflict_approved')
+        OR (
+          sp.qb_reconciliation_status = 'unmatched'
+          AND EXISTS (
+            SELECT 1 FROM stripe_staged_charges c
+            WHERE c.stripe_payout_id = sp.id
+              AND c.status NOT IN ('reconciled','excluded','rejected')
+          )
+        )
+      )`;
     case "all":
       return sql`TRUE`;
   }

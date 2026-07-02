@@ -166,7 +166,7 @@ async function seedPayout(opts: {
 
 async function seedCharge(
   payoutId: string,
-  opts: { matchedGiftId?: string } = {},
+  opts: { matchedGiftId?: string; status?: string } = {},
 ): Promise<string> {
   const id = nextId("ch");
   await db.insert(schema.stripeStagedCharges).values({
@@ -179,8 +179,10 @@ async function seedCharge(
     dateReceived: futureDate(),
     payerName: `Zztest Anchor Charge ${RUN}`,
     payerEmail: `${RUN}-charge@example.invalid`,
-    // A charge already booked into a gift is `reconciled` evidence.
-    status: (opts.matchedGiftId ? "reconciled" : "pending") as never,
+    // A charge already booked into a gift is `reconciled` evidence. An explicit
+    // `status` override lets a test mark a charge settled without an FK to a gift.
+    status: (opts.status ??
+      (opts.matchedGiftId ? "reconciled" : "pending")) as never,
     matchedGiftId: opts.matchedGiftId ?? null,
   });
   chargeIds.push(id);
@@ -460,6 +462,29 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     expect(row.statusLabel).toBe("pending");
     expect(row.chargeCount).toBeNull();
     expect(row.date).toBeTruthy();
+  });
+
+  it("omits an unmatched payout whose charges are ALL settled from needs_review (still under all)", async () => {
+    // Regression: a recurring Stripe donor whose every charge is already booked
+    // into a gift (`reconciled`) but whose payout was never tied to a QB deposit
+    // (stays `unmatched`). The per-charge gifts are confirmed, so there is no work
+    // left in this workbench — the payout must NOT linger in needs_review, or
+    // confirmed money reappears in the settlement queue.
+    const pSettled = await seedPayout({ status: "unmatched" });
+    await seedCharge(pSettled, { status: "reconciled" });
+
+    // A sibling unmatched payout that still has an OPEN (pending) charge — a gift
+    // still needs minting there, so it MUST remain in needs_review.
+    const pOpen = await seedPayout({ status: "unmatched" });
+    await seedCharge(pOpen);
+
+    const needs = await listAnchors("needs_review");
+    expect(needs.has(`stripe_payout:${pSettled}`)).toBe(false);
+    expect(needs.has(`stripe_payout:${pOpen}`)).toBe(true);
+
+    // Fully-settled-but-untied money is still discoverable under `all`.
+    const all = await listAnchors("all");
+    expect(all.has(`stripe_payout:${pSettled}`)).toBe(true);
   });
 
   it("confirmed queue lists settled rows and omits pending ones", async () => {
