@@ -4,6 +4,8 @@ import {
   stagedPayments,
   giftsAndPayments,
   entities,
+  unitGroups,
+  unitGroupMembers,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
@@ -626,6 +628,7 @@ router.post(
       });
       return;
     }
+    const user = getAppUser(req);
     const confirmDonorConflict = parsed.data.confirmDonorConflict === true;
     const ids = Array.from(new Set(parsed.data.stagedPaymentIds)).sort();
     if (ids.length < 2) {
@@ -721,6 +724,38 @@ router.post(
           .where(eq(stagedPayments.sourceGroupId, sourceGroupId));
         const memberIds = members.map((m) => m.id).sort();
         const total = members.reduce((acc, m) => acc + Number(m.amount ?? 0), 0);
+
+        // ── Dual-write the durable unit_groups association (WS2) ────────────
+        // Additive mirror of source_group_id (docs/reconciliation-design.md
+        // §4.6b). Group id is deterministic (`ug_<sourceGroupId>`) so this and
+        // the 0088 backfill converge. Membership follows the just-written
+        // sourceGroupId exactly: delete any stale membership for these units,
+        // then (re)insert one row per member. Kept in the same tx as the
+        // source_group_id write so the two never diverge. Reads are NOT flipped
+        // to this table yet.
+        const unitGroupId = `ug_${sourceGroupId}`;
+        await tx
+          .insert(unitGroups)
+          .values({ id: unitGroupId, createdByUserId: user?.id ?? null })
+          .onConflictDoNothing({ target: unitGroups.id });
+        if (memberIds.length) {
+          await tx
+            .delete(unitGroupMembers)
+            .where(
+              and(
+                eq(unitGroupMembers.evidenceSource, "quickbooks"),
+                inArray(unitGroupMembers.sourceId, memberIds),
+              ),
+            );
+          await tx.insert(unitGroupMembers).values(
+            memberIds.map((sid) => ({
+              id: `ugm_${sid}`,
+              groupId: unitGroupId,
+              evidenceSource: "quickbooks" as const,
+              sourceId: sid,
+            })),
+          );
+        }
         result = {
           sourceGroupId,
           stagedPaymentIds: memberIds,
@@ -835,6 +870,32 @@ router.post(
             }
             dissolvedGroupIds.push(g);
           }
+        }
+
+        // ── Dual-write: keep unit_groups in lockstep with source_group_id ───
+        // Drop membership for every unit whose sourceGroupId we just cleared
+        // (removed members + any auto-cleared orphan), then delete the group
+        // rows for fully-dissolved groups (cascade would clear their remaining
+        // membership, but the source rows were all cleared above so there is
+        // none left). Kept in the same tx so the two never diverge.
+        const clearedIds = Array.from(new Set(ungroupedIds));
+        if (clearedIds.length) {
+          await tx
+            .delete(unitGroupMembers)
+            .where(
+              and(
+                eq(unitGroupMembers.evidenceSource, "quickbooks"),
+                inArray(unitGroupMembers.sourceId, clearedIds),
+              ),
+            );
+        }
+        if (dissolvedGroupIds.length) {
+          await tx.delete(unitGroups).where(
+            inArray(
+              unitGroups.id,
+              dissolvedGroupIds.map((g) => `ug_${g}`),
+            ),
+          );
         }
         result = {
           ungroupedIds: Array.from(new Set(ungroupedIds)),
