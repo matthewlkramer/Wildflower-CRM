@@ -139,3 +139,4 @@
 - [Bundle confirm cache invalidation](reconciliation-bundle-confirm-invalidation.md) — confirming a settlement bundle reconciles the SAME staged/charge/gift rows the workbench's other queues render; invalidate cards + staged-payments + gifts + gifts-missing-qb, not just the anchor list.
 - [Reconciliation target-state design](reconciliation-target-design.md) — ratified two-plane/one-ledger simplification lives in docs/reconciliation-design.md; the 5 open decisions are resolved there.
 - [Gift must always have >=1 allocation](gift-allocation-seed-invariant.md) — all 6 mint paths seed a starter allocation via giftAllocationSeed.ts; guard app-level by decision (invariant #7); grant_year set only if the fiscal_years FK row exists.
+- [unit_groups additive dual-write](unit-groups-dualwrite.md) — polymorphic group table mirrors staged_payments.source_group_id in-tx; every source_group_id writer must dual-write; bidirectional parity gate must pass PROD before reads flip.

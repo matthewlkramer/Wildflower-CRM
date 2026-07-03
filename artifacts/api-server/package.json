@@ -19,6 +19,7 @@
     "backfill:derived-opps": "tsx src/scripts/backfill-derived-opp-fields.ts",
     "backfill:gift-qb-tie": "tsx src/scripts/backfill-gift-qb-tie.ts",
     "parity:payment-applications": "tsx src/scripts/parity-payment-applications.ts",
+    "parity:unit-groups": "tsx src/scripts/parity-unit-groups.ts",
     "parity:reconciliation-guards": "tsx src/scripts/parity-reconciliation-guards.ts",
     "parity:stripe-donorbox-readflip": "tsx src/scripts/parity-stripe-donorbox-readflip.ts",
     "parity:loan-or-grant": "tsx src/scripts/parity-loan-or-grant.ts",
