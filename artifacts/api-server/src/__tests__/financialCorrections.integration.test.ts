@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
+import {
+  derivedSettledAmountForGift,
+  hasLinkedPaymentForGift,
+} from "../lib/giftPaymentSummary";
 
 /**
  * End-to-end coverage for the admin-only financial-corrections review queue
@@ -84,6 +88,7 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
   giftEvidenceLinks: Db["giftEvidenceLinks"];
+  paymentApplications: Db["paymentApplications"];
   financialCorrectionDismissals: Db["financialCorrectionDismissals"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -145,6 +150,7 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
     giftEvidenceLinks: dbMod.giftEvidenceLinks,
+    paymentApplications: dbMod.paymentApplications,
     financialCorrectionDismissals: dbMod.financialCorrectionDismissals,
   };
   eqFn = drizzle.eq;
@@ -236,6 +242,19 @@ afterAll(async () => {
     .delete(schema.giftEvidenceLinks)
     .where(
       inArrayFn(schema.giftEvidenceLinks.giftId, [
+        GIFT_M1,
+        GIFT_M2,
+        GIFT_A1,
+        GIFT_A2,
+      ]),
+    );
+  // The /apply flow now dual-writes a corroborating payment_applications row per
+  // link (Phase 5); clear them before the staged-payment (payment_id FK) and
+  // gift (gift_id RESTRICT) deletes below.
+  await db
+    .delete(schema.paymentApplications)
+    .where(
+      inArrayFn(schema.paymentApplications.giftId, [
         GIFT_M1,
         GIFT_M2,
         GIFT_A1,
@@ -381,6 +400,37 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
     expect(staged.matched).toBeNull();
     expect(staged.created).toBeNull();
     expect(staged.group).toBeNull();
+  }, 30_000);
+
+  it("corroborating links stay out of the settled read model (link_role='counted' guard)", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    // Precondition: the prior apply dual-wrote a single corroborating ledger row
+    // for GIFT_A1 (link_role='corroborating', amount NULL) and NO counted row.
+    const pa = await db
+      .select({
+        role: schema.paymentApplications.linkRole,
+        amt: schema.paymentApplications.amountApplied,
+      })
+      .from(schema.paymentApplications)
+      .where(eqFn(schema.paymentApplications.giftId, GIFT_A1));
+    expect(pa).toHaveLength(1);
+    expect(pa[0].role).toBe("corroborating");
+    expect(pa[0].amt).toBeNull();
+
+    // A corroborating-only gift has NO linked counted payment, so the settled
+    // read model must report "nothing landed yet" — derived settled amount NULL
+    // (not '0'). This is the regression guard for the link_role='counted' filter
+    // in giftPaymentSummary: without it the corroborating row would flip
+    // hasLinkedPayment TRUE and settle the gift at $0.
+    const [row] = await db
+      .select({
+        amt: derivedSettledAmountForGift(),
+        has: hasLinkedPaymentForGift(),
+      })
+      .from(schema.giftsAndPayments)
+      .where(eqFn(schema.giftsAndPayments.id, GIFT_A1));
+    expect(row.has).toBe(false);
+    expect(row.amt).toBeNull();
   }, 30_000);
 
   it("rejects apply with an unknown evidence row (404) or unknown gifts (400)", async () => {

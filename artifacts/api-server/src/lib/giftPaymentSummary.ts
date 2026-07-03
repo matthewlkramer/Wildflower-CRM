@@ -49,6 +49,7 @@ export function settledGrossForGift(
       SELECT SUM(pa.amount_applied)
       FROM payment_applications pa
       WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks'
+        AND pa.link_role = 'counted'
     ), 0)
     + COALESCE((
       SELECT SUM(ssc.gross_amount)
@@ -99,6 +100,7 @@ export function hasLinkedPaymentForGift(
     EXISTS (
       SELECT 1 FROM payment_applications pa
       WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks'
+        AND pa.link_role = 'counted'
     )
     OR EXISTS (
       SELECT 1 FROM stripe_staged_charges ssc

@@ -4,6 +4,7 @@ import {
   giftsAndPayments,
   giftAllocations,
   giftEvidenceLinks,
+  paymentApplications,
   stagedPayments,
   stripeStagedCharges,
   organizations,
@@ -469,24 +470,72 @@ router.post(
       return;
     }
 
-    await db
-      .insert(giftEvidenceLinks)
-      .values(
-        body.giftIds.map((giftId) => ({
-          id: newId(),
-          giftId,
-          evidenceKind: body.evidenceKind,
-          evidenceId: body.evidenceId,
-          createdByUserId: appUser?.id ?? null,
-        })),
-      )
-      .onConflictDoNothing({
-        target: [
-          giftEvidenceLinks.giftId,
-          giftEvidenceLinks.evidenceKind,
-          giftEvidenceLinks.evidenceId,
-        ],
-      });
+    // Pre-generate one id per gift so the corroborating payment_applications row
+    // written below REUSES the gift_evidence_links id (mutual idempotency with
+    // the Phase-5 backfill, which also seeds PA.id from gel.id).
+    const now = new Date();
+    const links = body.giftIds.map((giftId) => ({
+      id: newId(),
+      giftId,
+      evidenceKind: body.evidenceKind,
+      evidenceId: body.evidenceId,
+      createdByUserId: appUser?.id ?? null,
+    }));
+
+    // Dual-write (Phase 5, INV-F) in ONE transaction so the gel row and its
+    // corroborating ledger twin are written atomically — a failure between them
+    // would otherwise strand a gel row with no PA twin (a BLOCKING parity
+    // orphan). The ledger row folds each corroborating link into the unit↔gift
+    // ledger as a `link_role='corroborating'` row — audit-only, never in the
+    // counted SUM. amount_applied stays NULL (this flow carries no sub_amount).
+    // It reuses the gel id and dedupes on the corroborating per-anchor partial
+    // UNIQUE, so re-applying the same evidence↔gift is a no-op on both tables.
+    // NEVER writes a counted row here.
+    const evidenceSource: "quickbooks" | "stripe" =
+      body.evidenceKind === "qb_staged" ? "quickbooks" : "stripe";
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(giftEvidenceLinks)
+        .values(links)
+        .onConflictDoNothing({
+          target: [
+            giftEvidenceLinks.giftId,
+            giftEvidenceLinks.evidenceKind,
+            giftEvidenceLinks.evidenceId,
+          ],
+        });
+
+      await tx
+        .insert(paymentApplications)
+        .values(
+          links.map((l) => ({
+            id: l.id,
+            giftId: l.giftId,
+            evidenceSource,
+            paymentId:
+              body.evidenceKind === "qb_staged" ? body.evidenceId : null,
+            stripeChargeId:
+              body.evidenceKind === "stripe_charge" ? body.evidenceId : null,
+            amountApplied: null,
+            matchMethod: "human" as const,
+            linkRole: "corroborating" as const,
+            lifecycle: "confirmed" as const,
+            confirmedByUserId: appUser?.id ?? null,
+            confirmedAt: now,
+            createdTheGift: false,
+          })),
+        )
+        .onConflictDoNothing({
+          target:
+            body.evidenceKind === "qb_staged"
+              ? [paymentApplications.paymentId, paymentApplications.giftId]
+              : [paymentApplications.stripeChargeId, paymentApplications.giftId],
+          where:
+            body.evidenceKind === "qb_staged"
+              ? sql`${paymentApplications.paymentId} IS NOT NULL AND ${paymentApplications.linkRole} = 'corroborating'`
+              : sql`${paymentApplications.stripeChargeId} IS NOT NULL AND ${paymentApplications.linkRole} = 'corroborating'`,
+        });
+    });
 
     res.json({
       evidenceKind: body.evidenceKind,

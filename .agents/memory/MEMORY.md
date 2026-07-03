@@ -142,3 +142,4 @@
 - [unit_groups additive dual-write](unit-groups-dualwrite.md) — polymorphic group table mirrors staged_payments.source_group_id in-tx; every source_group_id writer must dual-write; bidirectional parity gate must pass PROD before reads flip.
 - [Phase 3 group-read flip](reconciliation-phase3-group-read-flip.md) — guards/mutations flip to unit_group_members; cards.ts+bundleAnchors reads stay legacy (parity-safe); revert path is a no-op.
 - [settlement_links parity](settlement-links-parity.md) — Plane-1 payout↔deposit dual-write; parity gate compares confirmed_at exactly ONLY for stable human rows (sync worker bumps updated_at fallback); deposit FK SET-NULL vs CHECK errors on staged-payment delete.
+- [PA counted vs corroborating link_role](reconciliation-corroborating-link-role.md) — every payment_applications money/settled read MUST filter link_role='counted'; corroborating rows are audit-only (amount NULL) and leaked into giftPaymentSummary once.

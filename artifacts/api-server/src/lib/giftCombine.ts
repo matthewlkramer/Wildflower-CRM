@@ -157,6 +157,25 @@ export async function absorbGiftEvidenceIntoSurvivor(
     .from(giftEvidenceLinks)
     .where(inArray(giftEvidenceLinks.giftId, allIds));
 
+  // Corroborating ledger rows (the Phase-5 fold of gift_evidence_links). Kept
+  // separate from the counted ledger above (which drives the money trail) — these
+  // are audit-only and never enter a SUM, so they re-home by simple dedupe.
+  const corrLedger = await tx
+    .select({
+      id: paymentApplications.id,
+      giftId: paymentApplications.giftId,
+      evidenceSource: paymentApplications.evidenceSource,
+      paymentId: paymentApplications.paymentId,
+      stripeChargeId: paymentApplications.stripeChargeId,
+    })
+    .from(paymentApplications)
+    .where(
+      and(
+        inArray(paymentApplications.giftId, allIds),
+        eq(paymentApplications.linkRole, "corroborating"),
+      ),
+    );
+
   // ── 2. Collision detection (no writes past this point until it passes) ───
   const loserSplit = splitRows.some((r) => loserSet.has(r.giftId));
   const survivorSplit = splitRows.some((r) => r.giftId === survivorId);
@@ -343,6 +362,38 @@ export async function absorbGiftEvidenceIntoSurvivor(
         .set({ giftId: survivorId })
         .where(eq(giftEvidenceLinks.id, l.id));
       survivorEvKeys.add(key);
+    }
+  }
+
+  // ── 6b. Re-home corroborating payment_applications (Phase-5 fold of gel) ──
+  // Mirrors §6 on the ledger: re-point each loser's corroborating row to the
+  // survivor, or delete it when the survivor already corroborates that anchor
+  // (the corroborating per-anchor UNIQUE would otherwise 23505). Audit-only, so
+  // this never sums and never blocks the merge (the §2 collision detector reads
+  // the counted ledger only). Keyed on the anchor, independent of gel ids, so it
+  // stays correct after the read-flip stops writing gel.
+  const corrAnchorKey = (r: (typeof corrLedger)[number]): string =>
+    r.evidenceSource === "quickbooks"
+      ? `qb:${r.paymentId}`
+      : `st:${r.stripeChargeId}`;
+  const survivorCorrKeys = new Set(
+    corrLedger
+      .filter((r) => r.giftId === survivorId)
+      .map((r) => corrAnchorKey(r)),
+  );
+  for (const r of corrLedger) {
+    if (!loserSet.has(r.giftId)) continue;
+    const key = corrAnchorKey(r);
+    if (survivorCorrKeys.has(key)) {
+      await tx
+        .delete(paymentApplications)
+        .where(eq(paymentApplications.id, r.id));
+    } else {
+      await tx
+        .update(paymentApplications)
+        .set({ giftId: survivorId, updatedAt: now })
+        .where(eq(paymentApplications.id, r.id));
+      survivorCorrKeys.add(key);
     }
   }
 
