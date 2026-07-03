@@ -34,23 +34,22 @@ date never prompts. The client detects the span and opens a confirm dialog, then
 resends `confirmMultiDate:true`. (Flag name kept as `confirmMultiDate` though it
 now also covers the multi-deposit case.)
 
-**Amount-mismatch gate (SEPARATE human confirmation — do NOT widen the band):**
+**Amount-mismatch gate (NO override — B1, correct the gift amount instead):**
 the fee band is asymmetric on purpose — deposits may land slightly BELOW the gift
 (processor fees) but essentially never above (`giftAmt >= sum-0.01 && giftAmt <=
 sum*1.1+1`). Appreciated-stock/securities gifts break this: shares are booked at
 one value but SELL for more, so combined proceeds exceed the recorded gift (real
 case: a securities gift booked at its share value settled ~1.3% higher across its
-sales). The user explicitly chose an operator override over widening the band.
-So when the combined total is OUTSIDE the band the server returns a DISTINCT
-`400 amount_mismatch_confirmation_required` (was `amount_mismatch`) unless
-`confirmAmountMismatch === true`, which fully bypasses the band check. Tight band
-stays the automatic default. The two confirm flags are independent and the server
-only enforces whichever applies, so the client sends BOTH `confirmMultiDate:true`
-+ `confirmAmountMismatch:true` on the single explicit confirm (harmless extras).
-Client `groupWithinBandFor(amount)` must use the SAME band and the per-row match
-must pass the row's own gift amount (not just the selected gift) so the dialog
-opens for any gift. The single-row + split reconcile paths keep the old strict
-`amount_mismatch` (no override) — only the group flow has the confirm.
+sales). **The earlier `confirmAmountMismatch` operator override was REMOVED** in
+the reconciliation redesign (docs/reconciliation-design.md §4.6b, decision C5/B1):
+an out-of-band combined total now returns `400 error:"amount_mismatch"`
+(`details:{combinedTotal,giftAmount}`) with NO bypass. The human corrects the
+gift's amount to what actually landed, then reconciles (the SUM then falls in
+band). Do NOT reintroduce a confirm-override flag. The band gate is unconditional;
+`confirmMultiDate` is the ONLY group confirm flag left. Single-row + split
+reconcile paths already used the strict `amount_mismatch` (unchanged).
+**Why:** one canonical "the money that landed is the truth" rule instead of an
+operator bypass that could book a wrong amount.
 
 **Lockstep invariants** (client `groupKeyOf`/`groupNeedsConfirm` ↔ server guard —
 the server is the real boundary, a direct API call must not bypass):
@@ -89,15 +88,17 @@ WORKBENCH (separate page from staged-payments.tsx) must detect
 group-reconcile for EVERY entry path (stage-confirm, re-target-to-gift,
 bulk approve-all-high-confidence, one-click confirm-and-apply); non-grouped or
 non-link outcomes still use the per-row approve. A shared
-`buildGroupedLinkPayload(card, giftId, giftAmount)` returns null for non-group/
-<2-member cards and otherwise sets `confirmMultiDate:true` (members lack
-`qbDepositId`, so multi-deposit can't be detected client-side — auto-pass is OK
-for source groups only) and `confirmAmountMismatch:false`.
-**Money safety:** never auto-confirm a group-total↔gift amount mismatch — the
-single-card stage/retarget paths open a confirm dialog (then resend with
-`confirmAmountMismatch:true`); bulk SKIPS mismatches; one-click apply refuses and
-sends the operator to Re-target. When staging a grouped link into the tray, clear
-any pending staged change keyed on ANY member's stagedPaymentId (not just the
+`buildGroupedLinkPayload(card, giftId)` returns null for non-group/<2-member
+cards and otherwise sets `confirmMultiDate:true` (members lack `qbDepositId`, so
+multi-deposit can't be detected client-side — auto-pass is OK for source groups
+only). It no longer computes an amountMismatch flag (the override is gone, B1).
+**Money safety:** the server is the sole guard for a group-total↔gift amount
+mismatch — all client callers just stage/call group-reconcile and let the
+`400 amount_mismatch` surface via the shared catch → `extractGateIssues` → toast
+(same path that already surfaces `multi_date_confirmation_required`). Bulk approve
+now STAGES out-of-band groups (was: silently skipped) and the apply fails visibly
+with the corrective message. When staging a grouped link into the tray, clear any
+pending staged change keyed on ANY member's stagedPaymentId (not just the
 representative) so a member isn't double-applied alongside the group reconcile.
 **Why:** without this the operator literally cannot link a grouped card to an
 existing gift from the workbench (hard 409); the original report was an $850k

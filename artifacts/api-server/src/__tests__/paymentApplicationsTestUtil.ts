@@ -44,3 +44,24 @@ export async function clearPaymentApplicationsForStagedIds(
     .delete(paymentApplications)
     .where(inArray(paymentApplications.paymentId, stagedIds));
 }
+
+/**
+ * Clear ledger rows anchored to an explicit set of gift ids.
+ *
+ * Needed for Stripe-evidence rows, which carry `payment_id = NULL` (they anchor
+ * on `stripe_charge_id` + `gift_id`), so `clearPaymentApplicationsForStagedIds`
+ * never reaches them. Because `stripe_charge_id`'s FK is `ON DELETE SET NULL`,
+ * deleting the parent charge while such a row still exists nulls its
+ * `stripe_charge_id` and trips the `payment_applications_stripe_evidence_chk`
+ * CHECK — so a teardown that deletes charges/gifts must clear these FIRST.
+ */
+export async function clearPaymentApplicationsForGiftIds(
+  giftIds: string[],
+): Promise<void> {
+  if (!giftIds.length) return;
+  const { db, paymentApplications } = await import("@workspace/db");
+  const { inArray } = await import("drizzle-orm");
+  await db
+    .delete(paymentApplications)
+    .where(inArray(paymentApplications.giftId, giftIds));
+}

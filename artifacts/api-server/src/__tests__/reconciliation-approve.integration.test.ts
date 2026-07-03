@@ -7,7 +7,10 @@ import {
   it,
   vi,
 } from "vitest";
-import { clearPaymentApplicationsForStagedIds } from "./paymentApplicationsTestUtil";
+import {
+  clearPaymentApplicationsForGiftIds,
+  clearPaymentApplicationsForStagedIds,
+} from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -417,6 +420,12 @@ afterAll(async () => {
         finalAmountQbStagedPaymentId: null,
       })
       .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
+  // Clear the cash-application ledger BEFORE deleting charges/gifts. Stripe
+  // evidence rows anchor on (stripe_charge_id, gift_id) with a NULL payment_id,
+  // so clearing by staged id alone misses them — and the charge's ON DELETE SET
+  // NULL would then trip the stripe-evidence CHECK. Clearing by gift id catches
+  // every row this suite created (all reference a gift).
+  await clearPaymentApplicationsForGiftIds(giftIds);
   if (chargeIds.length)
     await db
       .delete(schema.stripeStagedCharges)
@@ -430,6 +439,14 @@ afterAll(async () => {
     await db
       .delete(schema.stagedPayments)
       .where(inArrayFn(schema.stagedPayments.id, stagedIds));
+  // Delete allocations by gift id, not just the ids the test tracked: every
+  // minted gift auto-seeds a starter allocation (invariant #7) whose id the
+  // suite never captures, and that orphan would otherwise block the gift delete
+  // (gift_allocations.gift_id FK is RESTRICT).
+  if (giftIds.length)
+    await db
+      .delete(schema.giftAllocations)
+      .where(inArrayFn(schema.giftAllocations.giftId, giftIds));
   if (allocIds.length)
     await db
       .delete(schema.giftAllocations)

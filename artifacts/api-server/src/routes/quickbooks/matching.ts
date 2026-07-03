@@ -314,7 +314,6 @@ router.post(
     }
     const { giftId } = parsed.data;
     const confirmMultiDate = parsed.data.confirmMultiDate === true;
-    const confirmAmountMismatch = parsed.data.confirmAmountMismatch === true;
     // De-dupe and sort for a deterministic representative (smallest id).
     const ids = Array.from(new Set(parsed.data.stagedPaymentIds)).sort();
     if (ids.length < 2) {
@@ -466,14 +465,12 @@ router.post(
         const giftAmt = Number(gift.amount ?? 0);
         // Outside the fee-band the combined total is a deliberate mismatch —
         // typically stock/securities gifts whose sale proceeds differ from the
-        // booked value. Keep the tight band as the automatic default, but let
-        // the operator explicitly approve the mismatch (confirmAmountMismatch)
-        // rather than widening the band for every group.
+        // booked value. There is no override: the operator must correct the
+        // gift's amount to the combined total and reconcile, so the gift and the
+        // money it represents stay in agreement.
         if (!(giftAmt >= sum - 0.01 && giftAmt <= sum * 1.1 + 1)) {
-          if (!confirmAmountMismatch) {
-            toleranceDetail = { combinedTotal: sum, giftAmount: giftAmt };
-            throw new Error(AMOUNT_MISMATCH);
-          }
+          toleranceDetail = { combinedTotal: sum, giftAmount: giftAmt };
+          throw new Error(AMOUNT_MISMATCH);
         }
 
         // Gift must not already be QB-linked to a staged payment OUTSIDE this
@@ -601,9 +598,9 @@ router.post(
       }
       if (e instanceof Error && e.message === AMOUNT_MISMATCH) {
         res.status(400).json({
-          error: "amount_mismatch_confirmation_required",
+          error: "amount_mismatch",
           message:
-            "The combined deposit total doesn't match the selected gift within the fee tolerance. Confirm you want to group them anyway.",
+            "The combined deposit total doesn't match the selected gift within the fee tolerance. Correct the gift's amount to the combined total, then reconcile.",
           details: toleranceDetail,
         });
         return;

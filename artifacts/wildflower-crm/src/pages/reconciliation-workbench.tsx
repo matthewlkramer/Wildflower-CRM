@@ -168,35 +168,20 @@ function money(v: string | null | undefined): string {
 }
 
 /**
- * Mirror of the server group-reconcile fee-band tolerance (matching.ts): the
- * gift may be a hair under the combined total (rounding) and at most ~10% + $1
- * over (processor fees withheld before deposit).
- */
-function groupTotalWithinGiftBand(
-  groupTotal: number,
-  giftAmount: number,
-): boolean {
-  return giftAmount >= groupTotal - 0.01 && giftAmount <= groupTotal * 1.1 + 1;
-}
-
-/**
  * For a grouped ("same physical gift" source group) card being linked to an
  * EXISTING gift, build the /staged-payments/group-reconcile payload. Returns
  * null when the card is not a source group (the caller uses the per-row approve
  * path). `confirmMultiDate` is always true for a source group: forming the
  * group was already the human assertion that these rows are one physical gift
  * (groups span dates/deposits by design), and the client can't see member
- * deposit ids to detect multi-deposit anyway. `amountMismatch` is true when the
- * members' combined total sits OUTSIDE the gift's fee-band — the caller must get
- * explicit human confirmation before sending confirmAmountMismatch.
+ * deposit ids to detect multi-deposit anyway. When the members' combined total
+ * sits OUTSIDE the gift's fee-band the server rejects with 400 amount_mismatch;
+ * there is no override — the operator corrects the gift amount and retries.
  */
 function buildGroupedLinkPayload(
   card: ReconciliationCard,
   giftId: string,
-  giftAmount: number | null,
 ): {
-  memberIds: string[];
-  amountMismatch: boolean;
   payload: GroupReconcileStagedPaymentsBody;
 } | null {
   if (!card.isSourceGroup) return null;
@@ -204,19 +189,11 @@ function buildGroupedLinkPayload(
     .map((m) => m.stagedPaymentId)
     .filter((id): id is string => !!id);
   if (memberIds.length < 2) return null;
-  const groupTotal = num(card.sourceGroupTotalAmount);
-  const amountMismatch =
-    groupTotal == null ||
-    giftAmount == null ||
-    !groupTotalWithinGiftBand(groupTotal, giftAmount);
   return {
-    memberIds,
-    amountMismatch,
     payload: {
       stagedPaymentIds: memberIds,
       giftId,
       confirmMultiDate: true,
-      confirmAmountMismatch: false,
     },
   };
 }
@@ -387,16 +364,6 @@ export default function ReconciliationWorkbench() {
   const [excludeCard, setExcludeCard] = useState<ReconciliationCard | null>(
     null,
   );
-  // A grouped card whose chosen gift's amount is OUTSIDE the group total's
-  // fee-band: hold the intended group-reconcile here and make the operator
-  // explicitly confirm the amount mismatch before staging it.
-  const [groupLinkConfirm, setGroupLinkConfirm] = useState<{
-    card: ReconciliationCard;
-    giftLabel: string;
-    giftAmount: number | null;
-    groupTotal: number | null;
-    payload: GroupReconcileStagedPaymentsBody;
-  } | null>(null);
   // Creating a gift from a multi-payment group: hold the derived approve body
   // here and ask whether each grouped subcomponent should become its own
   // allocation row on the new gift (or a single header-only lump).
@@ -627,23 +594,9 @@ export default function ReconciliationWorkbench() {
         res.body.outcome === "link_existing_gift" &&
         res.body.giftId
       ) {
-        const grouped = buildGroupedLinkPayload(
-          card,
-          res.body.giftId,
-          num(card.resolvedGiftAmount),
-        );
+        const grouped = buildGroupedLinkPayload(card, res.body.giftId);
         if (grouped) {
           const giftLabel = card.resolvedGiftName ?? "the matched gift";
-          if (grouped.amountMismatch) {
-            setGroupLinkConfirm({
-              card,
-              giftLabel,
-              giftAmount: num(card.resolvedGiftAmount),
-              groupTotal: num(card.sourceGroupTotalAmount),
-              payload: grouped.payload,
-            });
-            return;
-          }
           stageGroupedLink(card, giftLabel, grouped.payload);
           return;
         }
@@ -679,20 +632,8 @@ export default function ReconciliationWorkbench() {
       // Grouped ("same physical gift") cards can't link to an existing gift via
       // the per-row approve endpoint (it 409s "link the whole group"); route
       // them through /staged-payments/group-reconcile instead.
-      const grouped = buildGroupedLinkPayload(card, gift.id, num(gift.amount));
+      const grouped = buildGroupedLinkPayload(card, gift.id);
       if (grouped) {
-        if (grouped.amountMismatch) {
-          setGroupLinkConfirm({
-            card,
-            giftLabel: gift.label,
-            giftAmount: num(gift.amount),
-            groupTotal: num(card.sourceGroupTotalAmount),
-            payload: grouped.payload,
-          });
-          setRetargetCard(null);
-          setSearchGiftCard(null);
-          return;
-        }
         stageGroupedLink(card, gift.label, grouped.payload);
         return;
       }
@@ -742,18 +683,8 @@ export default function ReconciliationWorkbench() {
         res.body.outcome === "link_existing_gift" &&
         res.body.giftId
       ) {
-        const grouped = buildGroupedLinkPayload(
-          card,
-          res.body.giftId,
-          num(card.resolvedGiftAmount),
-        );
+        const grouped = buildGroupedLinkPayload(card, res.body.giftId);
         if (grouped) {
-          // Never auto-confirm an amount mismatch in a bulk action — leave it
-          // for the reviewer to confirm individually via Re-target.
-          if (grouped.amountMismatch) {
-            skipped += 1;
-            continue;
-          }
           stageGroupedLink(
             card,
             card.resolvedGiftName ?? "the matched gift",
@@ -1044,27 +975,11 @@ export default function ReconciliationWorkbench() {
           res.body.outcome === "link_existing_gift" &&
           res.body.giftId
         ) {
-          const giftAmount = giftOverride
-            ? num(giftOverride.amount)
-            : num(card.resolvedGiftAmount);
-          const grouped = buildGroupedLinkPayload(
-            card,
-            res.body.giftId,
-            giftAmount,
-          );
+          const grouped = buildGroupedLinkPayload(card, res.body.giftId);
           if (grouped) {
-            // One-click apply can't gather a confirmation; on a mismatch, open
-            // Re-target (which prompts for explicit confirmation) instead of
-            // guessing.
-            if (grouped.amountMismatch) {
-              setRetargetCard(card);
-              toast({
-                title: "Confirm the amount first",
-                description:
-                  "The grouped payments don’t total the gift amount. Re-pick the gift to review and confirm linking the whole group.",
-              });
-              return;
-            }
+            // The server rejects an out-of-band group total with 400
+            // amount_mismatch; the catch below surfaces it so the operator can
+            // correct the gift amount and retry.
             await groupReconcileStagedPayments(grouped.payload);
             invalidateAll();
             setRetargetCard(null);
@@ -1458,19 +1373,6 @@ export default function ReconciliationWorkbench() {
               date: g.dateReceived ?? null,
             })
           }
-        />
-      )}
-      {groupLinkConfirm && (
-        <GroupLinkAmountDialog
-          info={groupLinkConfirm}
-          onCancel={() => setGroupLinkConfirm(null)}
-          onConfirm={() => {
-            stageGroupedLink(groupLinkConfirm.card, groupLinkConfirm.giftLabel, {
-              ...groupLinkConfirm.payload,
-              confirmAmountMismatch: true,
-            });
-            setGroupLinkConfirm(null);
-          }}
         />
       )}
       {groupCreateGift && (
@@ -2681,55 +2583,6 @@ function CodingPanel({
         </div>
       </div>
     </div>
-  );
-}
-
-// ─── Grouped-link amount-mismatch confirm ─────────────────────────────────────
-
-/**
- * Shown before staging a grouped link-to-existing-gift when the group total
- * sits outside the gift's fee-band. The operator must explicitly confirm the
- * mismatch (→ confirmAmountMismatch) before the group is reconciled to the gift.
- */
-function GroupLinkAmountDialog({
-  info,
-  onCancel,
-  onConfirm,
-}: {
-  info: {
-    giftLabel: string;
-    giftAmount: number | null;
-    groupTotal: number | null;
-    payload: GroupReconcileStagedPaymentsBody;
-  };
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <Dialog open onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Amounts don’t match</DialogTitle>
-          <DialogDescription>
-            The {info.payload.stagedPaymentIds.length} grouped payments total{" "}
-            <span className="font-medium tabular-nums">
-              {money(info.groupTotal?.toString())}
-            </span>
-            , but “{info.giftLabel}” is{" "}
-            <span className="font-medium tabular-nums">
-              {money(info.giftAmount?.toString())}
-            </span>
-            . Link the whole group to this gift anyway?
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button onClick={onConfirm}>Link group anyway</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

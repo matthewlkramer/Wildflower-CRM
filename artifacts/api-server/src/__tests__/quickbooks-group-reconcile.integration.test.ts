@@ -496,8 +496,10 @@ describe.skipIf(!HAS_DB)(
       }
     }, 30_000);
 
-    it("gates an out-of-tolerance combined total behind confirmAmountMismatch without touching the rows", async () => {
+    it("rejects an out-of-tolerance combined total with 400 amount_mismatch (no override) without touching the rows", async () => {
       // Gift 200.00 vs combined 100.00 → 200 > 100*1.1+1 = 111 → over band.
+      // There is no confirm-override anymore: the group is rejected outright and
+      // the operator must correct the gift amount to the combined total.
       const giftId = await seedGift("200.00");
       seededGiftIds.push(giftId);
       const aId = await seedStaged(giftId, "a", "50.00");
@@ -509,7 +511,7 @@ describe.skipIf(!HAS_DB)(
       });
 
       expect(res.status).toBe(400);
-      expect(res.json.error).toBe("amount_mismatch_confirmation_required");
+      expect(res.json.error).toBe("amount_mismatch");
       expect(res.json.details).toMatchObject({
         combinedTotal: 100,
         giftAmount: 200,
@@ -525,10 +527,11 @@ describe.skipIf(!HAS_DB)(
       }
     }, 30_000);
 
-    it("reconciles an out-of-tolerance group WITH confirmAmountMismatch (the appreciated-stock case)", async () => {
+    it("reconciles an out-of-tolerance group once the gift amount is corrected to the combined total (the appreciated-stock case)", async () => {
       // Stock gift booked at 1,000,000 but the sale proceeds came to a hair
       // over (1,012,780.49) — above the fee band, which only tolerates the
-      // deposit landing BELOW the gift. The operator explicitly confirms.
+      // deposit landing BELOW the gift. There is no override: the operator must
+      // correct the gift's amount to the combined total, then reconcile.
       const giftId = await seedGift("1000000.00");
       seededGiftIds.push(giftId);
       const aId = await seedStaged(giftId, "a", "512780.49");
@@ -539,12 +542,21 @@ describe.skipIf(!HAS_DB)(
         stagedPaymentIds: [aId, bId],
       });
       expect(blocked.status).toBe(400);
-      expect(blocked.json.error).toBe("amount_mismatch_confirmation_required");
+      expect(blocked.json.error).toBe("amount_mismatch");
+      expect(blocked.json.details).toMatchObject({
+        combinedTotal: 1012780.49,
+        giftAmount: 1000000,
+      });
+
+      // Correct the gift's amount to the combined total, then reconcile.
+      await db
+        .update(schema.giftsAndPayments)
+        .set({ amount: "1012780.49" })
+        .where(eqFn(schema.giftsAndPayments.id, giftId));
 
       const res = await api("/api/staged-payments/group-reconcile", {
         giftId,
         stagedPaymentIds: [aId, bId],
-        confirmAmountMismatch: true,
       });
 
       expect(res.status).toBe(200);

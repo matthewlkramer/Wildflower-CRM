@@ -425,13 +425,14 @@ describe.skipIf(!HAS_DB)(
       expect(b.groupReconciledGiftId).toBe(giftId);
     }, 30_000);
 
-    it("needs BOTH confirmations when the Arthur Rock group spans dates/deposits AND its proceeds exceed the gift", async () => {
+    it("needs confirmMultiDate then a corrected gift amount when the Arthur Rock group spans dates/deposits AND its proceeds exceed the gift", async () => {
       // The true production case: appreciated-stock sales over ~24 days, each a
       // separate deposit (needs confirmMultiDate), whose combined proceeds
       // ($1,012,780.49) land ABOVE the $1,000,000 booked gift, outside the fee
-      // band (needs confirmAmountMismatch). The first attempt surfaces the
-      // multi-date gate; confirming only that still trips the amount gate; only
-      // sending BOTH flags reconciles — proving the one-shot dual-confirm path.
+      // band. The first attempt surfaces the multi-date gate; confirming only
+      // that then trips the amount gate (no override); correcting the gift's
+      // amount to the combined total and re-confirming the multi-date span
+      // reconciles.
       const giftId = await seedGift("1000000.00");
       const aId = await seedStaged(giftId, "a", "512780.49", {
         depositId: `${RUN}_arBothA`,
@@ -459,17 +460,23 @@ describe.skipIf(!HAS_DB)(
         confirmMultiDate: true,
       });
       expect(dateOnly.status).toBe(400);
-      expect(dateOnly.json.error).toBe("amount_mismatch_confirmation_required");
+      expect(dateOnly.json.error).toBe("amount_mismatch");
       await expectUntouchedPending(aId);
       await expectUntouchedPending(bId);
 
-      const both = await api("/api/staged-payments/group-reconcile", {
+      // Correct the gift's amount to the combined total, then re-confirm the
+      // multi-date span.
+      await db
+        .update(schema.giftsAndPayments)
+        .set({ amount: "1012780.49" })
+        .where(inArrayFn(schema.giftsAndPayments.id, [giftId]));
+
+      const corrected = await api("/api/staged-payments/group-reconcile", {
         giftId,
         stagedPaymentIds: [aId, bId],
         confirmMultiDate: true,
-        confirmAmountMismatch: true,
       });
-      expect(both.status).toBe(200);
+      expect(corrected.status).toBe(200);
       const a = await readStaged(aId);
       const b = await readStaged(bId);
       expect(a.status).toBe("reconciled");

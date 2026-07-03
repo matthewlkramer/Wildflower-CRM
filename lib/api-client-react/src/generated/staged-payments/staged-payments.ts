@@ -1395,8 +1395,8 @@ all pending and unresolved, all sharing one grouping key (deposit or
 payer) — OR all already belonging to one "same physical gift" source
 group (sharing a single non-null sourceGroupId), which bypasses the
 deposit/payer coherence check since the human already asserted the rows
-are one gift (the multi-date / amount-mismatch confirmations below still
-apply); the gift exists with a single valid donor and is not already
+are one gift (the multi-date confirmation and amount-mismatch check below
+still apply); the gift exists with a single valid donor and is not already
 linked elsewhere, and the members' combined total matches the gift amount
 within the processor fee-band tolerance. When the grouped payments do not
 all fall on the same date_received, or carry more than one distinct
@@ -1404,9 +1404,9 @@ all fall on the same date_received, or carry more than one distinct
 400 multi_date_confirmation_required) — this guards against collapsing
 unrelated same-payer gifts. When the combined total falls OUTSIDE the
 fee-band tolerance (e.g. stock/securities gifts whose sale proceeds differ
-from the booked value), `confirmAmountMismatch` must be true (otherwise
-400 amount_mismatch_confirmation_required). Reversible as a whole via the
-revert endpoint.
+from the booked value), the request is rejected 400 amount_mismatch;
+correct the gift's amount to the combined total, then reconcile.
+Reversible as a whole via the revert endpoint.
 
  * @summary Group several staged payments and reconcile them as one unit to an existing gift.
  */
