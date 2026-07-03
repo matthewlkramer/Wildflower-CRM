@@ -75,7 +75,10 @@ HAVING COUNT(*) > 1;
 The full machine-checked gate is:
 
 ```bash
-pnpm --filter @workspace/api-server run parity:unit-groups
+# NOTE: the script connects to $DATABASE_URL, which in the workspace shell is the
+# DEV database. To run the gate against PROD, override it for this one command.
+# The gate is READ-ONLY (SELECT/count only — it never writes), so this is safe.
+DATABASE_URL="$PROD_DATABASE_URL" pnpm --filter @workspace/api-server run parity:unit-groups
 ```
 
 It must exit `PASS` on **prod** before the read-flip (mechanism collapse) phase
