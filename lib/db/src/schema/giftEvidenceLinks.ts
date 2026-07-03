@@ -12,6 +12,19 @@ import { giftsAndPayments } from "./giftsAndPayments";
 import { users } from "./users";
 
 /**
+ * @deprecated Phase-5 (reconciliation redesign, docs/reconciliation-design.md §5
+ * Decision 2 / §7 step 5) FOLDED this table into `payment_applications` as
+ * `link_role='corroborating'` rows. As of the read-flip it is WRITE-FROZEN and
+ * READ-FROZEN: no application code reads or writes it — corrections `/apply`
+ * writes only the corroborating ledger row and gift-combine re-homes only ledger
+ * rows. The corroborating ledger is the sole home for evidence↔gift links. The
+ * table + its rows are retained (physically present) purely as a rollback/audit
+ * safety net until the S7 human-gated `DROP TABLE`. Do NOT add new readers or
+ * writers here — use `payment_applications` (`link_role='corroborating'`).
+ *
+ * ---
+ * Historical design notes (pre-fold):
+ *
  * Many-to-many CORROBORATING evidence links between a CRM gift and a piece of
  * funding/accounting evidence (a QuickBooks staged row or a Stripe staged
  * charge). This is the additive layer that makes evidence↔gift truly
@@ -72,5 +85,7 @@ export const giftEvidenceLinks = pgTable(
   ],
 );
 
+/** @deprecated See `giftEvidenceLinks` — folded into `payment_applications` (Phase 5). */
 export type GiftEvidenceLink = typeof giftEvidenceLinks.$inferSelect;
+/** @deprecated See `giftEvidenceLinks` — folded into `payment_applications` (Phase 5). */
 export type NewGiftEvidenceLink = typeof giftEvidenceLinks.$inferInsert;
