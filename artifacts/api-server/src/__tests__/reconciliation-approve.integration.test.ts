@@ -1221,12 +1221,14 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
     expect(staged.exclusionReason).not.toBe("processor_payout");
   }, 30_000);
 
-  it("stamps the Stripe GROSS as the gift's final amount, NOT the coarser QB staged amount (Stripe precedence)", async () => {
+  it("records Stripe as the gift's final-amount source (Stripe precedence), preserving the human amount", async () => {
     // The gift's prior (human) figure 98.50 sits inside the Stripe [net 97.00,
     // gross 100.00] window — a pure gross-vs-net gap, so it auto-resolves with no
-    // override. The QB deposit is a coarser net 90.00. Only Stripe precedence
-    // (gross wins when a charge exists) explains a final amount of 100.00 —
-    // neither the QB 90.00 nor the prior 98.50.
+    // override. The QB deposit is a coarser net 90.00. Post-#448 the Stripe stamp
+    // records provenance (source + charge pointer) but NO LONGER overwrites the
+    // human amount; the settled GROSS is DERIVED at read time. The QB+Stripe
+    // settled-total derivation (counted-vs-corroborating dedupe) is deferred to
+    // Phase 5, so this asserts provenance, not the derived total.
     const giftId = await seedGiftWithAllocations("98.50", ["98.50"]);
     const allocId = allocIds[allocIds.length - 1] as string;
     const stagedId = await seedStaged("90.00");
@@ -1241,14 +1243,15 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
     expect(res.status).toBe(200);
 
     const gift = await readGift(giftId);
-    expect(gift.amount).toBe("100.00"); // Stripe GROSS, not QB 90.00 or prior 98.50
+    // The human amount is preserved (no overwrite); Stripe precedence is recorded
+    // via provenance (source + charge pointer), not by rewriting `amount`.
+    expect(gift.amount).toBe("98.50");
     expect(gift.finalAmountSource).toBe("stripe");
     expect(gift.finalAmountStripeChargeId).toBe(chargeId);
     expect(gift.finalAmountQbStagedPaymentId).toBeNull();
-    // The pre-stamp human figure is snapshotted, never lost.
-    expect(gift.originalHumanCrmAmount).toBe("98.50");
-    // The lone allocation is rescaled to the new final amount (no review flag).
-    expect((await readAlloc(allocId)).subAmount).toBe("100.00");
+    // No overwrite ⇒ nothing snapshotted, no allocation rescale, no review flag.
+    expect(gift.originalHumanCrmAmount).toBeNull();
+    expect((await readAlloc(allocId)).subAmount).toBe("98.50");
     expect(await readOpenReviews(giftId)).toHaveLength(0);
     // The QB staged row stays as reconciled evidence at its own coarse figure.
     const staged = await readStaged(stagedId);
@@ -1256,7 +1259,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
     expect(staged.amount).toBe("90.00");
   }, 30_000);
 
-  it("a gift ABOVE the Stripe gross is a REAL discrepancy → 409 without an override, 200 (stamped to gross) with one", async () => {
+  it("a gift ABOVE the Stripe gross is a REAL discrepancy → 409 without an override, 200 (Stripe provenance recorded, human amount preserved) with one", async () => {
     // gross 100.00, net 97.00; a human-recorded 105.00 sits ABOVE gross. A
     // processor fee can only LOWER the recorded amount, so this is not a pure
     // gross-vs-net gap and must not silently auto-resolve.
@@ -1278,7 +1281,9 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
     expect(codes).toContain("amount_out_of_band");
     expect((await readGift(giftId)).amount).toBe("105.00");
 
-    // Explicit override reason → approved, and Stripe gross still wins.
+    // Explicit override reason → approved. The stamp records Stripe provenance
+    // but (post-#448) does NOT overwrite the human amount — the 105-vs-100 gap
+    // now surfaces in the DERIVED settled total (Phase 5), not by rewriting it.
     const ok = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
       outcome: "link_existing_gift",
       giftId,
@@ -1287,10 +1292,11 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
     });
     expect(ok.status).toBe(200);
     const gift = await readGift(giftId);
-    expect(gift.amount).toBe("100.00"); // Stripe GROSS once the human confirms.
+    expect(gift.amount).toBe("105.00"); // human figure preserved, not overwritten
     expect(gift.finalAmountSource).toBe("stripe");
-    expect(gift.originalHumanCrmAmount).toBe("105.00");
-    expect((await readAlloc(allocId)).subAmount).toBe("100.00");
+    expect(gift.finalAmountStripeChargeId).toBe(chargeId);
+    expect(gift.originalHumanCrmAmount).toBeNull();
+    expect((await readAlloc(allocId)).subAmount).toBe("105.00");
     expect(await readOpenReviews(giftId)).toHaveLength(0);
   }, 30_000);
 });
