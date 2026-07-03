@@ -504,10 +504,42 @@ task** — this task delivers only the ratified design (Phase 1).
    `source_group_id`, so a grouped set matches as one counted ledger row per member.
 
 4. **Model Plane 1 settlement as links.** Add `settlement_links` (§4.3). Backfill
-   from `stripe_payouts.qb_reconciliation_status` (map `confirmed_*` → a
-   `confirmed` link, `proposed` → `proposed`, `confirmed_excluded` →
-   `exempt`/excluded QB row as today). Parity, flip reads to the derived batch
-   status (§4.4). Retire the 7-value enum and the vestigial confirm paths.
+   from `stripe_payouts.qb_reconciliation_status`: ALL `confirmed_*` (including
+   `confirmed_excluded`) → a `confirmed` link, `proposed`/`conflict_approved` →
+   `proposed`, `unmatched` → no link. The `exempt` lifecycle is reserved for links
+   with no expected QB deposit — a `confirmed_excluded` payout is **not** exempt:
+   the coarse QB lump was suppressed to avoid double-counting the per-charge Stripe
+   gifts, but the payout itself is a *confirmed settlement* (the exclusion is a
+   Plane-2 fact on `staged_payments.exclusion_reason`, not a payout-settlement
+   state). Parity, flip reads to the derived batch status (§4.4). Retire the
+   7-value enum and the vestigial confirm paths.
+
+   *Progress — payout reconciliation READ-flip done (additive, parity-gated).*
+   The payout list (`stripe.ts`), the unified bundle-anchor enumeration
+   (`bundleAnchors.ts`), and the reconciliation card queue (`cards.ts`) now read
+   the payout↔deposit tie from `settlement_links` (proposed vs confirmed
+   lifecycle) instead of `stripe_payouts.qb_reconciliation_status` + the pointer
+   columns. `derivePayoutLanes` takes the settlement-link lifecycle. Dual-write is
+   retained for rollback; the read-flip is parity-equivalent for production shapes
+   (a `proposed`/`confirmed` status always carries the matching deposit pointer) —
+   `deriveSettlementLinkFields` maps degenerate status/pointer mismatches to *no
+   link*, which cannot occur in prod. **ONE deliberate read delta:** a
+   `confirmed_excluded` payout's funding lane (`derivePayoutLanes`, a derived
+   display projection in the payout-list response) now reads `confirmed` instead of
+   the old `exempt` — it IS a confirmed settlement (see the step-4 mapping above).
+   The parity gate **cannot** catch this: it checks mirror↔deriver consistency, not
+   reads↔legacy-lane semantics, and dev holds zero `confirmed_excluded` rows.
+   Gate: `parity-settlement-links.ts` (dev PASS; **prod parity + a read-only check
+   of prod's `confirmed_excluded` population still required before deprecating** the
+   enum/pointers).
+   **Still legacy (KEPT on purpose):** `reconQueueWhere` in `stripe.ts`, the
+   7-value `status_label` in `bundleAnchors.ts`, and the raw
+   `qb_reconciliation_status` blob in `cards.ts` — none is reconstructible from the
+   3-value lifecycle. **Blocking dependency for the enum/pointer DROP:** the
+   confirm state machine still writes `qbConflictGiftId` + the pointer columns; a
+   follow-on WRITE-flip (port confirm onto `settlement_links`) is required first,
+   because `conflict_approved` is NOT vestigial (the 7→3 lifecycle collapse is
+   lossy).
 
 5. **Resolve `gift_evidence_links`** (Decision 2). Migrate its rows to
    `link_role = 'corroborating'` ledger rows; re-point financial corrections;

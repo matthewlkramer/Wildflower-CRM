@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { clearPaymentApplicationsForStagedIds } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
+import { deriveSettlementLinkFields } from "../lib/settlementLink";
 
 /**
  * DB-backed coverage for the unified reconciler's DEFAULT work-queue filter
@@ -56,6 +57,7 @@ let schema: {
   stripeStagedCharges: Db["stripeStagedCharges"];
   giftAllocations: Db["giftAllocations"];
   paymentApplications: Db["paymentApplications"];
+  settlementLinks: Db["settlementLinks"];
 };
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -140,6 +142,30 @@ async function seedPayoutFor(
       : { proposedQbStagedPaymentId: stagedPaymentId }),
   });
   payoutIds.push(id);
+  // Mirror the runtime settlement-link dual-write so the S5 read-flip (which now
+  // reads settlement_links, not the legacy pointer columns) sees this fixture.
+  // Reuse the SAME pure deriver the production sync uses. FK cascade cleans it up.
+  const fields = deriveSettlementLinkFields({
+    qbReconciliationStatus:
+      link === "matched" ? "confirmed_reconciled" : "proposed",
+    proposedQbStagedPaymentId: link === "matched" ? null : stagedPaymentId,
+    matchedQbStagedPaymentId: link === "matched" ? stagedPaymentId : null,
+    qbConflictStagedPaymentId: null,
+    qbReconciliationConfirmedByUserId: null,
+    qbReconciliationConfirmedAt: null,
+    updatedAt: new Date(),
+  });
+  if (fields) {
+    await db.insert(schema.settlementLinks).values({
+      id: `sl_${id}`,
+      payoutId: id,
+      depositStagedPaymentId: fields.depositStagedPaymentId,
+      lifecycle: fields.lifecycle,
+      provenance: fields.provenance,
+      confirmedByUserId: fields.confirmedByUserId,
+      confirmedAt: fields.confirmedAt,
+    });
+  }
   return id;
 }
 
@@ -242,6 +268,7 @@ beforeAll(async () => {
     stripeStagedCharges: dbMod.stripeStagedCharges,
     giftAllocations: dbMod.giftAllocations,
     paymentApplications: dbMod.paymentApplications,
+    settlementLinks: dbMod.settlementLinks,
   };
   inArrayFn = drizzle.inArray;
   eqFn = drizzle.eq;

@@ -9,6 +9,7 @@ import {
 } from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
+import { deriveSettlementLinkFields } from "../lib/settlementLink";
 
 /**
  * DB-backed coverage for the UNIFIED settlement-anchor surface of the reactive
@@ -77,6 +78,7 @@ let schema: {
   stagedPayments: Db["stagedPayments"];
   paymentApplications: Db["paymentApplications"];
   reconciliationBundleDrafts: Db["reconciliationBundleDrafts"];
+  settlementLinks: Db["settlementLinks"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -161,6 +163,30 @@ async function seedPayout(opts: {
     qbConflictGiftId: opts.conflictGift ?? null,
   });
   payoutIds.push(id);
+  // Mirror the runtime settlement-link dual-write so the S5 read-flip (which now
+  // reads settlement_links, not the legacy pointer columns) sees this fixture.
+  // Reuse the SAME pure deriver the production sync uses, so fixtures stay in
+  // lockstep by construction. FK cascade on payout_id cleans it up.
+  const link = deriveSettlementLinkFields({
+    qbReconciliationStatus: opts.status,
+    proposedQbStagedPaymentId: opts.proposed ?? null,
+    matchedQbStagedPaymentId: opts.matched ?? null,
+    qbConflictStagedPaymentId: opts.conflict ?? null,
+    qbReconciliationConfirmedByUserId: null,
+    qbReconciliationConfirmedAt: null,
+    updatedAt: new Date(),
+  });
+  if (link) {
+    await db.insert(schema.settlementLinks).values({
+      id: `sl_${id}`,
+      payoutId: id,
+      depositStagedPaymentId: link.depositStagedPaymentId,
+      lifecycle: link.lifecycle,
+      provenance: link.provenance,
+      confirmedByUserId: link.confirmedByUserId,
+      confirmedAt: link.confirmedAt,
+    });
+  }
   return id;
 }
 
@@ -290,6 +316,7 @@ beforeAll(async () => {
     stagedPayments: dbMod.stagedPayments,
     paymentApplications: dbMod.paymentApplications,
     reconciliationBundleDrafts: dbMod.reconciliationBundleDrafts,
+    settlementLinks: dbMod.settlementLinks,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -412,10 +439,14 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     await seedCharge(pEligible);
     const sStandalone = await seedStaged({ status: "pending" });
 
-    // QB rows tied to a payout (matched / proposed / conflict) → OMITTED; their
-    // payouts are the anchor instead.
+    // QB rows tied to a payout (via a settlement link) → OMITTED; their payouts
+    // are the anchor instead. A `confirmed` (matched/settled) tie omits its staged
+    // row too, but the payout itself is settled — not needs_review.
     const sMatched = await seedStaged({ status: "pending" });
-    const pMatched = await seedPayout({ status: "proposed", matched: sMatched });
+    const pMatched = await seedPayout({
+      status: "confirmed_reconciled",
+      matched: sMatched,
+    });
     const sProposed = await seedStaged({ status: "pending" });
     const pProposed = await seedPayout({
       status: "proposed",
@@ -440,14 +471,15 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
 
     const map = await listAnchors("needs_review");
 
-    // Present.
+    // Present (proposed/conflict payout ties + a standalone deposit).
     expect(map.has(`stripe_payout:${pEligible}`)).toBe(true);
     expect(map.has(`qb_staged_payment:${sStandalone}`)).toBe(true);
-    expect(map.has(`stripe_payout:${pMatched}`)).toBe(true);
     expect(map.has(`stripe_payout:${pProposed}`)).toBe(true);
     expect(map.has(`stripe_payout:${pConflict}`)).toBe(true);
 
-    // Omitted.
+    // Omitted. Every staged row tied to a payout drops out (its payout is the
+    // anchor). A `confirmed` (settled) payout is not needs_review work either.
+    expect(map.has(`stripe_payout:${pMatched}`)).toBe(false);
     expect(map.has(`qb_staged_payment:${sMatched}`)).toBe(false);
     expect(map.has(`qb_staged_payment:${sProposed}`)).toBe(false);
     expect(map.has(`qb_staged_payment:${sConflict}`)).toBe(false);
@@ -491,7 +523,12 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     const sApproved = await seedStaged({ status: "approved" });
     const sReconciled = await seedStaged({ status: "reconciled" });
     const sPending = await seedStaged({ status: "pending" });
-    const pConfirmed = await seedPayout({ status: "confirmed_reconciled" });
+    // A confirmed payout ties to its QB deposit via a confirmed settlement link.
+    const sConfirmedDep = await seedStaged({ status: "reconciled" });
+    const pConfirmed = await seedPayout({
+      status: "confirmed_reconciled",
+      matched: sConfirmedDep,
+    });
     const pUnmatched = await seedPayout({ status: "unmatched" });
 
     const map = await listAnchors("confirmed");

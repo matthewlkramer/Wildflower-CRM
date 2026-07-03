@@ -26,26 +26,35 @@ type AnchorQueue = "needs_review" | "confirmed" | "all";
 const ANCHOR_QUEUES = ["needs_review", "confirmed", "all"] as const;
 type AnchorSource = "stripe_payout" | "qb_staged_payment";
 
-// Stripe payout buckets (over qb_reconciliation_status). `all` = every payout is
-// a valid anchor (even a stray unmatched one — its charges can still mint gifts).
+// Stripe payout buckets (over the settlement_links mirror — S5 read-flip). `all` =
+// every payout is a valid anchor (even a stray orphan one — its charges can still
+// mint gifts).
 //
 // A payout only NEEDS review when there is actionable work in this workbench:
-//   • its QB-deposit tie is awaiting a human decision (proposed/conflict_approved), OR
-//   • it is still `unmatched` AND at least one of its charges has not yet been
-//     reconciled/excluded/rejected (i.e. a gift still needs to be minted/matched).
-// An `unmatched` payout whose charges are ALL settled has nothing to do here —
-// there is no QB deposit to tie — so it must NOT linger in needs_review (the
-// per-charge gifts have already been confirmed). It still shows under `all`, and
-// re-enters needs_review as `proposed` if the admin propose-all tie pass runs.
+//   • its QB-deposit tie is awaiting a human decision (a `proposed` settlement
+//     link), OR
+//   • it has NO settlement link (orphan) AND at least one of its charges has not
+//     yet been reconciled/excluded/rejected (i.e. a gift still needs to be
+//     minted/matched).
+// An orphan payout whose charges are ALL settled has nothing to do here — there is
+// no QB deposit to tie — so it must NOT linger in needs_review (the per-charge
+// gifts have already been confirmed). It still shows under `all`, and re-enters
+// needs_review as `proposed` if the admin propose-all tie pass runs.
 function stripeWhere(queue: AnchorQueue): SQL {
   switch (queue) {
     case "confirmed":
-      return sql`sp.qb_reconciliation_status IN ('confirmed_reconciled','confirmed_excluded','confirmed_keep','confirmed_replace')`;
+      return sql`EXISTS (
+        SELECT 1 FROM settlement_links sl
+        WHERE sl.payout_id = sp.id AND sl.lifecycle = 'confirmed'
+      )`;
     case "needs_review":
       return sql`(
-        sp.qb_reconciliation_status IN ('proposed','conflict_approved')
+        EXISTS (
+          SELECT 1 FROM settlement_links sl
+          WHERE sl.payout_id = sp.id AND sl.lifecycle = 'proposed'
+        )
         OR (
-          sp.qb_reconciliation_status = 'unmatched'
+          NOT EXISTS (SELECT 1 FROM settlement_links sl WHERE sl.payout_id = sp.id)
           AND EXISTS (
             SELECT 1 FROM stripe_staged_charges c
             WHERE c.stripe_payout_id = sp.id
@@ -58,14 +67,12 @@ function stripeWhere(queue: AnchorQueue): SQL {
   }
 }
 
-// Standalone QB anchors: eligible (not grouped, not tied to a payout, an active
-// status) AND in the requested bucket.
+// Standalone QB anchors: eligible (not grouped, not tied to a payout via a
+// settlement link, an active status) AND in the requested bucket.
 function qbWhere(queue: AnchorQueue): SQL {
   const eligible = sql`s.source_group_id IS NULL AND NOT EXISTS (
-      SELECT 1 FROM stripe_payouts p
-      WHERE p.matched_qb_staged_payment_id = s.id
-         OR p.proposed_qb_staged_payment_id = s.id
-         OR p.qb_conflict_staged_payment_id = s.id
+      SELECT 1 FROM settlement_links sl
+      WHERE sl.deposit_staged_payment_id = s.id
     )`;
   const statusClause =
     queue === "confirmed"
@@ -106,8 +113,10 @@ router.get(
     const { limit, offset, page } = parsePagination(req.query);
 
     // Normalized projection over each source — identical column list/types so the
-    // two halves UNION ALL cleanly. The active deposit (matched, else the
-    // proposed/conflicting candidate) supplies the payer name for a Stripe payout.
+    // two halves UNION ALL cleanly. The settlement link's deposit supplies the
+    // payer name for a Stripe payout. (status_label stays on the legacy raw
+    // qb_reconciliation_status — the 7-value display label is not reconstructible
+    // from settlement_links and is retired with the later write-flip + Phase 6.)
     const stripeSelect = sql`
       SELECT
         'stripe_payout'::text AS anchor_type,
@@ -118,12 +127,8 @@ router.get(
         sp.charge_count AS charge_count,
         sp.qb_reconciliation_status::text AS status_label
       FROM stripe_payouts sp
-      LEFT JOIN staged_payments ad
-        ON ad.id = COALESCE(
-          sp.matched_qb_staged_payment_id,
-          sp.proposed_qb_staged_payment_id,
-          sp.qb_conflict_staged_payment_id
-        )
+      LEFT JOIN settlement_links sl ON sl.payout_id = sp.id
+      LEFT JOIN staged_payments ad ON ad.id = sl.deposit_staged_payment_id
       WHERE ${stripeWhere(queue)}`;
 
     const qbSelect = sql`

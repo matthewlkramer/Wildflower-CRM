@@ -42,5 +42,5 @@ archived-participant rejection and must not reintroduce a
 COALESCE(matched,created,groupReconciled)+ledger double-read on one surface.
 Post-tx runs `applyDerivedOppFieldsMany(...pledges)` +
 `applyGiftQbTieMany(primary, ...losers)` (tie on archived losers benignly
-derives `missing`). This is the T002/Phase-3 "ledger-aware combine (WS3)" piece;
-it ships via Publish (no mid-phase prod-SQL gate).
+derives `missing`). This ledger-aware combine ships via Publish (no mid-phase
+prod-SQL gate).

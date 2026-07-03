@@ -236,6 +236,19 @@ mid-run as noise (retry), not a blocker.
   The ratified target-state simplification (two planes, one unit↔gift ledger +
   one settlement-link table, derived statuses, two three-column reports, and the
   prod-safe phased path) is in [`docs/reconciliation-design.md`](docs/reconciliation-design.md).
+  **Phase-4 payout read-flip (in progress):** the payout list, bundle-anchor
+  enumeration, and card queue now read the payout↔deposit tie from
+  `settlement_links` (proposed/confirmed lifecycle) via `deriveSettlementLinkFields`
+  / `derivePayoutLanes`, not the legacy `qb_reconciliation_status` + pointer columns
+  (which are still dual-written for rollback). Parity-equivalent for prod shapes,
+  with ONE deliberate read delta: a `confirmed_excluded` payout's funding lane now
+  reads `confirmed` (not the old `exempt`) — it IS a confirmed settlement (the
+  exclusion is a Plane-2 fact on `staged_payments`, matching the 0089 backfill). The
+  parity gate can't catch this (mirror↔deriver, not reads↔legacy-lane), so prod's
+  `confirmed_excluded` population needs a read-only check before enum/pointer
+  deprecation. Gated by `parity-settlement-links.ts`. Enum/pointer DROP is also
+  blocked on a follow-on WRITE-flip of the confirm state machine
+  (`conflict_approved` is not vestigial; the 7→3 lifecycle collapse is lossy).
 - **Allocation restriction (three axes)** — restriction is captured per allocation on
   three independent axes (`regional` / `usage` / `time`), each a `restriction_axis`
   enum (`donor_restricted` / `wf_restricted` / `unrestricted`, default `unrestricted`).

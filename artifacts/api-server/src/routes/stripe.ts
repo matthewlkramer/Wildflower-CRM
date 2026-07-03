@@ -12,6 +12,7 @@ import {
   households,
   people,
   paymentIntermediaries,
+  settlementLinks,
 } from "@workspace/db/schema";
 import {
   and,
@@ -1304,6 +1305,7 @@ const conflictPerson = alias(people, "conflict_person");
 
 const reconSelect = {
   ...getTableColumns(stripePayouts),
+  settlementLifecycle: settlementLinks.lifecycle,
   depositId: activeDeposit.id,
   depositAmount: activeDeposit.amount,
   depositDateReceived: activeDeposit.dateReceived,
@@ -1338,9 +1340,10 @@ router.get(
       db
         .select(reconSelect)
         .from(stripePayouts)
+        .leftJoin(settlementLinks, eq(settlementLinks.payoutId, stripePayouts.id))
         .leftJoin(
           activeDeposit,
-          sql`${activeDeposit.id} = COALESCE(${stripePayouts.matchedQbStagedPaymentId}, ${stripePayouts.proposedQbStagedPaymentId}, ${stripePayouts.qbConflictStagedPaymentId})`,
+          eq(activeDeposit.id, settlementLinks.depositStagedPaymentId),
         )
         .leftJoin(conflictGift, eq(conflictGift.id, stripePayouts.qbConflictGiftId))
         .leftJoin(conflictOrg, eq(conflictOrg.id, conflictGift.organizationId))
@@ -1366,7 +1369,9 @@ router.get(
     res.json({
       data: rows.map((row) => ({
         ...row,
-        reconciliationLanes: derivePayoutLanes(row.qbReconciliationStatus),
+        reconciliationLanes: derivePayoutLanes(
+          row.settlementLifecycle ? { lifecycle: row.settlementLifecycle } : null,
+        ),
       })),
       pagination: { page, limit, total: totalRow?.value ?? 0 },
     });

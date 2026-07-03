@@ -83,32 +83,34 @@ export function deriveEvidenceLanes(i: EvidenceLaneInput): ReconciliationLanes {
   return { funding, crmRecord };
 }
 
-type PayoutReconciliationStatus =
-  | "unmatched"
-  | "proposed"
-  | "conflict_approved"
-  | "confirmed_reconciled"
-  | "confirmed_excluded"
-  | "confirmed_keep"
-  | "confirmed_replace"
-  | null
-  | undefined;
+// The minimal shape of a payout's settlement_links mirror row this deriver reads
+// (§4.4 batch). `null` / `undefined` = no link at all = an orphan payout.
+export interface PayoutSettlementLinkLike {
+  lifecycle: "proposed" | "confirmed" | "exempt";
+}
 
 // A Stripe payout is a batch (gross − fees = net) with no single donor, so only
-// the funding lane applies; crmRecord is null. Its funding lane is derived from
-// the payout ↔ QuickBooks reconciliation lifecycle.
+// the funding lane applies; crmRecord is null. Post S5 read-flip its funding lane
+// is derived from the payout's `settlement_links` mirror (§4.4 batch), NOT the
+// legacy 7-value qb_reconciliation_status: a `confirmed` link = settled money
+// (funding=confirmed), a `proposed` link = an unconfirmed tie (proposed), no link
+// = orphan (unlinked); the reserved `exempt` lifecycle maps straight to exempt.
+//
+// One deliberate delta vs the retired status mapping: a legacy `confirmed_excluded`
+// payout mirrors as a CONFIRMED settlement link, so it now reads funding=confirmed
+// (it IS a confirmed settlement — the coarse QB lump was suppressed so the
+// per-charge Stripe gifts aren't double-counted; the exclusion is a Plane-2 fact on
+// staged_payments.exclusion_reason, not a payout-settlement state), where the old
+// status mapping read it as `exempt`.
 export function derivePayoutLanes(
-  status: PayoutReconciliationStatus,
+  link: PayoutSettlementLinkLike | null | undefined,
 ): ReconciliationLanes {
-  const funding: ReconciliationLaneStatus =
-    status === "confirmed_excluded"
+  const funding: ReconciliationLaneStatus = !link
+    ? "unlinked"
+    : link.lifecycle === "exempt"
       ? "exempt"
-      : status === "confirmed_reconciled" ||
-          status === "confirmed_keep" ||
-          status === "confirmed_replace"
+      : link.lifecycle === "confirmed"
         ? "confirmed"
-        : status === "proposed" || status === "conflict_approved"
-          ? "proposed"
-          : "unlinked";
+        : "proposed";
   return { funding, crmRecord: null };
 }

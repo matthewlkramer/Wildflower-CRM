@@ -43,3 +43,24 @@ must first clear or re-`exempt` the referencing links.
 cols — currently reconciliationCommit ×2, stripeConfirm ×7, stripeReconcile ×2); the
 read-flip is gated on `parity:settlement-links` returning zero exceptions on **prod**
 (dev parity ≠ prod), per the 0089 RUNBOOK.
+
+## The parity gate is mirror↔deriver only — a read-flip can still shift derived semantics
+
+`parity:settlement-links` proves `settlement_links` faithfully mirrors the legacy
+status/pointer columns. It does **not** prove the flipped READS produce the same
+derived output as the pre-flip reads. Those are different comparisons: the gate never
+sees `derivePayoutLanes` / `deriveSettlementLinkFields` lane output.
+
+Concrete case: the 0089 backfill maps ALL `confirmed_*` (via `LIKE 'confirmed_%'`),
+**including `confirmed_excluded`**, to a `confirmed` link — `confirmed_excluded` IS a
+confirmed settlement (the exclusion is a Plane-2 fact on
+`staged_payments.exclusion_reason`, not a payout-settlement state; `exempt` is
+reserved for links with no expected QB deposit). So after the read-flip a
+`confirmed_excluded` payout's funding lane reads `confirmed`, where the pre-flip
+legacy-status lane read `exempt`. The parity gate is blind to this; dev holds zero
+`confirmed_excluded` rows.
+
+**How to apply:** when flipping reads onto a mirror, don't trust the parity gate as
+proof of read-equivalence. Diff the derived output on any status/edge the mirror maps
+differently than the old read path, and read-only-check prod's population of those
+edge statuses (here `confirmed_excluded`) before deprecating the legacy source.

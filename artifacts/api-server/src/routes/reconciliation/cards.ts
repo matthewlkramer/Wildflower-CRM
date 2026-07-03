@@ -131,8 +131,8 @@ const stripeEvidenceExpr = sql<{
     )
   )
   FROM stripe_payouts p
-  WHERE p.matched_qb_staged_payment_id = ${stagedPayments.id}
-     OR p.proposed_qb_staged_payment_id = ${stagedPayments.id}
+  JOIN settlement_links sl ON sl.payout_id = p.id
+  WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
   LIMIT 1
 )`;
 
@@ -229,9 +229,8 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
         AND NOT (
           (${stagedPayments.matchedGiftId} IS NOT NULL OR ${stagedPayments.createdGiftId} IS NOT NULL)
           AND NOT EXISTS (
-            SELECT 1 FROM stripe_payouts po
-            WHERE po.matched_qb_staged_payment_id = ${stagedPayments.id}
-               OR po.proposed_qb_staged_payment_id = ${stagedPayments.id}
+            SELECT 1 FROM settlement_links sl
+            WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
           )
         )
       )
