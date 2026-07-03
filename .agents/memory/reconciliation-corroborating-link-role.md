@@ -45,7 +45,19 @@ raw subqueries in `giftPaymentSummary.ts` now do too). The regression guard is t
 The corroborating rows have their own per-anchor partial uniques
 (`..._corroborating_uq`, partial on `link_role='corroborating'`), DISJOINT from the
 counted book-once uniques, so a counted and a corroborating row for the same
-(anchor, gift) coexist. Dual-write (corrections `/apply`) and re-home (gift
-combine) keep gel and its corroborating PA twin in lockstep; the
-`parity:gift-evidence-links` script is the bidirectional gate that must pass on
-PROD before the Phase-5 read-flip (which switches gel readers to the ledger).
+(anchor, gift) coexist.
+
+## Read-flip is DONE — gel is frozen; parity is no longer a gate
+
+The Phase-5 read-flip has shipped: `gift_evidence_links` (gel) is now WRITE-FROZEN.
+The corroborating ledger is the SOLE home for evidence↔gift links. No api-server
+source reads or writes gel anymore — corrections `/apply` writes only the
+corroborating PA row, and giftCombine re-homes only corroborating PA rows (keyed on
+the anchor `qb:{paymentId}` / `st:{stripeChargeId}`, deleting the loser's row when
+the survivor already corroborates that anchor to dodge 23505). The only remaining
+references are comments + the retained `parity-gift-evidence-links.ts` script.
+
+**Do NOT re-run `parity:gift-evidence-links` as a post-flip gate.** It was the S1–S4
+dual-write gate only. Post-flip divergence is EXPECTED by design: new corroborating
+rows have no gel twin. gel stays physically present (deprecated) until the S7
+human-gated `DROP TABLE`.

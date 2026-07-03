@@ -27,7 +27,6 @@ import {
   stagedPaymentSplits,
   stripeStagedCharges,
   donorboxDonations,
-  giftEvidenceLinks,
   paymentApplications,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
@@ -55,10 +54,10 @@ const num = (v: string | number | null | undefined): number => {
  * FIRST (before any write); on collision returns `{ collision }` having written
  * nothing so the caller can 409 and let the transaction roll back cleanly.
  *
- * On success the ledger, the QuickBooks staged pointers, the Stripe/Donorbox
- * pointers, and the corroborating gift_evidence_links are all re-homed onto the
- * survivor, and each loser's dangling QB final-amount stamp is cleared. The
- * caller is still responsible for moving allocations, summing the survivor
+ * On success the counted ledger, the QuickBooks staged pointers, the
+ * Stripe/Donorbox pointers, and the corroborating ledger rows are all re-homed
+ * onto the survivor, and each loser's dangling QB final-amount stamp is cleared.
+ * The caller is still responsible for moving allocations, summing the survivor
  * amount, clearing self-referential match pointers, archiving the losers, and
  * recomputing derived fields / QB tie afterward.
  */
@@ -146,16 +145,6 @@ export async function absorbGiftEvidenceIntoSurvivor(
         eq(paymentApplications.linkRole, "counted"),
       ),
     );
-
-  const evLinks = await tx
-    .select({
-      id: giftEvidenceLinks.id,
-      giftId: giftEvidenceLinks.giftId,
-      evidenceKind: giftEvidenceLinks.evidenceKind,
-      evidenceId: giftEvidenceLinks.evidenceId,
-    })
-    .from(giftEvidenceLinks)
-    .where(inArray(giftEvidenceLinks.giftId, allIds));
 
   // Corroborating ledger rows (the Phase-5 fold of gift_evidence_links). Kept
   // separate from the counted ledger above (which drives the money trail) — these
@@ -345,33 +334,14 @@ export async function absorbGiftEvidenceIntoSurvivor(
       .where(eq(donorboxDonations.id, r.id));
   }
 
-  // ── 6. Re-home corroborating gift_evidence_links (dedupe on the UNIQUE) ──
-  const survivorEvKeys = new Set(
-    evLinks
-      .filter((l) => l.giftId === survivorId)
-      .map((l) => `${l.evidenceKind}:${l.evidenceId}`),
-  );
-  for (const l of evLinks) {
-    if (!loserSet.has(l.giftId)) continue;
-    const key = `${l.evidenceKind}:${l.evidenceId}`;
-    if (survivorEvKeys.has(key)) {
-      await tx.delete(giftEvidenceLinks).where(eq(giftEvidenceLinks.id, l.id));
-    } else {
-      await tx
-        .update(giftEvidenceLinks)
-        .set({ giftId: survivorId })
-        .where(eq(giftEvidenceLinks.id, l.id));
-      survivorEvKeys.add(key);
-    }
-  }
-
-  // ── 6b. Re-home corroborating payment_applications (Phase-5 fold of gel) ──
-  // Mirrors §6 on the ledger: re-point each loser's corroborating row to the
-  // survivor, or delete it when the survivor already corroborates that anchor
-  // (the corroborating per-anchor UNIQUE would otherwise 23505). Audit-only, so
-  // this never sums and never blocks the merge (the §2 collision detector reads
-  // the counted ledger only). Keyed on the anchor, independent of gel ids, so it
-  // stays correct after the read-flip stops writing gel.
+  // ── 6. Re-home corroborating payment_applications (Phase-5 fold of gel) ──
+  // The corroborating ledger is now the sole home for evidence↔gift links
+  // (Phase-5 read-flip: gift_evidence_links is frozen). Re-point each loser's
+  // corroborating row to the survivor, or delete it when the survivor already
+  // corroborates that anchor (the corroborating per-anchor UNIQUE would
+  // otherwise 23505). Audit-only, so this never sums and never blocks the merge
+  // (the §2 collision detector reads the counted ledger only). Keyed on the
+  // anchor, independent of gel ids.
   const corrAnchorKey = (r: (typeof corrLedger)[number]): string =>
     r.evidenceSource === "quickbooks"
       ? `qb:${r.paymentId}`

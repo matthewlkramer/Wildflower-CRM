@@ -93,6 +93,7 @@ let schema: {
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
+let andFn: (typeof import("drizzle-orm"))["and"];
 let detect: typeof import("../routes/financialCorrections").detectFinancialCorrections;
 let server: Server;
 let baseUrl = "";
@@ -131,7 +132,24 @@ async function postJson(path: string, body: unknown): Promise<number> {
   return res.status;
 }
 
-async function linkCount(): Promise<number> {
+// Corroborating ledger rows the /apply flow writes, anchored to the QB deposit.
+// Phase-5 read-flip: /apply writes ONLY these rows (link_role='corroborating').
+async function corrLedgerCount(): Promise<number> {
+  const rows = await db
+    .select({ id: schema.paymentApplications.id })
+    .from(schema.paymentApplications)
+    .where(
+      andFn(
+        eqFn(schema.paymentApplications.paymentId, STAGED_E),
+        eqFn(schema.paymentApplications.linkRole, "corroborating"),
+      ),
+    );
+  return rows.length;
+}
+
+// gift_evidence_links is frozen after the Phase-5 read-flip: /apply must never
+// write it. This stays 0 as a regression guard against a reintroduced gel write.
+async function gelCount(): Promise<number> {
   const rows = await db
     .select({ id: schema.giftEvidenceLinks.id })
     .from(schema.giftEvidenceLinks)
@@ -155,6 +173,7 @@ beforeAll(async () => {
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
+  andFn = drizzle.and;
   detect = (await import("../routes/financialCorrections"))
     .detectFinancialCorrections;
 
@@ -248,9 +267,9 @@ afterAll(async () => {
         GIFT_A2,
       ]),
     );
-  // The /apply flow now dual-writes a corroborating payment_applications row per
-  // link (Phase 5); clear them before the staged-payment (payment_id FK) and
-  // gift (gift_id RESTRICT) deletes below.
+  // The /apply flow writes a corroborating payment_applications row per link
+  // (Phase-5 read-flip); clear them before the staged-payment (payment_id FK)
+  // and gift (gift_id RESTRICT) deletes below.
   await db
     .delete(schema.paymentApplications)
     .where(
@@ -353,7 +372,8 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
 
   it("applies link_evidence: one deposit corroborates many gifts, idempotently, without touching the QB source", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
-    expect(await linkCount()).toBe(0);
+    expect(await corrLedgerCount()).toBe(0);
+    expect(await gelCount()).toBe(0);
 
     expect(
       await postJson("/api/financial-corrections/apply", {
@@ -362,7 +382,9 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
         giftIds: [GIFT_A1, GIFT_A2],
       }),
     ).toBe(200);
-    expect(await linkCount()).toBe(2);
+    expect(await corrLedgerCount()).toBe(2);
+    // Phase-5 read-flip: the legacy gift_evidence_links table is never written.
+    expect(await gelCount()).toBe(0);
 
     // Idempotent: re-applying the same correction adds no rows.
     expect(
@@ -372,7 +394,8 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
         giftIds: [GIFT_A1, GIFT_A2],
       }),
     ).toBe(200);
-    expect(await linkCount()).toBe(2);
+    expect(await corrLedgerCount()).toBe(2);
+    expect(await gelCount()).toBe(0);
 
     // Book-once preserved: the gifts' counted pointers stay null (corroborating
     // links never become the counted source)...
