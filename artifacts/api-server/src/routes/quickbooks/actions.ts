@@ -36,6 +36,7 @@ import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import { applyPaymentApplication } from "../../lib/paymentApplications";
 import { respondInvariantFailure, stagedReturnColumns } from "./shared";
 import { giftHeaderColumns } from "../giftsAndPayments";
+import { isGroupMember } from "../../lib/unitGroupMembership";
 
 const router: IRouter = Router();
 
@@ -131,7 +132,7 @@ router.post(
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
     if (!existing) return notFound(res, "staged payment");
-    if (existing.sourceGroupId != null) {
+    if (await isGroupMember(db, id)) {
       res.status(409).json({
         error: "source_group_member",
         message:

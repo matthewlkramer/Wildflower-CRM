@@ -24,6 +24,10 @@ import { and, eq, sql, type SQL } from "drizzle-orm";
 import type { PaymentApplicationEvidenceSource } from "./paymentApplications";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+// Group reads run both as cheap pre-transaction guards (on the pooled `db`) and
+// inside a reconcile/approve transaction (on its `tx`). Accept either, matching
+// the repo convention (`reconciliationBundleProposal.ts`, `bundleProposals.ts`).
+type DbLike = typeof db | Tx;
 
 const QUICKBOOKS: PaymentApplicationEvidenceSource = "quickbooks";
 
@@ -33,7 +37,7 @@ const QUICKBOOKS: PaymentApplicationEvidenceSource = "quickbooks";
  * group, never individually. Replaces the legacy `sourceGroupId != null` check.
  */
 export async function isGroupMember(
-  tx: Tx,
+  tx: DbLike,
   sourceId: string,
   evidenceSource: PaymentApplicationEvidenceSource = QUICKBOOKS,
 ): Promise<boolean> {
@@ -61,7 +65,7 @@ export async function isGroupMember(
  * Replaces reading `staged_payments.source_group_id` to expand a group.
  */
 export async function groupMemberIdsFor(
-  tx: Tx,
+  tx: DbLike,
   sourceId: string,
   evidenceSource: PaymentApplicationEvidenceSource = QUICKBOOKS,
 ): Promise<string[]> {

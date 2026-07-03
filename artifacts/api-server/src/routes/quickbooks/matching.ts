@@ -37,6 +37,10 @@ import {
 import { stagedReturnColumns } from "./shared";
 import { giftHeaderColumns } from "../giftsAndPayments";
 import { isStagedApprovable } from "../../lib/reconciliationGate";
+import {
+  isGroupMember,
+  groupMemberIdsFor,
+} from "../../lib/unitGroupMembership";
 
 const router: IRouter = Router();
 
@@ -72,7 +76,7 @@ router.post(
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
     if (!existing) return notFound(res, "staged payment");
-    if (existing.sourceGroupId != null) {
+    if (await isGroupMember(db, id)) {
       res.status(409).json({
         error: "source_group_member",
         message:
@@ -410,13 +414,18 @@ router.post(
         // accept groups (e.g. one deposit batching DIFFERENT payers) that the UI
         // can never assemble, and — worse — would let a direct API call collapse
         // two different donors who happen to share a deposit into one gift.
-        // A human-stamped source group (every member shares one non-null
-        // sourceGroupId) is an explicit "these are one physical gift" assertion,
-        // so it bypasses the deposit/payer coherence key that ad hoc selections
-        // must satisfy. The multi-date + amount-tolerance confirmations below
-        // still apply.
-        const sourceGroups = new Set(locked.map((r) => r.sourceGroupId));
-        const isSourceGroup = sourceGroups.size === 1 && !sourceGroups.has(null);
+        // A human-stamped source group (every member belongs to the SAME
+        // `unit_groups` group) is an explicit "these are one physical gift"
+        // assertion, so it bypasses the deposit/payer coherence key that ad hoc
+        // selections must satisfy. The multi-date + amount-tolerance
+        // confirmations below still apply. Read from unit-group membership (the
+        // single source, docs/reconciliation-design.md §4.6b), not the legacy
+        // `source_group_id` pointer: the locked rows are one group iff they all
+        // sit in the representative row's group.
+        const groupSiblings = await groupMemberIdsFor(tx, locked[0].id);
+        const isSourceGroup =
+          groupSiblings.length > 0 &&
+          locked.every((r) => groupSiblings.includes(r.id));
         if (!isSourceGroup) {
           const keyOf = (r: (typeof locked)[number]): string | null => {
             const payer = (r.payerName ?? "").trim().toLowerCase();
@@ -695,12 +704,8 @@ router.post(
 
     // A grouped row is reconciled only as part of its whole group (the tx below
     // re-checks pending under the row lock; this is the cheap up-front guard).
-    const grouped = await db
-      .select({ sourceGroupId: stagedPayments.sourceGroupId })
-      .from(stagedPayments)
-      .where(eq(stagedPayments.id, id))
-      .then((r) => r[0]);
-    if (grouped && grouped.sourceGroupId != null) {
+    // Reads unit-group membership (the single source), not `source_group_id`.
+    if (await isGroupMember(db, id)) {
       res.status(409).json({
         error: "source_group_member",
         message:

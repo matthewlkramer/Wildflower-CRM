@@ -22,6 +22,7 @@ import {
 } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
+import { groupMemberIdsFor } from "../../lib/unitGroupMembership";
 import {
   runConsistencyGate,
   isStagedApprovable,
@@ -515,12 +516,18 @@ router.post(
     // EXISTING gift ties all members at once via the group-reconcile endpoint, so
     // it's rejected here with a redirect (this card endpoint mints only).
     const groupRow = await db
-      .select({ sourceGroupId: stagedPayments.sourceGroupId })
+      .select({ id: stagedPayments.id })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, stagedPaymentId))
       .then((r) => r[0]);
     if (!groupRow) return notFound(res, "staged payment");
-    if (groupRow.sourceGroupId != null) {
+    // Group membership (and the group expansion below) reads from unit-group
+    // membership — the single source, docs/reconciliation-design.md §4.6b — not
+    // the legacy `source_group_id` pointer. `groupMemberIdsFor` returns [] for
+    // an ungrouped unit and the sorted members (incl. self) for a grouped one,
+    // so its first element is the deterministic representative (min id).
+    const memberIds = await groupMemberIdsFor(db, stagedPaymentId);
+    if (memberIds.length > 0) {
       if (body.outcome === "link_existing_gift") {
         res.status(409).json({
           error: "source_group_use_reconcile",
@@ -538,9 +545,7 @@ router.post(
           entityId: stagedPayments.entityId,
         })
         .from(stagedPayments)
-        .where(eq(stagedPayments.sourceGroupId, groupRow.sourceGroupId));
-      const memberIds = members.map((m) => m.id).sort();
-      if (memberIds.length === 0) return notFound(res, "staged payment");
+        .where(inArray(stagedPayments.id, memberIds));
       const representativeId = memberIds[0];
       const total = members
         .reduce((acc, m) => acc + Number(m.amount ?? 0), 0)

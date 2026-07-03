@@ -53,6 +53,7 @@ import {
 } from "./quickbooksMatch";
 import { scoreStripeCharge } from "./stripeMatch";
 import { amountWithinFeeBand } from "./reconciliationGate";
+import { groupMemberIdsFor } from "./unitGroupMembership";
 import {
   giftCandidateJoins,
   giftCandidateSelect,
@@ -811,13 +812,18 @@ export async function buildReconciliationGraph(
   // (e.g. $65k + $15k → $80k) is wrongly flagged as an amount mismatch. Mirrors
   // the mint path (approve.ts) and the group-reconcile gate (matching.ts).
   let sourceGroupTotal: string | null = null;
-  if (staged.sourceGroupId != null) {
+  // Group membership reads from unit-group membership (the single source,
+  // docs/reconciliation-design.md §4.6b), not the legacy `source_group_id`
+  // pointer. The member set includes `staged` itself, so summing over it yields
+  // the same combined total the group-reconcile/mint paths compute.
+  const groupMemberIds = await groupMemberIdsFor(db, staged.id);
+  if (groupMemberIds.length > 0) {
     const agg = await db
       .select({
         total: sql<string>`COALESCE(SUM(${stagedPayments.amount}), 0)::text`,
       })
       .from(stagedPayments)
-      .where(eq(stagedPayments.sourceGroupId, staged.sourceGroupId))
+      .where(inArray(stagedPayments.id, groupMemberIds))
       .then((r) => r[0]);
     sourceGroupTotal = agg?.total ?? null;
   }
