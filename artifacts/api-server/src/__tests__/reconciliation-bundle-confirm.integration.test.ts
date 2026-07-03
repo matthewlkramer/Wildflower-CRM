@@ -71,6 +71,7 @@ let schema: {
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   reconciliationBundleDrafts: Db["reconciliationBundleDrafts"];
+  paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -178,6 +179,7 @@ beforeAll(async () => {
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     reconciliationBundleDrafts: dbMod.reconciliationBundleDrafts,
+    paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -216,6 +218,14 @@ afterAll(async () => {
         finalAmountQbStagedPaymentId: null,
       })
       .where(inArrayFn(schema.giftsAndPayments.id, createdGiftIds));
+  // `payment_applications` (Plane-2 ledger booked by the per-charge mint) FKs the
+  // gift ON DELETE RESTRICT, so clear it before the gifts. (`settlement_links`
+  // needs no explicit cleanup: its payout FK cascades on the stripePayouts delete
+  // below.)
+  if (createdGiftIds.length)
+    await db
+      .delete(schema.paymentApplications)
+      .where(inArrayFn(schema.paymentApplications.giftId, createdGiftIds));
   if (createdGiftIds.length)
     await db
       .delete(schema.giftAllocations)

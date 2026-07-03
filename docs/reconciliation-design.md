@@ -207,6 +207,16 @@ Give batch↔batch its own purpose-built table (Decision 1) — call it
 | `confirmed_by_user_id` / `confirmed_at` | who/when |
 | `note` | optional |
 
+> **Latent constraint (record before Phase 7 / any staged-payment delete tooling).**
+> The `deposit_staged_payment_id` FK is `ON DELETE SET NULL`, but the
+> `settlement_links_deposit_required_chk` CHECK requires a non-`exempt` link to
+> carry a deposit. Postgres evaluates CHECKs during a referential SET NULL, so
+> hard-*deleting* a `staged_payments` row referenced by a `proposed`/`confirmed`
+> link would raise a CHECK violation rather than silently null the pointer. No
+> `delete(staged_payments)` path exists in the app today (archive-not-delete), so
+> this is latent — but any future staged-payment wipe/delete tooling must first
+> clear or re-`exempt` the referencing links.
+
 This **retires** `stripe_payouts.qb_reconciliation_status` (7-value enum),
 `qb_supersede_status`, `proposed_qb_staged_payment_id`,
 `matched_qb_staged_payment_id`, `qb_conflict_staged_payment_id`,

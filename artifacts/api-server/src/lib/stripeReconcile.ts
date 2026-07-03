@@ -15,6 +15,7 @@ import {
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { getUncachableStripeClient } from "./stripeClient";
+import { syncSettlementLinkFromPayout } from "./settlementLink";
 
 /**
  * Stripe payout ↔ QuickBooks deposit-lump reconciliation (the audit join).
@@ -305,7 +306,11 @@ export async function runProposalPass(
             ),
           )
           .returning({ id: stripePayouts.id });
-        if (upd.length) cleared += 1;
+        if (upd.length) {
+          cleared += 1;
+          // Plane-1 dual-write: mirror the reset-to-unmatched (removes the link).
+          await syncSettlementLinkFromPayout(db, p.id);
+        }
       }
       continue;
     }
@@ -365,6 +370,8 @@ export async function runProposalPass(
     if (upd.length) {
       if (isConflict) conflicts += 1;
       else proposed += 1;
+      // Plane-1 dual-write: mirror the freshly proposed / conflict tie.
+      await syncSettlementLinkFromPayout(db, p.id);
     }
   }
 

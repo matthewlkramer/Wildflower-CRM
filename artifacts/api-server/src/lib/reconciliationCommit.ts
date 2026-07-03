@@ -24,6 +24,7 @@ import {
   adjustSingleAllocationOrFlag,
 } from "./giftFinalAmount";
 import { donorOf, type LinkDonor } from "./quickbooksLink";
+import { syncSettlementLinkFromPayout } from "./settlementLink";
 import {
   seedInitialGiftAllocation,
   assertGiftHasAllocations,
@@ -436,6 +437,8 @@ export async function mintGiftInTx(
           updatedAt: new Date(),
         })
         .where(eq(stripePayouts.id, charge.stripePayoutId));
+      // Plane-1 dual-write: mirror the payout↔deposit tie into settlement_links.
+      await syncSettlementLinkFromPayout(tx, charge.stripePayoutId);
     }
     // Dual-write (Phase 2): book the Stripe charge as parallel evidence. The QB
     // anchor OWNS the mint (createdTheGift:true on its row); this Stripe row is
@@ -690,6 +693,8 @@ export async function linkGiftInTx(
           updatedAt: new Date(),
         })
         .where(eq(stripePayouts.id, charge.stripePayoutId));
+      // Plane-1 dual-write: mirror the payout↔deposit tie into settlement_links.
+      await syncSettlementLinkFromPayout(tx, charge.stripePayoutId);
     }
     // Dual-write (Phase 2): book the Stripe charge as parallel evidence (GROSS
     // source). The QB row already recorded the QB-settled amount above; this is

@@ -7,6 +7,7 @@ import {
 } from "@workspace/db/schema";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { candidateGiftId } from "./stripeReconcile";
+import { syncSettlementLinkFromPayout } from "./settlementLink";
 
 /**
  * A transaction handle, matching `db.transaction`'s callback argument. Exported
@@ -229,6 +230,7 @@ export async function confirmPendingQbDepositInTx(
       "This payout is no longer proposed. Refresh and retry.",
     );
   }
+  await syncSettlementLinkFromPayout(tx, payoutId);
 
   return {
     ok: true,
@@ -352,6 +354,7 @@ export async function confirmKeepApprovedQbGiftInTx(
       "This payout is no longer in conflict. Refresh and retry.",
     );
   }
+  await syncSettlementLinkFromPayout(tx, payoutId);
 
   return {
     ok: true,
@@ -445,6 +448,7 @@ export function revertPayoutQbConfirmation(
             "This payout has changed. Refresh and retry.",
           );
         }
+        await syncSettlementLinkFromPayout(tx, payoutId);
         return {
           ok: true,
           kind: "reverted",
@@ -510,6 +514,7 @@ export function revertPayoutQbConfirmation(
           "This payout has changed. Refresh and retry.",
         );
       }
+      await syncSettlementLinkFromPayout(tx, payoutId);
       return {
         ok: true,
         kind: "reverted",
@@ -580,6 +585,7 @@ export function revertPayoutQbConfirmation(
           "This payout has changed. Refresh and retry.",
         );
       }
+      await syncSettlementLinkFromPayout(tx, payoutId);
       return {
         ok: true,
         kind: "reverted",
@@ -619,6 +625,7 @@ export function revertPayoutQbConfirmation(
           "This payout has changed. Refresh and retry.",
         );
       }
+      await syncSettlementLinkFromPayout(tx, payoutId);
       return {
         ok: true,
         kind: "reverted",
@@ -749,6 +756,7 @@ export function revertPayoutQbConfirmation(
           "This payout has changed. Refresh and retry.",
         );
       }
+      await syncSettlementLinkFromPayout(tx, payoutId);
       return {
         ok: true,
         kind: "reverted",
