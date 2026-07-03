@@ -184,11 +184,12 @@ async function resolveAndLockAnchor(
         id: args.paymentId,
         cap: row.amount,
         ledgerColumn: paymentApplications.paymentId,
-        // Plain (non-partial) UNIQUE — no arbiter predicate needed.
+        // Partial UNIQUE arbiter — must match the counted book-once index predicate.
         conflictTarget: [
           paymentApplications.paymentId,
           paymentApplications.giftId,
         ],
+        conflictTargetWhere: sql`${paymentApplications.linkRole} = 'counted'`,
       };
     }
     case "stripe": {
@@ -216,7 +217,7 @@ async function resolveAndLockAnchor(
           paymentApplications.stripeChargeId,
           paymentApplications.giftId,
         ],
-        conflictTargetWhere: sql`${paymentApplications.stripeChargeId} IS NOT NULL`,
+        conflictTargetWhere: sql`${paymentApplications.stripeChargeId} IS NOT NULL AND ${paymentApplications.linkRole} = 'counted'`,
       };
     }
     case "donorbox": {
@@ -244,7 +245,7 @@ async function resolveAndLockAnchor(
           paymentApplications.donorboxDonationId,
           paymentApplications.giftId,
         ],
-        conflictTargetWhere: sql`${paymentApplications.donorboxDonationId} IS NOT NULL`,
+        conflictTargetWhere: sql`${paymentApplications.donorboxDonationId} IS NOT NULL AND ${paymentApplications.linkRole} = 'counted'`,
       };
     }
   }

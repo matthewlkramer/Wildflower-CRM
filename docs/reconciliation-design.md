@@ -503,6 +503,18 @@ task** — this task delivers only the ratified design (Phase 1).
    add the `unit_groups` table + polymorphic membership, backfilled from today's
    `source_group_id`, so a grouped set matches as one counted ledger row per member.
 
+   *Holdout — Stripe/Donorbox counted read-flip NOT shipped (tracked so it isn't
+   lost).* The QB unit↔gift read-flip shipped, but the **counted** Stripe- and
+   Donorbox-charge↔gift links are not yet read from the ledger: `deriveGiftQbTie`
+   still ties Stripe-sourced gifts via an amount-blind shortcut and never reads
+   Donorbox counted rows; `parity-stripe-donorbox-readflip.ts` is still a
+   preview/parity script, not a shipped flip. This tail is deliberately deferred to
+   its own task because it touches the money-total derivation (higher risk) and
+   needs its own **prod** parity gate. Phase 5 was allowed to proceed ahead of it
+   because corroborating links are money-total-neutral (excluded from every counted
+   SUM), so the temporary asymmetry (corroborating Stripe/Donorbox links in the
+   ledger while their counted siblings are still read via legacy) is harmless.
+
 4. **Model Plane 1 settlement as links.** Add `settlement_links` (§4.3). Backfill
    from `stripe_payouts.qb_reconciliation_status`: ALL `confirmed_*` (including
    `confirmed_excluded`) → a `confirmed` link, `proposed`/`conflict_approved` →

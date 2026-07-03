@@ -88,8 +88,11 @@ export const paymentApplications = pgTable(
       () => giftAllocations.id,
       { onDelete: "set null" },
     ),
-    // The portion of the payment applied to this gift (> 0, enforced by CHECK).
-    amountApplied: numeric("amount_applied", { precision: 14, scale: 2 }).notNull(),
+    // The portion of the payment applied to this gift. REQUIRED and > 0 for
+    // counted (money-trail) rows; NULLABLE for corroborating rows (audit-only —
+    // gift_evidence_links.sub_amount is optional and the corrections flow never
+    // sets it). Enforced by the role-aware amount_applied CHECK below.
+    amountApplied: numeric("amount_applied", { precision: 14, scale: 2 }),
     evidenceSource: paymentApplicationEvidenceSourceEnum("evidence_source").notNull(),
     // Present (and required) when evidence_source = 'stripe'.
     stripeChargeId: text("stripe_charge_id").references(
@@ -127,21 +130,39 @@ export const paymentApplications = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
-    // Book-once key (quickbooks anchor): one ledger row per payment↔gift pair.
-    // payment_id is now nullable, but Postgres treats NULLs as distinct so this
-    // constrains only quickbooks rows (the only rows that carry payment_id).
-    uniqueIndex("payment_applications_payment_id_gift_id_uq").on(
-      t.paymentId,
-      t.giftId,
-    ),
-    // Book-once key (stripe anchor): one ledger row per charge↔gift pair.
+    // Book-once key (quickbooks anchor): one COUNTED ledger row per payment↔gift
+    // pair. Role-scoped to link_role='counted' so a Phase-5 corroborating QB link
+    // to the same (payment, gift) lands in the separate corroborating unique below
+    // instead of colliding with the counted money-trail row. payment_id is
+    // nullable, but Postgres treats NULLs as distinct so this constrains only
+    // quickbooks counted rows (the only counted rows that carry payment_id).
+    uniqueIndex("payment_applications_payment_id_gift_id_uq")
+      .on(t.paymentId, t.giftId)
+      .where(sql`${t.linkRole} = 'counted'`),
+    // Book-once key (stripe anchor): one COUNTED ledger row per charge↔gift pair.
     uniqueIndex("payment_applications_stripe_charge_id_gift_id_uq")
       .on(t.stripeChargeId, t.giftId)
-      .where(sql`${t.stripeChargeId} IS NOT NULL`),
-    // Book-once key (donorbox anchor): one ledger row per donation↔gift pair.
+      .where(sql`${t.stripeChargeId} IS NOT NULL AND ${t.linkRole} = 'counted'`),
+    // Book-once key (donorbox anchor): one COUNTED ledger row per donation↔gift pair.
     uniqueIndex("payment_applications_donorbox_donation_id_gift_id_uq")
       .on(t.donorboxDonationId, t.giftId)
-      .where(sql`${t.donorboxDonationId} IS NOT NULL`),
+      .where(
+        sql`${t.donorboxDonationId} IS NOT NULL AND ${t.linkRole} = 'counted'`,
+      ),
+    // Corroborating dedupe (Phase 5) — mirrors gift_evidence_links'
+    // (gift, evidence) unique: a given evidence row corroborates a given gift AT
+    // MOST ONCE per anchor. Disjoint from the counted uniques above (partial on
+    // link_role) so a counted row and a corroborating row for the same
+    // (anchor, gift) can coexist without collision. Only the QB + Stripe anchors
+    // exist as corroborating evidence (gel's two evidence kinds).
+    uniqueIndex("payment_applications_payment_id_gift_id_corroborating_uq")
+      .on(t.paymentId, t.giftId)
+      .where(sql`${t.paymentId} IS NOT NULL AND ${t.linkRole} = 'corroborating'`),
+    uniqueIndex("payment_applications_stripe_charge_id_gift_id_corroborating_uq")
+      .on(t.stripeChargeId, t.giftId)
+      .where(
+        sql`${t.stripeChargeId} IS NOT NULL AND ${t.linkRole} = 'corroborating'`,
+      ),
     index("payment_applications_gift_id_idx").on(t.giftId),
     index("payment_applications_gift_allocation_id_idx").on(t.giftAllocationId),
     index("payment_applications_payment_id_idx").on(t.paymentId),
@@ -149,9 +170,13 @@ export const paymentApplications = pgTable(
     index("payment_applications_donorbox_donation_id_idx").on(
       t.donorboxDonationId,
     ),
+    // amount_applied is REQUIRED (> 0) for counted rows — the money trail — but
+    // OPTIONAL for corroborating rows (gel.sub_amount is nullable and the
+    // corrections flow never sets it). Counted SUMs filter link_role='counted',
+    // so a null corroborating amount can never enter a total.
     check(
       "payment_applications_amount_applied_positive",
-      sql`${t.amountApplied} > 0`,
+      sql`(${t.linkRole} = 'counted' AND ${t.amountApplied} > 0) OR (${t.linkRole} = 'corroborating' AND (${t.amountApplied} IS NULL OR ${t.amountApplied} > 0))`,
     ),
     // Each evidence source must carry its originating anchor id.
     check(

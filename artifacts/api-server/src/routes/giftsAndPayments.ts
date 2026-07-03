@@ -2068,6 +2068,8 @@ router.get(
         and(
           eq(paymentApplications.giftId, id),
           eq(paymentApplications.evidenceSource, "quickbooks"),
+          // Money-trail display only — corroborating rows (Phase 5) never appear here.
+          eq(paymentApplications.linkRole, "counted"),
         ),
       );
 
@@ -2087,7 +2089,7 @@ router.get(
       qbDepositToAccountName: r.qbDepositToAccountName,
       qbPaymentMethod: r.qbPaymentMethod,
       payerName: r.payerName,
-      amount: r.amountApplied,
+      amount: r.amountApplied ?? "0",
       dateReceived: r.dateReceived,
     }));
 
