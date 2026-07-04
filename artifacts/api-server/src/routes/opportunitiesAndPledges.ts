@@ -348,8 +348,7 @@ router.get(
     if (!row) return notFound(res, "opportunity");
     const [allocations, payments] = await Promise.all([
       db.select().from(pledgeAllocations).where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
-      // Scrubbed header projection — the nested `payments` array must not leak
-      // the @deprecated `countsTowardGoal` column (now allocation-only).
+      // Named gift-header projection for the nested `payments` array.
       db.select(giftHeaderColumns).from(giftsAndPayments).where(eq(giftsAndPayments.opportunityId, id)),
     ]);
     res.json({ ...maskOppDonorRow(row, getViewer(req)), allocations, payments });

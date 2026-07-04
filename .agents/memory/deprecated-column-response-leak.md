@@ -25,15 +25,21 @@ sites are scattered and easy to miss:
   reconcile+create paths that re-read and return the gift header),
 - create/PATCH/merge/split `.returning()`.
 
-**How to apply.** Route **all** response-facing reads of an affected table
-through ONE exported, scrubbed column projection and reuse it everywhere:
-- gift header → `giftHeaderColumns` (exported from `routes/giftsAndPayments.ts`,
-  = `getTableColumns(giftsAndPayments)` minus the deprecated field).
-- staged rows → `stagedReturnColumns` / `stagedSelect` / `giftCandidateSelect`
-  (in `routes/quickbooks/shared.ts`).
-- generic `archiveOne`/`unarchiveOne` takes an optional `responseColumns`
-  projection (default = bare `.returning()`, so the other ~9 archive tables are
-  unchanged; gift callers opt in).
+**How to apply.** While a column is `@deprecated`-but-still-physical, route **all**
+response-facing reads of the affected table through ONE exported, scrubbed column
+projection and reuse it everywhere (`giftHeaderColumns` in
+`routes/giftsAndPayments.ts`; `stagedReturnColumns` / `stagedSelect` /
+`giftCandidateSelect` in `routes/quickbooks/shared.ts`; generic
+`archiveOne`/`unarchiveOne` takes an optional `responseColumns` projection,
+default = bare `.returning()`, so the other ~9 archive tables are unchanged and
+gift callers opt in).
+
+**Status of the original case (counts_toward_goal / sync_gap).** The physical DROP
+finally shipped (migration 0094). Those columns are gone from the schema, so the
+named projections above were reverted to plain `getTableColumns(...)` full sets
+(no `Omit`/destructure) — value-identical, kept only as greppable named exports.
+The **rule still applies to the NEXT** deprecated-but-physical column: scrub through
+one projection until its DROP runs, then simplify back.
 
 To find leaks, grep every `\.from(<table>)` and `\.returning(`, then keep only
 the ones whose result reaches `res.json`. Bare full-row selects used purely for

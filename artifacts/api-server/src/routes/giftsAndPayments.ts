@@ -47,18 +47,10 @@ const maskGiftDonorRow = maskDonorDisplayFields;
 // three de-duplicated aggregates from gift_allocations so the gifts
 // list can render Entities / Usages / Grant years inline without
 // fanning out per-row fetches.
-// `countsTowardGoal` now lives ONLY on gift_allocations. The gifts-header column
-// is retained @deprecated in the Drizzle schema (so Publish never proposes
-// dropping it before the manual prod DROP) but must never be projected into an
-// API response. Strip it from the full column set once here and reuse the result
-// for the list/detail projection AND the create/PATCH `.returning()` below, so
-// no response surface can leak the deprecated header flag.
-const { countsTowardGoal: _deprecatedGiftCountsTowardGoal, ...giftHeaderColumns } =
-  getTableColumns(giftsAndPayments);
-// Canonical scrubbed gift-header projection — drops the @deprecated
-// `countsTowardGoal` (now allocation-only) from the gift_and_payments header.
-// Reused by the QuickBooks reconcile/mint routes (matching.ts, actions.ts) that
-// echo a gift row directly, so a raw header never leaks the dead column.
+// Named gift-header projection, reused by the QuickBooks reconcile/mint routes
+// (matching.ts, actions.ts) that echo a gift row directly, plus the opportunities
+// payments projection and the archive/unarchive routes.
+const giftHeaderColumns = getTableColumns(giftsAndPayments);
 export { giftHeaderColumns };
 const donorJoinSelect = {
   ...giftHeaderColumns,
@@ -696,9 +688,6 @@ router.post(
 router.post(
   "/gifts-and-payments/:id/archive",
   asyncHandler(async (req, res) => {
-    // Project away the @deprecated `countsTowardGoal` header so the archive
-    // response never serializes the dead column (it persists on the gift table
-    // until the manual prod DROP).
     await archiveOne(req, res, {
       entity: "gift",
       table: giftsAndPayments,

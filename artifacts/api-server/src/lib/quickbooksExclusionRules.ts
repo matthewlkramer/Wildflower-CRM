@@ -538,9 +538,9 @@ function isNotePayableLine(input: ClassifierInput): boolean {
  * True if a row is a GOVERNMENT REIMBURSEMENT (the exact "CSP" payer marker).
  * NOT an exclusion — this money flows into the review queue like any other. It is
  * a standalone detector (run alongside detectEntity / detectFundingSource at
- * ingest + reclassify) used to set `staged_payments.counts_toward_goal = false`,
- * so when a fundraiser records it as a gift the gift is minted with
- * `counts_toward_goal = false` (real money, but it doesn't advance the goal).
+ * ingest + reclassify); when a fundraiser records the row as a gift, the mint
+ * seeds that gift's allocation with `counts_toward_goal = false` (real money, but
+ * it doesn't advance the fundraising goal).
  */
 export function isGovernmentReimbursement(input: ClassifierInput): boolean {
   return matchesAny(

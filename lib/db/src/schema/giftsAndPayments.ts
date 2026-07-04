@@ -170,14 +170,6 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // "Wildflower Foundation TSNE"). No longer read or written by application code.
   // Retained @deprecated (see designatedToSchool).
   paymentExpected: boolean("payment_expected").default(true).notNull(),
-  // @deprecated — the "counts toward goal" signal moved to gift_allocations
-  // (per-allocation; see giftAllocations.countsTowardGoal). The header column is
-  // no longer read or written by application code; analytics now gate on the
-  // allocation flag. Retained ONLY so dev push stays additive and prod Publish
-  // never auto-drops it (prod invariant #7); the physical DROP ships as a
-  // reviewed, human-applied SQL file in lib/db/migrations/. The one-shot backfill
-  // reads this column to seed the per-allocation flag before it is dropped.
-  countsTowardGoal: boolean("counts_toward_goal").default(true).notNull(),
   // Plain human-set flag: a fundraiser/finance reviewer hasn't fully figured
   // this money record out yet (unknown donor, ambiguous coding, unclear
   // restriction, etc.) and wants to come back to it. Never auto-derived and has

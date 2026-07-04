@@ -281,9 +281,9 @@ export const SEED_RULES: EngineRule[] = [
   // NOTE: the former `seed_government_reimbursement` exclude rule (was priority
   // 40, "CSP" payer) was REMOVED — government reimbursements are no longer
   // excluded. They flow into the review queue and are flagged by
-  // `isGovernmentReimbursement` (counts_toward_goal=false on the staged row) so
-  // the eventual gift mints non-goal. The migration disables/deletes the
-  // persisted seed_government_reimbursement handling rule.
+  // `isGovernmentReimbursement` so the eventual gift mints with its allocation's
+  // counts_toward_goal=false. The migration disables/deletes the persisted
+  // seed_government_reimbursement handling rule.
   //
   // NOTE: the former `seed_fiscally_sponsored` exclude rule (priority 50) was
   // likewise removed — fiscally sponsored money is no longer auto-excluded. It is

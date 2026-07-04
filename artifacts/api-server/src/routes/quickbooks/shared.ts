@@ -122,38 +122,22 @@ export const queueExpr = sql<string>`
 
 // Donor + resolved-gift + intermediary display fields joined for the queue UI.
 // The verbatim raw QB JSON (qbRaw / qbRawLine) is stored for audit but excluded
-// from every list/detail response — it is large and never needed by the UI.
-// `syncGap` is retired and `countsTowardGoal` now lives ONLY on gift_allocations;
-// both are kept @deprecated in the Drizzle schema for the deferred prod DROP, so
-// they must be stripped here alongside the audit-only raw JSON or the shared
-// staged projection (consumed by the QuickBooks queue + reconciliation cards)
-// would leak them into list/detail responses.
+// from every list/detail response — it is large and never needed by the UI, so
+// the shared staged projection (consumed by the QuickBooks queue + reconciliation
+// cards) strips it.
 const {
   qbRaw: _qbRaw,
   qbRawLine: _qbRawLine,
-  syncGap: _deprecatedSyncGap,
-  countsTowardGoal: _deprecatedStagedCountsTowardGoal,
   ...stagedColumns
 } = getTableColumns(stagedPayments);
 
 // Staged-row projection for the mutation endpoints that echo the freshly-updated
 // row directly (match / unmatch / revert + the actions.ts staged actions). Unlike
 // `stagedSelect` (the joined list/card projection) it KEEPS qbRaw/qbRawLine — the
-// historical raw-return shape of those endpoints — and only drops the two
-// deprecated columns: `syncGap` (retired) and `countsTowardGoal` (now
-// allocation-only). Both stay @deprecated in the schema for the deferred prod
-// DROP, so this is the single source that keeps them out of every raw staged
-// mutation response.
-const {
-  syncGap: _deprecatedRetSyncGap,
-  countsTowardGoal: _deprecatedRetCountsTowardGoal,
-  ...stagedReturnColumns
-} = getTableColumns(stagedPayments);
+// historical raw-return shape of those endpoints.
+const stagedReturnColumns = getTableColumns(stagedPayments);
 export { stagedReturnColumns };
-export type StagedReturnRow = Omit<
-  typeof stagedPayments.$inferSelect,
-  "syncGap" | "countsTowardGoal"
->;
+export type StagedReturnRow = typeof stagedPayments.$inferSelect;
 export const stagedSelect = {
   ...stagedColumns,
   queue: queueExpr,
@@ -421,12 +405,8 @@ export function queueWhere(queue: Queue) {
 
 // Shared candidate-gift select (donor names + already-linked flag).
 export function giftCandidateSelect(excludeStagedId: string) {
-  // Drop the @deprecated gifts-header counts_toward_goal flag (now allocation-only)
-  // so candidate-gift responses don't leak it.
-  const { countsTowardGoal: _deprecatedGiftCountsTowardGoal, ...giftHeaderColumns } =
-    getTableColumns(giftsAndPayments);
   return {
-    ...giftHeaderColumns,
+    ...getTableColumns(giftsAndPayments),
     organizationName: organizations.name,
     householdName: households.name,
     individualGiverPersonName: people.fullName,

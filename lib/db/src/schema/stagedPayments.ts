@@ -343,21 +343,6 @@ export const stagedPayments = pgTable(
     deferredRevenue: deferredRevenueEnum("deferred_revenue"),
     deferredRevenueReason: text("deferred_revenue_reason"),
 
-    // @deprecated — the "sync gap" annotation was removed end-to-end (no API,
-    // no UI). The column is retained ONLY so dev `drizzle-kit push` stays purely
-    // additive and prod Publish never proposes a destructive auto-drop (prod
-    // invariant #7). The physical DROP ships as a reviewed, human-applied SQL
-    // file in lib/db/migrations/. No code reads or writes this column anymore.
-    syncGap: boolean("sync_gap").notNull().default(false),
-
-    // @deprecated — the "counts toward goal" signal moved to gift_allocations
-    // (per-allocation). It is no longer read or written on the staged payment;
-    // QuickBooks auto-create now seeds the new allocation's flag directly from
-    // isGovernmentReimbursement(...). Retained ONLY so dev push stays additive and
-    // prod Publish never auto-drops it (prod invariant #7); the physical DROP
-    // ships as a reviewed, human-applied SQL file in lib/db/migrations/.
-    countsTowardGoal: boolean("counts_toward_goal").notNull().default(true),
-
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
