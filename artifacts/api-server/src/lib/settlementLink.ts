@@ -5,33 +5,19 @@ import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 /**
  * Plane-1 settlement-link primitives (docs/reconciliation-design.md §4.3).
  *
- * `settlement_links` is now the AUTHORITATIVE store AND the optimistic-lock
- * surface: every payout reconciliation choke point (proposal pass, human
- * confirm/revert, mint/link commit) expresses its INTENT as the `settlement_links`
- * row it wants (via `settlementWriter.ts`) and reverse-derives the legacy
- * `stripe_payouts.qb_reconciliation_status` + pointer columns from it. After the
- * write-flip those legacy columns are a pure WRITE-ONLY mirror — read by NOTHING
- * except the parity gate (`parity:settlement-links`) and the response scrub — kept
- * only until a later human-gated column drop. `deriveSettlementLinkFields` is the
- * pure legacy→link mapping retained ONLY for that parity gate and the 0089/0092
- * backfills; `upsertSettlementLink` / `transitionSettlementLink` /
- * `deleteSettlementLink` are the low-level physical writes shared with the
- * authoritative writer.
+ * `settlement_links` is the AUTHORITATIVE store AND the optimistic-lock surface:
+ * every payout reconciliation choke point (proposal pass, human confirm/revert,
+ * mint/link commit) expresses its INTENT as the `settlement_links` row it wants
+ * (built in `settlementWriter.ts`) and persists it here. The reconciliation status
+ * enum a link represents is derived on read by {@link payoutStatusFromLink} /
+ * {@link payoutStatusLabelSql}. `upsertSettlementLink` / `transitionSettlementLink`
+ * / `deleteSettlementLink` are the low-level physical writes shared with the
+ * authoritative writer. The legacy `stripe_payouts.qb_reconciliation_status` +
+ * pointer mirror columns this store replaced have been dropped.
  */
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type DbLike = typeof db | Tx;
-
-type SettlementLinkSource = {
-  qbReconciliationStatus: string | null;
-  proposedQbStagedPaymentId: string | null;
-  matchedQbStagedPaymentId: string | null;
-  qbConflictStagedPaymentId: string | null;
-  qbConflictGiftId: string | null;
-  qbReconciliationConfirmedByUserId: string | null;
-  qbReconciliationConfirmedAt: Date | null;
-  updatedAt: Date;
-};
 
 export type SettlementLinkFields = {
   lifecycle: "proposed" | "confirmed" | "exempt";
@@ -47,71 +33,13 @@ export type SettlementLinkFields = {
 };
 
 /**
- * Pure mapping from a payout's legacy reconciliation state to the settlement link
- * that should mirror it. Returns `null` when NO link should exist (the payout is
- * `unmatched`, in an unknown state, or has no resolvable QB deposit pointer).
+ * The reconciliation status enum a settlement link REPRESENTS, for readers that
+ * expose / gate on the enum shape (all now sourced from `settlement_links`, never
+ * the retired legacy `stripe_payouts.qb_reconciliation_status` mirror).
  *
- * MUST mirror the backfills in `lib/db/migrations/0089_settlement_links.sql` and
- * `0092_settlement_links_conflict_gift_id.sql` (load-bearing fields — lifecycle /
- * provenance / deposit / conflictGift / confirmedBy / at). The `note` column is
- * intentionally NOT set here: it is reserved for the backfill's `legacy <status>`
- * provenance markers + future human annotations, and the parity gate ignores it.
- */
-export function deriveSettlementLinkFields(
-  p: SettlementLinkSource,
-): SettlementLinkFields | null {
-  const status = p.qbReconciliationStatus;
-  if (!status || status === "unmatched") return null;
-
-  const isProposedFamily =
-    status === "proposed" || status === "conflict_approved";
-  const isConfirmedFamily = status.startsWith("confirmed_");
-  if (!isProposedFamily && !isConfirmedFamily) return null;
-
-  let depositId: string | null;
-  if (status === "proposed") {
-    depositId = p.proposedQbStagedPaymentId;
-  } else if (status === "conflict_approved") {
-    depositId = p.qbConflictStagedPaymentId ?? p.proposedQbStagedPaymentId;
-  } else {
-    depositId =
-      p.matchedQbStagedPaymentId ??
-      p.qbConflictStagedPaymentId ??
-      p.proposedQbStagedPaymentId;
-  }
-  if (!depositId) return null;
-
-  if (isProposedFamily) {
-    return {
-      lifecycle: "proposed",
-      provenance: "system",
-      depositStagedPaymentId: depositId,
-      conflictGiftId: p.qbConflictGiftId,
-      confirmedByUserId: null,
-      confirmedAt: null,
-    };
-  }
-  return {
-    lifecycle: "confirmed",
-    provenance: p.qbReconciliationConfirmedByUserId ? "human" : "system_confirmed",
-    depositStagedPaymentId: depositId,
-    conflictGiftId: p.qbConflictGiftId,
-    confirmedByUserId: p.qbReconciliationConfirmedByUserId,
-    confirmedAt: p.qbReconciliationConfirmedAt ?? p.updatedAt,
-  };
-}
-
-/**
- * Read-side inverse of {@link deriveSettlementLinkFields}: the legacy payout
- * reconciliation status enum a settlement link REPRESENTS. Used by readers that
- * have been flipped off the legacy `stripe_payouts.qb_reconciliation_status`
- * column onto `settlement_links` (Phase-4 read cut-over) but still expose / gate
- * on the enum shape.
- *
- * Mirrors {@link reverseSettlementLink}'s status mapping over the only four states
- * the authoritative writer produces, but NEVER throws: it is a read path, so an
- * `exempt` link (which no payout link is in this model) degrades to `unmatched`
- * rather than 500-ing an evidence view.
+ * Emits only the four states the authoritative writer produces and NEVER throws:
+ * it is a read path, so an `exempt` link (which no payout link is in this model)
+ * degrades to `unmatched` rather than 500-ing an evidence view.
  */
 export function payoutStatusFromLink(
   link: { lifecycle: SettlementLinkFields["lifecycle"]; conflictGiftId: string | null } | null,
@@ -146,9 +74,9 @@ END`;
 
 /**
  * Physical upsert of ONE settlement link from explicit fields (deterministic id
- * `sl_<payoutId>`). The single low-level write used by the Phase-4 authoritative
- * writer (`settlementWriter.ts`), which builds the fields from explicit
- * human/system intent and reverse-maps the legacy enum + pointer columns from them.
+ * `sl_<payoutId>`). The single low-level write used by the authoritative writer
+ * (`settlementWriter.ts`), which builds the fields from explicit human/system
+ * intent.
  */
 export async function upsertSettlementLink(
   dbi: DbLike,
@@ -195,8 +123,8 @@ export async function deleteSettlementLink(
 /**
  * Guarded state-transition UPDATE of an EXISTING settlement link, used by the
  * human confirm/revert state machine (stripeConfirm.ts) as its optimistic-lock
- * boundary now that the legacy `stripe_payouts.qb_reconciliation_status` + pointer
- * columns are a pure write-only mirror (read by nothing that branches). Advances
+ * boundary (`settlement_links` is now the sole authoritative reconciliation store;
+ * the legacy mirror columns it replaced have been dropped). Advances
  * the 1:1 link (`sl_<payoutId>`) to `fields` ONLY when its CURRENT state still
  * matches `expectedStatus`, expressed in link terms:
  *   - `proposed`             → lifecycle 'proposed' AND no conflict gift

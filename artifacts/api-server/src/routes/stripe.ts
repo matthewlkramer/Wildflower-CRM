@@ -1301,21 +1301,12 @@ const conflictOrg = alias(organizations, "conflict_org");
 const conflictHousehold = alias(households, "conflict_household");
 const conflictPerson = alias(people, "conflict_person");
 
-// Scrub the DEPRECATED legacy reconciliation-mirror columns (+ the undeclared
-// qbSupersedeStatus) from every payout response. The authoritative settlement
-// state lives in settlement_links and is exposed via settlementLifecycle +
-// the derived reconciliationLanes; the mirror columns are write-only now.
-const {
-  qbReconciliationStatus: _qbReconciliationStatus,
-  matchedQbStagedPaymentId: _matchedQbStagedPaymentId,
-  proposedQbStagedPaymentId: _proposedQbStagedPaymentId,
-  qbConflictStagedPaymentId: _qbConflictStagedPaymentId,
-  qbConflictGiftId: _qbConflictGiftId,
-  qbReconciliationConfirmedByUserId: _qbReconciliationConfirmedByUserId,
-  qbReconciliationConfirmedAt: _qbReconciliationConfirmedAt,
-  qbSupersedeStatus: _qbSupersedeStatus,
-  ...payoutResponseColumns
-} = getTableColumns(stripePayouts);
+// Scrub the DEPRECATED qbSupersedeStatus column (a separate, older deprecation
+// lineage that is still physically present) from every payout response. The
+// authoritative settlement state lives in settlement_links and is exposed via
+// settlementLifecycle + the derived reconciliationLanes.
+const { qbSupersedeStatus: _qbSupersedeStatus, ...payoutResponseColumns } =
+  getTableColumns(stripePayouts);
 
 const reconSelect = {
   ...payoutResponseColumns,

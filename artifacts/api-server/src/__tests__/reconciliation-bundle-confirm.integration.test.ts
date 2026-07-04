@@ -114,7 +114,6 @@ async function seedPayout(): Promise<string> {
     amount: "100.00",
     netTotal: "96.80",
     arrivalDate: "2026-03-15",
-    qbReconciliationStatus: "unmatched",
   });
   payoutIds.push(id);
   return id;

@@ -4390,7 +4390,7 @@ export interface BundleAnchor {
   payerName?: string | null;
   /** Stripe charges behind the payout; null for QB-only money. */
   chargeCount?: number | null;
-  /** Raw source status for the display badge: the Stripe payout's qbReconciliationStatus, or the QB staged-payment status. */
+  /** Raw source status for the display badge: the Stripe payout's reconciliation status (derived from its settlement link), or the QB staged-payment status. */
   statusLabel: string;
 }
 

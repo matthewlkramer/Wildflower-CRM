@@ -20,7 +20,7 @@ import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { getUncachableStripeClient } from "./stripeClient";
 import { upsertSettlementLink, deleteSettlementLink } from "./settlementLink";
-import { proposeSettlementLink, reverseSettlementLink } from "./settlementWriter";
+import { proposeSettlementLink } from "./settlementWriter";
 
 /**
  * Stripe payout ↔ QuickBooks deposit-lump reconciliation (the audit join).
@@ -31,12 +31,12 @@ import { proposeSettlementLink, reverseSettlementLink } from "./settlementWriter
  * "Stripe"). This module PROPOSES which QB deposit lump a payout corresponds to
  * so a human can confirm the match in the reconciliation queue.
  *
- * It is PURELY a proposer: it only ever writes the proposal columns on
- * stripe_payouts (qbReconciliationStatus / proposedQbStagedPaymentId /
- * qbConflict*). It NEVER mutates a staged_payments / QuickBooks row — the QB
- * side is only touched on explicit human confirm (see routes/stripe.ts). It also
- * never overwrites a CONFIRMED payout (confirmed_excluded / confirmed_keep /
- * confirmed_replace); those are out of scope on every pass.
+ * It is PURELY a proposer: it only ever writes a PROPOSED payout↔deposit
+ * settlement_links row (via settlementWriter / settlementLink). It NEVER mutates
+ * a staged_payments / QuickBooks row — the QB side is only touched on explicit
+ * human confirm (see routes/stripe.ts). It also never overwrites a CONFIRMED
+ * settlement link (legacy confirmed_excluded / confirmed_keep / confirmed_replace
+ * all map to a confirmed link); those are out of scope on every pass.
  */
 
 // ── Pure scoring (unit-testable, no DB) ───────────────────────────────────
@@ -321,9 +321,11 @@ export async function runProposalPass(
           const upd = await tx
             .update(stripePayouts)
             .set({
-              // Phase-4 authoritative write: the legacy enum + pointer columns are
-              // reverse-derived from the ABSENCE of a settlement link (unmatched).
-              ...reverseSettlementLink(null),
+              // Row-lock only: this UPDATE takes the payout tuple lock so a
+              // concurrent human confirm (which takes FOR UPDATE) serializes
+              // behind it and re-evaluates its guard under READ COMMITTED; the
+              // authoritative write is deleteSettlementLink() below. No
+              // reconciliation columns are written anymore.
               updatedAt: new Date(),
             })
             .where(
@@ -387,7 +389,10 @@ export async function runProposalPass(
       const upd = await tx
         .update(stripePayouts)
         .set({
-          ...reverseSettlementLink(link),
+          // Row-lock only (see the clear branch above): the authoritative write
+          // is the upsertSettlementLink() below. This guarded UPDATE still
+          // tuple-locks the payout and re-checks notConfirmed()+candidateStateGuard
+          // under the lock; RETURNING gates the link write on it succeeding.
           updatedAt: new Date(),
         })
         .where(

@@ -29,7 +29,6 @@ import {
   donorboxDonations,
   paymentApplications,
   settlementLinks,
-  stripePayouts,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
 
@@ -382,23 +381,17 @@ export async function absorbGiftEvidenceIntoSurvivor(
       ),
     );
 
-  // ── 8. Re-point the conflict-kept gift pointer (settlement + legacy mirror) ─
+  // ── 8. Re-point the conflict-kept gift pointer ─────────────────────────────
   // A `conflict_approved` settlement KEEPS an already-approved QB deposit gift as
-  // the single source of truth (`settlement_links.conflict_gift_id`, mirrored on
-  // `stripe_payouts.qb_conflict_gift_id`). Both FKs are ON DELETE SET NULL, but
-  // merge ARCHIVES losers (soft-delete) rather than deleting them, so a pointer
-  // at a merged-away kept gift would otherwise survive pointing at a tombstone —
-  // and the conflict-keep double-book guard compares that pointer to the
-  // deposit's gift link. Follow it to the survivor on both surfaces (keeps the
-  // authoritative link and its legacy mirror in parity).
+  // the single source of truth (`settlement_links.conflict_gift_id`). The FK is
+  // ON DELETE SET NULL, but merge ARCHIVES losers (soft-delete) rather than
+  // deleting them, so a pointer at a merged-away kept gift would otherwise
+  // survive pointing at a tombstone — and the conflict-keep double-book guard
+  // compares that pointer to the deposit's gift link. Follow it to the survivor.
   await tx
     .update(settlementLinks)
     .set({ conflictGiftId: survivorId, updatedAt: now })
     .where(inArray(settlementLinks.conflictGiftId, loserIds));
-  await tx
-    .update(stripePayouts)
-    .set({ qbConflictGiftId: survivorId, updatedAt: now })
-    .where(inArray(stripePayouts.qbConflictGiftId, loserIds));
 
   return { collision: null };
 }

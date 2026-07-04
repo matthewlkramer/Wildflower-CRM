@@ -138,7 +138,6 @@ beforeAll(async () => {
     netTotal: "96.80",
     arrivalDate: ANCHOR_DATE,
     chargeCount: 1,
-    qbReconciliationStatus: "unmatched" as never,
   });
   await db.insert(schema.stripeStagedCharges).values({
     id: CHARGE_ID,

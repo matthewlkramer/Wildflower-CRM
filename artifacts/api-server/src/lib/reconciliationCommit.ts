@@ -26,10 +26,7 @@ import {
 } from "./giftFinalAmount";
 import { donorOf, type LinkDonor } from "./quickbooksLink";
 import { upsertSettlementLink } from "./settlementLink";
-import {
-  confirmSettlementLink,
-  reverseSettlementLink,
-} from "./settlementWriter";
+import { confirmSettlementLink } from "./settlementWriter";
 import {
   seedInitialGiftAllocation,
   assertGiftHasAllocations,
@@ -431,15 +428,14 @@ export async function mintGiftInTx(
       })
       .where(eq(stripeStagedCharges.id, charge.id));
     if (charge.stripePayoutId) {
-      // Phase-4 authoritative write: express the confirm as a settlement link and
-      // reverse-derive the legacy columns from it. This UPDATE has no prior-status
-      // pin, so we READ + carry the conflict gift through under the payout row lock
-      // (all settlement-link writers take that same lock, so the value can't change
-      // before our confirm write below): clearing a set conflict gift would re-open
-      // per-charge minting against a kept QB gift = double-book, and misroute revert.
-      // Read-flip: the conflict gift is read off the AUTHORITATIVE settlement link,
-      // not the legacy payout column. Conflict is guarded upstream so it is null in
-      // practice, but we never clear it blindly.
+      // Phase-4 authoritative write: express the confirm as a settlement link.
+      // This has no prior-status pin, so we READ + carry the conflict gift through
+      // under the payout row lock (all settlement-link writers take that same lock,
+      // so the value can't change before our confirm write below): clearing a set
+      // conflict gift would re-open per-charge minting against a kept QB gift =
+      // double-book, and misroute revert. The conflict gift is read off the
+      // AUTHORITATIVE settlement link, never a legacy payout column. Conflict is
+      // guarded upstream so it is null in practice, but we never clear it blindly.
       const now = new Date();
       await tx
         .select({ id: stripePayouts.id })
@@ -456,13 +452,6 @@ export async function mintGiftInTx(
         confirmedByUserId: userId,
         confirmedAt: now,
       });
-      await tx
-        .update(stripePayouts)
-        .set({
-          ...reverseSettlementLink(link),
-          updatedAt: now,
-        })
-        .where(eq(stripePayouts.id, charge.stripePayoutId));
       // Plane-1 authoritative write: upsert the settlement link.
       await upsertSettlementLink(tx, charge.stripePayoutId, link);
     }
@@ -708,15 +697,14 @@ export async function linkGiftInTx(
       })
       .where(eq(stripeStagedCharges.id, charge.id));
     if (charge.stripePayoutId) {
-      // Phase-4 authoritative write: express the confirm as a settlement link and
-      // reverse-derive the legacy columns from it. This UPDATE has no prior-status
-      // pin, so we READ + carry the conflict gift through under the payout row lock
-      // (all settlement-link writers take that same lock, so the value can't change
-      // before our confirm write below): clearing a set conflict gift would re-open
-      // per-charge minting against a kept QB gift = double-book, and misroute revert.
-      // Read-flip: the conflict gift is read off the AUTHORITATIVE settlement link,
-      // not the legacy payout column. Conflict is guarded upstream so it is null in
-      // practice, but we never clear it blindly.
+      // Phase-4 authoritative write: express the confirm as a settlement link.
+      // This has no prior-status pin, so we READ + carry the conflict gift through
+      // under the payout row lock (all settlement-link writers take that same lock,
+      // so the value can't change before our confirm write below): clearing a set
+      // conflict gift would re-open per-charge minting against a kept QB gift =
+      // double-book, and misroute revert. The conflict gift is read off the
+      // AUTHORITATIVE settlement link, never a legacy payout column. Conflict is
+      // guarded upstream so it is null in practice, but we never clear it blindly.
       const now = new Date();
       await tx
         .select({ id: stripePayouts.id })
@@ -733,13 +721,6 @@ export async function linkGiftInTx(
         confirmedByUserId: userId,
         confirmedAt: now,
       });
-      await tx
-        .update(stripePayouts)
-        .set({
-          ...reverseSettlementLink(link),
-          updatedAt: now,
-        })
-        .where(eq(stripePayouts.id, charge.stripePayoutId));
       // Plane-1 authoritative write: upsert the settlement link.
       await upsertSettlementLink(tx, charge.stripePayoutId, link);
     }

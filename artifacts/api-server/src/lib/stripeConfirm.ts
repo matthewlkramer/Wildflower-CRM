@@ -13,7 +13,6 @@ import {
 import {
   confirmSettlementLink,
   proposeSettlementLink,
-  reverseSettlementLink,
 } from "./settlementWriter";
 
 /**
@@ -67,15 +66,13 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * (payout → `proposed`, deposit `reconciled` → `pending`); SET ⇒ it was a keep
  * confirm (payout → `conflict_approved`, deposit left alone).
  *
- * Phase-6 / write-flip: every gate/branch AND the optimistic-lock guard below
+ * Write-flip complete: every gate/branch AND the optimistic-lock guard below
  * derive state from `settlement_links` (via `payoutStatusFromLink` +
- * `transitionSettlementLink`), NOT the legacy `qb_reconciliation_status` + pointer
- * columns. Those columns are still WRITTEN in lockstep (reverseSettlementLink) as a
- * pure WRITE-ONLY mirror — read only by the parity gate + the response scrub — kept
- * until a later human-gated column drop; NO confirm/revert logic reads or guards on
- * them. The retired legacy 7-value confirmed_* sub-states (zero in prod,
- * unproducible by the authoritative writer) have no revert branch and degrade to
- * `invalid_transition`.
+ * `transitionSettlementLink`). The legacy `qb_reconciliation_status` + pointer
+ * mirror columns are no longer written (the dual-write was removed) and have been
+ * dropped; NO confirm/revert logic reads or guards on them. The retired legacy
+ * 7-value confirmed_* sub-states (zero in prod, unproducible by the authoritative
+ * writer) have no revert branch and degrade to `invalid_transition`.
  */
 
 export type ConfirmRevertKind = "confirmed_reconciled" | "reverted";
@@ -150,8 +147,9 @@ async function runTransition(
 // ─── CONFIRM (pending QB deposit) ──────────────────────────────────────────
 // payout `proposed` → `confirmed_reconciled`; the pending QB deposit lump is
 // marked `reconciled` (permanent payout-level evidence — NOT excluded, no
-// processor_payout, no gift) and linked via matchedQbStagedPaymentId. The money
-// is accounted for by the payout's separate per-charge Stripe gifts.
+// processor_payout, no gift) and tied to the payout via a confirmed settlement
+// link (its deposit_staged_payment_id). The money is accounted for by the
+// payout's separate per-charge Stripe gifts.
 export function confirmPendingQbDeposit(
   args: ConfirmRevertArgs,
 ): Promise<ConfirmRevertResult> {
@@ -256,13 +254,6 @@ export async function confirmPendingQbDepositInTx(
       "This payout is no longer proposed. Refresh and retry.",
     );
   }
-  await tx
-    .update(stripePayouts)
-    .set({
-      ...reverseSettlementLink(link),
-      updatedAt: now,
-    })
-    .where(eq(stripePayouts.id, payoutId));
 
   return {
     ok: true,
@@ -362,13 +353,9 @@ export async function confirmKeepApprovedQbGiftInTx(
   }
 
   // Touch neither the deposit nor the gift — they are already terminal evidence.
-  // Preserve qbConflictStagedPaymentId + qbConflictGiftId as revert/audit
-  // pointers (qbConflictGiftId being set is the revert discriminator for "keep").
-  // Phase-4 authoritative write: a confirmed link carrying the kept gift as its
-  // discriminator. reverse-deriving it re-writes qbConflictStagedPaymentId +
-  // qbConflictGiftId to (deposit, keptGiftId) — identical to the prior conflict
-  // state's retained values (guarded above), so the legacy columns stay
-  // byte-identical while the link becomes authoritative.
+  // Authoritative write: a confirmed settlement link carrying the kept gift as
+  // its `conflictGiftId` — the revert-of-keep discriminator the revert path reads
+  // to route a "keep" back to conflict_approved.
   const link = confirmSettlementLink({
     depositStagedPaymentId: depositId,
     conflictGiftId: keptGiftId,
@@ -387,13 +374,6 @@ export async function confirmKeepApprovedQbGiftInTx(
       "This payout is no longer in conflict. Refresh and retry.",
     );
   }
-  await tx
-    .update(stripePayouts)
-    .set({
-      ...reverseSettlementLink(link),
-      updatedAt: now,
-    })
-    .where(eq(stripePayouts.id, payoutId));
 
   return {
     ok: true,
@@ -463,9 +443,8 @@ export function revertPayoutQbConfirmation(
       // the deposit + gift were never touched, so revert restores the payout to
       // conflict_approved and leaves the deposit alone.
       if (priorLink?.conflictGiftId) {
-        // Phase-4 authoritative write: revert to a proposed link carrying the
-        // kept gift (legacy `conflict_approved`); reverse-deriving it restores the
-        // proposed + conflict pointers = (deposit, deposit, keptGift) identically.
+        // Authoritative write: revert to a proposed link carrying the kept gift
+        // (legacy `conflict_approved`).
         const link = proposeSettlementLink(depositId, priorLink.conflictGiftId);
         const advanced = await transitionSettlementLink(
           tx,
@@ -479,13 +458,6 @@ export function revertPayoutQbConfirmation(
             "This payout has changed. Refresh and retry.",
           );
         }
-        await tx
-          .update(stripePayouts)
-          .set({
-            ...reverseSettlementLink(link),
-            updatedAt: now,
-          })
-          .where(eq(stripePayouts.id, payoutId));
         return {
           ok: true,
           kind: "reverted",
@@ -544,13 +516,6 @@ export function revertPayoutQbConfirmation(
           "This payout has changed. Refresh and retry.",
         );
       }
-      await tx
-        .update(stripePayouts)
-        .set({
-          ...reverseSettlementLink(link),
-          updatedAt: now,
-        })
-        .where(eq(stripePayouts.id, payoutId));
       return {
         ok: true,
         kind: "reverted",

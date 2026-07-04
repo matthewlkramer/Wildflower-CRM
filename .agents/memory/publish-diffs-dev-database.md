@@ -69,3 +69,22 @@ apply the SAME files to **prod by hand**, rename file FIRST. That alone un-break
 the live app — **no re-publish needed**. **Footgun after step (a):** dev is now
 ahead of prod, so a Publish in the gap would finally propose the destructive
 rename — tell the user NOT to re-publish until the prod SQL has run.
+
+## Corollary: a column DROP's order depends on whether LIVE code still writes it
+
+Two OPPOSITE safe orders for a physical column/table drop, chosen by whether the
+CURRENTLY-DEPLOYED prod build still writes the object:
+
+- **Already unused by live code** (reader flipped in a PRIOR release): apply the drop
+  SQL FIRST, then Publish. The later Publish diffs prod-has-no-col vs
+  schema-dropped-col → no destructive diff. (This was 0091 / gift_evidence_links.)
+- **Still WRITTEN by live code** (the dual-write was removed only in THIS release):
+  Publish FIRST. Keep BOTH dev and prod holding the column THROUGH Publish so the
+  dev↔prod diff is clean → the new build deploys and stops writing it; THEN drop both
+  DBs by hand, **back-to-back**. (This was 0093 / stripe_payouts recon mirror.)
+
+**Why:** dropping prod before the new code deploys 500s live writes; dropping dev
+alone before Publish makes Publish propose a destructive prod drop that aborts; and a
+Publish in the gap where only ONE DB dropped the column proposes a destructive
+(prod-only) OR additive (dev-only re-create) diff. Never drop dev alone before
+Publish either way.

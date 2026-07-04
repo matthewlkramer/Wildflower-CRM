@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { clearPaymentApplicationsForStagedIds } from "./paymentApplicationsTestUtil";
-import { deriveSettlementLinkFields } from "../lib/settlementLink";
+import {
+  payoutStatusFromLink,
+  type SettlementLinkFields,
+} from "../lib/settlementLink";
+import { proposeSettlementLink } from "../lib/settlementWriter";
 
 /**
  * DB-backed coverage for the D4 human-confirm/revert payout ↔ QuickBooks-deposit
@@ -13,10 +17,14 @@ import { deriveSettlementLinkFields } from "../lib/settlementLink";
  *   - CONFIRM (already-booked gift): conflict_approved → confirmed_reconciled;
  *     deposit + gift left untouched,
  *   - REPLACE is RETIRED: returns manual_review_required, mutates nothing,
- *   - REVERT of confirmed_reconciled restores the prior state via the
- *     qbConflictGiftId discriminator (null ⇒ proposed + deposit pending;
+ *   - REVERT of confirmed_reconciled restores the prior state via the settlement
+ *     link's conflictGiftId discriminator (null ⇒ proposed + deposit pending;
  *     set ⇒ conflict_approved + deposit untouched),
  *   - invalid transitions / unknown payout return typed errors.
+ *
+ * `settlement_links` is the authoritative reconciliation store (the legacy
+ * `stripe_payouts.qb_reconciliation_status` + pointer/confirmed-by mirror columns
+ * have been dropped), so fixtures seed a link row and assertions read it back.
  *
  * Skips automatically when no real DATABASE_URL is configured.
  */
@@ -54,11 +62,10 @@ let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 
 async function seedPayout(over: {
-  status?: Db["stripePayouts"]["$inferInsert"]["qbReconciliationStatus"];
-  proposedQbStagedPaymentId?: string | null;
-  matchedQbStagedPaymentId?: string | null;
-  qbConflictStagedPaymentId?: string | null;
-  qbConflictGiftId?: string | null;
+  // Settlement-link intent to seed alongside the payout. `null`/omitted = an
+  // `unmatched` payout (no link row); a built link (proposeSettlementLink) seeds
+  // the authoritative reconciliation state that confirm/revert read + mutate.
+  link?: SettlementLinkFields | null;
 }): Promise<string> {
   const id = nextId("po");
   await db.insert(schema.stripePayouts).values({
@@ -67,38 +74,19 @@ async function seedPayout(over: {
     amount: "1000.00",
     netTotal: "1000.00",
     arrivalDate: "2026-03-15",
-    qbReconciliationStatus: over.status ?? "unmatched",
-    proposedQbStagedPaymentId: over.proposedQbStagedPaymentId ?? null,
-    matchedQbStagedPaymentId: over.matchedQbStagedPaymentId ?? null,
-    qbConflictStagedPaymentId: over.qbConflictStagedPaymentId ?? null,
-    qbConflictGiftId: over.qbConflictGiftId ?? null,
   });
   payoutIds.push(id);
-  // Mirror the runtime settlement-link dual-write so the Phase-6 read-flip (confirm
-  // /revert now derive their gate + pointers from settlement_links, not the legacy
-  // columns) sees this fixture. Reuse the SAME pure deriver production uses, so the
-  // fixture stays in lockstep by construction. FK cascade on payout_id cleans it up
-  // with the payout in afterAll.
-  const link = deriveSettlementLinkFields({
-    qbReconciliationStatus: over.status ?? "unmatched",
-    proposedQbStagedPaymentId: over.proposedQbStagedPaymentId ?? null,
-    matchedQbStagedPaymentId: over.matchedQbStagedPaymentId ?? null,
-    qbConflictStagedPaymentId: over.qbConflictStagedPaymentId ?? null,
-    qbConflictGiftId: over.qbConflictGiftId ?? null,
-    qbReconciliationConfirmedByUserId: null,
-    qbReconciliationConfirmedAt: null,
-    updatedAt: new Date(),
-  });
-  if (link) {
+  // FK cascade on payout_id cleans the link up with the payout in afterAll.
+  if (over.link) {
     await db.insert(schema.settlementLinks).values({
       id: `sl_${id}`,
       payoutId: id,
-      depositStagedPaymentId: link.depositStagedPaymentId,
-      conflictGiftId: link.conflictGiftId,
-      lifecycle: link.lifecycle,
-      provenance: link.provenance,
-      confirmedByUserId: link.confirmedByUserId,
-      confirmedAt: link.confirmedAt,
+      depositStagedPaymentId: over.link.depositStagedPaymentId,
+      conflictGiftId: over.link.conflictGiftId,
+      lifecycle: over.link.lifecycle,
+      provenance: over.link.provenance,
+      confirmedByUserId: over.link.confirmedByUserId,
+      confirmedAt: over.link.confirmedAt,
     });
   }
   return id;
@@ -141,13 +129,6 @@ async function seedGift(): Promise<string> {
   return id;
 }
 
-async function readPayout(id: string) {
-  const [row] = await db
-    .select()
-    .from(schema.stripePayouts)
-    .where(eqFn(schema.stripePayouts.id, id));
-  return row;
-}
 async function readDeposit(id: string) {
   const [row] = await db
     .select()
@@ -162,18 +143,21 @@ async function readGift(id: string) {
     .where(eqFn(schema.giftsAndPayments.id, id));
   return row;
 }
+async function readLink(payoutId: string) {
+  const [row] = await db
+    .select()
+    .from(schema.settlementLinks)
+    .where(eqFn(schema.settlementLinks.payoutId, payoutId));
+  return row;
+}
 
 /** Seed a fully-wired conflict_approved payout: approved deposit booked into a
- * gift, payout pointing at both. Mirrors the proposal pass's conflict output. */
+ * gift, its settlement link proposed with the conflict gift. Mirrors the
+ * proposal pass's conflict output. */
 async function seedConflict(): Promise<{ po: string; dep: string; gift: string }> {
   const gift = await seedGift();
   const dep = await seedDeposit({ status: "approved", createdGiftId: gift });
-  const po = await seedPayout({
-    status: "conflict_approved",
-    proposedQbStagedPaymentId: dep,
-    qbConflictStagedPaymentId: dep,
-    qbConflictGiftId: gift,
-  });
+  const po = await seedPayout({ link: proposeSettlementLink(dep, gift) });
   return { po, dep, gift };
 }
 
@@ -239,19 +223,20 @@ afterAll(async () => {
 describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
   it("CONFIRM (pending deposit): proposed → confirmed_reconciled, deposit reconciled (not excluded)", async () => {
     const dep = await seedDeposit({ status: "pending" });
-    const po = await seedPayout({ status: "proposed", proposedQbStagedPaymentId: dep });
+    const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
 
     const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.kind).toBe("confirmed_reconciled");
 
-    const payout = await readPayout(po);
-    expect(payout.qbReconciliationStatus).toBe("confirmed_reconciled");
-    expect(payout.matchedQbStagedPaymentId).toBe(dep);
-    expect(payout.proposedQbStagedPaymentId).toBeNull();
-    expect(payout.qbReconciliationConfirmedByUserId).toBe(USER_ID);
-    expect(payout.qbReconciliationConfirmedAt).not.toBeNull();
+    const link = await readLink(po);
+    expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
+    expect(link?.lifecycle).toBe("confirmed");
+    expect(link?.depositStagedPaymentId).toBe(dep);
+    expect(link?.conflictGiftId).toBeNull();
+    expect(link?.confirmedByUserId).toBe(USER_ID);
+    expect(link?.confirmedAt).not.toBeNull();
 
     // D4: the deposit becomes permanent EVIDENCE — `reconciled`, NOT excluded
     // with a processor_payout reason.
@@ -261,7 +246,7 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
   });
 
   it("CONFIRM (pending deposit): rejects a payout that is not proposed", async () => {
-    const po = await seedPayout({ status: "unmatched" });
+    const po = await seedPayout({});
     const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
     expect(r.ok).toBe(false);
     if (r.ok) return;
@@ -286,11 +271,11 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     if (!r.ok) return;
     expect(r.kind).toBe("confirmed_reconciled");
 
-    const payout = await readPayout(po);
-    expect(payout.qbReconciliationStatus).toBe("confirmed_reconciled");
-    expect(payout.matchedQbStagedPaymentId).toBe(dep);
+    const link = await readLink(po);
+    expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
+    expect(link?.depositStagedPaymentId).toBe(dep);
     // The conflict gift pointer is retained as the revert discriminator.
-    expect(payout.qbConflictGiftId).toBe(gift);
+    expect(link?.conflictGiftId).toBe(gift);
 
     // Touches nothing else: deposit stays approved, gift stays active.
     expect((await readDeposit(dep)).status).toBe("approved");
@@ -305,9 +290,9 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     if (r.ok) return;
     expect(r.code).toBe("manual_review_required");
 
-    // Nothing was changed — the payout, deposit, and gift are all intact.
-    const payout = await readPayout(po);
-    expect(payout.qbReconciliationStatus).toBe("conflict_approved");
+    // Nothing was changed — the link, deposit, and gift are all intact.
+    const link = await readLink(po);
+    expect(payoutStatusFromLink(link ?? null)).toBe("conflict_approved");
     const deposit = await readDeposit(dep);
     expect(deposit.status).toBe("approved");
     expect(deposit.exclusionReason).toBeNull();
@@ -316,17 +301,17 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
 
   it("REVERT confirmed_reconciled (pending-deposit confirm) → proposed, deposit pending again", async () => {
     const dep = await seedDeposit({ status: "pending" });
-    const po = await seedPayout({ status: "proposed", proposedQbStagedPaymentId: dep });
+    const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
     await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
 
     const r = await confirm.revertPayoutQbConfirmation({ payoutId: po, userId: USER_ID });
     expect(r.ok).toBe(true);
 
-    const payout = await readPayout(po);
-    expect(payout.qbReconciliationStatus).toBe("proposed");
-    expect(payout.proposedQbStagedPaymentId).toBe(dep);
-    expect(payout.matchedQbStagedPaymentId).toBeNull();
-    expect(payout.qbReconciliationConfirmedByUserId).toBeNull();
+    const link = await readLink(po);
+    expect(payoutStatusFromLink(link ?? null)).toBe("proposed");
+    expect(link?.depositStagedPaymentId).toBe(dep);
+    expect(link?.conflictGiftId).toBeNull();
+    expect(link?.confirmedByUserId).toBeNull();
     // The deposit reverts from `reconciled` evidence back to `pending`.
     expect((await readDeposit(dep)).status).toBe("pending");
   });
@@ -338,17 +323,17 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     const r = await confirm.revertPayoutQbConfirmation({ payoutId: po, userId: USER_ID });
     expect(r.ok).toBe(true);
 
-    const payout = await readPayout(po);
-    expect(payout.qbReconciliationStatus).toBe("conflict_approved");
-    expect(payout.proposedQbStagedPaymentId).toBe(dep);
-    expect(payout.matchedQbStagedPaymentId).toBeNull();
-    // The qbConflictGiftId discriminator routed the revert; deposit + gift intact.
+    const link = await readLink(po);
+    expect(payoutStatusFromLink(link ?? null)).toBe("conflict_approved");
+    expect(link?.depositStagedPaymentId).toBe(dep);
+    // The conflictGiftId discriminator routed the revert; deposit + gift intact.
+    expect(link?.conflictGiftId).toBe(gift);
     expect((await readDeposit(dep)).status).toBe("approved");
     expect((await readGift(gift)).archivedAt).toBeNull();
   });
 
   it("REVERT: rejects a payout with nothing to revert", async () => {
-    const po = await seedPayout({ status: "unmatched" });
+    const po = await seedPayout({});
     const r = await confirm.revertPayoutQbConfirmation({ payoutId: po, userId: USER_ID });
     expect(r.ok).toBe(false);
     if (r.ok) return;

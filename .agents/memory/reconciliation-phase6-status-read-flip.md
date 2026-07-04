@@ -16,19 +16,18 @@ shared helpers in `settlementLink.ts` are the ONLY sanctioned way to read that s
   confirmed→confirmed_reconciled, proposed+conflictGiftId→conflict_approved,
   proposed→proposed). Used by `stripeConfirm.ts` confirm/revert gate + pointers.
 
-**Why the inverse is lossless:** the authoritative writer (`reverseSettlementLink`)
-only ever produces the 4 live states and sets/clears the conflict pointer atomically
-with lifecycle, so the legacy `confirmed_keep/excluded/replace` sub-states can no
-longer occur. Prod confirmed this (distribution = only the 4 live values; parity gate
-PASS). Because of that, the 3 dead revert branches (`confirmed_excluded/keep/replace`)
-in `stripeConfirm.ts` were deleted as unreachable.
+**Why the inverse is lossless:** the authoritative writers
+(`proposeSettlementLink` / `confirmSettlementLink`) only ever produce the 4 live
+states and set/clear the conflict pointer atomically with lifecycle, so the legacy
+`confirmed_keep/excluded/replace` sub-states can no longer occur. Prod confirmed this
+(distribution = only the 4 live values). Because of that, the 3 dead revert branches
+(`confirmed_excluded/keep/replace`) in `stripeConfirm.ts` were deleted as unreachable.
 
-**Dual-writes are intentionally RETAINED** — every state transition still writes BOTH
-the legacy `stripe_payouts.qb_reconciliation_status` (+ pointer cols) AND
-`settlement_links`. The read-flip ships in ONE Publish (no schema push, no data
-migration). Dropping the legacy columns is a separate LATER gated task.
+**Legacy columns are GONE.** The dual-write to `stripe_payouts.qb_reconciliation_status`
+(+ pointer cols) was removed and the columns physically dropped (migration 0093);
+`settlement_links` is the sole store.
 
-## Write-flip DONE — legacy columns are now a pure write-only mirror
+## Write-flip DONE — then the legacy columns were dropped
 The confirm/revert optimistic lock moved off `stripe_payouts.qb_reconciliation_status`
 onto a guarded `settlement_links` UPDATE (`transitionSettlementLink`, guarded by
 `lifecycle` + `conflict_gift_id` presence), and the last legacy POINTER reader —
@@ -39,8 +38,9 @@ ZERO divergent rows, dev had 9 conflict_approved rows that now resolve via the c
 pointer = a fix, not a regression). No confirm/revert/queue LOGIC reads the 4 legacy
 columns anymore.
 
-**Remaining readers = the parity script + the `routes/stripe.ts` response scrub ONLY.**
-The legacy-column DROP task's read-side precondition is therefore satisfied; the
-dual-write mirror is still RETAINED for parity + rollback until that separate
-human-gated DROP. Carry the prod evidence (zero divergent pointer rows) into the DROP
-task as the equivalence proof.
+**DROP complete.** No logic read the 4 legacy columns; the only remaining touch-points
+(the parity script + the `routes/stripe.ts` response scrub) were removed with the drop.
+The 7 columns + their index are dropped from the schema and by migration 0093, whose
+prod-safe ordering is: Publish FIRST so the live build stops writing them, THEN drop
+both DBs back-to-back (see that RUNBOOK). `qb_supersede_status` is a different concern,
+kept + still scrubbed.

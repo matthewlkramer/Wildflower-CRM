@@ -37,11 +37,12 @@ import {
  * per-charge counted units downgrade the coarse deposit→gift link to
  * `corroborating`) — that is NOT modeled here and is Phase 5, not Phase 4.
  *
- * Rollout note (additive dual-write phase): the reconcile/confirm/revert +
- * mint/link choke points write this table ALONGSIDE the legacy
- * `qb_reconciliation_status` + pointer columns; reads are NOT yet flipped to it
- * (that read cutover is a separate task, gated on PROD parity). Backfilled from
- * today's `qb_reconciliation_status` by migration 0089.
+ * This is now the authoritative store: the reconcile/confirm/revert + mint/link
+ * choke points write ONLY this table, and the payout's reconciliation status is a
+ * pure derivation over it on read (`payoutStatusFromLink` / `payoutStatusLabelSql`).
+ * It was backfilled from the legacy `qb_reconciliation_status` by migration 0089;
+ * those legacy `qb_reconciliation_status` + pointer mirror columns have since been
+ * dropped.
  *
  * Membership is EXCLUSIVE: at most one settlement link per payout, enforced by the
  * deterministic PK `sl_<payout_id>` AND a UNIQUE(payout_id). FKs cascade off the

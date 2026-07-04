@@ -11,7 +11,8 @@ import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
 } from "./paymentApplicationsTestUtil";
-import { deriveSettlementLinkFields } from "../lib/settlementLink";
+import { payoutStatusFromLink } from "../lib/settlementLink";
+import { proposeSettlementLink } from "../lib/settlementWriter";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -255,37 +256,23 @@ async function seedPayout(stagedPaymentId: string): Promise<string> {
     amount: "100.00",
     netTotal: "97.00",
     arrivalDate: "2026-03-15",
-    qbReconciliationStatus: "proposed",
-    proposedQbStagedPaymentId: stagedPaymentId,
   });
   payoutIds.push(id);
-  // Mirror the runtime settlement-link dual-write so the Phase-4 read-flip (the
-  // approve route now finds tied payouts via settlement_links, not the legacy
-  // pointer columns) sees this fixture. Reuse the SAME pure deriver production
-  // uses so fixtures stay in lockstep by construction; FK cascade on payout_id
-  // cleans it up when the payout is deleted in afterAll.
-  const link = deriveSettlementLinkFields({
-    qbReconciliationStatus: "proposed",
-    proposedQbStagedPaymentId: stagedPaymentId,
-    matchedQbStagedPaymentId: null,
-    qbConflictStagedPaymentId: null,
-    qbConflictGiftId: null,
-    qbReconciliationConfirmedByUserId: null,
-    qbReconciliationConfirmedAt: null,
-    updatedAt: new Date(),
+  // The approve route finds tied payouts via settlement_links (the authoritative
+  // reconciliation store; the legacy pointer columns are dropped). Seed a
+  // proposed link pointing at this deposit; FK cascade on payout_id cleans it up
+  // when the payout is deleted in afterAll.
+  const link = proposeSettlementLink(stagedPaymentId, null);
+  await db.insert(schema.settlementLinks).values({
+    id: `sl_${id}`,
+    payoutId: id,
+    depositStagedPaymentId: link.depositStagedPaymentId,
+    conflictGiftId: link.conflictGiftId,
+    lifecycle: link.lifecycle,
+    provenance: link.provenance,
+    confirmedByUserId: link.confirmedByUserId,
+    confirmedAt: link.confirmedAt,
   });
-  if (link) {
-    await db.insert(schema.settlementLinks).values({
-      id: `sl_${id}`,
-      payoutId: id,
-      depositStagedPaymentId: link.depositStagedPaymentId,
-      conflictGiftId: link.conflictGiftId,
-      lifecycle: link.lifecycle,
-      provenance: link.provenance,
-      confirmedByUserId: link.confirmedByUserId,
-      confirmedAt: link.confirmedAt,
-    });
-  }
   return id;
 }
 
@@ -331,11 +318,11 @@ async function readCharge(id: string) {
     .where(eqFn(schema.stripeStagedCharges.id, id));
   return row;
 }
-async function readPayout(id: string) {
+async function readLink(payoutId: string) {
   const [row] = await db
     .select()
-    .from(schema.stripePayouts)
-    .where(eqFn(schema.stripePayouts.id, id));
+    .from(schema.settlementLinks)
+    .where(eqFn(schema.settlementLinks.payoutId, payoutId));
   return row;
 }
 
@@ -533,9 +520,9 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — link existing gift (integra
     expect(staged.status).toBe("reconciled");
     expect(staged.matchedGiftId).toBe(giftId);
 
-    const payout = await readPayout(payoutId);
-    expect(payout.qbReconciliationStatus).toBe("confirmed_reconciled");
-    expect(payout.matchedQbStagedPaymentId).toBe(stagedId);
+    const link = await readLink(payoutId);
+    expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
+    expect(link?.depositStagedPaymentId).toBe(stagedId);
 
     // Gift FINAL amount stamped from the Stripe GROSS (source + pointer).
     const gift = await readGift(giftId);
@@ -635,9 +622,9 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)",
     expect(charge.matchedGiftId).toBe(newGiftId);
     expect(charge.createdGiftId).toBeNull();
 
-    const payout = await readPayout(payoutId);
-    expect(payout.qbReconciliationStatus).toBe("confirmed_reconciled");
-    expect(payout.matchedQbStagedPaymentId).toBe(stagedId);
+    const link = await readLink(payoutId);
+    expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
+    expect(link?.depositStagedPaymentId).toBe(stagedId);
   }, 30_000);
 
   it("mints a QB-only gift (no Stripe) stamped from the QB staged amount", async () => {
@@ -1053,8 +1040,8 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     expect(charge.status).toBe("reconciled");
     expect(charge.matchedGiftId).toBe(giftId);
 
-    const payout = await readPayout(payoutId);
-    expect(payout.qbReconciliationStatus).toBe("confirmed_reconciled");
+    const link = await readLink(payoutId);
+    expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
 
     const staged = await readStaged(stagedId);
     expect(staged.createdGiftId).toBe(giftId);

@@ -9,7 +9,10 @@ import {
 } from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
-import { deriveSettlementLinkFields } from "../lib/settlementLink";
+import {
+  proposeSettlementLink,
+  confirmSettlementLink,
+} from "../lib/settlementWriter";
 
 /**
  * DB-backed coverage for the UNIFIED settlement-anchor surface of the reactive
@@ -156,27 +159,27 @@ async function seedPayout(opts: {
     netTotal: "96.80",
     arrivalDate: futureDate(),
     chargeCount: 1,
-    qbReconciliationStatus: opts.status as never,
-    matchedQbStagedPaymentId: opts.matched ?? null,
-    proposedQbStagedPaymentId: opts.proposed ?? null,
-    qbConflictStagedPaymentId: opts.conflict ?? null,
-    qbConflictGiftId: opts.conflictGift ?? null,
   });
   payoutIds.push(id);
-  // Mirror the runtime settlement-link dual-write so the S5 read-flip (which now
-  // reads settlement_links, not the legacy pointer columns) sees this fixture.
-  // Reuse the SAME pure deriver the production sync uses, so fixtures stay in
-  // lockstep by construction. FK cascade on payout_id cleans it up.
-  const link = deriveSettlementLinkFields({
-    qbReconciliationStatus: opts.status,
-    proposedQbStagedPaymentId: opts.proposed ?? null,
-    matchedQbStagedPaymentId: opts.matched ?? null,
-    qbConflictStagedPaymentId: opts.conflict ?? null,
-    qbConflictGiftId: opts.conflictGift ?? null,
-    qbReconciliationConfirmedByUserId: null,
-    qbReconciliationConfirmedAt: null,
-    updatedAt: new Date(),
-  });
+  // settlement_links is the authoritative payout↔deposit store; the legacy
+  // pointer columns are dropped. Express the fixture's intended tie directly as
+  // the settlement link the status maps to. FK cascade on payout_id cleans it up.
+  const link =
+    opts.status === "unmatched"
+      ? null
+      : opts.status.startsWith("confirmed_")
+        ? confirmSettlementLink({
+            depositStagedPaymentId: (opts.matched ??
+              opts.proposed ??
+              opts.conflict)!,
+            conflictGiftId: opts.conflictGift ?? null,
+            confirmedByUserId: null,
+            confirmedAt: new Date(),
+          })
+        : proposeSettlementLink(
+            (opts.proposed ?? opts.conflict)!,
+            opts.conflictGift ?? null,
+          );
   if (link) {
     await db.insert(schema.settlementLinks).values({
       id: `sl_${id}`,
