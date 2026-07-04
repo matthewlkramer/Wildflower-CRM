@@ -122,12 +122,16 @@ import {
 } from "@/components/gift-merge-dialogs";
 import { DonorFieldPicker, type DonorType } from "@/components/entity-picker";
 import FinancialCorrectionsPage from "@/pages/financial-corrections";
-import { BundleQueue } from "@/components/reconciliation-bundles/BundleQueue";
+import { SettlementReport } from "@/components/reconciliation-bundles/SettlementReport";
 
 // ─── Shell config (mockup structure, corrected to our money model) ──────────
 
+// Two three-column reports (design §4.5). The Settlement report (Plane 1) owns
+// what used to be the "Settlement bundles" queue; the Gift report (Plane 2) owns
+// the remaining unit↔gift queues below.
+type ReportId = "settlement" | "gift";
+
 type QueueId =
-  | "bundle"
   | "review"
   | "qbo"
   | "crm"
@@ -135,8 +139,12 @@ type QueueId =
   | "confirmed"
   | "excluded";
 
+const REPORTS: { id: ReportId; name: string }[] = [
+  { id: "settlement", name: "Settlement" },
+  { id: "gift", name: "Gift" },
+];
+
 const QUEUES: { id: QueueId; name: string; dot: string; live: boolean }[] = [
-  { id: "bundle", name: "Settlement bundles", dot: "#2f6f8f", live: true },
   { id: "review", name: "Needs review", dot: "#9a6b00", live: true },
   { id: "qbo", name: "QBO-only", dot: "#b23b2e", live: true },
   { id: "crm", name: "CRM-only", dot: "#b23b2e", live: true },
@@ -334,12 +342,15 @@ export default function ReconciliationWorkbench() {
   // Old reconciliation routes redirect here with `?queue=<id>` so the matching
   // queue is preselected. Read once on mount; the rail drives state thereafter.
   const urlSearch = useSearch();
-  const [queue, setQueue] = useState<QueueId>(() => {
-    const requested = new URLSearchParams(urlSearch).get("queue");
-    return QUEUES.some((q) => q.id === requested)
-      ? (requested as QueueId)
-      : "review";
-  });
+  const initialQueueParam = new URLSearchParams(urlSearch).get("queue");
+  const [report, setReport] = useState<ReportId>(() =>
+    initialQueueParam === "bundle" ? "settlement" : "gift",
+  );
+  const [queue, setQueue] = useState<QueueId>(() =>
+    QUEUES.some((q) => q.id === initialQueueParam)
+      ? (initialQueueParam as QueueId)
+      : "review",
+  );
   const [search, setSearch] = useState("");
   // Excluded queue: server-side reason filter + pagination offset.
   const [excludedReason, setExcludedReason] = useState<
@@ -1178,9 +1189,10 @@ export default function ReconciliationWorkbench() {
                 Reconciliation Workbench
               </h1>
               <p className="text-sm text-muted-foreground">
-                {activeQueue.name} — one place to reconcile pulled money to CRM
-                gifts. Pull-only: nothing is written to QuickBooks, Stripe, or
-                Donorbox.
+                {report === "settlement"
+                  ? "Settlement — match Stripe payouts to their QuickBooks deposits."
+                  : `${activeQueue.name} — one place to reconcile pulled money to CRM gifts.`}{" "}
+                Pull-only: nothing is written to QuickBooks, Stripe, or Donorbox.
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -1200,7 +1212,7 @@ export default function ReconciliationWorkbench() {
                   Re-match donors
                 </Button>
               )}
-              {queue === "review" && (
+              {report === "gift" && queue === "review" && (
                 <Button
                   onClick={approveAllHighConfidence}
                   disabled={busy || readyCount === 0}
@@ -1216,7 +1228,31 @@ export default function ReconciliationWorkbench() {
             </div>
           </div>
 
-          {/* Queue nav (moved here from above the workbench) + search */}
+          {/* Report nav — two three-column reports (design §4.5). */}
+          <nav className="flex flex-wrap items-center gap-1">
+            {REPORTS.map((r) => {
+              const active = r.id === report;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setReport(r.id)}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-sm transition-colors",
+                    active
+                      ? "bg-muted font-medium text-foreground"
+                      : "text-muted-foreground hover:bg-muted/60",
+                  )}
+                  data-testid={`button-report-${r.id}`}
+                >
+                  {r.name}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Gift-report queue sub-nav + search (Settlement has its own filters). */}
+          {report === "gift" && (
           <div className="flex flex-wrap items-center gap-1 border-b pb-2">
             <nav className="flex flex-wrap items-center gap-1">
               {QUEUES.map((q) => {
@@ -1280,11 +1316,12 @@ export default function ReconciliationWorkbench() {
               />
             </div>
           </div>
+          )}
         </header>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-28 pr-1">
-          {queue === "bundle" ? (
-            <BundleQueue />
+          {report === "settlement" ? (
+            <SettlementReport />
           ) : queue === "crm" ? (
             <StrayGiftsWorklist />
           ) : queue === "confirmed" ? (

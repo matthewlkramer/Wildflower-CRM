@@ -624,7 +624,8 @@ export const ListReconciliationBundleAnchorsResponse = zod.object({
   "date": zod.string().date().nullish().describe('Stripe arrival date, or the QB date received.'),
   "payerName": zod.string().nullish().describe('QB payer name (the tied\/candidate deposit\'s payer for a Stripe payout, or the staged row\'s payer for QB-only money).'),
   "chargeCount": zod.number().nullish().describe('Stripe charges behind the payout; null for QB-only money.'),
-  "statusLabel": zod.string().describe('Raw source status for the display badge: the Stripe payout\'s reconciliation status (derived from its settlement link), or the QB staged-payment status.')
+  "statusLabel": zod.string().describe('Raw source status for the display badge: the Stripe payout\'s reconciliation status (derived from its settlement link), or the QB staged-payment status.'),
+  "batchStatus": zod.enum(['settled', 'proposed', 'orphan']).describe('Derived Plane-1 settlement status for one anchor (design §4.4 batch), used by the\nSettlement report to group anchors into its three columns. settled: a confirmed\npayout↔deposit settlement link exists. proposed: only a proposed link exists\n(awaiting human confirm — the \"needs review\" filter). orphan: no settlement link\n(a Stripe payout that never booked to a deposit, or a standalone QB deposit with no\npayout). Combined with anchorType this fully places a row: Stripe orphan → the\n\"missing deposit\" column; QB orphan → the \"missing payout\" column.\n')
 }).describe('One selectable settlement anchor for the workbench. anchorType discriminates a\nStripe payout from a standalone QB deposit; the remaining fields are a normalized\ndisplay projection over both sources.\n')),
   "pagination": zod.object({
   "page": zod.number(),

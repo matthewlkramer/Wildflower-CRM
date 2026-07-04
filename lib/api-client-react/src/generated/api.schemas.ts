@@ -4373,6 +4373,25 @@ export const BundleAnchorQueue = {
 } as const;
 
 /**
+ * Derived Plane-1 settlement status for one anchor (design §4.4 batch), used by the
+Settlement report to group anchors into its three columns. settled: a confirmed
+payout↔deposit settlement link exists. proposed: only a proposed link exists
+(awaiting human confirm — the "needs review" filter). orphan: no settlement link
+(a Stripe payout that never booked to a deposit, or a standalone QB deposit with no
+payout). Combined with anchorType this fully places a row: Stripe orphan → the
+"missing deposit" column; QB orphan → the "missing payout" column.
+
+ */
+export type SettlementBatchStatus = typeof SettlementBatchStatus[keyof typeof SettlementBatchStatus];
+
+
+export const SettlementBatchStatus = {
+  settled: 'settled',
+  proposed: 'proposed',
+  orphan: 'orphan',
+} as const;
+
+/**
  * One selectable settlement anchor for the workbench. anchorType discriminates a
 Stripe payout from a standalone QB deposit; the remaining fields are a normalized
 display projection over both sources.
@@ -4392,6 +4411,7 @@ export interface BundleAnchor {
   chargeCount?: number | null;
   /** Raw source status for the display badge: the Stripe payout's reconciliation status (derived from its settlement link), or the QB staged-payment status. */
   statusLabel: string;
+  batchStatus: SettlementBatchStatus;
 }
 
 export interface BundleAnchorListResponse {

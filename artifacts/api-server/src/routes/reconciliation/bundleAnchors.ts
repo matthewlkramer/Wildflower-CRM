@@ -92,6 +92,7 @@ interface AnchorRow {
   payer_name: string | null;
   charge_count: number | null;
   status_label: string;
+  batch_status: "settled" | "proposed" | "orphan";
 }
 
 // ─── GET /reconciliation/bundle-anchors ────────────────────────────────────
@@ -126,7 +127,16 @@ router.get(
         sp.arrival_date::text AS anchor_date,
         ad.payer_name AS payer_name,
         sp.charge_count AS charge_count,
-        ${payoutStatusLabelSql}::text AS status_label
+        ${payoutStatusLabelSql}::text AS status_label,
+        (CASE
+          WHEN EXISTS (SELECT 1 FROM settlement_links sl2
+                       WHERE sl2.payout_id = sp.id AND sl2.lifecycle = 'confirmed')
+            THEN 'settled'
+          WHEN EXISTS (SELECT 1 FROM settlement_links sl2
+                       WHERE sl2.payout_id = sp.id AND sl2.lifecycle = 'proposed')
+            THEN 'proposed'
+          ELSE 'orphan'
+        END)::text AS batch_status
       FROM stripe_payouts sp
       LEFT JOIN settlement_links sl ON sl.payout_id = sp.id
       LEFT JOIN staged_payments ad ON ad.id = sl.deposit_staged_payment_id
@@ -140,7 +150,8 @@ router.get(
         s.date_received::text AS anchor_date,
         s.payer_name AS payer_name,
         NULL::int AS charge_count,
-        s.status::text AS status_label
+        s.status::text AS status_label,
+        'orphan'::text AS batch_status
       FROM staged_payments s
       WHERE ${qbWhere(queue)}`;
 
@@ -155,7 +166,7 @@ router.get(
       db.execute(sql`
         SELECT
           anchor_type, anchor_id, amount, anchor_date,
-          payer_name, charge_count, status_label
+          payer_name, charge_count, status_label, batch_status
         FROM ( ${merged} ) AS anchors
         ORDER BY anchor_date DESC NULLS LAST, anchor_id DESC
         LIMIT ${limit} OFFSET ${offset}
@@ -175,6 +186,7 @@ router.get(
         payerName: r.payer_name,
         chargeCount: r.charge_count,
         statusLabel: r.status_label,
+        batchStatus: r.batch_status,
       })),
       pagination: { page, limit, total },
     });
