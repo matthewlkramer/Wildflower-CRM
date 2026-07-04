@@ -31,11 +31,18 @@ tail (`staged_payments.source_group_id`, dead enum values).
 **Drop-readiness caution (verify, don't trust the label):** a schema `@deprecated`
 comment is NOT proof a column is drop-ready. Several `gifts_and_payments` columns
 labelled `@deprecated` "no longer read or written" are in fact STILL read/written by
-live code — `quickbooks_tie_status` (feeds `deriveGiftLanes` + the gifts filter),
-`final_amount_source` and the `final_amount_*` provenance pointers (QB
-matching/actions still write them, financial corrections read them). `staged_payment_splits`
-is likewise fully live (QB split resolution). Always grep live readers/writers
-before treating any `@deprecated` column/table as droppable. As of 2026-07 the one
+live code — `quickbooks_tie_status` (feeds `deriveGiftLanes` + the gifts filter,
+recomputed by `applyGiftQbTieMany` on every gift mutation), `final_amount_source`
+and the `final_amount_*` provenance pointers (QB matching/actions still write them,
+financial corrections read them), and `type` (still read by the gifts list filter,
+analytics, revenueCoding, gatherTaskSignals; copied onto split-gift rows). By
+contrast `processor_fee`, `grant_year`, `designated_to_school`,
+`off_books_fiscal_sponsor`, `payment_expected` ARE genuinely retired at runtime
+(off-books/payment-expected now derived from allocation entities) — those comments
+are accurate. `staged_payment_splits` is likewise fully live (QB split resolution).
+Those false comments were corrected in-place to "TRANSITIONAL … STILL LIVE" in
+2026-07. Always grep live readers/writers before treating any `@deprecated`
+column/table as droppable. As of 2026-07 the one
 clean reconciliation drop candidate is `staged_payments.source_group_id`: no live
 route code touches it (only parity scripts) and a read-only PROD parity run against
 `unit_groups` (0088 backfill) was perfectly clean (0 missing/mismatch/orphan).

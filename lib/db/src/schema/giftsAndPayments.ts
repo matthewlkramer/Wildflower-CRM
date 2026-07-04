@@ -54,31 +54,37 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // (prod invariant #7); the physical DROP ships as a reviewed, human-applied SQL
   // file in lib/db/migrations/.
   processorFee: numeric("processor_fee", { precision: 14, scale: 2 }),
-  // @deprecated — final-amount provenance moved off the header. The
-  // human-entered `amount` stays the authoritative donor credit; what actually
-  // settled is DERIVED at read time from the gift's linked payments (Stripe
-  // charges / QuickBooks payment_applications / Donorbox) via
-  // giftPaymentSummary.ts (`derivedSettledAmount`). The CRM gift stays tied to
-  // its reconciliation evidence through those existing links, so these provenance
-  // columns + the XOR CHECK + the two partial-unique indexes are retired.
-  // Retained @deprecated ONLY so dev push stays additive and prod Publish never
-  // auto-drops them; the physical DROP ships as a reviewed SQL file.
+  // TRANSITIONAL (intended for eventual retirement, but STILL LIVE — do NOT
+  // drop). The design goal: the human-entered `amount` stays the authoritative
+  // donor credit and what actually settled is DERIVED at read time from the
+  // gift's linked payments (Stripe / QuickBooks payment_applications / Donorbox)
+  // via giftPaymentSummary.ts (`derivedSettledAmount`). That derivation exists,
+  // but these provenance columns have NOT been retired yet: QuickBooks matching
+  // (routes/quickbooks/matching.ts + actions.ts) still WRITES them when it sets a
+  // gift's amount from a staged payment; `finalAmountSource` is still READ by the
+  // gifts list filter ("still funding" = final_amount_source = 'human'); and
+  // `finalAmountStripeChargeId` is still READ by financialCorrections.ts. Retained
+  // so dev push stays additive and prod Publish never auto-drops them; a physical
+  // DROP must wait until those readers/writers are removed and ships as a reviewed
+  // SQL file.
   originalHumanCrmAmount: numeric("original_human_crm_amount", {
     precision: 14,
     scale: 2,
   }),
-  // @deprecated — see originalHumanCrmAmount.
+  // TRANSITIONAL — still READ by the gifts list filter and still WRITTEN
+  // ('quickbooks') by QB matching/actions. See originalHumanCrmAmount above.
   finalAmountSource: giftFinalAmountSourceEnum("final_amount_source")
     .notNull()
     .default("human"),
-  // @deprecated — see originalHumanCrmAmount. FK + RESTRICT kept while the
-  // column lingers; no longer written.
+  // TRANSITIONAL — still READ by financialCorrections.ts; still WRITTEN (to null)
+  // by QB matching. FK + RESTRICT kept while the column lives. See
+  // originalHumanCrmAmount above.
   finalAmountStripeChargeId: text("final_amount_stripe_charge_id").references(
     (): AnyPgColumn => stripeStagedCharges.id,
     { onDelete: "restrict" },
   ),
-  // @deprecated — see originalHumanCrmAmount. FK + RESTRICT kept while the
-  // column lingers; no longer written.
+  // TRANSITIONAL — still WRITTEN (the staged-payment id) by QB matching. FK +
+  // RESTRICT kept while the column lives. See originalHumanCrmAmount above.
   finalAmountQbStagedPaymentId: text(
     "final_amount_qb_staged_payment_id",
   ).references((): AnyPgColumn => stagedPayments.id, { onDelete: "restrict" }),
@@ -97,12 +103,16 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   householdId: text("household_id").references(() => households.id, {
     onDelete: "restrict",
   }),
-  // @deprecated — the gift `type` is no longer stored. A gift's classification
-  // is DERIVED: pledge payment ⇐ opportunity_id, directed ⇐ advisor_person_id,
-  // matching ⇐ gift_being_matched_id, loan ⇐ loan_or_grant='loan', else standard
-  // (see deriveGiftType in @workspace/api-zod). No longer read or written by
-  // application code. Retained @deprecated so dev push stays additive and prod
-  // Publish never auto-drops it; the physical DROP ships as a reviewed SQL file.
+  // TRANSITIONAL (intended for eventual retirement, but STILL LIVE — do NOT
+  // drop). The design goal is that a gift's classification is DERIVED (pledge
+  // payment ⇐ opportunity_id, directed ⇐ advisor_person_id, matching ⇐
+  // gift_being_matched_id, loan ⇐ loan_or_grant='loan', else standard — see
+  // deriveGiftType in @workspace/api-zod), but the physical column has NOT been
+  // retired: it is still READ by the gifts list `type` filter, analytics
+  // (routes/analytics.ts), revenueCoding.ts and gatherTaskSignals.ts, and still
+  // WRITTEN — copied onto each new row when a gift is split. Retained so dev push
+  // stays additive and prod Publish never auto-drops it; a physical DROP must wait
+  // until those readers/writers are removed and ships as a reviewed SQL file.
   type: giftTypeEnum("type"),
   // Authoritative loan-vs-grant flag (see loanOrGrantEnum). Backfilled from
   // `type` (loan_fund_investment→loan, else grant) plus explicit data
@@ -175,11 +185,14 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // restriction, etc.) and wants to come back to it. Never auto-derived and has
   // NO side effects on status / derivation / QB tie — a pure annotation.
   needsResearch: boolean("needs_research").default(false).notNull(),
-  // @deprecated — the QuickBooks "tie" signal is retired. Reconciliation state is
-  // now expressed through the settled-vs-entered queue (derived settled amount vs
-  // entered amount, gated on derived payment-expected) and the lane model. No
-  // longer read or written by application code. Retained @deprecated so dev push
-  // stays additive and prod Publish never auto-drops it; the physical DROP ships
+  // TRANSITIONAL (intended for eventual retirement, but STILL LIVE — do NOT
+  // drop). The design goal is to express reconciliation state through the
+  // settled-vs-entered queue + the lane model instead of this "tie" signal, but
+  // that has NOT happened yet: `applyGiftQbTieMany` (lib/giftQbTie.ts) still
+  // RECOMPUTES this column on every gift link/amount/merge/reconcile mutation, and
+  // `deriveGiftLanes` (lib/reconciliationLanes.ts) + the gifts list filter still
+  // READ it. Retained so dev push stays additive and prod Publish never auto-drops
+  // it; a physical DROP must wait until the lane model no longer reads it and ships
   // as a reviewed SQL file.
   quickbooksTieStatus: giftQuickbooksTieEnum("quickbooks_tie_status")
     .default("missing")
