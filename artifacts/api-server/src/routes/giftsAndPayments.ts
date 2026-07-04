@@ -130,6 +130,7 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
+import { payoutStatusFromLink } from "../lib/settlementLink";
 import { absorbGiftEvidenceIntoSurvivor } from "../lib/giftCombine";
 import {
   qbLedgerExistsForGift,
@@ -1887,7 +1888,10 @@ router.get(
         payoutFee: stripePayouts.feeTotal,
         payoutNet: stripePayouts.netTotal,
         payoutChargeCount: stripePayouts.chargeCount,
-        payoutReconStatus: stripePayouts.qbReconciliationStatus,
+        // Reconciliation status is DERIVED from the authoritative settlement
+        // link (payoutStatusFromLink), never the deprecated mirror column.
+        linkLifecycle: settlementLinks.lifecycle,
+        linkConflictGiftId: settlementLinks.conflictGiftId,
         depositId: stagedPayments.id,
         depositAmount: stagedPayments.amount,
         depositDate: stagedPayments.dateReceived,
@@ -1944,7 +1948,14 @@ router.get(
             feeTotal: row.payoutFee,
             netTotal: row.payoutNet,
             chargeCount: row.payoutChargeCount,
-            qbReconciliationStatus: row.payoutReconStatus,
+            reconciliationStatus: payoutStatusFromLink(
+              row.linkLifecycle
+                ? {
+                    lifecycle: row.linkLifecycle,
+                    conflictGiftId: row.linkConflictGiftId,
+                  }
+                : null,
+            ),
           }
         : null,
       qbDeposit: row?.depositId

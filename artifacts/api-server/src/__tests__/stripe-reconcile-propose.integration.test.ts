@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { clearPaymentApplicationsForStagedIds } from "./paymentApplicationsTestUtil";
-import { deriveSettlementLinkFields } from "../lib/settlementLink";
+import {
+  deriveSettlementLinkFields,
+  payoutStatusFromLink,
+} from "../lib/settlementLink";
 
 /**
  * DB-backed coverage for the Stripe payout ↔ QuickBooks deposit proposal pass
@@ -56,6 +59,8 @@ async function seedPayout(over: {
   status?: Db["stripePayouts"]["$inferInsert"]["qbReconciliationStatus"];
   matchedQbStagedPaymentId?: string | null;
   proposedQbStagedPaymentId?: string | null;
+  qbConflictStagedPaymentId?: string | null;
+  qbConflictGiftId?: string | null;
 }): Promise<string> {
   const id = nextId("po");
   await db.insert(schema.stripePayouts).values({
@@ -67,6 +72,8 @@ async function seedPayout(over: {
     qbReconciliationStatus: over.status ?? "unmatched",
     matchedQbStagedPaymentId: over.matchedQbStagedPaymentId ?? null,
     proposedQbStagedPaymentId: over.proposedQbStagedPaymentId ?? null,
+    qbConflictStagedPaymentId: over.qbConflictStagedPaymentId ?? null,
+    qbConflictGiftId: over.qbConflictGiftId ?? null,
   });
   payoutIds.push(id);
   // Mirror the runtime settlement-link dual-write so runProposalPass — which now
@@ -78,8 +85,8 @@ async function seedPayout(over: {
     qbReconciliationStatus: over.status ?? "unmatched",
     proposedQbStagedPaymentId: over.proposedQbStagedPaymentId ?? null,
     matchedQbStagedPaymentId: over.matchedQbStagedPaymentId ?? null,
-    qbConflictStagedPaymentId: null,
-    qbConflictGiftId: null,
+    qbConflictStagedPaymentId: over.qbConflictStagedPaymentId ?? null,
+    qbConflictGiftId: over.qbConflictGiftId ?? null,
     qbReconciliationConfirmedByUserId: null,
     qbReconciliationConfirmedAt: null,
     updatedAt: new Date(),
@@ -143,6 +150,14 @@ async function readPayout(id: string) {
     .select()
     .from(schema.stripePayouts)
     .where(eqFn(schema.stripePayouts.id, id));
+  return row;
+}
+
+async function readLink(payoutId: string) {
+  const [row] = await db
+    .select()
+    .from(schema.settlementLinks)
+    .where(eqFn(schema.settlementLinks.payoutId, payoutId));
   return row;
 }
 
@@ -285,6 +300,56 @@ describe.skipIf(!HAS_DB)("runProposalPass (DB)", () => {
     const row = await readPayout(po);
     expect(row.qbReconciliationStatus).toBe("unmatched");
     expect(row.proposedQbStagedPaymentId).toBeNull();
+  });
+
+  it("clears a stale CONFLICT proposal — link + legacy mirror in lockstep", async () => {
+    // A pre-existing conflict_approved proposal is a `proposed` settlement link
+    // that ALSO carries a conflict gift. When its deposit is no longer an
+    // eligible candidate the pass must clear it: delete the settlement link AND
+    // reverse the legacy mirror columns back to `unmatched` IN ONE transaction,
+    // so the authoritative link-derived status and the deprecated mirror can
+    // never disagree (the whole point of retiring the mirror in Phase-6).
+    const gift = await seedGift("3131.31");
+    const dep = await seedDeposit({
+      amount: "3131.31",
+      dateReceived: "2026-09-01",
+      // `excluded` is outside the pending/approved/reconciled candidate set, so
+      // the pass finds no `best` and takes the clear branch.
+      status: "excluded",
+      createdGiftId: gift,
+    });
+    const po = await seedPayout({
+      amount: "3131.31",
+      arrivalDate: "2026-09-01",
+      status: "conflict_approved",
+      proposedQbStagedPaymentId: dep,
+      qbConflictStagedPaymentId: dep,
+      qbConflictGiftId: gift,
+    });
+
+    // Precondition: the fixture really is a conflict — link and mirror agree.
+    const beforeLink = await readLink(po);
+    expect(beforeLink?.lifecycle).toBe("proposed");
+    expect(beforeLink?.conflictGiftId).toBe(gift);
+    expect(payoutStatusFromLink(beforeLink ?? null)).toBe("conflict_approved");
+    const before = await readPayout(po);
+    expect(before.qbReconciliationStatus).toBe("conflict_approved");
+    expect(before.qbConflictGiftId).toBe(gift);
+
+    const r = await runProposalPass([po]);
+    expect(r.cleared).toBe(1);
+
+    // The settlement link is gone...
+    const afterLink = await readLink(po);
+    expect(afterLink).toBeUndefined();
+    // ...the legacy mirror reverted fully to unmatched (no orphan pointers)...
+    const after = await readPayout(po);
+    expect(after.qbReconciliationStatus).toBe("unmatched");
+    expect(after.proposedQbStagedPaymentId).toBeNull();
+    expect(after.qbConflictStagedPaymentId).toBeNull();
+    expect(after.qbConflictGiftId).toBeNull();
+    // ...and both derivations agree on the cleared state.
+    expect(payoutStatusFromLink(afterLink ?? null)).toBe("unmatched");
   });
 
   it("leaves confirmed_* payouts untouched", async () => {

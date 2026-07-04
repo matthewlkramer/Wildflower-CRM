@@ -784,21 +784,6 @@ function deriveTie(base: TieBase | null, override: BundleTieOverride | null | un
     }
   }
 
-  // Money-safety invariant — INDEPENDENT of any tie action override: a keep
-  // confirm preserves the deposit's gift as the single source of truth, so
-  // downstream per-charge mint guards skip it. If we don't know WHICH gift that
-  // is (a legacy/malformed conflict with no recorded gift), we can't prove a
-  // per-charge gift wouldn't double-book it — so block, even if a client
-  // supplies an explicit tie action, keeping the pure layer's readiness honest.
-  if (base.status === "conflict_approved" && !base.qbConflictGiftId) {
-    warnings.push({
-      code: "tie_conflict_missing_gift",
-      message:
-        "This conflicting QuickBooks deposit has no recorded gift to keep. Resolve it in QuickBooks review before confirming.",
-      severity: "blocker",
-    });
-  }
-
   return {
     payoutId: base.payoutId,
     depositStagedPaymentId: depositId,

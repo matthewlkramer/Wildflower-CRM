@@ -6740,15 +6740,15 @@ components:
         pagination: { $ref: "#/components/schemas/Pagination" }
     StripePayoutReconciliationStatus:
       type: string
-      description: "Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep/replace. confirmed_reconciled: the current model — on confirm the per-charge Stripe gifts are stamped as the source of truth and the QB deposit lump is marked reconciled (kept, never archived). confirmed_excluded/keep/replace: legacy decisions retained for history."
-      enum: [unmatched, proposed, conflict_approved, confirmed_reconciled, confirmed_excluded, confirmed_keep, confirmed_replace]
+      description: "Where a Stripe payout sits in the QuickBooks reconciliation lifecycle, DERIVED read-only from the authoritative settlement_links row (payoutStatusFromLink). unmatched: no settlement link. proposed: a link exists (lifecycle=proposed) with no conflict gift. conflict_approved: a proposed link whose deposit was already approved into a gift (needs keep/replace). confirmed_reconciled: lifecycle=confirmed — the per-charge Stripe gifts are the source of truth and the QB deposit lump is marked reconciled (kept, never archived)."
+      enum: [unmatched, proposed, conflict_approved, confirmed_reconciled]
     StripePayoutReconciliationQueue:
       type: string
       description: "Which reconciliation bucket to list. unmatched: no QB deposit candidate yet (stray Stripe). proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state (incl. confirmed_reconciled). all: every non-unmatched payout."
       enum: [unmatched, proposed, conflict, confirmed, all]
     StripePayoutReconciliation:
       type: object
-      required: [id, stripeAccountId, qbReconciliationStatus]
+      required: [id, stripeAccountId]
       properties:
         id:                              { type: string, description: "The Stripe payout id (po_...) — also the primary key." }
         stripeAccountId:                 { type: string }
@@ -6762,14 +6762,8 @@ components:
         refundTotal:                     { type: string, nullable: true }
         netTotal:                        { type: string, nullable: true }
         chargeCount:                     { type: integer, nullable: true }
-        # QuickBooks reconciliation state + linkage (propose-then-confirm).
-        qbReconciliationStatus:          { $ref: "#/components/schemas/StripePayoutReconciliationStatus" }
-        proposedQbStagedPaymentId:       { type: string, nullable: true, description: "The pending QB deposit lump proposed as this payout's match." }
-        matchedQbStagedPaymentId:        { type: string, nullable: true, description: "The QB deposit lump confirmed (excluded + linked) for this payout." }
-        qbConflictStagedPaymentId:       { type: string, nullable: true, description: "The QB deposit lump that was already approved into a gift (conflict candidate)." }
-        qbConflictGiftId:                { type: string, nullable: true, description: "The already-approved QB gift this payout conflicts with." }
-        qbReconciliationConfirmedByUserId: { type: string, nullable: true }
-        qbReconciliationConfirmedAt:     { type: string, format: date-time, nullable: true }
+        # Settlement state — DERIVED read-only from the authoritative settlement_links row.
+        settlementLifecycle:             { type: string, enum: [proposed, confirmed, exempt], nullable: true, description: "The settlement_links lifecycle for this payout (null when there is no link). The reconciliation status is derived from this + the conflict gift via payoutStatusFromLink." }
         # Active QB deposit lump (matched once confirmed, else the candidate), joined read-only.
         depositId:                       { type: string, nullable: true }
         depositAmount:                   { type: string, nullable: true }
@@ -6781,7 +6775,7 @@ components:
         conflictGiftDate:                { type: string, format: date, nullable: true }
         conflictGiftArchivedAt:          { type: string, format: date-time, nullable: true, description: "Set once a confirm-replace archives this gift (kept, never deleted)." }
         conflictGiftDonorName:           { type: string, nullable: true }
-        reconciliationLanes:             { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two-lane reconciliation status (INV-4) for this payout, derived read-only from qbReconciliationStatus: funding = unlinked (unmatched)→proposed (proposed/conflict_approved)→confirmed (any confirmed_*, exempt when confirmed_excluded). crmRecord is null — a payout is a batch with no single donor." }
+        reconciliationLanes:             { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two-lane reconciliation status (INV-4) for this payout, derived read-only from the settlement link: funding = unlinked (no link)→proposed (lifecycle=proposed)→confirmed (lifecycle=confirmed). crmRecord is null — a payout is a batch with no single donor." }
     StripePayoutReconciliationList:
       type: object
       required: [data, pagination]
@@ -6821,7 +6815,7 @@ components:
         payout:
           type: object
           nullable: true
-          required: [id, qbReconciliationStatus]
+          required: [id, reconciliationStatus]
           properties:
             id:                     { type: string, description: "The Stripe payout id (po_...)." }
             amount:                 { type: string, nullable: true }
@@ -6830,7 +6824,7 @@ components:
             feeTotal:               { type: string, nullable: true }
             netTotal:               { type: string, nullable: true }
             chargeCount:            { type: integer, nullable: true }
-            qbReconciliationStatus: { $ref: "#/components/schemas/StripePayoutReconciliationStatus" }
+            reconciliationStatus:   { $ref: "#/components/schemas/StripePayoutReconciliationStatus" }
         qbDeposit:
           type: object
           nullable: true

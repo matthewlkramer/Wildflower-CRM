@@ -858,9 +858,6 @@ const RECON_CHAIN_LABEL: Record<StripePayoutReconciliationStatus, string> = {
   conflict_approved: "Conflict — needs a keep/replace decision",
   confirmed_reconciled:
     "Reconciled — Stripe charges are the record; QuickBooks deposit kept",
-  confirmed_excluded: "Deposit excluded as a processor payout",
-  confirmed_keep: "Kept the existing QuickBooks gift",
-  confirmed_replace: "Replaced — old QuickBooks gift archived",
 };
 
 /**
@@ -905,7 +902,7 @@ function GiftStripeChainCard({ giftId }: { giftId: string }) {
                 {payout.arrivalDate ? formatDate(payout.arrivalDate) : "—"}
               </div>
               <div className="text-xs">
-                {RECON_CHAIN_LABEL[payout.qbReconciliationStatus]}
+                {RECON_CHAIN_LABEL[payout.reconciliationStatus]}
               </div>
               <Link
                 href="/reconciliation-workbench?queue=bundle"

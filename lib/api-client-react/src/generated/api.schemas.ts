@@ -3327,7 +3327,7 @@ export interface StripeStagedChargeList {
 }
 
 /**
- * Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep/replace. confirmed_reconciled: the current model — on confirm the per-charge Stripe gifts are stamped as the source of truth and the QB deposit lump is marked reconciled (kept, never archived). confirmed_excluded/keep/replace: legacy decisions retained for history.
+ * Where a Stripe payout sits in the QuickBooks reconciliation lifecycle, DERIVED read-only from the authoritative settlement_links row (payoutStatusFromLink). unmatched: no settlement link. proposed: a link exists (lifecycle=proposed) with no conflict gift. conflict_approved: a proposed link whose deposit was already approved into a gift (needs keep/replace). confirmed_reconciled: lifecycle=confirmed — the per-charge Stripe gifts are the source of truth and the QB deposit lump is marked reconciled (kept, never archived).
  */
 export type StripePayoutReconciliationStatus = typeof StripePayoutReconciliationStatus[keyof typeof StripePayoutReconciliationStatus];
 
@@ -3337,9 +3337,6 @@ export const StripePayoutReconciliationStatus = {
   proposed: 'proposed',
   conflict_approved: 'conflict_approved',
   confirmed_reconciled: 'confirmed_reconciled',
-  confirmed_excluded: 'confirmed_excluded',
-  confirmed_keep: 'confirmed_keep',
-  confirmed_replace: 'confirmed_replace',
 } as const;
 
 /**
@@ -3356,6 +3353,18 @@ export const StripePayoutReconciliationQueue = {
   all: 'all',
 } as const;
 
+/**
+ * The settlement_links lifecycle for this payout (null when there is no link). The reconciliation status is derived from this + the conflict gift via payoutStatusFromLink.
+ */
+export type StripePayoutReconciliationSettlementLifecycle = typeof StripePayoutReconciliationSettlementLifecycle[keyof typeof StripePayoutReconciliationSettlementLifecycle] | null;
+
+
+export const StripePayoutReconciliationSettlementLifecycle = {
+  proposed: 'proposed',
+  confirmed: 'confirmed',
+  exempt: 'exempt',
+} as const;
+
 export interface StripePayoutReconciliation {
   /** The Stripe payout id (po_...) — also the primary key. */
   id: string;
@@ -3370,17 +3379,8 @@ export interface StripePayoutReconciliation {
   refundTotal?: string | null;
   netTotal?: string | null;
   chargeCount?: number | null;
-  qbReconciliationStatus: StripePayoutReconciliationStatus;
-  /** The pending QB deposit lump proposed as this payout's match. */
-  proposedQbStagedPaymentId?: string | null;
-  /** The QB deposit lump confirmed (excluded + linked) for this payout. */
-  matchedQbStagedPaymentId?: string | null;
-  /** The QB deposit lump that was already approved into a gift (conflict candidate). */
-  qbConflictStagedPaymentId?: string | null;
-  /** The already-approved QB gift this payout conflicts with. */
-  qbConflictGiftId?: string | null;
-  qbReconciliationConfirmedByUserId?: string | null;
-  qbReconciliationConfirmedAt?: string | null;
+  /** The settlement_links lifecycle for this payout (null when there is no link). The reconciliation status is derived from this + the conflict gift via payoutStatusFromLink. */
+  settlementLifecycle?: StripePayoutReconciliationSettlementLifecycle;
   depositId?: string | null;
   depositAmount?: string | null;
   depositDateReceived?: string | null;
@@ -3391,7 +3391,7 @@ export interface StripePayoutReconciliation {
   /** Set once a confirm-replace archives this gift (kept, never deleted). */
   conflictGiftArchivedAt?: string | null;
   conflictGiftDonorName?: string | null;
-  /** Two-lane reconciliation status (INV-4) for this payout, derived read-only from qbReconciliationStatus: funding = unlinked (unmatched)→proposed (proposed/conflict_approved)→confirmed (any confirmed_*, exempt when confirmed_excluded). crmRecord is null — a payout is a batch with no single donor. */
+  /** Two-lane reconciliation status (INV-4) for this payout, derived read-only from the settlement link: funding = unlinked (no link)→proposed (lifecycle=proposed)→confirmed (lifecycle=confirmed). crmRecord is null — a payout is a batch with no single donor. */
   readonly reconciliationLanes?: ReconciliationLanes;
 }
 
@@ -3459,7 +3459,7 @@ export type GiftStripeChainPayout = {
   feeTotal?: string | null;
   netTotal?: string | null;
   chargeCount?: number | null;
-  qbReconciliationStatus: StripePayoutReconciliationStatus;
+  reconciliationStatus: StripePayoutReconciliationStatus;
 } | null;
 
 export type GiftStripeChainQbDeposit = {

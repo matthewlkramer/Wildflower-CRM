@@ -41,3 +41,22 @@ and stamp provenance — never create a parallel "gift" out of a Stripe/QB row,
 never archive a gift to dedupe money, never re-add processor_payout. FKs from
 gift → staged/charge are RESTRICT by design (clear the gift pointer before
 deleting evidence, e.g. in test teardown).
+
+## Legacy stripe_payouts mirror columns — deprecated, NOT yet droppable
+
+`settlement_links` is authoritative; the 7 legacy `stripe_payouts` reconciliation
+columns (`qb_reconciliation_status` + the 6 pointer/confirm cols) are `@deprecated`
+reverse-derived MIRRORS. They are still WRITTEN in lockstep (the `parity:settlement-links`
+gate depends on them) but are SCRUBBED from every client response via the
+destructure-omit projection `payoutResponseColumns` in `routes/stripe.ts`
+(`reconSelect`); the gift stripe-chain derives status with `payoutStatusFromLink`.
+The OpenAPI `StripePayoutReconciliationStatus` enum is narrowed to the 4 LIVE
+states (`unmatched`/`proposed`/`conflict_approved`/`confirmed_reconciled`) while the
+DB `$type` union stays FULL (all 7, incl. `confirmed_keep`/`_excluded`/`_replace`)
+for history + `stripeConfirm.ts` internal gating.
+**Why safe to narrow-enum-but-keep-$type-full:** responses are plain `res.json`
+(no outbound Zod), and only `payoutStatusFromLink`-fed fields ref the narrowed enum,
+so a legacy DB value can never reach an enum-typed response field.
+**Before the physical columns can be DROPPED (Phase-6):** migrate the 2 remaining
+functional readers of `qb_reconciliation_status` — `bundleAnchors.ts` `status_label`
+and `stripeConfirm.ts` legacy-value gating — off the mirror onto the link first.

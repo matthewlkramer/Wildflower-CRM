@@ -576,7 +576,7 @@ export const GetGiftStripeChainResponse = zod.object({
   "feeTotal": zod.string().nullish(),
   "netTotal": zod.string().nullish(),
   "chargeCount": zod.number().nullish(),
-  "qbReconciliationStatus": zod.enum(['unmatched', 'proposed', 'conflict_approved', 'confirmed_reconciled', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace']).describe('Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep\/replace. confirmed_reconciled: the current model — on confirm the per-charge Stripe gifts are stamped as the source of truth and the QB deposit lump is marked reconciled (kept, never archived). confirmed_excluded\/keep\/replace: legacy decisions retained for history.')
+  "reconciliationStatus": zod.enum(['unmatched', 'proposed', 'conflict_approved', 'confirmed_reconciled']).describe('Where a Stripe payout sits in the QuickBooks reconciliation lifecycle, DERIVED read-only from the authoritative settlement_links row (payoutStatusFromLink). unmatched: no settlement link. proposed: a link exists (lifecycle=proposed) with no conflict gift. conflict_approved: a proposed link whose deposit was already approved into a gift (needs keep\/replace). confirmed_reconciled: lifecycle=confirmed — the per-charge Stripe gifts are the source of truth and the QB deposit lump is marked reconciled (kept, never archived).')
 }).nullish(),
   "qbDeposit": zod.object({
   "id": zod.string().describe('The QuickBooks deposit lump\'s staged-payment id.'),

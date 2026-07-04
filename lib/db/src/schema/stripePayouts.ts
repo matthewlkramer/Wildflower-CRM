@@ -62,17 +62,30 @@ export const stripePayouts = pgTable(
     // dropped) so historical rows keep their value. Do not write to it on the
     // new path.
     qbSupersedeStatus: text("qb_supersede_status").notNull().default("none"),
+    // ── DEPRECATED legacy Stripe↔QuickBooks reconciliation mirror ───────
+    // As of the settlement_links read-flip (reconciliation redesign Phase 4),
+    // the AUTHORITATIVE source for the Stripe payout ↔ QB deposit settlement is
+    // the `settlement_links` table (lifecycle + depositStagedPaymentId +
+    // conflictGiftId); status is DERIVED via payoutStatusFromLink(link). The
+    // columns below are now written ONLY as a reverse-derived mirror — retained
+    // so the parity gate `derive(legacy) == link` stays valid — and are scrubbed
+    // from every API response. Do NOT read them for behavior. They stop being
+    // written and are physically DROPped in a later, separately-gated phase.
+
     // The QB staged row this payout is CONFIRMED-matched to (the net-payout
     // lump). Set when a human confirms the match in the reconciliation queue.
+    /** @deprecated mirror-only; read settlement_links.depositStagedPaymentId. Scrubbed from responses. */
     matchedQbStagedPaymentId: text("matched_qb_staged_payment_id").references(
       () => stagedPayments.id,
       { onDelete: "set null" },
     ),
     // The QB staged row that was already APPROVED (conflict — left untouched).
+    /** @deprecated mirror-only; conflict is settlement_links.conflictGiftId. Scrubbed from responses. */
     qbConflictStagedPaymentId: text("qb_conflict_staged_payment_id").references(
       () => stagedPayments.id,
       { onDelete: "set null" },
     ),
+    /** @deprecated mirror-only; read settlement_links.conflictGiftId. Scrubbed from responses. */
     qbConflictGiftId: text("qb_conflict_gift_id").references(
       () => giftsAndPayments.id,
       { onDelete: "set null" },
@@ -99,6 +112,11 @@ export const stripePayouts = pgTable(
     //                        Stripe gifts are stamped as the source of truth.
     //                        Supersedes confirmed_excluded/_keep/_replace going
     //                        forward; the old values are retained for history.
+    // NOTE: the `$type` union is kept FULL — history rows still physically hold
+    // the legacy confirmed_excluded/_keep/_replace values. The API contract
+    // (StripePayoutReconciliationStatus) narrows to the 4 values
+    // payoutStatusFromLink emits.
+    /** @deprecated mirror-only; derive via payoutStatusFromLink(settlement_links). Scrubbed from responses. */
     qbReconciliationStatus: text("qb_reconciliation_status")
       .$type<
         | "unmatched"
@@ -112,12 +130,15 @@ export const stripePayouts = pgTable(
       .notNull()
       .default("unmatched"),
     // The QB staged row PROPOSED as this payout's net-deposit lump (pre-confirm).
+    /** @deprecated mirror-only; read settlement_links.depositStagedPaymentId. Scrubbed from responses. */
     proposedQbStagedPaymentId: text(
       "proposed_qb_staged_payment_id",
     ).references(() => stagedPayments.id, { onDelete: "set null" }),
+    /** @deprecated mirror-only; read settlement_links.confirmedByUserId. Scrubbed from responses. */
     qbReconciliationConfirmedByUserId: text(
       "qb_reconciliation_confirmed_by_user_id",
     ).references(() => users.id, { onDelete: "set null" }),
+    /** @deprecated mirror-only; read settlement_links.confirmedAt. Scrubbed from responses. */
     qbReconciliationConfirmedAt: timestamp("qb_reconciliation_confirmed_at", {
       withTimezone: true,
     }),

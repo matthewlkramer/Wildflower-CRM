@@ -877,13 +877,7 @@ export const ListStripePayoutReconciliationsResponse = zod.object({
   "refundTotal": zod.string().nullish(),
   "netTotal": zod.string().nullish(),
   "chargeCount": zod.number().nullish(),
-  "qbReconciliationStatus": zod.enum(['unmatched', 'proposed', 'conflict_approved', 'confirmed_reconciled', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace']).describe('Where a Stripe payout sits in the QuickBooks reconciliation lifecycle. unmatched: no QB deposit candidate. proposed: a pending QB deposit lump was matched, awaiting confirm. conflict_approved: the matching QB deposit was already approved into a gift, needs keep\/replace. confirmed_reconciled: the current model — on confirm the per-charge Stripe gifts are stamped as the source of truth and the QB deposit lump is marked reconciled (kept, never archived). confirmed_excluded\/keep\/replace: legacy decisions retained for history.'),
-  "proposedQbStagedPaymentId": zod.string().nullish().describe('The pending QB deposit lump proposed as this payout\'s match.'),
-  "matchedQbStagedPaymentId": zod.string().nullish().describe('The QB deposit lump confirmed (excluded + linked) for this payout.'),
-  "qbConflictStagedPaymentId": zod.string().nullish().describe('The QB deposit lump that was already approved into a gift (conflict candidate).'),
-  "qbConflictGiftId": zod.string().nullish().describe('The already-approved QB gift this payout conflicts with.'),
-  "qbReconciliationConfirmedByUserId": zod.string().nullish(),
-  "qbReconciliationConfirmedAt": zod.string().datetime({}).nullish(),
+  "settlementLifecycle": zod.enum(['proposed', 'confirmed', 'exempt']).nullish().describe('The settlement_links lifecycle for this payout (null when there is no link). The reconciliation status is derived from this + the conflict gift via payoutStatusFromLink.'),
   "depositId": zod.string().nullish(),
   "depositAmount": zod.string().nullish(),
   "depositDateReceived": zod.string().date().nullish(),
@@ -896,7 +890,7 @@ export const ListStripePayoutReconciliationsResponse = zod.object({
   "reconciliationLanes": zod.object({
   "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
   "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
-}).describe('The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).').optional().describe('Two-lane reconciliation status (INV-4) for this payout, derived read-only from qbReconciliationStatus: funding = unlinked (unmatched)→proposed (proposed\/conflict_approved)→confirmed (any confirmed_\*, exempt when confirmed_excluded). crmRecord is null — a payout is a batch with no single donor.')
+}).describe('The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).').optional().describe('Two-lane reconciliation status (INV-4) for this payout, derived read-only from the settlement link: funding = unlinked (no link)→proposed (lifecycle=proposed)→confirmed (lifecycle=confirmed). crmRecord is null — a payout is a batch with no single donor.')
 })),
   "pagination": zod.object({
   "page": zod.number(),
