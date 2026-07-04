@@ -564,8 +564,11 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
 
 describe.skipIf(!HAS_DB)("Tied-anchor canonicalization (integration)", () => {
   it("assembling a matched-tied QB id yields the payout's single draft", async () => {
-    const staged = await seedStaged({ status: "pending" });
-    const payout = await seedPayout({ status: "proposed", matched: staged });
+    const staged = await seedStaged({ status: "approved" });
+    const payout = await seedPayout({
+      status: "confirmed_reconciled",
+      matched: staged,
+    });
     await seedCharge(payout);
 
     // Entry A: from the tied QB id → rewritten to the payout.
@@ -596,10 +599,15 @@ describe.skipIf(!HAS_DB)("Tied-anchor canonicalization (integration)", () => {
     // anchor is the payout. Assembling it directly must surface the conflict tie
     // as confirm_tie with the conflict deposit id — otherwise a conflict anchor
     // can never be reconciled through the workbench.
-    const staged = await seedStaged({ status: "approved" });
+    const keptGift = await seedGift();
+    const staged = await seedStaged({
+      status: "approved",
+      createdGiftId: keptGift,
+    });
     const payout = await seedPayout({
       status: "conflict_approved",
       conflict: staged,
+      conflictGift: keptGift,
     });
     await seedCharge(payout);
 
@@ -899,32 +907,49 @@ describe.skipIf(!HAS_DB)("Conflict-approved payout double-book gate", () => {
     expect(confirm.json.giftsCreated).toBe(0);
   });
 
-  it("blocks confirming a conflict_approved payout that has no recorded gift to keep", async () => {
-    // A legacy/malformed conflict: the deposit is booked, but the payout has no
-    // recorded qbConflictGiftId, so we can't identify the gift a keep preserves.
-    // Even with the only charge deferred to research (no row-level blocker), the
-    // tie itself must block — otherwise a later per-charge mint could double-book.
-    const deposit = await seedStaged({ status: "approved" });
+  it("blocks confirming a conflict_approved payout by refusing a per-charge mint on the kept gift", async () => {
+    // A well-formed conflict: the QB deposit was already approved into a kept gift,
+    // which the keep preserves as the single source of truth. Minting a NEW
+    // per-charge gift on top of that kept gift would double-book the same money, so
+    // the tie must block any mint/match row (the reviewer defers or excludes it).
+    const keptGift = await seedGift();
+    const deposit = await seedStaged({
+      status: "approved",
+      createdGiftId: keptGift,
+    });
     const payout = await seedPayout({
       status: "conflict_approved",
       conflict: deposit,
+      conflictGift: keptGift,
     });
     const charge = await seedCharge(payout);
 
     const a = await assemble("stripe_payout", payout);
     expect(a.json.tie?.status).toBe("conflict_approved");
-    expect(
-      (a.json.tie?.warnings ?? []).some(
-        (w: any) =>
-          w.code === "tie_conflict_missing_gift" && w.severity === "blocker",
-      ),
-    ).toBe(true);
 
     const derived = await post(
       `/api/reconciliation/bundle-proposals/${a.draftId}/derive`,
-      { rows: [{ rowKey: charge, giftKind: "research" }] },
+      {
+        rows: [
+          {
+            rowKey: charge,
+            giftKind: "mint",
+            donorKind: "existing",
+            donorId: ORG_ID,
+            donorRecordKind: "organization",
+          },
+        ],
+      },
     );
     expect(derived.status).toBe(200);
+    expect(
+      (derived.json.rows ?? [])
+        .find((r: any) => r.rowKey === charge)
+        ?.warnings?.some(
+          (w: any) =>
+            w.code === "conflict_keep_no_new_gift" && w.severity === "blocker",
+        ),
+    ).toBe(true);
     expect(derived.json.summary.ready).toBe(false);
     expect(derived.json.summary.blockerCount).toBeGreaterThanOrEqual(1);
 
@@ -933,5 +958,23 @@ describe.skipIf(!HAS_DB)("Conflict-approved payout double-book gate", () => {
       { expectedRevision: derived.json.revision, allowWarnings: true },
     );
     expect(confirm.status).toBe(409);
+  });
+
+  it("degrades a malformed conflict_approved payout with no recorded gift to a plain proposed tie", async () => {
+    // The authoritative settlement_links model cannot represent "conflict without a
+    // kept gift": conflict_approved is DERIVED as (proposed link AND a non-null
+    // conflict gift). A legacy/malformed conflict enum with no recorded gift
+    // therefore reads as a plain proposed tie — there is no booked gift to
+    // double-book, so a per-charge mint is correct rather than blocked. Prod census
+    // for this state is zero; this pins the intentional Phase-4 degrade semantics.
+    const deposit = await seedStaged({ status: "approved" });
+    const payout = await seedPayout({
+      status: "conflict_approved",
+      conflict: deposit,
+    });
+    await seedCharge(payout);
+
+    const a = await assemble("stripe_payout", payout);
+    expect(a.json.tie?.status).toBe("proposed");
   });
 });

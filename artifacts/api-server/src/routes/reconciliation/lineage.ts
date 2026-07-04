@@ -4,6 +4,7 @@ import {
   stagedPayments,
   stripePayouts,
   stripeStagedCharges,
+  settlementLinks,
   donorboxDonations,
   organizations,
   people,
@@ -11,6 +12,7 @@ import {
 } from "@workspace/db/schema";
 import { eq, inArray, or, sql } from "drizzle-orm";
 import { asyncHandler, notFound } from "../../lib/helpers";
+import { payoutStatusFromLink } from "../../lib/settlementLink";
 
 type LinkSource = "pulled" | "qb_confirmed" | "stripe_pulled" | "stripe_confirmed";
 
@@ -45,6 +47,9 @@ router.get(
     if (!staged) return notFound(res, "reconciliation card");
 
     // ── Stripe payout tied to this deposit (confirmed or proposed) ─────────
+    // Resolved through the authoritative settlement_links row (one
+    // `deposit_staged_payment_id`, covering proposed / confirmed / conflict),
+    // not the legacy pointer columns.
     const [payoutRow] = await db
       .select({
         id: stripePayouts.id,
@@ -55,15 +60,12 @@ router.get(
         chargeCount: stripePayouts.chargeCount,
         arrivalDate: stripePayouts.arrivalDate,
         status: stripePayouts.status,
-        qbReconciliationStatus: stripePayouts.qbReconciliationStatus,
+        lifecycle: settlementLinks.lifecycle,
+        conflictGiftId: settlementLinks.conflictGiftId,
       })
-      .from(stripePayouts)
-      .where(
-        or(
-          eq(stripePayouts.matchedQbStagedPaymentId, id),
-          eq(stripePayouts.proposedQbStagedPaymentId, id),
-        ),
-      )
+      .from(settlementLinks)
+      .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
+      .where(eq(settlementLinks.depositStagedPaymentId, id))
       .limit(1);
 
     const payout = payoutRow
@@ -76,7 +78,7 @@ router.get(
           chargeCount: payoutRow.chargeCount,
           arrivalDate: payoutRow.arrivalDate,
           status: payoutRow.status,
-          reconciliationStatus: payoutRow.qbReconciliationStatus,
+          reconciliationStatus: payoutStatusFromLink(payoutRow),
           linkSource: "pulled" as LinkSource,
         }
       : null;

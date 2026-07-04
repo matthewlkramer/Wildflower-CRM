@@ -7,9 +7,11 @@ import {
   organizations,
   people,
   households,
+  settlementLinks,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
+import { payoutStatusFromLink, type SettlementLinkFields } from "./settlementLink";
 import { scoreStripeCharge } from "./stripeMatch";
 import {
   scoreStagedPayment,
@@ -1324,18 +1326,19 @@ export async function loadBundleBase(opts: {
 }): Promise<BundleBase | null> {
   const conn = opts.conn ?? db;
 
-  // Resolve the payout + deposit lump for the anchor.
+  // Resolve the payout + deposit lump for the anchor. The payout↔deposit tie
+  // (deposit pointer, conflict gift, reconciliation status) now reads from the
+  // authoritative `settlement_links` row, not the legacy `stripe_payouts`
+  // pointer/enum columns. `linkLifecycle === null` means no link ⇒ unmatched.
   let payout:
     | {
         id: string;
         amount: string | null;
         netTotal: string | null;
         chargeCount: number | null;
-        status: PayoutReconciliationStatus;
-        matchedQbStagedPaymentId: string | null;
-        proposedQbStagedPaymentId: string | null;
-        qbConflictStagedPaymentId: string | null;
-        qbConflictGiftId: string | null;
+        linkLifecycle: SettlementLinkFields["lifecycle"] | null;
+        linkDepositId: string | null;
+        linkConflictGiftId: string | null;
       }
     | null = null;
 
@@ -1346,42 +1349,33 @@ export async function loadBundleBase(opts: {
         amount: stripePayouts.amount,
         netTotal: stripePayouts.netTotal,
         chargeCount: stripePayouts.chargeCount,
-        status: stripePayouts.qbReconciliationStatus,
-        matchedQbStagedPaymentId: stripePayouts.matchedQbStagedPaymentId,
-        proposedQbStagedPaymentId: stripePayouts.proposedQbStagedPaymentId,
-        qbConflictStagedPaymentId: stripePayouts.qbConflictStagedPaymentId,
-        qbConflictGiftId: stripePayouts.qbConflictGiftId,
+        linkLifecycle: settlementLinks.lifecycle,
+        linkDepositId: settlementLinks.depositStagedPaymentId,
+        linkConflictGiftId: settlementLinks.conflictGiftId,
       })
       .from(stripePayouts)
+      .leftJoin(settlementLinks, eq(settlementLinks.payoutId, stripePayouts.id))
       .where(eq(stripePayouts.id, opts.anchorId));
     if (!p) return null;
     payout = p;
   } else {
-    // QB deposit anchor — is a Stripe payout tied to it?
+    // QB deposit anchor — is a Stripe payout tied to it? Resolve through the
+    // settlement link whose deposit points at this anchor (covers proposed /
+    // confirmed / conflict in one column), so a tied QB anchor can never
+    // assemble as pure-QB money.
     const [p] = await conn
       .select({
         id: stripePayouts.id,
         amount: stripePayouts.amount,
         netTotal: stripePayouts.netTotal,
         chargeCount: stripePayouts.chargeCount,
-        status: stripePayouts.qbReconciliationStatus,
-        matchedQbStagedPaymentId: stripePayouts.matchedQbStagedPaymentId,
-        proposedQbStagedPaymentId: stripePayouts.proposedQbStagedPaymentId,
-        qbConflictStagedPaymentId: stripePayouts.qbConflictStagedPaymentId,
-        qbConflictGiftId: stripePayouts.qbConflictGiftId,
+        linkLifecycle: settlementLinks.lifecycle,
+        linkDepositId: settlementLinks.depositStagedPaymentId,
+        linkConflictGiftId: settlementLinks.conflictGiftId,
       })
-      .from(stripePayouts)
-      .where(
-        or(
-          eq(stripePayouts.matchedQbStagedPaymentId, opts.anchorId),
-          eq(stripePayouts.proposedQbStagedPaymentId, opts.anchorId),
-          // Defense in depth: a conflict tie also means this deposit belongs to
-          // the payout bundle, never standalone QB. Callers should canonicalize
-          // first, but detect it here too so a tied QB anchor can never assemble
-          // as pure-QB money.
-          eq(stripePayouts.qbConflictStagedPaymentId, opts.anchorId),
-        ),
-      );
+      .from(settlementLinks)
+      .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
+      .where(eq(settlementLinks.depositStagedPaymentId, opts.anchorId));
     payout = p ?? null;
   }
 
@@ -1391,13 +1385,16 @@ export async function loadBundleBase(opts: {
 
   if (payout) {
     // Stripe-backed bundle: rows = the payout's charges; tie = payout↔deposit.
-    // conflict_approved keeps the deposit in qbConflictStagedPaymentId (not
-    // matched/proposed), so include it or the conflict tie can't be confirmed
-    // through the workbench (deriveTie needs a depositId to emit confirm_tie).
-    const depositId =
-      payout.matchedQbStagedPaymentId ??
-      payout.proposedQbStagedPaymentId ??
-      payout.qbConflictStagedPaymentId;
+    // The settlement link's single `deposit_staged_payment_id` covers every tie
+    // family (proposed / confirmed / conflict), so no pointer-column coalesce is
+    // needed — a conflict tie's deposit is right here too, and deriveTie needs a
+    // depositId to emit confirm_tie.
+    const status = payoutStatusFromLink(
+      payout.linkLifecycle
+        ? { lifecycle: payout.linkLifecycle, conflictGiftId: payout.linkConflictGiftId }
+        : null,
+    );
+    const depositId = payout.linkDepositId;
     let depositAmount: string | null = null;
     if (depositId) {
       const [d] = await conn
@@ -1431,17 +1428,17 @@ export async function loadBundleBase(opts: {
     tie = {
       payoutId: payout.id,
       depositStagedPaymentId: depositId,
-      status: payout.status,
+      status,
       payoutNetAmount: payout.amount ?? payout.netTotal,
       depositAmount,
       chargeCount: charges.length,
-      qbConflictGiftId: payout.qbConflictGiftId,
+      qbConflictGiftId: payout.linkConflictGiftId,
     };
     fpParts.push({
       payout: {
         id: payout.id,
         amount: payout.amount,
-        status: payout.status,
+        status,
         deposit: depositId,
       },
       charges: charges.map((c) => ({

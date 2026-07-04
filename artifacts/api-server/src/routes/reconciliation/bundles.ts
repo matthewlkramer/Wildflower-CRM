@@ -5,8 +5,9 @@ import {
   stripePayouts,
   stripeStagedCharges,
   donorboxDonations,
+  settlementLinks,
 } from "@workspace/db/schema";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { asyncHandler, notFound } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 
@@ -38,16 +39,13 @@ router.post(
       .limit(1);
     if (!staged) return notFound(res, "reconciliation card");
 
-    // The Stripe payout tied to this deposit (confirmed or proposed).
+    // The Stripe payout tied to this deposit (authoritative settlement_links
+    // covers every lifecycle — proposed/confirmed and the conflict tie).
     const [payout] = await db
       .select({ id: stripePayouts.id })
-      .from(stripePayouts)
-      .where(
-        or(
-          eq(stripePayouts.matchedQbStagedPaymentId, id),
-          eq(stripePayouts.proposedQbStagedPaymentId, id),
-        ),
-      )
+      .from(settlementLinks)
+      .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
+      .where(eq(settlementLinks.depositStagedPaymentId, id))
       .limit(1);
 
     let chargesLinked = 0;

@@ -11,6 +11,7 @@ import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
 } from "./paymentApplicationsTestUtil";
+import { deriveSettlementLinkFields } from "../lib/settlementLink";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -74,6 +75,7 @@ let schema: {
   stagedPayments: Db["stagedPayments"];
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
+  settlementLinks: Db["settlementLinks"];
   giftAmountAllocationReview: Db["giftAmountAllocationReview"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -257,6 +259,33 @@ async function seedPayout(stagedPaymentId: string): Promise<string> {
     proposedQbStagedPaymentId: stagedPaymentId,
   });
   payoutIds.push(id);
+  // Mirror the runtime settlement-link dual-write so the Phase-4 read-flip (the
+  // approve route now finds tied payouts via settlement_links, not the legacy
+  // pointer columns) sees this fixture. Reuse the SAME pure deriver production
+  // uses so fixtures stay in lockstep by construction; FK cascade on payout_id
+  // cleans it up when the payout is deleted in afterAll.
+  const link = deriveSettlementLinkFields({
+    qbReconciliationStatus: "proposed",
+    proposedQbStagedPaymentId: stagedPaymentId,
+    matchedQbStagedPaymentId: null,
+    qbConflictStagedPaymentId: null,
+    qbConflictGiftId: null,
+    qbReconciliationConfirmedByUserId: null,
+    qbReconciliationConfirmedAt: null,
+    updatedAt: new Date(),
+  });
+  if (link) {
+    await db.insert(schema.settlementLinks).values({
+      id: `sl_${id}`,
+      payoutId: id,
+      depositStagedPaymentId: link.depositStagedPaymentId,
+      conflictGiftId: link.conflictGiftId,
+      lifecycle: link.lifecycle,
+      provenance: link.provenance,
+      confirmedByUserId: link.confirmedByUserId,
+      confirmedAt: link.confirmedAt,
+    });
+  }
   return id;
 }
 
@@ -377,6 +406,7 @@ beforeAll(async () => {
     stagedPayments: dbMod.stagedPayments,
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
+    settlementLinks: dbMod.settlementLinks,
     giftAmountAllocationReview: dbMod.giftAmountAllocationReview,
   };
   eqFn = drizzle.eq;

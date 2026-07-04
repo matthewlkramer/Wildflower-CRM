@@ -6,8 +6,9 @@ import {
   stagedPayments,
   stripePayouts,
   giftsAndPayments,
+  settlementLinks,
 } from "@workspace/db/schema";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { asyncHandler, notFound, parseOrBadRequest, newId } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { getViewer } from "../../lib/identityVisibility";
@@ -174,16 +175,14 @@ async function canonicalizeAnchor(
   anchorId: string,
 ): Promise<{ anchorType: BundleAnchorType; anchorId: string }> {
   if (anchorType !== "qb_staged_payment") return { anchorType, anchorId };
+  // Authoritative source of the payout↔deposit tie is settlement_links; its
+  // deposit covers every lifecycle (proposed/confirmed and the conflict tie),
+  // so this subsumes the legacy matched/proposed/qbConflict pointer OR.
   const tied = await conn
     .select({ id: stripePayouts.id })
-    .from(stripePayouts)
-    .where(
-      or(
-        eq(stripePayouts.matchedQbStagedPaymentId, anchorId),
-        eq(stripePayouts.proposedQbStagedPaymentId, anchorId),
-        eq(stripePayouts.qbConflictStagedPaymentId, anchorId),
-      ),
-    )
+    .from(settlementLinks)
+    .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
+    .where(eq(settlementLinks.depositStagedPaymentId, anchorId))
     .then((r) => r[0]);
   return tied
     ? { anchorType: "stripe_payout" as const, anchorId: tied.id }

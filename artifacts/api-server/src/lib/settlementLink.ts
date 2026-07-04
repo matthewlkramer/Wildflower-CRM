@@ -99,6 +99,29 @@ export function deriveSettlementLinkFields(
 }
 
 /**
+ * Read-side inverse of {@link deriveSettlementLinkFields}: the legacy payout
+ * reconciliation status enum a settlement link REPRESENTS. Used by readers that
+ * have been flipped off the legacy `stripe_payouts.qb_reconciliation_status`
+ * column onto `settlement_links` (Phase-4 read cut-over) but still expose / gate
+ * on the enum shape.
+ *
+ * Mirrors {@link reverseSettlementLink}'s status mapping over the only four states
+ * the authoritative writer produces, but NEVER throws: it is a read path, so an
+ * `exempt` link (which no payout link is in this model) degrades to `unmatched`
+ * rather than 500-ing an evidence view.
+ */
+export function payoutStatusFromLink(
+  link: { lifecycle: SettlementLinkFields["lifecycle"]; conflictGiftId: string | null } | null,
+): "unmatched" | "proposed" | "conflict_approved" | "confirmed_reconciled" {
+  if (!link) return "unmatched";
+  if (link.lifecycle === "confirmed") return "confirmed_reconciled";
+  if (link.lifecycle === "proposed") {
+    return link.conflictGiftId ? "conflict_approved" : "proposed";
+  }
+  return "unmatched";
+}
+
+/**
  * Physical upsert of ONE settlement link from explicit fields (deterministic id
  * `sl_<payoutId>`). The single low-level write used by the Phase-4 authoritative
  * writer (`settlementWriter.ts`), which builds the fields from explicit

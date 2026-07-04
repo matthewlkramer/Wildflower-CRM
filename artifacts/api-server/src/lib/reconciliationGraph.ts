@@ -31,6 +31,7 @@ import {
   stripePayouts,
   stripeStagedCharges,
   pledgeAllocations,
+  settlementLinks,
 } from "@workspace/db/schema";
 import {
   and,
@@ -40,7 +41,6 @@ import {
   ilike,
   inArray,
   isNull,
-  or,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -64,6 +64,7 @@ import {
   DEFAULT_GIFT_ID_SQL,
   chargeIdOwningGiftExcludingCharge,
 } from "./paymentApplications";
+import { payoutStatusFromLink } from "./settlementLink";
 import {
   ANON_LABEL,
   canSeeIdentity,
@@ -747,21 +748,21 @@ export async function buildReconciliationGraph(
   if (!staged) return null;
 
   // ── Evidence: QB anchor (always) + optional Stripe payout/charge ──
+  // The payout tied to this deposit is now resolved through the authoritative
+  // settlement_links row (one `deposit_staged_payment_id`, covering proposed /
+  // confirmed / conflict), not the legacy pointer columns.
   const stripePayout = await db
     .select({
       id: stripePayouts.id,
       amount: stripePayouts.amount,
       feeTotal: stripePayouts.feeTotal,
       netTotal: stripePayouts.netTotal,
-      qbReconciliationStatus: stripePayouts.qbReconciliationStatus,
+      lifecycle: settlementLinks.lifecycle,
+      conflictGiftId: settlementLinks.conflictGiftId,
     })
-    .from(stripePayouts)
-    .where(
-      or(
-        eq(stripePayouts.matchedQbStagedPaymentId, stagedPaymentId),
-        eq(stripePayouts.proposedQbStagedPaymentId, stagedPaymentId),
-      ),
-    )
+    .from(settlementLinks)
+    .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
+    .where(eq(settlementLinks.depositStagedPaymentId, stagedPaymentId))
     .limit(1)
     .then((r) => r[0] ?? null);
 
@@ -799,7 +800,7 @@ export async function buildReconciliationGraph(
       feeAmount: single?.feeAmount ?? stripePayout.feeTotal,
       netAmount: single?.netAmount ?? stripePayout.netTotal ?? stripePayout.amount,
       chargeCount: charges.length,
-      reconciliationStatus: stripePayout.qbReconciliationStatus,
+      reconciliationStatus: payoutStatusFromLink(stripePayout),
     };
   }
 

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { clearPaymentApplicationsForStagedIds } from "./paymentApplicationsTestUtil";
+import { deriveSettlementLinkFields } from "../lib/settlementLink";
 
 /**
  * DB-backed coverage for the Stripe payout ↔ QuickBooks deposit proposal pass
@@ -34,6 +35,7 @@ let db: Db["db"];
 let schema: {
   stripePayouts: Db["stripePayouts"];
   stagedPayments: Db["stagedPayments"];
+  settlementLinks: Db["settlementLinks"];
   giftsAndPayments: Db["giftsAndPayments"];
   giftAllocations: Db["giftAllocations"];
   organizations: Db["organizations"];
@@ -67,6 +69,33 @@ async function seedPayout(over: {
     proposedQbStagedPaymentId: over.proposedQbStagedPaymentId ?? null,
   });
   payoutIds.push(id);
+  // Mirror the runtime settlement-link dual-write so runProposalPass — which now
+  // reads a payout's link (leftJoin) and the confirmed-deposit set from
+  // settlement_links, not the legacy pointer columns — sees this fixture. Reuse
+  // the SAME pure deriver production uses so fixtures stay in lockstep; FK cascade
+  // on payout_id cleans it up when the payout is deleted in afterAll.
+  const link = deriveSettlementLinkFields({
+    qbReconciliationStatus: over.status ?? "unmatched",
+    proposedQbStagedPaymentId: over.proposedQbStagedPaymentId ?? null,
+    matchedQbStagedPaymentId: over.matchedQbStagedPaymentId ?? null,
+    qbConflictStagedPaymentId: null,
+    qbConflictGiftId: null,
+    qbReconciliationConfirmedByUserId: null,
+    qbReconciliationConfirmedAt: null,
+    updatedAt: new Date(),
+  });
+  if (link) {
+    await db.insert(schema.settlementLinks).values({
+      id: `sl_${id}`,
+      payoutId: id,
+      depositStagedPaymentId: link.depositStagedPaymentId,
+      conflictGiftId: link.conflictGiftId,
+      lifecycle: link.lifecycle,
+      provenance: link.provenance,
+      confirmedByUserId: link.confirmedByUserId,
+      confirmedAt: link.confirmedAt,
+    });
+  }
   return id;
 }
 
@@ -125,6 +154,7 @@ beforeAll(async () => {
   schema = {
     stripePayouts: dbMod.stripePayouts,
     stagedPayments: dbMod.stagedPayments,
+    settlementLinks: dbMod.settlementLinks,
     giftsAndPayments: dbMod.giftsAndPayments,
     giftAllocations: dbMod.giftAllocations,
     organizations: dbMod.organizations,
@@ -232,12 +262,22 @@ describe.skipIf(!HAS_DB)("runProposalPass (DB)", () => {
   });
 
   it("clears a stale proposal back to unmatched when no candidate is eligible", async () => {
-    // Payout pre-set to `proposed` but with no matching deposit in the window.
+    // A stale proposed link whose deposit is no longer an eligible candidate
+    // (`excluded` is outside the pending/approved/reconciled candidate set), so
+    // the pass finds no `best` and must clear the link. In the settlement_links
+    // model a `proposed` payout ALWAYS carries a proposed link with a deposit
+    // pointer (a null-pointer `proposed` is not representable), so we anchor the
+    // stale link on a real-but-ineligible deposit.
+    const dep = await seedDeposit({
+      amount: "6543.21",
+      dateReceived: "2026-06-01",
+      status: "excluded",
+    });
     const po = await seedPayout({
       amount: "6543.21",
       arrivalDate: "2026-06-01",
       status: "proposed",
-      proposedQbStagedPaymentId: null,
+      proposedQbStagedPaymentId: dep,
     });
 
     const r = await runProposalPass([po]);

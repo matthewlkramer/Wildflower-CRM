@@ -18,6 +18,7 @@ import {
   peopleEntityRoles,
   stripeStagedCharges,
   stripePayouts,
+  settlementLinks,
   donorboxDonations,
   paymentApplications,
   type NewGiftAllocation,
@@ -1898,9 +1899,15 @@ router.get(
         stripePayouts,
         eq(stripePayouts.id, stripeStagedCharges.stripePayoutId),
       )
+      // Payout↔deposit tie now reads from the authoritative settlement_links row
+      // (single `deposit_staged_payment_id`), not the legacy pointer columns.
+      .leftJoin(
+        settlementLinks,
+        eq(settlementLinks.payoutId, stripePayouts.id),
+      )
       .leftJoin(
         stagedPayments,
-        sql`${stagedPayments.id} = COALESCE(${stripePayouts.matchedQbStagedPaymentId}, ${stripePayouts.proposedQbStagedPaymentId}, ${stripePayouts.qbConflictStagedPaymentId})`,
+        eq(stagedPayments.id, settlementLinks.depositStagedPaymentId),
       )
       .where(
         or(

@@ -6,8 +6,9 @@ import {
   opportunitiesAndPledges,
   stripeStagedCharges,
   stripePayouts,
+  settlementLinks,
 } from "@workspace/db/schema";
-import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { asyncHandler, newId, notFound } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import {
@@ -196,13 +197,9 @@ async function mintGiftFromEvidence(
   // they're the lock targets that serialize us against stripeConfirm.
   const stagedPayoutRows = await db
     .select({ id: stripePayouts.id })
-    .from(stripePayouts)
-    .where(
-      or(
-        eq(stripePayouts.matchedQbStagedPaymentId, stagedPaymentId),
-        eq(stripePayouts.proposedQbStagedPaymentId, stagedPaymentId),
-      ),
-    );
+    .from(settlementLinks)
+    .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
+    .where(eq(settlementLinks.depositStagedPaymentId, stagedPaymentId));
   const stagedPayoutIds = stagedPayoutRows.map((r) => r.id);
 
   const newGiftId = newId();
@@ -556,13 +553,9 @@ router.post(
       // charge selection. Ungroup to reconcile those individually.
       const stripeTied = await db
         .select({ id: stripePayouts.id })
-        .from(stripePayouts)
-        .where(
-          or(
-            inArray(stripePayouts.matchedQbStagedPaymentId, memberIds),
-            inArray(stripePayouts.proposedQbStagedPaymentId, memberIds),
-          ),
-        )
+        .from(settlementLinks)
+        .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
+        .where(inArray(settlementLinks.depositStagedPaymentId, memberIds))
         .then((r) => r[0]);
       if (stripeTied || body.stripeChargeId) {
         res.status(409).json({
@@ -716,13 +709,9 @@ router.post(
     // (Read-only; the charge↔payout membership is re-validated by the gate.)
     const stagedPayoutRows = await db
       .select({ id: stripePayouts.id })
-      .from(stripePayouts)
-      .where(
-        or(
-          eq(stripePayouts.matchedQbStagedPaymentId, stagedPaymentId),
-          eq(stripePayouts.proposedQbStagedPaymentId, stagedPaymentId),
-        ),
-      );
+      .from(settlementLinks)
+      .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
+      .where(eq(settlementLinks.depositStagedPaymentId, stagedPaymentId));
     const stagedPayoutIds = stagedPayoutRows.map((r) => r.id);
 
     // Pledges whose derived fields must be recomputed AFTER commit (a newly
