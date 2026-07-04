@@ -1,9 +1,12 @@
 # Reconciliation — Target-State Design (ratified)
 
-**Status:** ratified design. This document is the committed target for the
-reconciliation subsystem. It changes **no code behavior**; it locks the model,
-resolves the open decisions, and defines the prod-safe phased path. Each phase
-below (2–7) becomes its own human-gated task once this design is accepted.
+**Status:** ratified design, now largely implemented. This document is the
+committed target for the reconciliation subsystem. It locks the model, resolves
+the open decisions, and defines the prod-safe phased path. Each phase below (2–7)
+was its own human-gated task. **Implementation status: Phases 2–5 have shipped
+(migrations 0086–0093); see the banner at the top of §7 for the authoritative
+per-phase status — the inline "Progress" notes under each phase are historical and
+now lag the code.**
 
 **Audience:** written for an engineer, with a plain-English overview first so a
 non-technical reader can follow the shape of the decision. Where it names a file
@@ -475,8 +478,37 @@ already-reconciled over-splits — the common real case — without severing his
 
 Each phase is independently shippable and reversible, follows INV-F (additive →
 dual-write → backfill → **prod parity** → flip reads → deprecate → drop much
-later), and is its own human-gated task. **Phases 2–7 are out of scope for this
-task** — this task delivers only the ratified design (Phase 1).
+later), and is its own human-gated task. The original design task delivered only
+Phase 1 (this document); Phases 2–7 were sequenced as follow-on tasks.
+
+> **Implementation status (updated 2026-07) — this banner supersedes the inline
+> "Progress / holdout / blocking" notes under each phase below, which predate
+> migrations 0089–0094 and now lag the code.**
+>
+> - **Phases 2–5: SHIPPED** (migrations 0086–0093). The unit↔gift cash-application
+>   ledger (`payment_applications`, with `link_role` + `lifecycle`, backfilled for
+>   Stripe/Donorbox) and the Plane-1 `settlement_links` table are the authoritative
+>   stores; batch and gift statuses derive from them. `settlement_links` is now the
+>   **sole** payout↔deposit store — the 7-value `stripe_payouts.qb_reconciliation_status`
+>   mirror + pointer columns (0093) and the `gift_evidence_links` table (0091) have
+>   been dropped, and `conflict_gift_id` moved onto `settlement_links` (0092). The
+>   write-flip and enum retirement that the Phase-4 note below calls "still required"
+>   are **done**.
+>   - *By-design remainder (not a holdout):* `giftPaymentSummary.ts` still reads
+>     processor **fees** from `stripe_staged_charges` / `donorbox_donations` because
+>     fees are not modelled in the ledger. This is intentional and permanent.
+> - **Phase 6 (two-report UI): NOT built.** The Workbench still exposes the six
+>   queues this phase collapses.
+> - **Phase 7 (deprecate → drop): partial.** Dropped so far: `gift_evidence_links`
+>   (0091), the `stripe_payouts` recon mirror (0093), `gift_allocations.counts_toward_goal`
+>   (0094). Next clean candidate: `staged_payments.source_group_id` (no live code
+>   reads it — only parity scripts; superseded by `unit_groups`; a read-only prod
+>   parity run of the 0088 backfill is clean). **Caution:** several
+>   `@deprecated`-labelled `gifts_and_payments` columns (`quickbooks_tie_status`,
+>   `final_amount_source` and the `final_amount_*` provenance pointers) are STILL
+>   actively read/written by live code (lane derivation, the gifts filter, QB
+>   matching/actions, financial corrections). Their "no longer read or written"
+>   comments are aspirational — these are **not** drop-ready yet.
 
 1. **Ratify the spec** *(this task)*. Commit this document as the target. Lock
    INV-A…INV-G. No code behavior change.
