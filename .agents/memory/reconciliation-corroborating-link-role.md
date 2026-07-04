@@ -68,9 +68,12 @@ test's gel references (the `gelCount()` regression guard, schema field, dbMod
 assignment, afterAll cleanup) were removed. The corroborating PA ledger is now the
 ONLY home for evidence↔gift links — there is no `parity:gift-evidence-links` gate.
 
-**Prod ordering (durable lesson):** once you DROP a table in DEV, dev is AHEAD of
-prod, so ANY Publish before the human applies the DROP SQL on prod makes the drizzle
-Publish diff propose the destructive DROP against prod (Publish diffs dev↔prod, not
-code↔prod). Apply the reviewed DROP SQL to prod FIRST, THEN Publish. Same drop either
-way, but SQL-first keeps the reviewed-SQL invariant and dodges this repo's distrusted
-/ interactively-aborting Publish drop-diffs.
+**Prod DROP ships via Publish (VERIFIED, durable lesson):** a table dropped in DEV
+ships to prod through the **Publish schema diff automatically and non-interactively**.
+Here the user Published without hand-applying 0091 and gel was still dropped from prod
+cleanly (`to_regclass` → NULL in prod, app healthy, no `relation does not exist`).
+Schema/DDL is Publish's job — the reviewed-idempotent-SQL-file rule (replit.md
+invariant #7) is for prod **DATA** changes, not DDL. So 0091 was belt-and-suspenders:
+kept as documentation / a manual fallback, but prod did NOT need it applied by hand.
+Caveat: the DEV post-merge `drizzle-kit push` is a *different*, INTERACTIVE path that
+can abort on drops (see `post-push-abort`) — that abort risk is dev-only, not deploy.
