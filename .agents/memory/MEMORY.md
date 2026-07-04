@@ -144,4 +144,5 @@
 - [Phase 3 group-read flip](reconciliation-phase3-group-read-flip.md) — guards/mutations flip to unit_group_members; cards.ts+bundleAnchors reads stay legacy (parity-safe); revert path is a no-op.
 - [settlement_links constraints](settlement-links-parity.md) — sole payout↔deposit store (legacy stripe_payouts mirror dropped); conflict_approved = proposed+conflict_gift_id; deposit-FK-vs-CHECK errors on staged-payment delete.
 - [PA counted vs corroborating link_role](reconciliation-corroborating-link-role.md) — every payment_applications money/settled read MUST filter link_role='counted'; corroborating rows are audit-only (amount NULL) and leaked into giftPaymentSummary once.
+- [Reconciliation phase status source](reconciliation-phase-status-source.md) — trust the migration ledger + schema header comments for phase status; design-doc §7 progress prose lags the code (phases 2-5 shipped; only the two-report UI + drop tail remain).
 - [Payout status flip + mirror drop](reconciliation-phase6-status-read-flip.md) — payout status + confirm/revert lock + cards charge_unit all read settlement_links; legacy stripe_payouts mirror cols dropped (migration 0093).
