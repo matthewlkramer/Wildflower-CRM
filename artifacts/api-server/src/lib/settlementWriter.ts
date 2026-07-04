@@ -9,7 +9,10 @@ import type { SettlementLinkFields } from "./settlementLink";
  * `settlement_links` (deriveSettlementLinkFields), this module inverts the
  * authority: a caller expresses settlement INTENT as the `settlement_links` row it
  * wants, and {@link reverseSettlementLink} derives the legacy enum + pointer columns
- * FROM that link so still-legacy readers keep working during the transition.
+ * FROM that link. After the write-flip those columns are a pure WRITE-ONLY mirror,
+ * read only by the parity gate + the response scrub (no confirm/revert/queue logic
+ * reads or guards on them); they are kept solely for parity + rollback until a
+ * later human-gated column drop.
  *
  * The forward parity gate (`parity:settlement-links`) still proves
  * `deriveSettlementLinkFields(payout) == link`. Because the reverse map is the EXACT

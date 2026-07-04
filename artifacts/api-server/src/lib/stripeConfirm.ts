@@ -6,7 +6,10 @@ import {
 } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
 import { candidateGiftId } from "./stripeReconcile";
-import { payoutStatusFromLink, upsertSettlementLink } from "./settlementLink";
+import {
+  payoutStatusFromLink,
+  transitionSettlementLink,
+} from "./settlementLink";
 import {
   confirmSettlementLink,
   proposeSettlementLink,
@@ -33,8 +36,10 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *      for REPLACE) so a concurrent proposal pass / approval can't race it,
  *   3. re-checks the prior state under the lock and bails with a typed error if
  *      it has drifted (maps to 409 in the route), and
- *   4. writes guarded UPDATEs (WHERE still pins the expected prior state) as a
- *      belt-and-suspenders against the rare lost-lock case.
+ *   4. writes a guarded UPDATE on `settlement_links` (WHERE still pins the
+ *      expected prior lifecycle, via `transitionSettlementLink`) as a
+ *      belt-and-suspenders against the rare lost-lock case, then mirrors the
+ *      legacy `stripe_payouts` columns UNGUARDED.
  *
  * This mirrors the QuickBooks confirm/create-gift pattern in routes/quickbooks.ts
  * (tx + FOR UPDATE + guarded UPDATE). It deliberately does NOT take the global
@@ -62,13 +67,15 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * (payout → `proposed`, deposit `reconciled` → `pending`); SET ⇒ it was a keep
  * confirm (payout → `conflict_approved`, deposit left alone).
  *
- * Phase-6: every gate/branch below derives state from `settlement_links` (via
- * `payoutStatusFromLink` + the link's deposit/conflict pointers), NOT the legacy
- * `qb_reconciliation_status` + pointer columns. Those columns are still WRITTEN in
- * lockstep (reverseSettlementLink) as the optimistic-lock guard + mirror until a
- * later drop task; they are no longer READ for branching. The retired legacy
- * 7-value confirmed_* sub-states (zero in prod, unproducible by the authoritative
- * writer) have no revert branch and degrade to `invalid_transition`.
+ * Phase-6 / write-flip: every gate/branch AND the optimistic-lock guard below
+ * derive state from `settlement_links` (via `payoutStatusFromLink` +
+ * `transitionSettlementLink`), NOT the legacy `qb_reconciliation_status` + pointer
+ * columns. Those columns are still WRITTEN in lockstep (reverseSettlementLink) as a
+ * pure WRITE-ONLY mirror — read only by the parity gate + the response scrub — kept
+ * until a later human-gated column drop; NO confirm/revert logic reads or guards on
+ * them. The retired legacy 7-value confirmed_* sub-states (zero in prod,
+ * unproducible by the authoritative writer) have no revert branch and degrade to
+ * `invalid_transition`.
  */
 
 export type ConfirmRevertKind = "confirmed_reconciled" | "reverted";
@@ -237,26 +244,25 @@ export async function confirmPendingQbDepositInTx(
     confirmedByUserId: userId,
     confirmedAt: now,
   });
-  const updated = await tx
-    .update(stripePayouts)
-    .set({
-      ...reverseSettlementLink(link),
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(stripePayouts.id, payoutId),
-        eq(stripePayouts.qbReconciliationStatus, "proposed"),
-      ),
-    )
-    .returning({ id: stripePayouts.id });
-  if (!updated.length) {
+  const advanced = await transitionSettlementLink(
+    tx,
+    payoutId,
+    "proposed",
+    link,
+  );
+  if (!advanced) {
     throw new TransitionError(
       "invalid_transition",
       "This payout is no longer proposed. Refresh and retry.",
     );
   }
-  await upsertSettlementLink(tx, payoutId, link);
+  await tx
+    .update(stripePayouts)
+    .set({
+      ...reverseSettlementLink(link),
+      updatedAt: now,
+    })
+    .where(eq(stripePayouts.id, payoutId));
 
   return {
     ok: true,
@@ -369,26 +375,25 @@ export async function confirmKeepApprovedQbGiftInTx(
     confirmedByUserId: userId,
     confirmedAt: now,
   });
-  const updated = await tx
-    .update(stripePayouts)
-    .set({
-      ...reverseSettlementLink(link),
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(stripePayouts.id, payoutId),
-        eq(stripePayouts.qbReconciliationStatus, "conflict_approved"),
-      ),
-    )
-    .returning({ id: stripePayouts.id });
-  if (!updated.length) {
+  const advanced = await transitionSettlementLink(
+    tx,
+    payoutId,
+    "conflict_approved",
+    link,
+  );
+  if (!advanced) {
     throw new TransitionError(
       "invalid_transition",
       "This payout is no longer in conflict. Refresh and retry.",
     );
   }
-  await upsertSettlementLink(tx, payoutId, link);
+  await tx
+    .update(stripePayouts)
+    .set({
+      ...reverseSettlementLink(link),
+      updatedAt: now,
+    })
+    .where(eq(stripePayouts.id, payoutId));
 
   return {
     ok: true,
@@ -462,26 +467,25 @@ export function revertPayoutQbConfirmation(
         // kept gift (legacy `conflict_approved`); reverse-deriving it restores the
         // proposed + conflict pointers = (deposit, deposit, keptGift) identically.
         const link = proposeSettlementLink(depositId, priorLink.conflictGiftId);
-        const updated = await tx
-          .update(stripePayouts)
-          .set({
-            ...reverseSettlementLink(link),
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(stripePayouts.id, payoutId),
-              eq(stripePayouts.qbReconciliationStatus, "confirmed_reconciled"),
-            ),
-          )
-          .returning({ id: stripePayouts.id });
-        if (!updated.length) {
+        const advanced = await transitionSettlementLink(
+          tx,
+          payoutId,
+          "confirmed_reconciled",
+          link,
+        );
+        if (!advanced) {
           throw new TransitionError(
             "invalid_transition",
             "This payout has changed. Refresh and retry.",
           );
         }
-        await upsertSettlementLink(tx, payoutId, link);
+        await tx
+          .update(stripePayouts)
+          .set({
+            ...reverseSettlementLink(link),
+            updatedAt: now,
+          })
+          .where(eq(stripePayouts.id, payoutId));
         return {
           ok: true,
           kind: "reverted",
@@ -528,26 +532,25 @@ export function revertPayoutQbConfirmation(
       // gift); reverse-deriving it clears the confirm/conflict pointers = the
       // legacy `proposed` state identically.
       const link = proposeSettlementLink(depositId, null);
-      const updated = await tx
-        .update(stripePayouts)
-        .set({
-          ...reverseSettlementLink(link),
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(stripePayouts.id, payoutId),
-            eq(stripePayouts.qbReconciliationStatus, "confirmed_reconciled"),
-          ),
-        )
-        .returning({ id: stripePayouts.id });
-      if (!updated.length) {
+      const advanced = await transitionSettlementLink(
+        tx,
+        payoutId,
+        "confirmed_reconciled",
+        link,
+      );
+      if (!advanced) {
         throw new TransitionError(
           "invalid_transition",
           "This payout has changed. Refresh and retry.",
         );
       }
-      await upsertSettlementLink(tx, payoutId, link);
+      await tx
+        .update(stripePayouts)
+        .set({
+          ...reverseSettlementLink(link),
+          updatedAt: now,
+        })
+        .where(eq(stripePayouts.id, payoutId));
       return {
         ok: true,
         kind: "reverted",

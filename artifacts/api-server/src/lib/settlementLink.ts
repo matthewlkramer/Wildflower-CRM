@@ -1,19 +1,22 @@
 import { db } from "@workspace/db";
 import { settlementLinks } from "@workspace/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 /**
  * Plane-1 settlement-link primitives (docs/reconciliation-design.md §4.3).
  *
- * `settlement_links` is now the AUTHORITATIVE store: every payout reconciliation
- * choke point (proposal pass, human confirm/revert, mint/link commit) expresses
- * its INTENT as the `settlement_links` row it wants (via `settlementWriter.ts`)
- * and reverse-derives the legacy `stripe_payouts.qb_reconciliation_status` +
- * pointer columns from it, so those columns stay a perfect mirror until they are
- * retired (Phase-6). `deriveSettlementLinkFields` is the pure legacy→link mapping
- * retained ONLY for the forward parity gate (`parity:settlement-links`) and the
- * 0089/0092 backfills; `upsertSettlementLink` / `deleteSettlementLink` are the
- * low-level physical writes shared with the authoritative writer.
+ * `settlement_links` is now the AUTHORITATIVE store AND the optimistic-lock
+ * surface: every payout reconciliation choke point (proposal pass, human
+ * confirm/revert, mint/link commit) expresses its INTENT as the `settlement_links`
+ * row it wants (via `settlementWriter.ts`) and reverse-derives the legacy
+ * `stripe_payouts.qb_reconciliation_status` + pointer columns from it. After the
+ * write-flip those legacy columns are a pure WRITE-ONLY mirror — read by NOTHING
+ * except the parity gate (`parity:settlement-links`) and the response scrub — kept
+ * only until a later human-gated column drop. `deriveSettlementLinkFields` is the
+ * pure legacy→link mapping retained ONLY for that parity gate and the 0089/0092
+ * backfills; `upsertSettlementLink` / `transitionSettlementLink` /
+ * `deleteSettlementLink` are the low-level physical writes shared with the
+ * authoritative writer.
  */
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -187,4 +190,53 @@ export async function deleteSettlementLink(
   await dbi
     .delete(settlementLinks)
     .where(eq(settlementLinks.id, `sl_${payoutId}`));
+}
+
+/**
+ * Guarded state-transition UPDATE of an EXISTING settlement link, used by the
+ * human confirm/revert state machine (stripeConfirm.ts) as its optimistic-lock
+ * boundary now that the legacy `stripe_payouts.qb_reconciliation_status` + pointer
+ * columns are a pure write-only mirror (read by nothing that branches). Advances
+ * the 1:1 link (`sl_<payoutId>`) to `fields` ONLY when its CURRENT state still
+ * matches `expectedStatus`, expressed in link terms:
+ *   - `proposed`             → lifecycle 'proposed' AND no conflict gift
+ *   - `conflict_approved`    → lifecycle 'proposed' AND a conflict gift
+ *   - `confirmed_reconciled` → lifecycle 'confirmed'
+ * Returns `true` when a row advanced, `false` when the prior state had drifted
+ * (the caller maps that to a typed `invalid_transition` / 409). This is an UPDATE,
+ * never an upsert: every confirm/revert site already has a prior link, and a guard
+ * that could INSERT would defeat the optimistic lock.
+ */
+export async function transitionSettlementLink(
+  dbi: DbLike,
+  payoutId: string,
+  expectedStatus: "proposed" | "conflict_approved" | "confirmed_reconciled",
+  fields: SettlementLinkFields,
+): Promise<boolean> {
+  const guard =
+    expectedStatus === "confirmed_reconciled"
+      ? eq(settlementLinks.lifecycle, "confirmed")
+      : expectedStatus === "conflict_approved"
+        ? and(
+            eq(settlementLinks.lifecycle, "proposed"),
+            isNotNull(settlementLinks.conflictGiftId),
+          )
+        : and(
+            eq(settlementLinks.lifecycle, "proposed"),
+            isNull(settlementLinks.conflictGiftId),
+          );
+  const updated = await dbi
+    .update(settlementLinks)
+    .set({
+      depositStagedPaymentId: fields.depositStagedPaymentId,
+      conflictGiftId: fields.conflictGiftId,
+      lifecycle: fields.lifecycle,
+      provenance: fields.provenance,
+      confirmedByUserId: fields.confirmedByUserId,
+      confirmedAt: fields.confirmedAt,
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(settlementLinks.payoutId, payoutId), guard))
+    .returning({ id: settlementLinks.id });
+  return updated.length > 0;
 }

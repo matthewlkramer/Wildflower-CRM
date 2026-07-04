@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
+  settlementLinks,
   stagedPayments,
   stagedPaymentExclusionReasonEnum,
   stripePayouts,
@@ -422,13 +423,14 @@ router.get(
         stripeStagedCharges,
         eq(stripeStagedCharges.stripePayoutId, stripePayouts.id),
       )
+      .leftJoin(
+        settlementLinks,
+        eq(settlementLinks.payoutId, stripePayouts.id),
+      )
       .where(
         sql`${shouldExpand ? sql`TRUE` : sql`FALSE`}
           AND ${stagedPayments.sourceGroupId} IS NULL
-          AND (
-            ${stripePayouts.matchedQbStagedPaymentId} = ${stagedPayments.id}
-            OR ${stripePayouts.proposedQbStagedPaymentId} = ${stagedPayments.id}
-          )`,
+          AND ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id}`,
       )
       .as("charge_unit");
 

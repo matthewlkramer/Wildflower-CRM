@@ -28,17 +28,19 @@ the legacy `stripe_payouts.qb_reconciliation_status` (+ pointer cols) AND
 `settlement_links`. The read-flip ships in ONE Publish (no schema push, no data
 migration). Dropping the legacy columns is a separate LATER gated task.
 
-## Prerequisite before dropping the legacy columns
-`payoutStatusFromLink` handles the *status*, but the legacy POINTER columns still have
-one live functional reader: **`cards.ts` `charge_unit` lateral** joins on
-`stripePayouts.matchedQbStagedPaymentId OR proposedQbStagedPaymentId`. Harmless while
-dual-writes keep pointers lockstep, but it MUST be flipped before the column DROP.
-**Caveat when flipping it:** the settlement link's `deposit_staged_payment_id`
-coalesces the *conflict* pointer first for `conflict_approved`, whereas this lateral
-ignores the conflict pointer — flip it deliberately, not mechanically, or
-conflict_approved rows will resolve to a different staged payment.
+## Write-flip DONE — legacy columns are now a pure write-only mirror
+The confirm/revert optimistic lock moved off `stripe_payouts.qb_reconciliation_status`
+onto a guarded `settlement_links` UPDATE (`transitionSettlementLink`, guarded by
+`lifecycle` + `conflict_gift_id` presence), and the last legacy POINTER reader —
+`cards.ts` `charge_unit` lateral — was flipped to
+`settlement_links.deposit_staged_payment_id`. The conflict-pointer coalesce caveat was
+resolved deliberately (the link's coalesce IS the ratified deriver semantics; prod had
+ZERO divergent rows, dev had 9 conflict_approved rows that now resolve via the conflict
+pointer = a fix, not a regression). No confirm/revert/queue LOGIC reads the 4 legacy
+columns anymore.
 
-**How to apply:** treat "flip cards.ts charge_unit lateral (with the conflict-pointer
-coalesce caveat)" as an explicit precondition in the legacy-column DROP task; only then
-is it safe to remove `qb_reconciliation_status` + the proposed/matched/qb_conflict
-pointer columns.
+**Remaining readers = the parity script + the `routes/stripe.ts` response scrub ONLY.**
+The legacy-column DROP task's read-side precondition is therefore satisfied; the
+dual-write mirror is still RETAINED for parity + rollback until that separate
+human-gated DROP. Carry the prod evidence (zero divergent pointer rows) into the DROP
+task as the equivalence proof.
