@@ -124,3 +124,36 @@ export function proposeSettlementLink(
     confirmedAt: null,
   };
 }
+
+/**
+ * Build the settlement link for a human/system CONFIRMED payout↔deposit tie
+ * (legacy `confirmed_reconciled`).
+ *
+ * `confirmedAt` is a REQUIRED non-null `Date`: `deriveSettlementLinkFields`
+ * coalesces a null `confirmedAt` to the payout's `updated_at`, so a confirmed
+ * link that omitted the timestamp would round-trip to a DIFFERENT link whenever
+ * `updated_at` later moves. The type makes that mistake unrepresentable — every
+ * confirm-family caller must stamp `now`.
+ *
+ * Provenance follows the confirmer, matching the deriver's
+ * `qbReconciliationConfirmedByUserId ? "human" : "system_confirmed"`: a real
+ * user id is `human`, a null (system) confirmer is `system_confirmed`. A
+ * non-null `conflictGiftId` is the "keep" discriminator carried onto the
+ * confirmed link — the already-booked QB gift the coarse deposit is kept
+ * against, which the revert path reads to route back to `conflict_approved`.
+ */
+export function confirmSettlementLink(args: {
+  depositStagedPaymentId: string;
+  conflictGiftId: string | null;
+  confirmedByUserId: string | null;
+  confirmedAt: Date;
+}): SettlementLinkFields {
+  return {
+    lifecycle: "confirmed",
+    provenance: args.confirmedByUserId ? "human" : "system_confirmed",
+    depositStagedPaymentId: args.depositStagedPaymentId,
+    conflictGiftId: args.conflictGiftId,
+    confirmedByUserId: args.confirmedByUserId,
+    confirmedAt: args.confirmedAt,
+  };
+}

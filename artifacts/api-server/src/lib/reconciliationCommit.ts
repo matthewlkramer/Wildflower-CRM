@@ -24,7 +24,11 @@ import {
   adjustSingleAllocationOrFlag,
 } from "./giftFinalAmount";
 import { donorOf, type LinkDonor } from "./quickbooksLink";
-import { syncSettlementLinkFromPayout } from "./settlementLink";
+import { upsertSettlementLink } from "./settlementLink";
+import {
+  confirmSettlementLink,
+  reverseSettlementLink,
+} from "./settlementWriter";
 import {
   seedInitialGiftAllocation,
   assertGiftHasAllocations,
@@ -426,19 +430,33 @@ export async function mintGiftInTx(
       })
       .where(eq(stripeStagedCharges.id, charge.id));
     if (charge.stripePayoutId) {
+      // Phase-4 authoritative write: express the confirm as a settlement link and
+      // reverse-derive the legacy columns from it. This UPDATE has no prior-status
+      // pin, so we READ + carry the payout's conflict gift through (FOR UPDATE):
+      // clearing a set qbConflictGiftId would re-open per-charge minting against a
+      // kept QB gift = double-book, and misroute revert. Conflict is guarded
+      // upstream so it is null in practice, but we never clear it blindly.
+      const now = new Date();
+      const [po] = await tx
+        .select({ qbConflictGiftId: stripePayouts.qbConflictGiftId })
+        .from(stripePayouts)
+        .where(eq(stripePayouts.id, charge.stripePayoutId))
+        .for("update");
+      const link = confirmSettlementLink({
+        depositStagedPaymentId: stagedPaymentId,
+        conflictGiftId: po?.qbConflictGiftId ?? null,
+        confirmedByUserId: userId,
+        confirmedAt: now,
+      });
       await tx
         .update(stripePayouts)
         .set({
-          qbReconciliationStatus: "confirmed_reconciled",
-          matchedQbStagedPaymentId: stagedPaymentId,
-          proposedQbStagedPaymentId: null,
-          qbReconciliationConfirmedByUserId: userId,
-          qbReconciliationConfirmedAt: new Date(),
-          updatedAt: new Date(),
+          ...reverseSettlementLink(link),
+          updatedAt: now,
         })
         .where(eq(stripePayouts.id, charge.stripePayoutId));
-      // Plane-1 dual-write: mirror the payout↔deposit tie into settlement_links.
-      await syncSettlementLinkFromPayout(tx, charge.stripePayoutId);
+      // Plane-1 authoritative write: upsert the settlement link.
+      await upsertSettlementLink(tx, charge.stripePayoutId, link);
     }
     // Dual-write (Phase 2): book the Stripe charge as parallel evidence. The QB
     // anchor OWNS the mint (createdTheGift:true on its row); this Stripe row is
@@ -682,19 +700,33 @@ export async function linkGiftInTx(
       })
       .where(eq(stripeStagedCharges.id, charge.id));
     if (charge.stripePayoutId) {
+      // Phase-4 authoritative write: express the confirm as a settlement link and
+      // reverse-derive the legacy columns from it. This UPDATE has no prior-status
+      // pin, so we READ + carry the payout's conflict gift through (FOR UPDATE):
+      // clearing a set qbConflictGiftId would re-open per-charge minting against a
+      // kept QB gift = double-book, and misroute revert. Conflict is guarded
+      // upstream so it is null in practice, but we never clear it blindly.
+      const now = new Date();
+      const [po] = await tx
+        .select({ qbConflictGiftId: stripePayouts.qbConflictGiftId })
+        .from(stripePayouts)
+        .where(eq(stripePayouts.id, charge.stripePayoutId))
+        .for("update");
+      const link = confirmSettlementLink({
+        depositStagedPaymentId: stagedPaymentId,
+        conflictGiftId: po?.qbConflictGiftId ?? null,
+        confirmedByUserId: userId,
+        confirmedAt: now,
+      });
       await tx
         .update(stripePayouts)
         .set({
-          qbReconciliationStatus: "confirmed_reconciled",
-          matchedQbStagedPaymentId: stagedPaymentId,
-          proposedQbStagedPaymentId: null,
-          qbReconciliationConfirmedByUserId: userId,
-          qbReconciliationConfirmedAt: new Date(),
-          updatedAt: new Date(),
+          ...reverseSettlementLink(link),
+          updatedAt: now,
         })
         .where(eq(stripePayouts.id, charge.stripePayoutId));
-      // Plane-1 dual-write: mirror the payout↔deposit tie into settlement_links.
-      await syncSettlementLinkFromPayout(tx, charge.stripePayoutId);
+      // Plane-1 authoritative write: upsert the settlement link.
+      await upsertSettlementLink(tx, charge.stripePayoutId, link);
     }
     // Dual-write (Phase 2): book the Stripe charge as parallel evidence (GROSS
     // source). The QB row already recorded the QB-settled amount above; this is

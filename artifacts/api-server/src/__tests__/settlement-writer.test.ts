@@ -6,6 +6,7 @@ import {
 import {
   reverseSettlementLink,
   proposeSettlementLink,
+  confirmSettlementLink,
 } from "../lib/settlementWriter";
 
 /**
@@ -166,5 +167,73 @@ describe("proposeSettlementLink", () => {
       confirmedByUserId: null,
       confirmedAt: null,
     });
+  });
+});
+
+describe("confirmSettlementLink", () => {
+  const AT = new Date("2026-03-15T08:00:00.000Z");
+
+  it("builds a human confirmed link (real user ⇒ human provenance)", () => {
+    expect(
+      confirmSettlementLink({
+        depositStagedPaymentId: "dep_1",
+        conflictGiftId: null,
+        confirmedByUserId: "user_1",
+        confirmedAt: AT,
+      }),
+    ).toEqual({
+      lifecycle: "confirmed",
+      provenance: "human",
+      depositStagedPaymentId: "dep_1",
+      conflictGiftId: null,
+      confirmedByUserId: "user_1",
+      confirmedAt: AT,
+    });
+  });
+
+  it("null confirmer ⇒ system_confirmed provenance", () => {
+    const link = confirmSettlementLink({
+      depositStagedPaymentId: "dep_1",
+      conflictGiftId: null,
+      confirmedByUserId: null,
+      confirmedAt: AT,
+    });
+    expect(link.provenance).toBe("system_confirmed");
+    expect(link.confirmedByUserId).toBeNull();
+  });
+
+  it("carries the kept gift as the confirmed 'keep' discriminator", () => {
+    const link = confirmSettlementLink({
+      depositStagedPaymentId: "dep_1",
+      conflictGiftId: "gift_c",
+      confirmedByUserId: "user_1",
+      confirmedAt: AT,
+    });
+    expect(link.conflictGiftId).toBe("gift_c");
+  });
+
+  // The deriver coalesces a null confirmedAt to the payout's updated_at, so a
+  // confirmed link MUST always carry an explicit timestamp or the round-trip
+  // drifts once updated_at moves. Prove it across all four confirm shapes.
+  it("always stamps a non-null confirmedAt that survives a different updated_at", () => {
+    for (const confirmedByUserId of ["user_1", null] as const) {
+      for (const conflictGiftId of ["gift_c", null] as const) {
+        const link = confirmSettlementLink({
+          depositStagedPaymentId: "dep_1",
+          conflictGiftId,
+          confirmedByUserId,
+          confirmedAt: AT,
+        });
+        expect(link.confirmedAt).not.toBeNull();
+        const w = reverseSettlementLink(link);
+        expect(w.qbReconciliationConfirmedAt).toEqual(AT);
+        expect(
+          deriveSettlementLinkFields({
+            ...w,
+            updatedAt: new Date("2000-01-01T00:00:00.000Z"),
+          }),
+        ).toEqual(link);
+      }
+    }
   });
 });
