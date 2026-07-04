@@ -131,14 +131,29 @@ export async function syncSettlementLinkFromPayout(
     .limit(1);
   if (!payout) return;
 
-  const id = `sl_${payoutId}`;
   const fields = deriveSettlementLinkFields(payout);
-
   if (!fields) {
-    await dbi.delete(settlementLinks).where(eq(settlementLinks.id, id));
+    await deleteSettlementLink(dbi, payoutId);
     return;
   }
+  await upsertSettlementLink(dbi, payoutId, fields);
+}
 
+/**
+ * Physical upsert of ONE settlement link from explicit fields (deterministic id
+ * `sl_<payoutId>`). This is the single low-level write shared by BOTH the legacy
+ * mirror ({@link syncSettlementLinkFromPayout}, which derives the fields from the
+ * payout's post-write legacy state) AND the Phase-4 authoritative writer
+ * (`settlementWriter.ts`, which builds the fields from explicit human/system intent
+ * and reverse-maps the legacy enum from them). One physical writer means the row
+ * shape can never drift between the two callers.
+ */
+export async function upsertSettlementLink(
+  dbi: DbLike,
+  payoutId: string,
+  fields: SettlementLinkFields,
+): Promise<void> {
+  const id = `sl_${payoutId}`;
   await dbi
     .insert(settlementLinks)
     .values({
@@ -163,4 +178,14 @@ export async function syncSettlementLinkFromPayout(
         updatedAt: sql`now()`,
       },
     });
+}
+
+/** Remove the settlement link for a payout (no-op if absent). */
+export async function deleteSettlementLink(
+  dbi: DbLike,
+  payoutId: string,
+): Promise<void> {
+  await dbi
+    .delete(settlementLinks)
+    .where(eq(settlementLinks.id, `sl_${payoutId}`));
 }
