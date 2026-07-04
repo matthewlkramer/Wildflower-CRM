@@ -1,3 +1,4 @@
+- [user_query widget doesn't render](interactive-prompts-dont-render.md) — this user can't see interactive prompts; ALWAYS ask clarifying questions in plain-text chat, never via user_query.
 - [Canonical architecture docs](architecture-canon.md) — read replit.md + lib/db/SCHEMA.md first (kept-current intent + invariants); schema code is the final truth.
 - [email-messages cross-mailbox dedup](email-messages-cross-mailbox-dedup.md) — same Gmail message stored once per mailbox; list endpoint uses DISTINCT ON (gmail_message_id) to deduplicate.
 - [wildflower-crm detail routes](wildflower-crm-routes.md) — organizations live at /organizations (was /funding-entities); pledge detail inherits opportunity.
