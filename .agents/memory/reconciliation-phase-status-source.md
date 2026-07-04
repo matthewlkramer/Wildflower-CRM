@@ -35,14 +35,24 @@ live code — `quickbooks_tie_status` (feeds `deriveGiftLanes` + the gifts filte
 recomputed by `applyGiftQbTieMany` on every gift mutation), `final_amount_source`
 and the `final_amount_*` provenance pointers (QB matching/actions still write them,
 financial corrections read them), and `type` (still read by the gifts list filter,
-analytics, revenueCoding, gatherTaskSignals; copied onto split-gift rows). By
-contrast `processor_fee`, `grant_year`, `designated_to_school`,
-`off_books_fiscal_sponsor`, `payment_expected` ARE genuinely retired at runtime
-(off-books/payment-expected now derived from allocation entities) — those comments
-are accurate. `staged_payment_splits` is likewise fully live (QB split resolution).
-Those false comments were corrected in-place to "TRANSITIONAL … STILL LIVE" in
-2026-07. Always grep live readers/writers before treating any `@deprecated`
-column/table as droppable. As of 2026-07 the one
+analytics, revenueCoding, gatherTaskSignals; copied onto split-gift rows). ALSO
+still live: `grant_year`, `designated_to_school`, `off_books_fiscal_sponsor`,
+`payment_expected` — `giftIsOffBooksExpr()` (giftPaymentSummary.ts) still OR's the
+three header flags into the off-books / QB-tie exemption as a DOCUMENTED
+transitional fallback until a prod backfill migrates them to allocation entities,
+and the split-gift path copies grant_year/designated_to_school/payment_expected
+onto new rows. The ONLY genuinely-retired `gifts_and_payments` column is
+`processor_fee` (derivedProcessorFee replaces it). Because those flags are live,
+the OpenAPI descriptions for off_books_fiscal_sponsor / payment_expected are
+ACCURATE — do NOT "fix" them. `staged_payment_splits` is likewise fully live (QB
+split resolution). All the false schema comments (quickbooks_tie_status,
+final_amount_*, type, grant_year, designated_to_school, off_books_fiscal_sponsor,
+payment_expected) were corrected in-place to "TRANSITIONAL … STILL LIVE" in 2026-07.
+Two traps hid the live readers on the first pass: `rg … | head -N` truncated the
+route hits, and `payment_expected` is read as raw SQL (`g.payment_expected`), not
+the camelCase drizzle property, so a `-w paymentExpected` grep missed it. Always
+grep live readers/writers WITHOUT a `head` cap (and check raw-SQL snake_case) before
+treating any `@deprecated` column/table as droppable. As of 2026-07 the one
 clean reconciliation drop candidate is `staged_payments.source_group_id`: no live
 route code touches it (only parity scripts) and a read-only PROD parity run against
 `unit_groups` (0088 backfill) was perfectly clean (0 missing/mismatch/orphan).

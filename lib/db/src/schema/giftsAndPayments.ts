@@ -134,10 +134,14 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   advisorPersonId: text("advisor_person_id").references(() => people.id, {
     onDelete: "set null",
   }),
-  // @deprecated — grant year lives only on gift_allocations.grant_year now. No
-  // longer read or written by application code. Retained @deprecated so dev push
-  // stays additive and prod Publish never auto-drops it; the physical DROP ships
-  // as a reviewed SQL file (the backfill seeds the allocation copy first).
+  // TRANSITIONAL (intended for eventual retirement, but STILL LIVE — do NOT
+  // drop). Grant year is moving to gift_allocations.grant_year (a normal gift
+  // create seeds it on the allocation, not the header), but the split-gift path
+  // still READS the original gift's header grant_year and WRITES it onto each new
+  // split row. Retained so dev push stays additive and prod Publish never
+  // auto-drops it; a physical DROP must wait until the split path stops copying it
+  // and ships as a reviewed SQL file (the backfill seeds the allocation copy
+  // first).
   grantYear: text("grant_year").references(() => fiscalYears.id, {
     onDelete: "restrict",
   }),
@@ -162,23 +166,31 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   ownerUserId: text("owner_user_id").references(() => users.id, {
     onDelete: "restrict",
   }),
-  // @deprecated — "direct to school" is now expressed by the allocation entity
-  // ("Direct to School"), not a header flag. No longer read or written by
-  // application code. Retained @deprecated so dev push stays additive and prod
-  // Publish never auto-drops it; the physical DROP ships as a reviewed SQL file
-  // (the backfill moves the designation onto allocations first).
+  // TRANSITIONAL (intended for eventual retirement, but STILL LIVE — do NOT
+  // drop). "Direct to school" is moving to the allocation entity ("Direct to
+  // School"), but until the prod backfill migrates existing rows,
+  // giftIsOffBooksExpr() (giftPaymentSummary.ts) still OR's this header flag into
+  // the off-books / QB-tie exemption, the audit-reconciliation route reads it, the
+  // gift PATCH change-detection compares it, and the split-gift path copies it
+  // onto new rows. Retained so dev push stays additive and prod Publish never
+  // auto-drops it; a physical DROP must wait for that backfill and ships as a
+  // reviewed SQL file.
   designatedToSchool: boolean("designated_to_school").default(false).notNull(),
-  // @deprecated — off-books (fiscal-sponsor era) is now the "Wildflower
-  // Foundation TSNE" allocation entity, not a header flag. No longer read or
-  // written by application code. Retained @deprecated (see designatedToSchool).
+  // TRANSITIONAL (STILL LIVE — do NOT drop). Off-books (fiscal-sponsor era) is
+  // moving to the "Wildflower Foundation TSNE" allocation entity, but until the
+  // prod backfill it is still OR'd into giftIsOffBooksExpr(), read by the
+  // audit-reconciliation route, and compared by the gift PATCH change-detection.
+  // Retained (see designatedToSchool).
   offBooksFiscalSponsor: boolean("off_books_fiscal_sponsor")
     .default(false)
     .notNull(),
-  // @deprecated — "payment expected" is now DERIVED from the allocation entity:
-  // a gift expects payment unless ALL of its allocations sit on no-payment
-  // entities (entities.expects_payment = false, i.e. "Direct to School" /
-  // "Wildflower Foundation TSNE"). No longer read or written by application code.
-  // Retained @deprecated (see designatedToSchool).
+  // TRANSITIONAL (STILL LIVE — do NOT drop). "Payment expected" is moving to a
+  // derivation from allocation entities (a gift expects payment unless ALL its
+  // allocations sit on no-payment entities, entities.expects_payment = false,
+  // i.e. "Direct to School" / "Wildflower Foundation TSNE"), but until the prod
+  // backfill giftIsOffBooksExpr() still OR's `NOT payment_expected` into the
+  // off-books / QB-tie exemption, and the split-gift path copies it onto new rows.
+  // Retained (see designatedToSchool).
   paymentExpected: boolean("payment_expected").default(true).notNull(),
   // Plain human-set flag: a fundraiser/finance reviewer hasn't fully figured
   // this money record out yet (unknown donor, ambiguous coding, unclear
