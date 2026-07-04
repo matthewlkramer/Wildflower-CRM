@@ -91,3 +91,43 @@ merge re-pointing to `conflict_gift_id` alone would break parity. Any future
 AUTHORITATIVE writer (post write-flip) MUST preserve this atomic set/clear of the
 conflict pointer alongside lifecycle. Backfill 0092 can only SET (column starts all
 NULL); the never-CLEAR case is unreachable at backfill time and the gate catches it.
+
+## Write-flip needs NO parity-direction flip — reverse map is the exact inverse
+
+The Phase-4 write-flip inverts authority ONE write path at a time (the Stripe
+proposal pass first): the caller expresses settlement INTENT as the
+`settlement_links` row it wants, and a pure `reverseSettlementLink(link|null)`
+reverse-derives the legacy `qb_reconciliation_status` + pointer columns FROM it
+(`settlementWriter.ts`). The forward parity gate (`derive(legacy) == link`) STAYS
+valid with NO direction flip — but ONLY because `reverseSettlementLink` is the EXACT
+inverse of `deriveSettlementLinkFields` over the ONLY four states an authoritative
+writer can produce: {unmatched, proposed, conflict_approved, confirmed_reconciled}.
+The two are lockstep by construction, so the reverse-mapped legacy columns are
+byte-identical to what the old inline `.set()` wrote.
+
+**Rules that keep this safe:**
+- `reverse` writes `confirmed_at` FROM the link (not COALESCE-to-updated_at), which
+  kills the drift carve-out for rows the writer creates. So a confirmed link MUST
+  always carry a non-null `confirmedAt` or it fails to round-trip (derive coalesces
+  null → updated_at). `stripeConfirm` always stamps it — add an explicit round-trip
+  test when the confirm family flips (T4).
+- `reverse` on lifecycle `exempt` THROWS: no writer produces exempt today (the
+  deriver never returns it; `confirmed_excluded` backfills to `confirmed`). If a
+  future intent introduces exemptions, map it explicitly then.
+- The legacy mirror (`syncSettlementLinkFromPayout`, still used by the not-yet-
+  flipped confirm/commit paths) and the authoritative path MUST share the SAME
+  physical `upsertSettlementLink`/`deleteSettlementLink` so the row shape can never
+  drift between callers.
+- Money-safety guards on the `update(stripePayouts)` (REPROPOSABLE status WHERE +
+  candidateStateGuard) are UNCHANGED by the flip — the flip only changes how the
+  `.set()` payload is COMPUTED, never the guarded primitive. `reverse(null)` also
+  nulls matched/confirmed* cols, but those are already null in every REPROPOSABLE
+  state (matched/confirmed* are written only at confirm, nulled in every revert), so
+  it is a faithful no-op.
+
+**T5 read-flip caveat:** the old mirror re-read post-write payout state, so a human
+confirm racing between the propose UPDATE and the link write got mirrored as
+confirmed; the new path upserts the precomputed *proposed* link, leaving a transient
+proposed link on a just-confirmed payout until the confirm's own sync / next pass
+converges it. Harmless while legacy columns are the read source (parity would flag
+it) — re-examine when readers flip to the link in T5.

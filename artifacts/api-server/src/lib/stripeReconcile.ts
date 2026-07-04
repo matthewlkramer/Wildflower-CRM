@@ -15,7 +15,8 @@ import {
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { getUncachableStripeClient } from "./stripeClient";
-import { syncSettlementLinkFromPayout } from "./settlementLink";
+import { upsertSettlementLink, deleteSettlementLink } from "./settlementLink";
+import { proposeSettlementLink, reverseSettlementLink } from "./settlementWriter";
 
 /**
  * Stripe payout ↔ QuickBooks deposit-lump reconciliation (the audit join).
@@ -293,10 +294,9 @@ export async function runProposalPass(
         const upd = await db
           .update(stripePayouts)
           .set({
-            qbReconciliationStatus: "unmatched",
-            proposedQbStagedPaymentId: null,
-            qbConflictStagedPaymentId: null,
-            qbConflictGiftId: null,
+            // Phase-4 authoritative write: the legacy enum + pointer columns are
+            // reverse-derived from the ABSENCE of a settlement link (unmatched).
+            ...reverseSettlementLink(null),
             updatedAt: new Date(),
           })
           .where(
@@ -308,8 +308,8 @@ export async function runProposalPass(
           .returning({ id: stripePayouts.id });
         if (upd.length) {
           cleared += 1;
-          // Plane-1 dual-write: mirror the reset-to-unmatched (removes the link).
-          await syncSettlementLinkFromPayout(db, p.id);
+          // Plane-1 authoritative write: remove the settlement link.
+          await deleteSettlementLink(db, p.id);
         }
       }
       continue;
@@ -349,13 +349,14 @@ export async function runProposalPass(
       ? exists(candidateHasGift)
       : notExists(candidateHasGift);
 
+    // Phase-4 authoritative write: express the proposal as the settlement link we
+    // want, then reverse-derive the legacy enum + pointer columns from it. A
+    // non-null conflict gift marks the legacy `conflict_approved` case.
+    const link = proposeSettlementLink(best.c.id, isConflict ? giftId : null);
     const upd = await db
       .update(stripePayouts)
       .set({
-        qbReconciliationStatus: isConflict ? "conflict_approved" : "proposed",
-        proposedQbStagedPaymentId: best.c.id,
-        qbConflictStagedPaymentId: isConflict ? best.c.id : null,
-        qbConflictGiftId: isConflict ? giftId : null,
+        ...reverseSettlementLink(link),
         updatedAt: new Date(),
       })
       .where(
@@ -370,8 +371,8 @@ export async function runProposalPass(
     if (upd.length) {
       if (isConflict) conflicts += 1;
       else proposed += 1;
-      // Plane-1 dual-write: mirror the freshly proposed / conflict tie.
-      await syncSettlementLinkFromPayout(db, p.id);
+      // Plane-1 authoritative write: upsert the freshly proposed / conflict link.
+      await upsertSettlementLink(db, p.id, link);
     }
   }
 
