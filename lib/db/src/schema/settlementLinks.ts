@@ -9,6 +9,7 @@ import {
 import { sql } from "drizzle-orm";
 import { stripePayouts } from "./stripePayouts";
 import { stagedPayments } from "./stagedPayments";
+import { giftsAndPayments } from "./giftsAndPayments";
 import { users } from "./users";
 import {
   settlementLinkLifecycleEnum,
@@ -24,9 +25,11 @@ import {
  * only records "this payout IS this deposit", plus its confirmation lifecycle.
  *
  * It REPLACES the 7-value `stripe_payouts.qb_reconciliation_status` enum (and the
- * `proposed/matched/qb_conflict` pointer columns + the vestigial keep/replace/
- * conflict paths). The payout's settlement status (`settled` | `proposed` |
- * `orphan`) becomes a pure derivation over this table (§4.4) — nothing hand-set.
+ * `proposed/matched/qb_conflict` pointer columns + the vestigial keep/replace
+ * paths). The legacy `conflict_approved` state is preserved here as
+ * `lifecycle = 'proposed' AND conflict_gift_id IS NOT NULL` (see that column). The
+ * payout's settlement status (`settled` | `proposed` | `orphan`) becomes a pure
+ * derivation over this table (§4.4) — nothing hand-set.
  *
  * A confirmed link means the deposit and its constituent Stripe charges are the
  * SAME dollars at two grains. Book-once is per-unit, so avoiding a double count
@@ -61,6 +64,18 @@ export const settlementLinks = pgTable(
       () => stagedPayments.id,
       { onDelete: "set null" },
     ),
+    // The already-approved QB gift a `proposed` link COLLIDED with — i.e. the
+    // legacy `conflict_approved` state (a proposal that landed on a gift already
+    // booked from QB, awaiting the human's keep/replace decision). A conflict is
+    // therefore `lifecycle = 'proposed' AND conflict_gift_id IS NOT NULL` — NOT a
+    // 4th lifecycle value (that would contradict the ratified §4.5 target and fork
+    // every shipped lifecycle read). Mirrors `stripe_payouts.qb_conflict_gift_id`;
+    // RETAINED on the resulting `confirmed` link too, because revert-of-keep uses
+    // its presence as the discriminator and the double-book guards consume it.
+    conflictGiftId: text("conflict_gift_id").references(
+      () => giftsAndPayments.id,
+      { onDelete: "set null" },
+    ),
     lifecycle: settlementLinkLifecycleEnum("lifecycle").notNull(),
     provenance: settlementLinkProvenanceEnum("provenance")
       .notNull()
@@ -81,6 +96,7 @@ export const settlementLinks = pgTable(
       t.depositStagedPaymentId,
     ),
     index("settlement_links_lifecycle_idx").on(t.lifecycle),
+    index("settlement_links_conflict_gift_id_idx").on(t.conflictGiftId),
     // A non-exempt link must tie to a QB deposit; only `exempt` may omit it.
     check(
       "settlement_links_deposit_required_chk",

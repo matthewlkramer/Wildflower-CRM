@@ -503,17 +503,32 @@ task** — this task delivers only the ratified design (Phase 1).
    add the `unit_groups` table + polymorphic membership, backfilled from today's
    `source_group_id`, so a grouped set matches as one counted ledger row per member.
 
-   *Holdout — Stripe/Donorbox counted read-flip NOT shipped (tracked so it isn't
-   lost).* The QB unit↔gift read-flip shipped, but the **counted** Stripe- and
-   Donorbox-charge↔gift links are not yet read from the ledger: `deriveGiftQbTie`
-   still ties Stripe-sourced gifts via an amount-blind shortcut and never reads
-   Donorbox counted rows; `parity-stripe-donorbox-readflip.ts` is still a
-   preview/parity script, not a shipped flip. This tail is deliberately deferred to
-   its own task because it touches the money-total derivation (higher risk) and
-   needs its own **prod** parity gate. Phase 5 was allowed to proceed ahead of it
-   because corroborating links are money-total-neutral (excluded from every counted
-   SUM), so the temporary asymmetry (corroborating Stripe/Donorbox links in the
-   ledger while their counted siblings are still read via legacy) is harmless.
+   *Progress — Stripe/Donorbox counted gift-TIE read-flip DONE (shipped,
+   prod-parity clean).* `deriveGiftQbTie` / `applyGiftQbTieMany` now read Stripe AND
+   Donorbox counted rows from the ledger via PER-SOURCE PRECEDENCE (QB sum wins,
+   else Stripe, else Donorbox — deliberately NOT a cross-source SUM, which would
+   ~2× double-count a gift carrying both a coarse QB deposit line and its per-charge
+   Stripe rows); the amount-blind `final_amount_source==='stripe'` shortcut is gone.
+   A read-only **prod** run of `parity-stripe-donorbox-readflip.ts` was parity-clean
+   (0 tie-status changes; the cross-source pairs it enumerates are exactly the ones
+   precedence protects).
+
+   *Holdout — the money-total surface is intentionally still legacy, folded into
+   Phase 4 (below).* `giftPaymentSummary.ts` (`settledGross` / `totalFees` /
+   `hasLinkedPayment`) still reads Stripe from `stripe_staged_charges` and Donorbox
+   from `donorbox_donations`, for two reasons a bare read-swap cannot resolve: (1)
+   processor FEES (`fee_amount` / `processing_fee`) are not modelled in the ledger
+   at all, so `totalFees` must stay on the processor tables regardless; and (2)
+   `settledGross` is a cross-source SUM, so a gift settled by both a coarse QB
+   deposit AND its per-charge Stripe rows already double-counts — the fix is not a
+   source-swap but Phase 4's `settlement_links` reclassification of the coarse QB
+   row to `link_role='corroborating'`, which is what finally makes the single
+   all-source `SUM(counted amount_applied)` of §4.4 correct. `cards.ts`'s per-charge
+   gift pointer is the anchor row's own link (Phase 6 replaces that UI). Phase 5 was
+   allowed to proceed because corroborating links are money-total-neutral (excluded
+   from every counted SUM), so the temporary asymmetry (corroborating Stripe/Donorbox
+   links in the ledger while their counted siblings are still read via legacy) is
+   harmless.
 
 4. **Model Plane 1 settlement as links.** Add `settlement_links` (§4.3). Backfill
    from `stripe_payouts.qb_reconciliation_status`: ALL `confirmed_*` (including

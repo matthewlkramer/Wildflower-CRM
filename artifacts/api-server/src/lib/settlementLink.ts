@@ -24,6 +24,7 @@ type SettlementLinkSource = {
   proposedQbStagedPaymentId: string | null;
   matchedQbStagedPaymentId: string | null;
   qbConflictStagedPaymentId: string | null;
+  qbConflictGiftId: string | null;
   qbReconciliationConfirmedByUserId: string | null;
   qbReconciliationConfirmedAt: Date | null;
   updatedAt: Date;
@@ -33,6 +34,11 @@ export type SettlementLinkFields = {
   lifecycle: "proposed" | "confirmed" | "exempt";
   provenance: "system" | "system_confirmed" | "human";
   depositStagedPaymentId: string;
+  // The already-approved QB gift the proposal collided with (legacy
+  // `conflict_approved`) — mirrors `stripe_payouts.qb_conflict_gift_id`. Non-null
+  // on a proposed link marks a conflict; retained on the resulting confirmed link
+  // as the revert-of-keep discriminator. Null for a clean proposal / confirm.
+  conflictGiftId: string | null;
   confirmedByUserId: string | null;
   confirmedAt: Date | null;
 };
@@ -42,11 +48,11 @@ export type SettlementLinkFields = {
  * that should mirror it. Returns `null` when NO link should exist (the payout is
  * `unmatched`, in an unknown state, or has no resolvable QB deposit pointer).
  *
- * MUST mirror the backfill in `lib/db/migrations/0089_settlement_links.sql`
- * (load-bearing fields — lifecycle / provenance / deposit / confirmedBy / at). The
- * `note` column is intentionally NOT set here: it is reserved for the backfill's
- * `legacy <status>` provenance markers + future human annotations, and the parity
- * gate ignores it.
+ * MUST mirror the backfills in `lib/db/migrations/0089_settlement_links.sql` and
+ * `0092_settlement_links_conflict_gift_id.sql` (load-bearing fields — lifecycle /
+ * provenance / deposit / conflictGift / confirmedBy / at). The `note` column is
+ * intentionally NOT set here: it is reserved for the backfill's `legacy <status>`
+ * provenance markers + future human annotations, and the parity gate ignores it.
  */
 export function deriveSettlementLinkFields(
   p: SettlementLinkSource,
@@ -77,6 +83,7 @@ export function deriveSettlementLinkFields(
       lifecycle: "proposed",
       provenance: "system",
       depositStagedPaymentId: depositId,
+      conflictGiftId: p.qbConflictGiftId,
       confirmedByUserId: null,
       confirmedAt: null,
     };
@@ -85,6 +92,7 @@ export function deriveSettlementLinkFields(
     lifecycle: "confirmed",
     provenance: p.qbReconciliationConfirmedByUserId ? "human" : "system_confirmed",
     depositStagedPaymentId: depositId,
+    conflictGiftId: p.qbConflictGiftId,
     confirmedByUserId: p.qbReconciliationConfirmedByUserId,
     confirmedAt: p.qbReconciliationConfirmedAt ?? p.updatedAt,
   };
@@ -112,6 +120,7 @@ export async function syncSettlementLinkFromPayout(
       proposedQbStagedPaymentId: stripePayouts.proposedQbStagedPaymentId,
       matchedQbStagedPaymentId: stripePayouts.matchedQbStagedPaymentId,
       qbConflictStagedPaymentId: stripePayouts.qbConflictStagedPaymentId,
+      qbConflictGiftId: stripePayouts.qbConflictGiftId,
       qbReconciliationConfirmedByUserId:
         stripePayouts.qbReconciliationConfirmedByUserId,
       qbReconciliationConfirmedAt: stripePayouts.qbReconciliationConfirmedAt,
@@ -136,6 +145,7 @@ export async function syncSettlementLinkFromPayout(
       id,
       payoutId,
       depositStagedPaymentId: fields.depositStagedPaymentId,
+      conflictGiftId: fields.conflictGiftId,
       lifecycle: fields.lifecycle,
       provenance: fields.provenance,
       confirmedByUserId: fields.confirmedByUserId,
@@ -145,6 +155,7 @@ export async function syncSettlementLinkFromPayout(
       target: settlementLinks.id,
       set: {
         depositStagedPaymentId: fields.depositStagedPaymentId,
+        conflictGiftId: fields.conflictGiftId,
         lifecycle: fields.lifecycle,
         provenance: fields.provenance,
         confirmedByUserId: fields.confirmedByUserId,

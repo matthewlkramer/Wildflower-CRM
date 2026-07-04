@@ -48,6 +48,7 @@ function sourceFor(status: LegacyStatus) {
     proposedQbStagedPaymentId: status === "unmatched" ? null : DEPOSIT,
     matchedQbStagedPaymentId: confirmed ? DEPOSIT : null,
     qbConflictStagedPaymentId: status === "conflict_approved" ? DEPOSIT : null,
+    qbConflictGiftId: null,
     qbReconciliationConfirmedByUserId: null,
     qbReconciliationConfirmedAt: null,
     updatedAt: new Date("2026-01-01T00:00:00Z"),

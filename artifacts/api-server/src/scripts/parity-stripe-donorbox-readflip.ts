@@ -1,21 +1,22 @@
 /**
- * PHASE-3 READ-FLIP PREVIEW (Stripe/Donorbox gift-tie) — payment_applications
- * ledger, per-source precedence, vs. the CURRENT shipped gift-tie derivation.
+ * PHASE-3 Stripe/Donorbox gift-TIE read-flip — RETROSPECTIVE PARITY / re-verify.
  *
- * This is a ZERO-behavior-change simulation. It changes nothing; it derives the
- * QuickBooks-tie for every gift two ways and enumerates every status change the
- * upcoming Stripe/Donorbox read-flip would produce, categorized, so a human can
- * sign off on the change classes on REAL prod data BEFORE the deriver is flipped.
+ * The flip HAS SHIPPED: deriveGiftQbTie / applyGiftQbTieMany now read Stripe AND
+ * Donorbox counted rows from payment_applications via per-source precedence, and
+ * the amount-blind `finalAmountSource==='stripe'` shortcut is gone. This script is
+ * kept as a ZERO-behavior-change parity harness: it derives the QuickBooks-tie for
+ * every gift the PRE-FLIP way and the SHIPPED way and enumerates every status
+ * difference, categorized, so the flip can be re-verified read-only on REAL prod
+ * data (it was parity-clean at flip time: 0 tie-status changes).
  *
- * CURRENT (shipped) derivation — the baseline:
- *   - QB link/amount come from the ledger (evidence_source='quickbooks',
- *     link_role='counted'); the QB read-flip already shipped.
- *   - Stripe is handled by the `finalAmountSource === 'stripe'` SHORTCUT in
+ * PRE-FLIP baseline (deriveLegacy) — what shipped BEFORE this flip:
+ *   - QB link/amount from the ledger (evidence_source='quickbooks',
+ *     link_role='counted'); the QB read-flip had already shipped.
+ *   - Stripe handled by the `finalAmountSource === 'stripe'` SHORTCUT in
  *     deriveGiftQbTie ("money lands in QB at the payout level") — amount-BLIND.
- *   - Donorbox counted rows are NOT read at all (a donorbox-only gift is
- *     `missing`).
+ *   - Donorbox counted rows not read at all (a donorbox-only gift was `missing`).
  *
- * NEW (flipped) derivation — per-source PRECEDENCE, NOT a naive all-source SUM:
+ * SHIPPED derivation (deriveNew) — per-source PRECEDENCE, NOT a naive all-source SUM:
  *   - amount = QB counted sum if any QB counted row exists, else the Stripe
  *     counted sum, else the Donorbox counted sum.
  *   - hasLink = a counted row of ANY source exists.
@@ -125,8 +126,8 @@ function precedenceAmount(r: RawRow): string | null {
 }
 
 /**
- * The NEW (flipped) deriver, implemented locally so this preview needs no code
- * change. Mirrors what step 2 will fold into deriveGiftQbTie: per-source
+ * The SHIPPED (flipped) deriver, implemented locally so this parity harness needs
+ * no code change. Mirrors what was folded into deriveGiftQbTie: per-source
  * precedence, no finalAmountSource shortcut.
  */
 function deriveNew(r: RawRow): GiftQbTie {

@@ -75,6 +75,7 @@ async function main(): Promise<void> {
       proposedQbStagedPaymentId: stripePayouts.proposedQbStagedPaymentId,
       matchedQbStagedPaymentId: stripePayouts.matchedQbStagedPaymentId,
       qbConflictStagedPaymentId: stripePayouts.qbConflictStagedPaymentId,
+      qbConflictGiftId: stripePayouts.qbConflictGiftId,
       qbReconciliationConfirmedByUserId:
         stripePayouts.qbReconciliationConfirmedByUserId,
       qbReconciliationConfirmedAt: stripePayouts.qbReconciliationConfirmedAt,
@@ -87,6 +88,7 @@ async function main(): Promise<void> {
       id: settlementLinks.id,
       payoutId: settlementLinks.payoutId,
       depositStagedPaymentId: settlementLinks.depositStagedPaymentId,
+      conflictGiftId: settlementLinks.conflictGiftId,
       lifecycle: settlementLinks.lifecycle,
       provenance: settlementLinks.provenance,
       confirmedByUserId: settlementLinks.confirmedByUserId,
@@ -160,6 +162,13 @@ async function main(): Promise<void> {
       diffs.push(
         `deposit ${link.depositStagedPaymentId ?? "∅"}≠${
           expected.depositStagedPaymentId ?? "∅"
+        }`,
+      );
+    }
+    if ((link.conflictGiftId ?? null) !== (expected.conflictGiftId ?? null)) {
+      diffs.push(
+        `conflictGift ${link.conflictGiftId ?? "∅"}≠${
+          expected.conflictGiftId ?? "∅"
         }`,
       );
     }

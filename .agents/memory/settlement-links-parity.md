@@ -64,3 +64,30 @@ legacy-status lane read `exempt`. The parity gate is blind to this; dev holds ze
 proof of read-equivalence. Diff the derived output on any status/edge the mirror maps
 differently than the old read path, and read-only-check prod's population of those
 edge statuses (here `confirmed_excluded`) before deprecating the legacy source.
+
+## conflict_approved has no lifecycle value — it is `proposed` + `conflict_gift_id`
+
+The 3-value lifecycle (proposed|confirmed|exempt) can't hold the legacy
+`conflict_approved` state (a proposal that landed on an already-booked QB gift,
+awaiting keep/replace). Representation: `settlement_links.conflict_gift_id`
+(nullable FK→gifts_and_payments, ON DELETE SET NULL) mirroring
+`stripe_payouts.qb_conflict_gift_id`. A conflict is `lifecycle='proposed' AND
+conflict_gift_id IS NOT NULL` — deliberately NOT a 4th lifecycle value (that forks
+every lifecycle read, e.g. `derivePayoutLanes` maps lifecycle straight to funding).
+
+**Rule:** the deriver emits `conflictGiftId = payout.qbConflictGiftId` unconditionally
+for BOTH proposed AND confirmed families (retained on the confirmed link as the
+revert-of-keep discriminator + double-book-guard input). Parity compares it with
+`(a ?? null) !== (b ?? null)` — no drift carve-out (unlike confirmed_at, it has no
+sync-worker bump source).
+
+**Why the mirror must NOT add its own re-pointing:** the propose pass
+(`stripeReconcile`) sets/clears `qbConflictGiftId` atomically with status in the SAME
+`update(stripePayouts)` then calls the sync — so `proposed` can never carry a stale
+conflict pointer. Gift merge does NOT re-point `qbConflictGiftId` (losers are
+archived, not deleted), and gift hard-delete nulls both columns symmetrically via
+ON DELETE SET NULL. So mirror==derive(payout) holds by construction; adding divergent
+merge re-pointing to `conflict_gift_id` alone would break parity. Any future
+AUTHORITATIVE writer (post write-flip) MUST preserve this atomic set/clear of the
+conflict pointer alongside lifecycle. Backfill 0092 can only SET (column starts all
+NULL); the never-CLEAR case is unreachable at backfill time and the gate catches it.
