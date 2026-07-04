@@ -2,12 +2,12 @@ import { type Request } from "express";
 import {
   giftsAndPayments,
   stripeStagedCharges,
-  stripePayouts,
   stagedPayments,
   organizations,
   people,
   households,
   emails,
+  settlementLinks,
 } from "@workspace/db/schema";
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { newId } from "./helpers";
@@ -84,18 +84,19 @@ export async function createGiftFromChargeInTx(
   // here would double-count the same money. Mirrors the standalone create-gift
   // route. The payout row is already locked by the caller.
   if (charge.stripePayoutId) {
-    const payout = await tx
-      .select({
-        qb: stripePayouts.qbReconciliationStatus,
-        conflictGiftId: stripePayouts.qbConflictGiftId,
-      })
-      .from(stripePayouts)
-      .where(eq(stripePayouts.id, charge.stripePayoutId))
+    // Read-flip: the settlement link is authoritative. A link carrying a conflict
+    // gift means this payout's money is already booked as a QB-derived gift —
+    // whether an unresolved conflict (proposed link + conflict gift) or a confirmed
+    // "keep" that left that gift in place (confirmed link + conflict gift). A link
+    // with no conflict gift reconciled a bare deposit into no gift, so per-charge
+    // gifts are still correct — allow it. The payout row is already locked by the
+    // caller, so all settlement-link writers are serialized behind it.
+    const link = await tx
+      .select({ conflictGiftId: settlementLinks.conflictGiftId })
+      .from(settlementLinks)
+      .where(eq(settlementLinks.payoutId, charge.stripePayoutId))
       .then((r) => r[0]);
-    if (
-      payout?.qb === "conflict_approved" ||
-      (payout?.qb === "confirmed_reconciled" && payout.conflictGiftId)
-    ) {
+    if (link?.conflictGiftId) {
       throw new ReconcileAbort(409, {
         error: "qb_conflict",
         message:

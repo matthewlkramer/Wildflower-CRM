@@ -22,7 +22,8 @@ import {
   eq,
   getTableColumns,
   ilike,
-  inArray,
+  isNotNull,
+  isNull,
   or,
   sql,
 } from "drizzle-orm";
@@ -180,7 +181,7 @@ const stagedSelect = {
   // Non-destructive QuickBooks supersede audit (display-only; populated by the
   // gated supersede pass). 'conflict_approved' blocks minting a duplicate gift.
   payoutQbSupersedeStatus: stripePayouts.qbSupersedeStatus,
-  payoutQbConflictGiftId: stripePayouts.qbConflictGiftId,
+  payoutQbConflictGiftId: settlementLinks.conflictGiftId,
 };
 
 function withJoins<T extends PgSelect>(q: T) {
@@ -208,6 +209,10 @@ function withJoins<T extends PgSelect>(q: T) {
     .leftJoin(
       stripePayouts,
       eq(stripePayouts.id, stripeStagedCharges.stripePayoutId),
+    )
+    .leftJoin(
+      settlementLinks,
+      eq(settlementLinks.payoutId, stripeStagedCharges.stripePayoutId),
     );
 }
 
@@ -609,24 +614,19 @@ router.post(
         // reconciliation queue (we never mutate QB data). Set by the proposal
         // pass; inert (unmatched) until a proposal lands on an approved lump.
         if (locked.stripePayoutId) {
-          const payout = await tx
-            .select({
-              qb: stripePayouts.qbReconciliationStatus,
-              conflictGiftId: stripePayouts.qbConflictGiftId,
-            })
-            .from(stripePayouts)
-            .where(eq(stripePayouts.id, locked.stripePayoutId))
+          // Read-flip: the settlement link is authoritative. Block when the
+          // payout's money is ALREADY booked as a QB-derived gift — a link
+          // carrying a conflict gift, whether an unresolved conflict (proposed
+          // link + conflict gift) or a confirmed "keep" that left that gift in
+          // place (confirmed link + conflict gift). A link with no conflict gift
+          // reconciled a bare deposit into no gift, so per-charge gifts are still
+          // the correct booking — allow it.
+          const link = await tx
+            .select({ conflictGiftId: settlementLinks.conflictGiftId })
+            .from(settlementLinks)
+            .where(eq(settlementLinks.payoutId, locked.stripePayoutId))
             .then((r) => r[0]);
-          // Block when the payout's money is ALREADY booked as a QB-derived gift:
-          // either an unresolved conflict (conflict_approved), or a confirmed
-          // "keep" that left that gift in place (confirmed_reconciled WITH a
-          // qbConflictGiftId pointer). A confirmed_reconciled payout whose
-          // qbConflictGiftId is null reconciled a bare deposit into no gift, so
-          // per-charge gifts are still the correct booking — allow it.
-          if (
-            payout?.qb === "conflict_approved" ||
-            (payout?.qb === "confirmed_reconciled" && payout.conflictGiftId)
-          ) {
+          if (link?.conflictGiftId) {
             throw new Error(QB_CONFLICT);
           }
         }
@@ -1264,33 +1264,31 @@ const RECON_QUEUES = [
   "confirmed",
   "all",
 ] as const;
-const CONFIRMED_STATUSES = [
-  "confirmed_reconciled",
-  "confirmed_excluded",
-  "confirmed_keep",
-  "confirmed_replace",
-] as const;
-
+// Read-flip: recon queue buckets derive from the AUTHORITATIVE settlement link
+// (leftJoined on the payout), not the legacy enum:
+//   unmatched → no link · proposed → proposed link, no conflict gift ·
+//   conflict → proposed link WITH a conflict gift · confirmed → confirmed link ·
+//   all → any link. Every caller must leftJoin settlementLinks on payoutId.
 function reconQueueWhere(queue: ReconQueue) {
   switch (queue) {
     case "unmatched":
-      // Stray Stripe: a payout that found no QuickBooks deposit candidate (the
-      // stray-Stripe worklist). These never appear in the active queues above.
-      return eq(stripePayouts.qbReconciliationStatus, "unmatched");
+      // Stray Stripe: a payout with no settlement link (found no QuickBooks
+      // deposit candidate). These never appear in the active queues above.
+      return isNull(settlementLinks.id);
     case "proposed":
-      return eq(stripePayouts.qbReconciliationStatus, "proposed");
+      return and(
+        eq(settlementLinks.lifecycle, "proposed"),
+        isNull(settlementLinks.conflictGiftId),
+      );
     case "conflict":
-      return eq(stripePayouts.qbReconciliationStatus, "conflict_approved");
+      return and(
+        eq(settlementLinks.lifecycle, "proposed"),
+        isNotNull(settlementLinks.conflictGiftId),
+      );
     case "confirmed":
-      return inArray(stripePayouts.qbReconciliationStatus, [
-        ...CONFIRMED_STATUSES,
-      ]);
+      return eq(settlementLinks.lifecycle, "confirmed");
     case "all":
-      return inArray(stripePayouts.qbReconciliationStatus, [
-        "proposed",
-        "conflict_approved",
-        ...CONFIRMED_STATUSES,
-      ]);
+      return isNotNull(settlementLinks.id);
   }
 }
 
@@ -1345,7 +1343,7 @@ router.get(
           activeDeposit,
           eq(activeDeposit.id, settlementLinks.depositStagedPaymentId),
         )
-        .leftJoin(conflictGift, eq(conflictGift.id, stripePayouts.qbConflictGiftId))
+        .leftJoin(conflictGift, eq(conflictGift.id, settlementLinks.conflictGiftId))
         .leftJoin(conflictOrg, eq(conflictOrg.id, conflictGift.organizationId))
         .leftJoin(
           conflictHousehold,
@@ -1362,6 +1360,7 @@ router.get(
       db
         .select({ value: count() })
         .from(stripePayouts)
+        .leftJoin(settlementLinks, eq(settlementLinks.payoutId, stripePayouts.id))
         .where(where)
         .then((r) => r[0]),
     ]);

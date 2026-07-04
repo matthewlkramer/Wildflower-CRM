@@ -1,5 +1,9 @@
 import { db } from "@workspace/db";
-import { stripePayouts, stagedPayments } from "@workspace/db/schema";
+import {
+  stripePayouts,
+  stagedPayments,
+  settlementLinks,
+} from "@workspace/db/schema";
 import {
   and,
   eq,
@@ -183,14 +187,29 @@ function shiftDate(isoDate: string, days: number): string {
   return new Date(t + days * ADD_DAY_MS).toISOString().slice(0, 10);
 }
 
-/** Payout reconciliation states that a proposal pass may (re)compute. */
-const REPROPOSABLE = ["unmatched", "proposed", "conflict_approved"] as const;
+/**
+ * Read-flip predicate: a payout is (re)proposable unless it already carries a
+ * CONFIRMED settlement link. Correlated on stripePayouts.id, so it drops into
+ * both the candidate SELECT's WHERE and each guarded UPDATE's WHERE.
+ */
+const notConfirmed = () =>
+  notExists(
+    db
+      .select({ x: sql<number>`1` })
+      .from(settlementLinks)
+      .where(
+        and(
+          eq(settlementLinks.payoutId, stripePayouts.id),
+          eq(settlementLinks.lifecycle, "confirmed"),
+        ),
+      ),
+  );
 
 /**
  * Recompute payout↔deposit proposals over every NON-confirmed payout (optionally
  * restricted to `payoutIds`). Idempotent: re-running yields the same proposals.
- * Writes ONLY stripe_payouts proposal columns and guards `qb_reconciliation_status`
- * in every UPDATE so a concurrent human confirm is never clobbered.
+ * Writes ONLY stripe_payouts proposal columns and guards against a CONFIRMED
+ * settlement link in every UPDATE so a concurrent human confirm is never clobbered.
  *
  * Lock-free: callers already holding the per-account "stripe" advisory lock (the
  * backfill / sync workers) call this directly; the public proposePayoutMatches()
@@ -201,29 +220,30 @@ export async function runProposalPass(
 ): Promise<ProposalSummary> {
   const where =
     payoutIds && payoutIds.length
-      ? and(
-          inArray(stripePayouts.qbReconciliationStatus, [...REPROPOSABLE]),
-          inArray(stripePayouts.id, payoutIds),
-        )
-      : inArray(stripePayouts.qbReconciliationStatus, [...REPROPOSABLE]);
+      ? and(notConfirmed(), inArray(stripePayouts.id, payoutIds))
+      : notConfirmed();
 
+  // Read-flip: link existence (leftJoin) replaces the legacy `unmatched` enum —
+  // a NULL linkId means the payout has no settlement link (nothing to clear).
   const payouts = await db
     .select({
       id: stripePayouts.id,
       amount: stripePayouts.amount,
       netTotal: stripePayouts.netTotal,
       arrivalDate: stripePayouts.arrivalDate,
-      status: stripePayouts.qbReconciliationStatus,
+      linkId: settlementLinks.id,
     })
     .from(stripePayouts)
+    .leftJoin(settlementLinks, eq(settlementLinks.payoutId, stripePayouts.id))
     .where(where);
 
   // Deposit lumps already CONFIRMED-linked to a payout are taken — never propose
-  // them to another payout.
+  // them to another payout. Read-flip: read the confirmed links' deposits, not
+  // the legacy matched pointer column.
   const takenRows = await db
-    .select({ id: stripePayouts.matchedQbStagedPaymentId })
-    .from(stripePayouts)
-    .where(isNotNull(stripePayouts.matchedQbStagedPaymentId));
+    .select({ id: settlementLinks.depositStagedPaymentId })
+    .from(settlementLinks)
+    .where(eq(settlementLinks.lifecycle, "confirmed"));
   const taken = new Set(takenRows.map((r) => r.id).filter(Boolean) as string[]);
   // Within a single pass, never assign one deposit lump to two payouts.
   const assigned = new Set<string>();
@@ -290,27 +310,35 @@ export async function runProposalPass(
 
     if (!best) {
       // No eligible candidate — clear any stale proposal back to unmatched.
-      if (p.status !== "unmatched") {
-        const upd = await db
-          .update(stripePayouts)
-          .set({
-            // Phase-4 authoritative write: the legacy enum + pointer columns are
-            // reverse-derived from the ABSENCE of a settlement link (unmatched).
-            ...reverseSettlementLink(null),
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(stripePayouts.id, p.id),
-              inArray(stripePayouts.qbReconciliationStatus, [...REPROPOSABLE]),
-            ),
-          )
-          .returning({ id: stripePayouts.id });
-        if (upd.length) {
-          cleared += 1;
+      if (p.linkId != null) {
+        // T5.1: the guarded UPDATE and the settlement-link write must be ONE
+        // transaction. The UPDATE row-locks the payout, so a concurrent human
+        // confirm (which takes FOR UPDATE) serializes behind it and re-evaluates
+        // its status guard. Without this, a confirm landing BETWEEN the two
+        // statements would be silently overwritten once reads are flipped to
+        // settlement_links (the link would revert confirmed → proposed/absent).
+        const didClear = await db.transaction(async (tx) => {
+          const upd = await tx
+            .update(stripePayouts)
+            .set({
+              // Phase-4 authoritative write: the legacy enum + pointer columns are
+              // reverse-derived from the ABSENCE of a settlement link (unmatched).
+              ...reverseSettlementLink(null),
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(stripePayouts.id, p.id),
+                notConfirmed(),
+              ),
+            )
+            .returning({ id: stripePayouts.id });
+          if (!upd.length) return false;
           // Plane-1 authoritative write: remove the settlement link.
-          await deleteSettlementLink(db, p.id);
-        }
+          await deleteSettlementLink(tx, p.id);
+          return true;
+        });
+        if (didClear) cleared += 1;
       }
       continue;
     }
@@ -353,26 +381,32 @@ export async function runProposalPass(
     // want, then reverse-derive the legacy enum + pointer columns from it. A
     // non-null conflict gift marks the legacy `conflict_approved` case.
     const link = proposeSettlementLink(best.c.id, isConflict ? giftId : null);
-    const upd = await db
-      .update(stripePayouts)
-      .set({
-        ...reverseSettlementLink(link),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(stripePayouts.id, p.id),
-          inArray(stripePayouts.qbReconciliationStatus, [...REPROPOSABLE]),
-          candidateStateGuard,
-        ),
-      )
-      .returning({ id: stripePayouts.id });
+    // T5.1: UPDATE + settlement-link upsert in ONE transaction (see clear branch
+    // above) so a racing human confirm cannot be lost between the two writes.
+    const applied = await db.transaction(async (tx) => {
+      const upd = await tx
+        .update(stripePayouts)
+        .set({
+          ...reverseSettlementLink(link),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(stripePayouts.id, p.id),
+            notConfirmed(),
+            candidateStateGuard,
+          ),
+        )
+        .returning({ id: stripePayouts.id });
+      if (!upd.length) return false;
+      // Plane-1 authoritative write: upsert the freshly proposed / conflict link.
+      await upsertSettlementLink(tx, p.id, link);
+      return true;
+    });
 
-    if (upd.length) {
+    if (applied) {
       if (isConflict) conflicts += 1;
       else proposed += 1;
-      // Plane-1 authoritative write: upsert the freshly proposed / conflict link.
-      await upsertSettlementLink(db, p.id, link);
     }
   }
 

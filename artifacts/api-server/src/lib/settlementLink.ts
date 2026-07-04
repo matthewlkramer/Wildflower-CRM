@@ -1,19 +1,19 @@
 import { db } from "@workspace/db";
-import { settlementLinks, stripePayouts } from "@workspace/db/schema";
+import { settlementLinks } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
 
 /**
- * Plane-1 settlement-link dual-write (docs/reconciliation-design.md §4.3).
+ * Plane-1 settlement-link primitives (docs/reconciliation-design.md §4.3).
  *
- * Phase-4 rollout is ADDITIVE dual-write: the payout reconciliation choke points
- * (proposal pass, human confirm/revert, mint/link commit) still write the legacy
- * `stripe_payouts.qb_reconciliation_status` + pointer columns AS the source of
- * truth, and then call {@link syncSettlementLinkFromPayout} to MIRROR that state
- * into `settlement_links`. Reads are NOT flipped to `settlement_links` yet (that
- * read cutover is a later, prod-parity-gated step). Keeping the mirror derived
- * from the payout's post-write legacy state (rather than hand-writing lifecycle at
- * each of ~11 sites) means the mapping lives in exactly ONE place and stays in
- * lockstep with the 0089 backfill by construction.
+ * `settlement_links` is now the AUTHORITATIVE store: every payout reconciliation
+ * choke point (proposal pass, human confirm/revert, mint/link commit) expresses
+ * its INTENT as the `settlement_links` row it wants (via `settlementWriter.ts`)
+ * and reverse-derives the legacy `stripe_payouts.qb_reconciliation_status` +
+ * pointer columns from it, so those columns stay a perfect mirror until they are
+ * retired (Phase-6). `deriveSettlementLinkFields` is the pure legacy→link mapping
+ * retained ONLY for the forward parity gate (`parity:settlement-links`) and the
+ * 0089/0092 backfills; `upsertSettlementLink` / `deleteSettlementLink` are the
+ * low-level physical writes shared with the authoritative writer.
  */
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -99,54 +99,10 @@ export function deriveSettlementLinkFields(
 }
 
 /**
- * Mirror a payout's current legacy reconciliation state into `settlement_links`.
- * Re-reads the payout under the caller's connection/transaction, derives the
- * intended link, and upserts it (deterministic id `sl_<payoutId>`) — or deletes
- * any existing mirror when no link should exist (payout back to `unmatched`).
- *
- * Idempotent + self-healing: it always converges on the payout's post-write state,
- * so it is safe to call unconditionally after any payout reconciliation mutation.
- * At every runtime write site the resolved deposit is a freshly-read / row-locked
- * staged payment that exists, so the FK is satisfied without a redundant existence
- * probe (the 0089 backfill guards dangling historic pointers instead).
- */
-export async function syncSettlementLinkFromPayout(
-  dbi: DbLike,
-  payoutId: string,
-): Promise<void> {
-  const [payout] = await dbi
-    .select({
-      qbReconciliationStatus: stripePayouts.qbReconciliationStatus,
-      proposedQbStagedPaymentId: stripePayouts.proposedQbStagedPaymentId,
-      matchedQbStagedPaymentId: stripePayouts.matchedQbStagedPaymentId,
-      qbConflictStagedPaymentId: stripePayouts.qbConflictStagedPaymentId,
-      qbConflictGiftId: stripePayouts.qbConflictGiftId,
-      qbReconciliationConfirmedByUserId:
-        stripePayouts.qbReconciliationConfirmedByUserId,
-      qbReconciliationConfirmedAt: stripePayouts.qbReconciliationConfirmedAt,
-      updatedAt: stripePayouts.updatedAt,
-    })
-    .from(stripePayouts)
-    .where(eq(stripePayouts.id, payoutId))
-    .limit(1);
-  if (!payout) return;
-
-  const fields = deriveSettlementLinkFields(payout);
-  if (!fields) {
-    await deleteSettlementLink(dbi, payoutId);
-    return;
-  }
-  await upsertSettlementLink(dbi, payoutId, fields);
-}
-
-/**
  * Physical upsert of ONE settlement link from explicit fields (deterministic id
- * `sl_<payoutId>`). This is the single low-level write shared by BOTH the legacy
- * mirror ({@link syncSettlementLinkFromPayout}, which derives the fields from the
- * payout's post-write legacy state) AND the Phase-4 authoritative writer
- * (`settlementWriter.ts`, which builds the fields from explicit human/system intent
- * and reverse-maps the legacy enum from them). One physical writer means the row
- * shape can never drift between the two callers.
+ * `sl_<payoutId>`). The single low-level write used by the Phase-4 authoritative
+ * writer (`settlementWriter.ts`), which builds the fields from explicit
+ * human/system intent and reverse-maps the legacy enum + pointer columns from them.
  */
 export async function upsertSettlementLink(
   dbi: DbLike,

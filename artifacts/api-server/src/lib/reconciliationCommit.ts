@@ -8,6 +8,7 @@ import {
   opportunitiesAndPledges,
   stripeStagedCharges,
   stripePayouts,
+  settlementLinks,
 } from "@workspace/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { newId } from "./helpers";
@@ -432,19 +433,26 @@ export async function mintGiftInTx(
     if (charge.stripePayoutId) {
       // Phase-4 authoritative write: express the confirm as a settlement link and
       // reverse-derive the legacy columns from it. This UPDATE has no prior-status
-      // pin, so we READ + carry the payout's conflict gift through (FOR UPDATE):
-      // clearing a set qbConflictGiftId would re-open per-charge minting against a
-      // kept QB gift = double-book, and misroute revert. Conflict is guarded
-      // upstream so it is null in practice, but we never clear it blindly.
+      // pin, so we READ + carry the conflict gift through under the payout row lock
+      // (all settlement-link writers take that same lock, so the value can't change
+      // before our confirm write below): clearing a set conflict gift would re-open
+      // per-charge minting against a kept QB gift = double-book, and misroute revert.
+      // Read-flip: the conflict gift is read off the AUTHORITATIVE settlement link,
+      // not the legacy payout column. Conflict is guarded upstream so it is null in
+      // practice, but we never clear it blindly.
       const now = new Date();
-      const [po] = await tx
-        .select({ qbConflictGiftId: stripePayouts.qbConflictGiftId })
+      await tx
+        .select({ id: stripePayouts.id })
         .from(stripePayouts)
         .where(eq(stripePayouts.id, charge.stripePayoutId))
         .for("update");
+      const [po] = await tx
+        .select({ conflictGiftId: settlementLinks.conflictGiftId })
+        .from(settlementLinks)
+        .where(eq(settlementLinks.payoutId, charge.stripePayoutId));
       const link = confirmSettlementLink({
         depositStagedPaymentId: stagedPaymentId,
-        conflictGiftId: po?.qbConflictGiftId ?? null,
+        conflictGiftId: po?.conflictGiftId ?? null,
         confirmedByUserId: userId,
         confirmedAt: now,
       });
@@ -702,19 +710,26 @@ export async function linkGiftInTx(
     if (charge.stripePayoutId) {
       // Phase-4 authoritative write: express the confirm as a settlement link and
       // reverse-derive the legacy columns from it. This UPDATE has no prior-status
-      // pin, so we READ + carry the payout's conflict gift through (FOR UPDATE):
-      // clearing a set qbConflictGiftId would re-open per-charge minting against a
-      // kept QB gift = double-book, and misroute revert. Conflict is guarded
-      // upstream so it is null in practice, but we never clear it blindly.
+      // pin, so we READ + carry the conflict gift through under the payout row lock
+      // (all settlement-link writers take that same lock, so the value can't change
+      // before our confirm write below): clearing a set conflict gift would re-open
+      // per-charge minting against a kept QB gift = double-book, and misroute revert.
+      // Read-flip: the conflict gift is read off the AUTHORITATIVE settlement link,
+      // not the legacy payout column. Conflict is guarded upstream so it is null in
+      // practice, but we never clear it blindly.
       const now = new Date();
-      const [po] = await tx
-        .select({ qbConflictGiftId: stripePayouts.qbConflictGiftId })
+      await tx
+        .select({ id: stripePayouts.id })
         .from(stripePayouts)
         .where(eq(stripePayouts.id, charge.stripePayoutId))
         .for("update");
+      const [po] = await tx
+        .select({ conflictGiftId: settlementLinks.conflictGiftId })
+        .from(settlementLinks)
+        .where(eq(settlementLinks.payoutId, charge.stripePayoutId));
       const link = confirmSettlementLink({
         depositStagedPaymentId: stagedPaymentId,
-        conflictGiftId: po?.qbConflictGiftId ?? null,
+        conflictGiftId: po?.conflictGiftId ?? null,
         confirmedByUserId: userId,
         confirmedAt: now,
       });
