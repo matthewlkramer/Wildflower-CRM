@@ -1,13 +1,12 @@
 import { db } from "@workspace/db";
 import {
-  giftsAndPayments,
+  settlementLinks,
   stagedPayments,
   stripePayouts,
-  stripeStagedCharges,
 } from "@workspace/db/schema";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { candidateGiftId } from "./stripeReconcile";
-import { upsertSettlementLink } from "./settlementLink";
+import { payoutStatusFromLink, upsertSettlementLink } from "./settlementLink";
 import {
   confirmSettlementLink,
   proposeSettlementLink,
@@ -58,11 +57,18 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * gifts. A genuine coarse-vs-granular conflict returns `manual_review_required`
  * (409) for a human to resolve out of band.
  *
- * Revert symmetry: a `confirmed_reconciled` payout reverts by its qbConflictGiftId
- * — NULL ⇒ it was a pending-deposit confirm (payout → `proposed`, deposit
- * `reconciled` → `pending`); SET ⇒ it was a keep confirm (payout →
- * `conflict_approved`, deposit left alone). Legacy confirmed_* branches are kept
- * for historical prod rows predating this model.
+ * Revert symmetry: a `confirmed_reconciled` payout reverts by its settlement
+ * link's conflict-gift discriminator — NULL ⇒ it was a pending-deposit confirm
+ * (payout → `proposed`, deposit `reconciled` → `pending`); SET ⇒ it was a keep
+ * confirm (payout → `conflict_approved`, deposit left alone).
+ *
+ * Phase-6: every gate/branch below derives state from `settlement_links` (via
+ * `payoutStatusFromLink` + the link's deposit/conflict pointers), NOT the legacy
+ * `qb_reconciliation_status` + pointer columns. Those columns are still WRITTEN in
+ * lockstep (reverseSettlementLink) as the optimistic-lock guard + mirror until a
+ * later drop task; they are no longer READ for branching. The retired legacy
+ * 7-value confirmed_* sub-states (zero in prod, unproducible by the authoritative
+ * writer) have no revert branch and degrade to `invalid_transition`.
  */
 
 export type ConfirmRevertKind = "confirmed_reconciled" | "reverted";
@@ -72,8 +78,6 @@ export type ConfirmRevertOk = {
   kind: ConfirmRevertKind;
   payoutId: string;
   stagedPaymentId: string | null;
-  /** Set by a legacy REPLACE revert: the QB-derived gift that was unarchived. */
-  restoredGiftId?: string | null;
 };
 
 export type ConfirmRevertErrorCode =
@@ -106,10 +110,19 @@ export class TransitionError extends Error {
   }
 }
 
-/** Append a timestamped audit line to a gift's free-text `details` column. */
-function appendAudit(existing: string | null, note: string, at: Date): string {
-  const line = `[${at.toISOString()}] ${note}`;
-  return existing && existing.length > 0 ? `${existing}\n${line}` : line;
+/**
+ * Read the authoritative settlement link for a payout inside a transaction. The
+ * caller has already SELECT...FOR UPDATE'd the payout row, which serializes every
+ * confirm/revert writer, so the 1:1 link (`sl_<payoutId>`) needs no separate lock.
+ * Returns null for an unmatched payout (no link); `payoutStatusFromLink` maps that
+ * to `unmatched`.
+ */
+async function readSettlementLink(tx: Tx, payoutId: string) {
+  return tx
+    .select()
+    .from(settlementLinks)
+    .where(eq(settlementLinks.payoutId, payoutId))
+    .then((r) => r[0] ?? null);
 }
 
 async function runTransition(
@@ -159,13 +172,14 @@ export async function confirmPendingQbDepositInTx(
     .for("update")
     .then((r) => r[0]);
   if (!payout) throw new TransitionError("not_found", "Payout not found.");
-  if (payout.qbReconciliationStatus !== "proposed") {
+  const priorLink = await readSettlementLink(tx, payoutId);
+  if (payoutStatusFromLink(priorLink) !== "proposed") {
     throw new TransitionError(
       "invalid_transition",
       "Only a proposed payout can be confirmed as excluded.",
     );
   }
-  const depositId = payout.proposedQbStagedPaymentId;
+  const depositId = priorLink?.depositStagedPaymentId ?? null;
   if (!depositId) {
     throw new TransitionError(
       "invalid_transition",
@@ -214,12 +228,12 @@ export async function confirmPendingQbDepositInTx(
 
   // Phase-4 authoritative write: express the confirm as the settlement link we
   // want, then reverse-derive the legacy enum + pointer columns from it. The
-  // conflict gift is carried through from the locked payout (null in every legal
-  // `proposed` state) so a stale pointer is preserved byte-identically, never
-  // cleared.
+  // conflict gift is carried through from the prior settlement link (null in every
+  // legal `proposed` state) so a stale pointer is preserved byte-identically,
+  // never cleared.
   const link = confirmSettlementLink({
     depositStagedPaymentId: depositId,
-    conflictGiftId: payout.qbConflictGiftId,
+    conflictGiftId: priorLink?.conflictGiftId ?? null,
     confirmedByUserId: userId,
     confirmedAt: now,
   });
@@ -285,13 +299,14 @@ export async function confirmKeepApprovedQbGiftInTx(
     .for("update")
     .then((r) => r[0]);
   if (!payout) throw new TransitionError("not_found", "Payout not found.");
-  if (payout.qbReconciliationStatus !== "conflict_approved") {
+  const priorLink = await readSettlementLink(tx, payoutId);
+  if (payoutStatusFromLink(priorLink) !== "conflict_approved") {
     throw new TransitionError(
       "invalid_transition",
       "Only a conflicting (already-approved) payout can be kept.",
     );
   }
-  const depositId = payout.qbConflictStagedPaymentId;
+  const depositId = priorLink?.depositStagedPaymentId ?? null;
   if (!depositId) {
     throw new TransitionError(
       "invalid_transition",
@@ -326,7 +341,7 @@ export async function confirmKeepApprovedQbGiftInTx(
   // we cannot prove a per-charge gift wouldn't double-book it, so we refuse the
   // keep instead of risking it. This also guards the legacy standalone
   // confirm-keep route, which never passes through the bundle re-derive gate.
-  const keptGiftId = payout.qbConflictGiftId;
+  const keptGiftId = priorLink?.conflictGiftId ?? null;
   if (!keptGiftId) {
     throw new TransitionError(
       "invalid_transition",
@@ -403,17 +418,16 @@ export function confirmReplaceApprovedQbGift(
   });
 }
 
-// ─── REVERT (any confirmed state → back to proposal) ───────────────────────
-// Undoes a confirm. The reverse target depends on the confirmed state:
-//   confirmed_excluded → proposed         (deposit pending again)
-//   confirmed_keep     → conflict_approved (deposit untouched)         [legacy]
-//   confirmed_replace  → conflict_approved (deposit re-approved, gift unarchived) [legacy]
-// D4 confirmed_reconciled reverts by its qbConflictGiftId discriminator:
-//   qbConflictGiftId NULL → proposed          (deposit `reconciled` → `pending`)
-//   qbConflictGiftId SET  → conflict_approved (deposit left untouched)
-// confirmed_replace revert is refused (charges_already_booked) once any of the
-// payout's Stripe charges have been booked into a gift — the operator must
-// revert those charge gifts first.
+// ─── REVERT (confirmed_reconciled → back to proposal) ──────────────────────
+// Undoes a confirm. State is DERIVED from the settlement link (Phase-6), so the
+// only revertable state is D4 `confirmed_reconciled`; it routes by the link's
+// conflict-gift discriminator:
+//   conflictGiftId NULL → proposed          (deposit `reconciled` → `pending`)
+//   conflictGiftId SET  → conflict_approved (deposit left untouched)
+// Any other state has nothing to revert → invalid_transition. The retired legacy
+// confirmed_excluded/keep/replace sub-states (zero in prod, unproducible by the
+// authoritative writer) are not distinguishable from the link and are no longer
+// handled.
 export function revertPayoutQbConfirmation(
   args: ConfirmRevertArgs,
 ): Promise<ConfirmRevertResult> {
@@ -428,8 +442,9 @@ export function revertPayoutQbConfirmation(
       .then((r) => r[0]);
     if (!payout) throw new TransitionError("not_found", "Payout not found.");
 
-    const status = payout.qbReconciliationStatus;
-    const depositId = payout.matchedQbStagedPaymentId;
+    const priorLink = await readSettlementLink(tx, payoutId);
+    const status = payoutStatusFromLink(priorLink);
+    const depositId = priorLink?.depositStagedPaymentId ?? null;
 
     // ── D4 primary revert: confirmed_reconciled ──────────────────────────────
     if (status === "confirmed_reconciled") {
@@ -442,11 +457,11 @@ export function revertPayoutQbConfirmation(
       // qbConflictGiftId set ⇒ this was a KEEP confirm of an already-booked gift:
       // the deposit + gift were never touched, so revert restores the payout to
       // conflict_approved and leaves the deposit alone.
-      if (payout.qbConflictGiftId) {
+      if (priorLink?.conflictGiftId) {
         // Phase-4 authoritative write: revert to a proposed link carrying the
         // kept gift (legacy `conflict_approved`); reverse-deriving it restores the
         // proposed + conflict pointers = (deposit, deposit, keptGift) identically.
-        const link = proposeSettlementLink(depositId, payout.qbConflictGiftId);
+        const link = proposeSettlementLink(depositId, priorLink.conflictGiftId);
         const updated = await tx
           .update(stripePayouts)
           .set({
@@ -538,249 +553,6 @@ export function revertPayoutQbConfirmation(
         kind: "reverted",
         payoutId,
         stagedPaymentId: depositId,
-      };
-    }
-
-    if (status === "confirmed_excluded") {
-      if (!depositId) {
-        throw new TransitionError(
-          "invalid_transition",
-          "Payout has no linked deposit to revert.",
-        );
-      }
-      const deposit = await tx
-        .select()
-        .from(stagedPayments)
-        .where(eq(stagedPayments.id, depositId))
-        .for("update")
-        .then((r) => r[0]);
-      if (!deposit)
-        throw new TransitionError(
-          "not_found",
-          "Linked QuickBooks deposit not found.",
-        );
-      const reincluded = await tx
-        .update(stagedPayments)
-        .set({
-          status: "pending",
-          exclusionReason: null,
-          classificationSource: "manual",
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(stagedPayments.id, depositId),
-            eq(stagedPayments.status, "excluded"),
-          ),
-        )
-        .returning({ id: stagedPayments.id });
-      if (!reincluded.length) {
-        throw new TransitionError(
-          "invalid_transition",
-          "The linked deposit is no longer excluded. Refresh and retry.",
-        );
-      }
-      // Phase-4 authoritative write: revert to a clean PROPOSED settlement link
-      // (an excluded deposit had no conflict gift) and reverse-derive the legacy
-      // enum + pointer columns from it — identical to the legacy `proposed` state.
-      const link = proposeSettlementLink(depositId, null);
-      const updated = await tx
-        .update(stripePayouts)
-        .set({
-          ...reverseSettlementLink(link),
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(stripePayouts.id, payoutId),
-            eq(stripePayouts.qbReconciliationStatus, "confirmed_excluded"),
-          ),
-        )
-        .returning({ id: stripePayouts.id });
-      if (!updated.length) {
-        throw new TransitionError(
-          "invalid_transition",
-          "This payout has changed. Refresh and retry.",
-        );
-      }
-      await upsertSettlementLink(tx, payoutId, link);
-      return {
-        ok: true,
-        kind: "reverted",
-        payoutId,
-        stagedPaymentId: depositId,
-      };
-    }
-
-    if (status === "confirmed_keep") {
-      if (!depositId) {
-        throw new TransitionError(
-          "invalid_transition",
-          "Payout has no linked deposit to revert.",
-        );
-      }
-      // KEEP touched nothing but the payout, so revert restores the payout only.
-      // Phase-4 authoritative write: revert to the CONFLICT proposed link (the
-      // kept QB gift is the conflict discriminator) and reverse-derive the legacy
-      // enum + pointer columns — identical to the legacy `conflict_approved` state.
-      const link = proposeSettlementLink(depositId, payout.qbConflictGiftId);
-      const updated = await tx
-        .update(stripePayouts)
-        .set({
-          ...reverseSettlementLink(link),
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(stripePayouts.id, payoutId),
-            eq(stripePayouts.qbReconciliationStatus, "confirmed_keep"),
-          ),
-        )
-        .returning({ id: stripePayouts.id });
-      if (!updated.length) {
-        throw new TransitionError(
-          "invalid_transition",
-          "This payout has changed. Refresh and retry.",
-        );
-      }
-      await upsertSettlementLink(tx, payoutId, link);
-      return {
-        ok: true,
-        kind: "reverted",
-        payoutId,
-        stagedPaymentId: depositId,
-      };
-    }
-
-    if (status === "confirmed_replace") {
-      const conflictGiftId = payout.qbConflictGiftId;
-      if (!depositId || !conflictGiftId) {
-        throw new TransitionError(
-          "invalid_transition",
-          "Payout has no linked deposit + gift to revert.",
-        );
-      }
-      // Refuse if any of this payout's Stripe charges have already been booked
-      // into a gift — those gifts must be reverted through the charge flow first.
-      const booked = await tx
-        .select({ id: stripeStagedCharges.id })
-        .from(stripeStagedCharges)
-        .where(
-          and(
-            eq(stripeStagedCharges.stripePayoutId, payoutId),
-            eq(stripeStagedCharges.status, "approved"),
-            sql`(${stripeStagedCharges.createdGiftId} IS NOT NULL OR ${stripeStagedCharges.matchedGiftId} IS NOT NULL)`,
-          ),
-        )
-        .limit(1);
-      if (booked.length) {
-        throw new TransitionError(
-          "charges_already_booked",
-          "Stripe charges from this payout have already been booked into gifts. Revert those charge gifts before reverting the replacement.",
-        );
-      }
-
-      const deposit = await tx
-        .select()
-        .from(stagedPayments)
-        .where(eq(stagedPayments.id, depositId))
-        .for("update")
-        .then((r) => r[0]);
-      if (!deposit)
-        throw new TransitionError(
-          "not_found",
-          "Linked QuickBooks deposit not found.",
-        );
-
-      const gift = await tx
-        .select()
-        .from(giftsAndPayments)
-        .where(eq(giftsAndPayments.id, conflictGiftId))
-        .for("update")
-        .then((r) => r[0]);
-      if (!gift)
-        throw new TransitionError(
-          "not_found",
-          "Archived QuickBooks-derived gift not found.",
-        );
-
-      const reincluded = await tx
-        .update(stagedPayments)
-        .set({
-          status: "approved",
-          exclusionReason: null,
-          classificationSource: "manual",
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(stagedPayments.id, depositId),
-            eq(stagedPayments.status, "excluded"),
-          ),
-        )
-        .returning({ id: stagedPayments.id });
-      if (!reincluded.length) {
-        throw new TransitionError(
-          "invalid_transition",
-          "The linked deposit is no longer excluded. Refresh and retry.",
-        );
-      }
-
-      const unarchived = await tx
-        .update(giftsAndPayments)
-        .set({
-          archivedAt: null,
-          details: appendAudit(
-            gift.details,
-            `Unarchived: Stripe payout reconciliation reverted (payout ${payoutId}).`,
-            now,
-          ),
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(giftsAndPayments.id, conflictGiftId),
-            isNotNull(giftsAndPayments.archivedAt),
-          ),
-        )
-        .returning({ id: giftsAndPayments.id });
-      if (!unarchived.length) {
-        throw new TransitionError(
-          "invalid_transition",
-          "The QuickBooks-derived gift is no longer archived. Refresh and retry.",
-        );
-      }
-
-      // Phase-4 authoritative write: revert to the CONFLICT proposed link (the
-      // restored QB gift is the conflict discriminator) and reverse-derive the
-      // legacy enum + pointer columns — identical to the legacy `conflict_approved`.
-      const link = proposeSettlementLink(depositId, conflictGiftId);
-      const updated = await tx
-        .update(stripePayouts)
-        .set({
-          ...reverseSettlementLink(link),
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(stripePayouts.id, payoutId),
-            eq(stripePayouts.qbReconciliationStatus, "confirmed_replace"),
-          ),
-        )
-        .returning({ id: stripePayouts.id });
-      if (!updated.length) {
-        throw new TransitionError(
-          "invalid_transition",
-          "This payout has changed. Refresh and retry.",
-        );
-      }
-      await upsertSettlementLink(tx, payoutId, link);
-      return {
-        ok: true,
-        kind: "reverted",
-        payoutId,
-        stagedPaymentId: depositId,
-        restoredGiftId: conflictGiftId,
       };
     }
 

@@ -14,6 +14,7 @@ import { asyncHandler, notFound } from "../../lib/helpers";
 import { getViewer } from "../../lib/identityVisibility";
 import { buildReconciliationGraph } from "../../lib/reconciliationGraph";
 import { deriveEvidenceLanes } from "../../lib/reconciliationLanes";
+import { payoutStatusLabelSql } from "../../lib/settlementLink";
 import {
   entityWhere,
   isParkedFiscallyRow,
@@ -116,7 +117,7 @@ const stripeEvidenceExpr = sql<{
     'chargeCount', (
       SELECT COUNT(*)::int FROM stripe_staged_charges c WHERE c.stripe_payout_id = p.id
     ),
-    'reconciliationStatus', p.qb_reconciliation_status,
+    'reconciliationStatus', ${payoutStatusLabelSql},
     -- The single backing charge's money + payer, but ONLY when exactly one
     -- charge backs the payout (MIN collapses that lone row; COUNT<>1 → NULL),
     -- so multi-charge payouts never show one charge's donor as the whole.

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { clearPaymentApplicationsForStagedIds } from "./paymentApplicationsTestUtil";
+import { deriveSettlementLinkFields } from "../lib/settlementLink";
 
 /**
  * DB-backed coverage for the D4 human-confirm/revert payout ↔ QuickBooks-deposit
@@ -37,6 +38,7 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   giftAllocations: Db["giftAllocations"];
   stripeStagedCharges: Db["stripeStagedCharges"];
+  settlementLinks: Db["settlementLinks"];
   organizations: Db["organizations"];
   users: Db["users"];
 };
@@ -72,6 +74,33 @@ async function seedPayout(over: {
     qbConflictGiftId: over.qbConflictGiftId ?? null,
   });
   payoutIds.push(id);
+  // Mirror the runtime settlement-link dual-write so the Phase-6 read-flip (confirm
+  // /revert now derive their gate + pointers from settlement_links, not the legacy
+  // columns) sees this fixture. Reuse the SAME pure deriver production uses, so the
+  // fixture stays in lockstep by construction. FK cascade on payout_id cleans it up
+  // with the payout in afterAll.
+  const link = deriveSettlementLinkFields({
+    qbReconciliationStatus: over.status ?? "unmatched",
+    proposedQbStagedPaymentId: over.proposedQbStagedPaymentId ?? null,
+    matchedQbStagedPaymentId: over.matchedQbStagedPaymentId ?? null,
+    qbConflictStagedPaymentId: over.qbConflictStagedPaymentId ?? null,
+    qbConflictGiftId: over.qbConflictGiftId ?? null,
+    qbReconciliationConfirmedByUserId: null,
+    qbReconciliationConfirmedAt: null,
+    updatedAt: new Date(),
+  });
+  if (link) {
+    await db.insert(schema.settlementLinks).values({
+      id: `sl_${id}`,
+      payoutId: id,
+      depositStagedPaymentId: link.depositStagedPaymentId,
+      conflictGiftId: link.conflictGiftId,
+      lifecycle: link.lifecycle,
+      provenance: link.provenance,
+      confirmedByUserId: link.confirmedByUserId,
+      confirmedAt: link.confirmedAt,
+    });
+  }
   return id;
 }
 
@@ -159,6 +188,7 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     giftAllocations: dbMod.giftAllocations,
     stripeStagedCharges: dbMod.stripeStagedCharges,
+    settlementLinks: dbMod.settlementLinks,
     organizations: dbMod.organizations,
     users: dbMod.users,
   };

@@ -122,6 +122,26 @@ export function payoutStatusFromLink(
 }
 
 /**
+ * SQL twin of {@link payoutStatusFromLink}: the legacy reconciliation status enum
+ * a payout's settlement link REPRESENTS, computed inline for the raw-SQL evidence
+ * readers (the reconciliation bundle-anchor list + card evidence expression) that
+ * have been flipped off `stripe_payouts.qb_reconciliation_status`.
+ *
+ * REQUIRES the surrounding query to alias `settlement_links` as `sl`. A missing
+ * link (LEFT JOIN → all-null `sl`) falls through to `'unmatched'`, exactly like
+ * the null branch of {@link payoutStatusFromLink}. It emits ONLY the four live
+ * values the authoritative writer produces and MUST stay in lockstep with that
+ * function; the retired 7-value display distinction is not reconstructible (and,
+ * per prod, has zero live rows), so it is intentionally collapsed here.
+ */
+export const payoutStatusLabelSql = sql`CASE
+  WHEN sl.lifecycle = 'confirmed' THEN 'confirmed_reconciled'
+  WHEN sl.lifecycle = 'proposed' AND sl.conflict_gift_id IS NOT NULL THEN 'conflict_approved'
+  WHEN sl.lifecycle = 'proposed' THEN 'proposed'
+  ELSE 'unmatched'
+END`;
+
+/**
  * Physical upsert of ONE settlement link from explicit fields (deterministic id
  * `sl_<payoutId>`). The single low-level write used by the Phase-4 authoritative
  * writer (`settlementWriter.ts`), which builds the fields from explicit

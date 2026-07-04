@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql, type SQL } from "drizzle-orm";
 import { asyncHandler, parsePagination } from "../../lib/helpers";
+import { payoutStatusLabelSql } from "../../lib/settlementLink";
 
 /**
  * Unified settlement-anchor enumeration for the reactive bundle workbench.
@@ -114,9 +115,9 @@ router.get(
 
     // Normalized projection over each source — identical column list/types so the
     // two halves UNION ALL cleanly. The settlement link's deposit supplies the
-    // payer name for a Stripe payout. (status_label stays on the legacy raw
-    // qb_reconciliation_status — the 7-value display label is not reconstructible
-    // from settlement_links and is retired with the later write-flip + Phase 6.)
+    // payer name for a Stripe payout. status_label is now DERIVED from the joined
+    // settlement link (Phase-6 read-flip) — the four live values are lossless (prod
+    // holds zero legacy 7-value rows); a payout with no link → 'unmatched'.
     const stripeSelect = sql`
       SELECT
         'stripe_payout'::text AS anchor_type,
@@ -125,7 +126,7 @@ router.get(
         sp.arrival_date::text AS anchor_date,
         ad.payer_name AS payer_name,
         sp.charge_count AS charge_count,
-        sp.qb_reconciliation_status::text AS status_label
+        ${payoutStatusLabelSql}::text AS status_label
       FROM stripe_payouts sp
       LEFT JOIN settlement_links sl ON sl.payout_id = sp.id
       LEFT JOIN staged_payments ad ON ad.id = sl.deposit_staged_payment_id
