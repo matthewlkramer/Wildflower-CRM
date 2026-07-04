@@ -55,9 +55,22 @@ source reads or writes gel anymore — corrections `/apply` writes only the
 corroborating PA row, and giftCombine re-homes only corroborating PA rows (keyed on
 the anchor `qb:{paymentId}` / `st:{stripeChargeId}`, deleting the loser's row when
 the survivor already corroborates that anchor to dodge 23505). The only remaining
-references are comments + the retained `parity-gift-evidence-links.ts` script.
+references are historical comments + the design doc + migrations 0063/0090/0091.
 
-**Do NOT re-run `parity:gift-evidence-links` as a post-flip gate.** It was the S1–S4
-dual-write gate only. Post-flip divergence is EXPECTED by design: new corroborating
-rows have no gel twin. gel stays physically present (deprecated) until the S7
-human-gated `DROP TABLE`.
+## gel is DROPPED (Phase 5 S7 complete)
+
+The physical `DROP TABLE gift_evidence_links` shipped as the reviewed, human-applied
+`lib/db/migrations/0091_drop_gift_evidence_links.sql` (idempotent `IF EXISTS`, no
+CASCADE — gel had only outgoing FKs, so RESTRICT-on-surprise is the safe default;
+applied via `psql -1`). The Drizzle schema file, its barrel export, and the obsolete
+`parity-gift-evidence-links.ts` script + its package.json entry are all gone; the
+test's gel references (the `gelCount()` regression guard, schema field, dbMod
+assignment, afterAll cleanup) were removed. The corroborating PA ledger is now the
+ONLY home for evidence↔gift links — there is no `parity:gift-evidence-links` gate.
+
+**Prod ordering (durable lesson):** once you DROP a table in DEV, dev is AHEAD of
+prod, so ANY Publish before the human applies the DROP SQL on prod makes the drizzle
+Publish diff propose the destructive DROP against prod (Publish diffs dev↔prod, not
+code↔prod). Apply the reviewed DROP SQL to prod FIRST, THEN Publish. Same drop either
+way, but SQL-first keeps the reviewed-SQL invariant and dodges this repo's distrusted
+/ interactively-aborting Publish drop-diffs.

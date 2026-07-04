@@ -19,7 +19,6 @@
     "backfill:derived-opps": "tsx src/scripts/backfill-derived-opp-fields.ts",
     "backfill:gift-qb-tie": "tsx src/scripts/backfill-gift-qb-tie.ts",
     "parity:payment-applications": "tsx src/scripts/parity-payment-applications.ts",
-    "parity:gift-evidence-links": "tsx src/scripts/parity-gift-evidence-links.ts",
     "parity:unit-groups": "tsx src/scripts/parity-unit-groups.ts",
     "parity:settlement-links": "tsx src/scripts/parity-settlement-links.ts",
     "parity:group-readflip": "tsx src/scripts/parity-group-readflip.ts",

@@ -1,0 +1,50 @@
+-- Migration 0091: Physically DROP the deprecated gift_evidence_links (gel) table.
+--
+-- PHASE 5 (docs/reconciliation-design.md §7 step 7 — "deprecate, then, much
+-- later, human-gated, drop legacy"). Decision 2 folded gel into the unified
+-- payment_applications (PA) ledger as link_role='corroborating' rows. The gel
+-- lifecycle is now complete:
+--   S1-S4  additive schema + dual-write + dev/prod parity + backfill (0090)
+--   S5     read-flip: every gel reader switched onto the corroborating ledger;
+--          nothing reads or writes gel anymore
+--   S6     gel marked @deprecated
+--   S7     THIS FILE — the physical drop.
+--
+-- SAFE TO DROP: the corroborating payment_applications rows (link_role=
+-- 'corroborating') are the SOLE home for evidence<->gift corroboration links.
+-- gel is empty in prod (0 rows at the S4 parity gate) and unread by live code,
+-- so this drops an empty, dead table. Even were a row present, 0090 + the live
+-- dual-write already mirrored every gel row into a corroborating PA twin, so no
+-- evidence link is lost. This CANNOT move a counted dollar: corroborating rows
+-- are excluded from every counted SUM / tie / settled derivation, and gel never
+-- entered one either.
+--
+-- IF EXISTS -> idempotent / re-runnable (a second run is a no-op).
+--
+-- NO CASCADE, ON PURPOSE: nothing has a foreign key INTO gel (its own FKs point
+-- OUT, to gifts_and_payments and users, and are dropped automatically with the
+-- table). Plain DROP TABLE therefore succeeds cleanly. If some unexpected
+-- dependent object existed, we WANT the RESTRICT default to error and alert us
+-- rather than silently cascade-drop it.
+--
+-- ORDERING (prod): S5 + S6 must already be live (they are — nothing reads gel).
+-- Apply THIS file to prod FIRST, THEN Publish the S7 code (which removes gel from
+-- the Drizzle schema, deletes the obsolete parity-gift-evidence-links script +
+-- its package.json entry, and drops the test's gel references). Dropping via this
+-- reviewed SQL first means the subsequent Publish diffs prod-has-no-table against
+-- schema-has-no-table => NO destructive schema diff, so drizzle-kit never
+-- proposes (or interactively stalls on) the DROP. See the runbook for detail.
+--
+-- Apply with psql -1 (wraps the file in ONE transaction; do NOT add BEGIN/COMMIT
+-- or it nests and warns):
+--   psql "$DATABASE_URL"      -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0091_drop_gift_evidence_links.sql   (dev)
+--   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0091_drop_gift_evidence_links.sql   (prod)
+
+DROP TABLE IF EXISTS gift_evidence_links;
+
+-- Verification (run by hand AFTER applying) -----------------------------------
+--   -- The table should be gone:
+--   SELECT to_regclass('public.gift_evidence_links');   -- expect: NULL
+--
+--   -- The corroborating ledger (its sole home) is untouched:
+--   SELECT link_role, count(*) FROM payment_applications GROUP BY 1 ORDER BY 1;

@@ -87,7 +87,6 @@ let schema: {
   organizations: Db["organizations"];
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
-  giftEvidenceLinks: Db["giftEvidenceLinks"];
   paymentApplications: Db["paymentApplications"];
   financialCorrectionDismissals: Db["financialCorrectionDismissals"];
 };
@@ -147,16 +146,6 @@ async function corrLedgerCount(): Promise<number> {
   return rows.length;
 }
 
-// gift_evidence_links is frozen after the Phase-5 read-flip: /apply must never
-// write it. This stays 0 as a regression guard against a reintroduced gel write.
-async function gelCount(): Promise<number> {
-  const rows = await db
-    .select({ id: schema.giftEvidenceLinks.id })
-    .from(schema.giftEvidenceLinks)
-    .where(eqFn(schema.giftEvidenceLinks.evidenceId, STAGED_E));
-  return rows.length;
-}
-
 beforeAll(async () => {
   if (!HAS_DB) return;
   const dbMod = await import("@workspace/db");
@@ -167,7 +156,6 @@ beforeAll(async () => {
     organizations: dbMod.organizations,
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
-    giftEvidenceLinks: dbMod.giftEvidenceLinks,
     paymentApplications: dbMod.paymentApplications,
     financialCorrectionDismissals: dbMod.financialCorrectionDismissals,
   };
@@ -257,16 +245,6 @@ afterAll(async () => {
   if (!HAS_DB) return;
   if (server)
     await new Promise<void>((resolve) => server.close(() => resolve()));
-  await db
-    .delete(schema.giftEvidenceLinks)
-    .where(
-      inArrayFn(schema.giftEvidenceLinks.giftId, [
-        GIFT_M1,
-        GIFT_M2,
-        GIFT_A1,
-        GIFT_A2,
-      ]),
-    );
   // The /apply flow writes a corroborating payment_applications row per link
   // (Phase-5 read-flip); clear them before the staged-payment (payment_id FK)
   // and gift (gift_id RESTRICT) deletes below.
@@ -373,7 +351,6 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
   it("applies link_evidence: one deposit corroborates many gifts, idempotently, without touching the QB source", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
     expect(await corrLedgerCount()).toBe(0);
-    expect(await gelCount()).toBe(0);
 
     expect(
       await postJson("/api/financial-corrections/apply", {
@@ -383,8 +360,6 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
       }),
     ).toBe(200);
     expect(await corrLedgerCount()).toBe(2);
-    // Phase-5 read-flip: the legacy gift_evidence_links table is never written.
-    expect(await gelCount()).toBe(0);
 
     // Idempotent: re-applying the same correction adds no rows.
     expect(
@@ -395,7 +370,6 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
       }),
     ).toBe(200);
     expect(await corrLedgerCount()).toBe(2);
-    expect(await gelCount()).toBe(0);
 
     // Book-once preserved: the gifts' counted pointers stay null (corroborating
     // links never become the counted source)...

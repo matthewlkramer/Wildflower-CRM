@@ -495,8 +495,9 @@ router.post(
     }
 
     // Phase-5 read-flip: write ONLY the corroborating payment_applications row.
-    // gift_evidence_links is frozen (no longer written; deprecated pending its
-    // physical DROP). Each corroborating link folds into the unit↔gift ledger as
+    // The legacy gift_evidence_links table has been dropped (Phase-5 §7,
+    // deprecate-then-drop); the corroborating ledger is its sole home. Each
+    // corroborating link folds into the unit↔gift ledger as
     // a `link_role='corroborating'` row — audit-only, never in the counted SUM;
     // amount_applied stays NULL (this flow carries no sub_amount). It dedupes on
     // the corroborating per-anchor partial UNIQUE, so re-applying the same
