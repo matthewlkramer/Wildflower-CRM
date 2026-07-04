@@ -8654,6 +8654,10 @@ ready?: boolean;
  */
 exclusionReason?: StagedPaymentExclusionReason;
 /**
+ * Filter cards by funding source (Gift report §4.5): stripe / donorbox / qb_direct (checks, ACH, cash — money not routed through a processor, including unclassified). Applies across all queues.
+ */
+fundingSource?: ListReconciliationCardsFundingSource;
+/**
  * @minimum 1
  * @maximum 500
  */
@@ -8663,6 +8667,15 @@ limit?: number;
  */
 offset?: number;
 };
+
+export type ListReconciliationCardsFundingSource = typeof ListReconciliationCardsFundingSource[keyof typeof ListReconciliationCardsFundingSource];
+
+
+export const ListReconciliationCardsFundingSource = {
+  stripe: 'stripe',
+  donorbox: 'donorbox',
+  qb_direct: 'qb_direct',
+} as const;
 
 export type SearchReconciliationNodeParams = {
 /**

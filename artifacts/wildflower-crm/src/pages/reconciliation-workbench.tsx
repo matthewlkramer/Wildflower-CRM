@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -131,26 +131,31 @@ import { SettlementReport } from "@/components/reconciliation-bundles/Settlement
 // the remaining unit↔gift queues below.
 type ReportId = "settlement" | "gift";
 
-type QueueId =
-  | "review"
-  | "qbo"
-  | "crm"
-  | "research"
-  | "confirmed"
-  | "excluded";
+// The Gift report's orthogonal "view" (design §4.5/§4.6): the three-column
+// reconciliation report, or one of the two flag-driven filters that don't fit a
+// match-state column — needs_research parking and excluded non-gifts.
+type GiftView = "reports" | "research" | "excluded";
+
+// Funding-source filter for the Gift report (design §4.5). qb_direct = money not
+// routed through a known processor (checks, ACH, cash, and unclassified rows).
+type FundingSourceFilter = "all" | "stripe" | "qb_direct" | "donorbox";
 
 const REPORTS: { id: ReportId; name: string }[] = [
   { id: "settlement", name: "Settlement" },
   { id: "gift", name: "Gift" },
 ];
 
-const QUEUES: { id: QueueId; name: string; dot: string; live: boolean }[] = [
-  { id: "review", name: "Needs review", dot: "#9a6b00", live: true },
-  { id: "qbo", name: "QBO-only", dot: "#b23b2e", live: true },
-  { id: "crm", name: "CRM-only", dot: "#b23b2e", live: true },
-  { id: "research", name: "Research", dot: "#857b73", live: true },
-  { id: "confirmed", name: "Confirmed", dot: "#2f7d57", live: false },
-  { id: "excluded", name: "Excluded", dot: "#6c4ea3", live: true },
+const GIFT_VIEWS: { id: GiftView; name: string }[] = [
+  { id: "reports", name: "Reports" },
+  { id: "research", name: "Research" },
+  { id: "excluded", name: "Excluded" },
+];
+
+const FUNDING_SOURCES: { id: FundingSourceFilter; name: string }[] = [
+  { id: "all", name: "All sources" },
+  { id: "stripe", name: "Stripe" },
+  { id: "qb_direct", name: "QuickBooks direct" },
+  { id: "donorbox", name: "Donorbox" },
 ];
 
 // Excluded queue is server-paginated (can be several thousand rows).
@@ -346,11 +351,18 @@ export default function ReconciliationWorkbench() {
   const [report, setReport] = useState<ReportId>(() =>
     initialQueueParam === "bundle" ? "settlement" : "gift",
   );
-  const [queue, setQueue] = useState<QueueId>(() =>
-    QUEUES.some((q) => q.id === initialQueueParam)
-      ? (initialQueueParam as QueueId)
-      : "review",
+  // Old per-queue deep links collapse into the new Gift-report views: the
+  // research/excluded flag queues keep their own view; every match-state queue
+  // (review/qbo/crm/confirmed/done) lands on the three-column report.
+  const [giftView, setGiftView] = useState<GiftView>(() =>
+    initialQueueParam === "research"
+      ? "research"
+      : initialQueueParam === "excluded"
+        ? "excluded"
+        : "reports",
   );
+  const [fundingSource, setFundingSource] =
+    useState<FundingSourceFilter>("all");
   const [search, setSearch] = useState("");
   // Excluded queue: server-side reason filter + pagination offset.
   const [excludedReason, setExcludedReason] = useState<
@@ -385,23 +397,48 @@ export default function ReconciliationWorkbench() {
   } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Needs-review queue = the active work queue (omit `queue` param). Loaded
-  // once and split client-side into Needs review / QBO-only buckets (see
-  // `buckets` below). Research is its own server-side queue (below).
-  const cardsQuery = useListReconciliationCards({ limit: 200, offset: 0 });
-  // CRM-only queue badge — total count of on-books gift allocations that don't
+  // Funding-source filter param shared by the needs-review / matched / research /
+  // excluded queries (server-side, §4.5). `all` → omit the param.
+  const fundingSourceParam =
+    fundingSource === "all" ? undefined : fundingSource;
+  // "Donor not credited" column = the needs-review queue: pulled money without a
+  // confirmed gift. Loaded once and split client-side into review/QBO buckets.
+  const cardsQuery = useListReconciliationCards({
+    limit: 200,
+    offset: 0,
+    fundingSource: fundingSourceParam,
+  });
+  // "Matched" column = the `done` queue: money already tied to a confirmed gift.
+  const doneParams = {
+    queue: "done" as const,
+    limit: 200,
+    offset: 0,
+    fundingSource: fundingSourceParam,
+  };
+  const doneQuery = useListReconciliationCards(doneParams, {
+    query: {
+      enabled: report === "gift" && giftView === "reports",
+      queryKey: getListReconciliationCardsQueryKey(doneParams),
+    },
+  });
+  // "Gift with no money" column total — on-books gift allocations that don't
   // reconcile to QuickBooks (allocation granularity, mirrors the worklist).
   const crmCountQuery = useListGiftsMissingQb({ limit: 1, offset: 0 });
-  // Research queue — pending money flagged needs_research; its own server-side
+  // Research filter — pending money flagged needs_research; its own server-side
   // query so flagged rows surface regardless of the needs_review page window.
-  const researchParams = { queue: "research", limit: 200, offset: 0 } as const;
+  const researchParams = {
+    queue: "research",
+    limit: 200,
+    offset: 0,
+    fundingSource: fundingSourceParam,
+  } as const;
   const researchQuery = useListReconciliationCards(researchParams, {
     query: {
-      enabled: queue === "research",
+      enabled: report === "gift" && giftView === "research",
       queryKey: getListReconciliationCardsQueryKey(researchParams),
     },
   });
-  // Excluded queue — fetched on its own, only while that tab is open, with a
+  // Excluded filter — fetched on its own, only while that view is open, with a
   // server-side reason filter + pagination.
   const excludedParams = {
     queue: "excluded" as const,
@@ -409,10 +446,11 @@ export default function ReconciliationWorkbench() {
     limit: EXCLUDED_PAGE_SIZE,
     offset: excludedOffset,
     exclusionReason: excludedReason === "all" ? undefined : excludedReason,
+    fundingSource: fundingSourceParam,
   };
   const excludedQuery = useListReconciliationCards(excludedParams, {
     query: {
-      enabled: queue === "excluded",
+      enabled: report === "gift" && giftView === "excluded",
       queryKey: getListReconciliationCardsQueryKey(excludedParams),
     },
   });
@@ -466,10 +504,24 @@ export default function ReconciliationWorkbench() {
     return { review, qbo };
   }, [filtered]);
 
-  // Research queue cards (server-fetched); search-filtered client-side.
+  // Research cards (server-fetched); search-filtered client-side.
   const researchCards = useMemo(
     () => (researchQuery.data?.data ?? []).filter(matchSearch),
     [researchQuery.data, matchSearch],
+  );
+
+  // "Matched" column = the `done` queue (money already tied to a confirmed
+  // gift), search-filtered client-side.
+  const matchedCards = useMemo(
+    () => (doneQuery.data?.data ?? []).filter(matchSearch),
+    [doneQuery.data, matchSearch],
+  );
+
+  // "Donor not credited" column = every needs-review card (has-candidate review
+  // rows + candidate-less QBO rows) — pulled money with no confirmed gift yet.
+  const donorNotCredited = useMemo(
+    () => [...buckets.review, ...buckets.qbo],
+    [buckets],
   );
 
   // Excluded is server-filtered + paginated, so no client-side filtering here.
@@ -480,10 +532,10 @@ export default function ReconciliationWorkbench() {
   const excludedTotal = excludedQuery.data?.pagination.total ?? 0;
 
   // Excluded uses server-side filtering + pagination — reset to page 1 whenever
-  // the search term or the reason filter changes.
+  // the search term, reason filter, or funding source changes.
   useEffect(() => {
     setExcludedOffset(0);
-  }, [search, excludedReason]);
+  }, [search, excludedReason, fundingSource]);
 
   const readyCount = useMemo(
     () => buckets.review.filter((c) => c.ready).length,
@@ -1176,8 +1228,6 @@ export default function ReconciliationWorkbench() {
     );
   };
 
-  const activeQueue = QUEUES.find((q) => q.id === queue)!;
-
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       {/* Main column */}
@@ -1191,7 +1241,7 @@ export default function ReconciliationWorkbench() {
               <p className="text-sm text-muted-foreground">
                 {report === "settlement"
                   ? "Settlement — match Stripe payouts to their QuickBooks deposits."
-                  : `${activeQueue.name} — one place to reconcile pulled money to CRM gifts.`}{" "}
+                  : "Gift — reconcile pulled money to CRM gifts across three columns: matched, donor not credited, and gifts with no money."}{" "}
                 Pull-only: nothing is written to QuickBooks, Stripe, or Donorbox.
               </p>
             </div>
@@ -1212,7 +1262,7 @@ export default function ReconciliationWorkbench() {
                   Re-match donors
                 </Button>
               )}
-              {report === "gift" && queue === "review" && (
+              {report === "gift" && giftView === "reports" && (
                 <Button
                   onClick={approveAllHighConfidence}
                   disabled={busy || readyCount === 0}
@@ -1251,70 +1301,78 @@ export default function ReconciliationWorkbench() {
             })}
           </nav>
 
-          {/* Gift-report queue sub-nav + search (Settlement has its own filters). */}
+          {/* Gift-report filter bar — funding-source + views replace the old
+              six-queue sub-nav (design §4.5/§4.6). Settlement has its own filters. */}
           {report === "gift" && (
-          <div className="flex flex-wrap items-center gap-1 border-b pb-2">
+          <div className="flex flex-col gap-2 border-b pb-2">
+            <div className="flex flex-wrap items-center gap-1">
+              {/* View toggle: the three-column report vs the two flag filters
+                  (needs_research parking, excluded non-gifts). */}
+              <nav className="flex flex-wrap items-center gap-1">
+                {GIFT_VIEWS.map((v) => {
+                  const active = v.id === giftView;
+                  const count =
+                    v.id === "research"
+                      ? researchQuery.data?.pagination.total
+                      : v.id === "excluded"
+                        ? excludedQuery.data?.pagination.total
+                        : undefined;
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => setGiftView(v.id)}
+                      className={cn(
+                        "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
+                        active
+                          ? "bg-muted font-medium text-foreground"
+                          : "text-muted-foreground hover:bg-muted/60",
+                      )}
+                      data-testid={`button-giftview-${v.id}`}
+                    >
+                      {v.name}
+                      {count !== undefined && count > 0 && (
+                        <Badge variant="secondary">{count}</Badge>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+              <div className="relative ml-auto">
+                <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search payer, gift, donor…"
+                  className="h-8 w-64 pl-7 text-sm"
+                />
+              </div>
+            </div>
+            {/* Funding-source filter (§4.5) — slices every card query server-side. */}
             <nav className="flex flex-wrap items-center gap-1">
-              {QUEUES.map((q) => {
-                const active = q.id === queue;
+              <span className="mr-1 text-xs font-medium text-muted-foreground">
+                Funding source
+              </span>
+              {FUNDING_SOURCES.map((f) => {
+                const active = f.id === fundingSource;
                 return (
                   <button
-                    key={q.id}
+                    key={f.id}
                     type="button"
-                    onClick={() => setQueue(q.id)}
+                    onClick={() => setFundingSource(f.id)}
                     className={cn(
-                      "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
+                      "rounded-full border px-3 py-1 text-xs transition-colors",
                       active
-                        ? "bg-muted font-medium text-foreground"
-                        : "text-muted-foreground hover:bg-muted/60",
+                        ? "border-transparent bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground hover:bg-muted/60",
                     )}
+                    data-testid={`button-funding-${f.id}`}
                   >
-                    <span
-                      className="inline-block h-2 w-2 rounded-full"
-                      style={{ backgroundColor: q.dot }}
-                    />
-                    {q.name}
-                    {q.id === "review" && (
-                      <Badge variant="secondary">
-                        {cardsQuery.isLoading ? "…" : buckets.review.length}
-                      </Badge>
-                    )}
-                    {q.id === "qbo" && buckets.qbo.length > 0 && (
-                      <Badge variant="secondary">{buckets.qbo.length}</Badge>
-                    )}
-                    {q.id === "crm" && (
-                      <Badge variant="secondary">
-                        {crmCountQuery.isLoading
-                          ? "…"
-                          : (crmCountQuery.data?.pagination.total ?? 0)}
-                      </Badge>
-                    )}
-                    {q.id === "research" && researchQuery.data && (
-                      <Badge variant="secondary">
-                        {researchQuery.data.pagination.total}
-                      </Badge>
-                    )}
-                    {q.id === "excluded" && excludedQuery.data && (
-                      <Badge variant="secondary">{excludedTotal}</Badge>
-                    )}
-                    {!q.live && (
-                      <span className="text-[10px] uppercase text-muted-foreground/70">
-                        soon
-                      </span>
-                    )}
+                    {f.name}
                   </button>
                 );
               })}
             </nav>
-            <div className="relative ml-auto">
-              <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search payer, gift, donor…"
-                className="h-8 w-64 pl-7 text-sm"
-              />
-            </div>
           </div>
           )}
         </header>
@@ -1322,11 +1380,7 @@ export default function ReconciliationWorkbench() {
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-28 pr-1">
           {report === "settlement" ? (
             <SettlementReport />
-          ) : queue === "crm" ? (
-            <StrayGiftsWorklist />
-          ) : queue === "confirmed" ? (
-            <ComingSoon name={activeQueue.name} />
-          ) : queue === "excluded" ? (
+          ) : giftView === "excluded" ? (
             <ExcludedTable
               cards={excludedCards}
               total={excludedTotal}
@@ -1340,32 +1394,64 @@ export default function ReconciliationWorkbench() {
               busy={actionBusy}
               onReInclude={handleReInclude}
             />
-          ) : queue === "research" ? (
+          ) : giftView === "research" ? (
             researchQuery.isLoading ? (
               <LoadingRow />
             ) : researchQuery.isError ? (
               <ErrorRow label="research queue" />
             ) : researchCards.length === 0 ? (
-              <EmptyBucket queue="research" />
+              <ResearchEmpty />
             ) : (
               researchCards.map((card) => renderReconCard(card))
             )
-          ) : cardsQuery.isLoading ? (
-            <LoadingRow />
-          ) : cardsQuery.isError ? (
-            <ErrorRow label="review queue" />
           ) : (
-            // Needs review + QBO-only share one card.
-            (() => {
-              const bucket = queue === "review" ? buckets.review : buckets.qbo;
-              if (bucket.length === 0)
-                return queue === "review" ? (
-                  <EmptyState />
+            // Gift report — three columns (design §4.5): Matched (done queue) ·
+            // Donor not credited (needs-review) · Gift with no money (stray gifts).
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <ReportColumn
+                title="Matched"
+                hint="Money tied to a confirmed CRM gift."
+                count={doneQuery.isLoading ? undefined : matchedCards.length}
+              >
+                {doneQuery.isLoading ? (
+                  <LoadingRow />
+                ) : doneQuery.isError ? (
+                  <ErrorRow label="matched queue" />
+                ) : matchedCards.length === 0 ? (
+                  <ColumnEmpty label="No matched money yet." />
                 ) : (
-                  <EmptyBucket queue={queue} />
-                );
-              return bucket.map((card) => renderReconCard(card));
-            })()
+                  matchedCards.map((card) => renderReconCard(card))
+                )}
+              </ReportColumn>
+              <ReportColumn
+                title="Donor not credited"
+                hint="Pulled money with no confirmed gift."
+                count={
+                  cardsQuery.isLoading ? undefined : donorNotCredited.length
+                }
+              >
+                {cardsQuery.isLoading ? (
+                  <LoadingRow />
+                ) : cardsQuery.isError ? (
+                  <ErrorRow label="review queue" />
+                ) : donorNotCredited.length === 0 ? (
+                  <ColumnEmpty label="Every pulled payment is credited." />
+                ) : (
+                  donorNotCredited.map((card) => renderReconCard(card))
+                )}
+              </ReportColumn>
+              <ReportColumn
+                title="Gift with no money"
+                hint="On-books gifts missing a QuickBooks match."
+                count={
+                  crmCountQuery.isLoading
+                    ? undefined
+                    : (crmCountQuery.data?.pagination.total ?? 0)
+                }
+              >
+                <StrayGiftsWorklist />
+              </ReportColumn>
+            </div>
           )}
         </div>
       </main>
@@ -1432,7 +1518,8 @@ export default function ReconciliationWorkbench() {
       )}
 
       {/* Group selected → one gift (Review / QBO-only / Research / Sync buckets) */}
-      {(queue === "review" || queue === "qbo" || queue === "research") &&
+      {report === "gift" &&
+        (giftView === "reports" || giftView === "research") &&
         selectedIds.size > 0 && (
           <div className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border bg-card px-4 py-2 shadow-xl">
             <span className="text-sm font-medium">
@@ -2872,29 +2959,6 @@ function PendingTray({
 
 // ─── Empty / placeholder states ───────────────────────────────────────────────
 
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center text-muted-foreground">
-      <Check className="mb-2 h-8 w-8 text-emerald-500" />
-      <p className="font-medium">Nothing to review</p>
-      <p className="text-sm">No QuickBooks money is waiting on a gift match.</p>
-    </div>
-  );
-}
-
-function ComingSoon({ name }: { name: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center text-muted-foreground">
-      <X className="mb-2 h-8 w-8" />
-      <p className="font-medium">{name} is coming soon</p>
-      <p className="max-w-sm text-sm">
-        This queue is part of the workbench foundation but isn't wired up yet.
-        Use the existing reconciliation pages for now.
-      </p>
-    </div>
-  );
-}
-
 function LoadingRow() {
   return (
     <div className="flex items-center justify-center py-16 text-muted-foreground">
@@ -2923,16 +2987,51 @@ function EmptyExcluded() {
   );
 }
 
-function EmptyBucket({ queue }: { queue: QueueId }) {
-  const copy =
-    queue === "qbo"
-      ? "No QuickBooks money is waiting without a CRM candidate."
-      : "Nothing is flagged for research.";
+function ResearchEmpty() {
   return (
     <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center text-muted-foreground">
       <Check className="mb-2 h-8 w-8 text-emerald-500" />
       <p className="font-medium">All clear</p>
-      <p className="text-sm">{copy}</p>
+      <p className="text-sm">Nothing is flagged for research.</p>
+    </div>
+  );
+}
+
+// A single column of the three-column Gift report (design §4.5).
+function ReportColumn({
+  title,
+  hint,
+  count,
+  children,
+}: {
+  title: string;
+  hint: string;
+  count?: number;
+  children: ReactNode;
+}) {
+  return (
+    <section className="flex min-w-0 flex-col rounded-lg border bg-muted/20">
+      <header className="flex items-center justify-between gap-2 border-b px-3 py-2">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold">{title}</h2>
+          <p className="truncate text-xs text-muted-foreground">{hint}</p>
+        </div>
+        {count !== undefined && (
+          <Badge variant="secondary" className="shrink-0">
+            {count}
+          </Badge>
+        )}
+      </header>
+      <div className="space-y-3 p-2">{children}</div>
+    </section>
+  );
+}
+
+function ColumnEmpty({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-10 text-center text-xs text-muted-foreground">
+      <Check className="mb-1 h-5 w-5 text-emerald-500" />
+      {label}
     </div>
   );
 }

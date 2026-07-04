@@ -32,6 +32,7 @@ export const ListReconciliationCardsQueryParams = zod.object({
   "entityId": zod.coerce.string().optional().describe('Filter to one Wildflower legal entity attribution.'),
   "ready": zod.coerce.boolean().optional().describe('Filter to cards whose auto-proposal passes (true) \/ fails (false) the consistency gate.'),
   "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).optional().describe('Filter the Excluded queue to a single exclusion reason. Only meaningful with queue=excluded; ignored otherwise.'),
+  "fundingSource": zod.enum(['stripe', 'donorbox', 'qb_direct']).optional().describe('Filter cards by funding source (Gift report §4.5): stripe \/ donorbox \/ qb_direct (checks, ACH, cash — money not routed through a processor, including unclassified). Applies across all queues.'),
   "limit": zod.coerce.number().min(1).max(listReconciliationCardsQueryLimitMax).default(listReconciliationCardsQueryLimitDefault),
   "offset": zod.coerce.number().min(listReconciliationCardsQueryOffsetMin).default(listReconciliationCardsQueryOffsetDefault)
 })

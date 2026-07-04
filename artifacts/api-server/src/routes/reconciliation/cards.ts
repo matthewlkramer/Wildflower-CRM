@@ -7,7 +7,7 @@ import {
   stripePayouts,
   stripeStagedCharges,
 } from "@workspace/db/schema";
-import { and, asc, eq, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { opportunitiesAndPledges } from "@workspace/db/schema";
 import { qbLedgerExistsForGiftExcludingPayment } from "../../lib/paymentApplications";
@@ -282,6 +282,17 @@ router.get(
         : undefined;
     const limit = clampInt(req.query["limit"], 50, 1, 500);
     const offset = clampInt(req.query["offset"], 0, 0, 1_000_000);
+    // Gift-report funding-source filter (§4.5): stripe / donorbox / qb_direct.
+    // qb_direct = money not routed through a known processor (checks, ACH, cash)
+    // and unclassified rows. Validated against the closed set so an arbitrary
+    // string never reaches a pg-enum comparison.
+    const rawFundingSource = req.query["fundingSource"];
+    const fundingSource =
+      rawFundingSource === "stripe" ||
+      rawFundingSource === "donorbox" ||
+      rawFundingSource === "qb_direct"
+        ? rawFundingSource
+        : undefined;
 
     // Per-charge expansion only applies to the live work queues (default/all,
     // needs_review, research). The terminal queues (reconciled, excluded, done,
@@ -307,6 +318,17 @@ router.get(
     }
     if (ready === true) conds.push(readyExpr);
     else if (ready === false) conds.push(sql`NOT ${readyExpr}`);
+    if (fundingSource === "stripe")
+      conds.push(eq(stagedPayments.fundingSource, "stripe"));
+    else if (fundingSource === "donorbox")
+      conds.push(eq(stagedPayments.fundingSource, "donorbox"));
+    else if (fundingSource === "qb_direct") {
+      const fsCond = or(
+        isNull(stagedPayments.fundingSource),
+        notInArray(stagedPayments.fundingSource, ["stripe", "donorbox"]),
+      );
+      if (fsCond) conds.push(fsCond);
+    }
     // Always collapse source groups to their representative row (one card per
     // group), in both the page and the count.
     conds.push(groupRepresentativeWhere);
