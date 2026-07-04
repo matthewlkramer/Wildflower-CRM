@@ -146,3 +146,4 @@
 - [PA counted vs corroborating link_role](reconciliation-corroborating-link-role.md) — every payment_applications money/settled read MUST filter link_role='counted'; corroborating rows are audit-only (amount NULL) and leaked into giftPaymentSummary once.
 - [Reconciliation phase status source](reconciliation-phase-status-source.md) — trust the migration ledger + schema header comments for phase status; design-doc §7 progress prose lags the code (phases 2-5 shipped; only the two-report UI + drop tail remain).
 - [Payout status flip + mirror drop](reconciliation-phase6-status-read-flip.md) — payout status + confirm/revert lock + cards charge_unit all read settlement_links; legacy stripe_payouts mirror cols dropped (migration 0093).
+- [Matched column is read-only](reconciliation-matched-column-readonly.md) — the done/Matched report renders cards view-only (no confirm/group/checkbox); gate by COLUMN not derived status or settled grouped cards 409 on re-confirm.

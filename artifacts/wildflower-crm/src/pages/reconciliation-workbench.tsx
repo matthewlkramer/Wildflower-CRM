@@ -1183,7 +1183,10 @@ export default function ReconciliationWorkbench() {
   }, [selectedIds, groupM, invalidateAll, toast, errMessage]);
 
   // Shared card renderer for the Needs review / QBO-only / Research queues.
-  const renderReconCard = (card: ReconciliationCard) => {
+  const renderReconCard = (
+    card: ReconciliationCard,
+    opts?: { readOnly?: boolean },
+  ) => {
     // A Stripe-backed deposit is expanded into one card per backing charge, so
     // several cards can share a stagedPaymentId. Their identity (React key,
     // expand/select state) is the composite (stagedPaymentId, stripeChargeId).
@@ -1193,6 +1196,7 @@ export default function ReconciliationWorkbench() {
       <ReconCard
         key={key}
         card={card}
+        readOnly={opts?.readOnly}
         // Charge cards never enter the staging tray (it is keyed by the QB
         // deposit's payment id) — they resolve/mint/reject immediately.
         staged={
@@ -1420,7 +1424,9 @@ export default function ReconciliationWorkbench() {
                 ) : matchedCards.length === 0 ? (
                   <ColumnEmpty label="No matched money yet." />
                 ) : (
-                  matchedCards.map((card) => renderReconCard(card))
+                  matchedCards.map((card) =>
+                    renderReconCard(card, { readOnly: true }),
+                  )
                 )}
               </ReportColumn>
               <ReportColumn
@@ -1719,6 +1725,7 @@ function ReconCard({
   onToggleResearch,
   onUnstage,
   onCodingSaved,
+  readOnly = false,
 }: {
   card: ReconciliationCard;
   staged: StagedChange | undefined;
@@ -1739,6 +1746,11 @@ function ReconCard({
   onToggleResearch: () => void;
   onUnstage: () => void;
   onCodingSaved: () => void;
+  /** Settled-money report row (Matched column): render view-only — no select
+      checkbox and no confirm/create/group/reject actions. These payments are
+      already tied to a gift, so re-confirming them 409s ("already resolved");
+      a report of settled money is informational, never re-actionable here. */
+  readOnly?: boolean;
 }) {
   const conf = confidenceOf(card);
   const meta = CONFIDENCE_META[conf];
@@ -1802,7 +1814,7 @@ function ReconCard({
         {/* Select for grouping — deposit-level only; a per-charge card has no
             checkbox (its matching unit is the single charge, not the deposit). */}
         <div className="flex items-start p-3 pr-0">
-          {!isCharge && (
+          {!isCharge && !readOnly && (
             <Checkbox
               checked={selected}
               onCheckedChange={onToggleSelect}
@@ -2080,14 +2092,20 @@ function ReconCard({
 
         {/* Confidence + expand */}
         <div className="flex w-40 shrink-0 flex-col items-end justify-between border-l p-3">
-          <span
-            className={cn(
-              "rounded-full border px-2 py-0.5 text-[11px] font-medium",
-              meta.className,
-            )}
-          >
-            {meta.label}
-          </span>
+          {/* Settled-money report rows are already reconciled; a match-confidence
+              chip ("Weak"/"Strong") is meaningless (and misleading) there. */}
+          {readOnly ? (
+            <span />
+          ) : (
+            <span
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                meta.className,
+              )}
+            >
+              {meta.label}
+            </span>
+          )}
           <button
             type="button"
             onClick={onToggle}
@@ -2157,6 +2175,16 @@ function ReconCard({
               Undo
             </Button>
           </>
+        ) : readOnly ? (
+          // Settled-money report row: already tied to a gift. Re-confirming
+          // 409s ("already resolved"), so surface no re-actionable buttons —
+          // just the confirmed link. Corrections happen on the gift itself.
+          <span className="flex items-center gap-1 text-xs font-medium text-emerald-700">
+            <Check className="h-3.5 w-3.5" />
+            {linkedGiftName
+              ? `Reconciled to ${linkedGiftName}`
+              : "Reconciled"}
+          </span>
         ) : (
           <>
             {hasGift ? (
