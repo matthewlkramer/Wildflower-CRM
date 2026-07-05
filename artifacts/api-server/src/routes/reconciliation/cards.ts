@@ -238,14 +238,6 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
       )
     )`;
   if (queue === "reconciled") return eq(stagedPayments.status, "reconciled");
-  // Research parking queue: pending money a human flagged needs_research. Its
-  // own server-side query so flagged rows surface regardless of where they fall
-  // in the (paged) needs_review set.
-  if (queue === "research")
-    return and(
-      eq(stagedPayments.status, "pending"),
-      eq(stagedPayments.needsResearch, true),
-    );
   return queueWhere(queue as Queue);
 }
 
@@ -295,13 +287,10 @@ router.get(
         : undefined;
 
     // Per-charge expansion only applies to the live work queues (default/all,
-    // needs_review, research). The terminal queues (reconciled, excluded, done,
-    // rejected, fiscally_sponsored) keep one card per QB staged payment.
+    // needs_review). The terminal queues (reconciled, excluded, done, rejected,
+    // fiscally_sponsored) keep one card per QB staged payment.
     const shouldExpand =
-      queue === undefined ||
-      queue === "all" ||
-      queue === "needs_review" ||
-      queue === "research";
+      queue === undefined || queue === "all" || queue === "needs_review";
 
     const conds: SQL[] = [];
     const queueCond = reconciliationQueueWhere(queue);
@@ -757,10 +746,6 @@ router.get(
         // a charge card is approved through the per-charge Stripe flow (resolve →
         // create-gift), not the one-click QB anchor approve.
         ready: !isCharge && !isSourceGroup && row.cardReady === true,
-        // Pure human-set annotation flag (orthogonal to reconcile status) —
-        // surfaced so the workbench can route cards into the Research queue
-        // without a second fetch.
-        needsResearch: row.needsResearch === true,
         exclusionReason: row.exclusionReason ?? null,
         reconciliationLanes: deriveEvidenceLanes({
           status: laneStatus,

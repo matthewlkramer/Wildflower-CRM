@@ -27,7 +27,6 @@ import {
   SetStagedPaymentEntityBody,
   SetStagedPaymentFundingSourceBody,
   SetStagedPaymentCodingBody,
-  SetStagedPaymentNeedsResearchBody,
   GroupStagedPaymentsBody,
   UngroupStagedPaymentsBody,
 } from "@workspace/api-zod";
@@ -569,42 +568,6 @@ router.post(
     const [row] = await db
       .update(stagedPayments)
       .set(set)
-      .where(eq(stagedPayments.id, id))
-      .returning(stagedReturnColumns);
-    res.json(row);
-  }),
-);
-
-// ─── POST /staged-payments/:id/set-needs-research ──────────────────────────
-// Reviewer flags (or clears) a staged payment as not yet fully figured out
-// (unknown donor, ambiguous coding, unclear restriction, …) so they can come
-// back to it. A PURE annotation — orthogonal to reconcile status, so allowed on
-// a row in any state, and with no side effects on matching / status /
-// reconciliation. Never auto-derived. Body: { needsResearch: boolean }.
-router.post(
-  "/staged-payments/:id/set-needs-research",
-  asyncHandler(async (req, res) => {
-    const id = paramId(req);
-    const parsed = SetStagedPaymentNeedsResearchBody.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "validation_error",
-        message: "Request validation failed",
-        details: parsed.error.flatten(),
-      });
-      return;
-    }
-
-    const existing = await db
-      .select({ id: stagedPayments.id })
-      .from(stagedPayments)
-      .where(eq(stagedPayments.id, id))
-      .then((r) => r[0]);
-    if (!existing) return notFound(res, "staged payment");
-
-    const [row] = await db
-      .update(stagedPayments)
-      .set({ needsResearch: parsed.data.needsResearch, updatedAt: new Date() })
       .where(eq(stagedPayments.id, id))
       .returning(stagedReturnColumns);
     res.json(row);

@@ -55,7 +55,7 @@ export const ListCleanupQueueResponse = zod.object({
 
 
 export const FlagForResearchBody = zod.object({
-  "targetType": zod.enum(['opportunity', 'pledge', 'organization', 'person', 'gift']).describe('Kind of record being flagged.'),
+  "targetType": zod.enum(['opportunity', 'pledge', 'organization', 'person', 'gift', 'staged_payment']).describe('Kind of record being flagged.'),
   "targetId": zod.string().min(1).describe('Id of the record being flagged.'),
   "note": zod.string().min(1).describe('What needs research \/ follow-up on this record.')
 }).describe('Flag a record for research. reason_code is always \'needs_research\'.')

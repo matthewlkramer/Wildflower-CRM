@@ -27,6 +27,9 @@ const USER_ID = `${RUN}_user`;
 const ORG_ID = `${RUN}_org`;
 const OPP_ID = `${RUN}_opp`;
 const CLEANUP_ID = `cleanup_nr_${OPP_ID}`;
+const STAGED_ID = `${RUN}_staged`;
+const STAGED_PAYER = `Flag Payer ${RUN}`;
+const CLEANUP_STAGED_ID = `cleanup_nr_${STAGED_ID}`;
 
 const auth = vi.hoisted(() => ({
   current: { id: "", role: "" } as { id: string; role: string },
@@ -50,6 +53,7 @@ let schema: {
   users: Db["users"];
   organizations: Db["organizations"];
   opportunitiesAndPledges: Db["opportunitiesAndPledges"];
+  stagedPayments: Db["stagedPayments"];
   cleanupQueue: Db["cleanupQueue"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -60,6 +64,7 @@ type CleanupItem = {
   id: string;
   targetType: string;
   targetId: string;
+  targetName: string | null;
   reasonCode: string;
   note: string;
   status: string;
@@ -91,6 +96,7 @@ beforeAll(async () => {
     users: dbMod.users,
     organizations: dbMod.organizations,
     opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
+    stagedPayments: dbMod.stagedPayments,
     cleanupQueue: dbMod.cleanupQueue,
   };
   eqFn = drizzle.eq;
@@ -107,6 +113,13 @@ beforeAll(async () => {
   await db
     .insert(schema.opportunitiesAndPledges)
     .values({ id: OPP_ID, name: `Flag Opp ${RUN}`, organizationId: ORG_ID });
+  await db.insert(schema.stagedPayments).values({
+    id: STAGED_ID,
+    realmId: `realm_${RUN}`,
+    qbEntityType: "payment",
+    qbEntityId: `qb_${RUN}`,
+    payerName: STAGED_PAYER,
+  });
 
   const { default: app } = await import("../app");
   server = await new Promise<Server>((resolve) => {
@@ -123,6 +136,12 @@ afterAll(async () => {
   await db
     .delete(schema.cleanupQueue)
     .where(eqFn(schema.cleanupQueue.id, CLEANUP_ID));
+  await db
+    .delete(schema.cleanupQueue)
+    .where(eqFn(schema.cleanupQueue.id, CLEANUP_STAGED_ID));
+  await db
+    .delete(schema.stagedPayments)
+    .where(eqFn(schema.stagedPayments.id, STAGED_ID));
   await db
     .delete(schema.opportunitiesAndPledges)
     .where(eqFn(schema.opportunitiesAndPledges.id, OPP_ID));
@@ -178,5 +197,39 @@ describe.skipIf(!HAS_DB)("POST /cleanup-queue (flag for research)", () => {
       note: "   ",
     });
     expect(status).toBe(400);
+  });
+
+  it("flags a staged payment for research (201) and resolves its payer name", async () => {
+    const { status, json } = await flag({
+      targetType: "staged_payment",
+      targetId: STAGED_ID,
+      note: "Unclear which donor this QB payment belongs to — research.",
+    });
+    expect(status).toBe(201);
+    expect(json.id).toBe(CLEANUP_STAGED_ID);
+    expect(json.targetType).toBe("staged_payment");
+    expect(json.targetId).toBe(STAGED_ID);
+    expect(json.targetName).toBe(STAGED_PAYER);
+    expect(json.reasonCode).toBe("needs_research");
+    expect(json.status).toBe("open");
+  });
+
+  it("is idempotent for a staged payment — re-flagging returns the existing item (200)", async () => {
+    const { status, json } = await flag({
+      targetType: "staged_payment",
+      targetId: STAGED_ID,
+      note: "A different note that must NOT overwrite the original.",
+    });
+    expect(status).toBe(200);
+    expect(json.id).toBe(CLEANUP_STAGED_ID);
+    expect(json.note).toBe(
+      "Unclear which donor this QB payment belongs to — research.",
+    );
+
+    const rows = await db
+      .select({ id: schema.cleanupQueue.id })
+      .from(schema.cleanupQueue)
+      .where(eqFn(schema.cleanupQueue.targetId, STAGED_ID));
+    expect(rows.length).toBe(1);
   });
 });

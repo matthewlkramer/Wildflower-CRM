@@ -6,9 +6,19 @@ description: How records get added to the Cleanup Queue (needs_research) from th
 # Cleanup queue "Flag for research"
 
 `POST /cleanup-queue` (operationId `flagForResearch`) lets fundraisers add any
-record (opportunity/pledge/organization/person/gift) to the Cleanup Queue with
-`reason_code = 'needs_research'` from the detail page (shared
-`FlagForResearchDialog` component, placed next to the Archive action).
+record to the Cleanup Queue with `reason_code = 'needs_research'` via the shared
+`FlagForResearchDialog` component. `targetType` is polymorphic:
+`opportunity`/`pledge`/`organization`/`person`/`gift` (from a detail page, next to
+Archive) **and `staged_payment`** (from the Reconciliation Workbench's per-card
+"Flag for research" menu item). For `staged_payment`, `targetName` resolves to the
+QB `payerName` in both the list SQL and `enrich()`; the cleanup-queue detail link
+sends the reviewer to `/reconciliation-workbench`.
+
+**This is the SOLE research-flagging mechanism.** The old Reconciliation Workbench
+"Research" view and the `staged_payments.needsResearch` boolean it wrote were
+removed — that column is now `@deprecated` (kept, not dropped, to avoid a
+destructive prod migration) and excluded from every API response. Do NOT
+reintroduce a per-row research flag; route research flags here.
 
 **Idempotency / id contract:**
 - Deterministic PK `cleanup_nr_<targetId>` is shared between the hand-applied

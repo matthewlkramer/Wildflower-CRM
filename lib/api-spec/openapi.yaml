@@ -2903,25 +2903,6 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
-  /staged-payments/{id}/set-needs-research:
-    post:
-      operationId: setStagedPaymentNeedsResearch
-      tags: [staged-payments]
-      summary: Set or clear the plain human "needs research" flag on a staged payment.
-      description: |
-        Reviewer flags a staged payment as not yet fully figured out (unknown
-        donor, ambiguous coding, unclear restriction, etc.) so they can come
-        back to it. A pure annotation: orthogonal to reconcile status, allowed
-        on a row in any state, and never auto-derived. Flipping it has no side
-        effects on matching, status, or reconciliation.
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/SetStagedPaymentNeedsResearchBody" } } }
-      responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "404": { $ref: "#/components/responses/NotFound" }
   /staged-payments/{id}/set-coding:
     post:
       operationId: setStagedPaymentCoding
@@ -3989,7 +3970,7 @@ paths:
         same money. `reconciled` cards are excluded by default (filter with
         queue=reconciled). Use the graph endpoint for the full candidate detail.
       parameters:
-        - { name: queue, in: query, schema: { $ref: "#/components/schemas/ReconciliationCardQueue" }, description: "Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable), or queue=research for pending money flagged needs_research." }
+        - { name: queue, in: query, schema: { $ref: "#/components/schemas/ReconciliationCardQueue" }, description: "Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable)." }
         - { name: q, in: query, schema: { type: string }, description: "Free-text over payer name / reference / memo." }
         - { name: entityId, in: query, schema: { type: string }, description: "Filter to one Wildflower legal entity attribution." }
         - { name: ready, in: query, schema: { type: boolean }, description: "Filter to cards whose auto-proposal passes (true) / fails (false) the consistency gate." }
@@ -6105,7 +6086,7 @@ components:
     StripeRefundPropagationStatus: { type: string, enum: [none, proposed, applied, dismissed], description: "Lifecycle of a Stripe refund/chargeback proposal against a charge already booked into a CRM gift (INV-13). none: no refund/dispute or no linked gift. proposed: detected, awaiting human confirm. applied: human confirmed (gift reversed/reduced). dismissed: human declined to propagate." }
     StripeRefundKind: { type: string, enum: [full_refund, partial_refund, chargeback], description: "Kind of Stripe reversal. full_refund/chargeback reverse (archive) the gift; partial_refund reduces the gift amount." }
     QuickbooksStagedPaymentQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done, rejected, reconciled], description: "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review)." }
-    ReconciliationCardQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done, rejected, reconciled, research], description: "Queue buckets accepted by the reconciliation cards endpoint query param. Superset of QuickbooksStagedPaymentQueue adding the research parking queue (pending money a human flagged needs_research) — a query-time filter over the needs_research flag, never a derived response bucket (so it is NOT part of the staged-payment response queue enum)." }
+    ReconciliationCardQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done, rejected, reconciled], description: "Queue buckets accepted by the reconciliation cards endpoint query param. Mirrors QuickbooksStagedPaymentQueue but kept as its own schema so card-only query filters never leak into the staged-payment response queue enum." }
     StagedPaymentSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc, payer_asc, payer_desc] }
     GiftSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc] }
     QuickbooksOauthStatus:
@@ -6292,7 +6273,7 @@ components:
         notes:           { type: string, nullable: true }
     StagedPayment:
       type: object
-      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, needsResearch, classificationSource, entitySource, fundingSourceProvenance, createdAt, updatedAt]
+      required: [id, realmId, qbEntityType, qbEntityId, status, matchStatus, autoApplied, classificationSource, entitySource, fundingSourceProvenance, createdAt, updatedAt]
       properties:
         id:                        { type: string }
         realmId:                   { type: string }
@@ -6375,7 +6356,6 @@ components:
         entitySource:              { $ref: "#/components/schemas/StagedPaymentEntitySource" }
         fundingSource:             { $ref: "#/components/schemas/StagedPaymentFundingSource", nullable: true, description: "WHERE this money came from / how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown / not yet determined. Auto-seeded at ingest, human-correctable." }
         fundingSourceProvenance:   { $ref: "#/components/schemas/StagedPaymentFundingSourceProvenance" }
-        needsResearch:             { type: boolean, description: "Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via /set-needs-research with no side effects on reconcile status or matching." }
         # ── Revenue-accounting / QuickBooks coding snapshot (Task #449) ──────────
         # The derived coding snapshot describes a QuickBooks PAYMENT, so it lives
         # here (moved off gift/pledge allocations). Each `*Override` lets a human
@@ -7030,7 +7010,7 @@ components:
         timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
     ReconciliationCard:
       type: object
-      required: [stagedPaymentId, status, queue, hasStripeEvidence, ready, isSourceGroup, needsResearch]
+      required: [stagedPaymentId, status, queue, hasStripeEvidence, ready, isSourceGroup]
       description: "List item for the unified reconciler — one per QB staged payment (the anchor), OR one per manual 'same physical gift' source group (collapsed; stagedPaymentId is the representative member). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card."
       properties:
         stagedPaymentId: { type: string }
@@ -7085,7 +7065,6 @@ components:
           items: { $ref: "#/components/schemas/ReconciliationCardGiftAllocation" }
         finalAmountSource:  { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
         ready:              { type: boolean, description: "Auto-proposal satisfies the consistency gate (one-click approve)." }
-        needsResearch:      { type: boolean, description: "Plain human-set 'needs research' flag (parked for later); orthogonal to reconcile status. Set via /staged-payments/{id}/set-needs-research." }
         exclusionReason:    { allOf: [ { $ref: "#/components/schemas/StagedPaymentExclusionReason" } ], nullable: true, description: "Why this money was filed as a non-gift; set only when status='excluded'. Drives the Excluded queue's reason label." }
         reconciliationLanes: { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor/gift state: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge." }
         fundingSource:      { $ref: "#/components/schemas/StagedPaymentFundingSource", nullable: true, description: "Origin of this money (Stripe, brokerage, DAF, …). For a group card this is the members' common source, or null when they differ. Distinct from qbPaymentMethod (the instrument) and the funding lane." }
@@ -7769,7 +7748,7 @@ components:
       description: >-
         Flag a record for research. reason_code is always 'needs_research'.
       properties:
-        targetType: { type: string, enum: [opportunity, pledge, organization, person, gift], description: "Kind of record being flagged." }
+        targetType: { type: string, enum: [opportunity, pledge, organization, person, gift, staged_payment], description: "Kind of record being flagged." }
         targetId:   { type: string, minLength: 1, description: "Id of the record being flagged." }
         note:       { type: string, minLength: 1, description: "What needs research / follow-up on this record." }
     CodingFormRowStatus:
@@ -8064,12 +8043,6 @@ components:
       description: "Pin (or clear) the funding source by hand. Sets fundingSourceProvenance='manual' so detectFundingSource never overwrites it on re-sync / reclassify. fundingSource null clears the value back to unknown while keeping the manual pin (so it is not re-derived)."
       properties:
         fundingSource: { $ref: "#/components/schemas/StagedPaymentFundingSource", nullable: true, description: "The origin to attribute this money to, or null to clear it (keeping the manual pin)." }
-    SetStagedPaymentNeedsResearchBody:
-      type: object
-      required: [needsResearch]
-      description: "Set or clear the plain human 'needs research' flag on a staged payment. A pure annotation with no side effects on reconcile status or matching."
-      properties:
-        needsResearch: { type: boolean, description: "True to flag this row for further research, false to clear it." }
     SetStagedPaymentCodingBody:
       type: object
       description: |

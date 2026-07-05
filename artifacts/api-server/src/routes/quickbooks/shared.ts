@@ -124,20 +124,30 @@ export const queueExpr = sql<string>`
 // The verbatim raw QB JSON (qbRaw / qbRawLine) is stored for audit but excluded
 // from every list/detail response — it is large and never needed by the UI, so
 // the shared staged projection (consumed by the QuickBooks queue + reconciliation
-// cards) strips it.
+// cards) strips it. The deprecated needs_research column is stripped too — the
+// "flag for research" flow now lives in the Cleanup Queue, so the column is no
+// longer part of the StagedPayment / ReconciliationCard response contract.
 const {
   qbRaw: _qbRaw,
   qbRawLine: _qbRawLine,
+  needsResearch: _needsResearch,
   ...stagedColumns
 } = getTableColumns(stagedPayments);
 
 // Staged-row projection for the mutation endpoints that echo the freshly-updated
 // row directly (match / unmatch / revert + the actions.ts staged actions). Unlike
 // `stagedSelect` (the joined list/card projection) it KEEPS qbRaw/qbRawLine — the
-// historical raw-return shape of those endpoints.
-const stagedReturnColumns = getTableColumns(stagedPayments);
+// historical raw-return shape of those endpoints. The deprecated needs_research
+// column is stripped so it never leaks into the StagedPayment response contract.
+const { needsResearch: _returnNeedsResearch, ...stagedReturnColumns } =
+  getTableColumns(stagedPayments);
 export { stagedReturnColumns };
-export type StagedReturnRow = typeof stagedPayments.$inferSelect;
+// Mirrors the scrubbed `stagedReturnColumns` projection: the deprecated
+// needs_research column is dropped so it never leaks into the response contract.
+export type StagedReturnRow = Omit<
+  typeof stagedPayments.$inferSelect,
+  "needsResearch"
+>;
 export const stagedSelect = {
   ...stagedColumns,
   queue: queueExpr,

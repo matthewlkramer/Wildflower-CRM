@@ -9,7 +9,6 @@ import {
   useCreateGiftFromStagedPayment,
   useExcludeStagedPayment,
   useReIncludeStagedPayment,
-  useSetStagedPaymentNeedsResearch,
   useSetStagedPaymentCoding,
   useGroupStagedPayments,
   useResolveStripeStagedCharge,
@@ -123,6 +122,7 @@ import {
 import { DonorFieldPicker, type DonorType } from "@/components/entity-picker";
 import FinancialCorrectionsPage from "@/pages/financial-corrections";
 import { SettlementReport } from "@/components/reconciliation-bundles/SettlementReport";
+import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 
 // ─── Shell config (mockup structure, corrected to our money model) ──────────
 
@@ -132,9 +132,9 @@ import { SettlementReport } from "@/components/reconciliation-bundles/Settlement
 type ReportId = "settlement" | "gift";
 
 // The Gift report's orthogonal "view" (design §4.5/§4.6): the three-column
-// reconciliation report, or one of the two flag-driven filters that don't fit a
-// match-state column — needs_research parking and excluded non-gifts.
-type GiftView = "reports" | "research" | "excluded";
+// reconciliation report, or the excluded-non-gifts filter that doesn't fit a
+// match-state column. (Research-flagging now lives in the Cleanup Queue.)
+type GiftView = "reports" | "excluded";
 
 // Funding-source filter for the Gift report (design §4.5). qb_direct = money not
 // routed through a known processor (checks, ACH, cash, and unclassified rows).
@@ -147,7 +147,6 @@ const REPORTS: { id: ReportId; name: string }[] = [
 
 const GIFT_VIEWS: { id: GiftView; name: string }[] = [
   { id: "reports", name: "Reports" },
-  { id: "research", name: "Research" },
   { id: "excluded", name: "Excluded" },
 ];
 
@@ -352,14 +351,11 @@ export default function ReconciliationWorkbench() {
     initialQueueParam === "bundle" ? "settlement" : "gift",
   );
   // Old per-queue deep links collapse into the new Gift-report views: the
-  // research/excluded flag queues keep their own view; every match-state queue
-  // (review/qbo/crm/confirmed/done) lands on the three-column report.
+  // excluded flag queue keeps its own view; every match-state queue
+  // (review/qbo/crm/confirmed/done) lands on the three-column report. Legacy
+  // ?queue=research deep links now land on the report (research moved out).
   const [giftView, setGiftView] = useState<GiftView>(() =>
-    initialQueueParam === "research"
-      ? "research"
-      : initialQueueParam === "excluded"
-        ? "excluded"
-        : "reports",
+    initialQueueParam === "excluded" ? "excluded" : "reports",
   );
   const [fundingSource, setFundingSource] =
     useState<FundingSourceFilter>("all");
@@ -387,6 +383,11 @@ export default function ReconciliationWorkbench() {
   const [excludeCard, setExcludeCard] = useState<ReconciliationCard | null>(
     null,
   );
+  // A staged payment flagged for research → opens the shared Cleanup Queue
+  // "Flag for research" dialog (target_type='staged_payment').
+  const [researchCard, setResearchCard] = useState<ReconciliationCard | null>(
+    null,
+  );
   // Creating a gift from a multi-payment group: hold the derived approve body
   // here and ask whether each grouped subcomponent should become its own
   // allocation row on the new gift (or a single header-only lump).
@@ -397,8 +398,8 @@ export default function ReconciliationWorkbench() {
   } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Funding-source filter param shared by the needs-review / matched / research /
-  // excluded queries (server-side, §4.5). `all` → omit the param.
+  // Funding-source filter param shared by the needs-review / matched / excluded
+  // queries (server-side, §4.5). `all` → omit the param.
   const fundingSourceParam =
     fundingSource === "all" ? undefined : fundingSource;
   // "Donor not credited" column = the needs-review queue: pulled money without a
@@ -424,20 +425,6 @@ export default function ReconciliationWorkbench() {
   // "Gift with no money" column total — on-books gift allocations that don't
   // reconcile to QuickBooks (allocation granularity, mirrors the worklist).
   const crmCountQuery = useListGiftsMissingQb({ limit: 1, offset: 0 });
-  // Research filter — pending money flagged needs_research; its own server-side
-  // query so flagged rows surface regardless of the needs_review page window.
-  const researchParams = {
-    queue: "research",
-    limit: 200,
-    offset: 0,
-    fundingSource: fundingSourceParam,
-  } as const;
-  const researchQuery = useListReconciliationCards(researchParams, {
-    query: {
-      enabled: report === "gift" && giftView === "research",
-      queryKey: getListReconciliationCardsQueryKey(researchParams),
-    },
-  });
   // Excluded filter — fetched on its own, only while that view is open, with a
   // server-side reason filter + pagination.
   const excludedParams = {
@@ -485,9 +472,8 @@ export default function ReconciliationWorkbench() {
   );
 
   // Bucket the loaded needs_review cards: Needs review (has a candidate) vs
-  // QBO-only. Research-flagged money is parked — it has its own server-side
-  // queue (researchQuery) and is skipped here. Sync-gap rows now flow back
-  // into review/QBO (sync-gap parking was removed).
+  // QBO-only. Sync-gap rows now flow back into review/QBO (sync-gap parking was
+  // removed).
   const buckets = useMemo(() => {
     const review: ReconciliationCard[] = [];
     const qbo: ReconciliationCard[] = [];
@@ -496,19 +482,12 @@ export default function ReconciliationWorkbench() {
       // drop out of the review surface — they belong in the Confirmed queue, not
       // Needs review. Partial/multiple (amounts still diverge) stay visible.
       if (deriveCardStatus(c).key === "confirmed") continue;
-      if (c.needsResearch) continue;
       if (c.proposedGiftId || c.proposedDonorId || c.resolvedGiftId)
         review.push(c);
       else qbo.push(c);
     }
     return { review, qbo };
   }, [filtered]);
-
-  // Research cards (server-fetched); search-filtered client-side.
-  const researchCards = useMemo(
-    () => (researchQuery.data?.data ?? []).filter(matchSearch),
-    [researchQuery.data, matchSearch],
-  );
 
   // "Matched" column = the `done` queue (money already tied to a confirmed
   // gift), search-filtered client-side.
@@ -877,7 +856,6 @@ export default function ReconciliationWorkbench() {
   const createGiftM = useCreateGiftFromStagedPayment();
   const excludeM = useExcludeStagedPayment();
   const reIncludeM = useReIncludeStagedPayment();
-  const researchM = useSetStagedPaymentNeedsResearch();
   const groupM = useGroupStagedPayments();
   // Per-charge actions: a Stripe-payout-backed deposit is expanded into one card
   // per backing charge; each charge resolves/mints/rejects on its OWN Stripe
@@ -891,7 +869,6 @@ export default function ReconciliationWorkbench() {
     createGiftM.isPending ||
     excludeM.isPending ||
     reIncludeM.isPending ||
-    researchM.isPending ||
     groupM.isPending ||
     resolveChargeM.isPending ||
     createChargeGiftM.isPending ||
@@ -1125,24 +1102,6 @@ export default function ReconciliationWorkbench() {
     [reIncludeM, invalidateAll, toast, errMessage],
   );
 
-  const handleToggleResearch = useCallback(
-    async (card: ReconciliationCard) => {
-      try {
-        await researchM.mutateAsync({
-          id: card.stagedPaymentId,
-          data: { needsResearch: !card.needsResearch },
-        });
-        invalidateAll();
-      } catch (err) {
-        toast({
-          title: "Couldn't update research flag",
-          description: errMessage(err),
-        });
-      }
-    },
-    [researchM, invalidateAll, toast, errMessage],
-  );
-
   const handleGroupSelected = useCallback(async () => {
     const ids = [...selectedIds];
     if (ids.length < 2) return;
@@ -1226,7 +1185,7 @@ export default function ReconciliationWorkbench() {
             description: "Pick another payment, then Group into one gift.",
           });
         }}
-        onToggleResearch={() => handleToggleResearch(card)}
+        onFlagResearch={() => setResearchCard(card)}
         onUnstage={() => unstage(card.stagedPaymentId)}
         onCodingSaved={invalidateAll}
       />
@@ -1311,17 +1270,15 @@ export default function ReconciliationWorkbench() {
           {report === "gift" && (
           <div className="flex flex-col gap-2 border-b pb-2">
             <div className="flex flex-wrap items-center gap-1">
-              {/* View toggle: the three-column report vs the two flag filters
-                  (needs_research parking, excluded non-gifts). */}
+              {/* View toggle: the three-column report vs the excluded-non-gifts
+                  filter. */}
               <nav className="flex flex-wrap items-center gap-1">
                 {GIFT_VIEWS.map((v) => {
                   const active = v.id === giftView;
                   const count =
-                    v.id === "research"
-                      ? researchQuery.data?.pagination.total
-                      : v.id === "excluded"
-                        ? excludedQuery.data?.pagination.total
-                        : undefined;
+                    v.id === "excluded"
+                      ? excludedQuery.data?.pagination.total
+                      : undefined;
                   return (
                     <button
                       key={v.id}
@@ -1399,16 +1356,6 @@ export default function ReconciliationWorkbench() {
               busy={actionBusy}
               onReInclude={handleReInclude}
             />
-          ) : giftView === "research" ? (
-            researchQuery.isLoading ? (
-              <LoadingRow />
-            ) : researchQuery.isError ? (
-              <ErrorRow label="research queue" />
-            ) : researchCards.length === 0 ? (
-              <ResearchEmpty />
-            ) : (
-              researchCards.map((card) => renderReconCard(card))
-            )
           ) : (
             // Gift report — three columns (design §4.5): Matched (done queue) ·
             // Donor not credited (needs-review) · Gift with no money (stray gifts).
@@ -1529,9 +1476,23 @@ export default function ReconciliationWorkbench() {
         />
       )}
 
-      {/* Group selected → one gift (Review / QBO-only / Research / Sync buckets) */}
+      {/* Flag a staged payment for research → Cleanup Queue */}
+      {researchCard && (
+        <FlagForResearchDialog
+          targetType="staged_payment"
+          targetId={researchCard.stagedPaymentId}
+          recordLabel={researchCard.payerName ?? "this payment"}
+          open
+          hideTrigger
+          onOpenChange={(o) => {
+            if (!o) setResearchCard(null);
+          }}
+        />
+      )}
+
+      {/* Group selected → one gift (Review / QBO-only buckets) */}
       {report === "gift" &&
-        (giftView === "reports" || giftView === "research") &&
+        giftView === "reports" &&
         selectedIds.size > 0 && (
           <div className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border bg-card px-4 py-2 shadow-xl">
             <span className="text-sm font-medium">
@@ -1603,7 +1564,7 @@ function ResolveMenu({
   onExclude,
   onSplit,
   onGroup,
-  onToggleResearch,
+  onFlagResearch,
 }: {
   card: ReconciliationCard;
   busy: boolean;
@@ -1618,7 +1579,7 @@ function ResolveMenu({
   onExclude: () => void;
   onSplit: () => void;
   onGroup: () => void;
-  onToggleResearch: () => void;
+  onFlagResearch: () => void;
 }) {
   const hasGift = Boolean(card.resolvedGiftId || card.proposedGiftId);
   const MI = (onClick: () => void, title: string, desc: string) => (
@@ -1696,9 +1657,9 @@ function ResolveMenu({
           Flag
         </DropdownMenuLabel>
         {MI(
-          onToggleResearch,
-          card.needsResearch ? "Clear research" : "Send to research",
-          "park with a note for later",
+          onFlagResearch,
+          "Flag for research",
+          "add to the Cleanup Queue with a note",
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -1728,7 +1689,7 @@ function ReconCard({
   onExclude,
   onSplit,
   onGroup,
-  onToggleResearch,
+  onFlagResearch,
   onUnstage,
   onCodingSaved,
   readOnly = false,
@@ -1750,7 +1711,7 @@ function ReconCard({
   onExclude: () => void;
   onSplit: () => void;
   onGroup: () => void;
-  onToggleResearch: () => void;
+  onFlagResearch: () => void;
   onUnstage: () => void;
   onCodingSaved: () => void;
   /** Settled-money report row (Matched column): render view-only — no select
@@ -1760,8 +1721,7 @@ function ReconCard({
   readOnly?: boolean;
   /** Hide the derived "Status:" and "CRM record" lane badges. The gift-report
       columns (Matched / Donor not credited) already encode that state in the
-      column heading, so the badges are redundant there; the research view keeps
-      them. */
+      column heading, so the badges are redundant there. */
   hideStateBadges?: boolean;
 }) {
   const conf = confidenceOf(card);
@@ -2146,11 +2106,6 @@ function ReconCard({
             {crmRecordLane.label}
           </Badge>
         )}
-        {card.needsResearch && (
-          <Badge className="bg-stone-200 text-stone-800 text-[10px]">
-            Research
-          </Badge>
-        )}
         {bullets.slice(0, 3).map((b, i) => (
           <span
             key={i}
@@ -2242,7 +2197,7 @@ function ReconCard({
                 onExclude={onExclude}
                 onSplit={onSplit}
                 onGroup={onGroup}
-                onToggleResearch={onToggleResearch}
+                onFlagResearch={onFlagResearch}
               />
             </div>
           </>
@@ -3025,16 +2980,6 @@ function EmptyExcluded() {
       <p className="text-sm">
         No QuickBooks money has been filed as a non-gift.
       </p>
-    </div>
-  );
-}
-
-function ResearchEmpty() {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center text-muted-foreground">
-      <Check className="mb-2 h-8 w-8 text-emerald-500" />
-      <p className="font-medium">All clear</p>
-      <p className="text-sm">Nothing is flagged for research.</p>
     </div>
   );
 }

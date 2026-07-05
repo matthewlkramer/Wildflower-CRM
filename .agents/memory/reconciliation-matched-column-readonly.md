@@ -12,17 +12,17 @@ actions — only a static "Reconciled to <gift>" indicator.
 (ResolveMenu → confirmAndApply → group-reconcile) and a group-select checkbox. On
 a settled source-group card these route back into the server group-reconcile
 guard, which 409s ("one/more of these staged payments already resolved") because
-none of the member `staged_payments` are `pending` anymore. This was the
-Arthur Rock Foundation $1.6M DAF bug: a 3-row `reconciled` source group whose
-"Confirm match" 409'd.
+none of the member `staged_payments` are `pending` anymore. The original bug was a
+multi-row `reconciled` DAF source group whose "Confirm match" 409'd.
 
 **How to apply:** gate read-only by the **column** (pass `{ readOnly: true }` from
 the Matched column into `renderReconCard`), NOT by a derived status. A reconciled
 *grouped* card whose gift amount diverges beyond the fee band reads
 `deriveCardStatus` = "partial"/"multiple" (not "confirmed"), so status-driven
-gating would leak live actions on exactly those grouped cards. The other columns
-(research, "Donor not credited") serve only `pending` rows by server construction,
-so they keep full actions. Also hide the match-confidence chip in read-only mode —
+gating would leak live actions on exactly those grouped cards. The other column
+("Donor not credited") serves only `pending` rows by server construction, so it
+keeps full actions. (There is no longer a "Research" column — research-flagging
+moved to the Cleanup Queue.) Also hide the match-confidence chip in read-only mode —
 `confidenceOf` reads "Weak" for a resolved-but-no-proposed-gift card, which is
 misleading on settled money.
 

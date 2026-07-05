@@ -2521,7 +2521,7 @@ export const QuickbooksStagedPaymentQueue = {
 } as const;
 
 /**
- * Queue buckets accepted by the reconciliation cards endpoint query param. Superset of QuickbooksStagedPaymentQueue adding the research parking queue (pending money a human flagged needs_research) — a query-time filter over the needs_research flag, never a derived response bucket (so it is NOT part of the staged-payment response queue enum).
+ * Queue buckets accepted by the reconciliation cards endpoint query param. Mirrors QuickbooksStagedPaymentQueue but kept as its own schema so card-only query filters never leak into the staged-payment response queue enum.
  */
 export type ReconciliationCardQueue = typeof ReconciliationCardQueue[keyof typeof ReconciliationCardQueue];
 
@@ -2534,7 +2534,6 @@ export const ReconciliationCardQueue = {
   done: 'done',
   rejected: 'rejected',
   reconciled: 'reconciled',
-  research: 'research',
 } as const;
 
 export type StagedPaymentSort = typeof StagedPaymentSort[keyof typeof StagedPaymentSort];
@@ -2909,8 +2908,6 @@ export interface StagedPayment {
   /** WHERE this money came from / how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown / not yet determined. Auto-seeded at ingest, human-correctable. */
   fundingSource?: StagedPaymentFundingSource | null;
   fundingSourceProvenance: StagedPaymentFundingSourceProvenance;
-  /** Plain human-set flag: a reviewer hasn't fully figured this incoming money out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; set via /set-needs-research with no side effects on reconcile status or matching. */
-  needsResearch: boolean;
   objectCode?: string | null;
   objectCodeOverride?: string | null;
   revenueLocation?: string | null;
@@ -3847,8 +3844,6 @@ export interface ReconciliationCard {
   finalAmountSource?: GiftFinalAmountSource | null;
   /** Auto-proposal satisfies the consistency gate (one-click approve). */
   ready: boolean;
-  /** Plain human-set 'needs research' flag (parked for later); orthogonal to reconcile status. Set via /staged-payments/{id}/set-needs-research. */
-  needsResearch: boolean;
   /** Why this money was filed as a non-gift; set only when status='excluded'. Drives the Excluded queue's reason label. */
   exclusionReason?: StagedPaymentExclusionReason | null;
   /** Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor/gift state: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge. */
@@ -4998,6 +4993,7 @@ export const FlagForResearchBodyTargetType = {
   organization: 'organization',
   person: 'person',
   gift: 'gift',
+  staged_payment: 'staged_payment',
 } as const;
 
 /**
@@ -5404,14 +5400,6 @@ export interface SetStagedPaymentEntityBody {
 export interface SetStagedPaymentFundingSourceBody {
   /** The origin to attribute this money to, or null to clear it (keeping the manual pin). */
   fundingSource: StagedPaymentFundingSource | null;
-}
-
-/**
- * Set or clear the plain human 'needs research' flag on a staged payment. A pure annotation with no side effects on reconcile status or matching.
- */
-export interface SetStagedPaymentNeedsResearchBody {
-  /** True to flag this row for further research, false to clear it. */
-  needsResearch: boolean;
 }
 
 /**
@@ -8634,7 +8622,7 @@ userId: string;
 
 export type ListReconciliationCardsParams = {
 /**
- * Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable), or queue=research for pending money flagged needs_research.
+ * Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable).
  */
 queue?: ReconciliationCardQueue;
 /**

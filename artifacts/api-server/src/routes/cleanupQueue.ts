@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import {
   cleanupQueue,
   opportunitiesAndPledges,
+  stagedPayments,
   users,
 } from "@workspace/db/schema";
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
@@ -88,13 +89,22 @@ router.get(
           resolvedByUserId: cleanupQueue.resolvedByUserId,
           createdAt: cleanupQueue.createdAt,
           updatedAt: cleanupQueue.updatedAt,
-          // Resolve the target's display name for opportunity/pledge targets
-          // (the only seeded kind). Other target types fall back to null.
-          targetName: sql<string | null>`(
-            SELECT ${opportunitiesAndPledges.name}
-            FROM ${opportunitiesAndPledges}
-            WHERE ${opportunitiesAndPledges.id} = ${cleanupQueue.targetId}
-              AND ${cleanupQueue.targetType} IN ('pledge', 'opportunity')
+          // Resolve the target's display name: opportunity/pledge → its name,
+          // staged_payment → the QB payer name. Other target types fall back to
+          // null.
+          targetName: sql<string | null>`COALESCE(
+            (
+              SELECT ${opportunitiesAndPledges.name}
+              FROM ${opportunitiesAndPledges}
+              WHERE ${opportunitiesAndPledges.id} = ${cleanupQueue.targetId}
+                AND ${cleanupQueue.targetType} IN ('pledge', 'opportunity')
+            ),
+            (
+              SELECT ${stagedPayments.payerName}
+              FROM ${stagedPayments}
+              WHERE ${stagedPayments.id} = ${cleanupQueue.targetId}
+                AND ${cleanupQueue.targetType} = 'staged_payment'
+            )
           )`,
           resolvedByUserName: userNameExpr,
         })
@@ -233,11 +243,18 @@ async function enrich(
         .map((r) => r.targetId),
     ),
   ];
+  const stagedIds = [
+    ...new Set(
+      rows
+        .filter((r) => r.targetType === "staged_payment")
+        .map((r) => r.targetId),
+    ),
+  ];
   const userIds = [
     ...new Set(rows.map((r) => r.resolvedByUserId).filter(Boolean) as string[]),
   ];
 
-  const [oppRows, userRows] = await Promise.all([
+  const [oppRows, stagedRows, userRows] = await Promise.all([
     oppIds.length > 0
       ? db
           .select({
@@ -246,6 +263,15 @@ async function enrich(
           })
           .from(opportunitiesAndPledges)
           .where(inArray(opportunitiesAndPledges.id, oppIds))
+      : Promise.resolve([]),
+    stagedIds.length > 0
+      ? db
+          .select({
+            id: stagedPayments.id,
+            name: stagedPayments.payerName,
+          })
+          .from(stagedPayments)
+          .where(inArray(stagedPayments.id, stagedIds))
       : Promise.resolve([]),
     userIds.length > 0
       ? db
@@ -256,6 +282,7 @@ async function enrich(
   ]);
 
   const oppMap = new Map(oppRows.map((o) => [o.id, o.name]));
+  const stagedMap = new Map(stagedRows.map((s) => [s.id, s.name]));
   const userMap = new Map(userRows.map((u) => [u.id, u.name]));
 
   return rows.map((r) => ({
@@ -263,7 +290,9 @@ async function enrich(
     targetName:
       r.targetType === "pledge" || r.targetType === "opportunity"
         ? (oppMap.get(r.targetId) ?? null)
-        : null,
+        : r.targetType === "staged_payment"
+          ? (stagedMap.get(r.targetId) ?? null)
+          : null,
     resolvedByUserName: r.resolvedByUserId
       ? (userMap.get(r.resolvedByUserId) ?? null)
       : null,

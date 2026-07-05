@@ -46,6 +46,10 @@ function targetHref(type: string, id: string): string {
       return `/individuals/${id}`;
     case "gift":
       return `/gifts/${id}`;
+    case "staged_payment":
+      // Staged payments have no standalone detail page; send the reviewer to the
+      // Reconciliation Workbench where the flagged payment lives.
+      return "/reconciliation-workbench";
     default:
       return `/pledges/${id}`;
   }
