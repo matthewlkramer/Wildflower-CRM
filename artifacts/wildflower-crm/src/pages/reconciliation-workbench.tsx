@@ -2106,14 +2106,18 @@ function ReconCard({
             {crmRecordLane.label}
           </Badge>
         )}
-        {bullets.slice(0, 3).map((b, i) => (
-          <span
-            key={i}
-            className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
-          >
-            {b}
-          </span>
-        ))}
+        {/* Per-charge cards already print "Stripe payout: …" in the body, so the
+            provenance chip would just duplicate it — only show it on non-charge
+            cards where the body has no payout line. */}
+        {!isCharge &&
+          bullets.slice(0, 3).map((b, i) => (
+            <span
+              key={i}
+              className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
+            >
+              {b}
+            </span>
+          ))}
       </div>
 
       {expanded && (
