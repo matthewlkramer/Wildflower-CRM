@@ -39,6 +39,7 @@ import {
   type SetStagedPaymentCodingBody,
   type DeferredRevenue,
   type GroupReconcileStagedPaymentsBody,
+  type FlagForResearchBodyTargetType,
 } from "@workspace/api-client-react";
 import {
   AlertCircle,
@@ -46,6 +47,7 @@ import {
   Check,
   CheckCheck,
   ChevronDown,
+  Flag,
   GitMerge,
   Layers,
   Loader2,
@@ -123,7 +125,11 @@ import {
 import { DonorFieldPicker, type DonorType } from "@/components/entity-picker";
 import FinancialCorrectionsPage from "@/pages/financial-corrections";
 import { SettlementReport } from "@/components/reconciliation-bundles/SettlementReport";
-import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
+import {
+  FlagForResearchDialog,
+  BulkFlagForResearchDialog,
+} from "@/components/flag-for-research-dialog";
+import { BulkSelectBar } from "@/components/bulk-select-bar";
 
 // ─── Shell config (mockup structure, corrected to our money model) ──────────
 
@@ -367,6 +373,12 @@ export default function ReconciliationWorkbench() {
     memberCount: number;
   } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Bulk "flag for research" over the currently-selected review cards. Snapshot
+  // the targets when the dialog opens so clearing the selection doesn't empty it.
+  const [bulkFlagOpen, setBulkFlagOpen] = useState(false);
+  const [bulkFlagTargets, setBulkFlagTargets] = useState<
+    { targetType: FlagForResearchBodyTargetType; targetId: string }[]
+  >([]);
 
   // Funding-source filter param shared by the needs-review / matched / excluded
   // queries (server-side, §4.5). `all` → omit the param.
@@ -639,6 +651,57 @@ export default function ReconciliationWorkbench() {
     [stage],
   );
 
+  /**
+   * Stage a confirm (or grouped link-to-existing-gift) for each given card,
+   * skipping any whose match graph no longer derives a valid body. Shared by the
+   * "approve all high-confidence" and the bulk-select "Approve" actions. Toggles
+   * `busy` while it works and returns per-run counts for the caller's toast.
+   */
+  const stageConfirmBatch = useCallback(
+    async (
+      cards: ReconciliationCard[],
+    ): Promise<{ stagedOk: number; skipped: number }> => {
+      setBusy(true);
+      let stagedOk = 0;
+      let skipped = 0;
+      for (const card of cards) {
+        const res = await deriveConfirmBody(card);
+        if (typeof res === "string") {
+          skipped += 1;
+          continue;
+        }
+        if (
+          card.isSourceGroup &&
+          res.body.outcome === "link_existing_gift" &&
+          res.body.giftId
+        ) {
+          const grouped = buildGroupedLinkPayload(card, res.body.giftId);
+          if (grouped) {
+            stageGroupedLink(
+              card,
+              card.resolvedGiftName ?? "the matched gift",
+              grouped.payload,
+            );
+            stagedOk += 1;
+            continue;
+          }
+        }
+        stage({
+          key: card.stagedPaymentId,
+          kind: "confirm",
+          stagedPaymentId: card.stagedPaymentId,
+          label: card.payerName ?? "QuickBooks payment",
+          detail: res.summary,
+          body: res.body,
+        });
+        stagedOk += 1;
+      }
+      setBusy(false);
+      return { stagedOk, skipped };
+    },
+    [deriveConfirmBody, stage, stageGroupedLink],
+  );
+
   const approveAllHighConfidence = useCallback(async () => {
     const ready = buckets.review.filter(
       (c) => c.ready && !stagedIds.has(c.stagedPaymentId),
@@ -650,42 +713,7 @@ export default function ReconciliationWorkbench() {
       });
       return;
     }
-    setBusy(true);
-    let stagedOk = 0;
-    let skipped = 0;
-    for (const card of ready) {
-      const res = await deriveConfirmBody(card);
-      if (typeof res === "string") {
-        skipped += 1;
-        continue;
-      }
-      if (
-        card.isSourceGroup &&
-        res.body.outcome === "link_existing_gift" &&
-        res.body.giftId
-      ) {
-        const grouped = buildGroupedLinkPayload(card, res.body.giftId);
-        if (grouped) {
-          stageGroupedLink(
-            card,
-            card.resolvedGiftName ?? "the matched gift",
-            grouped.payload,
-          );
-          stagedOk += 1;
-          continue;
-        }
-      }
-      stage({
-        key: card.stagedPaymentId,
-        kind: "confirm",
-        stagedPaymentId: card.stagedPaymentId,
-        label: card.payerName ?? "QuickBooks payment",
-        detail: res.summary,
-        body: res.body,
-      });
-      stagedOk += 1;
-    }
-    setBusy(false);
+    const { stagedOk, skipped } = await stageConfirmBatch(ready);
     toast({
       title: `Staged ${stagedOk} high-confidence ${stagedOk === 1 ? "match" : "matches"}`,
       description:
@@ -693,14 +721,7 @@ export default function ReconciliationWorkbench() {
           ? `${skipped} couldn't be staged (changed state) and were skipped.`
           : "Review the tray, then Apply to CRM.",
     });
-  }, [
-    buckets.review,
-    stagedIds,
-    deriveConfirmBody,
-    stage,
-    stageGroupedLink,
-    toast,
-  ]);
+  }, [buckets.review, stagedIds, stageConfirmBatch, toast]);
 
   /** Apply each staged action individually through its existing guarded endpoint. */
   const applyToCrm = useCallback(async () => {
@@ -824,6 +845,110 @@ export default function ReconciliationWorkbench() {
       return next;
     });
   }, []);
+
+  // ── Column-2 bulk multi-select ("Money unlinked to a CRM record") ──────────
+  // Charge cards (from a multi-charge Stripe payout) are never selectable — they
+  // resolve immediately and don't enter the staging tray — so the selectable
+  // pool is the non-charge review/QBO cards. Selection reuses `selectedIds`
+  // (shared with the "Group into one gift" bar), keyed by cardKey.
+  const selectableReviewCards = useMemo(
+    () => donorNotCredited.filter((c) => !c.stripeChargeId),
+    [donorNotCredited],
+  );
+  const selectableReviewKeys = useMemo(
+    () => selectableReviewCards.map((c) => cardKey(c)),
+    [selectableReviewCards],
+  );
+  const selectedReviewCards = useMemo(
+    () => selectableReviewCards.filter((c) => selectedIds.has(cardKey(c))),
+    [selectableReviewCards, selectedIds],
+  );
+  const selectedReviewCount = selectedReviewCards.length;
+  const allReviewSelected =
+    selectableReviewKeys.length > 0 &&
+    selectableReviewKeys.every((k) => selectedIds.has(k));
+
+  const toggleSelectAllReview = useCallback(() => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const allOn = selectableReviewKeys.every((k) => next.has(k));
+      if (allOn) {
+        for (const k of selectableReviewKeys) next.delete(k);
+      } else {
+        for (const k of selectableReviewKeys) next.add(k);
+      }
+      return next;
+    });
+  }, [selectableReviewKeys]);
+
+  const clearSelectedReview = useCallback(() => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const k of selectableReviewKeys) next.delete(k);
+      return next;
+    });
+  }, [selectableReviewKeys]);
+
+  /** Bulk "Approve" → stage a confirm for each selected review card. */
+  const bulkApproveSelected = useCallback(async () => {
+    const cards = selectedReviewCards.filter(
+      (c) => !stagedIds.has(c.stagedPaymentId),
+    );
+    if (cards.length === 0) {
+      toast({
+        title: "Nothing to approve",
+        description: "The selected cards are already staged.",
+      });
+      return;
+    }
+    const { stagedOk, skipped } = await stageConfirmBatch(cards);
+    clearSelectedReview();
+    toast({
+      title: `Staged ${stagedOk} ${stagedOk === 1 ? "match" : "matches"}`,
+      description:
+        skipped > 0
+          ? `${skipped} couldn't be staged (changed state) and were skipped.`
+          : "Review the tray, then Apply to CRM.",
+    });
+  }, [
+    selectedReviewCards,
+    stagedIds,
+    stageConfirmBatch,
+    clearSelectedReview,
+    toast,
+  ]);
+
+  /** Bulk "Reject" → stage a reject for each selected review card. */
+  const bulkRejectSelected = useCallback(() => {
+    const cards = selectedReviewCards.filter(
+      (c) => !stagedIds.has(c.stagedPaymentId),
+    );
+    if (cards.length === 0) {
+      toast({
+        title: "Nothing to reject",
+        description: "The selected cards are already staged.",
+      });
+      return;
+    }
+    for (const c of cards) stageReject(c);
+    clearSelectedReview();
+    toast({
+      title: `Staged ${cards.length} ${cards.length === 1 ? "rejection" : "rejections"}`,
+      description: "Review the tray, then Apply to CRM.",
+    });
+  }, [selectedReviewCards, stagedIds, stageReject, clearSelectedReview, toast]);
+
+  /** Bulk "Flag for research" → snapshot targets and open the shared dialog. */
+  const openBulkFlagResearch = useCallback(() => {
+    if (selectedReviewCards.length === 0) return;
+    setBulkFlagTargets(
+      selectedReviewCards.map((c) => ({
+        targetType: "staged_payment" as FlagForResearchBodyTargetType,
+        targetId: c.stagedPaymentId,
+      })),
+    );
+    setBulkFlagOpen(true);
+  }, [selectedReviewCards]);
 
   const handleCreateGift = useCallback(
     async (card: ReconciliationCard) => {
@@ -1430,6 +1555,53 @@ export default function ReconciliationWorkbench() {
                 count={
                   cardsQuery.isLoading ? undefined : donorNotCredited.length
                 }
+                toolbar={
+                  selectableReviewKeys.length > 0 ? (
+                    <BulkSelectBar
+                      selectedCount={selectedReviewCount}
+                      allSelected={allReviewSelected}
+                      onToggleAll={toggleSelectAllReview}
+                      testId="checkbox-select-all-review"
+                    >
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          selectedReviewCount === 0 || busy || actionBusy
+                        }
+                        onClick={bulkApproveSelected}
+                        data-testid="button-bulk-approve-review"
+                      >
+                        <Check className="mr-1 h-3.5 w-3.5" />
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          selectedReviewCount === 0 || busy || actionBusy
+                        }
+                        onClick={bulkRejectSelected}
+                        data-testid="button-bulk-reject-review"
+                      >
+                        <X className="mr-1 h-3.5 w-3.5" />
+                        Reject
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          selectedReviewCount === 0 || busy || actionBusy
+                        }
+                        onClick={openBulkFlagResearch}
+                        data-testid="button-bulk-flag-review"
+                      >
+                        <Flag className="mr-1 h-3.5 w-3.5" />
+                        Flag for research
+                      </Button>
+                    </BulkSelectBar>
+                  ) : undefined
+                }
               >
                 {cardsQuery.isLoading ? (
                   <LoadingRow />
@@ -1533,6 +1705,14 @@ export default function ReconciliationWorkbench() {
           }}
         />
       )}
+
+      {/* Bulk flag selected review cards for research → Cleanup Queue */}
+      <BulkFlagForResearchDialog
+        targets={bulkFlagTargets}
+        open={bulkFlagOpen}
+        onOpenChange={setBulkFlagOpen}
+        onDone={clearSelectedReview}
+      />
 
       {/* Group selected → one gift (Review / QBO-only buckets) */}
       {report === "gift" &&
@@ -3017,11 +3197,13 @@ function ReportColumn({
   title,
   hint,
   count,
+  toolbar,
   children,
 }: {
   title: string;
   hint: string;
   count?: number;
+  toolbar?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -3037,6 +3219,7 @@ function ReportColumn({
           </Badge>
         )}
       </header>
+      {toolbar && <div className="border-b bg-muted/30 px-2 py-2">{toolbar}</div>}
       <div className="space-y-3 p-2">{children}</div>
     </section>
   );

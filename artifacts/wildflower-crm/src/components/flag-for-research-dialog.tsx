@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useFlagForResearch,
@@ -138,6 +138,130 @@ export function FlagForResearchDialog({
             data-testid="button-confirm-flag-research"
           >
             {flagMut.isPending ? "Flagging…" : "Flag for research"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Bulk variant of {@link FlagForResearchDialog}: flags many records for research
+ * at once with a single shared note. Loops the same idempotent /cleanup-queue
+ * endpoint over each target (deduped by target), tolerating partial failures,
+ * then reports how many landed. `onDone` fires after a run so the caller can
+ * clear its selection.
+ */
+export function BulkFlagForResearchDialog({
+  targets,
+  open,
+  onOpenChange,
+  onDone,
+}: {
+  targets: { targetType: FlagForResearchBodyTargetType; targetId: string }[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDone?: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const flagMut = useFlagForResearch();
+
+  const uniqueTargets = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { targetType: FlagForResearchBodyTargetType; targetId: string }[] =
+      [];
+    for (const t of targets) {
+      const key = `${t.targetType}:${t.targetId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(t);
+    }
+    return out;
+  }, [targets]);
+
+  const submit = async () => {
+    const trimmed = note.trim();
+    if (trimmed.length === 0 || uniqueTargets.length === 0) return;
+    setBusy(true);
+    let ok = 0;
+    let failed = 0;
+    for (const t of uniqueTargets) {
+      try {
+        await flagMut.mutateAsync({
+          data: {
+            targetType: t.targetType,
+            targetId: t.targetId,
+            note: trimmed,
+          },
+        });
+        ok += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setBusy(false);
+    void queryClient.invalidateQueries({ queryKey: [CLEANUP_KEY_PREFIX] });
+    onOpenChange(false);
+    setNote("");
+    onDone?.();
+    toast({
+      title: `Flagged ${ok} ${ok === 1 ? "record" : "records"} for research`,
+      description:
+        failed > 0
+          ? `${failed} couldn't be flagged.`
+          : "Added to the Cleanup Queue for follow-up.",
+    });
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!busy) onOpenChange(v);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Flag {uniqueTargets.length}{" "}
+            {uniqueTargets.length === 1 ? "record" : "records"} for research
+          </DialogTitle>
+          <DialogDescription>
+            Add the selected{" "}
+            {uniqueTargets.length === 1 ? "record" : "records"} to the Cleanup
+            Queue so the team can research and follow up.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor="bulk-flag-research-note">What needs research?</Label>
+          <Textarea
+            id="bulk-flag-research-note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Describe what to look into or follow up on…"
+            rows={4}
+            data-testid="input-bulk-flag-research-note"
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={submit}
+            disabled={busy || note.trim().length === 0 || uniqueTargets.length === 0}
+            data-testid="button-confirm-bulk-flag-research"
+          >
+            {busy
+              ? "Flagging…"
+              : `Flag ${uniqueTargets.length} for research`}
           </Button>
         </DialogFooter>
       </DialogContent>

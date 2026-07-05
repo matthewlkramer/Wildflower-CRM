@@ -54,11 +54,23 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  FlagForResearchDialog,
+  BulkFlagForResearchDialog,
+} from "@/components/flag-for-research-dialog";
+import { BulkSelectBar } from "@/components/bulk-select-bar";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
-import { ArrowRight, Check, Loader2, MoreHorizontal } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  ArrowRight,
+  Check,
+  Flag,
+  Loader2,
+  MoreHorizontal,
+} from "lucide-react";
 
 /* ────────────────────────────────────────────────────────────────────────
  * CRM-only worklist — "Gift allocations missing a QuickBooks record".
@@ -105,12 +117,22 @@ const PAYMENT_METHODS: GiftPaymentMethod[] = [
 const ANY = "__any__";
 
 export function StrayGiftsWorklist() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [entityId, setEntityId] = useState<string>(ANY);
   const [paymentMethod, setPaymentMethod] = useState<string>(ANY);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(0);
+
+  // Bulk multi-select (this column only). Keyed by rowKey (gift:allocation).
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [flagOpen, setFlagOpen] = useState(false);
+
+  const reconcile = useReconcileStagedPayment();
+  const linkStripe = useLinkStripeChargeToGift();
 
   const debouncedSearch = useDebounce(search.trim());
 
@@ -144,6 +166,112 @@ export function StrayGiftsWorklist() {
   const total = data?.pagination.total ?? 0;
   const showingFrom = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const showingTo = Math.min((page + 1) * PAGE_SIZE, total);
+
+  // Clear the selection whenever the underlying page of rows changes (filter,
+  // paging, or a mutation refetch) so we never act on stale rowKeys.
+  useEffect(() => {
+    setSelectedKeys(new Set());
+  }, [data]);
+
+  const allKeys = rows.map((r) => r.rowKey);
+  const selectedRows = rows.filter((r) => selectedKeys.has(r.rowKey));
+  const allSelected =
+    allKeys.length > 0 && allKeys.every((k) => selectedKeys.has(k));
+
+  const toggleSelectKey = (rowKey: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowKey)) next.delete(rowKey);
+      else next.add(rowKey);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedKeys((prev) => {
+      const on = allKeys.every((k) => prev.has(k));
+      return on ? new Set() : new Set(allKeys);
+    });
+  };
+
+  // Bulk "Approve" = link each selected gift to ITS OWN suggested payment.
+  // Only rows that actually carry a proposed payment can be linked; rows without
+  // one are skipped (the user must search per-gift). Dedupe by gift id so a gift
+  // split across allocation rows is only linked once. Runs sequentially through
+  // the same guarded endpoints as the per-row Link button.
+  const bulkLinkSelected = async () => {
+    const seenGift = new Set<string>();
+    const linkable = selectedRows.filter((g) => {
+      if (!g.proposedPayment) return false;
+      if (seenGift.has(g.id)) return false;
+      seenGift.add(g.id);
+      return true;
+    });
+    if (linkable.length === 0) {
+      toast({
+        title: "Nothing to link",
+        description: "None of the selected gifts have a suggested payment.",
+      });
+      return;
+    }
+    setBulkBusy(true);
+    let ok = 0;
+    let failed = 0;
+    for (const g of linkable) {
+      const proposal = g.proposedPayment;
+      if (!proposal) continue;
+      try {
+        if (proposal.source === "stripe") {
+          if (!proposal.stripeChargeId) {
+            failed += 1;
+            continue;
+          }
+          await linkStripe.mutateAsync({
+            id: proposal.stripeChargeId,
+            data: { giftId: g.id },
+          });
+        } else {
+          if (!proposal.stagedPaymentId) {
+            failed += 1;
+            continue;
+          }
+          await reconcile.mutateAsync({
+            id: proposal.stagedPaymentId,
+            data: {
+              giftId: g.id,
+              ...(g.allocationId ? { allocationId: g.allocationId } : {}),
+            },
+          });
+        }
+        ok += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setBulkBusy(false);
+    setSelectedKeys(new Set());
+    void queryClient.invalidateQueries({ queryKey: [MISSING_QB_KEY_PREFIX] });
+    toast({
+      title: `Linked ${ok} ${ok === 1 ? "gift" : "gifts"} to payments`,
+      description:
+        failed > 0
+          ? `${failed} couldn't be linked and were skipped.`
+          : "Each gift is now reconciled to its suggested payment.",
+    });
+  };
+
+  // Snapshot the flag targets when the dialog opens. Reading them live from
+  // `selectedRows` would let a background refetch (the `[data]` reset effect)
+  // empty the selection while the dialog is open, disabling submit mid-review.
+  const [flagTargets, setFlagTargets] = useState<
+    { targetType: "gift"; targetId: string }[]
+  >([]);
+  const openFlagResearch = () => {
+    setFlagTargets(
+      selectedRows.map((g) => ({ targetType: "gift" as const, targetId: g.id })),
+    );
+    setFlagOpen(true);
+  };
 
   return (
     <div className="space-y-4">
@@ -210,12 +338,60 @@ export function StrayGiftsWorklist() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {rows.map((g) => (
-            <StrayGiftCard key={g.rowKey} g={g} entities={entities} />
-          ))}
-        </div>
+        <>
+          <div className="rounded-md border bg-muted/30 px-2 py-2">
+            <BulkSelectBar
+              selectedCount={selectedRows.length}
+              allSelected={allSelected}
+              onToggleAll={toggleSelectAll}
+              testId="checkbox-select-all-stray"
+            >
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={selectedRows.length === 0 || bulkBusy}
+                onClick={bulkLinkSelected}
+                data-testid="button-bulk-approve-stray"
+              >
+                {bulkBusy ? (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="mr-1 h-3.5 w-3.5" />
+                )}
+                Approve
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={selectedRows.length === 0 || bulkBusy}
+                onClick={openFlagResearch}
+                data-testid="button-bulk-flag-stray"
+              >
+                <Flag className="mr-1 h-3.5 w-3.5" />
+                Flag for research
+              </Button>
+            </BulkSelectBar>
+          </div>
+          <div className="space-y-3">
+            {rows.map((g) => (
+              <StrayGiftCard
+                key={g.rowKey}
+                g={g}
+                entities={entities}
+                selected={selectedKeys.has(g.rowKey)}
+                onToggleSelect={() => toggleSelectKey(g.rowKey)}
+              />
+            ))}
+          </div>
+        </>
       )}
+
+      <BulkFlagForResearchDialog
+        targets={flagTargets}
+        open={flagOpen}
+        onOpenChange={setFlagOpen}
+        onDone={() => setSelectedKeys(new Set())}
+      />
 
       {total > PAGE_SIZE ? (
         <div className="flex items-center justify-between">
@@ -270,9 +446,13 @@ type RowDialog =
 function StrayGiftCard({
   g,
   entities,
+  selected = false,
+  onToggleSelect,
 }: {
   g: GiftMissingQb;
   entities: EntityOption[];
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -344,10 +524,25 @@ function StrayGiftCard({
 
   return (
     <div
-      className="rounded-lg border bg-card shadow-sm"
+      className={cn(
+        "rounded-lg border bg-card shadow-sm",
+        selected && "ring-2 ring-primary",
+      )}
       data-testid={`stray-gift-${g.rowKey}`}
     >
       <div className="flex items-stretch gap-0">
+        {/* Select checkbox */}
+        {onToggleSelect && (
+          <div className="flex items-start p-3 pr-0">
+            <Checkbox
+              checked={selected}
+              onCheckedChange={onToggleSelect}
+              aria-label="Select gift"
+              data-testid={`stray-gift-select-${g.rowKey}`}
+            />
+          </div>
+        )}
+
         {/* Left lane — the CRM gift */}
         <div className="min-w-0 flex-1 break-words p-3">
           <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">

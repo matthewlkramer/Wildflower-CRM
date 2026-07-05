@@ -51,3 +51,31 @@ FLODESK_SEGMENT_ID = "6a21f3ece6615f531081c6b2"
 DONORBOX_USER_EMAIL = "erica.cantoni@wildflowerschools.org"
 
 [userenv.development]
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 80
+
+[[ports]]
+localPort = 8082
+externalPort = 3002
+
+[[ports]]
+localPort = 8083
+externalPort = 4200
+
+[[ports]]
+localPort = 21297
+externalPort = 3000
+
+[[ports]]
+localPort = 21298
+externalPort = 3001
+
+[[ports]]
+localPort = 21299
+externalPort = 3003
