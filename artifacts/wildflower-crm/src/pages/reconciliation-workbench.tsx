@@ -1249,7 +1249,7 @@ export default function ReconciliationWorkbench() {
               <p className="text-sm text-muted-foreground">
                 {report === "settlement"
                   ? "Settlement — match Stripe payouts to their QuickBooks deposits."
-                  : "Gift — reconcile pulled money to CRM gifts across three columns: matched, donor not credited, and gifts with no money."}{" "}
+                  : "Gift — reconcile pulled money to CRM gifts across three columns: matched, money unlinked to CRM record, and CRM gifts unlinked to money."}{" "}
                 Pull-only: nothing is written to QuickBooks, Stripe, or Donorbox.
               </p>
             </div>
@@ -1425,7 +1425,7 @@ export default function ReconciliationWorkbench() {
                 )}
               </ReportColumn>
               <ReportColumn
-                title="Donor not credited"
+                title="Money unlinked to CRM record"
                 hint="Pulled money with no confirmed gift."
                 count={
                   cardsQuery.isLoading ? undefined : donorNotCredited.length
@@ -1444,7 +1444,7 @@ export default function ReconciliationWorkbench() {
                 )}
               </ReportColumn>
               <ReportColumn
-                title="Gift with no money"
+                title="CRM gifts unlinked to money"
                 hint="On-books gifts missing a QuickBooks match."
                 count={
                   crmCountQuery.isLoading
