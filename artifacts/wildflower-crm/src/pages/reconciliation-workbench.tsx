@@ -1797,7 +1797,7 @@ function ReconCard({
         </div>
 
         {/* Left: QuickBooks anchor (transaction type + id, payment method & Stripe in the header) */}
-        <div className="flex-1 p-3">
+        <div className="min-w-0 flex-1 break-words p-3">
           <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             <span>
               {card.qbEntityType ? `QBO ${card.qbEntityType}` : "QBO"}
@@ -1945,7 +1945,7 @@ function ReconCard({
         </div>
 
         {/* Right: CRM gift lane — link existing vs create new */}
-        <div className="flex-1 p-3">
+        <div className="min-w-0 flex-1 break-words p-3">
           <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             CRM gift
           </div>
