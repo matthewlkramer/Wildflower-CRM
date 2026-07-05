@@ -4496,7 +4496,6 @@ components:
     IntendedUsage: { type: string, enum: [gen_ops, growth, school_startup, teacher_training, project] }
     ReimbursementType: { type: string, enum: [direct, indirect], description: "Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)" }
     RestrictionAxis: { type: string, enum: [donor_restricted, wf_restricted, unrestricted], description: "Per-axis restriction taxonomy applied independently to the regional / fund-use / time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none." }
-    RestrictionType: { type: string, enum: [unrestricted, purpose, time, both, unclear, na], description: "@deprecated (Task #449) — superseded by the three RestrictionAxis fields. Retained only on deprecated read fields and legacy audit/reconciler views." }
     DeferredRevenue: { type: string, enum: [yes, no, na] }
 
     # ─── Users ─────────────────────────────────────────────────────────────────
@@ -5807,21 +5806,9 @@ components:
         notes:                  { type: string, nullable: true }
         regionIds:              { type: array, items: { type: string }, nullable: true }
         purposeVerbatim:        { type: string, nullable: true }
-        # @deprecated (Task #449) — superseded by regional/usage/time RestrictionAxis
-        # + the staged-payment coding snapshot. Read-only; no longer written.
-        formallyRestricted:     { type: boolean, deprecated: true, description: "@deprecated — use the three RestrictionAxis fields." }
+        # @deprecated (Task #449) — superseded by reimbursementType. Spec-only
+        # alias; the backing column was renamed, not retained. Read-only.
         reimbursableShare:      { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true, deprecated: true, description: "@deprecated — renamed to reimbursementType." }
-        restrictionType:        { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true, deprecated: true }
-        restrictionEvidence:    { type: string, nullable: true, deprecated: true }
-        deferredRevenue:        { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true, deprecated: true, description: "@deprecated — coding snapshot moved to staged_payments." }
-        deferredRevenueReason:  { type: string, nullable: true, deprecated: true }
-        objectCode:             { type: string, nullable: true, readOnly: true, deprecated: true }
-        objectCodeOverride:     { type: string, nullable: true, deprecated: true }
-        revenueLocation:        { type: string, nullable: true, readOnly: true, deprecated: true }
-        revenueLocationOverride: { type: string, nullable: true, deprecated: true }
-        revenueClass:           { type: string, nullable: true, readOnly: true, deprecated: true }
-        revenueClassOverride:   { type: string, nullable: true, deprecated: true }
-        codingFlags:            { type: array, items: { type: string }, nullable: true, readOnly: true, deprecated: true }
         createdAt:              { type: string, format: date-time }
         updatedAt:              { type: string, format: date-time }
     PledgeAllocationList:
@@ -8246,22 +8233,9 @@ components:
         regionIds:                   { type: array, items: { type: string }, nullable: true }
         displayUsage:                { type: string, nullable: true, readOnly: true, description: "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only." }
         purposeVerbatim:             { type: string, nullable: true }
-        # @deprecated (Task #449) — superseded by regional/usage/time RestrictionAxis
-        # + the staged-payment coding snapshot. Read-only; no longer written.
-        formalRegionalRestriction:   { type: boolean, deprecated: true, description: "@deprecated — use regionalRestrictionType." }
-        formalFundUseRestriction:    { type: boolean, deprecated: true, description: "@deprecated — use usageRestrictionType." }
+        # @deprecated (Task #449) — superseded by reimbursementType. Spec-only
+        # alias; the backing column was renamed, not retained. Read-only.
         reimbursableShare:           { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true, deprecated: true, description: "@deprecated — renamed to reimbursementType." }
-        restrictionType:             { allOf: [ { $ref: "#/components/schemas/RestrictionType" } ], nullable: true, deprecated: true }
-        restrictionEvidence:         { type: string, nullable: true, deprecated: true }
-        deferredRevenue:             { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true, deprecated: true, description: "@deprecated — coding snapshot moved to staged_payments." }
-        deferredRevenueReason:       { type: string, nullable: true, deprecated: true }
-        objectCode:                  { type: string, nullable: true, readOnly: true, deprecated: true }
-        objectCodeOverride:          { type: string, nullable: true, deprecated: true }
-        revenueLocation:             { type: string, nullable: true, readOnly: true, deprecated: true }
-        revenueLocationOverride:     { type: string, nullable: true, deprecated: true }
-        revenueClass:                { type: string, nullable: true, readOnly: true, deprecated: true }
-        revenueClassOverride:        { type: string, nullable: true, deprecated: true }
-        codingFlags:                 { type: array, items: { type: string }, nullable: true, readOnly: true, deprecated: true }
         createdAt:                   { type: string, format: date-time }
         updatedAt:                   { type: string, format: date-time }
     GiftAllocationList:

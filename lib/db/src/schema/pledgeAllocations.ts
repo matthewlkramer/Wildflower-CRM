@@ -10,8 +10,6 @@ import {
 import {
   pledgeAllocationStatusEnum,
   intendedUsageEnum,
-  restrictionTypeEnum,
-  deferredRevenueEnum,
   reimbursementTypeEnum,
   restrictionAxisEnum,
   opportunityConditionalEnum,
@@ -57,12 +55,6 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   schoolRecipientId: text("school_recipient_id").references(() => schools.id, {
     onDelete: "restrict",
   }),
-  // @deprecated (Task #449) — replaced by the three-axis restriction taxonomy
-  // (regionalRestrictionType / usageRestrictionType / timeRestrictionType). No
-  // code reads or writes this anymore; retained ONLY so dev push stays additive
-  // and prod Publish never auto-drops it (prod invariant #7). Physical DROP ships
-  // as a reviewed, human-applied SQL file in lib/db/migrations/.
-  formallyRestricted: boolean("formally_restricted").default(false).notNull(),
   // ── Restriction taxonomy (Task #449) ─────────────────────────────────────
   // Three independent axes capturing the donor's restriction INTENT, each one of
   // donor_restricted / wf_restricted / unrestricted. Mirrors gift_allocations.
@@ -109,20 +101,6 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   regionIds: text("region_ids").array(),
   // The donor's restriction language, verbatim. Still active.
   purposeVerbatim: text("purpose_verbatim"),
-  // ── @deprecated (Task #449) — revenue-coding snapshot moved to staged_payments ──
-  // See gift_allocations for the deprecate-then-drop rationale. No code reads or
-  // writes these anymore; the on-demand coding preview is derived from scope.
-  restrictionType: restrictionTypeEnum("restriction_type"),
-  restrictionEvidence: text("restriction_evidence"),
-  deferredRevenue: deferredRevenueEnum("deferred_revenue"),
-  deferredRevenueReason: text("deferred_revenue_reason"),
-  objectCode: text("object_code"),
-  objectCodeOverride: text("object_code_override"),
-  revenueLocation: text("revenue_location"),
-  revenueLocationOverride: text("revenue_location_override"),
-  revenueClass: text("revenue_class"),
-  revenueClassOverride: text("revenue_class_override"),
-  codingFlags: text("coding_flags").array(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

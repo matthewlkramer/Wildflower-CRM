@@ -10,9 +10,8 @@ const SOURCE_LABEL: Record<BundleAnchorType, string> = {
 };
 
 /**
- * Presentational settlement-anchor card, shared by the legacy BundleAnchorList
- * and the Settlement report's three columns. Selecting it loads the anchor's
- * draft in the detail pane.
+ * Presentational settlement-anchor card, used by the Settlement report's
+ * columns. Selecting it loads the anchor's draft in the detail pane.
  */
 export function AnchorCard({
   anchor: a,

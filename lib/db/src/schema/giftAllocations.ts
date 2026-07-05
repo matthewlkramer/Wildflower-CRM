@@ -9,8 +9,6 @@ import {
 } from "drizzle-orm/pg-core";
 import {
   intendedUsageEnum,
-  restrictionTypeEnum,
-  deferredRevenueEnum,
   reimbursementTypeEnum,
   restrictionAxisEnum,
 } from "./_enums";
@@ -37,25 +35,12 @@ export const giftAllocations = pgTable("gift_allocations", {
   entityId: text("entity_id").references(() => entities.id, {
     onDelete: "restrict",
   }),
-  // @deprecated (Task #449) — replaced by the three-axis restriction taxonomy
-  // (regionalRestrictionType / usageRestrictionType / timeRestrictionType). No
-  // code reads or writes this anymore; retained ONLY so dev `drizzle-kit push`
-  // stays additive and prod Publish never auto-drops it (prod invariant #7). The
-  // physical DROP ships as a reviewed, human-applied SQL file in lib/db/migrations/.
-  formalRegionalRestriction: boolean("formal_regional_restriction")
-    .default(false)
-    .notNull(),
   intendedUsage: intendedUsageEnum("intended_usage"),
   // FK to fundable_projects; populated when intendedUsage = 'project'.
   fundableProjectId: text("fundable_project_id").references(
     () => fundableProjects.id,
     { onDelete: "restrict" },
   ),
-  // @deprecated (Task #449) — replaced by usageRestrictionType. See
-  // formalRegionalRestriction above for the deprecate-then-drop rationale.
-  formalFundUseRestriction: boolean("formal_fund_use_restriction")
-    .default(false)
-    .notNull(),
   // ── Restriction taxonomy (Task #449) ─────────────────────────────────────
   // Three independent axes capturing the donor's restriction INTENT, each one
   // of donor_restricted / wf_restricted / unrestricted. Replaces the coarse
@@ -111,26 +96,6 @@ export const giftAllocations = pgTable("gift_allocations", {
   // The donor's restriction language, verbatim. Still active — the only
   // free-text restriction evidence the allocation keeps.
   purposeVerbatim: text("purpose_verbatim"),
-  // ── @deprecated (Task #449) — revenue-coding snapshot moved to staged_payments ──
-  // The derived QBO coding snapshot describes a QuickBooks PAYMENT, not the
-  // donor's intent, so it now lives on staged_payments. The allocation can still
-  // GENERATE a coding-instructions preview on demand from its scope (deriveRevenueCoding),
-  // but no longer persists one. restriction_type/restriction_evidence are replaced
-  // by the three-axis taxonomy above. All of the following are no longer read or
-  // written; retained ONLY so dev push stays additive and prod Publish never
-  // auto-drops them (prod invariant #7). The physical DROP ships as a reviewed,
-  // human-applied SQL file in lib/db/migrations/.
-  restrictionType: restrictionTypeEnum("restriction_type"),
-  restrictionEvidence: text("restriction_evidence"),
-  deferredRevenue: deferredRevenueEnum("deferred_revenue"),
-  deferredRevenueReason: text("deferred_revenue_reason"),
-  objectCode: text("object_code"),
-  objectCodeOverride: text("object_code_override"),
-  revenueLocation: text("revenue_location"),
-  revenueLocationOverride: text("revenue_location_override"),
-  revenueClass: text("revenue_class"),
-  revenueClassOverride: text("revenue_class_override"),
-  codingFlags: text("coding_flags").array(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

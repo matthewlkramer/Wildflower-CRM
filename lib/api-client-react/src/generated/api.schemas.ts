@@ -589,21 +589,6 @@ export const RestrictionAxis = {
   unrestricted: 'unrestricted',
 } as const;
 
-/**
- * @deprecated (Task #449) — superseded by the three RestrictionAxis fields. Retained only on deprecated read fields and legacy audit/reconciler views.
- */
-export type RestrictionType = typeof RestrictionType[keyof typeof RestrictionType];
-
-
-export const RestrictionType = {
-  unrestricted: 'unrestricted',
-  purpose: 'purpose',
-  time: 'time',
-  both: 'both',
-  unclear: 'unclear',
-  na: 'na',
-} as const;
-
 export type DeferredRevenue = typeof DeferredRevenue[keyof typeof DeferredRevenue];
 
 
@@ -1825,40 +1810,10 @@ export interface PledgeAllocation {
   regionIds?: string[] | null;
   purposeVerbatim?: string | null;
   /**
-   * @deprecated — use the three RestrictionAxis fields.
-   * @deprecated
-   */
-  formallyRestricted?: boolean;
-  /**
    * @deprecated — renamed to reimbursementType.
    * @deprecated
    */
   reimbursableShare?: ReimbursementType | null;
-  /** @deprecated */
-  restrictionType?: RestrictionType | null;
-  /** @deprecated */
-  restrictionEvidence?: string | null;
-  /**
-   * @deprecated — coding snapshot moved to staged_payments.
-   * @deprecated
-   */
-  deferredRevenue?: DeferredRevenue | null;
-  /** @deprecated */
-  deferredRevenueReason?: string | null;
-  /** @deprecated */
-  readonly objectCode?: string | null;
-  /** @deprecated */
-  objectCodeOverride?: string | null;
-  /** @deprecated */
-  readonly revenueLocation?: string | null;
-  /** @deprecated */
-  revenueLocationOverride?: string | null;
-  /** @deprecated */
-  readonly revenueClass?: string | null;
-  /** @deprecated */
-  revenueClassOverride?: string | null;
-  /** @deprecated */
-  readonly codingFlags?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2145,45 +2100,10 @@ export interface GiftAllocation {
   readonly displayUsage?: string | null;
   purposeVerbatim?: string | null;
   /**
-   * @deprecated — use regionalRestrictionType.
-   * @deprecated
-   */
-  formalRegionalRestriction?: boolean;
-  /**
-   * @deprecated — use usageRestrictionType.
-   * @deprecated
-   */
-  formalFundUseRestriction?: boolean;
-  /**
    * @deprecated — renamed to reimbursementType.
    * @deprecated
    */
   reimbursableShare?: ReimbursementType | null;
-  /** @deprecated */
-  restrictionType?: RestrictionType | null;
-  /** @deprecated */
-  restrictionEvidence?: string | null;
-  /**
-   * @deprecated — coding snapshot moved to staged_payments.
-   * @deprecated
-   */
-  deferredRevenue?: DeferredRevenue | null;
-  /** @deprecated */
-  deferredRevenueReason?: string | null;
-  /** @deprecated */
-  readonly objectCode?: string | null;
-  /** @deprecated */
-  objectCodeOverride?: string | null;
-  /** @deprecated */
-  readonly revenueLocation?: string | null;
-  /** @deprecated */
-  revenueLocationOverride?: string | null;
-  /** @deprecated */
-  readonly revenueClass?: string | null;
-  /** @deprecated */
-  revenueClassOverride?: string | null;
-  /** @deprecated */
-  readonly codingFlags?: readonly string[] | null;
   createdAt: string;
   updatedAt: string;
 }
