@@ -7265,22 +7265,31 @@ components:
           $ref: "#/components/schemas/GiftMissingQbProposedPayment"
           nullable: true
           description: |
-            Best-guess UNLINKED QuickBooks staged payment for this gift row, or null
-            when none is a plausible match. Read-only convenience so the card can offer
-            a one-click "Link" — the same match the manual Link dialog would surface
-            (donor name + amount fee-band + date window), restricted to staged rows not
-            already tied to a gift. The row-level amount used is the allocation
-            sub-amount, falling back to the gift's display amount.
+            Best-guess UNLINKED payment for this gift row (a QuickBooks staged payment
+            OR a Stripe staged charge), or null when none is a plausible match.
+            Read-only convenience so the card can offer a one-click "Link" — the same
+            match the manual Link dialog would surface (donor name + amount fee-band +
+            date window), restricted to rows not already tied to a gift. A QuickBooks
+            match is preferred; a Stripe charge is proposed when no plausible QuickBooks
+            payment exists (Stripe-settled gifts land in QuickBooks at the payout level,
+            not per gift). The row-level amount used is the allocation sub-amount,
+            falling back to the gift's display amount.
     GiftMissingQbProposedPayment:
       type: object
-      required: [stagedPaymentId]
-      description: A single unlinked QuickBooks staged payment proposed as this gift's match.
+      required: [source]
+      description: |
+        A single unlinked payment proposed as this gift's match. `source` picks the
+        processor and therefore the reconcile target + endpoint: a QuickBooks staged
+        payment (source=quickbooks, target stagedPaymentId) or a Stripe staged charge
+        (source=stripe, target stripeChargeId).
       properties:
-        stagedPaymentId: { type: string, description: "staged_payments id — the reconcile target." }
-        payerName:       { type: string, nullable: true, description: "QuickBooks payer name." }
-        amount:          { type: string, nullable: true, description: "Staged payment amount." }
-        dateReceived:    { type: string, format: date, nullable: true, description: "Staged payment date received." }
-        paymentMethod:   { type: string, nullable: true, description: "QuickBooks payment method / instrument (qb_payment_method)." }
+        source:          { type: string, enum: [quickbooks, stripe], description: "Which processor this proposal comes from — determines the reconcile target and endpoint." }
+        stagedPaymentId: { type: string, nullable: true, description: "staged_payments id — the reconcile target when source=quickbooks." }
+        stripeChargeId:  { type: string, nullable: true, description: "stripe_staged_charges id — the reconcile target when source=stripe." }
+        payerName:       { type: string, nullable: true, description: "Payer name (QuickBooks payer / Stripe payer or description)." }
+        amount:          { type: string, nullable: true, description: "Proposed payment amount (QuickBooks staged amount / Stripe GROSS)." }
+        dateReceived:    { type: string, format: date, nullable: true, description: "Payment date received." }
+        paymentMethod:   { type: string, nullable: true, description: "QuickBooks payment method / instrument (qb_payment_method), or Stripe card brand." }
         reference:       { type: string, nullable: true, description: "Raw memo / reference for context." }
     GiftMissingQbList:
       type: object

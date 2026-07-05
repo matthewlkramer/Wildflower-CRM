@@ -185,13 +185,30 @@ async function seedStaged(opts: {
   return id;
 }
 
-async function seedCharge(matchedGiftId: string | null = null): Promise<string> {
+async function seedCharge(opts: {
+  label?: string;
+  grossAmount?: string;
+  netAmount?: string | null;
+  dateReceived?: string | null;
+  status?: "pending" | "approved" | "reconciled";
+  matchedGiftId?: string | null;
+  createdGiftId?: string | null;
+  refunded?: boolean;
+  disputed?: boolean;
+} = {}): Promise<string> {
   const id = nextId("sc");
   await db.insert(schema.stripeStagedCharges).values({
     id,
     stripeAccountId: ACCOUNT_ID,
-    grossAmount: "100.00",
-    matchedGiftId,
+    grossAmount: opts.grossAmount ?? "100.00",
+    netAmount: opts.netAmount ?? null,
+    dateReceived: opts.dateReceived ?? null,
+    status: opts.status ?? (opts.matchedGiftId ? "approved" : "pending"),
+    payerName: opts.label ? `${MARKER} ${opts.label}` : null,
+    matchedGiftId: opts.matchedGiftId ?? null,
+    createdGiftId: opts.createdGiftId ?? null,
+    refunded: opts.refunded ?? false,
+    disputed: opts.disputed ?? false,
   });
   chargeIds.push(id);
   return id;
@@ -242,14 +259,13 @@ async function seedDonorboxLedgerRow(
   });
 }
 
-type ProposedPaymentRow = {
-  stagedPaymentId: string;
+type ProposedPayment = {
+  source: "quickbooks" | "stripe";
+  stagedPaymentId: string | null;
+  stripeChargeId: string | null;
   payerName: string | null;
   amount: string | null;
-  dateReceived: string | null;
-  paymentMethod: string | null;
-  reference: string | null;
-};
+} | null;
 
 type GiftRow = {
   id: string;
@@ -258,7 +274,7 @@ type GiftRow = {
   entityId: string | null;
   entityName: string | null;
   paymentMethod: string | null;
-  proposedPayment: ProposedPaymentRow | null;
+  proposedPayment: ProposedPayment;
 };
 
 async function listGifts(qs: string): Promise<{
@@ -473,7 +489,7 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
       organizationId: org,
       paymentMethod: "check",
     });
-    await seedCharge(giftStripeChargeOnly);
+    await seedCharge({ matchedGiftId: giftStripeChargeOnly });
 
     // entityId — only the entity-allocated gift, scoped DB-wide by the unique id.
     const byEntity = await listGifts(`entityId=${ENTITY_ID}&limit=200`);
@@ -494,6 +510,64 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
     // ledger, not stripe_staged_charges.
     const all = await listGifts(`q=${encodeURIComponent(MARKER)}&limit=200`);
     expect(all.ids.has(giftStripeChargeOnly)).toBe(true);
+  }, 30_000);
+
+  it("proposes an unlinked QB staged payment, else falls back to an unlinked Stripe charge", async () => {
+    // (a) QB-first: a stray gift whose donor name + amount + date match an
+    // unlinked QB staged payment gets a source=quickbooks proposal pointing at
+    // that staged row.
+    const orgQb = await seedOrg({ label: "Propose QB Org" });
+    const giftQb = await seedGift({
+      organizationId: orgQb,
+      amount: "321.00",
+      dateReceived: "2026-04-10",
+    });
+    const stagedQb = await seedStaged({
+      label: "Propose QB Org",
+      amount: "321.00",
+      dateReceived: "2026-04-12",
+    });
+
+    const qbRes = await listGifts(`q=${encodeURIComponent(MARKER)}&limit=200`);
+    const qbRow = qbRes.rows.find((r) => r.id === giftQb);
+    expect(qbRow?.proposedPayment?.source).toBe("quickbooks");
+    expect(qbRow?.proposedPayment?.stagedPaymentId).toBe(stagedQb);
+    expect(qbRow?.proposedPayment?.stripeChargeId).toBeNull();
+
+    // (b) Stripe fallback: a stray gift with NO plausible QB payment but an
+    // unlinked, pending Stripe charge whose GROSS/NET fee band contains the gift
+    // amount gets a source=stripe proposal pointing at that charge. The gift is
+    // booked NET of fees (485.50), inside the charge's [net 485.50, gross 500].
+    const orgStripe = await seedOrg({ label: "Propose Stripe Org" });
+    const giftStripe = await seedGift({
+      organizationId: orgStripe,
+      amount: "485.50",
+      dateReceived: "2026-06-01",
+    });
+    const chargeStripe = await seedCharge({
+      label: "Propose Stripe Org",
+      grossAmount: "500.00",
+      netAmount: "485.50",
+      dateReceived: "2026-06-02",
+      status: "pending",
+    });
+
+    const stripeRes = await listGifts(`q=${encodeURIComponent(MARKER)}&limit=200`);
+    const stripeRow = stripeRes.rows.find((r) => r.id === giftStripe);
+    expect(stripeRow?.proposedPayment?.source).toBe("stripe");
+    expect(stripeRow?.proposedPayment?.stripeChargeId).toBe(chargeStripe);
+    expect(stripeRow?.proposedPayment?.stagedPaymentId).toBeNull();
+
+    // (c) No plausible payment either place ⇒ null proposal (search-to-link).
+    const orgNone = await seedOrg({ label: "Propose None Org" });
+    const giftNone = await seedGift({
+      organizationId: orgNone,
+      amount: "777.77",
+      dateReceived: "2026-07-01",
+    });
+    const noneRes = await listGifts(`q=${encodeURIComponent(MARKER)}&limit=200`);
+    const noneRow = noneRes.rows.find((r) => r.id === giftNone);
+    expect(noneRow?.proposedPayment ?? null).toBeNull();
   }, 30_000);
 
   it("filters by date window (dateFrom / dateTo)", async () => {

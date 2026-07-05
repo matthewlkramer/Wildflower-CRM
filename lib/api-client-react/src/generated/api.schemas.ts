@@ -4020,18 +4020,37 @@ export const GiftMissingQbDonorKind = {
 } as const;
 
 /**
- * A single unlinked QuickBooks staged payment proposed as this gift's match.
+ * Which processor this proposal comes from — determines the reconcile target and endpoint.
+ */
+export type GiftMissingQbProposedPaymentSource = typeof GiftMissingQbProposedPaymentSource[keyof typeof GiftMissingQbProposedPaymentSource];
+
+
+export const GiftMissingQbProposedPaymentSource = {
+  quickbooks: 'quickbooks',
+  stripe: 'stripe',
+} as const;
+
+/**
+ * A single unlinked payment proposed as this gift's match. `source` picks the
+processor and therefore the reconcile target + endpoint: a QuickBooks staged
+payment (source=quickbooks, target stagedPaymentId) or a Stripe staged charge
+(source=stripe, target stripeChargeId).
+
  */
 export interface GiftMissingQbProposedPayment {
-  /** staged_payments id — the reconcile target. */
-  stagedPaymentId: string;
-  /** QuickBooks payer name. */
+  /** Which processor this proposal comes from — determines the reconcile target and endpoint. */
+  source: GiftMissingQbProposedPaymentSource;
+  /** staged_payments id — the reconcile target when source=quickbooks. */
+  stagedPaymentId?: string | null;
+  /** stripe_staged_charges id — the reconcile target when source=stripe. */
+  stripeChargeId?: string | null;
+  /** Payer name (QuickBooks payer / Stripe payer or description). */
   payerName?: string | null;
-  /** Staged payment amount. */
+  /** Proposed payment amount (QuickBooks staged amount / Stripe GROSS). */
   amount?: string | null;
-  /** Staged payment date received. */
+  /** Payment date received. */
   dateReceived?: string | null;
-  /** QuickBooks payment method / instrument (qb_payment_method). */
+  /** QuickBooks payment method / instrument (qb_payment_method), or Stripe card brand. */
   paymentMethod?: string | null;
   /** Raw memo / reference for context. */
   reference?: string | null;
@@ -4084,12 +4103,15 @@ export interface GiftMissingQb {
   /** The allocation's fiscal year (grant_year) id. */
   grantYear?: string | null;
   finalAmountSource?: GiftFinalAmountSource | null;
-  /** Best-guess UNLINKED QuickBooks staged payment for this gift row, or null
-when none is a plausible match. Read-only convenience so the card can offer
-a one-click "Link" — the same match the manual Link dialog would surface
-(donor name + amount fee-band + date window), restricted to staged rows not
-already tied to a gift. The row-level amount used is the allocation
-sub-amount, falling back to the gift's display amount.
+  /** Best-guess UNLINKED payment for this gift row (a QuickBooks staged payment
+OR a Stripe staged charge), or null when none is a plausible match.
+Read-only convenience so the card can offer a one-click "Link" — the same
+match the manual Link dialog would surface (donor name + amount fee-band +
+date window), restricted to rows not already tied to a gift. A QuickBooks
+match is preferred; a Stripe charge is proposed when no plausible QuickBooks
+payment exists (Stripe-settled gifts land in QuickBooks at the payout level,
+not per gift). The row-level amount used is the allocation sub-amount,
+falling back to the gift's display amount.
  */
   proposedPayment?: GiftMissingQbProposedPayment | null;
 }

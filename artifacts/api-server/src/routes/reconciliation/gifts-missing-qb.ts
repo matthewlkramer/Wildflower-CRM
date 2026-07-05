@@ -10,11 +10,13 @@ import {
   fundableProjects,
   schools,
   stagedPayments,
+  stripeStagedCharges,
 } from "@workspace/db/schema";
 import { and, asc, count, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { asyncHandler } from "../../lib/helpers";
 import { getViewer, maskName } from "../../lib/identityVisibility";
 import { escapeLike, stagedSearchWhere } from "../quickbooks/shared";
+import { giftMatchAmountBoundsKnownNet } from "../../lib/giftMatch";
 import {
   qbLedgerExistsForGift,
   stripeLedgerExistsForGift,
@@ -60,7 +62,9 @@ const personNameSql = sql<string | null>`
   )`;
 
 interface ProposedPayment {
-  stagedPaymentId: string;
+  source: "quickbooks" | "stripe";
+  stagedPaymentId: string | null;
+  stripeChargeId: string | null;
   payerName: string | null;
   amount: string | null;
   dateReceived: string | null;
@@ -74,8 +78,8 @@ interface ProposedPayment {
 // net differ by fees), and a ±30d date window. Restricted to staged rows not yet
 // tied to a gift (matched / created / group-reconciled all null) so a proposal is
 // always actionable, and ordered so the single closest amount-then-date row wins.
-// Returns null when nothing plausible matches (card shows "search to link").
-async function proposePaymentForGift(opts: {
+// Returns null when nothing plausible matches (Stripe fallback runs next).
+async function proposeQbPaymentForGift(opts: {
   rawDonorName: string | null;
   amount: string | null;
   date: string | null;
@@ -136,7 +140,138 @@ async function proposePaymentForGift(opts: {
     .orderBy(...orderBy)
     .limit(1);
 
-  return row ?? null;
+  if (!row) return null;
+  return {
+    source: "quickbooks",
+    stagedPaymentId: row.stagedPaymentId,
+    stripeChargeId: null,
+    payerName: row.payerName,
+    amount: row.amount,
+    dateReceived: row.dateReceived,
+    paymentMethod: row.paymentMethod,
+    reference: row.reference,
+  };
+}
+
+// Free-text donor filter for an unlinked Stripe charge — payer, payer email,
+// charge description, and the statement descriptor (mirrors stripe.ts's own
+// staged-charge search fields). Any substring hit counts.
+function stripeChargeSearchWhere(term: string): SQL {
+  const like = `%${escapeLike(term)}%`;
+  return or(
+    ilike(stripeStagedCharges.payerName, like),
+    ilike(stripeStagedCharges.payerEmail, like),
+    ilike(stripeStagedCharges.description, like),
+    ilike(stripeStagedCharges.statementDescriptor, like),
+  )!;
+}
+
+// Best-guess UNLINKED Stripe staged charge for a stray gift row — the Stripe
+// analogue of proposeQbPaymentForGift, used when no plausible QuickBooks payment
+// exists (a Stripe-settled gift never gets a per-gift QB record). Restricted to
+// still-open charges not yet tied to a gift (status='pending', matched/created
+// gift both null) and not refunded/disputed (those aren't real gifts). The
+// amount uses the shared KNOWN-NET fee band (giftMatchAmountBoundsKnownNet): a
+// gift booked anywhere in [min(net,gross), max(net,gross)] is the same money a
+// processor fee apart, consistent with how the reconciler ties a charge (GROSS)
+// to a gift. Ordered so the closest-gross, then closest-date row wins.
+async function proposeStripeChargeForGift(opts: {
+  rawDonorName: string | null;
+  amount: string | null;
+  date: string | null;
+}): Promise<ProposedPayment | null> {
+  const amt =
+    opts.amount != null && opts.amount !== "" ? Number(opts.amount) : NaN;
+  const hasAmount = Number.isFinite(amt) && amt > 0;
+  const name = (opts.rawDonorName ?? "").trim();
+  const hasText = name.length >= 2;
+  if (!hasText && !hasAmount) return null;
+
+  const conds: SQL[] = [
+    eq(stripeStagedCharges.status, "pending"),
+    sql`${stripeStagedCharges.matchedGiftId} IS NULL`,
+    sql`${stripeStagedCharges.createdGiftId} IS NULL`,
+    eq(stripeStagedCharges.refunded, false),
+    eq(stripeStagedCharges.disputed, false),
+  ];
+  if (hasText) conds.push(stripeChargeSearchWhere(name));
+  if (hasAmount) {
+    // Gross must be known for the fee band to mean anything; LEAST/GREATEST
+    // ignore a NULL net and collapse to a near-exact gross window (safe).
+    conds.push(sql`${stripeStagedCharges.grossAmount} IS NOT NULL`);
+    conds.push(
+      giftMatchAmountBoundsKnownNet(
+        sql`${amt}`,
+        sql`(${stripeStagedCharges.grossAmount})::numeric`,
+        sql`(${stripeStagedCharges.netAmount})::numeric`,
+      ),
+    );
+  }
+  if (opts.date) {
+    conds.push(
+      sql`${stripeStagedCharges.dateReceived} IS NOT NULL AND ${stripeStagedCharges.dateReceived} BETWEEN (${opts.date}::date - 30) AND (${opts.date}::date + 30)`,
+    );
+  }
+
+  const orderBy: SQL[] = [];
+  if (hasAmount) {
+    orderBy.push(
+      asc(sql`ABS((${stripeStagedCharges.grossAmount})::numeric - ${amt})`),
+    );
+  }
+  if (opts.date) {
+    orderBy.push(
+      asc(sql`ABS(${stripeStagedCharges.dateReceived} - ${opts.date}::date)`),
+    );
+  }
+  orderBy.push(desc(stripeStagedCharges.dateReceived));
+
+  const [row] = await db
+    .select({
+      stripeChargeId: stripeStagedCharges.id,
+      payerName: sql<string | null>`COALESCE(
+        NULLIF(TRIM(${stripeStagedCharges.payerName}), ''),
+        NULLIF(TRIM(${stripeStagedCharges.description}), '')
+      )`,
+      amount: stripeStagedCharges.grossAmount,
+      dateReceived: stripeStagedCharges.dateReceived,
+      paymentMethod: stripeStagedCharges.cardBrand,
+      reference: sql<string | null>`COALESCE(
+        NULLIF(TRIM(${stripeStagedCharges.description}), ''),
+        NULLIF(TRIM(${stripeStagedCharges.statementDescriptor}), '')
+      )`,
+    })
+    .from(stripeStagedCharges)
+    .where(and(...conds))
+    .orderBy(...orderBy)
+    .limit(1);
+
+  if (!row) return null;
+  return {
+    source: "stripe",
+    stagedPaymentId: null,
+    stripeChargeId: row.stripeChargeId,
+    payerName: row.payerName,
+    amount: row.amount,
+    dateReceived: row.dateReceived,
+    paymentMethod: row.paymentMethod,
+    reference: row.reference,
+  };
+}
+
+// One-click proposal for a stray gift row. Prefer a QuickBooks staged payment
+// (invariant: every gift should eventually have a QB record); fall back to an
+// unlinked Stripe charge when no plausible QB payment exists so Stripe-settled
+// gifts — which never get a per-gift QB record — can still be linked in one
+// click. Returns null when neither source has a plausible match.
+async function proposePaymentForGift(opts: {
+  rawDonorName: string | null;
+  amount: string | null;
+  date: string | null;
+}): Promise<ProposedPayment | null> {
+  const qb = await proposeQbPaymentForGift(opts);
+  if (qb) return qb;
+  return proposeStripeChargeForGift(opts);
 }
 
 // ─── GET /reconciliation/gifts-missing-qb ──────────────────────────────────

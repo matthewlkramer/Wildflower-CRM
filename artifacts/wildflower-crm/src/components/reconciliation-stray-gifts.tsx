@@ -8,6 +8,7 @@ import {
   useSearchReconciliationQbStaged,
   getSearchReconciliationQbStagedQueryKey,
   useReconcileStagedPayment,
+  useLinkStripeChargeToGift,
   useUpdateGiftAllocation,
   useRevertGiftToOpportunity,
   GiftPaymentMethod,
@@ -283,13 +284,42 @@ function StrayGiftCard({
     : `Gift ${g.id.slice(0, 8)}`;
 
   const proposal = g.proposedPayment ?? null;
+  const isStripe = proposal?.source === "stripe";
+  const sourceLabel = isStripe ? "Stripe" : "QuickBooks";
   const reconcile = useReconcileStagedPayment();
-  const linking = reconcile.isPending;
+  const linkStripe = useLinkStripeChargeToGift();
+  const linking = reconcile.isPending || linkStripe.isPending;
 
-  // Primary action: reconcile the gift to the proposed unlinked QB payment,
-  // recording the allocation pointer when this row actually carries one.
+  const onLinkSuccess = () => {
+    void queryClient.invalidateQueries({ queryKey: [MISSING_QB_KEY_PREFIX] });
+    toast({
+      title: "Linked to payment",
+      description: `The gift is now reconciled to the ${sourceLabel} payment.`,
+    });
+  };
+  const onLinkError = (err: unknown) =>
+    toast({
+      title: "Couldn't link",
+      description: err instanceof Error ? err.message : "Something went wrong.",
+      variant: "destructive",
+    });
+
+  // Primary action: reconcile the gift to the proposed unlinked payment.
+  // QuickBooks staged payments reconcile through the QB path (carrying the
+  // allocation pointer when this row has one); Stripe charges link through the
+  // Stripe evidence path, which ties a charge to the gift (no allocation
+  // pointer — the charge is gift-level evidence).
   const linkProposed = () => {
     if (!proposal) return;
+    if (proposal.source === "stripe") {
+      if (!proposal.stripeChargeId) return;
+      linkStripe.mutate(
+        { id: proposal.stripeChargeId, data: { giftId: g.id } },
+        { onSuccess: onLinkSuccess, onError: onLinkError },
+      );
+      return;
+    }
+    if (!proposal.stagedPaymentId) return;
     reconcile.mutate(
       {
         id: proposal.stagedPaymentId,
@@ -298,24 +328,7 @@ function StrayGiftCard({
           ...(g.allocationId ? { allocationId: g.allocationId } : {}),
         },
       },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({
-            queryKey: [MISSING_QB_KEY_PREFIX],
-          });
-          toast({
-            title: "Linked to payment",
-            description: "The gift is now reconciled to the QuickBooks payment.",
-          });
-        },
-        onError: (err) =>
-          toast({
-            title: "Couldn't link",
-            description:
-              err instanceof Error ? err.message : "Something went wrong.",
-            variant: "destructive",
-          }),
-      },
+      { onSuccess: onLinkSuccess, onError: onLinkError },
     );
   };
 
@@ -383,10 +396,10 @@ function StrayGiftCard({
           <ArrowRight className="h-4 w-4" />
         </div>
 
-        {/* Right lane — the proposed QuickBooks payment (pull-only) */}
+        {/* Right lane — the proposed payment (QuickBooks or Stripe; pull-only) */}
         <div className="min-w-0 flex-1 break-words p-3">
           <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            QuickBooks payment
+            {proposal ? `${sourceLabel} payment` : "QuickBooks payment"}
           </div>
           {proposal ? (
             <>
