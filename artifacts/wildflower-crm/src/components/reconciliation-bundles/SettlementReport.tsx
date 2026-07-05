@@ -5,10 +5,8 @@ import {
   useListReconciliationBundleAnchors,
   getListReconciliationBundleAnchorsQueryKey,
   type BundleAnchor,
-  type BundleAnchorQueue,
   type BundleAnchorType,
 } from "@workspace/api-client-react";
-import { cn } from "@/lib/utils";
 import { AnchorCard } from "./AnchorCard";
 import { BundleDraftPanel } from "./BundleDraftPanel";
 
@@ -17,12 +15,6 @@ interface SelectedAnchor {
   anchorId: string;
 }
 
-const FILTERS: { id: BundleAnchorQueue; label: string }[] = [
-  { id: "needs_review", label: "Needs review" },
-  { id: "confirmed", label: "Confirmed" },
-  { id: "all", label: "All" },
-];
-
 /**
  * Settlement report (design §4.5, Plane 1: Stripe payouts ↔ QB deposits). The
  * same settlement anchors the legacy bundle queue enumerated, re-grouped into
@@ -30,18 +22,22 @@ const FILTERS: { id: BundleAnchorQueue; label: string }[] = [
  *   • Matched        — a settlement link exists (settled or proposed).
  *   • Missing deposit — an orphan Stripe payout (money left Stripe, never booked).
  *   • Missing payout  — a standalone QB deposit with no tied payout.
- * "Needs review" / "Confirmed" are FILTERS over the same list (not queues).
+ * The three columns already encode the review state, so there is no separate
+ * needs-review / confirmed filter — the full anchor list ("all") is bucketed.
  * Selecting an anchor assembles its bundle inline (BundleDraftPanel reused as-is);
  * confirming refreshes every workbench query the bundle touches.
  */
 export function SettlementReport() {
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<BundleAnchorQueue>("needs_review");
   const [selected, setSelected] = useState<SelectedAnchor | null>(null);
 
+  // No queue filter — the three columns already bucket by review state, so we
+  // pull the FULL anchor list ("all") and bucket client-side. The limit is the
+  // endpoint's declared "list every anchor" max; a truncation banner (below)
+  // guards the theoretical case of more anchors than that.
   const { data, isLoading, isError } = useListReconciliationBundleAnchors({
-    queue: filter,
-    limit: 200,
+    queue: "all",
+    limit: 10000,
   });
 
   const rows = useMemo(() => data?.data ?? [], [data]);
@@ -97,30 +93,17 @@ export function SettlementReport() {
     ? `${selected.anchorType}:${selected.anchorId}`
     : null;
 
+  const total = data?.pagination.total ?? rows.length;
+  const truncated = !isLoading && !isError && total > rows.length;
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-1.5">
-        <span className="mr-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Filter
-        </span>
-        {FILTERS.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => setFilter(f.id)}
-            className={cn(
-              "rounded-md border px-2.5 py-1 text-xs transition-colors",
-              filter === f.id
-                ? "border-primary bg-primary/5 font-medium text-foreground"
-                : "text-muted-foreground hover:bg-muted/50",
-            )}
-            data-testid={`button-settlement-filter-${f.id}`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
-
+      {truncated && (
+        <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+          <AlertCircle className="h-4 w-4 shrink-0" /> Showing {rows.length} of{" "}
+          {total} settlement anchors — some rows are not listed.
+        </div>
+      )}
       {isError ? (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
           <AlertCircle className="h-4 w-4" /> Couldn't load settlement anchors.

@@ -1185,7 +1185,7 @@ export default function ReconciliationWorkbench() {
   // Shared card renderer for the Needs review / QBO-only / Research queues.
   const renderReconCard = (
     card: ReconciliationCard,
-    opts?: { readOnly?: boolean },
+    opts?: { readOnly?: boolean; hideStateBadges?: boolean },
   ) => {
     // A Stripe-backed deposit is expanded into one card per backing charge, so
     // several cards can share a stagedPaymentId. Their identity (React key,
@@ -1197,6 +1197,7 @@ export default function ReconciliationWorkbench() {
         key={key}
         card={card}
         readOnly={opts?.readOnly}
+        hideStateBadges={opts?.hideStateBadges}
         // Charge cards never enter the staging tray (it is keyed by the QB
         // deposit's payment id) — they resolve/mint/reject immediately.
         staged={
@@ -1425,7 +1426,10 @@ export default function ReconciliationWorkbench() {
                   <ColumnEmpty label="No matched money yet." />
                 ) : (
                   matchedCards.map((card) =>
-                    renderReconCard(card, { readOnly: true }),
+                    renderReconCard(card, {
+                      readOnly: true,
+                      hideStateBadges: true,
+                    }),
                   )
                 )}
               </ReportColumn>
@@ -1443,7 +1447,9 @@ export default function ReconciliationWorkbench() {
                 ) : donorNotCredited.length === 0 ? (
                   <ColumnEmpty label="Every pulled payment is credited." />
                 ) : (
-                  donorNotCredited.map((card) => renderReconCard(card))
+                  donorNotCredited.map((card) =>
+                    renderReconCard(card, { hideStateBadges: true }),
+                  )
                 )}
               </ReportColumn>
               <ReportColumn
@@ -1726,6 +1732,7 @@ function ReconCard({
   onUnstage,
   onCodingSaved,
   readOnly = false,
+  hideStateBadges = false,
 }: {
   card: ReconciliationCard;
   staged: StagedChange | undefined;
@@ -1751,6 +1758,11 @@ function ReconCard({
       already tied to a gift, so re-confirming them 409s ("already resolved");
       a report of settled money is informational, never re-actionable here. */
   readOnly?: boolean;
+  /** Hide the derived "Status:" and "CRM record" lane badges. The gift-report
+      columns (Matched / Donor not credited) already encode that state in the
+      column heading, so the badges are redundant there; the research view keeps
+      them. */
+  hideStateBadges?: boolean;
 }) {
   const conf = confidenceOf(card);
   const meta = CONFIDENCE_META[conf];
@@ -2124,10 +2136,12 @@ function ReconCard({
 
       {/* Status + CRM-record lane + evidence */}
       <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2">
-        <Badge variant={status.variant} className="text-[10px]">
-          Status: {status.label}
-        </Badge>
-        {crmRecordLane && (
+        {!hideStateBadges && (
+          <Badge variant={status.variant} className="text-[10px]">
+            Status: {status.label}
+          </Badge>
+        )}
+        {!hideStateBadges && crmRecordLane && (
           <Badge variant={crmRecordLane.variant} className="text-[10px]">
             {crmRecordLane.label}
           </Badge>
@@ -3074,6 +3088,31 @@ function qbDocType(card: ReconciliationCard): string {
   return t;
 }
 
+// The real donor for an excluded row's Donor cell. Prefer the CRM-matched donor,
+// then the Stripe charge's own payer — never the bare "Stripe" processor name
+// that shows up as the QB payer on a payout. A multi-charge Stripe payout has no
+// single donor, so label it as a payout (with its charge count) instead.
+function excludedDonorDisplay(card: ReconciliationCard) {
+  const realDonor = card.proposedDonorName ?? card.stripeChargeDonorName;
+  if (realDonor) return realDonor;
+  const isStripePayout =
+    card.fundingSource === "stripe" ||
+    (card.payerName ?? "").toLowerCase().includes("stripe");
+  if (isStripePayout) {
+    const count = card.stripeChargeCount ?? 0;
+    return (
+      <span className="text-muted-foreground">
+        Stripe payout{count > 1 ? ` · ${count} charges` : ""}
+      </span>
+    );
+  }
+  return (
+    <span className="text-muted-foreground">
+      {card.payerName ?? "Unknown payer"}
+    </span>
+  );
+}
+
 function ExcludedTable({
   cards,
   total,
@@ -3144,7 +3183,6 @@ function ExcludedTable({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>QuickBooks</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Record #</TableHead>
                   <TableHead>Donor</TableHead>
@@ -3157,20 +3195,11 @@ function ExcludedTable({
               <TableBody>
                 {cards.map((card) => (
                   <TableRow key={card.stagedPaymentId}>
-                    <TableCell className="font-medium">QuickBooks</TableCell>
                     <TableCell>{qbDocType(card)}</TableCell>
                     <TableCell className="tabular-nums">
                       {card.qbDocNumber ?? "—"}
                     </TableCell>
-                    <TableCell>
-                      {card.proposedDonorName ? (
-                        card.proposedDonorName
-                      ) : (
-                        <span className="text-muted-foreground">
-                          {card.payerName ?? "Unknown payer"}
-                        </span>
-                      )}
-                    </TableCell>
+                    <TableCell>{excludedDonorDisplay(card)}</TableCell>
                     <TableCell className="whitespace-nowrap tabular-nums">
                       {card.dateReceived ?? "—"}
                     </TableCell>

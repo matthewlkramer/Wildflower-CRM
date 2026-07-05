@@ -49,9 +49,6 @@ export function AnchorCard({
           {a.date ? formatDate(a.date) : "—"}
           {a.chargeCount != null ? ` · ${a.chargeCount} charges` : ""}
         </span>
-        <Badge variant="outline" className="text-[10px]">
-          {a.statusLabel}
-        </Badge>
       </div>
       {a.payerName && (
         <div className="mt-0.5 truncate text-xs text-muted-foreground">
