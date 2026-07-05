@@ -2435,6 +2435,14 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeHistoricalProposalSummary" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
         "502": { description: "Historical reconciliation proposal pass failed" }
+  /stripe/reconciliation/untied-diagnostic:
+    get:
+      operationId: getUntiedStripePayoutDiagnostic
+      tags: [stripe-sync]
+      summary: "Read-only triage of untied Stripe payouts (no settlement link). Per payout, reports whether a penny-exact QuickBooks row exists at ANY date, that row's type ('deposit' vs 'payment'), the date gap, and the suggested match grain — so finance can see coverage and triage the genuine orphans. Reads nothing outside QuickBooks/Stripe staging; writes nothing (admin only)."
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeUntiedPayoutDiagnostic" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   # ─── Stripe staged-charge review queue ────────────────────────────────────
   /stripe-staged-charges:
@@ -6456,7 +6464,7 @@ components:
         matched: { type: integer, description: "Rows newly given a donor hint by this run." }
     StripeHistoricalProposalSummary:
       type: object
-      required: [ran, payoutsScanned, proposalsCreated, conflictsFound, alreadyResolved, unmatched]
+      required: [ran, payoutsScanned, proposalsCreated, conflictsFound, alreadyResolved, unmatched, chargesScanned, chargesRematched]
       description: "Result of the admin historical Stripe→QuickBooks reconciliation proposal pass over ALL payouts (including prior-account rows). Every match is a PROPOSAL — a human confirms each; nothing is minted or archived."
       properties:
         ran:              { type: boolean, description: "False when the pass was skipped (a sync/rematch/proposal run was already holding the lock, or the Stripe connector was unavailable)." }
@@ -6465,6 +6473,38 @@ components:
         conflictsFound:   { type: integer, description: "Payouts whose candidate QB deposit was already approved into a gift (conflict_approved)." }
         alreadyResolved:  { type: integer, description: "Payouts already in a confirmed/reconciled state, left untouched." }
         unmatched:        { type: integer, description: "Payouts with no QB deposit candidate." }
+        chargesScanned:   { type: integer, description: "Donor-less Stripe charges re-scored for a donor hint (charge-grain backfill for single-donation payouts with no deposit lump)." }
+        chargesRematched: { type: integer, description: "Charges that gained a donor hint this pass, surfacing them in the per-charge review queue. DONOR-ONLY — never mints or reconciles." }
+    StripeUntiedPayoutDiagnostic:
+      type: object
+      required: [total, withExactQbRow, deposits, payments, orphans, rows]
+      description: "Read-only triage of untied Stripe payouts (no settlement link, positive amount). Purely diagnostic — surfaces where the money likely sits in QuickBooks so finance can confirm proposals and chase the genuine orphans."
+      properties:
+        total:          { type: integer, description: "Untied positive payouts examined." }
+        withExactQbRow: { type: integer, description: "Untied payouts that have a penny-exact QB row at some date." }
+        deposits:       { type: integer, description: "Of those, whose nearest exact QB row is typed 'deposit' (a lump)." }
+        payments:       { type: integer, description: "Of those, whose nearest exact QB row is a non-deposit row (donor 'payment')." }
+        orphans:        { type: integer, description: "Untied payouts with NO penny-exact QB row at any date — genuine manual-review orphans." }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/StripeUntiedPayoutDiagnosticRow" }
+    StripeUntiedPayoutDiagnosticRow:
+      type: object
+      required: [payoutId, amount, arrivalDate, chargeCount, hasExactQbRow, qbEntityType, qbId, qbDateReceived, dateGapDays, suggestedGrain]
+      properties:
+        payoutId:       { type: string }
+        amount:         { type: string, nullable: true, description: "Net amount that hit the bank (major units)." }
+        arrivalDate:    { type: string, nullable: true, description: "Bank arrival date (YYYY-MM-DD)." }
+        chargeCount:    { type: integer, nullable: true, description: "Number of charges rolled into the payout (1 = single donation)." }
+        hasExactQbRow:  { type: boolean, description: "A penny-exact QB row exists at some date." }
+        qbEntityType:   { type: string, nullable: true, description: "Type of the nearest exact QB row ('deposit', 'payment', etc.), or null when none." }
+        qbId:           { type: string, nullable: true, description: "staged_payments id of the nearest exact QB row." }
+        qbDateReceived: { type: string, nullable: true, description: "Date of the nearest exact QB row (YYYY-MM-DD)." }
+        dateGapDays:    { type: integer, nullable: true, description: "|days| between the payout arrival and the nearest exact QB row; null when no exact row." }
+        suggestedGrain:
+          type: string
+          enum: [deposit-lump, charge-payment, none]
+          description: "'deposit-lump' = tie payout↔deposit (multi-charge or a deposit-typed exact row exists); 'charge-payment' = single donation booked as a donor payment, match at the charge grain; 'none' = no exact QB row, needs manual review."
     StripeResyncStatus:
       type: object
       required: [status, startedAt, finishedAt, summary, error]

@@ -1164,9 +1164,18 @@ router.post(
           conflictsFound: 0,
           alreadyResolved: 0,
           unmatched: 0,
+          chargesScanned: 0,
+          chargesRematched: 0,
         });
         return;
       }
+      // Single-donation payouts have no deposit lump to settle against, so the
+      // payout↔deposit pass above intentionally leaves them untied — their money
+      // belongs at the charge grain. Run the donor-backfill rematch over ALL
+      // still-pending/donor-less charges so those historical charges surface (with
+      // a donor hint) in the per-charge review queue where a human ties them to a
+      // gift. DONOR-ONLY — never mints or reconciles (proposal-only guarantee).
+      const rematch = await rematchStripeCharges();
       const [counts] = await db
         .select({ total: sql<number>`count(*)::int` })
         .from(stripePayouts);
@@ -1181,6 +1190,9 @@ router.post(
         alreadyResolved: Math.max(0, total - scanned),
         // Scanned payouts that ended with no QB-deposit candidate.
         unmatched: Math.max(0, scanned - result.proposed - result.conflicts),
+        // Charge-grain donor backfill (step 2): charges examined and donor-hinted.
+        chargesScanned: rematch.scanned,
+        chargesRematched: rematch.matched,
       };
       req.log.info(summary, "Historical Stripe→QB reconciliation proposal pass");
       res.json(summary);
@@ -1195,6 +1207,90 @@ router.post(
           e instanceof Error ? e.message : "Historical reconciliation failed",
       });
     }
+  }),
+);
+
+// ─── GET /stripe/reconciliation/untied-diagnostic ──────────────────────────
+// Read-only triage for finance: for every UNTIED positive Stripe payout (no
+// settlement link), find the nearest penny-exact QuickBooks row at ANY date and
+// report its type ('deposit' vs 'payment'), the date gap, and a suggested match
+// grain. Purely diagnostic — surfaces where the money likely sits in QB so a
+// human can confirm proposals and chase the genuine orphans. Writes nothing.
+interface UntiedDiagnosticRow {
+  payout_id: string;
+  amount: string | null;
+  arrival_date: string | null;
+  charge_count: number | null;
+  qb_entity_type: string | null;
+  qb_id: string | null;
+  qb_date_received: string | null;
+  date_gap_days: number | null;
+}
+router.get(
+  "/stripe/reconciliation/untied-diagnostic",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = await db.execute(sql`
+      SELECT
+        p.id AS payout_id,
+        p.amount::text AS amount,
+        to_char(p.arrival_date, 'YYYY-MM-DD') AS arrival_date,
+        p.charge_count,
+        m.qb_entity_type,
+        m.qb_id,
+        to_char(m.date_received, 'YYYY-MM-DD') AS qb_date_received,
+        m.date_gap_days
+      FROM stripe_payouts p
+      LEFT JOIN settlement_links sl ON sl.payout_id = p.id
+      LEFT JOIN LATERAL (
+        SELECT
+          sp.qb_entity_type,
+          sp.id AS qb_id,
+          sp.date_received,
+          abs(sp.date_received - p.arrival_date)::int AS date_gap_days
+        FROM staged_payments sp
+        WHERE sp.status IN ('pending', 'approved', 'reconciled')
+          AND abs(sp.amount - COALESCE(p.amount, p.net_total)) <= 0.01
+        ORDER BY
+          abs(sp.date_received - p.arrival_date) ASC NULLS LAST,
+          (sp.qb_entity_type = 'deposit') DESC
+        LIMIT 1
+      ) m ON true
+      WHERE sl.id IS NULL
+        AND COALESCE(p.amount, p.net_total) > 0
+      ORDER BY p.arrival_date DESC NULLS LAST
+    `);
+    const raw = result.rows as unknown as UntiedDiagnosticRow[];
+    const rows = raw.map((r) => {
+      const hasExactQbRow = r.qb_id != null;
+      const singleCharge = (r.charge_count ?? 1) <= 1;
+      const suggestedGrain: "deposit-lump" | "charge-payment" | "none" =
+        !hasExactQbRow
+          ? "none"
+          : !singleCharge || r.qb_entity_type === "deposit"
+            ? "deposit-lump"
+            : "charge-payment";
+      return {
+        payoutId: r.payout_id,
+        amount: r.amount,
+        arrivalDate: r.arrival_date,
+        chargeCount: r.charge_count,
+        hasExactQbRow,
+        qbEntityType: r.qb_entity_type,
+        qbId: r.qb_id,
+        qbDateReceived: r.qb_date_received,
+        dateGapDays: r.date_gap_days,
+        suggestedGrain,
+      };
+    });
+    res.json({
+      total: rows.length,
+      withExactQbRow: rows.filter((r) => r.hasExactQbRow).length,
+      deposits: rows.filter((r) => r.suggestedGrain === "deposit-lump").length,
+      payments: rows.filter((r) => r.suggestedGrain === "charge-payment").length,
+      orphans: rows.filter((r) => r.suggestedGrain === "none").length,
+      rows,
+    });
   }),
 );
 

@@ -66,10 +66,17 @@ describe("scoreQbDepositCandidate", () => {
     expect(s!.stripeSignal).toBe(true);
   });
 
+  // Date arithmetic off the fixed payout arrival date (2026-01-10), derived from
+  // the constant so these stay correct if the window is retuned.
+  const dayMs = 24 * 60 * 60 * 1000;
+  const arrival = Date.parse("2026-01-10");
+  const isoDaysAfter = (n: number) =>
+    new Date(arrival + n * dayMs).toISOString().slice(0, 10);
+
   it("returns null beyond the date window", () => {
     const s = scoreQbDepositCandidate(
       payout(),
-      deposit({ dateReceived: "2026-01-25" }), // 15 days out
+      deposit({ dateReceived: isoDaysAfter(RECONCILE_WINDOW_DAYS + 5) }),
     );
     expect(s).toBeNull();
   });
@@ -77,10 +84,22 @@ describe("scoreQbDepositCandidate", () => {
   it("accepts the edge of the date window", () => {
     const s = scoreQbDepositCandidate(
       payout(),
-      deposit({ dateReceived: "2026-01-20" }), // exactly +10 days
+      deposit({ dateReceived: isoDaysAfter(RECONCILE_WINDOW_DAYS) }),
     );
     expect(s).not.toBeNull();
     expect(s!.dayDiff).toBe(RECONCILE_WINDOW_DAYS);
+  });
+
+  it("proposes at a gap that the OLD ±10-day window would have rejected", () => {
+    // A QB deposit 20 days off the payout — outside the retired ±10d window but
+    // inside the widened one. Regression guard for the window widening.
+    const s = scoreQbDepositCandidate(
+      payout(),
+      deposit({ dateReceived: isoDaysAfter(20) }),
+    );
+    expect(s).not.toBeNull();
+    expect(s!.dayDiff).toBe(20);
+    expect(RECONCILE_WINDOW_DAYS).toBeGreaterThanOrEqual(20);
   });
 
   it("rejects an amount mismatch with no Stripe signal", () => {

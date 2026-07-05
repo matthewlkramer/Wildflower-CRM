@@ -25,7 +25,8 @@ import type {
   StripeRematchSummary,
   StripeResyncStatus,
   StripeSyncStatus,
-  StripeSyncSummary
+  StripeSyncSummary,
+  StripeUntiedPayoutDiagnostic
 } from '../api.schemas';
 
 import { customFetch } from '../../custom-fetch';
@@ -464,4 +465,77 @@ export const useProposeHistoricalStripeReconciliation = <TError = ErrorType<Forb
       > => {
       return useMutation(getProposeHistoricalStripeReconciliationMutationOptions(options));
     }
+    /**
+ * @summary Read-only triage of untied Stripe payouts (no settlement link). Per payout, reports whether a penny-exact QuickBooks row exists at ANY date, that row's type ('deposit' vs 'payment'), the date gap, and the suggested match grain — so finance can see coverage and triage the genuine orphans. Reads nothing outside QuickBooks/Stripe staging; writes nothing (admin only).
+ */
+export const getGetUntiedStripePayoutDiagnosticUrl = () => {
+
+
+  
+
+  return `/api/stripe/reconciliation/untied-diagnostic`
+}
+
+export const getUntiedStripePayoutDiagnostic = async ( options?: RequestInit): Promise<StripeUntiedPayoutDiagnostic> => {
+  
+  return customFetch<StripeUntiedPayoutDiagnostic>(getGetUntiedStripePayoutDiagnosticUrl(),
+  {      
+    ...options,
+    method: 'GET'
     
+    
+  }
+);}
+  
+
+
+
+
+export const getGetUntiedStripePayoutDiagnosticQueryKey = () => {
+    return [
+    `/api/stripe/reconciliation/untied-diagnostic`
+    ] as const;
+    }
+
+    
+export const getGetUntiedStripePayoutDiagnosticQueryOptions = <TData = Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>, TError = ErrorType<ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUntiedStripePayoutDiagnosticQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>> = ({ signal }) => getUntiedStripePayoutDiagnostic({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetUntiedStripePayoutDiagnosticQueryResult = NonNullable<Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>>
+export type GetUntiedStripePayoutDiagnosticQueryError = ErrorType<ForbiddenResponse>
+
+
+/**
+ * @summary Read-only triage of untied Stripe payouts (no settlement link). Per payout, reports whether a penny-exact QuickBooks row exists at ANY date, that row's type ('deposit' vs 'payment'), the date gap, and the suggested match grain — so finance can see coverage and triage the genuine orphans. Reads nothing outside QuickBooks/Stripe staging; writes nothing (admin only).
+ */
+
+export function useGetUntiedStripePayoutDiagnostic<TData = Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>, TError = ErrorType<ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetUntiedStripePayoutDiagnosticQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+

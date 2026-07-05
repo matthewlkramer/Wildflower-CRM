@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useRunStripeSync,
   useResyncStripeFull,
   useGetStripeResyncStatus,
   useProposeHistoricalStripeReconciliation,
+  useGetUntiedStripePayoutDiagnostic,
   getGetStripeResyncStatusQueryKey,
+  getGetUntiedStripePayoutDiagnosticQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -87,8 +90,11 @@ export default function StripeSyncSection() {
         toast({
           title: "Historical matches proposed",
           description: data.ran
-            ? `Scanned ${data.payoutsScanned} payouts: ${data.proposalsCreated} new proposals, ${data.conflictsFound} conflicts, ${data.unmatched} unmatched.`
+            ? `Scanned ${data.payoutsScanned} payouts: ${data.proposalsCreated} new proposals, ${data.conflictsFound} conflicts, ${data.unmatched} unmatched. Charge-grain: ${data.chargesRematched}/${data.chargesScanned} charges donor-hinted.`
             : "Pass skipped (already running, or no Stripe connection).",
+        });
+        void qc.invalidateQueries({
+          queryKey: getGetUntiedStripePayoutDiagnosticQueryKey(),
         });
       },
       onError: (e: unknown) => {
@@ -100,6 +106,15 @@ export default function StripeSyncSection() {
       },
     },
   });
+
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
+  const diagnosticQ = useGetUntiedStripePayoutDiagnostic({
+    query: {
+      queryKey: getGetUntiedStripePayoutDiagnosticQueryKey(),
+      enabled: showDiagnostic,
+    },
+  });
+  const diagnostic = diagnosticQ.data;
 
   const resync = resyncStatusQ.data;
   const resyncRunning = resync?.status === "running" || resyncFull.isPending;
@@ -179,6 +194,82 @@ export default function StripeSyncSection() {
             ) : null}
           </div>
         ) : null}
+
+        <div className="border-t pt-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowDiagnostic((v) => !v)}
+            data-testid="stripe-untied-diagnostic-toggle"
+          >
+            {showDiagnostic ? "Hide" : "Show"} untied-payout diagnostic
+          </Button>
+          {showDiagnostic ? (
+            <div className="mt-3 space-y-3" data-testid="stripe-untied-diagnostic">
+              <p className="text-xs text-muted-foreground">
+                Read-only triage of Stripe payouts with no QuickBooks tie. For
+                each, the nearest penny-exact QuickBooks row (at any date) is
+                shown — a "deposit" is a lump to tie payout↔deposit, a "payment"
+                is a single donor donation to match at the charge grain, and
+                "none" means no matching QuickBooks row exists (a genuine orphan
+                to chase). Nothing here is written.
+              </p>
+              {diagnosticQ.isLoading ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              ) : diagnostic ? (
+                <>
+                  <p className="text-sm">
+                    {diagnostic.total} untied payouts —{" "}
+                    <span className="font-medium">
+                      {diagnostic.deposits}
+                    </span>{" "}
+                    deposit-lump,{" "}
+                    <span className="font-medium">{diagnostic.payments}</span>{" "}
+                    charge-payment,{" "}
+                    <span className="font-medium">{diagnostic.orphans}</span>{" "}
+                    no match.
+                  </p>
+                  <div className="max-h-96 overflow-auto rounded border">
+                    <table className="w-full text-left text-xs">
+                      <thead className="sticky top-0 bg-muted">
+                        <tr>
+                          <th className="p-2">Payout</th>
+                          <th className="p-2">Amount</th>
+                          <th className="p-2">Arrival</th>
+                          <th className="p-2">Charges</th>
+                          <th className="p-2">QB row</th>
+                          <th className="p-2">Gap (d)</th>
+                          <th className="p-2">Suggested</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {diagnostic.rows.map((r) => (
+                          <tr key={r.payoutId} className="border-t">
+                            <td className="p-2 font-mono">{r.payoutId}</td>
+                            <td className="p-2">{r.amount ?? "—"}</td>
+                            <td className="p-2">{r.arrivalDate ?? "—"}</td>
+                            <td className="p-2">{r.chargeCount ?? "—"}</td>
+                            <td className="p-2">
+                              {r.hasExactQbRow
+                                ? `${r.qbEntityType ?? "?"} (${r.qbDateReceived ?? "?"})`
+                                : "none"}
+                            </td>
+                            <td className="p-2">{r.dateGapDays ?? "—"}</td>
+                            <td className="p-2">{r.suggestedGrain}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No data (admin only).
+                </p>
+              )}
+            </div>
+          ) : null}
+        </div>
       </CardContent>
     </Card>
   );

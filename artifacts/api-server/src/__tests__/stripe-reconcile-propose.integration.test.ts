@@ -66,6 +66,9 @@ const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 async function seedPayout(over: {
   amount: string;
   arrivalDate: string;
+  // Number of charges rolled into the payout. Omitted/null = single-charge
+  // (conservative default), which routes to charge grain (no mis-typed-lump tie).
+  chargeCount?: number | null;
   // Settlement-link intent to seed alongside the payout. `null`/omitted = an
   // `unmatched` payout (no link row); a built link (proposeSettlementLink /
   // confirmSettlementLink) seeds the authoritative reconciliation state.
@@ -78,6 +81,7 @@ async function seedPayout(over: {
     amount: over.amount,
     netTotal: over.amount,
     arrivalDate: over.arrivalDate,
+    chargeCount: over.chargeCount ?? null,
   });
   payoutIds.push(id);
   // FK cascade on payout_id cleans the link up when the payout is deleted in
@@ -101,6 +105,9 @@ async function seedDeposit(over: {
   amount: string;
   dateReceived: string;
   payerName?: string | null;
+  // QB booking type. Defaults to 'deposit' (the classic Stripe lump); pass
+  // 'payment' to model the dominant real-world shape (a donor-name payment row).
+  qbEntityType?: "deposit" | "payment" | "sales_receipt";
   status?: "pending" | "approved" | "excluded" | "rejected";
   createdGiftId?: string | null;
 }): Promise<string> {
@@ -108,7 +115,7 @@ async function seedDeposit(over: {
   await db.insert(schema.stagedPayments).values({
     id,
     realmId: REALM_ID,
-    qbEntityType: "deposit",
+    qbEntityType: over.qbEntityType ?? "deposit",
     qbEntityId: nextId("qbe"),
     amount: over.amount,
     dateReceived: over.dateReceived,
@@ -214,6 +221,71 @@ describe.skipIf(!HAS_DB)("runProposalPass (DB)", () => {
     const second = await runProposalPass([po]);
     expect(second.proposed).toBe(1);
     link = await readLink(po);
+    expect(payoutStatusFromLink(link ?? null)).toBe("proposed");
+    expect(link?.depositStagedPaymentId).toBe(dep);
+  });
+
+  it("proposes a donor-name 'payment' lump for a MULTI-charge payout", async () => {
+    // The dominant real-world shape: the payout was booked in QB as a single
+    // donor-name 'payment' row (NOT a 'deposit'), payer contains a generic
+    // "misc" marker. A multi-charge payout is a genuine lump, so the broadened
+    // candidate query must reach it and propose the payout↔lump tie.
+    const po = await seedPayout({
+      amount: "7373.73",
+      arrivalDate: "2026-03-20",
+      chargeCount: 4,
+    });
+    const dep = await seedDeposit({
+      amount: "7373.73",
+      dateReceived: "2026-03-20",
+      qbEntityType: "payment",
+      payerName: "Misc Customer",
+    });
+
+    const r = await runProposalPass([po]);
+    expect(r.proposed).toBe(1);
+
+    const link = await readLink(po);
+    expect(payoutStatusFromLink(link ?? null)).toBe("proposed");
+    expect(link?.depositStagedPaymentId).toBe(dep);
+  });
+
+  it("does NOT tie a single-charge payout to a 'payment' lump (charge grain instead)", async () => {
+    // A single-charge payout is one donation; its QB counterpart is an
+    // individual donor 'payment' matched at the charge grain, never a
+    // payout↔deposit lump tie. The single-charge gate must skip the non-deposit
+    // candidate so we don't double-book the same dollars.
+    const po = await seedPayout({
+      amount: "6262.62",
+      arrivalDate: "2026-03-25",
+      chargeCount: 1,
+    });
+    await seedDeposit({
+      amount: "6262.62",
+      dateReceived: "2026-03-25",
+      qbEntityType: "payment",
+      payerName: "Misc Customer",
+    });
+
+    const r = await runProposalPass([po]);
+    expect(r.proposed).toBe(0);
+    const link = await readLink(po);
+    expect(link).toBeUndefined();
+    expect(payoutStatusFromLink(link ?? null)).toBe("unmatched");
+  });
+
+  it("proposes a deposit just outside the OLD ±10-day window but inside the widened one", async () => {
+    // Payout on 2026-03-01, matching QB deposit 20 days later — the retired
+    // ±10-day window would have missed it; the widened window catches it.
+    const po = await seedPayout({ amount: "5959.59", arrivalDate: "2026-03-01" });
+    const dep = await seedDeposit({
+      amount: "5959.59",
+      dateReceived: "2026-03-21",
+    });
+
+    const r = await runProposalPass([po]);
+    expect(r.proposed).toBe(1);
+    const link = await readLink(po);
     expect(payoutStatusFromLink(link ?? null)).toBe("proposed");
     expect(link?.depositStagedPaymentId).toBe(dep);
   });

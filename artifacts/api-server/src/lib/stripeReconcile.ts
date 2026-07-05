@@ -78,8 +78,14 @@ export interface PayoutQbScore {
   reasons: string[];
 }
 
-/** How far the QB deposit date may sit from the payout arrival date. */
-export const RECONCILE_WINDOW_DAYS = 10;
+/**
+ * How far the QB deposit date may sit from the payout arrival date. Widened from
+ * the original ±10 to ±45: the bookkeeper often records the QB counterpart days
+ * or weeks off the bank-arrival date, and a prod cross-check found ±10 (and even
+ * ±45) slightly too tight, while other reconcilers already use 60–90d. Still a
+ * PROPOSED link a human confirms, so a wider net only surfaces more candidates.
+ */
+export const RECONCILE_WINDOW_DAYS = 45;
 /** Amount diff (cents) treated as an exact match (penny rounding tolerance). */
 const EXACT_CENTS = 1;
 /** Near-amount band (cents) allowed only when there's a textual Stripe signal. */
@@ -231,6 +237,7 @@ export async function runProposalPass(
       amount: stripePayouts.amount,
       netTotal: stripePayouts.netTotal,
       arrivalDate: stripePayouts.arrivalDate,
+      chargeCount: stripePayouts.chargeCount,
       linkId: settlementLinks.id,
     })
     .from(stripePayouts)
@@ -259,9 +266,28 @@ export async function runProposalPass(
     if (target && p.arrivalDate) {
       const fromStr = shiftDate(p.arrivalDate, -RECONCILE_WINDOW_DAYS);
       const toStr = shiftDate(p.arrivalDate, RECONCILE_WINDOW_DAYS);
+      // A "lump" candidate is either a QB row explicitly typed as a Stripe
+      // deposit, OR a net-lump the bookkeeper mis-typed as a generic payment —
+      // detected by a textual "Stripe" signal or a generic payer name ("Misc
+      // Customer"). This broadens beyond qb_entity_type='deposit' so a real lump
+      // recorded under the wrong type is still found. A donor-NAME payment row is
+      // deliberately excluded here: that is a single donation and belongs at the
+      // charge grain (see the single-charge gate below), not a payout↔deposit tie.
+      const looksLikeLump = or(
+        eq(stagedPayments.qbEntityType, "deposit"),
+        sql`lower(
+          coalesce(${stagedPayments.payerName}, '') || ' ' ||
+          coalesce(${stagedPayments.lineDescription}, '') || ' ' ||
+          coalesce(${stagedPayments.qbTransactionMemo}, '') || ' ' ||
+          coalesce(${stagedPayments.rawReference}, '') || ' ' ||
+          coalesce(${stagedPayments.qbDepositToAccountName}, '')
+        ) like '%stripe%'`,
+        sql`lower(coalesce(${stagedPayments.payerName}, '')) like '%misc%'`,
+      );
       const cands = await db
         .select({
           id: stagedPayments.id,
+          qbEntityType: stagedPayments.qbEntityType,
           amount: stagedPayments.amount,
           dateReceived: stagedPayments.dateReceived,
           payerName: stagedPayments.payerName,
@@ -277,7 +303,7 @@ export async function runProposalPass(
         .from(stagedPayments)
         .where(
           and(
-            eq(stagedPayments.qbEntityType, "deposit"),
+            looksLikeLump,
             // `reconciled` is the new model's terminal tie (a deposit already
             // bound to a gift as evidence); it remains a valid Stripe-payout
             // candidate so the payout can be reconciled against that same gift.
@@ -288,8 +314,18 @@ export async function runProposalPass(
           ),
         );
 
+      // Single-charge payouts: the one donation's money is booked as an
+      // individual donor "payment", so its correct match is Stripe charge ↔ QB
+      // payment/gift (charge grain), NOT a payout↔deposit tie — tying the payout
+      // to a mis-typed lump here would double-count against the per-charge match.
+      // Only let a single-charge payout tie to an actual deposit-typed lump (rare
+      // but real); route everything else to charge-grain review (step 2). A null
+      // chargeCount is treated as single-charge (conservative).
+      const singleCharge = (p.chargeCount ?? 1) <= 1;
+
       for (const c of cands) {
         if (taken.has(c.id) || assigned.has(c.id)) continue;
+        if (singleCharge && c.qbEntityType !== "deposit") continue;
         const s = scoreQbDepositCandidate(
           { amount: p.amount, netTotal: p.netTotal, arrivalDate: p.arrivalDate },
           c,

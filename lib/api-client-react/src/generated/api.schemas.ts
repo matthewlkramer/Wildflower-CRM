@@ -3031,6 +3031,61 @@ export interface StripeHistoricalProposalSummary {
   alreadyResolved: number;
   /** Payouts with no QB deposit candidate. */
   unmatched: number;
+  /** Donor-less Stripe charges re-scored for a donor hint (charge-grain backfill for single-donation payouts with no deposit lump). */
+  chargesScanned: number;
+  /** Charges that gained a donor hint this pass, surfacing them in the per-charge review queue. DONOR-ONLY — never mints or reconciles. */
+  chargesRematched: number;
+}
+
+/**
+ * 'deposit-lump' = tie payout↔deposit (multi-charge or a deposit-typed exact row exists); 'charge-payment' = single donation booked as a donor payment, match at the charge grain; 'none' = no exact QB row, needs manual review.
+ */
+export type StripeUntiedPayoutDiagnosticRowSuggestedGrain = typeof StripeUntiedPayoutDiagnosticRowSuggestedGrain[keyof typeof StripeUntiedPayoutDiagnosticRowSuggestedGrain];
+
+
+export const StripeUntiedPayoutDiagnosticRowSuggestedGrain = {
+  'deposit-lump': 'deposit-lump',
+  'charge-payment': 'charge-payment',
+  none: 'none',
+} as const;
+
+export interface StripeUntiedPayoutDiagnosticRow {
+  payoutId: string;
+  /** Net amount that hit the bank (major units). */
+  amount: string | null;
+  /** Bank arrival date (YYYY-MM-DD). */
+  arrivalDate: string | null;
+  /** Number of charges rolled into the payout (1 = single donation). */
+  chargeCount: number | null;
+  /** A penny-exact QB row exists at some date. */
+  hasExactQbRow: boolean;
+  /** Type of the nearest exact QB row ('deposit', 'payment', etc.), or null when none. */
+  qbEntityType: string | null;
+  /** staged_payments id of the nearest exact QB row. */
+  qbId: string | null;
+  /** Date of the nearest exact QB row (YYYY-MM-DD). */
+  qbDateReceived: string | null;
+  /** |days| between the payout arrival and the nearest exact QB row; null when no exact row. */
+  dateGapDays: number | null;
+  /** 'deposit-lump' = tie payout↔deposit (multi-charge or a deposit-typed exact row exists); 'charge-payment' = single donation booked as a donor payment, match at the charge grain; 'none' = no exact QB row, needs manual review. */
+  suggestedGrain: StripeUntiedPayoutDiagnosticRowSuggestedGrain;
+}
+
+/**
+ * Read-only triage of untied Stripe payouts (no settlement link, positive amount). Purely diagnostic — surfaces where the money likely sits in QuickBooks so finance can confirm proposals and chase the genuine orphans.
+ */
+export interface StripeUntiedPayoutDiagnostic {
+  /** Untied positive payouts examined. */
+  total: number;
+  /** Untied payouts that have a penny-exact QB row at some date. */
+  withExactQbRow: number;
+  /** Of those, whose nearest exact QB row is typed 'deposit' (a lump). */
+  deposits: number;
+  /** Of those, whose nearest exact QB row is a non-deposit row (donor 'payment'). */
+  payments: number;
+  /** Untied payouts with NO penny-exact QB row at any date — genuine manual-review orphans. */
+  orphans: number;
+  rows: StripeUntiedPayoutDiagnosticRow[];
 }
 
 /**

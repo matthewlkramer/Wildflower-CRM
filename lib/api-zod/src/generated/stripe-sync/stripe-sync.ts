@@ -86,6 +86,31 @@ export const ProposeHistoricalStripeReconciliationResponse = zod.object({
   "proposalsCreated": zod.number().describe('Payouts newly moved to a proposed QB-deposit match.'),
   "conflictsFound": zod.number().describe('Payouts whose candidate QB deposit was already approved into a gift (conflict_approved).'),
   "alreadyResolved": zod.number().describe('Payouts already in a confirmed\/reconciled state, left untouched.'),
-  "unmatched": zod.number().describe('Payouts with no QB deposit candidate.')
+  "unmatched": zod.number().describe('Payouts with no QB deposit candidate.'),
+  "chargesScanned": zod.number().describe('Donor-less Stripe charges re-scored for a donor hint (charge-grain backfill for single-donation payouts with no deposit lump).'),
+  "chargesRematched": zod.number().describe('Charges that gained a donor hint this pass, surfacing them in the per-charge review queue. DONOR-ONLY — never mints or reconciles.')
 }).describe('Result of the admin historical Stripe→QuickBooks reconciliation proposal pass over ALL payouts (including prior-account rows). Every match is a PROPOSAL — a human confirms each; nothing is minted or archived.')
+
+/**
+ * @summary Read-only triage of untied Stripe payouts (no settlement link). Per payout, reports whether a penny-exact QuickBooks row exists at ANY date, that row's type ('deposit' vs 'payment'), the date gap, and the suggested match grain — so finance can see coverage and triage the genuine orphans. Reads nothing outside QuickBooks/Stripe staging; writes nothing (admin only).
+ */
+export const GetUntiedStripePayoutDiagnosticResponse = zod.object({
+  "total": zod.number().describe('Untied positive payouts examined.'),
+  "withExactQbRow": zod.number().describe('Untied payouts that have a penny-exact QB row at some date.'),
+  "deposits": zod.number().describe('Of those, whose nearest exact QB row is typed \'deposit\' (a lump).'),
+  "payments": zod.number().describe('Of those, whose nearest exact QB row is a non-deposit row (donor \'payment\').'),
+  "orphans": zod.number().describe('Untied payouts with NO penny-exact QB row at any date — genuine manual-review orphans.'),
+  "rows": zod.array(zod.object({
+  "payoutId": zod.string(),
+  "amount": zod.string().nullable().describe('Net amount that hit the bank (major units).'),
+  "arrivalDate": zod.string().nullable().describe('Bank arrival date (YYYY-MM-DD).'),
+  "chargeCount": zod.number().nullable().describe('Number of charges rolled into the payout (1 = single donation).'),
+  "hasExactQbRow": zod.boolean().describe('A penny-exact QB row exists at some date.'),
+  "qbEntityType": zod.string().nullable().describe('Type of the nearest exact QB row (\'deposit\', \'payment\', etc.), or null when none.'),
+  "qbId": zod.string().nullable().describe('staged_payments id of the nearest exact QB row.'),
+  "qbDateReceived": zod.string().nullable().describe('Date of the nearest exact QB row (YYYY-MM-DD).'),
+  "dateGapDays": zod.number().nullable().describe('|days| between the payout arrival and the nearest exact QB row; null when no exact row.'),
+  "suggestedGrain": zod.enum(['deposit-lump', 'charge-payment', 'none']).describe('\'deposit-lump\' = tie payout↔deposit (multi-charge or a deposit-typed exact row exists); \'charge-payment\' = single donation booked as a donor payment, match at the charge grain; \'none\' = no exact QB row, needs manual review.')
+}))
+}).describe('Read-only triage of untied Stripe payouts (no settlement link, positive amount). Purely diagnostic — surfaces where the money likely sits in QuickBooks so finance can confirm proposals and chase the genuine orphans.')
 
