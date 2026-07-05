@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import {
   cleanupQueue,
   opportunitiesAndPledges,
+  settlementLinks,
   stagedPayments,
   users,
 } from "@workspace/db/schema";
@@ -90,8 +91,8 @@ router.get(
           createdAt: cleanupQueue.createdAt,
           updatedAt: cleanupQueue.updatedAt,
           // Resolve the target's display name: opportunity/pledge → its name,
-          // staged_payment → the QB payer name. Other target types fall back to
-          // null.
+          // staged_payment → the QB payer name, stripe_payout → the payer name of
+          // its tied deposit (if any). Other target types fall back to null.
           targetName: sql<string | null>`COALESCE(
             (
               SELECT ${opportunitiesAndPledges.name}
@@ -104,6 +105,15 @@ router.get(
               FROM ${stagedPayments}
               WHERE ${stagedPayments.id} = ${cleanupQueue.targetId}
                 AND ${cleanupQueue.targetType} = 'staged_payment'
+            ),
+            (
+              SELECT ${stagedPayments.payerName}
+              FROM ${settlementLinks}
+              JOIN ${stagedPayments}
+                ON ${stagedPayments.id} = ${settlementLinks.depositStagedPaymentId}
+              WHERE ${settlementLinks.payoutId} = ${cleanupQueue.targetId}
+                AND ${cleanupQueue.targetType} = 'stripe_payout'
+              LIMIT 1
             )
           )`,
           resolvedByUserName: userNameExpr,
@@ -250,11 +260,18 @@ async function enrich(
         .map((r) => r.targetId),
     ),
   ];
+  const payoutIds = [
+    ...new Set(
+      rows
+        .filter((r) => r.targetType === "stripe_payout")
+        .map((r) => r.targetId),
+    ),
+  ];
   const userIds = [
     ...new Set(rows.map((r) => r.resolvedByUserId).filter(Boolean) as string[]),
   ];
 
-  const [oppRows, stagedRows, userRows] = await Promise.all([
+  const [oppRows, stagedRows, payoutRows, userRows] = await Promise.all([
     oppIds.length > 0
       ? db
           .select({
@@ -273,6 +290,19 @@ async function enrich(
           .from(stagedPayments)
           .where(inArray(stagedPayments.id, stagedIds))
       : Promise.resolve([]),
+    payoutIds.length > 0
+      ? db
+          .select({
+            id: settlementLinks.payoutId,
+            name: stagedPayments.payerName,
+          })
+          .from(settlementLinks)
+          .innerJoin(
+            stagedPayments,
+            eq(stagedPayments.id, settlementLinks.depositStagedPaymentId),
+          )
+          .where(inArray(settlementLinks.payoutId, payoutIds))
+      : Promise.resolve([]),
     userIds.length > 0
       ? db
           .select({ id: users.id, name: userNameExpr })
@@ -283,6 +313,7 @@ async function enrich(
 
   const oppMap = new Map(oppRows.map((o) => [o.id, o.name]));
   const stagedMap = new Map(stagedRows.map((s) => [s.id, s.name]));
+  const payoutMap = new Map(payoutRows.map((p) => [p.id, p.name]));
   const userMap = new Map(userRows.map((u) => [u.id, u.name]));
 
   return rows.map((r) => ({
@@ -292,7 +323,9 @@ async function enrich(
         ? (oppMap.get(r.targetId) ?? null)
         : r.targetType === "staged_payment"
           ? (stagedMap.get(r.targetId) ?? null)
-          : null,
+          : r.targetType === "stripe_payout"
+            ? (payoutMap.get(r.targetId) ?? null)
+            : null,
     resolvedByUserName: r.resolvedByUserId
       ? (userMap.get(r.resolvedByUserId) ?? null)
       : null,

@@ -563,6 +563,137 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     expect(stripeOnly.has(`stripe_payout:${p}`)).toBe(true);
     expect(stripeOnly.has(`qb_staged_payment:${s}`)).toBe(false);
   });
+
+  it("emits the proposed counterpart inline on a proposed Stripe payout; QB anchors stay orphan with no proposal", async () => {
+    // A proposed payout↔deposit tie. The payout is the anchor (the deposit is
+    // omitted); the card must be able to render the proposed match + approve/
+    // reject WITHOUT first assembling the full draft, so the anchor row carries
+    // the counterpart facts inline.
+    const sDep = await seedStaged({
+      status: "pending",
+      amount: "80.00",
+      payerName: `Zztest Proposed Dep ${RUN}`,
+    });
+    const pProp = await seedPayout({ status: "proposed", proposed: sDep });
+    const sOrphan = await seedStaged({ status: "pending" });
+
+    const map = await listAnchors("all");
+
+    const row = map.get(`stripe_payout:${pProp}`);
+    expect(row).toBeTruthy();
+    expect(row.batchStatus).toBe("proposed");
+    expect(row.proposedMatch).toBeTruthy();
+    expect(row.proposedMatch.counterpartType).toBe("qb_staged_payment");
+    expect(row.proposedMatch.counterpartId).toBe(sDep);
+    expect(Number(row.proposedMatch.amount)).toBeCloseTo(80, 2);
+    expect(row.proposedMatch.date).toBeTruthy();
+    // No draft assembled yet → readiness is a null hint (confirm re-derives).
+    expect(row.readiness).toBeNull();
+
+    // The tied deposit is NOT its own anchor (reconciles through the payout).
+    expect(map.has(`qb_staged_payment:${sDep}`)).toBe(false);
+
+    // A standalone QB deposit is always an orphan anchor with no proposal — the
+    // payout is always the canonical settlement anchor.
+    const orphan = map.get(`qb_staged_payment:${sOrphan}`);
+    expect(orphan.batchStatus).toBe("orphan");
+    expect(orphan.proposedMatch).toBeNull();
+    expect(orphan.readiness).toBeNull();
+  });
+
+  it("caches confirm-readiness from the assembled draft snapshot", async () => {
+    const pReady = await seedPayout({ status: "unmatched" });
+    await seedCharge(pReady);
+
+    // Before assembling any draft, readiness is a null hint.
+    let map = await listAnchors("all");
+    expect(map.get(`stripe_payout:${pReady}`).readiness).toBeNull();
+
+    // Assembling persists a bundle-draft snapshot; its summary now backs the
+    // anchor's readiness badge.
+    await assemble("stripe_payout", pReady);
+
+    map = await listAnchors("all");
+    const row = map.get(`stripe_payout:${pReady}`);
+    expect(row.readiness).toBeTruthy();
+    expect(typeof row.readiness.ready).toBe("boolean");
+    expect(typeof row.readiness.warningCount).toBe("number");
+    expect(typeof row.readiness.blockerCount).toBe("number");
+  });
+});
+
+describe.skipIf(!HAS_DB)("Reject a proposed settlement tie (integration)", () => {
+  it("deletes a proposed link (no-op when none), and 409s on a confirmed link", async () => {
+    const sDep = await seedStaged({ status: "pending" });
+    const pProp = await seedPayout({ status: "proposed", proposed: sDep });
+    // A pending charge keeps the payout as real work once the tie is dropped.
+    await seedCharge(pProp);
+
+    let map = await listAnchors("all");
+    expect(map.get(`stripe_payout:${pProp}`).batchStatus).toBe("proposed");
+
+    const rej = await post(
+      `/api/reconciliation/settlement-links/${pProp}/reject`,
+    );
+    expect(rej.status).toBe(200);
+    expect(rej.json.rejected).toBe(true);
+
+    // Link gone → payout is an orphan again and the deposit re-surfaces as its
+    // own standalone anchor.
+    map = await listAnchors("all");
+    const after = map.get(`stripe_payout:${pProp}`);
+    expect(after.batchStatus).toBe("orphan");
+    expect(after.proposedMatch).toBeNull();
+    expect(map.has(`qb_staged_payment:${sDep}`)).toBe(true);
+
+    // Idempotent: rejecting with no proposed link is a no-op success.
+    const again = await post(
+      `/api/reconciliation/settlement-links/${pProp}/reject`,
+    );
+    expect(again.status).toBe(200);
+    expect(again.json.rejected).toBe(false);
+
+    // A CONFIRMED tie is reverted, never rejected here → 409.
+    const sConf = await seedStaged({ status: "reconciled" });
+    const pConf = await seedPayout({
+      status: "confirmed_reconciled",
+      matched: sConf,
+    });
+    const conf = await post(
+      `/api/reconciliation/settlement-links/${pConf}/reject`,
+    );
+    expect(conf.status).toBe(409);
+  });
+});
+
+describe.skipIf(!HAS_DB)("Payout search resolve target (integration)", () => {
+  it("finds an orphan payout by id text + amount band, omitting tied payouts", async () => {
+    const pOrphan = await seedPayout({ status: "unmatched" });
+    const sTied = await seedStaged({ status: "pending" });
+    const pTied = await seedPayout({ status: "proposed", proposed: sTied });
+
+    // By id text → returns exactly the orphan payout with its projected facts.
+    const byId = await getJson(
+      `/api/reconciliation/payout-search?q=${pOrphan}&limit=100`,
+    );
+    expect(byId.status).toBe(200);
+    const cand = (byId.json.data as any[]).find((c) => c.id === pOrphan);
+    expect(cand).toBeTruthy();
+    expect(Number(cand.amount)).toBeCloseTo(96.8, 2);
+    expect(cand.chargeCount).toBe(1);
+
+    // A tied payout is never a resolve target (it already settles a deposit).
+    const tied = await getJson(
+      `/api/reconciliation/payout-search?q=${pTied}&limit=100`,
+    );
+    expect((tied.json.data as any[]).map((c) => c.id)).not.toContain(pTied);
+
+    // Amount-band search (near the payout NET) also surfaces the orphan.
+    const byAmt = await getJson(
+      `/api/reconciliation/payout-search?amount=96.80&limit=100`,
+    );
+    expect((byAmt.json.data as any[]).map((c) => c.id)).toContain(pOrphan);
+  });
 });
 
 describe.skipIf(!HAS_DB)("Tied-anchor canonicalization (integration)", () => {

@@ -1345,6 +1345,79 @@ async function searchQb(p: RecSearchParams): Promise<RecCandidate[]> {
   );
 }
 
+// ─── Criteria-based Stripe payout search (reverse of searchQbStaged) ─────────
+// Powers the Settlement report's "Missing payout" resolve box: given a standalone
+// QuickBooks DEPOSIT anchor, hunt the orphan Stripe payout it should settle
+// against. Only ORPHAN payouts (no settlement link at all) are offered — a payout
+// already tied (proposed or confirmed) belongs to another deposit's bundle.
+// Requires at least one positive criterion so it never dumps the whole table.
+export interface RecPayoutCandidate {
+  id: string;
+  amount: string | null;
+  date: string | null;
+  chargeCount: number | null;
+}
+
+export interface RecPayoutSearchParams {
+  q: string | null;
+  amount: string | null;
+  date: string | null;
+  days: number;
+  limit: number;
+}
+
+export async function searchPayouts(
+  p: RecPayoutSearchParams,
+): Promise<RecPayoutCandidate[]> {
+  const q = (p.q ?? "").trim();
+  const hasText = q.length >= 2;
+  const amt = p.amount != null && p.amount !== "" ? Number(p.amount) : NaN;
+  const hasAmount = Number.isFinite(amt) && amt > 0;
+  if (!hasText && !hasAmount) return [];
+
+  // Only orphan payouts (no settlement link) are eligible resolve targets.
+  const conds: SQL[] = [
+    sql`NOT EXISTS (SELECT 1 FROM ${settlementLinks} WHERE ${settlementLinks.payoutId} = ${stripePayouts.id})`,
+  ];
+  if (hasText) {
+    conds.push(ilike(stripePayouts.id, `%${escapeLike(q)}%`));
+  }
+  if (hasAmount) {
+    // A QB deposit sits near its payout (gross deposit vs net payout differ by
+    // processor fees) — band generously against the payout NET: ±20% or ±$50.
+    const net = sql`COALESCE(${stripePayouts.netTotal}, ${stripePayouts.amount})`;
+    const lo = Math.min(amt * 0.8, amt - 50);
+    const hi = Math.max(amt * 1.2, amt + 50);
+    conds.push(
+      sql`${net} IS NOT NULL AND (${net})::numeric BETWEEN ${lo} AND ${hi}`,
+    );
+  }
+  if (p.date) {
+    conds.push(
+      sql`${stripePayouts.arrivalDate} IS NOT NULL AND ${stripePayouts.arrivalDate} BETWEEN (${p.date}::date - make_interval(days => ${p.days})) AND (${p.date}::date + make_interval(days => ${p.days}))`,
+    );
+  }
+
+  const rows = await db
+    .select({
+      id: stripePayouts.id,
+      amount: sql<string | null>`COALESCE(${stripePayouts.netTotal}, ${stripePayouts.amount})`,
+      arrivalDate: stripePayouts.arrivalDate,
+      chargeCount: stripePayouts.chargeCount,
+    })
+    .from(stripePayouts)
+    .where(and(...conds))
+    .orderBy(desc(stripePayouts.arrivalDate))
+    .limit(p.limit);
+
+  return rows.map((r) => ({
+    id: r.id,
+    amount: r.amount,
+    date: r.arrivalDate,
+    chargeCount: r.chargeCount,
+  }));
+}
+
 // ─── Criteria-based QB staged search (NO card anchor) ────────────────────────
 // Powers the stray-Stripe worklist's "find the matching QuickBooks deposit" box.
 // Unlike searchReconciliationNode's qb branch, this is NOT tied to a staged

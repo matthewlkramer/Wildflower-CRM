@@ -34,6 +34,7 @@ import type {
   ListReconciliationCardsParams,
   ListReconciliationProposalsParams,
   NotFoundResponse,
+  PayoutSearchList,
   ReconciliationApproveResult,
   ReconciliationBundleConfirmResult,
   ReconciliationBundleProposal,
@@ -44,7 +45,9 @@ import type {
   ReconciliationProposalList,
   ReconciliationProposalWithContextList,
   ReconciliationSearchList,
+  RejectSettlementProposalResult,
   SearchReconciliationNodeParams,
+  SearchReconciliationPayoutsParams,
   SearchReconciliationQbStagedParams,
   SettlementLineage
 } from '../api.schemas';
@@ -910,6 +913,170 @@ export function useSearchReconciliationQbStaged<TData = Awaited<ReturnType<typeo
 
 
 /**
+ * Free search over ORPHAN Stripe payouts (no settlement link at all) by
+payout-id text / amount / date window — the reverse of qb-search. Powers
+the Settlement report's "Missing payout" resolve box: a standalone
+QuickBooks deposit anchor uses this to hunt the payout it should settle
+against. Payouts already tied (proposed or confirmed) are omitted — they
+belong to another deposit's bundle. Read-only.
+
+ * @summary Criteria-based Stripe payout search (reverse of qb-search; not anchored to a card).
+ */
+export const getSearchReconciliationPayoutsUrl = (params?: SearchReconciliationPayoutsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reconciliation/payout-search?${stringifiedParams}` : `/api/reconciliation/payout-search`
+}
+
+export const searchReconciliationPayouts = async (params?: SearchReconciliationPayoutsParams, options?: RequestInit): Promise<PayoutSearchList> => {
+  
+  return customFetch<PayoutSearchList>(getSearchReconciliationPayoutsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getSearchReconciliationPayoutsQueryKey = (params?: SearchReconciliationPayoutsParams,) => {
+    return [
+    `/api/reconciliation/payout-search`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getSearchReconciliationPayoutsQueryOptions = <TData = Awaited<ReturnType<typeof searchReconciliationPayouts>>, TError = ErrorType<BadRequestResponse>>(params?: SearchReconciliationPayoutsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationPayouts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSearchReconciliationPayoutsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof searchReconciliationPayouts>>> = ({ signal }) => searchReconciliationPayouts(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationPayouts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type SearchReconciliationPayoutsQueryResult = NonNullable<Awaited<ReturnType<typeof searchReconciliationPayouts>>>
+export type SearchReconciliationPayoutsQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Criteria-based Stripe payout search (reverse of qb-search; not anchored to a card).
+ */
+
+export function useSearchReconciliationPayouts<TData = Awaited<ReturnType<typeof searchReconciliationPayouts>>, TError = ErrorType<BadRequestResponse>>(
+ params?: SearchReconciliationPayoutsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationPayouts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getSearchReconciliationPayoutsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Deletes the PROPOSED settlement link for one Stripe payout, dropping the
+auto-proposed payout↔deposit tie so the Settlement report shows it as an
+un-proposed orphan again. Money is untouched: nothing is excluded and no
+gift is minted. A CONFIRMED link is never rejected here (revert is a
+separate reconciliation path) — attempting to reject a confirmed tie is a
+409. Rejecting a payout with no proposed link is a no-op success.
+
+ * @summary Dismiss a PROPOSED payout↔deposit settlement tie.
+ */
+export const getRejectSettlementProposalUrl = (payoutId: string,) => {
+
+
+  
+
+  return `/api/reconciliation/settlement-links/${payoutId}/reject`
+}
+
+export const rejectSettlementProposal = async (payoutId: string, options?: RequestInit): Promise<RejectSettlementProposalResult> => {
+  
+  return customFetch<RejectSettlementProposalResult>(getRejectSettlementProposalUrl(payoutId),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getRejectSettlementProposalMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectSettlementProposal>>, TError,{payoutId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rejectSettlementProposal>>, TError,{payoutId: string}, TContext> => {
+
+const mutationKey = ['rejectSettlementProposal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectSettlementProposal>>, {payoutId: string}> = (props) => {
+          const {payoutId} = props ?? {};
+
+          return  rejectSettlementProposal(payoutId,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RejectSettlementProposalMutationResult = NonNullable<Awaited<ReturnType<typeof rejectSettlementProposal>>>
+    
+    export type RejectSettlementProposalMutationError = ErrorType<void>
+
+    /**
+ * @summary Dismiss a PROPOSED payout↔deposit settlement tie.
+ */
+export const useRejectSettlementProposal = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectSettlementProposal>>, TError,{payoutId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rejectSettlementProposal>>,
+        TError,
+        {payoutId: string},
+        TContext
+      > => {
+      return useMutation(getRejectSettlementProposalMutationOptions(options));
+    }
+    /**
  * Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.
 no QuickBooks cash-application ledger entry exists for the gift — ONE ROW PER
 gift_allocation (a multi-allocation gift surfaces several rows; a gift with no

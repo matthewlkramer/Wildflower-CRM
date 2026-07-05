@@ -522,6 +522,59 @@ export const SearchReconciliationQbStagedResponse = zod.object({
 })
 
 /**
+ * Free search over ORPHAN Stripe payouts (no settlement link at all) by
+payout-id text / amount / date window — the reverse of qb-search. Powers
+the Settlement report's "Missing payout" resolve box: a standalone
+QuickBooks deposit anchor uses this to hunt the payout it should settle
+against. Payouts already tied (proposed or confirmed) are omitted — they
+belong to another deposit's bundle. Read-only.
+
+ * @summary Criteria-based Stripe payout search (reverse of qb-search; not anchored to a card).
+ */
+export const searchReconciliationPayoutsQueryDaysDefault = 30;
+export const searchReconciliationPayoutsQueryDaysMax = 365;
+
+export const searchReconciliationPayoutsQueryLimitDefault = 25;
+export const searchReconciliationPayoutsQueryLimitMax = 100;
+
+
+
+export const SearchReconciliationPayoutsQueryParams = zod.object({
+  "q": zod.coerce.string().optional().describe('Free-text over the Stripe payout id (po_...).'),
+  "amount": zod.coerce.string().optional().describe('Target amount (major units); when set, results are banded around the payout net.'),
+  "date": zod.coerce.string().date().optional().describe('Anchor date; pair with days for a ± window.'),
+  "days": zod.coerce.number().min(1).max(searchReconciliationPayoutsQueryDaysMax).default(searchReconciliationPayoutsQueryDaysDefault).describe('± days around date for the amount\/date window.'),
+  "limit": zod.coerce.number().min(1).max(searchReconciliationPayoutsQueryLimitMax).default(searchReconciliationPayoutsQueryLimitDefault)
+})
+
+export const SearchReconciliationPayoutsResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string().describe('Stripe payout id (po_...).'),
+  "amount": zod.string().nullish().describe('Payout net (net_total, falling back to amount), in major units.'),
+  "date": zod.string().date().nullish().describe('Payout arrival date.'),
+  "chargeCount": zod.number().nullish().describe('Number of charges in the payout.')
+}).describe('One orphan Stripe payout returned by the reverse payout search.'))
+})
+
+/**
+ * Deletes the PROPOSED settlement link for one Stripe payout, dropping the
+auto-proposed payout↔deposit tie so the Settlement report shows it as an
+un-proposed orphan again. Money is untouched: nothing is excluded and no
+gift is minted. A CONFIRMED link is never rejected here (revert is a
+separate reconciliation path) — attempting to reject a confirmed tie is a
+409. Rejecting a payout with no proposed link is a no-op success.
+
+ * @summary Dismiss a PROPOSED payout↔deposit settlement tie.
+ */
+export const RejectSettlementProposalParams = zod.object({
+  "payoutId": zod.coerce.string()
+})
+
+export const RejectSettlementProposalResponse = zod.object({
+  "rejected": zod.boolean().describe('True when a proposed link was deleted; false when there was no proposed link to reject (no-op).')
+})
+
+/**
  * Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.
 no QuickBooks cash-application ledger entry exists for the gift — ONE ROW PER
 gift_allocation (a multi-allocation gift surfaces several rows; a gift with no
@@ -635,7 +688,21 @@ export const ListReconciliationBundleAnchorsResponse = zod.object({
   "payerName": zod.string().nullish().describe('QB payer name (the tied\/candidate deposit\'s payer for a Stripe payout, or the staged row\'s payer for QB-only money).'),
   "chargeCount": zod.number().nullish().describe('Stripe charges behind the payout; null for QB-only money.'),
   "statusLabel": zod.string().describe('Raw source status for the display badge: the Stripe payout\'s reconciliation status (derived from its settlement link), or the QB staged-payment status.'),
-  "batchStatus": zod.enum(['settled', 'proposed', 'orphan']).describe('Derived Plane-1 settlement status for one anchor (design §4.4 batch), used by the\nSettlement report to group anchors into its three columns. settled: a confirmed\npayout↔deposit settlement link exists. proposed: only a proposed link exists\n(awaiting human confirm — the \"needs review\" filter). orphan: no settlement link\n(a Stripe payout that never booked to a deposit, or a standalone QB deposit with no\npayout). Combined with anchorType this fully places a row: Stripe orphan → the\n\"missing deposit\" column; QB orphan → the \"missing payout\" column.\n')
+  "batchStatus": zod.enum(['settled', 'proposed', 'orphan']).describe('Derived Plane-1 settlement status for one anchor (design §4.4 batch), used by the\nSettlement report to group anchors into its three columns. settled: a confirmed\npayout↔deposit settlement link exists. proposed: only a proposed link exists\n(awaiting human confirm — the \"needs review\" filter). orphan: no settlement link\n(a Stripe payout that never booked to a deposit, or a standalone QB deposit with no\npayout). Combined with anchorType this fully places a row: Stripe orphan → the\n\"missing deposit\" column; QB orphan → the \"missing payout\" column.\n'),
+  "proposedMatch": zod.object({
+  "counterpartType": zod.enum(['qb_staged_payment', 'stripe_payout']).describe('The settlement anchor a bundle reconciles: a QuickBooks deposit (staged_payments) or a Stripe payout (stripe_payouts).'),
+  "counterpartId": zod.string().describe('staged_payments.id or stripe_payouts.id of the proposed counterpart.'),
+  "amount": zod.string().nullish().describe('Counterpart amount, major units.'),
+  "date": zod.string().date().nullish().describe('Counterpart date (QB date received or Stripe arrival date).'),
+  "payerName": zod.string().nullish().describe('Counterpart payer name.'),
+  "chargeCount": zod.number().nullish().describe('Stripe charges behind the counterpart payout; null for a QB deposit.'),
+  "conflictGiftId": zod.string().nullish().describe('The already-approved QB gift the proposal collided with (a conflict tie awaiting a keep decision), if any.')
+}).describe('A proposed settlement counterpart for a bundle anchor — the QB deposit\nproposed for a Stripe payout (today the only populated direction; a QB\ndeposit tied to a payout is reconciled THROUGH the payout and never\nsurfaces as its own anchor).\n').nullish().describe('The proposed counterpart for this anchor, populated ONLY when a\n`proposed` (not-yet-confirmed) settlement link exists — enough to\nrender the proposed match inline and drive approve\/reject without\nfirst assembling the full draft. Null for orphan or settled anchors.\n'),
+  "readiness": zod.object({
+  "ready": zod.boolean(),
+  "warningCount": zod.number(),
+  "blockerCount": zod.number()
+}).describe('Cached confirm-readiness taken from the anchor\'s latest bundle-draft snapshot summary.').nullish().describe('Cached confirm-readiness from the anchor\'s most-recent bundle-draft\nsnapshot (a hint for the card\'s approve affordance; the confirm\nendpoint always re-derives and re-gates). Null when no draft has been\nassembled yet.\n')
 }).describe('One selectable settlement anchor for the workbench. anchorType discriminates a\nStripe payout from a standalone QB deposit; the remaining fields are a normalized\ndisplay projection over both sources.\n')),
   "pagination": zod.object({
   "page": zod.number(),

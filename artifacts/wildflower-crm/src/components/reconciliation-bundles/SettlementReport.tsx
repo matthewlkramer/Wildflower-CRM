@@ -1,40 +1,65 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Check, Loader2, X } from "lucide-react";
 import {
+  useAssembleReconciliationBundle,
+  useConfirmReconciliationBundle,
+  useDeriveReconciliationBundle,
   useListReconciliationBundleAnchors,
+  useRejectSettlementProposal,
   getListReconciliationBundleAnchorsQueryKey,
   type BundleAnchor,
-  type BundleAnchorType,
+  type FlagForResearchBodyTargetType,
 } from "@workspace/api-client-react";
-import { AnchorCard } from "./AnchorCard";
-import { BundleDraftPanel } from "./BundleDraftPanel";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/hooks/use-toast";
+import { useRowSelection } from "@/hooks/use-row-selection";
+import { BulkFlagForResearchDialog } from "@/components/flag-for-research-dialog";
+import { SettlementCard } from "./SettlementCard";
+import { approveAnchor, is409 } from "./settlement-actions";
 
-interface SelectedAnchor {
-  anchorType: BundleAnchorType;
-  anchorId: string;
+/** Selection key for an anchor (stable across the two actionable columns). */
+const anchorKey = (a: Pick<BundleAnchor, "anchorType" | "anchorId">) =>
+  `${a.anchorType}:${a.anchorId}`;
+
+/** Cleanup-queue flag target for an anchor (payout vs QB staged deposit). */
+function flagTarget(a: BundleAnchor): {
+  targetType: FlagForResearchBodyTargetType;
+  targetId: string;
+} {
+  return {
+    targetType:
+      a.anchorType === "stripe_payout" ? "stripe_payout" : "staged_payment",
+    targetId: a.anchorId,
+  };
 }
 
 /**
- * Settlement report (design §4.5, Plane 1: Stripe payouts ↔ QB deposits). The
- * same settlement anchors the legacy bundle queue enumerated, re-grouped into
- * three columns by the derived batch status (§4.4):
- *   • Matched        — a settlement link exists (settled or proposed).
- *   • Missing deposit — an orphan Stripe payout (money left Stripe, never booked).
- *   • Missing payout  — a standalone QB deposit with no tied payout.
- * The three columns already encode the review state, so there is no separate
- * needs-review / confirmed filter — the full anchor list ("all") is bucketed.
- * Selecting an anchor assembles its bundle inline (BundleDraftPanel reused as-is);
- * confirming refreshes every workbench query the bundle touches.
+ * Settlement report (design §4.5, Plane 1: Stripe payouts ↔ QB deposits),
+ * reworked to the Gift report's card-first model. Anchors are bucketed into
+ * three columns by derived batch status:
+ *   • Matched        — a CONFIRMED settlement link (settled). Read-only.
+ *   • Missing deposit — a Stripe payout with no confirmed deposit (may carry a
+ *                       proposed match to approve/reject, else resolve).
+ *   • Missing payout  — a standalone QB deposit with no payout (resolve).
+ * The proposed match, its approve/reject/resolve controls, per-charge editing,
+ * and multi-select bulk actions all live on the cards; the old below-columns
+ * bundle box is retired. Approve reuses the atomic bundle-confirm path, so
+ * committing refreshes every workbench query the bundle touches.
  */
 export function SettlementReport() {
   const queryClient = useQueryClient();
-  const [selected, setSelected] = useState<SelectedAnchor | null>(null);
+  const { toast } = useToast();
+  const selection = useRowSelection();
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [flagOpen, setFlagOpen] = useState(false);
 
-  // No queue filter — the three columns already bucket by review state, so we
-  // pull the FULL anchor list ("all") and bucket client-side. The limit is the
-  // endpoint's declared "list every anchor" max; a truncation banner (below)
-  // guards the theoretical case of more anchors than that.
+  const assembleM = useAssembleReconciliationBundle();
+  const deriveM = useDeriveReconciliationBundle();
+  const confirmM = useConfirmReconciliationBundle();
+  const rejectM = useRejectSettlementProposal();
+
   const { data, isLoading, isError } = useListReconciliationBundleAnchors({
     queue: "all",
     limit: 10000,
@@ -47,7 +72,10 @@ export function SettlementReport() {
     const missingDeposit: BundleAnchor[] = [];
     const missingPayout: BundleAnchor[] = [];
     for (const a of rows) {
-      if (a.batchStatus === "settled" || a.batchStatus === "proposed") {
+      // Only a CONFIRMED link is "Matched" (read-only). A `proposed` tie is
+      // still actionable, so it stays in its source column with the proposal
+      // shown inline on the card.
+      if (a.batchStatus === "settled") {
         matched.push(a);
       } else if (a.anchorType === "stripe_payout") {
         missingDeposit.push(a);
@@ -58,22 +86,27 @@ export function SettlementReport() {
     return { matched, missingDeposit, missingPayout };
   }, [rows]);
 
-  const handleSelect = useCallback(
-    (anchorType: BundleAnchorType, anchorId: string) => {
-      setSelected({ anchorType, anchorId });
-    },
-    [],
+  // Fast lookup for bulk actions over the selected keys.
+  const byKey = useMemo(() => {
+    const m = new Map<string, BundleAnchor>();
+    for (const a of [...missingDeposit, ...missingPayout]) m.set(anchorKey(a), a);
+    return m;
+  }, [missingDeposit, missingPayout]);
+
+  const selectedAnchors = useMemo(
+    () =>
+      selection.selectedIds
+        .map((k) => byKey.get(k))
+        .filter((a): a is BundleAnchor => a != null),
+    [selection.selectedIds, byKey],
   );
 
-  const handleConfirmed = useCallback(() => {
-    setSelected(null);
-    // Refresh the settlement-anchor list so the just-committed anchor drops out
-    // of its column (prefix-match across every filter variant, full "/api" key).
+  const invalidateWorkbench = useCallback(() => {
+    // Drop just-committed anchors from their columns…
     void queryClient.invalidateQueries({
       queryKey: getListReconciliationBundleAnchorsQueryKey(),
     });
-    // A bundle confirm reconciles the same staged payments / charges / gifts the
-    // rest of the workbench renders, so the other queues must refresh too.
+    // …and refresh the sibling queues a bundle confirm reconciles.
     void queryClient.invalidateQueries({
       predicate: (query) => {
         const key = query.queryKey?.[0];
@@ -89,12 +122,89 @@ export function SettlementReport() {
     });
   }, [queryClient]);
 
-  const selectedKey = selected
-    ? `${selected.anchorType}:${selected.anchorId}`
-    : null;
+  const handleChanged = useCallback(() => {
+    invalidateWorkbench();
+  }, [invalidateWorkbench]);
+
+  const fns = {
+    assemble: assembleM.mutateAsync,
+    derive: deriveM.mutateAsync,
+    confirm: confirmM.mutateAsync,
+  };
+
+  const runBulkApprove = useCallback(async () => {
+    const targets = selectedAnchors.filter((a) => a.proposedMatch);
+    if (targets.length === 0) {
+      toast({ title: "No proposed matches in the selection to approve." });
+      return;
+    }
+    setBulkBusy(true);
+    let approved = 0;
+    let skipped = 0;
+    let failed = 0;
+    const done: string[] = [];
+    for (const a of targets) {
+      try {
+        const outcome = await approveAnchor(a, fns);
+        if (outcome === "approved") {
+          approved += 1;
+          done.push(anchorKey(a));
+        } else {
+          skipped += 1;
+        }
+      } catch (err) {
+        if (is409(err)) skipped += 1;
+        else failed += 1;
+      }
+    }
+    setBulkBusy(false);
+    selection.removeMany(done);
+    invalidateWorkbench();
+    toast({
+      title: `Approved ${approved} settlement${approved === 1 ? "" : "s"}`,
+      description:
+        skipped + failed > 0
+          ? `${skipped} needed review, ${failed} failed.`
+          : undefined,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAnchors, selection, invalidateWorkbench, toast]);
+
+  const runBulkReject = useCallback(async () => {
+    // Only Stripe-payout anchors carry a proposed link that can be rejected.
+    const targets = selectedAnchors.filter(
+      (a) => a.proposedMatch && a.anchorType === "stripe_payout",
+    );
+    if (targets.length === 0) {
+      toast({ title: "No proposed matches in the selection to reject." });
+      return;
+    }
+    setBulkBusy(true);
+    let rejected = 0;
+    let failed = 0;
+    const done: string[] = [];
+    for (const a of targets) {
+      try {
+        await rejectM.mutateAsync({ payoutId: a.anchorId });
+        rejected += 1;
+        done.push(anchorKey(a));
+      } catch {
+        failed += 1;
+      }
+    }
+    setBulkBusy(false);
+    selection.removeMany(done);
+    invalidateWorkbench();
+    toast({
+      title: `Rejected ${rejected} proposed match${rejected === 1 ? "" : "es"}`,
+      description: failed > 0 ? `${failed} failed.` : undefined,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAnchors, selection, invalidateWorkbench, rejectM, toast]);
 
   const total = data?.pagination.total ?? rows.length;
   const truncated = !isLoading && !isError && total > rows.length;
+  const busy = bulkBusy;
 
   return (
     <div className="flex flex-col gap-4">
@@ -104,6 +214,64 @@ export function SettlementReport() {
           {total} settlement anchors — some rows are not listed.
         </div>
       )}
+
+      {selection.count > 0 && (
+        <div
+          className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-md border bg-card px-3 py-2 shadow-sm"
+          data-testid="settlement-bulk-bar"
+        >
+          <span className="text-sm font-medium" data-testid="settlement-bulk-count">
+            {selection.count} selected
+          </span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              className="gap-1"
+              disabled={busy}
+              onClick={runBulkApprove}
+              data-testid="button-settlement-bulk-approve"
+            >
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4" />
+              )}
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1"
+              disabled={busy}
+              onClick={runBulkReject}
+              data-testid="button-settlement-bulk-reject"
+            >
+              <X className="h-4 w-4" />
+              Reject
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setFlagOpen(true)}
+              data-testid="button-settlement-bulk-flag"
+            >
+              Flag for research
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={selection.clear}
+              data-testid="button-settlement-bulk-clear"
+            >
+              <X className="h-4 w-4" />
+              <span className="sr-only">Clear selection</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
       {isError ? (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
           <AlertCircle className="h-4 w-4" /> Couldn't load settlement anchors.
@@ -116,37 +284,43 @@ export function SettlementReport() {
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <SettlementColumn
             title="Matched"
-            hint="Payout ↔ deposit linked"
+            hint="Payout ↔ deposit confirmed"
             rows={matched}
-            selectedKey={selectedKey}
-            onSelect={handleSelect}
+            selectable={false}
+            selection={selection}
+            onChanged={handleChanged}
           />
           <SettlementColumn
             title="Missing deposit"
-            hint="Stripe payout, no QB deposit"
+            hint="Stripe payout, no confirmed deposit"
             rows={missingDeposit}
-            selectedKey={selectedKey}
-            onSelect={handleSelect}
+            selectable
+            selection={selection}
+            onChanged={handleChanged}
           />
           <SettlementColumn
             title="Missing payout"
             hint="QB deposit, no Stripe payout"
             rows={missingPayout}
-            selectedKey={selectedKey}
-            onSelect={handleSelect}
+            selectable
+            selection={selection}
+            onChanged={handleChanged}
           />
         </div>
       )}
 
-      {selected && (
-        <div className="min-h-0 rounded-lg border bg-card p-3">
-          <BundleDraftPanel
-            key={selectedKey ?? undefined}
-            anchorType={selected.anchorType}
-            anchorId={selected.anchorId}
-            onConfirmed={handleConfirmed}
-          />
-        </div>
+      {flagOpen && (
+        <BulkFlagForResearchDialog
+          targets={selectedAnchors.map(flagTarget)}
+          open={flagOpen}
+          onOpenChange={setFlagOpen}
+          onDone={() => {
+            selection.clear();
+            void queryClient.invalidateQueries({
+              queryKey: getListReconciliationBundleAnchorsQueryKey(),
+            });
+          }}
+        />
       )}
     </div>
   );
@@ -156,42 +330,62 @@ function SettlementColumn({
   title,
   hint,
   rows,
-  selectedKey,
-  onSelect,
+  selectable,
+  selection,
+  onChanged,
 }: {
   title: string;
   hint: string;
   rows: BundleAnchor[];
-  selectedKey: string | null;
-  onSelect: (anchorType: BundleAnchorType, anchorId: string) => void;
+  selectable: boolean;
+  selection: ReturnType<typeof useRowSelection>;
+  onChanged: () => void;
 }) {
+  const visibleKeys = useMemo(() => rows.map(anchorKey), [rows]);
+  const allSelected =
+    selectable &&
+    visibleKeys.length > 0 &&
+    visibleKeys.every((k) => selection.isSelected(k));
+
   return (
     <div className="flex min-h-0 flex-col rounded-lg border bg-card p-3">
       <div className="flex items-baseline justify-between gap-2 border-b pb-2">
-        <div className="flex flex-col">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {title}
-          </span>
-          <span className="text-[11px] text-muted-foreground/70">{hint}</span>
+        <div className="flex items-center gap-2">
+          {selectable && rows.length > 0 && (
+            <Checkbox
+              checked={allSelected}
+              onCheckedChange={() => selection.toggleVisible(visibleKeys)}
+              aria-label={`Select all ${title}`}
+              data-testid={`checkbox-settlement-all-${title.replace(/\s+/g, "-").toLowerCase()}`}
+            />
+          )}
+          <div className="flex flex-col">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {title}
+            </span>
+            <span className="text-[11px] text-muted-foreground/70">{hint}</span>
+          </div>
         </div>
         <span className="text-xs font-semibold text-muted-foreground">
           {rows.length}
         </span>
       </div>
-      <div className="mt-2 max-h-[52vh] min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+      <div className="mt-2 max-h-[60vh] min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
         {rows.length === 0 ? (
           <div className="py-10 text-center text-xs text-muted-foreground">
             Nothing here.
           </div>
         ) : (
           rows.map((a) => {
-            const key = `${a.anchorType}:${a.anchorId}`;
+            const key = anchorKey(a);
             return (
-              <AnchorCard
+              <SettlementCard
                 key={key}
                 anchor={a}
-                selected={key === selectedKey}
-                onSelect={() => onSelect(a.anchorType, a.anchorId)}
+                selectable={selectable}
+                selected={selection.isSelected(key)}
+                onToggleSelect={() => selection.toggle(key)}
+                onChanged={onChanged}
               />
             );
           })

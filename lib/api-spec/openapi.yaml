@@ -4192,6 +4192,44 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationSearchList" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /reconciliation/payout-search:
+    get:
+      operationId: searchReconciliationPayouts
+      tags: [reconciliation]
+      summary: Criteria-based Stripe payout search (reverse of qb-search; not anchored to a card).
+      description: |
+        Free search over ORPHAN Stripe payouts (no settlement link at all) by
+        payout-id text / amount / date window — the reverse of qb-search. Powers
+        the Settlement report's "Missing payout" resolve box: a standalone
+        QuickBooks deposit anchor uses this to hunt the payout it should settle
+        against. Payouts already tied (proposed or confirmed) are omitted — they
+        belong to another deposit's bundle. Read-only.
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: "Free-text over the Stripe payout id (po_...)." }
+        - { name: amount, in: query, schema: { type: string }, description: "Target amount (major units); when set, results are banded around the payout net." }
+        - { name: date, in: query, schema: { type: string, format: date }, description: "Anchor date; pair with days for a ± window." }
+        - { name: days, in: query, schema: { type: integer, default: 30, minimum: 1, maximum: 365 }, description: "± days around date for the amount/date window." }
+        - { name: limit, in: query, schema: { type: integer, default: 25, minimum: 1, maximum: 100 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PayoutSearchList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /reconciliation/settlement-links/{payoutId}/reject:
+    post:
+      operationId: rejectSettlementProposal
+      tags: [reconciliation]
+      summary: Dismiss a PROPOSED payout↔deposit settlement tie.
+      description: |
+        Deletes the PROPOSED settlement link for one Stripe payout, dropping the
+        auto-proposed payout↔deposit tie so the Settlement report shows it as an
+        un-proposed orphan again. Money is untouched: nothing is excluded and no
+        gift is minted. A CONFIRMED link is never rejected here (revert is a
+        separate reconciliation path) — attempting to reject a confirmed tie is a
+        409. Rejecting a payout with no proposed link is a no-op success.
+      parameters:
+        - { name: payoutId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RejectSettlementProposalResult" } } } }
+        "409": { description: "The settlement link is confirmed (use revert, not reject)." }
   /reconciliation/gifts-missing-qb:
     get:
       operationId: listGiftsMissingQb
@@ -7215,6 +7253,25 @@ components:
       required: [data]
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/ReconciliationCandidate" } }
+    PayoutSearchCandidate:
+      type: object
+      required: [id]
+      description: One orphan Stripe payout returned by the reverse payout search.
+      properties:
+        id:          { type: string, description: "Stripe payout id (po_...)." }
+        amount:      { type: string, nullable: true, description: "Payout net (net_total, falling back to amount), in major units." }
+        date:        { type: string, format: date, nullable: true, description: "Payout arrival date." }
+        chargeCount: { type: integer, nullable: true, description: "Number of charges in the payout." }
+    PayoutSearchList:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/PayoutSearchCandidate" } }
+    RejectSettlementProposalResult:
+      type: object
+      required: [rejected]
+      properties:
+        rejected: { type: boolean, description: "True when a proposed link was deleted; false when there was no proposed link to reject (no-op)." }
     GiftMissingQb:
       type: object
       required: [id, rowKey]
@@ -7517,6 +7574,46 @@ components:
         chargeCount: { type: integer, nullable: true, description: "Stripe charges behind the payout; null for QB-only money." }
         statusLabel: { type: string, description: "Raw source status for the display badge: the Stripe payout's reconciliation status (derived from its settlement link), or the QB staged-payment status." }
         batchStatus: { $ref: "#/components/schemas/SettlementBatchStatus" }
+        proposedMatch:
+          nullable: true
+          allOf: [ { $ref: "#/components/schemas/BundleAnchorProposedMatch" } ]
+          description: |
+            The proposed counterpart for this anchor, populated ONLY when a
+            `proposed` (not-yet-confirmed) settlement link exists — enough to
+            render the proposed match inline and drive approve/reject without
+            first assembling the full draft. Null for orphan or settled anchors.
+        readiness:
+          nullable: true
+          allOf: [ { $ref: "#/components/schemas/BundleAnchorReadiness" } ]
+          description: |
+            Cached confirm-readiness from the anchor's most-recent bundle-draft
+            snapshot (a hint for the card's approve affordance; the confirm
+            endpoint always re-derives and re-gates). Null when no draft has been
+            assembled yet.
+    BundleAnchorProposedMatch:
+      type: object
+      required: [counterpartType, counterpartId]
+      description: |
+        A proposed settlement counterpart for a bundle anchor — the QB deposit
+        proposed for a Stripe payout (today the only populated direction; a QB
+        deposit tied to a payout is reconciled THROUGH the payout and never
+        surfaces as its own anchor).
+      properties:
+        counterpartType: { $ref: "#/components/schemas/BundleAnchorType" }
+        counterpartId:   { type: string, description: "staged_payments.id or stripe_payouts.id of the proposed counterpart." }
+        amount:          { type: string, nullable: true, description: "Counterpart amount, major units." }
+        date:            { type: string, format: date, nullable: true, description: "Counterpart date (QB date received or Stripe arrival date)." }
+        payerName:       { type: string, nullable: true, description: "Counterpart payer name." }
+        chargeCount:     { type: integer, nullable: true, description: "Stripe charges behind the counterpart payout; null for a QB deposit." }
+        conflictGiftId:  { type: string, nullable: true, description: "The already-approved QB gift the proposal collided with (a conflict tie awaiting a keep decision), if any." }
+    BundleAnchorReadiness:
+      type: object
+      required: [ready, warningCount, blockerCount]
+      description: "Cached confirm-readiness taken from the anchor's latest bundle-draft snapshot summary."
+      properties:
+        ready:        { type: boolean }
+        warningCount: { type: integer }
+        blockerCount: { type: integer }
     BundleAnchorListResponse:
       type: object
       required: [data, pagination]
@@ -7835,7 +7932,7 @@ components:
       description: >-
         Flag a record for research. reason_code is always 'needs_research'.
       properties:
-        targetType: { type: string, enum: [opportunity, pledge, organization, person, gift, staged_payment], description: "Kind of record being flagged." }
+        targetType: { type: string, enum: [opportunity, pledge, organization, person, gift, staged_payment, stripe_payout], description: "Kind of record being flagged." }
         targetId:   { type: string, minLength: 1, description: "Id of the record being flagged." }
         note:       { type: string, minLength: 1, description: "What needs research / follow-up on this record." }
     CodingFormRowStatus:

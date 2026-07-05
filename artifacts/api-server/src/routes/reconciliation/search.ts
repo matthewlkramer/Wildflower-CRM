@@ -4,6 +4,7 @@ import { getViewer } from "../../lib/identityVisibility";
 import {
   searchReconciliationNode,
   searchQbStaged,
+  searchPayouts,
   type RecNodeType,
 } from "../../lib/reconciliationGraph";
 
@@ -123,6 +124,33 @@ router.get(
     const limit = clampInt(req.query["limit"], 25, 1, 100);
 
     const data = await searchQbStaged({ q, amount, date, days, limit });
+    res.json({ data });
+  }),
+);
+
+// ─── GET /reconciliation/payout-search ─────────────────────────────────────
+// Reverse of qb-search: criteria-based ORPHAN Stripe payout search with NO card
+// anchor — the Settlement report's "Missing payout" resolve box uses this to hunt
+// the payout a standalone QuickBooks deposit should settle against. Read-only.
+router.get(
+  "/reconciliation/payout-search",
+  asyncHandler(async (req, res) => {
+    const q = typeof req.query["q"] === "string" ? req.query["q"] : null;
+    const amount =
+      typeof req.query["amount"] === "string" ? req.query["amount"] : null;
+    const date =
+      typeof req.query["date"] === "string" ? req.query["date"] : null;
+    if (date && !isValidIsoDate(date)) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "date must be a valid YYYY-MM-DD date",
+      });
+      return;
+    }
+    const days = clampInt(req.query["days"], 30, 1, 365);
+    const limit = clampInt(req.query["limit"], 25, 1, 100);
+
+    const data = await searchPayouts({ q, amount, date, days, limit });
     res.json({ data });
   }),
 );

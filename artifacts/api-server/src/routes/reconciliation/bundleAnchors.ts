@@ -93,6 +93,18 @@ interface AnchorRow {
   charge_count: number | null;
   status_label: string;
   batch_status: "settled" | "proposed" | "orphan";
+  // Proposed counterpart facts (non-null only for a proposed Stripe payout).
+  proposed_counterpart_type: AnchorSource | null;
+  proposed_counterpart_id: string | null;
+  proposed_amount: string | null;
+  proposed_date: string | null;
+  proposed_payer_name: string | null;
+  proposed_charge_count: number | null;
+  proposed_conflict_gift_id: string | null;
+  // Cached confirm-readiness from the anchor's latest bundle-draft snapshot.
+  readiness_ready: boolean | null;
+  readiness_warning: number | null;
+  readiness_blocker: number | null;
 }
 
 // ─── GET /reconciliation/bundle-anchors ────────────────────────────────────
@@ -119,6 +131,14 @@ router.get(
     // payer name for a Stripe payout. status_label is now DERIVED from the joined
     // settlement link (Phase-6 read-flip) — the four live values are lossless (prod
     // holds zero legacy 7-value rows); a payout with no link → 'unmatched'.
+    // Cached confirm-readiness (a hint; confirm re-derives + re-gates) pulled from
+    // the anchor's latest bundle-draft snapshot summary. `d` must be the joined
+    // reconciliation_bundle_drafts alias in the surrounding SELECT.
+    const readinessSelect = (d: string) => sql`
+        (${sql.raw(d)}.derived_proposal->'summary'->>'ready')::boolean AS readiness_ready,
+        (${sql.raw(d)}.derived_proposal->'summary'->>'warningCount')::int AS readiness_warning,
+        (${sql.raw(d)}.derived_proposal->'summary'->>'blockerCount')::int AS readiness_blocker`;
+
     const stripeSelect = sql`
       SELECT
         'stripe_payout'::text AS anchor_type,
@@ -136,10 +156,21 @@ router.get(
                        WHERE sl2.payout_id = sp.id AND sl2.lifecycle = 'proposed')
             THEN 'proposed'
           ELSE 'orphan'
-        END)::text AS batch_status
+        END)::text AS batch_status,
+        -- Proposed counterpart = the deposit of a PROPOSED (not confirmed) link.
+        (CASE WHEN sl.lifecycle = 'proposed' THEN 'qb_staged_payment' END)::text AS proposed_counterpart_type,
+        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.id END)::text AS proposed_counterpart_id,
+        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.amount::text END)::text AS proposed_amount,
+        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.date_received::text END)::text AS proposed_date,
+        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.payer_name END)::text AS proposed_payer_name,
+        NULL::int AS proposed_charge_count,
+        (CASE WHEN sl.lifecycle = 'proposed' THEN sl.conflict_gift_id END)::text AS proposed_conflict_gift_id,
+        ${readinessSelect("d")}
       FROM stripe_payouts sp
       LEFT JOIN settlement_links sl ON sl.payout_id = sp.id
       LEFT JOIN staged_payments ad ON ad.id = sl.deposit_staged_payment_id
+      LEFT JOIN reconciliation_bundle_drafts d
+        ON d.anchor_type = 'stripe_payout' AND d.anchor_id = sp.id
       WHERE ${stripeWhere(queue)}`;
 
     const qbSelect = sql`
@@ -151,8 +182,18 @@ router.get(
         s.payer_name AS payer_name,
         NULL::int AS charge_count,
         s.status::text AS status_label,
-        'orphan'::text AS batch_status
+        'orphan'::text AS batch_status,
+        NULL::text AS proposed_counterpart_type,
+        NULL::text AS proposed_counterpart_id,
+        NULL::text AS proposed_amount,
+        NULL::text AS proposed_date,
+        NULL::text AS proposed_payer_name,
+        NULL::int AS proposed_charge_count,
+        NULL::text AS proposed_conflict_gift_id,
+        ${readinessSelect("d")}
       FROM staged_payments s
+      LEFT JOIN reconciliation_bundle_drafts d
+        ON d.anchor_type = 'qb_staged_payment' AND d.anchor_id = s.id
       WHERE ${qbWhere(queue)}`;
 
     const merged: SQL =
@@ -166,7 +207,11 @@ router.get(
       db.execute(sql`
         SELECT
           anchor_type, anchor_id, amount, anchor_date,
-          payer_name, charge_count, status_label, batch_status
+          payer_name, charge_count, status_label, batch_status,
+          proposed_counterpart_type, proposed_counterpart_id, proposed_amount,
+          proposed_date, proposed_payer_name, proposed_charge_count,
+          proposed_conflict_gift_id,
+          readiness_ready, readiness_warning, readiness_blocker
         FROM ( ${merged} ) AS anchors
         ORDER BY anchor_date DESC NULLS LAST, anchor_id DESC
         LIMIT ${limit} OFFSET ${offset}
@@ -187,6 +232,25 @@ router.get(
         chargeCount: r.charge_count,
         statusLabel: r.status_label,
         batchStatus: r.batch_status,
+        proposedMatch: r.proposed_counterpart_id
+          ? {
+              counterpartType: r.proposed_counterpart_type!,
+              counterpartId: r.proposed_counterpart_id,
+              amount: r.proposed_amount,
+              date: r.proposed_date,
+              payerName: r.proposed_payer_name,
+              chargeCount: r.proposed_charge_count,
+              conflictGiftId: r.proposed_conflict_gift_id,
+            }
+          : null,
+        readiness:
+          r.readiness_ready === null
+            ? null
+            : {
+                ready: r.readiness_ready,
+                warningCount: r.readiness_warning ?? 0,
+                blockerCount: r.readiness_blocker ?? 0,
+              },
       })),
       pagination: { page, limit, total },
     });

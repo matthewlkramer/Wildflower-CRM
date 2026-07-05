@@ -3930,6 +3930,29 @@ export interface ReconciliationSearchList {
   data: ReconciliationCandidate[];
 }
 
+/**
+ * One orphan Stripe payout returned by the reverse payout search.
+ */
+export interface PayoutSearchCandidate {
+  /** Stripe payout id (po_...). */
+  id: string;
+  /** Payout net (net_total, falling back to amount), in major units. */
+  amount?: string | null;
+  /** Payout arrival date. */
+  date?: string | null;
+  /** Number of charges in the payout. */
+  chargeCount?: number | null;
+}
+
+export interface PayoutSearchList {
+  data: PayoutSearchCandidate[];
+}
+
+export interface RejectSettlementProposalResult {
+  /** True when a proposed link was deleted; false when there was no proposed link to reject (no-op). */
+  rejected: boolean;
+}
+
 export type GiftMissingQbDonorKind = typeof GiftMissingQbDonorKind[keyof typeof GiftMissingQbDonorKind] | null;
 
 
@@ -4429,6 +4452,38 @@ export const SettlementBatchStatus = {
 } as const;
 
 /**
+ * A proposed settlement counterpart for a bundle anchor — the QB deposit
+proposed for a Stripe payout (today the only populated direction; a QB
+deposit tied to a payout is reconciled THROUGH the payout and never
+surfaces as its own anchor).
+
+ */
+export interface BundleAnchorProposedMatch {
+  counterpartType: BundleAnchorType;
+  /** staged_payments.id or stripe_payouts.id of the proposed counterpart. */
+  counterpartId: string;
+  /** Counterpart amount, major units. */
+  amount?: string | null;
+  /** Counterpart date (QB date received or Stripe arrival date). */
+  date?: string | null;
+  /** Counterpart payer name. */
+  payerName?: string | null;
+  /** Stripe charges behind the counterpart payout; null for a QB deposit. */
+  chargeCount?: number | null;
+  /** The already-approved QB gift the proposal collided with (a conflict tie awaiting a keep decision), if any. */
+  conflictGiftId?: string | null;
+}
+
+/**
+ * Cached confirm-readiness taken from the anchor's latest bundle-draft snapshot summary.
+ */
+export interface BundleAnchorReadiness {
+  ready: boolean;
+  warningCount: number;
+  blockerCount: number;
+}
+
+/**
  * One selectable settlement anchor for the workbench. anchorType discriminates a
 Stripe payout from a standalone QB deposit; the remaining fields are a normalized
 display projection over both sources.
@@ -4449,6 +4504,18 @@ export interface BundleAnchor {
   /** Raw source status for the display badge: the Stripe payout's reconciliation status (derived from its settlement link), or the QB staged-payment status. */
   statusLabel: string;
   batchStatus: SettlementBatchStatus;
+  /** The proposed counterpart for this anchor, populated ONLY when a
+`proposed` (not-yet-confirmed) settlement link exists — enough to
+render the proposed match inline and drive approve/reject without
+first assembling the full draft. Null for orphan or settled anchors.
+ */
+  proposedMatch?: BundleAnchorProposedMatch | null;
+  /** Cached confirm-readiness from the anchor's most-recent bundle-draft
+snapshot (a hint for the card's approve affordance; the confirm
+endpoint always re-derives and re-gates). Null when no draft has been
+assembled yet.
+ */
+  readiness?: BundleAnchorReadiness | null;
 }
 
 export interface BundleAnchorListResponse {
@@ -5036,6 +5103,7 @@ export const FlagForResearchBodyTargetType = {
   person: 'person',
   gift: 'gift',
   staged_payment: 'staged_payment',
+  stripe_payout: 'stripe_payout',
 } as const;
 
 /**
@@ -8764,6 +8832,32 @@ export type SearchReconciliationQbStagedParams = {
 q?: string;
 /**
  * Target amount (major units); when set, results are scored/filtered around it.
+ */
+amount?: string;
+/**
+ * Anchor date; pair with days for a ± window.
+ */
+date?: string;
+/**
+ * ± days around date for the amount/date window.
+ * @minimum 1
+ * @maximum 365
+ */
+days?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type SearchReconciliationPayoutsParams = {
+/**
+ * Free-text over the Stripe payout id (po_...).
+ */
+q?: string;
+/**
+ * Target amount (major units); when set, results are banded around the payout net.
  */
 amount?: string;
 /**

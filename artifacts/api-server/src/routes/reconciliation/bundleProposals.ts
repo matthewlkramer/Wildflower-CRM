@@ -19,6 +19,7 @@ import {
   DeriveReconciliationBundleBody,
   ConfirmReconciliationBundleParams,
   ConfirmReconciliationBundleBody,
+  RejectSettlementProposalParams,
 } from "@workspace/api-zod";
 import {
   assembleBundleProposal,
@@ -51,6 +52,7 @@ import {
 import { donorOf, donorsMatch, type LinkDonor } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
+import { deleteSettlementLink } from "../../lib/settlementLink";
 
 /**
  * Reactive "settlement bundle" reconciliation endpoints.
@@ -847,6 +849,44 @@ router.post(
     }
 
     res.json(committed);
+  }),
+);
+
+// ─── POST /reconciliation/settlement-links/:payoutId/reject ──────────────────
+// Dismiss a PROPOSED payout↔deposit tie: delete the proposed settlement link so
+// the Settlement report shows the payout as an un-proposed orphan again. Money is
+// untouched (nothing excluded, no gift minted). A CONFIRMED link is never rejected
+// here (revert is a separate path) → 409. No proposed link → no-op success.
+router.post(
+  "/reconciliation/settlement-links/:payoutId/reject",
+  asyncHandler(async (req, res) => {
+    const params = parseOrBadRequest(
+      RejectSettlementProposalParams,
+      req.params,
+      res,
+    );
+    if (!params) return;
+
+    const link = await db
+      .select({ lifecycle: settlementLinks.lifecycle })
+      .from(settlementLinks)
+      .where(eq(settlementLinks.payoutId, params.payoutId))
+      .then((r) => r[0]);
+
+    if (!link) {
+      res.json({ rejected: false });
+      return;
+    }
+    if (link.lifecycle === "confirmed") {
+      res.status(409).json({
+        error: "settlement_confirmed",
+        message: "This settlement tie is confirmed; use revert, not reject.",
+      });
+      return;
+    }
+
+    await deleteSettlementLink(db, params.payoutId);
+    res.json({ rejected: true });
   }),
 );
 
