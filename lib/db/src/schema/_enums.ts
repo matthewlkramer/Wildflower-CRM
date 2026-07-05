@@ -139,28 +139,6 @@ export const entityTypeEnum = pgEnum("entity_type", [
   "tribal",
 ]);
 
-// ---- Funder enums (kept for migration compatibility — removed after Phase 2 push) ----
-export const fundingEntitySubtypeEnum = pgEnum("funding_entity_subtype", [
-  "family_foundation",
-  "institutional_foundation",
-  "corporate_foundation",
-  "community_foundation",
-  "bank_foundation",
-  "family_office_trust",
-  "intermediary",
-  "government",
-  "nonprofit",
-  "corporation",
-  "capital_provider",
-  "philanthropic_advisor",
-  "cdfi",
-  "education_forprofit",
-  "competition",
-  "public_private",
-  "daf_platform",
-  "platform",
-]);
-
 export const numberOfEmployeesEnum = pgEnum("number_of_employees", [
   "e_1",
   "e_2_10",

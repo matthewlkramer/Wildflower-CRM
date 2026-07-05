@@ -1,0 +1,52 @@
+-- Migration 0097: Retire the now-orphaned `funding_entity_subtype` Postgres enum type.
+--
+-- The `funding_entity_subtype` enum was superseded by the unified `entity_type`
+-- enum (`entityTypeEnum`) when the split funders/organizations model was
+-- consolidated into a single `organizations` table. Its own comment in
+-- `_enums.ts` flagged it as "kept for migration compatibility — removed after
+-- Phase 2 push." No table column, function, view, or default references the type
+-- any longer; the only remaining code references are string-value maps in
+-- `lib/db/src/import-airtable.mjs` and
+-- `artifacts/api-server/src/scripts/migrate-organizations.ts`, which operate on
+-- text/column values, NOT on this pg enum type.
+--
+-- This mirrors migration 0096 (retiring the orphaned `restriction_type` enum):
+-- a dead enum type left behind after its columns were replaced.
+--
+-- SAFE TO DROP — verified zero references in dev AND prod:
+--   * No table column has udt_name='funding_entity_subtype'
+--     (SELECT ... FROM information_schema.columns returned zero rows in both).
+--   * No function, view, or default references the type
+--     (pg_depend join returned zero non-internal dependents in both).
+--   * The Drizzle schema no longer defines any column of this type; the lone
+--     remaining `fundingEntitySubtypeEnum` export in _enums.ts (unused by any
+--     table) is removed by this task's code. drizzle-kit only manages enums
+--     attached to a column, so removing that orphan export produces no Publish
+--     diff.
+--
+-- NO CASCADE — a bare `DROP TYPE` (no CASCADE) fails loudly if ANY dependency
+-- still exists, so it can never silently cascade-drop a live column. If some
+-- unexpected dependency remains, this file errors out instead of destroying data.
+--
+-- IF EXISTS -> idempotent / re-runnable (a second run is a no-op).
+--
+-- ORDERING (prod):
+--   Publish ordering is a non-issue here: the deployed prod build does not
+--   reference the `funding_entity_subtype` TYPE at all (the columns were removed
+--   long ago in the funders/organizations consolidation; this task only deletes
+--   an unused enum export). Publish diffs dev-DB vs prod-DB and both hold the
+--   identical orphaned type, so the diff is clean and proposes nothing. Apply
+--   this file to prod and dev back-to-back (below).
+--
+-- Apply with psql -1 (wraps the file in ONE transaction; do NOT add BEGIN/COMMIT):
+--   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0097_drop_funding_entity_subtype_enum.sql   (prod)
+--   psql "$DATABASE_URL"      -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0097_drop_funding_entity_subtype_enum.sql   (dev)
+
+DROP TYPE IF EXISTS funding_entity_subtype;
+
+-- Verification (run by hand AFTER applying) -----------------------------------
+--   -- funding_entity_subtype type gone (expect ZERO rows):
+--   SELECT typname FROM pg_type WHERE typname = 'funding_entity_subtype';
+--
+--   -- entity_type type UNTOUCHED (expect ONE row):
+--   SELECT typname FROM pg_type WHERE typname = 'entity_type';
