@@ -578,7 +578,15 @@ export const ListGiftsMissingQbResponse = zod.object({
   "schoolRecipientId": zod.string().nullish(),
   "schoolRecipientName": zod.string().nullish(),
   "grantYear": zod.string().nullish().describe('The allocation\'s fiscal year (grant_year) id.'),
-  "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).nullish().describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.')
+  "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).nullish().describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.'),
+  "proposedPayment": zod.object({
+  "stagedPaymentId": zod.string().describe('staged_payments id — the reconcile target.'),
+  "payerName": zod.string().nullish().describe('QuickBooks payer name.'),
+  "amount": zod.string().nullish().describe('Staged payment amount.'),
+  "dateReceived": zod.string().date().nullish().describe('Staged payment date received.'),
+  "paymentMethod": zod.string().nullish().describe('QuickBooks payment method \/ instrument (qb_payment_method).'),
+  "reference": zod.string().nullish().describe('Raw memo \/ reference for context.')
+}).nullish().describe('Best-guess UNLINKED QuickBooks staged payment for this gift row, or null\nwhen none is a plausible match. Read-only convenience so the card can offer\na one-click \"Link\" — the same match the manual Link dialog would surface\n(donor name + amount fee-band + date window), restricted to staged rows not\nalready tied to a gift. The row-level amount used is the allocation\nsub-amount, falling back to the gift\'s display amount.\n')
 }).describe('ONE ROW PER gift_allocation for the gifts-missing-QB worklist. A gift with\nseveral allocations surfaces several rows (the gift header fields repeat).\nA gift that has no allocations surfaces a single row with allocationId null.\nAllocations attributed to an entity that never settles through a payment\nprocessor (entities.expectsPayment = false: \"Direct to School\" \/\n\"Wildflower Foundation TSNE\") are excluded.\n')),
   "pagination": zod.object({
   "page": zod.number(),

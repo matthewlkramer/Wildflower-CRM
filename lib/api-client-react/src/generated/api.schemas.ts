@@ -4020,6 +4020,24 @@ export const GiftMissingQbDonorKind = {
 } as const;
 
 /**
+ * A single unlinked QuickBooks staged payment proposed as this gift's match.
+ */
+export interface GiftMissingQbProposedPayment {
+  /** staged_payments id — the reconcile target. */
+  stagedPaymentId: string;
+  /** QuickBooks payer name. */
+  payerName?: string | null;
+  /** Staged payment amount. */
+  amount?: string | null;
+  /** Staged payment date received. */
+  dateReceived?: string | null;
+  /** QuickBooks payment method / instrument (qb_payment_method). */
+  paymentMethod?: string | null;
+  /** Raw memo / reference for context. */
+  reference?: string | null;
+}
+
+/**
  * ONE ROW PER gift_allocation for the gifts-missing-QB worklist. A gift with
 several allocations surfaces several rows (the gift header fields repeat).
 A gift that has no allocations surfaces a single row with allocationId null.
@@ -4066,6 +4084,14 @@ export interface GiftMissingQb {
   /** The allocation's fiscal year (grant_year) id. */
   grantYear?: string | null;
   finalAmountSource?: GiftFinalAmountSource | null;
+  /** Best-guess UNLINKED QuickBooks staged payment for this gift row, or null
+when none is a plausible match. Read-only convenience so the card can offer
+a one-click "Link" — the same match the manual Link dialog would surface
+(donor name + amount fee-band + date window), restricted to staged rows not
+already tied to a gift. The row-level amount used is the allocation
+sub-amount, falling back to the gift's display amount.
+ */
+  proposedPayment?: GiftMissingQbProposedPayment | null;
 }
 
 export interface GiftMissingQbList {

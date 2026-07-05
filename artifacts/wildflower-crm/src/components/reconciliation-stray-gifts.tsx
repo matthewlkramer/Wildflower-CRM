@@ -28,14 +28,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -65,7 +57,7 @@ import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
-import { Loader2, MoreHorizontal } from "lucide-react";
+import { ArrowRight, Check, Loader2, MoreHorizontal } from "lucide-react";
 
 /* ────────────────────────────────────────────────────────────────────────
  * CRM-only worklist — "Gift allocations missing a QuickBooks record".
@@ -217,26 +209,10 @@ export function StrayGiftsWorklist() {
           </CardContent>
         </Card>
       ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Record</TableHead>
-                <TableHead>Donor</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Recorded method</TableHead>
-                <TableHead>Entity</TableHead>
-                <TableHead>Usage</TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((g) => (
-                <StrayGiftRow key={g.rowKey} g={g} entities={entities} />
-              ))}
-            </TableBody>
-          </Table>
+        <div className="space-y-3">
+          {rows.map((g) => (
+            <StrayGiftCard key={g.rowKey} g={g} entities={entities} />
+          ))}
         </div>
       )}
 
@@ -282,13 +258,23 @@ type RowDialog =
   | "revert-pledge"
   | "flag";
 
-function StrayGiftRow({
+/* ── One stray gift, rendered as a two-lane card ───────────────────────────
+ * Mirrors the middle-column ReconCard frame (rounded-lg border bg-card, two
+ * flex-1 lanes with an arrow between). Gift on the LEFT lane, the best-guess
+ * UNLINKED QuickBooks payment on the RIGHT lane. Primary "Link" reconciles the
+ * gift to that proposed payment; the ⋯ resolve menu covers the manual escape
+ * hatches. There is deliberately NO "create a matching record" action — the QB
+ * side is pull-only, so money can never be minted from here.
+ * ──────────────────────────────────────────────────────────────────────── */
+function StrayGiftCard({
   g,
   entities,
 }: {
   g: GiftMissingQb;
   entities: EntityOption[];
 }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<RowDialog>(null);
   const close = () => setDialog(null);
 
@@ -296,120 +282,227 @@ function StrayGiftRow({
     ? g.giftName
     : `Gift ${g.id.slice(0, 8)}`;
 
-  return (
-    <TableRow data-testid={`stray-gift-${g.rowKey}`}>
-      <TableCell>
-        <Link
-          href={`/gifts/${g.id}`}
-          className="font-medium underline-offset-2 hover:underline"
-        >
-          {recordLabel}
-        </Link>
-        <div className="text-xs text-muted-foreground">
-          {g.allocationId ? `Allocation ${g.allocationId.slice(0, 8)}` : "No allocation"}
-        </div>
-      </TableCell>
-      <TableCell className="text-muted-foreground">
-        {g.donorName ?? "—"}
-      </TableCell>
-      <TableCell className="tabular-nums">
-        {g.allocationAmount != null ? (
-          formatCurrency(g.allocationAmount)
-        ) : g.displayAmount != null ? (
-          <span title="Gift header amount (allocation sub-amount not set)">
-            {formatCurrency(g.displayAmount)}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            No amount recorded
-          </span>
-        )}
-      </TableCell>
-      <TableCell className="text-muted-foreground">
-        {g.displayDate != null ? (
-          formatDateShort(g.displayDate)
-        ) : (
-          <span className="text-xs">No date recorded</span>
-        )}
-      </TableCell>
-      <TableCell>
-        {g.paymentMethod ? formatEnum(g.paymentMethod) : "—"}
-      </TableCell>
-      <TableCell className="text-muted-foreground">
-        {g.entityName ?? "—"}
-      </TableCell>
-      <TableCell className="text-muted-foreground">
-        {g.displayUsage ??
-          (g.intendedUsage ? formatEnum(g.intendedUsage) : "—")}
-      </TableCell>
-      <TableCell>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              data-testid={`stray-gift-actions-${g.rowKey}`}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-              <span className="sr-only">Row actions</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => setDialog("link-allocation")}>
-              Link allocation → payment
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setDialog("link-gift")}>
-              Link gift → payment
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!g.allocationId}
-              onSelect={() => g.allocationId && setDialog("edit")}
-            >
-              Edit row
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => setDialog("revert-opportunity")}>
-              Revert gift → opportunity
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setDialog("revert-pledge")}>
-              Revert gift → pledge
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => setDialog("flag")}>
-              Flag for research
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+  const proposal = g.proposedPayment ?? null;
+  const reconcile = useReconcileStagedPayment();
+  const linking = reconcile.isPending;
 
-        {(dialog === "link-allocation" || dialog === "link-gift") && (
-          <PaymentLinkDialog
-            g={g}
-            scope={dialog === "link-allocation" ? "allocation" : "gift"}
-            onClose={close}
-          />
-        )}
-        {dialog === "edit" && g.allocationId && (
-          <EditAllocationDialog g={g} entities={entities} onClose={close} />
-        )}
-        {(dialog === "revert-opportunity" || dialog === "revert-pledge") && (
-          <RevertGiftDialog
-            g={g}
-            asPledge={dialog === "revert-pledge"}
-            onClose={close}
-          />
-        )}
-        <FlagForResearchDialog
-          targetType="gift"
-          targetId={g.id}
-          recordLabel={recordLabel}
-          hideTrigger
-          open={dialog === "flag"}
-          onOpenChange={(v) => (v ? setDialog("flag") : close())}
+  // Primary action: reconcile the gift to the proposed unlinked QB payment,
+  // recording the allocation pointer when this row actually carries one.
+  const linkProposed = () => {
+    if (!proposal) return;
+    reconcile.mutate(
+      {
+        id: proposal.stagedPaymentId,
+        data: {
+          giftId: g.id,
+          ...(g.allocationId ? { allocationId: g.allocationId } : {}),
+        },
+      },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({
+            queryKey: [MISSING_QB_KEY_PREFIX],
+          });
+          toast({
+            title: "Linked to payment",
+            description: "The gift is now reconciled to the QuickBooks payment.",
+          });
+        },
+        onError: (err) =>
+          toast({
+            title: "Couldn't link",
+            description:
+              err instanceof Error ? err.message : "Something went wrong.",
+            variant: "destructive",
+          }),
+      },
+    );
+  };
+
+  const amountText =
+    g.allocationAmount != null
+      ? formatCurrency(g.allocationAmount)
+      : g.displayAmount != null
+        ? formatCurrency(g.displayAmount)
+        : null;
+  const usageText =
+    g.displayUsage ?? (g.intendedUsage ? formatEnum(g.intendedUsage) : null);
+  const laneMeta = [g.entityName, usageText].filter(Boolean).join(" · ");
+
+  return (
+    <div
+      className="rounded-lg border bg-card shadow-sm"
+      data-testid={`stray-gift-${g.rowKey}`}
+    >
+      <div className="flex items-stretch gap-0">
+        {/* Left lane — the CRM gift */}
+        <div className="min-w-0 flex-1 break-words p-3">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            CRM gift
+          </div>
+          <Link
+            href={`/gifts/${g.id}`}
+            className="font-medium underline-offset-2 hover:underline"
+          >
+            {recordLabel}
+          </Link>
+          <div className="text-lg font-semibold tabular-nums">
+            {amountText ?? (
+              <span className="text-sm font-normal text-muted-foreground">
+                No amount recorded
+              </span>
+            )}
+            {amountText && g.allocationAmount == null && (
+              <span
+                className="ml-1.5 text-xs font-normal text-muted-foreground"
+                title="Gift header amount (allocation sub-amount not set)"
+              >
+                gift header
+              </span>
+            )}
+          </div>
+          <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+            <div>{g.donorName ?? "No donor"}</div>
+            <div>
+              {g.displayDate != null
+                ? formatDateShort(g.displayDate)
+                : "No date recorded"}
+              {g.paymentMethod ? ` · ${formatEnum(g.paymentMethod)}` : ""}
+            </div>
+            {laneMeta && <div>{laneMeta}</div>}
+            <div>
+              {g.allocationId
+                ? `Allocation ${g.allocationId.slice(0, 8)}`
+                : "No allocation"}
+            </div>
+          </div>
+        </div>
+
+        {/* Arrow between lanes */}
+        <div className="flex items-center px-1 text-muted-foreground">
+          <ArrowRight className="h-4 w-4" />
+        </div>
+
+        {/* Right lane — the proposed QuickBooks payment (pull-only) */}
+        <div className="min-w-0 flex-1 break-words p-3">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            QuickBooks payment
+          </div>
+          {proposal ? (
+            <>
+              <div className="font-medium">
+                {proposal.payerName ?? "Unknown payer"}
+              </div>
+              <div className="text-lg font-semibold tabular-nums">
+                {proposal.amount != null ? formatCurrency(proposal.amount) : "—"}
+              </div>
+              <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                <div>
+                  {proposal.dateReceived != null
+                    ? formatDateShort(proposal.dateReceived)
+                    : "No date"}
+                  {proposal.paymentMethod ? ` · ${proposal.paymentMethod}` : ""}
+                </div>
+                {proposal.reference && (
+                  <div className="truncate" title={proposal.reference}>
+                    {proposal.reference}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div
+              className="flex h-full min-h-[3.5rem] items-center text-sm text-muted-foreground"
+              data-testid={`stray-gift-no-match-${g.rowKey}`}
+            >
+              No suggested payment — search to link.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Footer — primary Link + resolve menu */}
+      <div className="flex items-center gap-2 border-t p-3">
+        <Button
+          size="sm"
+          className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700"
+          onClick={linkProposed}
+          disabled={!proposal || linking}
+          data-testid={`stray-gift-link-${g.rowKey}`}
+        >
+          {linking ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Check className="h-3.5 w-3.5" />
+          )}
+          Link
+        </Button>
+        <div className="ml-auto">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                data-testid={`stray-gift-actions-${g.rowKey}`}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+                <span className="sr-only">Resolve actions</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Resolve</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => setDialog("link-gift")}>
+                Search a different payment…
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!g.allocationId}
+                onSelect={() => g.allocationId && setDialog("edit")}
+              >
+                Edit allocation
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setDialog("revert-opportunity")}>
+                Revert gift → opportunity
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setDialog("revert-pledge")}>
+                Revert gift → pledge
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setDialog("flag")}>
+                Flag for research
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {(dialog === "link-allocation" || dialog === "link-gift") && (
+        <PaymentLinkDialog
+          g={g}
+          scope={g.allocationId ? "allocation" : "gift"}
+          onClose={close}
         />
-      </TableCell>
-    </TableRow>
+      )}
+      {dialog === "edit" && g.allocationId && (
+        <EditAllocationDialog g={g} entities={entities} onClose={close} />
+      )}
+      {(dialog === "revert-opportunity" || dialog === "revert-pledge") && (
+        <RevertGiftDialog
+          g={g}
+          asPledge={dialog === "revert-pledge"}
+          onClose={close}
+        />
+      )}
+      <FlagForResearchDialog
+        targetType="gift"
+        targetId={g.id}
+        recordLabel={recordLabel}
+        hideTrigger
+        open={dialog === "flag"}
+        onOpenChange={(v) => (v ? setDialog("flag") : close())}
+      />
+    </div>
   );
 }
 

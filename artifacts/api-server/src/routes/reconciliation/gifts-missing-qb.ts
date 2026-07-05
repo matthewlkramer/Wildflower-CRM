@@ -9,11 +9,12 @@ import {
   entities,
   fundableProjects,
   schools,
+  stagedPayments,
 } from "@workspace/db/schema";
 import { and, asc, count, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { asyncHandler } from "../../lib/helpers";
 import { getViewer, maskName } from "../../lib/identityVisibility";
-import { escapeLike } from "../quickbooks/shared";
+import { escapeLike, stagedSearchWhere } from "../quickbooks/shared";
 import {
   qbLedgerExistsForGift,
   stripeLedgerExistsForGift,
@@ -57,6 +58,86 @@ const personNameSql = sql<string | null>`
     NULLIF(TRIM(${people.fullName}), ''),
     NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
   )`;
+
+interface ProposedPayment {
+  stagedPaymentId: string;
+  payerName: string | null;
+  amount: string | null;
+  dateReceived: string | null;
+  paymentMethod: string | null;
+  reference: string | null;
+}
+
+// Best-guess UNLINKED QuickBooks staged payment for a stray gift row — the same
+// match the manual Link dialog surfaces (searchQbStaged): donor name over the
+// payer/memo/line fields, a generous ±20%/±$50 amount band (QB gross vs Stripe
+// net differ by fees), and a ±30d date window. Restricted to staged rows not yet
+// tied to a gift (matched / created / group-reconciled all null) so a proposal is
+// always actionable, and ordered so the single closest amount-then-date row wins.
+// Returns null when nothing plausible matches (card shows "search to link").
+async function proposePaymentForGift(opts: {
+  rawDonorName: string | null;
+  amount: string | null;
+  date: string | null;
+}): Promise<ProposedPayment | null> {
+  const amt =
+    opts.amount != null && opts.amount !== "" ? Number(opts.amount) : NaN;
+  const hasAmount = Number.isFinite(amt) && amt > 0;
+  const name = (opts.rawDonorName ?? "").trim();
+  const hasText = name.length >= 2;
+  // Need at least a donor name or an amount to make a meaningful proposal.
+  if (!hasText && !hasAmount) return null;
+
+  const conds: SQL[] = [
+    sql`${stagedPayments.matchedGiftId} IS NULL`,
+    sql`${stagedPayments.createdGiftId} IS NULL`,
+    sql`${stagedPayments.groupReconciledGiftId} IS NULL`,
+  ];
+  if (hasText) {
+    const w = stagedSearchWhere(name);
+    if (w) conds.push(w);
+  }
+  if (hasAmount) {
+    const lo = Math.min(amt * 0.8, amt - 50);
+    const hi = Math.max(amt * 1.2, amt + 50);
+    conds.push(
+      sql`${stagedPayments.amount} IS NOT NULL AND (${stagedPayments.amount})::numeric BETWEEN ${lo} AND ${hi}`,
+    );
+  }
+  if (opts.date) {
+    conds.push(
+      sql`${stagedPayments.dateReceived} IS NOT NULL AND ${stagedPayments.dateReceived} BETWEEN (${opts.date}::date - 30) AND (${opts.date}::date + 30)`,
+    );
+  }
+
+  // Rank the single best candidate: closest amount, then closest date. Only add
+  // the proximity terms that are actually anchored — a bare literal in ORDER BY
+  // is read by Postgres as an (invalid) column ordinal, so never emit one.
+  const orderBy: SQL[] = [];
+  if (hasAmount) {
+    orderBy.push(asc(sql`ABS((${stagedPayments.amount})::numeric - ${amt})`));
+  }
+  if (opts.date) {
+    orderBy.push(asc(sql`ABS(${stagedPayments.dateReceived} - ${opts.date}::date)`));
+  }
+  orderBy.push(desc(stagedPayments.dateReceived));
+
+  const [row] = await db
+    .select({
+      stagedPaymentId: stagedPayments.id,
+      payerName: stagedPayments.payerName,
+      amount: stagedPayments.amount,
+      dateReceived: stagedPayments.dateReceived,
+      paymentMethod: stagedPayments.qbPaymentMethod,
+      reference: stagedPayments.rawReference,
+    })
+    .from(stagedPayments)
+    .where(and(...conds))
+    .orderBy(...orderBy)
+    .limit(1);
+
+  return row ?? null;
+}
 
 // ─── GET /reconciliation/gifts-missing-qb ──────────────────────────────────
 // The "gifts with no QuickBooks record" stray worklist. Because the main
@@ -273,11 +354,15 @@ router.get(
         .then((r) => r[0]),
     ]);
 
-    const data = rows.map((r) => {
+    const base = rows.map((r) => {
       let donorName: string | null = null;
       let donorKind: "organization" | "person" | "household" | null = null;
+      // RAW (unmasked) donor name — used only to search for a proposed payment
+      // (server-side), never returned; the returned donorName stays masked.
+      let rawDonorName: string | null = null;
       if (r.organizationId) {
         donorKind = "organization";
+        rawDonorName = r.organizationName;
         donorName = maskName(
           r.organizationName,
           {
@@ -288,6 +373,7 @@ router.get(
         );
       } else if (r.individualGiverPersonId) {
         donorKind = "person";
+        rawDonorName = r.personName;
         donorName = maskName(
           r.personName,
           {
@@ -298,33 +384,61 @@ router.get(
         );
       } else if (r.householdId) {
         donorKind = "household";
+        rawDonorName = r.householdName;
         donorName = r.householdName;
       }
       return {
-        id: r.id,
-        rowKey: `${r.id}:${r.allocationId ?? "none"}`,
-        allocationId: r.allocationId,
-        giftName: r.giftName,
-        donorName,
-        donorKind,
-        amount: r.amount,
-        displayAmount: r.displayAmount,
-        allocationAmount: r.allocationAmount,
-        dateReceived: r.dateReceived,
-        displayDate: r.displayDate,
-        paymentMethod: r.paymentMethod,
-        entityId: r.entityId,
-        entityName: r.entityName,
-        intendedUsage: r.intendedUsage,
-        displayUsage: r.displayUsage,
-        fundableProjectId: r.fundableProjectId,
-        fundableProjectName: r.fundableProjectName,
-        schoolRecipientId: r.schoolRecipientId,
-        schoolRecipientName: r.schoolRecipientName,
-        grantYear: r.grantYear,
-        finalAmountSource: r.finalAmountSource,
+        rawDonorName,
+        row: {
+          id: r.id,
+          rowKey: `${r.id}:${r.allocationId ?? "none"}`,
+          allocationId: r.allocationId,
+          giftName: r.giftName,
+          donorName,
+          donorKind,
+          amount: r.amount,
+          displayAmount: r.displayAmount,
+          allocationAmount: r.allocationAmount,
+          dateReceived: r.dateReceived,
+          displayDate: r.displayDate,
+          paymentMethod: r.paymentMethod,
+          entityId: r.entityId,
+          entityName: r.entityName,
+          intendedUsage: r.intendedUsage,
+          displayUsage: r.displayUsage,
+          fundableProjectId: r.fundableProjectId,
+          fundableProjectName: r.fundableProjectName,
+          schoolRecipientId: r.schoolRecipientId,
+          schoolRecipientName: r.schoolRecipientName,
+          grantYear: r.grantYear,
+          finalAmountSource: r.finalAmountSource,
+        },
       };
     });
+
+    // Attach a proposed unlinked QB payment per row (page-scoped, ≤ limit rows).
+    // Rows that share the same (donor, amount, date) reuse one lookup so a
+    // multi-allocation gift doesn't re-run the same query.
+    const proposalCache = new Map<
+      string,
+      Promise<ProposedPayment | null>
+    >();
+    const data = await Promise.all(
+      base.map(async ({ rawDonorName, row }) => {
+        const searchAmount = row.allocationAmount ?? row.displayAmount ?? null;
+        const cacheKey = `${rawDonorName ?? ""}|${searchAmount ?? ""}|${row.displayDate ?? ""}`;
+        let pending = proposalCache.get(cacheKey);
+        if (!pending) {
+          pending = proposePaymentForGift({
+            rawDonorName,
+            amount: searchAmount,
+            date: row.displayDate,
+          });
+          proposalCache.set(cacheKey, pending);
+        }
+        return { ...row, proposedPayment: await pending };
+      }),
+    );
 
     res.json({
       data,

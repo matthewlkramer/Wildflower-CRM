@@ -7261,6 +7261,27 @@ components:
         schoolRecipientName: { type: string, nullable: true }
         grantYear:     { type: string, nullable: true, description: "The allocation's fiscal year (grant_year) id." }
         finalAmountSource: { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
+        proposedPayment:
+          $ref: "#/components/schemas/GiftMissingQbProposedPayment"
+          nullable: true
+          description: |
+            Best-guess UNLINKED QuickBooks staged payment for this gift row, or null
+            when none is a plausible match. Read-only convenience so the card can offer
+            a one-click "Link" — the same match the manual Link dialog would surface
+            (donor name + amount fee-band + date window), restricted to staged rows not
+            already tied to a gift. The row-level amount used is the allocation
+            sub-amount, falling back to the gift's display amount.
+    GiftMissingQbProposedPayment:
+      type: object
+      required: [stagedPaymentId]
+      description: A single unlinked QuickBooks staged payment proposed as this gift's match.
+      properties:
+        stagedPaymentId: { type: string, description: "staged_payments id — the reconcile target." }
+        payerName:       { type: string, nullable: true, description: "QuickBooks payer name." }
+        amount:          { type: string, nullable: true, description: "Staged payment amount." }
+        dateReceived:    { type: string, format: date, nullable: true, description: "Staged payment date received." }
+        paymentMethod:   { type: string, nullable: true, description: "QuickBooks payment method / instrument (qb_payment_method)." }
+        reference:       { type: string, nullable: true, description: "Raw memo / reference for context." }
     GiftMissingQbList:
       type: object
       required: [data, pagination]

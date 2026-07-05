@@ -40,34 +40,6 @@ integrations = ["airtable:1.0.0", "stripe:1.0.0", "google-drive:1.0.0"]
 path = "scripts/post-merge.sh"
 timeoutMs = 180000
 
-[[ports]]
-localPort = 8080
-externalPort = 8080
-
-[[ports]]
-localPort = 8081
-externalPort = 80
-
-[[ports]]
-localPort = 8082
-externalPort = 3002
-
-[[ports]]
-localPort = 8083
-externalPort = 4200
-
-[[ports]]
-localPort = 21297
-externalPort = 3000
-
-[[ports]]
-localPort = 21298
-externalPort = 3001
-
-[[ports]]
-localPort = 21299
-externalPort = 3003
-
 [nix]
 channel = "stable-25_05"
 
