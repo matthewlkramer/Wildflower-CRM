@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearPaymentApplicationsForStagedIds } from "./paymentApplicationsTestUtil";
+import {
+  clearPaymentApplicationsForGiftIds,
+  clearPaymentApplicationsForStagedIds,
+} from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -60,6 +63,7 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   stagedPayments: Db["stagedPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
+  donorboxDonations: Db["donorboxDonations"];
   paymentApplications: Db["paymentApplications"];
   entities: Db["entities"];
 };
@@ -73,6 +77,7 @@ const giftIds: string[] = [];
 const allocIds: string[] = [];
 const stagedIds: string[] = [];
 const chargeIds: string[] = [];
+const donorboxDonationIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 
@@ -180,7 +185,7 @@ async function seedStaged(opts: {
   return id;
 }
 
-async function seedCharge(matchedGiftId: string): Promise<string> {
+async function seedCharge(matchedGiftId: string | null = null): Promise<string> {
   const id = nextId("sc");
   await db.insert(schema.stripeStagedCharges).values({
     id,
@@ -190,6 +195,51 @@ async function seedCharge(matchedGiftId: string): Promise<string> {
   });
   chargeIds.push(id);
   return id;
+}
+
+async function seedDonorboxDonation(): Promise<string> {
+  const id = nextId("dbx");
+  await db.insert(schema.donorboxDonations).values({ id, amount: "100.00" });
+  donorboxDonationIds.push(id);
+  return id;
+}
+
+// Book a COUNTED cash-application ledger row for a non-QB processor (Stripe /
+// Donorbox). This is the authoritative "settled through a non-QB processor"
+// signal the gifts-missing-qb read consults (stripeLedgerExistsForGift /
+// donorboxLedgerExistsForGift) — such money lands in QuickBooks at the payout
+// level, not per gift, so the gift is reconciled and must NOT surface as
+// "missing a QB record".
+async function seedStripeLedgerRow(
+  giftId: string,
+  stripeChargeId: string,
+): Promise<void> {
+  await db.insert(schema.paymentApplications).values({
+    id: nextId("pa"),
+    giftId,
+    stripeChargeId,
+    amountApplied: "100.00",
+    evidenceSource: "stripe",
+    matchMethod: "human",
+    linkRole: "counted",
+    createdTheGift: false,
+  });
+}
+
+async function seedDonorboxLedgerRow(
+  giftId: string,
+  donorboxDonationId: string,
+): Promise<void> {
+  await db.insert(schema.paymentApplications).values({
+    id: nextId("pa"),
+    giftId,
+    donorboxDonationId,
+    amountApplied: "100.00",
+    evidenceSource: "donorbox",
+    matchMethod: "human",
+    linkRole: "counted",
+    createdTheGift: false,
+  });
 }
 
 type ProposedPaymentRow = {
@@ -238,6 +288,7 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     stagedPayments: dbMod.stagedPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
+    donorboxDonations: dbMod.donorboxDonations,
     paymentApplications: dbMod.paymentApplications,
     entities: dbMod.entities,
   };
@@ -263,11 +314,20 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  // Clear every ledger row for the test gifts FIRST. Stripe/Donorbox-anchored
+  // rows carry payment_id = NULL (so the by-staged-id clear never reaches them)
+  // and their anchor FKs are ON DELETE SET NULL, which would trip the evidence
+  // CHECK if we deleted the parent charge/donation while the row still existed.
+  await clearPaymentApplicationsForGiftIds(giftIds);
+  await clearPaymentApplicationsForStagedIds(stagedIds);
   if (chargeIds.length)
     await db
       .delete(schema.stripeStagedCharges)
       .where(inArrayFn(schema.stripeStagedCharges.id, chargeIds));
-  await clearPaymentApplicationsForStagedIds(stagedIds);
+  if (donorboxDonationIds.length)
+    await db
+      .delete(schema.donorboxDonations)
+      .where(inArrayFn(schema.donorboxDonations.id, donorboxDonationIds));
   if (stagedIds.length)
     await db
       .delete(schema.stagedPayments)
@@ -343,6 +403,34 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
 
     const { ids } = await listGifts(`q=${encodeURIComponent(MARKER)}&limit=200`);
     expect(ids.has(giftLedgerOnly)).toBe(false); // ledger row alone excludes it
+  }, 30_000);
+
+  it("excludes a gift settled through a non-QB processor via a COUNTED Stripe or Donorbox ledger row", async () => {
+    // The positive counterpart to the "legacy Stripe charge alone does NOT
+    // exclude" case: a gift with a COUNTED payment_applications row whose
+    // evidence_source is a non-QB processor (stripe / donorbox) is settled at the
+    // PAYOUT level in QuickBooks, never per gift, so it has no per-gift QB ledger
+    // row yet is still reconciled — it must be EXCLUDED. Both gifts otherwise
+    // qualify (on-books, no QB ledger row, no allocation), so the only thing that
+    // can keep them off the worklist is the processor-settled ledger exclusion,
+    // driven by stripeLedgerExistsForGift / donorboxLedgerExistsForGift (mirroring
+    // deriveGiftQbTie's "tied" semantics).
+    const org = await seedOrg({ label: "Processor Settled Org" });
+
+    // Stripe: the charge carries NO legacy matched_gift_id — the ONLY tie to the
+    // gift is the counted 'stripe' ledger row, isolating the ledger as the driver.
+    const giftStripe = await seedGift({ organizationId: org });
+    const charge = await seedCharge();
+    await seedStripeLedgerRow(giftStripe, charge);
+
+    // Donorbox: the only tie is the counted 'donorbox' ledger row.
+    const giftDonorbox = await seedGift({ organizationId: org });
+    const donation = await seedDonorboxDonation();
+    await seedDonorboxLedgerRow(giftDonorbox, donation);
+
+    const { ids } = await listGifts(`q=${encodeURIComponent(MARKER)}&limit=200`);
+    expect(ids.has(giftStripe)).toBe(false); // counted Stripe ledger row ⇒ processor-settled ⇒ excluded
+    expect(ids.has(giftDonorbox)).toBe(false); // counted Donorbox ledger row ⇒ excluded
   }, 30_000);
 
   it("masks anonymous donor names for a non-owner, non-admin viewer (match RAW, mask DISPLAY)", async () => {
