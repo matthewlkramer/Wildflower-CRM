@@ -224,9 +224,10 @@ Each allocation row carries **three independent restriction axes** — regional,
 `wf_restricted` (an internal Wildflower designation) and `unrestricted` both code as
 unrestricted (4000.x). This replaces the coarse `formal_*` booleans and the old
 `restriction_type` enum (`unrestricted` / `purpose` / `time` / `both` / `unclear` /
-`na`), which are now `@deprecated` (kept physical until the deferred drop). Because the
-axes default `unrestricted`, there is no longer an `unclear` review-flag path from
-restriction.
+`na`). The `restriction_type` columns are `@deprecated` (dropped by migration 0095)
+and the now-orphaned `restriction_type` pg **type** is retired by migration 0096.
+Because the axes default `unrestricted`, there is no longer an `unclear` review-flag
+path from restriction.
 
 ## Revenue-accounting coding capture (CFO "Revenue Extractor")
 

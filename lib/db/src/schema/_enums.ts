@@ -342,16 +342,10 @@ export const intendedUsageEnum = pgEnum("intended_usage", [
 ]);
 
 // ---- Revenue-accounting capture (CFO "Revenue Extractor") ----
-// Restriction taxonomy on gift/pledge allocations. "unclear" is never silently
-// defaulted to unrestricted — it flags for human review.
-export const restrictionTypeEnum = pgEnum("restriction_type", [
-  "unrestricted",
-  "purpose",
-  "time",
-  "both",
-  "unclear",
-  "na",
-]);
+// NOTE: the old coarse `restriction_type` enum (unrestricted/purpose/time/both/
+// unclear/na) was retired once its last columns were dropped from the allocation
+// tables (superseded by the three-axis `restriction_axis` taxonomy). The pg type
+// itself is dropped in migration 0096. Do NOT re-add it.
 
 // Deferred-revenue capture (CRM captures the answer; it does NOT compute AR).
 export const deferredRevenueEnum = pgEnum("deferred_revenue", [

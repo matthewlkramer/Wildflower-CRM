@@ -1,0 +1,50 @@
+-- Migration 0096: Retire the now-orphaned `restriction_type` Postgres enum type.
+--
+-- Migration 0095 physically dropped the LAST columns that used this enum
+-- (gift_allocations.restriction_type and pledge_allocations.restriction_type).
+-- Those columns had already been superseded by the three-axis restriction
+-- taxonomy (regional/usage/time_restriction_type, the `restriction_axis` enum).
+-- With no column, function, or default left referencing it, the `restriction_type`
+-- type is dead weight. This migration retires it.
+--
+-- DO NOT TOUCH the `deferred_revenue` enum — it is STILL LIVE
+-- (staged_payments.deferred_revenue uses it). This drop is strictly the
+-- `restriction_type` type.
+--
+-- SAFE TO DROP — verified zero references in dev AND prod:
+--   * No table column has udt_name='restriction_type' (0095 dropped the last two).
+--   * The Drizzle schema no longer defines any column of this type; the lone
+--     remaining `restrictionTypeEnum` export in _enums.ts (unused by any table) is
+--     removed by this task's code. drizzle-kit only manages enums attached to a
+--     column, so removing that orphan export produces no Publish diff.
+--   * No function, view, or default references the type.
+--
+-- NO CASCADE — a bare `DROP TYPE` (no CASCADE) fails loudly if ANY dependency
+-- still exists, so it can never silently cascade-drop a live column. This is the
+-- safety net: if 0095 has NOT been applied yet (columns still present), this file
+-- errors out instead of destroying data. Apply 0095 first.
+--
+-- IF EXISTS -> idempotent / re-runnable (a second run is a no-op).
+--
+-- ORDERING (prod):
+--   1. Apply 0095 FIRST (drops the last columns using this enum). This file will
+--      ERROR (dependency still exists) if 0095 has not been applied.
+--   2. Publish ordering is a non-issue here: the deployed prod build does not
+--      reference the `restriction_type` TYPE at all (the columns were already
+--      removed from the Drizzle schema in the 0095 task; this task only deletes an
+--      unused enum export). Publish diffs dev-DB vs prod-DB and both hold the
+--      identical orphaned type, so the diff is clean and proposes nothing. Still,
+--      apply this file to prod and dev back-to-back (below).
+--
+-- Apply with psql -1 (wraps the file in ONE transaction; do NOT add BEGIN/COMMIT):
+--   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0096_drop_restriction_type_enum.sql   (prod)
+--   psql "$DATABASE_URL"      -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0096_drop_restriction_type_enum.sql   (dev)
+
+DROP TYPE IF EXISTS restriction_type;
+
+-- Verification (run by hand AFTER applying) -----------------------------------
+--   -- restriction_type type gone (expect ZERO rows):
+--   SELECT typname FROM pg_type WHERE typname = 'restriction_type';
+--
+--   -- deferred_revenue type UNTOUCHED (expect ONE row):
+--   SELECT typname FROM pg_type WHERE typname = 'deferred_revenue';
