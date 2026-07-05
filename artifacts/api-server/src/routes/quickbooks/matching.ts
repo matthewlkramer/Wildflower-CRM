@@ -36,7 +36,7 @@ import {
 } from "../../lib/paymentApplications";
 import { stagedReturnColumns } from "./shared";
 import { giftHeaderColumns } from "../giftsAndPayments";
-import { isStagedApprovable } from "../../lib/reconciliationGate";
+import { isStagedApprovable, amountWithinFeeBand } from "../../lib/reconciliationGate";
 import {
   isGroupMember,
   groupMemberIdsFor,
@@ -468,7 +468,7 @@ router.post(
         // booked value. There is no override: the operator must correct the
         // gift's amount to the combined total and reconcile, so the gift and the
         // money it represents stay in agreement.
-        if (!(giftAmt >= sum - 0.01 && giftAmt <= sum * 1.1 + 1)) {
+        if (!amountWithinFeeBand(String(sum), String(giftAmt))) {
           toleranceDetail = { combinedTotal: sum, giftAmount: giftAmt };
           throw new Error(AMOUNT_MISMATCH);
         }

@@ -77,8 +77,14 @@ export function giftMatchAmountBounds(
  * window (including ABOVE the gross, which a fee can never explain) is a real
  * discrepancy. Because this window equals the gate's, a charge proposal it
  * surfaces can never be rejected at approve — use it for BOTH the charge
- * proposal pool and any charge ready hint. When either amount is NULL the bounds
- * are NULL and nothing matches (conservative).
+ * proposal pool and any charge ready hint.
+ *
+ * NULL handling is the CALLER's job: Postgres LEAST/GREATEST IGNORE NULLs, so a
+ * NULL `netAmount` here does NOT null out the band — it silently collapses it to
+ * `[gross - 0.01, gross + 0.01]` (near-exact gross only). That is the safe
+ * (narrower) direction, but it is NOT the intended "known-net" semantics, so
+ * callers that only want this band when the net is genuinely known must guard
+ * `netAmount IS NOT NULL` themselves (see `unlinkedChargeGiftWhere` in cards.ts).
  *
  * `giftAmount` / `grossAmount` / `netAmount` are SQL for the same embed-anywhere
  * reason as `giftMatchAmountBounds`.

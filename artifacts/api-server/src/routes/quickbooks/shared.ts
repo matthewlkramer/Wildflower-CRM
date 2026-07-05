@@ -40,6 +40,7 @@ import {
   qbLedgerPaymentIdForGiftExcludingPayment,
   DEFAULT_GIFT_ID_SQL,
 } from "../../lib/paymentApplications";
+import { giftMatchAmountBounds } from "../../lib/giftMatch";
 
 export function requireAdmin(req: Request, res: Response): boolean {
   const me = getAppUser(req);
@@ -254,8 +255,11 @@ export const stagedSelect = {
         OR (${stagedPayments.individualGiverPersonId} IS NOT NULL AND g.individual_giver_person_id = ${stagedPayments.individualGiverPersonId})
         OR (${stagedPayments.householdId} IS NOT NULL AND g.household_id = ${stagedPayments.householdId})
       )
-      AND g.amount >= ${stagedPayments.amount}::numeric - 0.01
-      AND g.amount <= ${stagedPayments.amount}::numeric * 1.10 + 1
+      AND ${giftMatchAmountBounds(
+        sql.raw("g.amount"),
+        sql`${stagedPayments.amount}::numeric`,
+        true,
+      )}
       AND ${qbLedgerExistsForGiftExcludingPayment(
         sql.raw("g.id"),
         sql.raw('"staged_payments"."id"'),
@@ -268,8 +272,11 @@ export const stagedSelect = {
         OR (${stagedPayments.individualGiverPersonId} IS NOT NULL AND g2.individual_giver_person_id = ${stagedPayments.individualGiverPersonId})
         OR (${stagedPayments.householdId} IS NOT NULL AND g2.household_id = ${stagedPayments.householdId})
       )
-      AND g2.amount >= ${stagedPayments.amount}::numeric - 0.01
-      AND g2.amount <= ${stagedPayments.amount}::numeric * 1.10 + 1
+      AND ${giftMatchAmountBounds(
+        sql.raw("g2.amount"),
+        sql`${stagedPayments.amount}::numeric`,
+        true,
+      )}
       AND NOT ${qbLedgerExistsForGift(sql.raw("g2.id"))}
     )
   )`.as("gift_already_linked_elsewhere"),

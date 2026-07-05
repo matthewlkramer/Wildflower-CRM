@@ -8,6 +8,7 @@ import {
 import { and, desc, eq, sql } from "drizzle-orm";
 import { asyncHandler, notFound, paramId } from "../../lib/helpers";
 import { donorOf } from "../../lib/quickbooksLink";
+import { giftMatchAmountBounds } from "../../lib/giftMatch";
 import { giftCandidateJoins, giftCandidateSelect } from "./shared";
 
 const router: IRouter = Router();
@@ -51,8 +52,11 @@ router.get(
       .where(
         and(
           donorFilter,
-          sql`${giftsAndPayments.amount} >= ${staged.amount}::numeric - 0.01`,
-          sql`${giftsAndPayments.amount} <= ${staged.amount}::numeric * 1.10 + 1`,
+          giftMatchAmountBounds(
+            sql`${giftsAndPayments.amount}`,
+            sql`${staged.amount}::numeric`,
+            true,
+          ),
         ),
       )
       .orderBy(
@@ -103,8 +107,11 @@ router.get(
     )
       .where(
         and(
-          sql`${giftsAndPayments.amount} >= ${staged.amount}::numeric - 0.01`,
-          sql`${giftsAndPayments.amount} <= ${staged.amount}::numeric * 1.10 + 1`,
+          giftMatchAmountBounds(
+            sql`${giftsAndPayments.amount}`,
+            sql`${staged.amount}::numeric`,
+            false,
+          ),
           dateClause,
         ),
       )

@@ -1,5 +1,6 @@
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { giftMatchAmountBounds, INGEST_GIFT_WINDOW_DAYS } from "./giftMatch";
 
 /**
  * Scored matcher for QuickBooks staged payments. Resolves a staged payment to
@@ -80,8 +81,6 @@ export const HIGH_THRESHOLD = 90;
 /** Score at/above which a match is surfaced as a hint (but not applied). */
 export const SUGGEST_THRESHOLD = 70;
 
-/** ± days around the staged date that counts as the same gift. */
-const GIFT_WINDOW_DAYS = 60;
 /** Trigram similarity at/above which a payer is treated as an intermediary. */
 const INTERMEDIARY_SIM = 0.6;
 
@@ -249,7 +248,7 @@ interface GiftWindowResult {
 }
 
 /**
- * Gifts for a donor within ±GIFT_WINDOW_DAYS of the staged date whose amount is
+ * Gifts for a donor within ±INGEST_GIFT_WINDOW_DAYS of the staged date whose amount is
  * at or just above the staged amount (the fee band), ordered by amount then date
  * proximity.
  *
@@ -274,7 +273,7 @@ async function giftsInWindow(
     ? sql`ORDER BY ABS(amount - ${amount}::numeric), ABS(date_received - ${dateReceived}::date) NULLS LAST`
     : sql`ORDER BY ABS(amount - ${amount}::numeric), date_received DESC NULLS LAST`;
   const dateClause = dateReceived
-    ? sql`AND (date_received IS NULL OR ABS(date_received - ${dateReceived}::date) <= ${GIFT_WINDOW_DAYS})`
+    ? sql`AND (date_received IS NULL OR ABS(date_received - ${dateReceived}::date) <= ${INGEST_GIFT_WINDOW_DAYS})`
     : sql``;
   const notOwnedByCharge = sql`AND NOT EXISTS (
           SELECT 1 FROM stripe_staged_charges sc
@@ -293,8 +292,7 @@ async function giftsInWindow(
       SELECT id, amount, date_received::text AS date_received
       FROM gifts_and_payments g
       WHERE ${where}
-        AND amount >= ${amount}::numeric - 0.01
-        AND amount <= ${amount}::numeric * 1.10 + 1
+        AND ${giftMatchAmountBounds(sql.raw("amount"), sql`${amount}::numeric`, false)}
         ${dateClause}
         ${ownershipClause}
       ${order}

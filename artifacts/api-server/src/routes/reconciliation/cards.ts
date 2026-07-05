@@ -137,6 +137,7 @@ function unlinkedChargeGiftWhere(): SQL {
     OR (${stripeStagedCharges.householdId} IS NOT NULL AND g.household_id = ${stripeStagedCharges.householdId})
   )
   AND ${stripeStagedCharges.grossAmount} IS NOT NULL
+  AND ${stripeStagedCharges.netAmount} IS NOT NULL
   AND ${giftMatchAmountBoundsKnownNet(
     sql.raw("g.amount"),
     sql`${stripeStagedCharges.grossAmount}`,
@@ -149,7 +150,7 @@ function unlinkedChargeGiftWhere(): SQL {
   AND ${chargeIdOwningGiftExcludingCharge(
     sql.raw("g.id"),
     sql`${stripeStagedCharges.id}`,
-  )} IS NULL)`;
+  )} IS NULL`;
 }
 
 const stripeEvidenceExpr = sql<{
