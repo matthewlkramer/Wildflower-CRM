@@ -2477,6 +2477,20 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged charge is not pending" }
+  /stripe-staged-charges/{id}/link-gift:
+    post:
+      operationId: linkStripeChargeToGift
+      tags: [stripe-staged-charges]
+      summary: Link a single Stripe charge (a per-charge card expanded from a multi-charge payout) to an EXISTING gift as permanent reconciled evidence. The charge adopts the gift's donor (unless switchGiftDonor); no new gift is minted, but the gift's final amount is stamped to the charge GROSS.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/StripeChargeLinkGiftBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeStagedCharge" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Charge is not pending, the gift is archived, the gift is already tied to another Stripe charge, or the payout conflicts with an approved QuickBooks lump" }
   /stripe-staged-charges/{id}/create-gift:
     post:
       operationId: createGiftFromStripeStagedCharge
@@ -6629,6 +6643,22 @@ components:
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/DonorboxReviewRow" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+    StripeChargeLinkGiftBody:
+      type: object
+      required: [giftId]
+      description: |
+        Link a single Stripe charge (a per-charge card expanded from a
+        multi-charge payout) to an EXISTING gift as permanent reconciled
+        evidence. The charge adopts that gift's donor and no new gift is minted;
+        the gift's final amount is stamped to the charge GROSS. Optionally
+        re-point the gift's donor by setting switchGiftDonor=true plus exactly one
+        donor FK (Donor XOR).
+      properties:
+        giftId:                  { type: string, description: "The existing gift this Stripe charge is evidence for." }
+        switchGiftDonor:         { type: boolean, description: "When true, re-point the gift's donor to the donor FK below instead of adopting the gift's current donor." }
+        organizationId:          { type: string, nullable: true }
+        individualGiverPersonId: { type: string, nullable: true }
+        householdId:             { type: string, nullable: true }
     DonorboxLinkGiftBody:
       type: object
       required: [giftId]

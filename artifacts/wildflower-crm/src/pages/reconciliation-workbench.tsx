@@ -14,6 +14,7 @@ import {
   useResolveStripeStagedCharge,
   useCreateGiftFromStripeStagedCharge,
   useRejectStripeStagedCharge,
+  useLinkStripeChargeToGift,
   useListGiftAllocations,
   getListGiftAllocationsQueryKey,
   useGetGiftAllocationCodingPreview,
@@ -638,37 +639,6 @@ export default function ReconciliationWorkbench() {
     [stage],
   );
 
-  const stageRetarget = useCallback(
-    async (card: ReconciliationCard, gift: ReconciliationCandidate) => {
-      // Grouped ("same physical gift") cards can't link to an existing gift via
-      // the per-row approve endpoint (it 409s "link the whole group"); route
-      // them through /staged-payments/group-reconcile instead.
-      const grouped = buildGroupedLinkPayload(card, gift.id);
-      if (grouped) {
-        stageGroupedLink(card, gift.label, grouped.payload);
-        return;
-      }
-      setBusy(true);
-      const res = await deriveConfirmBody(card, gift);
-      setBusy(false);
-      if (typeof res === "string") {
-        toast({ title: "Can't re-target", description: res });
-        return;
-      }
-      stage({
-        key: card.stagedPaymentId,
-        kind: "retarget",
-        stagedPaymentId: card.stagedPaymentId,
-        label: card.payerName ?? "QuickBooks payment",
-        detail: `Re-target → ${gift.label}`,
-        body: res.body,
-      });
-      setRetargetCard(null);
-      setSearchGiftCard(null);
-    },
-    [deriveConfirmBody, stage, stageGroupedLink, toast],
-  );
-
   const approveAllHighConfidence = useCallback(async () => {
     const ready = buckets.review.filter(
       (c) => c.ready && !stagedIds.has(c.stagedPaymentId),
@@ -832,6 +802,8 @@ export default function ReconciliationWorkbench() {
   const resolveChargeM = useResolveStripeStagedCharge();
   const createChargeGiftM = useCreateGiftFromStripeStagedCharge();
   const rejectChargeM = useRejectStripeStagedCharge();
+  // Link a single Stripe charge (from a multi-charge payout) to an EXISTING gift.
+  const linkChargeGiftM = useLinkStripeChargeToGift();
 
   const actionBusy =
     resolveM.isPending ||
@@ -841,7 +813,8 @@ export default function ReconciliationWorkbench() {
     groupM.isPending ||
     resolveChargeM.isPending ||
     createChargeGiftM.isPending ||
-    rejectChargeM.isPending;
+    rejectChargeM.isPending ||
+    linkChargeGiftM.isPending;
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -961,6 +934,99 @@ export default function ReconciliationWorkbench() {
     [rejectChargeM, invalidateAll, toast, errMessage],
   );
 
+  // A per-charge card expanded from a MULTI-charge Stripe payout can't be
+  // approved through the QB deposit graph: that graph describes the whole deposit
+  // so its evidence.stripe.chargeId is null, and the deposit approve 409s
+  // (stripe_charge_required). Route those charges to the per-charge link-gift
+  // endpoint instead — the charge links to the chosen (or already
+  // proposed/matched) gift as permanent evidence, adopting that gift's donor and
+  // stamping the gift to the charge GROSS. Single-charge payouts (chargeId
+  // present) keep the deposit-approve path untouched. Returns true when it
+  // handled the card, so callers skip their own deposit/staging flow.
+  const tryLinkMultiChargeCard = useCallback(
+    async (
+      card: ReconciliationCard,
+      giftCandidate?: ReconciliationCandidate | null,
+    ): Promise<boolean> => {
+      if (!card.stripeChargeId) return false;
+      const graph = await queryClient
+        .fetchQuery(getGetReconciliationGraphQueryOptions(card.stagedPaymentId))
+        .catch(() => null);
+      if (!graph) {
+        toast({
+          title: "Can't approve yet",
+          description: "Couldn't load the match graph. Refresh and try again.",
+        });
+        return true;
+      }
+      const isMultiCharge =
+        graph.evidence.stripe != null && graph.evidence.stripe.chargeId == null;
+      if (!isMultiCharge) return false;
+
+      const giftId =
+        giftCandidate?.id ?? card.proposedGiftId ?? card.resolvedGiftId ?? null;
+      if (!giftId) {
+        toast({
+          title: "Pick a gift first",
+          description:
+            "This Stripe charge is one of several in a payout — link it to an existing gift.",
+        });
+        return true;
+      }
+      try {
+        await linkChargeGiftM.mutateAsync({
+          id: card.stripeChargeId,
+          data: { giftId },
+        });
+        invalidateAll();
+        setRetargetCard(null);
+        setSearchGiftCard(null);
+        toast({
+          title: "Approved",
+          description: "Linked the Stripe charge to the gift.",
+        });
+      } catch (err) {
+        toast({ title: "Couldn't approve", description: errMessage(err) });
+      }
+      return true;
+    },
+    [queryClient, linkChargeGiftM, invalidateAll, toast, errMessage],
+  );
+
+  const stageRetarget = useCallback(
+    async (card: ReconciliationCard, gift: ReconciliationCandidate) => {
+      // Multi-charge Stripe payout: link this charge to the picked gift directly
+      // (per-charge link-gift), bypassing the deposit-keyed staging tray.
+      if (await tryLinkMultiChargeCard(card, gift)) return;
+      // Grouped ("same physical gift") cards can't link to an existing gift via
+      // the per-row approve endpoint (it 409s "link the whole group"); route
+      // them through /staged-payments/group-reconcile instead.
+      const grouped = buildGroupedLinkPayload(card, gift.id);
+      if (grouped) {
+        stageGroupedLink(card, gift.label, grouped.payload);
+        return;
+      }
+      setBusy(true);
+      const res = await deriveConfirmBody(card, gift);
+      setBusy(false);
+      if (typeof res === "string") {
+        toast({ title: "Can't re-target", description: res });
+        return;
+      }
+      stage({
+        key: card.stagedPaymentId,
+        kind: "retarget",
+        stagedPaymentId: card.stagedPaymentId,
+        label: card.payerName ?? "QuickBooks payment",
+        detail: `Re-target → ${gift.label}`,
+        body: res.body,
+      });
+      setRetargetCard(null);
+      setSearchGiftCard(null);
+    },
+    [tryLinkMultiChargeCard, deriveConfirmBody, stage, stageGroupedLink, toast],
+  );
+
   // One-click Approve: derive the auto-proposal (or re-targeted gift) body and
   // apply it to the CRM immediately, no staging-tray hop. Mirrors handleCreateGift
   // (invalidate + toast on success, gate issues surfaced via errMessage). The
@@ -972,6 +1038,9 @@ export default function ReconciliationWorkbench() {
     ) => {
       setApplyingCardId(card.stagedPaymentId);
       try {
+        // Multi-charge Stripe payout: this per-charge card can't approve via the
+        // (chargeId-less) QB deposit graph — link the single charge to its gift.
+        if (await tryLinkMultiChargeCard(card, giftOverride)) return;
         const res = await deriveConfirmBody(card, giftOverride);
         if (typeof res === "string") {
           toast({ title: "Can't confirm yet", description: res });
@@ -1012,7 +1081,13 @@ export default function ReconciliationWorkbench() {
         setApplyingCardId(null);
       }
     },
-    [deriveConfirmBody, invalidateAll, toast, errMessage],
+    [
+      tryLinkMultiChargeCard,
+      deriveConfirmBody,
+      invalidateAll,
+      toast,
+      errMessage,
+    ],
   );
 
   const handleResolveDonor = useCallback(

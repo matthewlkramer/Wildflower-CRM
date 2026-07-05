@@ -256,6 +256,111 @@ export const ResolveStripeStagedChargeResponse = zod.object({
 })
 
 /**
+ * @summary Link a single Stripe charge (a per-charge card expanded from a multi-charge payout) to an EXISTING gift as permanent reconciled evidence. The charge adopts the gift's donor (unless switchGiftDonor); no new gift is minted, but the gift's final amount is stamped to the charge GROSS.
+ */
+export const LinkStripeChargeToGiftParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const LinkStripeChargeToGiftBody = zod.object({
+  "giftId": zod.string().describe('The existing gift this Stripe charge is evidence for.'),
+  "switchGiftDonor": zod.boolean().optional().describe('When true, re-point the gift\'s donor to the donor FK below instead of adopting the gift\'s current donor.'),
+  "organizationId": zod.string().nullish(),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish()
+}).describe('Link a single Stripe charge (a per-charge card expanded from a\nmulti-charge payout) to an EXISTING gift as permanent reconciled\nevidence. The charge adopts that gift\'s donor and no new gift is minted;\nthe gift\'s final amount is stamped to the charge GROSS. Optionally\nre-point the gift\'s donor by setting switchGiftDonor=true plus exactly one\ndonor FK (Donor XOR).\n')
+
+export const LinkStripeChargeToGiftResponse = zod.object({
+  "id": zod.string().describe('The Stripe charge id (ch_...) — also the primary key.'),
+  "stripeAccountId": zod.string(),
+  "stripePayoutId": zod.string().nullish().describe('The payout this charge settled in (null until paid out).'),
+  "stripeBalanceTransactionId": zod.string().nullish(),
+  "stripePaymentIntentId": zod.string().nullish(),
+  "stripeCustomerId": zod.string().nullish(),
+  "grossAmount": zod.string().nullish(),
+  "feeAmount": zod.string().nullish(),
+  "netAmount": zod.string().nullish(),
+  "amountRefunded": zod.string().nullish(),
+  "currency": zod.string().nullish(),
+  "chargeCreated": zod.string().datetime({}).nullish(),
+  "dateReceived": zod.string().date().nullish(),
+  "payerName": zod.string().nullish(),
+  "payerEmail": zod.string().nullish(),
+  "description": zod.string().nullish(),
+  "statementDescriptor": zod.string().nullish(),
+  "cardBrand": zod.string().nullish(),
+  "metadata": zod.record(zod.string(), zod.string()).nullish(),
+  "refunded": zod.boolean(),
+  "disputed": zod.boolean(),
+  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
+  "classificationSource": zod.enum(['auto', 'manual']),
+  "matchStatus": zod.enum(['matched', 'suggested', 'unmatched']),
+  "matchScore": zod.number().nullish(),
+  "matchMethod": zod.enum(['email', 'name', 'name_amount_date', 'amount_date', 'memo', 'intermediary', 'manual']).nullish(),
+  "autoApplied": zod.boolean(),
+  "matchConfirmedByUserId": zod.string().nullish(),
+  "matchConfirmedAt": zod.string().datetime({}).nullish(),
+  "organizationId": zod.string().nullish(),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish(),
+  "matchedPaymentIntermediaryId": zod.string().nullish(),
+  "matchedGiftId": zod.string().nullish(),
+  "createdGiftId": zod.string().nullish(),
+  "approvedByUserId": zod.string().nullish(),
+  "approvedAt": zod.string().datetime({}).nullish(),
+  "rejectedByUserId": zod.string().nullish(),
+  "rejectedAt": zod.string().datetime({}).nullish(),
+  "refundPropagationStatus": zod.enum(['none', 'proposed', 'applied', 'dismissed']).describe('Lifecycle of a Stripe refund\/chargeback proposal against a charge already booked into a CRM gift (INV-13). none: no refund\/dispute or no linked gift. proposed: detected, awaiting human confirm. applied: human confirmed (gift reversed\/reduced). dismissed: human declined to propagate.'),
+  "refundPropagationKind": zod.enum(['full_refund', 'partial_refund', 'chargeback']).nullish().describe('Kind of Stripe reversal. full_refund\/chargeback reverse (archive) the gift; partial_refund reduces the gift amount.'),
+  "refundPropagationGiftId": zod.string().nullish().describe('The CRM gift the refund proposal targets (snapshot of the gift link at propose time).'),
+  "refundProposedAmount": zod.string().nullish().describe('Absolute amount being reversed: gross for a full refund \/ chargeback, cumulative amount_refunded for a partial refund.'),
+  "refundConfirmedByUserId": zod.string().nullish(),
+  "refundConfirmedAt": zod.string().datetime({}).nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({}),
+  "queue": zod.enum(['needs_review', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled', 'refund_review']).optional().describe('Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand. refund_review: a Stripe-only cross-cutting filter (independent of status) for charges with an open refund\/chargeback proposal awaiting confirm\/dismiss — never emitted as a row\'s derived bucket.'),
+  "organizationName": zod.string().nullish(),
+  "householdName": zod.string().nullish(),
+  "individualGiverPersonName": zod.string().nullish(),
+  "intermediaryName": zod.string().nullish(),
+  "resolvedGiftId": zod.string().nullish(),
+  "resolvedGiftName": zod.string().nullish(),
+  "resolvedGiftAmount": zod.string().nullish(),
+  "resolvedGiftDate": zod.string().date().nullish(),
+  "payoutAmount": zod.string().nullish(),
+  "payoutGrossTotal": zod.string().nullish(),
+  "payoutFeeTotal": zod.string().nullish(),
+  "payoutRefundTotal": zod.string().nullish(),
+  "payoutNetTotal": zod.string().nullish(),
+  "payoutArrivalDate": zod.string().date().nullish(),
+  "payoutStatus": zod.string().nullish(),
+  "payoutQbSupersedeStatus": zod.string().nullish().describe('Non-destructive QuickBooks supersede audit for this charge\'s payout: none | excluded_pending | conflict_approved. \'conflict_approved\' blocks minting a per-charge gift here.'),
+  "payoutQbConflictGiftId": zod.string().nullish().describe('The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.'),
+  "reconciliationLanes": zod.object({
+  "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
+  "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
+}).describe('The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).').optional().describe('Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).'),
+  "donorbox": zod.object({
+  "id": zod.string().describe('Donorbox donation id.'),
+  "donationType": zod.string().nullish().describe('Donorbox payment instrument (e.g. stripe).'),
+  "amount": zod.string().nullish(),
+  "processingFee": zod.string().nullish(),
+  "currency": zod.string().nullish(),
+  "donatedAt": zod.string().datetime({}).nullish(),
+  "campaignName": zod.string().nullish(),
+  "designation": zod.string().nullish(),
+  "comment": zod.string().nullish(),
+  "recurring": zod.boolean(),
+  "refunded": zod.boolean().describe('True when refunded (fully\/partially) in Donorbox. Surfaced as a badge — Donorbox refunds are NOT auto-applied to gifts.'),
+  "anonymous": zod.boolean(),
+  "donorName": zod.string().nullish(),
+  "donorEmail": zod.string().nullish(),
+  "donorEmployer": zod.string().nullish()
+}).describe('Read-only Donorbox donation facts joined onto a Stripe-sourced record\n(a Stripe staged charge or a gift minted\/matched from one) by\ndonorbox_donations.stripe_charge_id = stripe_staged_charges.id — a 1:1\njoin present only for Stripe-type Donorbox donations. Enrichment only:\nit NEVER mints a gift (the Stripe sync already pulls those charges). The\nverbatim Donorbox payload, custom questions, and review\/donor-match\nstate are deliberately omitted.\n').nullish().describe('Donorbox donation facts for this Stripe charge (joined 1:1 by donorbox_donations.stripe_charge_id = id), present when the charge originated from a Donorbox donation. Enrichment only — never mints a gift. Present on list reads; omitted from bare mutation responses.')
+})
+
+/**
  * @summary Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR).
  */
 export const CreateGiftFromStripeStagedChargeParams = zod.object({

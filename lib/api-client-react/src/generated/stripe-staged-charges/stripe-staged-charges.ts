@@ -27,6 +27,7 @@ import type {
   NotFoundResponse,
   ResolveStagedPaymentBody,
   StagedGiftResponse,
+  StripeChargeLinkGiftBody,
   StripePayoutReconciliationList,
   StripePayoutReconciliationResult,
   StripeStagedCharge,
@@ -259,6 +260,77 @@ export const useResolveStripeStagedCharge = <TError = ErrorType<BadRequestRespon
         TContext
       > => {
       return useMutation(getResolveStripeStagedChargeMutationOptions(options));
+    }
+    /**
+ * @summary Link a single Stripe charge (a per-charge card expanded from a multi-charge payout) to an EXISTING gift as permanent reconciled evidence. The charge adopts the gift's donor (unless switchGiftDonor); no new gift is minted, but the gift's final amount is stamped to the charge GROSS.
+ */
+export const getLinkStripeChargeToGiftUrl = (id: string,) => {
+
+
+  
+
+  return `/api/stripe-staged-charges/${id}/link-gift`
+}
+
+export const linkStripeChargeToGift = async (id: string,
+    stripeChargeLinkGiftBody: StripeChargeLinkGiftBody, options?: RequestInit): Promise<StripeStagedCharge> => {
+  
+  return customFetch<StripeStagedCharge>(getLinkStripeChargeToGiftUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      stripeChargeLinkGiftBody,)
+  }
+);}
+  
+
+
+
+export const getLinkStripeChargeToGiftMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof linkStripeChargeToGift>>, TError,{id: string;data: BodyType<StripeChargeLinkGiftBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof linkStripeChargeToGift>>, TError,{id: string;data: BodyType<StripeChargeLinkGiftBody>}, TContext> => {
+
+const mutationKey = ['linkStripeChargeToGift'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof linkStripeChargeToGift>>, {id: string;data: BodyType<StripeChargeLinkGiftBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  linkStripeChargeToGift(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LinkStripeChargeToGiftMutationResult = NonNullable<Awaited<ReturnType<typeof linkStripeChargeToGift>>>
+    export type LinkStripeChargeToGiftMutationBody = BodyType<StripeChargeLinkGiftBody>
+    export type LinkStripeChargeToGiftMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Link a single Stripe charge (a per-charge card expanded from a multi-charge payout) to an EXISTING gift as permanent reconciled evidence. The charge adopts the gift's donor (unless switchGiftDonor); no new gift is minted, but the gift's final amount is stamped to the charge GROSS.
+ */
+export const useLinkStripeChargeToGift = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof linkStripeChargeToGift>>, TError,{id: string;data: BodyType<StripeChargeLinkGiftBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof linkStripeChargeToGift>>,
+        TError,
+        {id: string;data: BodyType<StripeChargeLinkGiftBody>},
+        TContext
+      > => {
+      return useMutation(getLinkStripeChargeToGiftMutationOptions(options));
     }
     /**
  * @summary Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR).

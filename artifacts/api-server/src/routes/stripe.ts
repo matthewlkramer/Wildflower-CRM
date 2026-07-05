@@ -46,7 +46,12 @@ import {
   type InvariantIssue,
   ResolveStagedPaymentBody,
   ExcludeStagedPaymentBody,
+  LinkStripeChargeToGiftBody,
 } from "@workspace/api-zod";
+import { linkChargeToGiftInTx } from "../lib/reconciliationBundleCommit";
+import { ReconcileAbort } from "../lib/reconciliationCommit";
+import { donorOf, hasExactlyOneDonor, donorsMatch } from "../lib/quickbooksLink";
+import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { buildGiftValuesFromStripeCharge } from "../lib/stripeGift";
 import {
   bookStripeChargeApplication,
@@ -553,6 +558,164 @@ router.post(
       });
       return;
     }
+    res.json(row);
+  }),
+);
+
+// ─── POST /stripe-staged-charges/:id/link-gift ─────────────────────────────
+// Tie a single Stripe charge (a per-charge card expanded from a MULTI-charge
+// payout) to an EXISTING gift as permanent reconciled evidence. Mirrors the
+// settlement-bundle charge-link path (linkChargeToGiftInTx) but for one charge:
+// the charge adopts the gift's donor (or a confirmed switch), the gift's final
+// amount is stamped to the charge GROSS, and the charge never touches the payout
+// (the payout↔deposit tie is owned separately). No new gift is minted.
+//
+// Why this exists: a multi-charge payout's QB deposit approve carries a
+// deposit-level graph whose evidence.stripe.chargeId is null, so the per-charge
+// "Approve"/re-target on the workbench can't route through the deposit approve
+// (it 409s stripe_charge_required). This is the per-charge money path for that
+// case.
+router.post(
+  "/stripe-staged-charges/:id/link-gift",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const id = paramId(req);
+    const parsed = LinkStripeChargeToGiftBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+    const { giftId } = parsed.data;
+
+    const rederivePledgeIds: string[] = [];
+    let alreadyLinked = false;
+    try {
+      await db.transaction(async (tx) => {
+        // Lock the gift, then the charge (bundle lock order: gift before charge).
+        const gift = await tx
+          .select()
+          .from(giftsAndPayments)
+          .where(eq(giftsAndPayments.id, giftId))
+          .for("update")
+          .then((r) => r[0]);
+        if (!gift) {
+          throw new ReconcileAbort(404, {
+            error: "not_found",
+            message: "Gift not found.",
+          });
+        }
+        if (gift.archivedAt != null) {
+          throw new ReconcileAbort(409, {
+            error: "gift_archived",
+            message: "That gift is archived. Restore it before linking.",
+          });
+        }
+        const charge = await tx
+          .select()
+          .from(stripeStagedCharges)
+          .where(eq(stripeStagedCharges.id, id))
+          .for("update")
+          .then((r) => r[0]);
+        if (!charge) {
+          throw new ReconcileAbort(404, {
+            error: "not_found",
+            message: "Stripe staged charge not found.",
+          });
+        }
+        // Idempotent: already reconciled to THIS gift → no-op success.
+        if (charge.status === "reconciled" && charge.matchedGiftId === giftId) {
+          alreadyLinked = true;
+          return;
+        }
+        if (charge.status !== "pending") {
+          throw new ReconcileAbort(409, {
+            error: "not_pending",
+            message:
+              "This staged charge is no longer open for reconciliation. Refresh and try again.",
+          });
+        }
+
+        // Donor: the charge adopts the gift's donor. A confirmed switch
+        // (switchGiftDonor + exactly one donor FK) re-points the gift instead.
+        // Mirrors the settlement-bundle existing-donor branch.
+        const giftDonor = donorOf(gift);
+        let effectiveGiftDonor = giftDonor;
+        let donorSwitching = false;
+        if (parsed.data.switchGiftDonor === true) {
+          const chosen = {
+            organizationId: parsed.data.organizationId ?? null,
+            individualGiverPersonId: parsed.data.individualGiverPersonId ?? null,
+            householdId: parsed.data.householdId ?? null,
+          };
+          if (!hasExactlyOneDonor(chosen)) {
+            throw new ReconcileAbort(400, {
+              error: "donor_xor",
+              message:
+                "A donor switch needs exactly one donor (organization, person, or household).",
+            });
+          }
+          if (!donorsMatch(giftDonor, chosen)) {
+            effectiveGiftDonor = chosen;
+            donorSwitching = true;
+          }
+        }
+
+        const linkRes = await linkChargeToGiftInTx(tx, {
+          charge,
+          gift,
+          giftId,
+          effectiveGiftDonor,
+          donorSwitching,
+          userId: user.id,
+          auditReq: req,
+        });
+        rederivePledgeIds.push(...linkRes.rederivePledgeIds);
+      });
+    } catch (e) {
+      if (e instanceof ReconcileAbort) {
+        res.status(e.httpStatus).json(e.payload);
+        return;
+      }
+      // Unique violation: another Stripe charge just claimed this gift between
+      // the ownership check and the guarded update. Surface as a conflict.
+      if (
+        typeof e === "object" &&
+        e !== null &&
+        "code" in e &&
+        (e as { code?: string }).code === "23505"
+      ) {
+        res.status(409).json({
+          error: "link_conflict",
+          message:
+            "That gift was just linked to another Stripe charge. Refresh and try again.",
+        });
+        return;
+      }
+      throw e;
+    }
+
+    // Re-derive the linked pledge(s) + recompute the gift's QuickBooks tie from
+    // the committed evidence (outside the tx, on their own connections). Skipped
+    // for the idempotent no-op — nothing changed.
+    if (!alreadyLinked) {
+      if (rederivePledgeIds.length) {
+        await applyDerivedOppFieldsMany(...rederivePledgeIds);
+      }
+      await applyGiftQbTieMany(giftId);
+    }
+
+    const [row] = await db
+      .select()
+      .from(stripeStagedCharges)
+      .where(eq(stripeStagedCharges.id, id));
     res.json(row);
   }),
 );

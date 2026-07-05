@@ -3222,6 +3222,25 @@ export interface DonorboxReviewList {
   pagination: Pagination;
 }
 
+/**
+ * Link a single Stripe charge (a per-charge card expanded from a
+multi-charge payout) to an EXISTING gift as permanent reconciled
+evidence. The charge adopts that gift's donor and no new gift is minted;
+the gift's final amount is stamped to the charge GROSS. Optionally
+re-point the gift's donor by setting switchGiftDonor=true plus exactly one
+donor FK (Donor XOR).
+
+ */
+export interface StripeChargeLinkGiftBody {
+  /** The existing gift this Stripe charge is evidence for. */
+  giftId: string;
+  /** When true, re-point the gift's donor to the donor FK below instead of adopting the gift's current donor. */
+  switchGiftDonor?: boolean;
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+}
+
 export interface DonorboxLinkGiftBody {
   /** The existing gift this Donorbox donation is evidence for. The donation adopts that gift's donor; no new gift is minted. */
   giftId: string;
