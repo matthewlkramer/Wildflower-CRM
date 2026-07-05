@@ -383,6 +383,16 @@ function recGiftSelect(link: GiftLinkAnchor) {
 
 type RecGiftRow = Awaited<ReturnType<typeof fetchGiftById>>;
 
+/**
+ * Donor-scoped 1:1 gift-search date window (days). A booked gift's date often
+ * trails the Stripe settlement/charge date by weeks, and because a resolved
+ * donor already prevents cross-donor false positives, this window can be
+ * generous. Calibrated against production: ±90d catches essentially every real
+ * charge↔gift match without pulling in wrong-year gifts (the next real date gaps
+ * jump to 366d+). Applied only when the search is donor-scoped.
+ */
+const DONOR_SCOPED_GIFT_WINDOW_DAYS = 90;
+
 async function fetchGiftCandidates(opts: {
   link: GiftLinkAnchor;
   donorFilter?: SQL;
@@ -395,28 +405,38 @@ async function fetchGiftCandidates(opts: {
 }) {
   if (opts.amount == null) return [];
   const split = opts.split === true;
-  // Split mode: candidate gifts are FRACTIONS of the payment, so the whole-match
-  // lower bound (>= payment − 0.01) would exclude every real candidate. Instead
-  // accept any positive gift up to the payment total (upper fee-band tolerance
-  // only). Non-split (1:1 match) keeps the near-equal window around the amount.
-  const conds: SQL[] = split
-    ? [
-        sql`${giftsAndPayments.amount} > 0`,
-        sql`${giftsAndPayments.amount} <= ${opts.amount}::numeric * 1.10 + 1`,
-        isNull(giftsAndPayments.archivedAt),
-      ]
-    : [
-        sql`${giftsAndPayments.amount} >= ${opts.amount}::numeric - 0.01`,
-        sql`${giftsAndPayments.amount} <= ${opts.amount}::numeric * 1.10 + 1`,
-        isNull(giftsAndPayments.archivedAt),
-      ];
+  const donorScoped = opts.donorFilter != null;
+  // Split mode: candidate gifts are FRACTIONS of the payment, so accept any
+  // positive gift up to the payment total (upper fee-band tolerance only). For a
+  // 1:1 match the amount window is near-equal around the anchor — but when a
+  // donor is resolved the search is already scoped to that donor's own gifts, so
+  // cross-donor false positives can't occur and we widen the LOWER bound to a fee
+  // band (mirroring the upper). That surfaces a gift booked slightly UNDER the
+  // Stripe GROSS from fee-cover or rounding (e.g. a $104.00 gift behind a $104.42
+  // charge) or one recorded net of fees. Without a donor, keep the tight bound.
+  const lowerBound = split
+    ? sql`${giftsAndPayments.amount} > 0`
+    : donorScoped
+      ? sql`${giftsAndPayments.amount} >= ${opts.amount}::numeric * 0.90 - 1`
+      : sql`${giftsAndPayments.amount} >= ${opts.amount}::numeric - 0.01`;
+  const conds: SQL[] = [
+    lowerBound,
+    sql`${giftsAndPayments.amount} <= ${opts.amount}::numeric * 1.10 + 1`,
+    isNull(giftsAndPayments.archivedAt),
+  ];
   if (opts.donorFilter) conds.push(opts.donorFilter);
   // A lump payment routinely covers gifts booked across many months, so a tight
-  // ± days window would hide legitimate split candidates. Relax the date window
-  // in split mode (order by recency below instead); keep it in 1:1 match mode.
+  // ± days window would hide legitimate split candidates: relax it in split mode
+  // (order by recency below instead). For a donor-scoped 1:1 match, widen to at
+  // least DONOR_SCOPED_GIFT_WINDOW_DAYS — the booked gift date routinely trails
+  // the settlement/charge date. Otherwise keep the caller's window.
+  const windowDays =
+    !split && donorScoped
+      ? Math.max(opts.days, DONOR_SCOPED_GIFT_WINDOW_DAYS)
+      : opts.days;
   if (opts.date && !split)
     conds.push(
-      sql`(${giftsAndPayments.dateReceived} IS NULL OR ABS(${giftsAndPayments.dateReceived} - ${opts.date}::date) <= ${opts.days})`,
+      sql`(${giftsAndPayments.dateReceived} IS NULL OR ABS(${giftsAndPayments.dateReceived} - ${opts.date}::date) <= ${windowDays})`,
     );
   const q = (opts.q ?? "").trim();
   if (q.length >= 2)
