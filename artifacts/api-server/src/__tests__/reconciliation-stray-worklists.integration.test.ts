@@ -192,6 +192,15 @@ async function seedCharge(matchedGiftId: string): Promise<string> {
   return id;
 }
 
+type ProposedPaymentRow = {
+  stagedPaymentId: string;
+  payerName: string | null;
+  amount: string | null;
+  dateReceived: string | null;
+  paymentMethod: string | null;
+  reference: string | null;
+};
+
 type GiftRow = {
   id: string;
   donorName: string | null;
@@ -200,6 +209,7 @@ type GiftRow = {
   entityName: string | null;
   paymentMethod: string | null;
   hasStripeEvidence: boolean;
+  proposedPayment: ProposedPaymentRow | null;
 };
 
 async function listGifts(qs: string): Promise<{
@@ -432,6 +442,137 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
       `/api/reconciliation/gifts-missing-qb?dateTo=not-a-date`,
     );
     expect(badTo.status).toBe(400);
+  }, 30_000);
+
+  // ─── proposedPayment (the report's one-click "Link" suggestion) ────────────
+  // Each stray-gift row carries a best-guess UNLINKED QB staged payment the
+  // reviewer can one-click reconcile to. A wrong guess here would tie a gift to
+  // the wrong money, so pin the ranking (closest amount, then date), the
+  // in-band/already-linked null cases, and the RAW-name-vs-masked-display split.
+
+  it("proposedPayment picks the closest unlinked staged payment (amount, then date)", async () => {
+    const org = await seedOrg({ label: "Prop Closest Org" });
+    const gift = await seedGift({
+      organizationId: org,
+      amount: "100.00",
+      dateReceived: "2026-03-15",
+    });
+
+    // All three carry the donor's RAW name as the payer (text match), sit inside
+    // the ±20%/±$50 amount band, and fall in the ±30d date window — so ranking,
+    // not filtering, must decide the winner.
+    const closest = await seedStaged({
+      label: "Prop Closest Org", // payerName == org name ⇒ text match
+      amount: "100.00", // exact amount + closest date ⇒ winner
+      dateReceived: "2026-03-10",
+    });
+    await seedStaged({
+      label: "Prop Closest Org",
+      amount: "100.00", // exact amount but farther date ⇒ loses the date tiebreak
+      dateReceived: "2026-03-01",
+    });
+    await seedStaged({
+      label: "Prop Closest Org",
+      amount: "120.00", // in-band but farther amount ⇒ loses on amount first
+      dateReceived: "2026-03-15",
+    });
+
+    const { rows } = await listGifts(
+      `q=${encodeURIComponent(`${MARKER} Prop Closest Org`)}&limit=200`,
+    );
+    const row = rows.find((r) => r.id === gift);
+    expect(row?.proposedPayment?.stagedPaymentId).toBe(closest);
+  }, 30_000);
+
+  it("proposedPayment is null when nothing plausible is in the amount band", async () => {
+    const org = await seedOrg({ label: "Prop Out Of Band Org" });
+    const gift = await seedGift({
+      organizationId: org,
+      amount: "100.00",
+      dateReceived: "2026-03-15",
+    });
+    // Same donor name + date, but far outside the ±20%/±$50 amount band.
+    await seedStaged({
+      label: "Prop Out Of Band Org",
+      amount: "10000.00",
+      dateReceived: "2026-03-15",
+    });
+
+    const { rows } = await listGifts(
+      `q=${encodeURIComponent(`${MARKER} Prop Out Of Band Org`)}&limit=200`,
+    );
+    const row = rows.find((r) => r.id === gift);
+    expect(row).toBeDefined();
+    expect(row?.proposedPayment ?? null).toBeNull();
+  }, 30_000);
+
+  it("proposedPayment is null when the only candidates are already linked to a gift", async () => {
+    const org = await seedOrg({ label: "Prop Linked Org" });
+    const stray = await seedGift({
+      organizationId: org,
+      amount: "100.00",
+      dateReceived: "2026-03-15",
+    });
+    // Sink gifts the staged rows are already tied to. Those staged rows match the
+    // stray gift's name/amount/date but carry a gift link (matched / created /
+    // group), so the proposal must exclude every one of them. (The sinks are
+    // themselves excluded from the list because the dual-written ledger row gives
+    // them a QB record.)
+    const sinkMatched = await seedGift({ organizationId: org });
+    const sinkCreated = await seedGift({ organizationId: org });
+    const sinkGroup = await seedGift({ organizationId: org });
+
+    await seedStaged({
+      label: "Prop Linked Org",
+      amount: "100.00",
+      dateReceived: "2026-03-15",
+      matchedGiftId: sinkMatched,
+    });
+    await seedStaged({
+      label: "Prop Linked Org",
+      amount: "100.00",
+      dateReceived: "2026-03-15",
+      createdGiftId: sinkCreated,
+    });
+    await seedStaged({
+      label: "Prop Linked Org",
+      amount: "100.00",
+      dateReceived: "2026-03-15",
+      groupReconciledGiftId: sinkGroup,
+    });
+
+    const { rows } = await listGifts(
+      `q=${encodeURIComponent(`${MARKER} Prop Linked Org`)}&limit=200`,
+    );
+    const row = rows.find((r) => r.id === stray);
+    expect(row).toBeDefined(); // the stray gift itself has no QB link ⇒ surfaces
+    expect(row?.proposedPayment ?? null).toBeNull(); // but every candidate is linked
+  }, 30_000);
+
+  it("proposedPayment matches on the RAW donor name even when the response name is masked", async () => {
+    const orgAnon = await seedOrg({
+      label: "Prop Anon Org",
+      anonymous: true,
+    });
+    const gift = await seedGift({
+      organizationId: orgAnon,
+      amount: "100.00",
+      dateReceived: "2026-03-15",
+    });
+    // payerName carries the org's REAL (unmasked) name — the proposal must still
+    // find it via the raw name even though the non-owner viewer sees "Anonymous".
+    const staged = await seedStaged({
+      label: "Prop Anon Org",
+      amount: "100.00",
+      dateReceived: "2026-03-15",
+    });
+
+    const { rows } = await listGifts(
+      `q=${encodeURIComponent(`${MARKER} Prop Anon Org`)}&limit=200`,
+    );
+    const row = rows.find((r) => r.id === gift);
+    expect(row?.donorName).toBe("Anonymous"); // DISPLAY masked
+    expect(row?.proposedPayment?.stagedPaymentId).toBe(staged); // matched on RAW name
   }, 30_000);
 });
 
