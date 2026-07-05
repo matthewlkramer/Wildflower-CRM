@@ -53,6 +53,7 @@ import {
 } from "./quickbooksMatch";
 import { scoreStripeCharge } from "./stripeMatch";
 import { amountWithinFeeBand } from "./reconciliationGate";
+import { GIFT_MATCH_WINDOW_DAYS, giftMatchAmountBounds } from "./giftMatch";
 import { groupMemberIdsFor } from "./unitGroupMembership";
 import {
   giftCandidateJoins,
@@ -383,15 +384,11 @@ function recGiftSelect(link: GiftLinkAnchor) {
 
 type RecGiftRow = Awaited<ReturnType<typeof fetchGiftById>>;
 
-/**
- * Donor-scoped 1:1 gift-search date window (days). A booked gift's date often
- * trails the Stripe settlement/charge date by weeks, and because a resolved
- * donor already prevents cross-donor false positives, this window can be
- * generous. Calibrated against production: ±90d catches essentially every real
- * charge↔gift match without pulling in wrong-year gifts (the next real date gaps
- * jump to 366d+). Applied only when the search is donor-scoped.
- */
-const DONOR_SCOPED_GIFT_WINDOW_DAYS = 90;
+// The shared gift↔payment matcher (amount band + date window) lives in
+// ./giftMatch so every surface — this graph search, the reconciler card list,
+// the QuickBooks candidate/window endpoints, and the ingest matcher — composes
+// ONE definition and can never drift. See that module for the policy split
+// (widened donor-scoped proposals vs strict gate-parity vs known-net charge).
 
 async function fetchGiftCandidates(opts: {
   link: GiftLinkAnchor;
@@ -408,31 +405,25 @@ async function fetchGiftCandidates(opts: {
   const donorScoped = opts.donorFilter != null;
   // Split mode: candidate gifts are FRACTIONS of the payment, so accept any
   // positive gift up to the payment total (upper fee-band tolerance only). For a
-  // 1:1 match the amount window is near-equal around the anchor — but when a
-  // donor is resolved the search is already scoped to that donor's own gifts, so
-  // cross-donor false positives can't occur and we widen the LOWER bound to a fee
-  // band (mirroring the upper). That surfaces a gift booked slightly UNDER the
-  // Stripe GROSS from fee-cover or rounding (e.g. a $104.00 gift behind a $104.42
-  // charge) or one recorded net of fees. Without a donor, keep the tight bound.
-  const lowerBound = split
-    ? sql`${giftsAndPayments.amount} > 0`
-    : donorScoped
-      ? sql`${giftsAndPayments.amount} >= ${opts.amount}::numeric * 0.90 - 1`
-      : sql`${giftsAndPayments.amount} >= ${opts.amount}::numeric - 0.01`;
-  const conds: SQL[] = [
-    lowerBound,
-    sql`${giftsAndPayments.amount} <= ${opts.amount}::numeric * 1.10 + 1`,
-    isNull(giftsAndPayments.archivedAt),
-  ];
+  // 1:1 match, defer to the shared matcher (giftMatchAmountBounds) so this search
+  // and the card queue's auto-proposal pool stay identical.
+  const amountBound = split
+    ? sql`(${giftsAndPayments.amount} > 0 AND ${giftsAndPayments.amount} <= ${opts.amount}::numeric * 1.10 + 1)`
+    : giftMatchAmountBounds(
+        sql`${giftsAndPayments.amount}`,
+        sql`${opts.amount}::numeric`,
+        donorScoped,
+      );
+  const conds: SQL[] = [amountBound, isNull(giftsAndPayments.archivedAt)];
   if (opts.donorFilter) conds.push(opts.donorFilter);
   // A lump payment routinely covers gifts booked across many months, so a tight
   // ± days window would hide legitimate split candidates: relax it in split mode
   // (order by recency below instead). For a donor-scoped 1:1 match, widen to at
-  // least DONOR_SCOPED_GIFT_WINDOW_DAYS — the booked gift date routinely trails
-  // the settlement/charge date. Otherwise keep the caller's window.
+  // least GIFT_MATCH_WINDOW_DAYS — the booked gift date routinely trails the
+  // settlement/charge date. Otherwise keep the caller's window.
   const windowDays =
     !split && donorScoped
-      ? Math.max(opts.days, DONOR_SCOPED_GIFT_WINDOW_DAYS)
+      ? Math.max(opts.days, GIFT_MATCH_WINDOW_DAYS)
       : opts.days;
   if (opts.date && !split)
     conds.push(

@@ -59,6 +59,19 @@ describe("amountWithinFeeBand", () => {
     expect(amountWithinFeeBand("abc", "100.00")).toBe(false);
   });
 
+  // ── Ready/gate parity: the reconciler card's ready hint counts gifts with the
+  // STRICT band (this function's QB-only branch). A gift booked UNDER a QB check
+  // must NOT read one-click ready even though the widened donor proposal pool may
+  // still surface it. ──────────────────────────────────────────────────────────
+  it("QB-only, $920 gift under a $1000 check → out of band (not ready; needs override)", () => {
+    expect(amountWithinFeeBand("1000.00", "920.00")).toBe(false);
+  });
+  it("known net (Stripe charge), $104.00 gift behind a $104.42/$99.26 charge → within band (Ayeisha)", () => {
+    // The charge pool's known-net band [99.25, 104.43] matches the under-gross
+    // gift, so the card proposes it instead of a duplicate create-gift.
+    expect(amountWithinFeeBand("104.42", "104.00", "99.26")).toBe(true);
+  });
+
   // ── Net-aware window: a Stripe charge gives an EXACT gross + net, so the gift
   // is the same money ONLY inside [net, gross]. Once the net is known the legacy
   // heuristic band no longer applies. ─────────────────────────────────────────

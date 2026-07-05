@@ -10,10 +10,18 @@ import {
 import { and, asc, eq, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { opportunitiesAndPledges } from "@workspace/db/schema";
-import { qbLedgerExistsForGiftExcludingPayment } from "../../lib/paymentApplications";
+import {
+  qbLedgerExistsForGiftExcludingPayment,
+  chargeIdOwningGiftExcludingCharge,
+} from "../../lib/paymentApplications";
 import { asyncHandler, notFound } from "../../lib/helpers";
 import { getViewer } from "../../lib/identityVisibility";
 import { buildReconciliationGraph } from "../../lib/reconciliationGraph";
+import {
+  giftMatchAmountBounds,
+  giftMatchAmountBoundsKnownNet,
+  GIFT_MATCH_WINDOW_DAYS,
+} from "../../lib/giftMatch";
 import { deriveEvidenceLanes } from "../../lib/reconciliationLanes";
 import { payoutStatusLabelSql } from "../../lib/settlementLink";
 import {
@@ -47,22 +55,28 @@ function clampInt(v: unknown, def: number, min: number, max: number): number {
 // Strict NULL handling: a missing date on either side can't be claimed as
 // "within a few months", so it is excluded from this high-confidence pool (it
 // can still be matched by hand on the card).
-const READY_GIFT_DATE_WINDOW_DAYS = 90;
+const READY_GIFT_DATE_WINDOW_DAYS = GIFT_MATCH_WINDOW_DAYS;
 
-// Unlinked, fee-band, same-donor, date-proximate gifts for the staged row's
-// SAVED donor — the auto-proposal pool for the card's gift node. "Unlinked" =
-// not matched/created by another staged payment and not used in another row's
-// split. Mirrors the legacy giftAlreadyLinkedElsewhere logic so the card and the
-// queue agree.
-function unlinkedDonorGiftWhere(): SQL {
+// Unlinked, same-donor, date-proximate gifts for the staged row's SAVED donor —
+// the auto-proposal pool for the card's gift node. "Unlinked" = not
+// matched/created by another staged payment and not used in another row's split.
+// Mirrors the legacy giftAlreadyLinkedElsewhere logic so the card and the queue
+// agree. The amount band is THE shared matcher (giftMatchAmountBounds):
+//   - band "proposal" → WIDENED donor-scoped band (safe: the pool is already one
+//     donor's own gifts) so a gift booked under the Stripe gross still surfaces;
+//     this feeds the card's "match vs create gift" proposal + the graph search.
+//   - band "strict"   → the approve gate's exact band (amountWithinFeeBand),
+//     used ONLY by the ready/bulk-approve hint so the ready set can never exceed
+//     the gate-passing set (a $920 gift on a $1000 QB check PROPOSES but is NOT
+//     one-click ready — it needs the amount-mismatch override at approve).
+function unlinkedDonorGiftWhere(band: "proposal" | "strict" = "proposal"): SQL {
   return sql`(
     (${stagedPayments.organizationId} IS NOT NULL AND g.organization_id = ${stagedPayments.organizationId})
     OR (${stagedPayments.individualGiverPersonId} IS NOT NULL AND g.individual_giver_person_id = ${stagedPayments.individualGiverPersonId})
     OR (${stagedPayments.householdId} IS NOT NULL AND g.household_id = ${stagedPayments.householdId})
   )
   AND ${stagedPayments.amount} IS NOT NULL
-  AND g.amount >= ${stagedPayments.amount}::numeric - 0.01
-  AND g.amount <= ${stagedPayments.amount}::numeric * 1.10 + 1
+  AND ${giftMatchAmountBounds(sql.raw("g.amount"), sql`${stagedPayments.amount}::numeric`, band === "proposal")}
   AND g.archived_at IS NULL
   AND ${stagedPayments.dateReceived} IS NOT NULL
   AND g.date_received IS NOT NULL
@@ -93,14 +107,50 @@ const autoGiftPickExpr = sql<{
 )`;
 
 // A row is auto-ready when it is pending, its donor is a confirmed single match,
-// and exactly one unlinked fee-band gift exists to tie it to. (The full
-// consistency gate runs server-side at approve; this is the cheap list hint.)
+// and exactly one unlinked gift exists to tie it to — counted with the STRICT
+// band so the ready set equals the approve gate's pass set (amountWithinFeeBand).
+// The proposal pool above may be WIDER (it can surface an under-gross gift to
+// PROPOSE), but a widened-only match is never one-click ready; it needs the
+// gate's amount-mismatch override at approve. (The full consistency gate still
+// runs server-side at approve; this is the cheap list hint.)
 const readyExpr = sql<boolean>`(
   ${stagedPayments.status} = 'pending'
   AND ${stagedPayments.matchStatus} = 'matched'
   AND num_nonnulls(${stagedPayments.organizationId}, ${stagedPayments.individualGiverPersonId}, ${stagedPayments.householdId}) = 1
-  AND (SELECT COUNT(*)::int FROM gifts_and_payments g WHERE ${unlinkedDonorGiftWhere()}) = 1
+  AND (SELECT COUNT(*)::int FROM gifts_and_payments g WHERE ${unlinkedDonorGiftWhere("strict")}) = 1
 )`;
+
+// The charge-anchor analogue of unlinkedDonorGiftWhere: unlinked, same-donor,
+// date-proximate gifts for a Stripe CHARGE's own donor + KNOWN-NET amount band.
+// The known-net band [min(net,gross)-0.01, max(net,gross)+0.01] equals the
+// approve gate's window for a charge, so a proposal it surfaces is always
+// resolvable (never a phantom "create gift" for a gift booked under the gross,
+// e.g. a $104.00 gift behind a $104.42 charge). "Unlinked" here excludes ONLY
+// gifts already owned by ANOTHER charge — a gift a QuickBooks payment already
+// booked is PARALLEL evidence for the same money and must still match. Used only
+// inside the chargeSub lateral, so it correlates on the real
+// stripe_staged_charges columns (never the subquery's own aliased outputs).
+function unlinkedChargeGiftWhere(): SQL {
+  return sql`(
+    (${stripeStagedCharges.organizationId} IS NOT NULL AND g.organization_id = ${stripeStagedCharges.organizationId})
+    OR (${stripeStagedCharges.individualGiverPersonId} IS NOT NULL AND g.individual_giver_person_id = ${stripeStagedCharges.individualGiverPersonId})
+    OR (${stripeStagedCharges.householdId} IS NOT NULL AND g.household_id = ${stripeStagedCharges.householdId})
+  )
+  AND ${stripeStagedCharges.grossAmount} IS NOT NULL
+  AND ${giftMatchAmountBoundsKnownNet(
+    sql.raw("g.amount"),
+    sql`${stripeStagedCharges.grossAmount}`,
+    sql`${stripeStagedCharges.netAmount}`,
+  )}
+  AND g.archived_at IS NULL
+  AND ${stripeStagedCharges.dateReceived} IS NOT NULL
+  AND g.date_received IS NOT NULL
+  AND ABS(g.date_received - ${stripeStagedCharges.dateReceived}) <= ${GIFT_MATCH_WINDOW_DAYS}
+  AND ${chargeIdOwningGiftExcludingCharge(
+    sql.raw("g.id"),
+    sql`${stripeStagedCharges.id}`,
+  )} IS NULL)`;
+}
 
 const stripeEvidenceExpr = sql<{
   payoutId: string;
@@ -428,6 +478,26 @@ router.get(
           LEFT JOIN entities e ON e.id = ga.entity_id
           WHERE ga.gift_id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
         )`.as("charge_resolved_gift_allocations"),
+        // Charge auto-proposal pool: mirrors autoGiftCount/autoGiftPick for the
+        // QB anchor, but scoped to the charge's donor + known-net band so a
+        // charge card can propose an existing gift instead of "create gift".
+        autoGiftCount: sql<number>`(
+          SELECT COUNT(*)::int FROM gifts_and_payments g WHERE ${unlinkedChargeGiftWhere()}
+        )`.as("charge_auto_gift_count"),
+        autoGiftPick: sql<{
+          id: string;
+          name: string | null;
+          dateReceived: string | null;
+        } | null>`(
+          SELECT jsonb_build_object(
+            'id', g.id,
+            'name', g.name,
+            'dateReceived', g.date_received::text
+          )
+          FROM gifts_and_payments g WHERE ${unlinkedChargeGiftWhere()}
+          ORDER BY ABS(g.amount - ${stripeStagedCharges.grossAmount}) ASC
+          LIMIT 1
+        )`.as("charge_auto_gift_pick"),
       })
       .from(stripePayouts)
       .innerJoin(
@@ -510,6 +580,8 @@ router.get(
           chargeResolvedGiftDate: chargeSub.resolvedGiftDate,
           chargeResolvedGiftFiscalYear: chargeSub.resolvedGiftFiscalYear,
           chargeResolvedGiftAllocations: chargeSub.resolvedGiftAllocations,
+          chargeAutoGiftCount: chargeSub.autoGiftCount,
+          chargeAutoGiftPick: chargeSub.autoGiftPick,
         })
         .from(stagedPayments)
         .$dynamic(),
@@ -605,6 +677,18 @@ router.get(
           ? (row.chargeResolvedGiftDate ?? null)
           : (row.resolvedGiftDate ?? null);
       } else if (
+        isCharge &&
+        row.chargeAutoGiftCount === 1 &&
+        row.chargeAutoGiftPick
+      ) {
+        // A charge card proposes its own donor's unlinked gift inside the
+        // KNOWN-NET band (gate-consistent), so a gift booked at $104.00 behind a
+        // $104.42 charge matches instead of prompting a duplicate "create gift".
+        giftState = "determined";
+        proposedGiftId = row.chargeAutoGiftPick.id;
+        proposedGiftName = row.chargeAutoGiftPick.name ?? null;
+        proposedGiftDate = row.chargeAutoGiftPick.dateReceived ?? null;
+      } else if (
         !isCharge &&
         !isSourceGroup &&
         row.autoGiftCount === 1 &&
@@ -617,6 +701,8 @@ router.get(
         proposedGiftId = row.autoGiftPick.id;
         proposedGiftName = row.autoGiftPick.name ?? null;
         proposedGiftDate = row.autoGiftPick.dateReceived ?? null;
+      } else if (isCharge && (row.chargeAutoGiftCount ?? 0) > 1) {
+        giftState = "ambiguous";
       } else if (!isSourceGroup && (row.autoGiftCount ?? 0) > 1) {
         giftState = "ambiguous";
       } else {
