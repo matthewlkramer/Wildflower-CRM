@@ -210,37 +210,6 @@ function buildGroupedLinkPayload(
   };
 }
 
-type Confidence = "high" | "med" | "weak";
-
-/**
- * Card confidence for the chip + bulk-approve gate. `ready` (auto-proposal
- * satisfies the consistency gate) is the only thing the server promises is
- * one-click approvable — that and only that is "high" and bulk-approvable.
- */
-function confidenceOf(card: ReconciliationCard): Confidence {
-  if (card.ready) return "high";
-  if (card.proposedGiftId && card.giftState === "determined") return "med";
-  return "weak";
-}
-
-const CONFIDENCE_META: Record<
-  Confidence,
-  { label: string; className: string }
-> = {
-  high: {
-    label: "High confidence",
-    className: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  },
-  med: {
-    label: "Medium",
-    className: "bg-amber-100 text-amber-800 border-amber-200",
-  },
-  weak: {
-    label: "Weak",
-    className: "bg-rose-100 text-rose-800 border-rose-200",
-  },
-};
-
 // Supplemental chips for the badge row. The amount-delta and donor chips were
 // removed — the amount now lives on each side of the card and the donor name is
 // shown in the CRM-gift lane + the Status line — so only the Stripe-payout
@@ -1724,8 +1693,6 @@ function ReconCard({
       column heading, so the badges are redundant there. */
   hideStateBadges?: boolean;
 }) {
-  const conf = confidenceOf(card);
-  const meta = CONFIDENCE_META[conf];
   const bullets = evidenceBullets(card);
   const lanes = laneBadges(card.reconciliationLanes);
   const hasGift = Boolean(card.resolvedGiftId || card.proposedGiftId);
@@ -2061,37 +2028,6 @@ function ReconCard({
             </>
           )}
         </div>
-
-        {/* Confidence + expand */}
-        <div className="flex w-40 shrink-0 flex-col items-end justify-between border-l p-3">
-          {/* Settled-money report rows are already reconciled; a match-confidence
-              chip ("Weak"/"Strong") is meaningless (and misleading) there. */}
-          {readOnly ? (
-            <span />
-          ) : (
-            <span
-              className={cn(
-                "rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                meta.className,
-              )}
-            >
-              {meta.label}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={onToggle}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            Details
-            <ChevronDown
-              className={cn(
-                "h-3.5 w-3.5 transition-transform",
-                expanded && "rotate-180",
-              )}
-            />
-          </button>
-        </div>
       </div>
 
       {/* Status + CRM-record lane + evidence */}
@@ -2118,6 +2054,19 @@ function ReconCard({
               {b}
             </span>
           ))}
+        <button
+          type="button"
+          onClick={onToggle}
+          className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          Details
+          <ChevronDown
+            className={cn(
+              "h-3.5 w-3.5 transition-transform",
+              expanded && "rotate-180",
+            )}
+          />
+        </button>
       </div>
 
       {expanded && (
