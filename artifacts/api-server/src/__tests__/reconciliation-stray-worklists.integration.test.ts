@@ -12,7 +12,7 @@ import type { Server } from "node:http";
  *     QB money event; this surfaces the ones that don't. A gift is "missing a QB
  *     record" iff it carries NO final-amount QB pointer AND no staged_payments
  *     row links it (matched / created / group-reconciled). Broad + filterable
- *     (q, entityId, paymentMethod, hasStripe, date window); donor names masked
+ *     (q, entityId, paymentMethod, date window); donor names masked
  *     per the viewer (match RAW name, mask DISPLAY).
  *
  *   GET /api/reconciliation/qb-search
@@ -208,7 +208,6 @@ type GiftRow = {
   entityId: string | null;
   entityName: string | null;
   paymentMethod: string | null;
-  hasStripeEvidence: boolean;
   proposedPayment: ProposedPaymentRow | null;
 };
 
@@ -362,7 +361,7 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
     expect(row?.donorName).toBe("Anonymous"); // DISPLAY masked
   }, 30_000);
 
-  it("filters by entityId, paymentMethod, and hasStripe", async () => {
+  it("filters by entityId and paymentMethod; a legacy Stripe charge (no ledger row) does NOT exclude a gift", async () => {
     const org = await seedOrg({ label: "Filter Org" });
 
     const giftCheck = await seedGift({
@@ -377,10 +376,16 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
     });
     await seedAllocation(giftAch, ENTITY_ID);
 
-    // Stripe-but-no-QB: the high-priority anomaly. A stripe charge link does NOT
-    // count as a QB record, so the gift still surfaces here AND flags hasStripe.
-    const giftStripe = await seedGift({ organizationId: org, paymentMethod: "check" });
-    await seedCharge(giftStripe);
+    // A legacy stripe_staged_charges link alone does NOT settle a gift: the
+    // authoritative "settled through a non-QB processor" signal is a COUNTED
+    // Stripe row in the payment_applications ledger (T003 read cutover). A gift
+    // whose only Stripe tie is the legacy charge table (no ledger row) is still
+    // genuinely missing a QB record, so it must STILL surface on this worklist.
+    const giftStripeChargeOnly = await seedGift({
+      organizationId: org,
+      paymentMethod: "check",
+    });
+    await seedCharge(giftStripeChargeOnly);
 
     // entityId — only the entity-allocated gift, scoped DB-wide by the unique id.
     const byEntity = await listGifts(`entityId=${ENTITY_ID}&limit=200`);
@@ -397,19 +402,10 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
     expect(byMethod.ids.has(giftCheck)).toBe(true);
     expect(byMethod.ids.has(giftAch)).toBe(false);
 
-    // hasStripe=true ⇒ only the Stripe-backed anomaly; false ⇒ excludes it.
-    const withStripe = await listGifts(
-      `q=${encodeURIComponent(MARKER)}&hasStripe=true&limit=200`,
-    );
-    expect(withStripe.ids.has(giftStripe)).toBe(true);
-    expect(withStripe.rows.find((r) => r.id === giftStripe)?.hasStripeEvidence).toBe(true);
-    expect(withStripe.ids.has(giftCheck)).toBe(false);
-
-    const withoutStripe = await listGifts(
-      `q=${encodeURIComponent(MARKER)}&hasStripe=false&limit=200`,
-    );
-    expect(withoutStripe.ids.has(giftStripe)).toBe(false);
-    expect(withoutStripe.ids.has(giftCheck)).toBe(true);
+    // The legacy-charge-only gift is NOT excluded — exclusion consults the
+    // ledger, not stripe_staged_charges.
+    const all = await listGifts(`q=${encodeURIComponent(MARKER)}&limit=200`);
+    expect(all.ids.has(giftStripeChargeOnly)).toBe(true);
   }, 30_000);
 
   it("filters by date window (dateFrom / dateTo)", async () => {
