@@ -456,9 +456,12 @@ export function parseEmailSignature(
   // the phone detector skips them — a genuine labeled / separator-shaped
   // personal number elsewhere in the signature is still picked up.
   const meetingCueRe =
-    /\b(zoom|google\s+meet|microsoft\s+teams|webex|gotomeeting|dial\s+by\s+your\s+location|dial[-\s]?in|one[-\s]?tap\s+mobile|join\s+by\s+phone|meeting\s+id|passcode|find\s+your\s+local\s+number|international\s+numbers?\s+available)\b|PIN\s*:|,,\s*\d|#\s*$/i;
-  // A line that starts as a phone number (e.g. "+1 312 626 6799 US (Chicago)").
-  const dialNumberLineRe = /^\+?\d[\d\s().\-]{6,}\d/;
+    /\b(zoom|google\s+meet|microsoft\s+teams|webex|gotomeeting|dial\s+by\s+your\s+location|dial[-\s]?in|one[-\s]?tap\s+mobile|join\s+by\s+phone|meeting\s+id|passcode|find\s+your\s+local\s+number|international\s+numbers?\s+available|conference\s+(?:id|line|bridge|call)|access\s+code)\b|PIN\s*:|,,\s*\d|#\s*$|\b(?:or|to|please)\s+dial\b|\bdial\s*:/i;
+  // A "PIN:" / "Passcode" / "Meeting ID" line frequently follows the dial-in
+  // number on the NEXT line (Google Meet in particular), so a number line
+  // immediately followed by one of these is a dial-in even before any cue.
+  const pinLineRe =
+    /\b(?:PIN|pass\s*code|meeting\s+id|conference\s+id|access\s+code|participant\s+code)\b/i;
   const meetingTainted = new Array<boolean>(tail.length).fill(false);
   let inMeetingBlock = false;
   for (let i = 0; i < tail.length; i++) {
@@ -468,15 +471,29 @@ export function parseEmailSignature(
       inMeetingBlock = true;
       continue;
     }
-    if (inMeetingBlock) {
-      // Inside a dial-in block, bare number lines are additional access
-      // numbers — keep tainting them. Any other content line closes it.
-      if (dialNumberLineRe.test(l)) {
+    // Is this line a dial-in access number? Real dial-in lines are almost
+    // always label-prefixed — "US: +1 646 931 3860", "(US) +1 302-317-2902",
+    // "New York, NY +1 …", "Or dial: …" — so we can't require the number at
+    // the START of the line (the old check closed the block one line early
+    // and leaked the number as the person's phone). Instead any line that
+    // carries a phone-shaped number is a dial-in continuation UNLESS it has a
+    // personal phone label ("Mobile:", "Direct:", …), which is the sender's
+    // own number and must CLOSE (not extend) the block.
+    const hasPersonalLabel = phoneLabelRe.test(l);
+    const phoneMatch = l.match(phoneRe);
+    const isDialNumberLine =
+      !hasPersonalLabel && !!phoneMatch && looksLikePhone(phoneMatch[0], false);
+    if (isDialNumberLine) {
+      const next = i + 1 < tail.length ? tail[i + 1] : "";
+      if (inMeetingBlock || pinLineRe.test(next)) {
         meetingTainted[i] = true;
+        inMeetingBlock = true;
         continue;
       }
-      inMeetingBlock = false;
     }
+    // Any other content line (including a personal labeled number) closes
+    // the block.
+    if (inMeetingBlock) inMeetingBlock = false;
   }
 
   let title: string | null = null;

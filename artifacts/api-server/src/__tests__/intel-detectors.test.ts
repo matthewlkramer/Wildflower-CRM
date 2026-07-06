@@ -216,4 +216,73 @@ describe("parseEmailSignature — phone heuristics", () => {
     expect(sig?.phone).toBeTruthy();
     expect(sig?.phone?.replace(/\D/g, "")).toContain("4155559876");
   });
+
+  it("ignores a Zoom block with label-prefixed 'US: +1 …' dial-in lines", () => {
+    // The real-world leaking shape: dial-in numbers carry a country/city
+    // label so they don't start with a digit or '+'. The old parser closed
+    // the block at the first such line and leaked the number as the phone.
+    const sig = parseEmailSignature(
+      [
+        "Tanya Beja",
+        "Director of Development",
+        "Acme Foundation",
+        "Join Zoom Meeting",
+        "One tap mobile",
+        "US: +1 646 931 3860",
+        "Or dial:",
+        "US: +1 312 626 6799",
+        "Meeting ID: 812 3456 7890",
+      ].join("\n"),
+      null,
+    );
+    expect(sig?.phone ?? null).toBeNull();
+  });
+
+  it("ignores a Google Meet block with '(US) +1 …' and a following PIN line", () => {
+    const sig = parseEmailSignature(
+      [
+        "Brandon Levin",
+        "Program Officer",
+        "Beta Foundation",
+        "Join with Google Meet",
+        "Join by phone",
+        "(US) +1 302-317-2902",
+        "PIN: 987 654 321#",
+      ].join("\n"),
+      null,
+    );
+    expect(sig?.phone ?? null).toBeNull();
+  });
+
+  it("ignores a bare dial-in number immediately followed by a PIN line", () => {
+    const sig = parseEmailSignature(
+      [
+        "Sarah Lee",
+        "Development Associate",
+        "Gamma Trust",
+        "+1 408 555 0199",
+        "PIN: 555 111 222",
+      ].join("\n"),
+      null,
+    );
+    expect(sig?.phone ?? null).toBeNull();
+  });
+
+  it("still returns a labeled personal mobile even with a following dial-in block", () => {
+    const sig = parseEmailSignature(
+      [
+        "Emily Chen",
+        "Chief Advancement Officer",
+        "Delta Foundation",
+        "Direct: (617) 555-0142",
+        "Join Zoom Meeting",
+        "One tap mobile",
+        "US: +1 646 931 3860",
+        "Meeting ID: 812 3456 7890",
+      ].join("\n"),
+      null,
+    );
+    expect(sig?.phone).toBeTruthy();
+    expect(sig?.phone?.replace(/\D/g, "")).toContain("6175550142");
+  });
 });
