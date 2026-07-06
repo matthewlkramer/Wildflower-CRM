@@ -1,14 +1,18 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListOpportunitiesAndPledges,
   useArchiveOpportunityOrPledge,
+  useUpdateOpportunityOrPledge,
   getListOpportunitiesAndPledgesQueryKey,
   type OpportunityOrPledge,
+  type OpportunityLossType,
+  type UpdateOpportunityOrPledgeBody,
 } from "@workspace/api-client-react";
-import { RowActionIcons } from "@/components/row-action-icons";
+import { RowActionIcons, InlineRowSaveActions } from "@/components/row-action-icons";
+import { useSaveRunner } from "@/components/inline-edit";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 import {
@@ -19,6 +23,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { MoreHorizontal } from "lucide-react";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { DonorCell } from "@/components/donor-cell";
 import { useEntityFilter } from "@/lib/entity-filter-context";
@@ -62,6 +86,45 @@ export default function GrantsCalendar() {
   const queryClient = useQueryClient();
   const archiveMut = useArchiveOpportunityOrPledge();
 
+  // Any row action that mutates the opportunity refetches the calendar so the
+  // row re-sorts (dates) or drops out (loss type). A shared onError toast keeps
+  // per-row handlers focused on the success path.
+  const update = useUpdateOpportunityOrPledge({
+    mutation: {
+      onError: (err: unknown) =>
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({
+      queryKey: getListOpportunitiesAndPledgesQueryKey(),
+    });
+
+  // Persist inline date edits (application deadline / projected close). Throws
+  // on failure so the row's save runner leaves the editor open.
+  const saveDates = async (id: string, body: UpdateOpportunityOrPledgeBody) => {
+    await update.mutateAsync({ id, data: body });
+    await invalidate();
+    toast({ title: "Dates updated" });
+  };
+
+  // Set the lossType override (dormant/lost). Mirrors the detail page: when
+  // there's no completion date yet, stamp today so the user doesn't have to.
+  const resolveOpp = async (o: OpportunityOrPledge, lossType: OpportunityLossType) => {
+    const body: UpdateOpportunityOrPledgeBody = { lossType };
+    if (!o.actualCompletionDate) {
+      body.actualCompletionDate = new Date().toISOString().slice(0, 10);
+    }
+    await update.mutateAsync({ id: o.id, data: body });
+    await invalidate();
+    toast({ title: lossType === "lost" ? "Marked lost" : "Marked dormant" });
+  };
+
   // Archiving an opportunity here soft-deletes the underlying record; the list
   // is active-only, so it drops out of the calendar on the next refetch.
   const archiveOpportunity = (o: OpportunityOrPledge) =>
@@ -69,9 +132,7 @@ export default function GrantsCalendar() {
       { id: o.id },
       {
         onSuccess: async () => {
-          await queryClient.invalidateQueries({
-            queryKey: getListOpportunitiesAndPledgesQueryKey(),
-          });
+          await invalidate();
           toast({ title: "Opportunity archived" });
         },
         onError: (err: unknown) =>
@@ -90,15 +151,19 @@ export default function GrantsCalendar() {
     // deprecated stages retained so any not-yet-backfilled rows still sort sanely
     conditional_commitment: 6, written_commitment: 6, cash_in: 7,
   };
+  const today = todayInChicago();
+  // Every open opportunity that has an application deadline or a projected
+  // close date — including past-due ones (the future-only filter was removed
+  // so overdue grants surface instead of silently disappearing). Base sort is
+  // soonest-first so overdue items land at the top by default.
   const upcoming = useMemo(() => {
     const rows = data?.data ?? [];
-    const today = todayInChicago();
     return rows
       .map((o) => ({
         o,
         sortDate: o.applicationDeadline ?? o.projectedCloseDate ?? "",
       }))
-      .filter(({ sortDate }) => sortDate && sortDate >= today)
+      .filter(({ sortDate }) => Boolean(sortDate))
       .sort((a, b) => a.sortDate.localeCompare(b.sortDate))
       .map(({ o }) => o);
   }, [data]);
@@ -127,7 +192,7 @@ export default function GrantsCalendar() {
       <div>
         <h1 className="text-3xl font-serif font-bold text-foreground">Grants calendar</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Open opportunities with an application deadline (or projected close) today or later, sorted soonest first.
+          Open opportunities with an application deadline (or projected close), sorted soonest first. Overdue items are included and flagged at the top.
           {data && data.pagination.total > FETCH_LIMIT ? (
             <span> Showing the first {FETCH_LIMIT} of {data.pagination.total.toLocaleString()}.</span>
           ) : null}
@@ -145,7 +210,7 @@ export default function GrantsCalendar() {
               <SortableTH colKey="primaryContact" {...ts}>Primary contact</SortableTH>
               <SortableTH colKey="stage" {...ts}>Stage</SortableTH>
               <SortableTH colKey="ask" align="right" {...ts}>Ask</SortableTH>
-              <TableHead className="w-[100px] text-right">
+              <TableHead className="w-[140px] text-right">
                 <span className="sr-only">Actions</span>
               </TableHead>
             </TableRow>
@@ -160,61 +225,248 @@ export default function GrantsCalendar() {
                 </TableCell>
               </TableRow>
             ) : sortedUpcoming.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">No open opportunities with deadlines today or later.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">No open opportunities with an application deadline or projected close date.</TableCell></TableRow>
             ) : (
               sortedUpcoming.map((o: OpportunityOrPledge) => (
-                <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-cal-${o.id}`}>
-                  <TableCell>{formatDateShort(o.applicationDeadline)}</TableCell>
-                  <TableCell>{formatDateShort(o.projectedCloseDate)}</TableCell>
-                  <TableCell className="font-medium">
-                    <Link href={`/opportunities/${o.id}`} className="block w-full">
-                      {o.name ?? `Untitled ${o.id}`}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <DonorCell
-                      organizationId={o.organizationId}
-                      organizationName={o.organizationName}
-                      organizationPriority={o.organizationPriority}
-                      householdId={o.householdId}
-                      householdName={o.householdName}
-                      individualGiverPersonId={o.individualGiverPersonId}
-                      individualGiverPersonName={o.individualGiverPersonName}
-                      individualGiverPersonPriority={o.individualGiverPersonPriority}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    {o.primaryContactPersonId ? (
-                      <Link
-                        href={`/individuals/${o.primaryContactPersonId}`}
-                        className="hover:underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {o.primaryContactPersonName ?? o.primaryContactPersonId}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>{formatEnum(o.stage)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrency(o.askAmount)}</TableCell>
-                  <TableCell
-                    className="text-right"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <RowActionIcons
-                      entityLabel={o.name ?? `Opportunity ${o.id}`}
-                      testIdPrefix={`cal-${o.id}`}
-                      onOpen={() => navigate(`/opportunities/${o.id}`)}
-                      onArchive={() => archiveOpportunity(o)}
-                    />
-                  </TableCell>
-                </TableRow>
+                <CalendarRow
+                  key={o.id}
+                  o={o}
+                  today={today}
+                  onOpen={() => navigate(`/opportunities/${o.id}`)}
+                  onArchive={() => archiveOpportunity(o)}
+                  onSaveDates={saveDates}
+                  onResolve={resolveOpp}
+                />
               ))
             )}
           </TableBody>
         </Table>
       </div>
     </div>
+  );
+}
+
+// Overdue-aware date display: the driving date (application deadline, else
+// projected close) is coloured red and paired with an "Overdue" badge when it's
+// in the past.
+function DateCell({ date, overdue }: { date: string | null | undefined; overdue: boolean }) {
+  return (
+    <span className={overdue ? "text-destructive font-medium" : undefined}>
+      {formatDateShort(date)}
+      {overdue ? (
+        <Badge variant="destructive" className="ml-2 align-middle">Overdue</Badge>
+      ) : null}
+    </span>
+  );
+}
+
+function CalendarRow({
+  o,
+  today,
+  onOpen,
+  onArchive,
+  onSaveDates,
+  onResolve,
+}: {
+  o: OpportunityOrPledge;
+  today: string;
+  onOpen: () => void;
+  onArchive: () => void;
+  onSaveDates: (id: string, body: UpdateOpportunityOrPledgeBody) => Promise<void>;
+  onResolve: (o: OpportunityOrPledge, lossType: OpportunityLossType) => Promise<void>;
+}) {
+  const [editingDates, setEditingDates] = useState(false);
+  const [appDraft, setAppDraft] = useState("");
+  const [closeDraft, setCloseDraft] = useState("");
+  const [confirmLoss, setConfirmLoss] = useState<OpportunityLossType | null>(null);
+  const { busy, run } = useSaveRunner();
+
+  const label = o.name ?? `Opportunity ${o.id}`;
+  // Driving date = application deadline, else projected close. Overdue when it's
+  // strictly before today in the booking timezone.
+  const drivingIsApp = Boolean(o.applicationDeadline);
+  const drivingDate = o.applicationDeadline ?? o.projectedCloseDate ?? "";
+  const overdue = Boolean(drivingDate) && drivingDate < today;
+
+  const startEditDates = () => {
+    setAppDraft(o.applicationDeadline ?? "");
+    setCloseDraft(o.projectedCloseDate ?? "");
+    setEditingDates(true);
+  };
+
+  const saveDates = () => {
+    const appNext = appDraft.trim().length === 0 ? null : appDraft;
+    const closeNext = closeDraft.trim().length === 0 ? null : closeDraft;
+    const dirty =
+      appNext !== (o.applicationDeadline ?? null) ||
+      closeNext !== (o.projectedCloseDate ?? null);
+    if (!dirty) {
+      setEditingDates(false);
+      return;
+    }
+    run(
+      () =>
+        onSaveDates(o.id, {
+          applicationDeadline: appNext,
+          projectedCloseDate: closeNext,
+        }),
+      () => setEditingDates(false),
+    );
+  };
+
+  const confirmResolve = () => {
+    if (!confirmLoss) return;
+    const lossType = confirmLoss;
+    run(() => onResolve(o, lossType), () => setConfirmLoss(null));
+  };
+
+  return (
+    <TableRow className="hover:bg-muted/50 transition-colors" data-testid={`row-cal-${o.id}`}>
+      <TableCell>
+        {editingDates ? (
+          <Input
+            type="date"
+            value={appDraft}
+            onChange={(e) => setAppDraft(e.target.value)}
+            aria-label="Application deadline"
+            disabled={busy}
+            className="h-8"
+            data-testid={`input-app-deadline-cal-${o.id}`}
+          />
+        ) : (
+          <DateCell date={o.applicationDeadline} overdue={overdue && drivingIsApp} />
+        )}
+      </TableCell>
+      <TableCell>
+        {editingDates ? (
+          <Input
+            type="date"
+            value={closeDraft}
+            onChange={(e) => setCloseDraft(e.target.value)}
+            aria-label="Projected close"
+            disabled={busy}
+            className="h-8"
+            data-testid={`input-projected-close-cal-${o.id}`}
+          />
+        ) : (
+          <DateCell date={o.projectedCloseDate} overdue={overdue && !drivingIsApp} />
+        )}
+      </TableCell>
+      <TableCell className="font-medium">
+        <Link href={`/opportunities/${o.id}`} className="block w-full">
+          {o.name ?? `Untitled ${o.id}`}
+        </Link>
+      </TableCell>
+      <TableCell>
+        <DonorCell
+          organizationId={o.organizationId}
+          organizationName={o.organizationName}
+          organizationPriority={o.organizationPriority}
+          householdId={o.householdId}
+          householdName={o.householdName}
+          individualGiverPersonId={o.individualGiverPersonId}
+          individualGiverPersonName={o.individualGiverPersonName}
+          individualGiverPersonPriority={o.individualGiverPersonPriority}
+        />
+      </TableCell>
+      <TableCell>
+        {o.primaryContactPersonId ? (
+          <Link
+            href={`/individuals/${o.primaryContactPersonId}`}
+            className="hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {o.primaryContactPersonName ?? o.primaryContactPersonId}
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell>{formatEnum(o.stage)}</TableCell>
+      <TableCell className="text-right tabular-nums">{formatCurrency(o.askAmount)}</TableCell>
+      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+        {editingDates ? (
+          <InlineRowSaveActions
+            onSave={saveDates}
+            onCancel={() => setEditingDates(false)}
+            saving={busy}
+            testIdPrefix={`cal-${o.id}`}
+          />
+        ) : (
+          <div className="flex items-center justify-end gap-0.5">
+            <RowActionIcons
+              entityLabel={label}
+              testIdPrefix={`cal-${o.id}`}
+              onOpen={onOpen}
+              onEdit={startEditDates}
+              onArchive={onArchive}
+              disabled={busy}
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  disabled={busy}
+                  aria-label={`Resolve ${label}`}
+                  title="Resolve"
+                  data-testid={`button-resolve-cal-${o.id}`}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => setConfirmLoss("lost")}
+                  data-testid={`menu-mark-lost-cal-${o.id}`}
+                >
+                  Mark lost
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setConfirmLoss("dormant")}
+                  data-testid={`menu-mark-dormant-cal-${o.id}`}
+                >
+                  Mark dormant
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
+
+        <AlertDialog
+          open={confirmLoss !== null}
+          onOpenChange={(open) => {
+            if (!open) setConfirmLoss(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Mark {confirmLoss === "lost" ? "lost" : "dormant"}?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-left">
+                This sets {label}&apos;s loss type to{" "}
+                {confirmLoss === "lost" ? "lost" : "dormant"}
+                {o.actualCompletionDate ? "" : " and stamps today as the completion date"}, so it
+                drops off the grants calendar. You can clear the loss type from the opportunity page
+                to bring it back.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmResolve}
+                disabled={busy}
+                data-testid={`button-confirm-resolve-cal-${o.id}`}
+              >
+                Confirm
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </TableCell>
+    </TableRow>
   );
 }
