@@ -297,6 +297,18 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
       )
       OR (
         ${stagedPayments.status} = 'reconciled'
+        -- Re-admit for per-charge crediting ONLY a SETTLEMENT-only-confirmed
+        -- deposit — one whose payout↔deposit tie is settled (Plane 1) but which
+        -- carries NO coarse gift of its own. When the deposit already booked its
+        -- own coarse gift, that gift is the single counted record for this money
+        -- (design §4.3 "one count across the settlement boundary": with no
+        -- per-charge counted units the coarse deposit gift stays the counted
+        -- record). Expanding such a deposit into per-charge cards would surface it
+        -- as unbooked and invite a second, double-counting gift, so it stays out
+        -- of the live gift queue and shows only in the done/Matched queue.
+        AND ${stagedPayments.matchedGiftId} IS NULL
+        AND ${stagedPayments.createdGiftId} IS NULL
+        AND ${stagedPayments.groupReconciledGiftId} IS NULL
         AND EXISTS (
           SELECT 1 FROM settlement_links sl
           JOIN stripe_staged_charges c ON c.stripe_payout_id = sl.payout_id

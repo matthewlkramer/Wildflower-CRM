@@ -552,6 +552,50 @@ describe.skipIf(!HAS_DB)(
       const after = await cardIds();
       expect(after.has(depositId)).toBe(false);
     }, 30_000);
+
+    it("drops a reconciled deposit that already booked its OWN coarse gift, even with uncredited charges (no double-count)", async () => {
+      // A Stripe-payout deposit reconciled by CREATING a single coarse
+      // deposit-level gift (the whole payout net booked as one gift). Its backing
+      // charges are NOT individually credited. Because the coarse gift is already
+      // the single counted record for this money (design §4.3 "one count across
+      // the settlement boundary": with no per-charge counted units the coarse
+      // deposit gift stays the counted record), the deposit must NOT be re-expanded
+      // into per-charge cards — doing so surfaced it as unbooked and fanned it into
+      // several "same QB deposit" cards each proposing a fresh, double-counting gift.
+      const coarseGift = await seedGift("174.60", "2026-03-15");
+      const depositId = await seedStaged({
+        label: "reconciled-coarse-gift-open-charges",
+        status: "reconciled",
+        createdGiftId: coarseGift,
+        amount: "180.00",
+      });
+      const payoutId = await seedPayoutFor(depositId, "matched");
+      // Two uncredited backing charges — the exact shape that used to fan out.
+      await seedCharge({
+        payoutId,
+        gross: "100.00",
+        fee: "3.00",
+        net: "97.00",
+        payerName: "Coarse Gift Charge One",
+        organizationId: ORG_ID,
+      });
+      await seedCharge({
+        payoutId,
+        gross: "80.00",
+        fee: "2.40",
+        net: "77.60",
+        payerName: "Coarse Gift Charge Two",
+        organizationId: ORG_ID,
+      });
+
+      // Absent from the live gift-report queue (no per-charge expansion).
+      const live = await cardIds();
+      expect(live.has(depositId)).toBe(false);
+
+      // Still visible as terminal work in the reconciled/done bucket.
+      const done = await cardIds("reconciled");
+      expect(done.has(depositId)).toBe(true);
+    }, 30_000);
   },
 );
 
