@@ -868,9 +868,9 @@ export default function ReconciliationWorkbench() {
     [selectableReviewCards, selectedIds],
   );
   const selectedReviewCount = selectedReviewCards.length;
-  // Deposit-level actions (bulk Approve, group-into-one-gift) can't act on an
-  // individual Stripe charge, so they disable themselves when a charge is
-  // selected; `groupableReviewCards` is the non-charge subset those actions use.
+  // Grouping merges QB deposits into one gift, so it can't act on an individual
+  // Stripe charge and disables itself when one is selected; `groupableReviewCards`
+  // is the non-charge subset it acts on. Bulk Approve/Reject/Flag handle charges.
   const chargeSelected = useMemo(
     () => selectedReviewCards.some((c) => !!c.stripeChargeId),
     [selectedReviewCards],
@@ -904,32 +904,98 @@ export default function ReconciliationWorkbench() {
     });
   }, [selectableReviewKeys]);
 
-  /** Bulk "Approve" → stage a confirm for each selected review card. */
+  /**
+   * Bulk "Approve":
+   *  - A genuine MULTI-charge payout card (stripeChargeCount > 1) can't use the
+   *    deposit-keyed tray, so it links its one charge to its proposed/resolved
+   *    gift immediately. Charges with no gift yet are skipped and reported.
+   *  - Everything else (QB deposits AND single-charge payout cards) stages a
+   *    confirm in the tray for review, then Apply to CRM.
+   * This mirrors the single-card confirm path, which only takes the link route
+   * when the payout actually holds several charges.
+   */
   const bulkApproveSelected = useCallback(async () => {
-    // Approve is deposit-level (stages a QB-deposit confirm); never a charge.
-    const cards = selectedReviewCards.filter(
-      (c) => !c.stripeChargeId && !stagedIds.has(c.stagedPaymentId),
+    const isMultiChargeCard = (c: ReconciliationCard) =>
+      !!c.stripeChargeId && (c.stripeChargeCount ?? 1) > 1;
+    const multiChargeCards = selectedReviewCards.filter(isMultiChargeCard);
+    const trayCards = selectedReviewCards.filter(
+      (c) => !isMultiChargeCard(c) && !stagedIds.has(c.stagedPaymentId),
     );
-    if (cards.length === 0) {
+    if (multiChargeCards.length === 0 && trayCards.length === 0) {
       toast({
         title: "Nothing to approve",
         description: "The selected cards are already staged.",
       });
       return;
     }
-    const { stagedOk, skipped } = await stageConfirmBatch(cards);
+    const { stagedOk, skipped } =
+      trayCards.length > 0
+        ? await stageConfirmBatch(trayCards)
+        : { stagedOk: 0, skipped: 0 };
+    let chargeOk = 0;
+    let chargeNoGift = 0;
+    let chargeFailed = 0;
+    for (const c of multiChargeCards) {
+      const giftId = c.proposedGiftId ?? c.resolvedGiftId ?? null;
+      if (!giftId) {
+        chargeNoGift += 1;
+        continue;
+      }
+      try {
+        await linkChargeGiftM.mutateAsync({
+          id: c.stripeChargeId!,
+          data: { giftId },
+        });
+        chargeOk += 1;
+      } catch {
+        // 409s when the charge's gift got claimed by another charge mid-run;
+        // count it so the summary is honest rather than silently dropping it.
+        chargeFailed += 1;
+      }
+    }
+    if (chargeOk > 0) invalidateAll();
     clearSelectedReview();
+    const parts: string[] = [];
+    if (stagedOk > 0)
+      parts.push(`staged ${stagedOk} ${stagedOk === 1 ? "match" : "matches"}`);
+    if (chargeOk > 0)
+      parts.push(
+        `approved ${chargeOk} Stripe ${chargeOk === 1 ? "charge" : "charges"}`,
+      );
+    if (parts.length === 0) {
+      toast({
+        title: "Nothing approved",
+        description:
+          chargeNoGift > 0
+            ? `${chargeNoGift} Stripe ${chargeNoGift === 1 ? "charge needs" : "charges need"} a gift picked first — open each card to link it.`
+            : "The selected cards couldn't be approved (they may have changed state).",
+      });
+      return;
+    }
+    const followUps: string[] = [];
+    if (stagedOk > 0) followUps.push("Review the tray, then Apply to CRM.");
+    if (skipped > 0)
+      followUps.push(
+        `${skipped} couldn't be staged (changed state) and were skipped.`,
+      );
+    if (chargeNoGift > 0)
+      followUps.push(
+        `${chargeNoGift} Stripe ${chargeNoGift === 1 ? "charge needs" : "charges need"} a gift picked first.`,
+      );
+    if (chargeFailed > 0)
+      followUps.push(
+        `${chargeFailed} Stripe ${chargeFailed === 1 ? "charge" : "charges"} couldn't be linked (changed state).`,
+      );
     toast({
-      title: `Staged ${stagedOk} ${stagedOk === 1 ? "match" : "matches"}`,
-      description:
-        skipped > 0
-          ? `${skipped} couldn't be staged (changed state) and were skipped.`
-          : "Review the tray, then Apply to CRM.",
+      title: `Approve — ${parts.join(", ")}`,
+      description: followUps.length > 0 ? followUps.join(" ") : "Done.",
     });
   }, [
     selectedReviewCards,
     stagedIds,
     stageConfirmBatch,
+    linkChargeGiftM,
+    invalidateAll,
     clearSelectedReview,
     toast,
   ]);
@@ -1647,15 +1713,7 @@ export default function ReconciliationWorkbench() {
                         size="sm"
                         variant="outline"
                         disabled={
-                          selectedReviewCount === 0 ||
-                          chargeSelected ||
-                          busy ||
-                          actionBusy
-                        }
-                        title={
-                          chargeSelected
-                            ? "Approve applies to deposit cards only — deselect the Stripe charge cards, or resolve each charge from its own card."
-                            : undefined
+                          selectedReviewCount === 0 || busy || actionBusy
                         }
                         onClick={bulkApproveSelected}
                         data-testid="button-bulk-approve-review"

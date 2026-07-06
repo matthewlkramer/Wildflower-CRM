@@ -33,6 +33,11 @@ bundle path.
   `graph.evidence.stripe != null && graph.evidence.stripe.chargeId == null`, and
   calls link-gift FIRST inside the approve/retarget flow. Single-charge deposits
   (chargeId present) return false and fall through to the unchanged deposit approve.
-- Charge cards are never `ready`, so bulk approve is untouched.
+- Bulk approve is NOT exempt: the workbench's multi-select Approve splits the
+  selection — a genuine multi-charge card (`stripeChargeCount > 1`) links via
+  link-gift immediately (skips no-gift charges), while single-charge and deposit
+  cards go through the deposit staging tray. Keep this split (`stripeChargeCount`
+  is the client-side proxy for the graph's `evidence.stripe.chargeId == null`) or
+  single-charge cards reach a different terminal state than a single-card approve.
 - Lock order is gift FOR UPDATE then charge FOR UPDATE (matches the bundle
   convention — don't invert it or you can deadlock against bundle confirm).
