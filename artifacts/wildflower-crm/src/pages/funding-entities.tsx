@@ -14,6 +14,7 @@ import {
   getGetOrganizationQueryOptions,
   getGetOrganizationQueryKey,
   useUpdateOrganization,
+  EntityType,
   type ListOrganizationsParams,
   type Organization,
   type ConnectionStatus,
@@ -92,26 +93,11 @@ import {
 } from "@/components/ui/pagination";
 import { PageJumper } from "@/components/page-jumper";
 
-const SUBTYPES: string[] = [
-  "family_foundation",
-  "institutional_foundation",
-  "corporate_foundation",
-  "community_foundation",
-  "bank_foundation",
-  "family_office_trust",
-  "intermediary",
-  "government",
-  "nonprofit",
-  "corporation",
-  "capital_provider",
-  "philanthropic_advisor",
-  "cdfi",
-  "education_forprofit",
-  "competition",
-  "public_private",
-  "daf_platform",
-  "platform",
-];
+// Derive the Type filter options from the generated `EntityType` enum so the
+// filter can never drift from the values records actually use. Enum insertion
+// order already groups grant-maker/foundation types first, then the rest;
+// `MultiFilterSelect` auto-labels these raw slugs via `formatEnum`.
+const SUBTYPES: string[] = Object.values(EntityType);
 
 // The Type filter is unfiltered by default — all organization types show
 // until the user opts into a subset.
