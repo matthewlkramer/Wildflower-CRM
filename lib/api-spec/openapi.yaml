@@ -6145,7 +6145,7 @@ components:
     # ─── Gifts & payments ──────────────────────────────────────────────────────
     GiftOrPayment:
       type: object
-      required: [id, designatedToSchool, offBooksFiscalSponsor, paymentExpected, quickbooksTieStatus, finalAmountSource, createdAt, updatedAt]
+      required: [id, offBooks, quickbooksTieStatus, finalAmountSource, createdAt, updatedAt]
       properties:
         id:                         { type: string }
         legacyGiftId:               { type: string, nullable: true }
@@ -6182,9 +6182,7 @@ components:
         primaryContactPersonId:     { type: string, nullable: true }
         paymentIntermediaryId:      { type: string, nullable: true }
         ownerUserId:                      { type: string, nullable: true }
-        designatedToSchool:         { type: boolean }
-        offBooksFiscalSponsor:      { type: boolean, description: "Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation)." }
-        paymentExpected:            { type: boolean, description: "When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor / designatedToSchool). Defaults true." }
+        offBooks:                   { type: boolean, readOnly: true, description: "DERIVED (Task #594): true when the gift is off-books / payment-exempt — it has at least one allocation and EVERY allocation sits on a no-payment entity (entities.expectsPayment = false: \"Direct to School\" / \"Wildflower Foundation TSNE\"). Replaces the retired header booleans (designatedToSchool / offBooksFiscalSponsor / paymentExpected). Off-books gifts still count toward revenue goals but are exempt from the QuickBooks-tie requirement and excluded from audit reconciliation. Never settable; make a gift off-books by putting its allocations on a no-payment entity." }
         quickbooksTieStatus:        { allOf: [ { $ref: "#/components/schemas/GiftQuickbooksTie" } ], readOnly: true, description: "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update." }
         loanOrGrant:                { allOf: [ { $ref: "#/components/schemas/LoanOrGrant" } ], readOnly: true, description: "Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition." }
         reconciliationLanes:        { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses." }
@@ -6316,7 +6314,7 @@ components:
         name:                { type: string, nullable: true }
         quickbooksTieStatus: { $ref: "#/components/schemas/GiftQuickbooksTie" }
         reconciliationLanes: { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], description: "Two-lane reconciliation status (INV-4): funding mirrors quickbooksTieStatus; crmRecord is confirmed (the gift is the CRM record)." }
-        offBooks:            { type: boolean, description: "True when the gift is exempt (fiscal-sponsor off-books OR designated-to-school)." }
+        offBooks:            { type: boolean, description: "True when the gift is off-books / payment-exempt — DERIVED from its allocations (every allocation on a no-payment entity, entities.expectsPayment = false)." }
         auditExcluded:       { type: boolean, description: "True when off-books — the gift is excluded from audit reconciliation." }
         amount:              { type: string, nullable: true }
         # WHEN
@@ -6357,9 +6355,6 @@ components:
         primaryContactPersonId:     { type: string }
         paymentIntermediaryId:      { type: string }
         ownerUserId:                      { type: string }
-        designatedToSchool:         { type: boolean }
-        offBooksFiscalSponsor:      { type: boolean }
-        paymentExpected:            { type: boolean }
         tags:                       { type: string }
         grantLetterUrl:             { type: string }
         grantLetterFilename:        { type: string }
@@ -6397,9 +6392,6 @@ components:
         primaryContactPersonId:     { type: string, nullable: true }
         paymentIntermediaryId:      { type: string, nullable: true }
         ownerUserId:                      { type: string, nullable: true }
-        designatedToSchool:         { type: boolean }
-        offBooksFiscalSponsor:      { type: boolean }
-        paymentExpected:            { type: boolean }
         tags:                       { type: string, nullable: true }
         grantLetterUrl:             { type: string, nullable: true }
         grantLetterFilename:        { type: string, nullable: true }

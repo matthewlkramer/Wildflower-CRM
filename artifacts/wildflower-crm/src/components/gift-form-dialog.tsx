@@ -41,7 +41,6 @@ import { Button } from "@/components/ui/button";
 import { AddIconButton } from "@/components/add-icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -232,9 +231,6 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [dateReceived, setDateReceived] = useState("");
-  // Defaults true — almost every gift expects a payment. (Goal-counting now
-  // lives per-allocation, set when allocating the gift, not on the header.)
-  const [paymentExpected, setPaymentExpected] = useState(true);
 
   // Opportunity link
   const [linkedOpp, setLinkedOpp] = useState<OpportunityOrPledge | null>(null);
@@ -384,7 +380,6 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     setName("");
     setAmount("");
     setDateReceived("");
-    setPaymentExpected(true);
     setLinkedOpp(null);
     setDonorMode("auto");
     resetDonor();
@@ -541,7 +536,6 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
         ...(linkedOpp ? { opportunityId: linkedOpp.id } : {}),
         ...(amt ? { amount: amt } : {}),
         ...(date ? { dateReceived: date } : {}),
-        paymentExpected,
         ...codingFields,
       },
     });
@@ -736,24 +730,6 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                 value={dateReceived}
                 onChange={(e) => setDateReceived(e.target.value)}
                 data-testid="input-new-gift-date"
-              />
-            </div>
-
-            {/* ── Classification flags (both default on) ── */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <Label htmlFor="new-gift-payment-expected">Payment expected</Label>
-                <p className="text-xs text-muted-foreground">
-                  Turn off for gifts that will never reach QuickBooks (e.g.
-                  fiscal-sponsor-era or direct-to-school money).
-                </p>
-              </div>
-              <Switch
-                id="new-gift-payment-expected"
-                checked={paymentExpected}
-                onCheckedChange={setPaymentExpected}
-                disabled={create.isPending}
-                data-testid="switch-new-gift-payment-expected"
               />
             </div>
 

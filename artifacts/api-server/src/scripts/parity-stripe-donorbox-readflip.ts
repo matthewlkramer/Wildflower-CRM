@@ -174,7 +174,15 @@ async function main(): Promise<void> {
       SELECT
         g.id,
         g.amount::text AS gift_amount,
-        (g.off_books_fiscal_sponsor OR g.designated_to_school OR NOT g.payment_expected) AS off_books,
+        (
+          EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = g.id)
+          AND NOT EXISTS (
+            SELECT 1 FROM gift_allocations ga
+            LEFT JOIN entities e ON e.id = ga.entity_id
+            WHERE ga.gift_id = g.id
+              AND (ga.entity_id IS NULL OR COALESCE(e.expects_payment, true) = true)
+          )
+        ) AS off_books,
         g.final_amount_source,
         (g.archived_at IS NOT NULL) AS archived,
         g.quickbooks_tie_status::text AS persisted_status,

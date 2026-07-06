@@ -538,37 +538,10 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
           ) : null}
           <FieldCard title="Classification">
             <div className="space-y-1">
-              <Row label="Designated to school">
-                <InlineEditBoolean
-                  label="Designated to school"
-                  testIdBase="gift-designated-to-school"
-                  value={gift.designatedToSchool}
-                  allowNull={false}
-                  display={gift.designatedToSchool ? "Yes" : "No"}
-                  onSave={(next) => patch({ designatedToSchool: next ?? false })}
-                />
-              </Row>
-              <Row label="Off-books fiscal sponsor">
-                <InlineEditBoolean
-                  label="Off-books fiscal sponsor"
-                  testIdBase="gift-off-books-fiscal-sponsor"
-                  value={gift.offBooksFiscalSponsor}
-                  allowNull={false}
-                  display={gift.offBooksFiscalSponsor ? "Yes" : "No"}
-                  onSave={(next) =>
-                    patch({ offBooksFiscalSponsor: next ?? false })
-                  }
-                />
-              </Row>
-              <Row label="Payment expected">
-                <InlineEditBoolean
-                  label="Payment expected"
-                  testIdBase="gift-payment-expected"
-                  value={gift.paymentExpected}
-                  allowNull={false}
-                  display={gift.paymentExpected ? "Yes" : "No"}
-                  onSave={(next) => patch({ paymentExpected: next ?? true })}
-                />
+              <Row label="Off-books">
+                <span data-testid="gift-off-books">
+                  {gift.offBooks ? "Yes" : "No"}
+                </span>
               </Row>
             </div>
             {gift.donorbox && (

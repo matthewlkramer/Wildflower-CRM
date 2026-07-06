@@ -29,8 +29,10 @@ export type GiftQbTie = "exempt" | "tied" | "amount_mismatch" | "missing";
 
 export interface GiftQbTieInput {
   /**
-   * off_books_fiscal_sponsor OR designated_to_school OR NOT payment_expected
-   * (any of the three exempts the gift from the QB-tie requirement).
+   * Derived off-books flag (`giftIsOffBooksExpr`): true when the gift has at
+   * least one allocation and EVERY allocation sits on a no-payment entity
+   * (`entities.expects_payment = false`). Being off-books exempts the gift from
+   * the QB-tie requirement.
    */
   offBooks: boolean;
   /** Gift's final amount (gross), or null when unknown. */
@@ -52,7 +54,7 @@ export interface GiftQbTieInput {
 /**
  * Pure deriver — no DB access, safe to unit-test.
  *
- *  - exempt          : off-books (fiscal-sponsor era OR designated-to-school).
+ *  - exempt          : off-books (every allocation on a no-payment entity).
  *  - tied            : linked to counted evidence (QB / Stripe / Donorbox)
  *                      within the fee band, or linked with an unknown amount
  *                      (can't prove a mismatch).

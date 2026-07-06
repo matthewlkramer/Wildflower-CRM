@@ -31,11 +31,12 @@ describe("deriveGiftQbTie", () => {
     ).toBe("exempt");
   });
 
-  it("exempts a payment_expected=false gift (folded into offBooks)", () => {
-    // The applier feeds `offBooks = off_books_fiscal_sponsor OR
-    // designated_to_school OR NOT payment_expected`, so a gift that expects no
-    // payment reads as exempt and drops out of the "untied" filter — even with
-    // no evidence (which would otherwise be `missing`).
+  it("exempts a payment-exempt (allocation-derived off-books) gift", () => {
+    // The applier feeds `offBooks = giftIsOffBooksExpr()` — true when the gift has
+    // >=1 allocation and EVERY allocation sits on a no-payment entity
+    // (entities.expects_payment = false). A gift that expects no payment reads as
+    // exempt and drops out of the "untied" filter — even with no evidence (which
+    // would otherwise be `missing`).
     expect(
       deriveGiftQbTie({
         offBooks: true,

@@ -1967,11 +1967,8 @@ export interface GiftOrPayment {
   primaryContactPersonId?: string | null;
   paymentIntermediaryId?: string | null;
   ownerUserId?: string | null;
-  designatedToSchool: boolean;
-  /** Fiscal-sponsor-era off-books flag. Together with designatedToSchool it exempts the gift from the QuickBooks-tie requirement (still counts toward revenue goals, excluded from audit reconciliation). */
-  offBooksFiscalSponsor: boolean;
-  /** When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor / designatedToSchool). Defaults true. */
-  paymentExpected: boolean;
+  /** DERIVED (Task #594): true when the gift is off-books / payment-exempt — it has at least one allocation and EVERY allocation sits on a no-payment entity (entities.expectsPayment = false: "Direct to School" / "Wildflower Foundation TSNE"). Replaces the retired header booleans (designatedToSchool / offBooksFiscalSponsor / paymentExpected). Off-books gifts still count toward revenue goals but are exempt from the QuickBooks-tie requirement and excluded from audit reconciliation. Never settable; make a gift off-books by putting its allocations on a no-payment entity. */
+  readonly offBooks: boolean;
   /** Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update. */
   readonly quickbooksTieStatus: GiftQuickbooksTie;
   /** Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition. */
@@ -2302,7 +2299,7 @@ export interface GiftAuditReconciliation {
   quickbooksTieStatus: GiftQuickbooksTie;
   /** Two-lane reconciliation status (INV-4): funding mirrors quickbooksTieStatus; crmRecord is confirmed (the gift is the CRM record). */
   reconciliationLanes: ReconciliationLanes;
-  /** True when the gift is exempt (fiscal-sponsor off-books OR designated-to-school). */
+  /** True when the gift is off-books / payment-exempt — DERIVED from its allocations (every allocation on a no-payment entity, entities.expectsPayment = false). */
   offBooks: boolean;
   /** True when off-books — the gift is excluded from audit reconciliation. */
   auditExcluded: boolean;
@@ -2332,9 +2329,6 @@ export interface CreateGiftOrPaymentBody {
   primaryContactPersonId?: string;
   paymentIntermediaryId?: string;
   ownerUserId?: string;
-  designatedToSchool?: boolean;
-  offBooksFiscalSponsor?: boolean;
-  paymentExpected?: boolean;
   tags?: string;
   grantLetterUrl?: string;
   grantLetterFilename?: string;
@@ -2367,9 +2361,6 @@ export interface UpdateGiftOrPaymentBody {
   primaryContactPersonId?: string | null;
   paymentIntermediaryId?: string | null;
   ownerUserId?: string | null;
-  designatedToSchool?: boolean;
-  offBooksFiscalSponsor?: boolean;
-  paymentExpected?: boolean;
   tags?: string | null;
   grantLetterUrl?: string | null;
   grantLetterFilename?: string | null;

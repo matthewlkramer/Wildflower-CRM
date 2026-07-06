@@ -179,32 +179,16 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   ownerUserId: text("owner_user_id").references(() => users.id, {
     onDelete: "restrict",
   }),
-  // TRANSITIONAL (intended for eventual retirement, but STILL LIVE — do NOT
-  // drop). "Direct to school" is moving to the allocation entity ("Direct to
-  // School"), but until the prod backfill migrates existing rows,
-  // giftIsOffBooksExpr() (giftPaymentSummary.ts) still OR's this header flag into
-  // the off-books / QB-tie exemption, the audit-reconciliation route reads it, the
-  // gift PATCH change-detection compares it, and the split-gift path copies it
-  // onto new rows. Retained so dev push stays additive and prod Publish never
-  // auto-drops it; a physical DROP must wait for that backfill and ships as a
-  // reviewed SQL file.
-  designatedToSchool: boolean("designated_to_school").default(false).notNull(),
-  // TRANSITIONAL (STILL LIVE — do NOT drop). Off-books (fiscal-sponsor era) is
-  // moving to the "Wildflower Foundation TSNE" allocation entity, but until the
-  // prod backfill it is still OR'd into giftIsOffBooksExpr(), read by the
-  // audit-reconciliation route, and compared by the gift PATCH change-detection.
-  // Retained (see designatedToSchool).
-  offBooksFiscalSponsor: boolean("off_books_fiscal_sponsor")
-    .default(false)
-    .notNull(),
-  // TRANSITIONAL (STILL LIVE — do NOT drop). "Payment expected" is moving to a
-  // derivation from allocation entities (a gift expects payment unless ALL its
-  // allocations sit on no-payment entities, entities.expects_payment = false,
-  // i.e. "Direct to School" / "Wildflower Foundation TSNE"), but until the prod
-  // backfill giftIsOffBooksExpr() still OR's `NOT payment_expected` into the
-  // off-books / QB-tie exemption, and the split-gift path copies it onto new rows.
-  // Retained (see designatedToSchool).
-  paymentExpected: boolean("payment_expected").default(true).notNull(),
+  // RETIRED (Task #594): the three legacy header booleans `designated_to_school`,
+  // `off_books_fiscal_sponsor`, and `payment_expected` are GONE from the schema.
+  // Off-books / payment-exempt is now derived ONLY from the allocation entities
+  // (a gift is off-books when it has at least one allocation and EVERY allocation
+  // sits on a no-payment entity, entities.expects_payment = false — "Direct to
+  // School" / "Wildflower Foundation TSNE"), via giftIsOffBooksExpr()
+  // (giftPaymentSummary.ts). The columns are physically dropped from both DBs by
+  // migration 0104 AFTER this schema-removal build is Published (the currently-
+  // deployed build still SELECTs them via getTableColumns until the new build
+  // ships — see the 0104 runbook for the Publish-first deploy ordering).
   // @deprecated DO NOT DROP (invariant #7 — non-destructive). Superseded by the
   // Cleanup Queue as the single source of truth for "needs research": a passive,
   // read-only `flaggedForResearch` badge is now DERIVED on the detail endpoints

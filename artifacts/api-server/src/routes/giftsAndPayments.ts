@@ -100,6 +100,11 @@ const donorJoinSelect = {
     "derived_settled_amount",
   ),
   derivedProcessorFee: derivedProcessorFeeForGift().as("derived_processor_fee"),
+  // Task #594 — off-books / payment-exempt is DERIVED ONLY from the gift's
+  // allocation entities (off-books when it has allocations and every one sits on
+  // a no-payment entity). Replaces the retired header booleans; the way to make a
+  // gift off-books is to put its allocations on a no-payment entity.
+  offBooks: giftIsOffBooksExpr().as("off_books"),
 };
 import {
   ListGiftsAndPaymentsQueryParams,
@@ -147,6 +152,7 @@ import { isFlaggedForResearch } from "../lib/flaggedForResearch";
 import {
   derivedSettledAmountForGift,
   derivedProcessorFeeForGift,
+  giftIsOffBooksExpr,
 } from "../lib/giftPaymentSummary";
 import { deriveGiftLanes } from "../lib/reconciliationLanes";
 import { inArray } from "drizzle-orm";
@@ -865,15 +871,12 @@ router.patch(
     // PATCH may re-point opportunity_id — recompute on both the
     // old and the new pledge so a newly-covered target advances.
     await applyDerivedOppFieldsMany(existing.opportunityId, row.opportunityId);
-    // Amount / off-books / designated-to-school edits change the QB-tie status.
-    // Only recompute when one of those tie-affecting fields actually changed so
-    // a pure-annotation edit (e.g. the needs-research flag) is a no-op for
-    // derivation, never silently re-deriving tie status.
-    if (
-      existing.amount !== row.amount ||
-      existing.offBooksFiscalSponsor !== row.offBooksFiscalSponsor ||
-      existing.designatedToSchool !== row.designatedToSchool
-    ) {
+    // A gift amount edit changes the QB-tie status. Off-books is now derived
+    // from the allocation entities, so allocation/entity edits recompute the tie
+    // on their own endpoints; a header PATCH only needs to react to `amount`.
+    // Only recompute when amount actually changed so a pure-annotation edit
+    // (e.g. the needs-research flag) is a no-op for derivation.
+    if (existing.amount !== row.amount) {
       await applyGiftQbTieMany(row.id);
     }
     // Revenue coding is no longer a persisted snapshot on the allocation
@@ -1596,10 +1599,11 @@ router.post(
 
       // 3. Transform-in-place. The original gift becomes the payment for the
       // FIRST allocation; mint a new gift for each remaining allocation and
-      // re-point that allocation onto it. Header fields are allocation-aware
-      // (grant year follows the allocation; designated-to-school is OR'd with
-      // the allocation's school recipient) so split rows aren't mislabeled.
-      // Thank-you / QB / Airtable / archive metadata stays only on the original.
+      // re-point that allocation onto it. The grant year follows the allocation;
+      // off-books is now derived from the allocation entity, which is re-pointed
+      // onto the new gift below, so it carries over automatically (no header flag
+      // to copy). Thank-you / QB / Airtable / archive metadata stays only on the
+      // original.
       const [first, ...rest] = allocs;
       const giftIds: string[] = [gift.id];
 
@@ -1609,7 +1613,6 @@ router.post(
           amount: first.subAmount,
           opportunityId: pledgeId,
           grantYear: first.grantYear ?? gift.grantYear,
-          designatedToSchool: gift.designatedToSchool || first.schoolRecipientId != null,
           updatedAt: new Date(),
         })
         .where(eq(giftsAndPayments.id, gift.id));
@@ -1636,12 +1639,6 @@ router.post(
           primaryContactPersonId: gift.primaryContactPersonId,
           paymentIntermediaryId: gift.paymentIntermediaryId,
           ownerUserId: gift.ownerUserId,
-          designatedToSchool: gift.designatedToSchool || a.schoolRecipientId != null,
-          // Carry the source gift's payment-expected flag onto every split row so
-          // it isn't silently reset to the column default. (Goal-counting now
-          // lives on the allocation, which is re-pointed onto the new gift below,
-          // so it carries over automatically.)
-          paymentExpected: gift.paymentExpected,
           tags: gift.tags,
         });
         // Re-point the allocation (a money-trail row — keep its id) onto the new
@@ -1658,7 +1655,7 @@ router.post(
           id: newId(),
           actorUserId: actor.id,
           entity: "gifts-and-payments/split-into-pledge",
-          fields: ["amount", "opportunityId", "grantYear", "designatedToSchool"],
+          fields: ["amount", "opportunityId", "grantYear"],
           targetIds: [gift.id],
           succeededIds: giftIds,
           failedIds: [],
@@ -2234,7 +2231,9 @@ router.get(
         amount: giftsAndPayments.amount,
         dateReceived: giftsAndPayments.dateReceived,
         quickbooksTieStatus: giftsAndPayments.quickbooksTieStatus,
-        offBooks: sql<boolean>`(${giftsAndPayments.offBooksFiscalSponsor} OR ${giftsAndPayments.designatedToSchool})`,
+        // Off-books is derived ONLY from allocation entities (a gift is off-books
+        // when every allocation sits on a no-payment entity) — no header flags.
+        offBooks: giftIsOffBooksExpr(),
         organizationId: giftsAndPayments.organizationId,
         individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
         householdId: giftsAndPayments.householdId,

@@ -137,19 +137,17 @@ export function derivedProcessorFeeForGift(
 }
 
 /**
- * Whether a gift is OFF-BOOKS / payment-exempt, DERIVED from its allocations
- * (Task #448 Steps 6-8). A gift is off-books exactly when it has at least one
- * allocation AND every allocation sits on a no-payment entity
- * (entities.expects_payment = false) — e.g. the "Direct to School" or "Wildflower
- * Foundation TSNE" buckets that replace the retired header booleans
- * `designated_to_school` / `off_books_fiscal_sponsor`. A gift with no allocations,
- * or any allocation on a payment-bearing entity (or with no entity), expects
- * payment.
+ * Whether a gift is OFF-BOOKS / payment-exempt, DERIVED ONLY from its allocations
+ * (Task #448 Steps 6-8; header terms retired in Task #594). A gift is off-books
+ * exactly when it has at least one allocation AND every allocation sits on a
+ * no-payment entity (entities.expects_payment = false) — e.g. the "Direct to
+ * School" or "Wildflower Foundation TSNE" buckets that replaced the retired header
+ * booleans `designated_to_school` / `off_books_fiscal_sponsor` / `payment_expected`.
+ * A gift with no allocations, or any allocation on a payment-bearing entity (or
+ * with no entity), expects payment.
  *
- * TRANSITIONAL: until the Step-12 backfill moves existing header designations
- * onto allocation entities in prod, the legacy header flags are OR'd in so the
- * exemption stays correct for not-yet-migrated rows. Drop the header terms when
- * the columns are dropped.
+ * The way to make a gift off-books is to put every allocation on a no-payment
+ * entity; there is no longer any header flag OR'd into this derivation.
  *
  * Correlation follows the bare-column rule (literal gift-id SQL expr).
  */
@@ -157,21 +155,14 @@ export function giftIsOffBooksExpr(
   giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
 ): SQL<boolean> {
   return sql<boolean>`(
-    (
-      EXISTS (
-        SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftIdSql}
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM gift_allocations ga
-        LEFT JOIN entities e ON e.id = ga.entity_id
-        WHERE ga.gift_id = ${giftIdSql}
-          AND (ga.entity_id IS NULL OR COALESCE(e.expects_payment, true) = true)
-      )
+    EXISTS (
+      SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftIdSql}
     )
-    OR EXISTS (
-      SELECT 1 FROM gifts_and_payments g
-      WHERE g.id = ${giftIdSql}
-        AND (g.off_books_fiscal_sponsor OR g.designated_to_school OR NOT g.payment_expected)
+    AND NOT EXISTS (
+      SELECT 1 FROM gift_allocations ga
+      LEFT JOIN entities e ON e.id = ga.entity_id
+      WHERE ga.gift_id = ${giftIdSql}
+        AND (ga.entity_id IS NULL OR COALESCE(e.expects_payment, true) = true)
     )
   )`;
 }
