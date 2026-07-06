@@ -575,6 +575,43 @@ export const RejectSettlementProposalResponse = zod.object({
 })
 
 /**
+ * Confirms the settlement link for ONE Stripe payout — the Plane-1
+payout↔deposit tie ONLY — without touching the per-charge → gift booking
+(Plane 2), which the Gift report owns. Approving a "linked" (proposed)
+settlement is therefore one click: the tie is stamped confirmed and the
+QuickBooks deposit is marked reconciled so the coarse deposit can never
+credit donors on top of the individual per-charge Stripe gifts (that
+deposit→reconciled flip IS the double-count guard).
+
+Behaviour by the payout's current settlement-link state:
+  • proposed (clean)                → confirm; deposit pending → reconciled.
+  • proposed + approved-QB-gift conflict → keep the existing gift; confirm
+    the linkage only (deposit + gift untouched).
+  • already confirmed               → idempotent success (no re-book).
+  • no link + depositStagedPaymentId body → propose that payout↔deposit tie,
+    then confirm it (powers the Settlement report Resolve box in BOTH
+    directions: a payout anchor picking a deposit, or a deposit anchor
+    picking a payout).
+  • no link + no deposit            → 400 (nothing to confirm).
+
+ * @summary Confirm a payout↔deposit settlement tie (Plane 1 only).
+ */
+export const ConfirmSettlementLinkParams = zod.object({
+  "payoutId": zod.coerce.string()
+})
+
+export const ConfirmSettlementLinkBody = zod.object({
+  "depositStagedPaymentId": zod.string().nullish().describe('QB deposit staged-payment id to tie to this payout before confirming (resolve). Omit when a proposed link already exists.')
+}).describe('Optional resolve payload. When the payout has NO settlement link yet, a\ndepositStagedPaymentId proposes that payout↔deposit tie before confirming\n(the Settlement report\'s Resolve box, in either direction). Omit it to\nconfirm an already-proposed tie.\n')
+
+export const ConfirmSettlementLinkResponse = zod.object({
+  "confirmed": zod.boolean().describe('True when the settlement link is confirmed after this call.'),
+  "kind": zod.enum(['confirmed_reconciled', 'conflict_kept', 'already_confirmed']).describe('Which path ran: a clean pending-deposit confirm, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link.'),
+  "payoutId": zod.string(),
+  "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit the confirmed link ties to (null only if the link\'s deposit pointer had degraded).')
+})
+
+/**
  * Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.
 no QuickBooks cash-application ledger entry exists for the gift — ONE ROW PER
 gift_allocation (a multi-allocation gift surfaces several rows; a gift with no

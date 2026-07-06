@@ -4230,6 +4230,42 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RejectSettlementProposalResult" } } } }
         "409": { description: "The settlement link is confirmed (use revert, not reject)." }
+  /reconciliation/settlement-links/{payoutId}/confirm:
+    post:
+      operationId: confirmSettlementLink
+      tags: [reconciliation]
+      summary: Confirm a payout↔deposit settlement tie (Plane 1 only).
+      description: |
+        Confirms the settlement link for ONE Stripe payout — the Plane-1
+        payout↔deposit tie ONLY — without touching the per-charge → gift booking
+        (Plane 2), which the Gift report owns. Approving a "linked" (proposed)
+        settlement is therefore one click: the tie is stamped confirmed and the
+        QuickBooks deposit is marked reconciled so the coarse deposit can never
+        credit donors on top of the individual per-charge Stripe gifts (that
+        deposit→reconciled flip IS the double-count guard).
+
+        Behaviour by the payout's current settlement-link state:
+          • proposed (clean)                → confirm; deposit pending → reconciled.
+          • proposed + approved-QB-gift conflict → keep the existing gift; confirm
+            the linkage only (deposit + gift untouched).
+          • already confirmed               → idempotent success (no re-book).
+          • no link + depositStagedPaymentId body → propose that payout↔deposit tie,
+            then confirm it (powers the Settlement report Resolve box in BOTH
+            directions: a payout anchor picking a deposit, or a deposit anchor
+            picking a payout).
+          • no link + no deposit            → 400 (nothing to confirm).
+      parameters:
+        - { name: payoutId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConfirmSettlementLinkBody" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConfirmSettlementLinkResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { description: "The payout (or the chosen deposit) no longer exists." }
+        "409": { description: "The settlement link drifted (already confirmed differently, or the deposit/gift changed). Reload and retry." }
   /reconciliation/gifts-missing-qb:
     get:
       operationId: listGiftsMissingQb
@@ -7272,6 +7308,26 @@ components:
       required: [rejected]
       properties:
         rejected: { type: boolean, description: "True when a proposed link was deleted; false when there was no proposed link to reject (no-op)." }
+    ConfirmSettlementLinkBody:
+      type: object
+      description: |
+        Optional resolve payload. When the payout has NO settlement link yet, a
+        depositStagedPaymentId proposes that payout↔deposit tie before confirming
+        (the Settlement report's Resolve box, in either direction). Omit it to
+        confirm an already-proposed tie.
+      properties:
+        depositStagedPaymentId: { type: string, nullable: true, description: "QB deposit staged-payment id to tie to this payout before confirming (resolve). Omit when a proposed link already exists." }
+    ConfirmSettlementLinkResult:
+      type: object
+      required: [confirmed, kind, payoutId]
+      properties:
+        confirmed: { type: boolean, description: "True when the settlement link is confirmed after this call." }
+        kind:
+          type: string
+          enum: [confirmed_reconciled, conflict_kept, already_confirmed]
+          description: "Which path ran: a clean pending-deposit confirm, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link."
+        payoutId: { type: string }
+        depositStagedPaymentId: { type: string, nullable: true, description: "The QB deposit the confirmed link ties to (null only if the link's deposit pointer had degraded)." }
     GiftMissingQb:
       type: object
       required: [id, rowKey]

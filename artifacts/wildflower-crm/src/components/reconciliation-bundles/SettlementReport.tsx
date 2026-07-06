@@ -2,9 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Check, Loader2, X } from "lucide-react";
 import {
-  useAssembleReconciliationBundle,
-  useConfirmReconciliationBundle,
-  useDeriveReconciliationBundle,
+  useConfirmSettlementLink,
   useListReconciliationBundleAnchors,
   useRejectSettlementProposal,
   getListReconciliationBundleAnchorsQueryKey,
@@ -17,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { BulkFlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import { SettlementCard } from "./SettlementCard";
-import { approveAnchor, is409 } from "./settlement-actions";
+import { is409 } from "./settlement-actions";
 
 /** Selection key for an anchor (stable across the two actionable columns). */
 const anchorKey = (a: Pick<BundleAnchor, "anchorType" | "anchorId">) =>
@@ -43,10 +41,12 @@ function flagTarget(a: BundleAnchor): {
  *   • Missing deposit — a Stripe payout with no confirmed deposit (may carry a
  *                       proposed match to approve/reject, else resolve).
  *   • Missing payout  — a standalone QB deposit with no payout (resolve).
- * The proposed match, its approve/reject/resolve controls, per-charge editing,
- * and multi-select bulk actions all live on the cards; the old below-columns
- * bundle box is retired. Approve reuses the atomic bundle-confirm path, so
- * committing refreshes every workbench query the bundle touches.
+ * The proposed match plus its approve/reject/resolve controls and multi-select
+ * bulk actions all live on the cards. This report is Plane 1 ONLY
+ * (docs/reconciliation-design.md §4.3/§4.4): Approve confirms JUST the
+ * payout↔deposit settlement tie (no per-charge editor) — per-charge → gift
+ * booking is owned by the Gift report. Committing stamps the deposit reconciled
+ * (the double-count guard) and refreshes the sibling workbench queues.
  */
 export function SettlementReport() {
   const queryClient = useQueryClient();
@@ -55,9 +55,7 @@ export function SettlementReport() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [flagOpen, setFlagOpen] = useState(false);
 
-  const assembleM = useAssembleReconciliationBundle();
-  const deriveM = useDeriveReconciliationBundle();
-  const confirmM = useConfirmReconciliationBundle();
+  const confirmM = useConfirmSettlementLink();
   const rejectM = useRejectSettlementProposal();
 
   const { data, isLoading, isError } = useListReconciliationBundleAnchors({
@@ -126,14 +124,12 @@ export function SettlementReport() {
     invalidateWorkbench();
   }, [invalidateWorkbench]);
 
-  const fns = {
-    assemble: assembleM.mutateAsync,
-    derive: deriveM.mutateAsync,
-    confirm: confirmM.mutateAsync,
-  };
-
   const runBulkApprove = useCallback(async () => {
-    const targets = selectedAnchors.filter((a) => a.proposedMatch);
+    // A proposal only ever lives on the Stripe-payout anchor, and the confirm
+    // endpoint is keyed by the payout — so approve those anchors by anchorId.
+    const targets = selectedAnchors.filter(
+      (a) => a.proposedMatch && a.anchorType === "stripe_payout",
+    );
     if (targets.length === 0) {
       toast({ title: "No proposed matches in the selection to approve." });
       return;
@@ -145,13 +141,9 @@ export function SettlementReport() {
     const done: string[] = [];
     for (const a of targets) {
       try {
-        const outcome = await approveAnchor(a, fns);
-        if (outcome === "approved") {
-          approved += 1;
-          done.push(anchorKey(a));
-        } else {
-          skipped += 1;
-        }
+        await confirmM.mutateAsync({ payoutId: a.anchorId, data: {} });
+        approved += 1;
+        done.push(anchorKey(a));
       } catch (err) {
         if (is409(err)) skipped += 1;
         else failed += 1;
@@ -164,11 +156,11 @@ export function SettlementReport() {
       title: `Approved ${approved} settlement${approved === 1 ? "" : "s"}`,
       description:
         skipped + failed > 0
-          ? `${skipped} needed review, ${failed} failed.`
+          ? `${skipped} changed, ${failed} failed.`
           : undefined,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAnchors, selection, invalidateWorkbench, toast]);
+  }, [selectedAnchors, selection, invalidateWorkbench, confirmM, toast]);
 
   const runBulkReject = useCallback(async () => {
     // Only Stripe-payout anchors carry a proposed link that can be rejected.

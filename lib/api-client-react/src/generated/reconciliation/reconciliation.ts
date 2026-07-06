@@ -27,6 +27,8 @@ import type {
   BundleConfirmInput,
   BundleOverridesInput,
   BundleTieResult,
+  ConfirmSettlementLinkBody,
+  ConfirmSettlementLinkResult,
   CreateReconciliationProposalBody,
   GiftMissingQbList,
   ListGiftsMissingQbParams,
@@ -1075,6 +1077,96 @@ export const useRejectSettlementProposal = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getRejectSettlementProposalMutationOptions(options));
+    }
+    /**
+ * Confirms the settlement link for ONE Stripe payout — the Plane-1
+payout↔deposit tie ONLY — without touching the per-charge → gift booking
+(Plane 2), which the Gift report owns. Approving a "linked" (proposed)
+settlement is therefore one click: the tie is stamped confirmed and the
+QuickBooks deposit is marked reconciled so the coarse deposit can never
+credit donors on top of the individual per-charge Stripe gifts (that
+deposit→reconciled flip IS the double-count guard).
+
+Behaviour by the payout's current settlement-link state:
+  • proposed (clean)                → confirm; deposit pending → reconciled.
+  • proposed + approved-QB-gift conflict → keep the existing gift; confirm
+    the linkage only (deposit + gift untouched).
+  • already confirmed               → idempotent success (no re-book).
+  • no link + depositStagedPaymentId body → propose that payout↔deposit tie,
+    then confirm it (powers the Settlement report Resolve box in BOTH
+    directions: a payout anchor picking a deposit, or a deposit anchor
+    picking a payout).
+  • no link + no deposit            → 400 (nothing to confirm).
+
+ * @summary Confirm a payout↔deposit settlement tie (Plane 1 only).
+ */
+export const getConfirmSettlementLinkUrl = (payoutId: string,) => {
+
+
+  
+
+  return `/api/reconciliation/settlement-links/${payoutId}/confirm`
+}
+
+export const confirmSettlementLink = async (payoutId: string,
+    confirmSettlementLinkBody?: ConfirmSettlementLinkBody, options?: RequestInit): Promise<ConfirmSettlementLinkResult> => {
+  
+  return customFetch<ConfirmSettlementLinkResult>(getConfirmSettlementLinkUrl(payoutId),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      confirmSettlementLinkBody,)
+  }
+);}
+  
+
+
+
+export const getConfirmSettlementLinkMutationOptions = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmSettlementLink>>, TError,{payoutId: string;data: BodyType<ConfirmSettlementLinkBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof confirmSettlementLink>>, TError,{payoutId: string;data: BodyType<ConfirmSettlementLinkBody>}, TContext> => {
+
+const mutationKey = ['confirmSettlementLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmSettlementLink>>, {payoutId: string;data: BodyType<ConfirmSettlementLinkBody>}> = (props) => {
+          const {payoutId,data} = props ?? {};
+
+          return  confirmSettlementLink(payoutId,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConfirmSettlementLinkMutationResult = NonNullable<Awaited<ReturnType<typeof confirmSettlementLink>>>
+    export type ConfirmSettlementLinkMutationBody = BodyType<ConfirmSettlementLinkBody>
+    export type ConfirmSettlementLinkMutationError = ErrorType<BadRequestResponse | void>
+
+    /**
+ * @summary Confirm a payout↔deposit settlement tie (Plane 1 only).
+ */
+export const useConfirmSettlementLink = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmSettlementLink>>, TError,{payoutId: string;data: BodyType<ConfirmSettlementLinkBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof confirmSettlementLink>>,
+        TError,
+        {payoutId: string;data: BodyType<ConfirmSettlementLinkBody>},
+        TContext
+      > => {
+      return useMutation(getConfirmSettlementLinkMutationOptions(options));
     }
     /**
  * Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.

@@ -267,9 +267,17 @@ const sourceGroupAggExpr = sql<{
 // QB↔gift link is DONE and should "stay approved" — it only re-enters this queue
 // when there is still Stripe to tie in (a payout matched/proposed to it). So an
 // approved row is excluded iff it has a gift link AND no Stripe to link;
-// otherwise (no gift, or Stripe pending) it stays as real work. "reconciled"
-// surfaces the terminal rows; any other named bucket reuses the legacy mapping
-// (which includes the fiscally_sponsored parking queue itself).
+// otherwise (no gift, or Stripe pending) it stays as real work.
+// `reconciled` deposits are normally terminal, EXCEPT a Stripe-payout deposit
+// whose payout↔deposit settlement has been confirmed (Plane 1) but whose backing
+// charges are not yet all credited to gifts (Plane 2). The settlement report now
+// confirms ONLY the settlement link, marking the deposit `reconciled` while
+// leaving per-charge crediting to the gift report — so such a deposit must stay
+// in the live queue until every charge is tied, or the unbooked charges would be
+// invisible/unbookable (silent under-credit). The lateral charge expansion +
+// unresolved-charge filter below collapse it to just its unbooked charge cards
+// and drop it once the last charge books. Any other named bucket reuses the
+// legacy mapping (which includes the fiscally_sponsored parking queue itself).
 function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
   if (!queue || queue === "all")
     return sql`(
@@ -285,6 +293,15 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
             SELECT 1 FROM settlement_links sl
             WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
           )
+        )
+      )
+      OR (
+        ${stagedPayments.status} = 'reconciled'
+        AND EXISTS (
+          SELECT 1 FROM settlement_links sl
+          JOIN stripe_staged_charges c ON c.stripe_payout_id = sl.payout_id
+          WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
+            AND COALESCE(c.matched_gift_id, c.created_gift_id) IS NULL
         )
       )
     )`;

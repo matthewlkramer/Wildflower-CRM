@@ -17,8 +17,10 @@ import {
  * row is excluded from the default queue iff it has a gift link
  * (matchedGiftId OR createdGiftId) AND no Stripe payout matched/proposed to it.
  * `pending` rows, approved rows with NO gift, and approved rows that still carry
- * Stripe evidence remain real work. `reconciled` rows only show under the
- * explicit `reconciled` queue.
+ * Stripe evidence remain real work. A `reconciled` row is normally terminal
+ * (explicit `reconciled` queue only) EXCEPT a settlement-confirmed deposit whose
+ * backing Stripe charges are not all booked yet — that one stays in the default
+ * queue (as its unbooked charge cards) until every charge is credited.
  *
  * Same seam as the other reconciliation suites: only `requireAuth` is mocked to
  * inject a seeded admin; the queue SQL is the real production code. Skips
@@ -509,6 +511,46 @@ describe.skipIf(!HAS_DB)(
       const expanded = list.filter((c) => c.stagedPaymentId === depositId);
       expect(expanded.length).toBe(1);
       expect(expanded[0]!.stripeChargeId).toBe(openCharge);
+    }, 30_000);
+
+    it("keeps a settlement-confirmed (reconciled) deposit in the work queue until its charges are booked", async () => {
+      // Plane 1 (payout↔deposit) confirmed: the new one-click settlement approve
+      // ties the link and marks the QB deposit lump `reconciled`. Plane 2 (per
+      // charge → gift) is NOT done: a backing charge is still uncredited. The
+      // deposit must stay in the default gift-report queue as its unbooked charge
+      // card, or the money would be invisible and unbookable (silent under-credit).
+      const depositId = await seedStaged({
+        label: "reconciled-settlement-open-charge",
+        status: "reconciled",
+        amount: "180.00",
+      });
+      const payoutId = await seedPayoutFor(depositId, "matched");
+      const openCharge = await seedCharge({
+        payoutId,
+        gross: "180.00",
+        fee: "5.40",
+        net: "174.60",
+        payerName: "Reconciled Settlement Open Charge",
+        organizationId: ORG_ID,
+      });
+
+      const before = await cards();
+      const expanded = before.filter((c) => c.stagedPaymentId === depositId);
+      expect(expanded.length).toBe(1);
+      expect(expanded[0]!.stripeChargeId).toBe(openCharge);
+      // Charge cards are never bulk-approvable (per-charge action only).
+      expect(expanded[0]!.ready ?? false).toBe(false);
+
+      // Book the charge → the deposit has no unresolved charges left → it drops
+      // out of the work queue (now terminal at both planes).
+      const giftForCharge = await seedGift("180.00", "2026-03-15");
+      await db
+        .update(schema.stripeStagedCharges)
+        .set({ matchStatus: "matched", matchedGiftId: giftForCharge })
+        .where(eqFn(schema.stripeStagedCharges.id, openCharge));
+
+      const after = await cardIds();
+      expect(after.has(depositId)).toBe(false);
     }, 30_000);
   },
 );

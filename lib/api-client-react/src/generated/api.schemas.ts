@@ -3953,6 +3953,40 @@ export interface RejectSettlementProposalResult {
   rejected: boolean;
 }
 
+/**
+ * Optional resolve payload. When the payout has NO settlement link yet, a
+depositStagedPaymentId proposes that payout↔deposit tie before confirming
+(the Settlement report's Resolve box, in either direction). Omit it to
+confirm an already-proposed tie.
+
+ */
+export interface ConfirmSettlementLinkBody {
+  /** QB deposit staged-payment id to tie to this payout before confirming (resolve). Omit when a proposed link already exists. */
+  depositStagedPaymentId?: string | null;
+}
+
+/**
+ * Which path ran: a clean pending-deposit confirm, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link.
+ */
+export type ConfirmSettlementLinkResultKind = typeof ConfirmSettlementLinkResultKind[keyof typeof ConfirmSettlementLinkResultKind];
+
+
+export const ConfirmSettlementLinkResultKind = {
+  confirmed_reconciled: 'confirmed_reconciled',
+  conflict_kept: 'conflict_kept',
+  already_confirmed: 'already_confirmed',
+} as const;
+
+export interface ConfirmSettlementLinkResult {
+  /** True when the settlement link is confirmed after this call. */
+  confirmed: boolean;
+  /** Which path ran: a clean pending-deposit confirm, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link. */
+  kind: ConfirmSettlementLinkResultKind;
+  payoutId: string;
+  /** The QB deposit the confirmed link ties to (null only if the link's deposit pointer had degraded). */
+  depositStagedPaymentId?: string | null;
+}
+
 export type GiftMissingQbDonorKind = typeof GiftMissingQbDonorKind[keyof typeof GiftMissingQbDonorKind] | null;
 
 

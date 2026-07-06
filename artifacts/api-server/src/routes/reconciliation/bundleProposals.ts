@@ -20,6 +20,8 @@ import {
   ConfirmReconciliationBundleParams,
   ConfirmReconciliationBundleBody,
   RejectSettlementProposalParams,
+  ConfirmSettlementLinkParams,
+  ConfirmSettlementLinkBody,
 } from "@workspace/api-zod";
 import {
   assembleBundleProposal,
@@ -52,7 +54,11 @@ import {
 import { donorOf, donorsMatch, type LinkDonor } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
-import { deleteSettlementLink } from "../../lib/settlementLink";
+import {
+  deleteSettlementLink,
+  upsertSettlementLink,
+} from "../../lib/settlementLink";
+import { proposeSettlementLink } from "../../lib/settlementWriter";
 
 /**
  * Reactive "settlement bundle" reconciliation endpoints.
@@ -887,6 +893,189 @@ router.post(
 
     await deleteSettlementLink(db, params.payoutId);
     res.json({ rejected: true });
+  }),
+);
+
+// ─── POST /reconciliation/settlement-links/:payoutId/confirm ─────────────────
+// Confirm the Plane-1 payout↔deposit settlement tie ONLY (docs/reconciliation-
+// design.md §4.3/§4.4) — decoupled from the Plane-2 per-charge → gift booking the
+// Gift report owns. This is what lets a "linked" (proposed) settlement approve in
+// ONE click: we never re-derive the whole per-charge bundle here, so a charge that
+// still needs a donor/gift decision no longer blocks confirming the settlement.
+//
+// Money-safety: confirming stamps the deposit `reconciled`, which IS the double-
+// count guard — the coarse deposit can never also credit donors on top of the
+// individual per-charge Stripe gifts. Charges keep being credited via the Gift
+// report, exactly once.
+//
+// State machine (mirrors the tie step the bundle confirm used, minus the bundle):
+//   • proposed, no conflict gift → confirmPendingQbDepositInTx (deposit → reconciled)
+//   • proposed + conflict gift   → confirmKeepApprovedQbGiftInTx (keep the gift)
+//   • already confirmed          → idempotent success
+//   • no link + body deposit     → propose the tie, then confirm (Resolve, both dirs)
+//   • no link + no deposit       → 400
+router.post(
+  "/reconciliation/settlement-links/:payoutId/confirm",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const params = parseOrBadRequest(
+      ConfirmSettlementLinkParams,
+      req.params,
+      res,
+    );
+    if (!params) return;
+    const body = parseOrBadRequest(ConfirmSettlementLinkBody, req.body, res);
+    if (!body) return;
+
+    const userId = user.id;
+    const payoutId = params.payoutId;
+    const pickedDepositId = body.depositStagedPaymentId ?? null;
+
+    try {
+      const result = await db.transaction(async (tx) => {
+        // Lock the payout so the link read + path decision stay consistent with
+        // the confirm primitives (which re-lock the same row FOR UPDATE).
+        const payout = await tx
+          .select({ id: stripePayouts.id })
+          .from(stripePayouts)
+          .where(eq(stripePayouts.id, payoutId))
+          .for("update")
+          .then((r) => r[0]);
+        if (!payout) {
+          throw new ReconcileAbort(404, {
+            error: "not_found",
+            message: "Payout not found.",
+          });
+        }
+
+        const link = await tx
+          .select({
+            lifecycle: settlementLinks.lifecycle,
+            conflictGiftId: settlementLinks.conflictGiftId,
+            depositStagedPaymentId: settlementLinks.depositStagedPaymentId,
+          })
+          .from(settlementLinks)
+          .where(eq(settlementLinks.payoutId, payoutId))
+          .then((r) => r[0] ?? null);
+
+        // Already settled — idempotent success (never re-book).
+        if (link?.lifecycle === "confirmed") {
+          return {
+            confirmed: true,
+            kind: "already_confirmed" as const,
+            payoutId,
+            depositStagedPaymentId: link.depositStagedPaymentId,
+          };
+        }
+
+        // A proposed tie exists → confirm it on its current shape.
+        if (link?.lifecycle === "proposed") {
+          if (link.conflictGiftId) {
+            const r = await confirmKeepApprovedQbGiftInTx(tx, {
+              payoutId,
+              userId,
+            });
+            return {
+              confirmed: true,
+              kind: "conflict_kept" as const,
+              payoutId,
+              depositStagedPaymentId: r.stagedPaymentId,
+            };
+          }
+          const r = await confirmPendingQbDepositInTx(tx, { payoutId, userId });
+          return {
+            confirmed: true,
+            kind: "confirmed_reconciled" as const,
+            payoutId,
+            depositStagedPaymentId: r.stagedPaymentId,
+          };
+        }
+
+        // No settlement link at all → Resolve: propose the caller's chosen
+        // payout↔deposit tie, then confirm it in the same transaction.
+        if (!pickedDepositId) {
+          throw new ReconcileAbort(400, {
+            error: "no_deposit",
+            message:
+              "This payout has no proposed deposit. Pick a QuickBooks deposit to tie before confirming.",
+          });
+        }
+        const deposit = await tx
+          .select({
+            id: stagedPayments.id,
+            qbEntityType: stagedPayments.qbEntityType,
+            status: stagedPayments.status,
+            sourceGroupId: stagedPayments.sourceGroupId,
+          })
+          .from(stagedPayments)
+          .where(eq(stagedPayments.id, pickedDepositId))
+          .for("update")
+          .then((r) => r[0]);
+        if (!deposit) {
+          throw new ReconcileAbort(404, {
+            error: "deposit_not_found",
+            message: "The chosen QuickBooks deposit no longer exists.",
+          });
+        }
+        if (deposit.qbEntityType !== "deposit" || deposit.status !== "pending") {
+          throw new ReconcileAbort(409, {
+            error: "deposit_ineligible",
+            message:
+              "The chosen QuickBooks deposit is no longer an open deposit. Refresh and retry.",
+          });
+        }
+        if (deposit.sourceGroupId) {
+          throw new ReconcileAbort(409, {
+            error: "deposit_grouped",
+            message:
+              "The chosen deposit belongs to a payment group and can't be settled directly.",
+          });
+        }
+        // Exclusivity: a deposit may back only one payout's settlement.
+        const otherLink = await tx
+          .select({ id: settlementLinks.id })
+          .from(settlementLinks)
+          .where(eq(settlementLinks.depositStagedPaymentId, pickedDepositId))
+          .then((r) => r[0]);
+        if (otherLink) {
+          throw new ReconcileAbort(409, {
+            error: "deposit_already_tied",
+            message:
+              "The chosen deposit is already tied to another payout. Refresh and retry.",
+          });
+        }
+
+        await upsertSettlementLink(
+          tx,
+          payoutId,
+          proposeSettlementLink(pickedDepositId, null),
+        );
+        const r = await confirmPendingQbDepositInTx(tx, { payoutId, userId });
+        return {
+          confirmed: true,
+          kind: "confirmed_reconciled" as const,
+          payoutId,
+          depositStagedPaymentId: r.stagedPaymentId,
+        };
+      });
+      res.json(result);
+    } catch (e) {
+      if (e instanceof ReconcileAbort) {
+        res.status(e.httpStatus).json(e.payload);
+        return;
+      }
+      if (e instanceof TransitionError) {
+        res
+          .status(409)
+          .json({ error: "tie_transition", message: e.message });
+        return;
+      }
+      throw e;
+    }
   }),
 );
 
