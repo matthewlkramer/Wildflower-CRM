@@ -443,4 +443,74 @@ describe("runConsistencyGate", () => {
       ),
     ).not.toContain("gift_already_stripe_sourced");
   });
+
+  it("gift already QB-linked to a different staged payment → gift_already_qb_linked", () => {
+    expect(
+      codes(
+        baseInput({
+          qbLinkedPaymentId: "sp-old",
+        }),
+      ),
+    ).toContain("gift_already_qb_linked");
+  });
+
+  it("no incumbent QB payment → no gift_already_qb_linked", () => {
+    expect(codes(baseInput({ qbLinkedPaymentId: null }))).not.toContain(
+      "gift_already_qb_linked",
+    );
+  });
+
+  it("displaceLinkedPayment confirmed → displacement allowed (no block)", () => {
+    expect(
+      codes(
+        baseInput({
+          qbLinkedPaymentId: "sp-old",
+          displaceLinkedPayment: true,
+        }),
+      ),
+    ).not.toContain("gift_already_qb_linked");
+  });
+
+  it("gift_already_qb_linked issue carries the incumbent payment + target details", () => {
+    const issues = runConsistencyGate(
+      baseInput({
+        qbLinkedPaymentId: "sp-old",
+        currentQbPaymentDetails: {
+          id: "sp-old",
+          amount: "100.00",
+          payerName: "Jane Donor",
+          date: "2026-01-15",
+        },
+      }),
+    );
+    const issue = issues.find((i) => i.code === "gift_already_qb_linked");
+    expect(issue?.details?.currentQbPayment?.id).toBe("sp-old");
+    expect(issue?.details?.currentQbPayment?.payerName).toBe("Jane Donor");
+    // baseInput's anchor is "sp1" — the payment being approved.
+    expect(issue?.details?.targetStagedPaymentId).toBe("sp1");
+  });
+
+  it("composes with stripe re-source: both conflicts surface together, both flags clear both", () => {
+    const conflicting = baseInput({
+      stripeCharge: { id: "c-new", stripePayoutId: "po1" },
+      stagedPayoutIds: ["po1"],
+      qbLinkedPaymentId: "sp-old",
+      gift: {
+        ...baseInput().gift,
+        finalAmountSource: "stripe",
+        finalAmountStripeChargeId: "c-old",
+      },
+    });
+    const both = codes(conflicting);
+    expect(both).toContain("gift_already_stripe_sourced");
+    expect(both).toContain("gift_already_qb_linked");
+    // Both confirmation flags together clear both issues in one pass.
+    const cleared = codes({
+      ...conflicting,
+      switchStripeSource: true,
+      displaceLinkedPayment: true,
+    });
+    expect(cleared).not.toContain("gift_already_stripe_sourced");
+    expect(cleared).not.toContain("gift_already_qb_linked");
+  });
 });

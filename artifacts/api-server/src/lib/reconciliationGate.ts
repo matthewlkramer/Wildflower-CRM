@@ -37,6 +37,7 @@ export type GateIssueCode =
   | "stripe_charge_unlinked"
   | "stripe_charge_required"
   | "gift_already_stripe_sourced"
+  | "gift_already_qb_linked"
   | "amount_out_of_band";
 
 /** Human-readable snapshot of the Stripe charge that currently backs a gift,
@@ -49,11 +50,26 @@ export interface GateStripeChargeDetails {
   date: string | null;
 }
 
+/** Human-readable snapshot of the QuickBooks staged payment that is currently
+ *  linked to a gift (the "incumbent"), surfaced in the `gift_already_qb_linked`
+ *  issue so the UI can describe the displacement the reviewer is about to
+ *  confirm. */
+export interface GateQbPaymentDetails {
+  id: string;
+  amount: string | null;
+  payerName: string | null;
+  date: string | null;
+}
+
 export interface GateIssueDetails {
   /** The Stripe charge presently sourcing the gift (for gift_already_stripe_sourced). */
   currentStripeCharge?: GateStripeChargeDetails;
   /** The charge the reviewer is trying to switch TO. */
   targetStripeChargeId?: string;
+  /** The QB staged payment presently linked to the gift (for gift_already_qb_linked). */
+  currentQbPayment?: GateQbPaymentDetails;
+  /** The staged payment the reviewer is trying to link (displace onto). */
+  targetStagedPaymentId?: string;
 }
 
 export interface GateIssue {
@@ -128,6 +144,19 @@ export interface ConsistencyGateInput {
    *  route. Attached to the `gift_already_stripe_sourced` issue so the UI can
    *  describe what it is about to swap. */
   currentStripeChargeDetails?: GateStripeChargeDetails | null;
+  /** The id of an INCUMBENT QuickBooks staged payment already QB-linked to the
+   *  gift (other than the anchor being approved), resolved by the route from the
+   *  cash-application ledger. When set, tying THIS payment would collide with the
+   *  incumbent — blocked unless the reviewer confirms `displaceLinkedPayment`. */
+  qbLinkedPaymentId?: string | null;
+  /** When true (link_existing_gift + human-confirmed), allow displacing the
+   *  incumbent QB payment: the commit disconnects it back to the pending queue
+   *  and links this one instead. */
+  displaceLinkedPayment?: boolean;
+  /** The incumbent QB staged payment presently linked to the gift, loaded under
+   *  lock by the route. Attached to the `gift_already_qb_linked` issue so the UI
+   *  can describe the displacement it is about to perform. */
+  currentQbPaymentDetails?: GateQbPaymentDetails | null;
 }
 
 /** Processor fees lower the QB/bank net below the human gross by up to ~10% + $1. */
@@ -211,6 +240,9 @@ export function runConsistencyGate(input: ConsistencyGateInput): GateIssue[] {
     overrideAmountMismatchReason,
     switchStripeSource = false,
     currentStripeChargeDetails = null,
+    qbLinkedPaymentId = null,
+    displaceLinkedPayment = false,
+    currentQbPaymentDetails = null,
   } = input;
 
   // ── QuickBooks anchor ──────────────────────────────────────────────────────
@@ -311,6 +343,28 @@ export function runConsistencyGate(input: ConsistencyGateInput): GateIssue[] {
       code: "stripe_charge_required",
       message:
         "This payment has Stripe charge detail; select the Stripe charge so its gross amount is used.",
+    });
+  }
+
+  // ── QB-link displacement (human-confirmed) ─────────────────────────────────
+  // Tying THIS payment to a gift that is ALREADY QB-linked to a DIFFERENT staged
+  // payment would collide with the ledger's one-QB-payment-per-gift guard (the
+  // link commit's UPDATE would find 0 rows → a dead-end 409). Block it UNLESS the
+  // reviewer explicitly confirmed the displacement — the commit then disconnects
+  // the incumbent back to the pending/unmatched queue before linking this one.
+  // The route only ever supplies an incumbent id OTHER than the anchor being
+  // approved (it excludes the anchor from the ledger lookup).
+  if (qbLinkedPaymentId && !displaceLinkedPayment) {
+    issues.push({
+      code: "gift_already_qb_linked",
+      message:
+        "This gift is already linked to a different QuickBooks staged payment.",
+      details: {
+        ...(currentQbPaymentDetails
+          ? { currentQbPayment: currentQbPaymentDetails }
+          : {}),
+        ...(staged?.id ? { targetStagedPaymentId: staged.id } : {}),
+      },
     });
   }
 

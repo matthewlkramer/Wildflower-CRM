@@ -419,6 +419,73 @@ export function extractStripeSourceConflict(
   return null;
 }
 
+/** Snapshot of the incumbent QuickBooks staged payment currently linked to a
+ *  gift, as returned in the `gift_already_qb_linked` gate issue's
+ *  `details.currentQbPayment`. */
+export interface QbLinkConflict {
+  currentPayment: {
+    id: string;
+    amount: string | null;
+    payerName: string | null;
+    date: string | null;
+  } | null;
+  targetStagedPaymentId: string | null;
+}
+
+/**
+ * When a re-target 409s because the gift is already linked to a DIFFERENT
+ * QuickBooks staged payment, pull the incumbent payment's details out of the
+ * gate issue so the workbench can describe the displacement the reviewer is
+ * about to confirm. Returns null when the failure isn't a `gift_already_qb_linked`
+ * conflict.
+ */
+export function extractQbLinkConflict(err: unknown): QbLinkConflict | null {
+  if (!err || typeof err !== "object") return null;
+  const data = (err as { data?: unknown }).data;
+  if (!data || typeof data !== "object") return null;
+  const details = (data as { details?: unknown }).details;
+  if (!details || typeof details !== "object") return null;
+  const issues = (details as { issues?: unknown }).issues;
+  if (!Array.isArray(issues)) return null;
+  for (const issue of issues) {
+    if (!issue || typeof issue !== "object") continue;
+    if ((issue as { code?: unknown }).code !== "gift_already_qb_linked") {
+      continue;
+    }
+    const d = (issue as { details?: unknown }).details;
+    const cur =
+      d && typeof d === "object"
+        ? (d as { currentQbPayment?: unknown }).currentQbPayment
+        : null;
+    const target =
+      d && typeof d === "object"
+        ? (d as { targetStagedPaymentId?: unknown }).targetStagedPaymentId
+        : null;
+    return {
+      currentPayment:
+        cur && typeof cur === "object"
+          ? {
+              id: String((cur as { id?: unknown }).id ?? ""),
+              amount:
+                typeof (cur as { amount?: unknown }).amount === "string"
+                  ? (cur as { amount: string }).amount
+                  : null,
+              payerName:
+                typeof (cur as { payerName?: unknown }).payerName === "string"
+                  ? (cur as { payerName: string }).payerName
+                  : null,
+              date:
+                typeof (cur as { date?: unknown }).date === "string"
+                  ? (cur as { date: string }).date
+                  : null,
+            }
+          : null,
+      targetStagedPaymentId: typeof target === "string" ? target : null,
+    };
+  }
+  return null;
+}
+
 export type OutcomeChoice =
   | "create_gift_from_opportunity"
   | "convert_to_pledge_and_first_payment";

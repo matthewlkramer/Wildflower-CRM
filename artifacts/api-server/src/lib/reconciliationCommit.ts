@@ -17,6 +17,7 @@ import {
   applyPaymentApplication,
   bookStripeChargeApplication,
   qbLedgerExistsForGiftExcludingPayment,
+  removePaymentApplicationsForPayment,
   removePaymentApplicationsForStripeCharge,
 } from "./paymentApplications";
 import { recordAudit } from "./audit";
@@ -555,6 +556,13 @@ export interface LinkGiftInTxArgs {
    *  when a source switch was confirmed — orphaned back to the queue before the
    *  new charge is stamped. Null unless switching. */
   oldStripeCharge?: typeof stripeStagedCharges.$inferSelect | null;
+  /** Whether the reviewer confirmed displacing an incumbent QB staged payment
+   *  already linked to the gift (Task #550). */
+  displaceLinkedPayment?: boolean;
+  /** The incumbent QB staged payment currently linked to the gift, ALREADY
+   *  locked, when a displacement was confirmed — disconnected back to the
+   *  pending queue before this payment is tied. Null unless displacing. */
+  incumbentStagedPayment?: typeof stagedPayments.$inferSelect | null;
   /** App user id stamped as the confirmer. */
   userId: string;
   /** Request used for audit attribution. */
@@ -585,6 +593,8 @@ export async function linkGiftInTx(
     donorSwitching,
     switchStripeSource = false,
     oldStripeCharge = null,
+    displaceLinkedPayment = false,
+    incumbentStagedPayment = null,
   } = args;
 
   const rederivePledgeIds: string[] = [];
@@ -595,6 +605,65 @@ export async function linkGiftInTx(
     !!oldStripeCharge &&
     !!charge &&
     oldStripeCharge.id !== charge.id;
+
+  // Task #550 — QB-link displacement (human-confirmed). The gift is already
+  // QB-linked to a DIFFERENT staged payment (the incumbent); the main UPDATE
+  // below would otherwise dead-end on its `NOT qbLedgerExistsForGiftExcluding
+  // Payment` guard. Disconnect the incumbent FIRST so that guard passes, then
+  // link this payment. Mirrors the QB single-payment revert (quickbooks/
+  // shared.ts revertOneStagedPayment isReconcile branch): undo the incumbent's
+  // cash-application to the gift, reverse its final-amount stamp, and return it
+  // to the pending/unmatched queue. The gift itself is NEVER touched here — it
+  // is the displacement TARGET and stays put.
+  const displacedLinkedPayment =
+    displaceLinkedPayment &&
+    !!incumbentStagedPayment &&
+    incumbentStagedPayment.id !== stagedPaymentId;
+  if (displacedLinkedPayment && incumbentStagedPayment) {
+    // Only a DIRECT match incumbent is safely displaceable one-at-a-time. A gift
+    // linked through a group (groupReconciledGiftId) or a split (paymentless on
+    // this gift, resolved via child split rows) must be reverted deliberately —
+    // half-releasing it would corrupt the group/split invariant. Refuse it.
+    const isDirectMatch =
+      incumbentStagedPayment.matchedGiftId === giftId &&
+      incumbentStagedPayment.groupReconciledGiftId == null;
+    if (!isDirectMatch) {
+      throw new ReconcileAbort(409, {
+        error: "incumbent_not_displaceable",
+        message:
+          "That gift is linked to another payment through a group or split. Revert that reconciliation first, then re-target.",
+      });
+    }
+    await removePaymentApplicationsForPayment(tx, incumbentStagedPayment.id);
+    const un = await unstampGiftFinalAmount(tx, giftId, {
+      source: "quickbooks",
+      qbStagedPaymentId: incumbentStagedPayment.id,
+    });
+    if (un.restored) {
+      await adjustSingleAllocationOrFlag(
+        tx,
+        giftId,
+        un.oldAmount,
+        un.newAmount,
+        "quickbooks",
+      );
+    }
+    await tx
+      .update(stagedPayments)
+      .set({
+        status: "pending",
+        matchedGiftId: null,
+        createdGiftId: null,
+        groupReconciledGiftId: null,
+        autoApplied: false,
+        matchConfirmedByUserId: null,
+        matchConfirmedAt: null,
+        approvedByUserId: null,
+        approvedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(stagedPayments.id, incumbentStagedPayment.id));
+  }
 
   // Tie the staged row to the gift. Only succeeds if still approvable AND no
   // other staged payment already QB-claims this gift in the ledger — the ledger
@@ -828,6 +897,8 @@ export async function linkGiftInTx(
   const summaryParts = ["Reconciled QuickBooks payment to gift"];
   if (donorSwitching) summaryParts.push("switched its donor");
   if (switchedStripeSource) summaryParts.push("switched its Stripe source");
+  if (displacedLinkedPayment)
+    summaryParts.push("displaced its previously linked payment");
   await recordAudit(tx, auditReq, {
     action: "update",
     entityType: "gift",
@@ -846,6 +917,12 @@ export async function linkGiftInTx(
             switchedStripeSource: true,
             fromStripeChargeId: oldStripeCharge.id,
             toStripeChargeId: charge?.id ?? null,
+          }
+        : {}),
+      ...(displacedLinkedPayment && incumbentStagedPayment
+        ? {
+            displacedLinkedPayment: true,
+            displacedStagedPaymentId: incumbentStagedPayment.id,
           }
         : {}),
     },

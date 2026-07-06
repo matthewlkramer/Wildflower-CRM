@@ -153,3 +153,4 @@
 - [Gift↔payment match band policy](gift-match-band-policy.md) — all gift-match amount/window logic flows through lib/giftMatch.ts; strict=ready/gate, widened=propose, known-net=Stripe net (guard net NOT NULL); ready ⊆ approve-gate invariant.
 - [drizzle ORDER BY bare-literal ordinal](drizzle-orderby-literal-ordinal.md) — a literal like `asc(sql\`0\`)` placeholder renders `ORDER BY 0` → Postgres 500 (ordinal position); build orderBy conditionally, only real terms + a column tiebreak.
 - [Settlement-only confirm vs gift-report queue](reconciliation-settlement-only-confirm.md) — settlement-only confirm stamps deposit reconciled; gift-report queue must still show reconciled deposits with unbooked charges or money under-credits.
+- [Reconciliation re-target conflict composition](reconciliation-retarget-conflict-compose.md) — gate collects ALL issues so stripe re-source + QB-link displacement resolve in ONE confirm; displace only DIRECT-match incumbents.

@@ -688,6 +688,154 @@ describe.skipIf(!HAS_DB)(
   },
 );
 
+describe.skipIf(!HAS_DB)(
+  "Reconciliation approve — displace linked QB payment (integration)",
+  () => {
+    // Establish an INCUMBENT: link a plain QB staged payment (no Stripe charges)
+    // to the gift through the real approve route so the cash-application ledger
+    // row + matchedGiftId linkage exist exactly as production creates them.
+    async function bookIncumbentLink(
+      giftId: string,
+      amount: string,
+    ): Promise<string> {
+      const incumbentId = await seedStaged(amount, { payerName: "Incumbent" });
+      const res = await api(
+        `/api/reconciliation/cards/${incumbentId}/approve`,
+        { outcome: "link_existing_gift", giftId },
+      );
+      expect(res.status).toBe(200);
+      expect((await readStaged(incumbentId)).matchedGiftId).toBe(giftId);
+      return incumbentId;
+    }
+
+    it("hard-blocks without the flag, surfacing the incumbent payment in the 409 details", async () => {
+      const giftId = await seedGift("100.00");
+      const incumbentId = await bookIncumbentLink(giftId, "100.00");
+
+      const stagedId = await seedStaged("100.00");
+      const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+        outcome: "link_existing_gift",
+        giftId,
+      });
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("consistency_gate");
+      const issue = (res.json.details?.issues ?? []).find(
+        (i: any) => i.code === "gift_already_qb_linked",
+      );
+      expect(issue).toBeTruthy();
+      expect(issue.details?.currentQbPayment?.id).toBe(incumbentId);
+      expect(issue.details?.targetStagedPaymentId).toBe(stagedId);
+
+      // Nothing mutated: the incumbent still holds the gift; the new row is
+      // still pending.
+      expect((await readStaged(incumbentId)).status).toBe("reconciled");
+      expect((await readStaged(incumbentId)).matchedGiftId).toBe(giftId);
+      expect((await readStaged(stagedId)).status).toBe("pending");
+    }, 30_000);
+
+    it("with displaceLinkedPayment disconnects the incumbent (back to pending) and links the new one", async () => {
+      const giftId = await seedGift("100.00");
+      const incumbentId = await bookIncumbentLink(giftId, "100.00");
+
+      const stagedId = await seedStaged("100.00");
+      const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+        outcome: "link_existing_gift",
+        giftId,
+        displaceLinkedPayment: true,
+      });
+      expect(res.status).toBe(200);
+      expect(res.json.ok).toBe(true);
+
+      // The incumbent is returned to the pending/unmatched queue, fully unlinked.
+      const incumbent = await readStaged(incumbentId);
+      expect(incumbent.status).toBe("pending");
+      expect(incumbent.matchedGiftId).toBeNull();
+      expect(incumbent.createdGiftId).toBeNull();
+      expect(incumbent.groupReconciledGiftId).toBeNull();
+      expect(incumbent.matchConfirmedAt).toBeNull();
+
+      // The new payment now holds the gift as permanent reconciled evidence.
+      const staged = await readStaged(stagedId);
+      expect(staged.status).toBe("reconciled");
+      expect(staged.matchedGiftId).toBe(giftId);
+    }, 30_000);
+
+    it("composes with the Stripe source switch: one confirmation resolves BOTH conflicts", async () => {
+      const giftId = await seedGift("100.00");
+      // Incumbent QB link on the gift (creates the ledger row) …
+      const incumbentId = await bookIncumbentLink(giftId, "100.00");
+      // … and additionally re-point the gift's final amount at an OLD Stripe
+      // charge so it is ALSO Stripe-sourced. Both conflicts now coexist.
+      const oldPayoutId = await seedPayout(await seedStaged("100.00"));
+      const oldChargeId = await seedCharge({
+        payoutId: oldPayoutId,
+        grossAmount: "100.00",
+      });
+      await db
+        .update(schema.giftsAndPayments)
+        .set({
+          finalAmountSource: "stripe",
+          finalAmountStripeChargeId: oldChargeId,
+        })
+        .where(eqFn(schema.giftsAndPayments.id, giftId));
+      await db
+        .update(schema.stripeStagedCharges)
+        .set({
+          status: "reconciled",
+          matchedGiftId: giftId,
+          matchStatus: "matched",
+          matchConfirmedByUserId: TEST_USER_ID,
+        })
+        .where(eqFn(schema.stripeStagedCharges.id, oldChargeId));
+
+      // A NEW Stripe-backed deposit targeting the same gift.
+      const stagedId = await seedStaged("100.00");
+      const payoutId = await seedPayout(stagedId);
+      const newChargeId = await seedCharge({
+        payoutId,
+        grossAmount: "100.00",
+      });
+
+      // Without the flags the gate returns BOTH issues in one 409.
+      const blocked = await api(
+        `/api/reconciliation/cards/${stagedId}/approve`,
+        { outcome: "link_existing_gift", giftId, stripeChargeId: newChargeId },
+      );
+      expect(blocked.status).toBe(409);
+      const codes = (blocked.json.details?.issues ?? []).map(
+        (i: any) => i.code,
+      );
+      expect(codes).toContain("gift_already_stripe_sourced");
+      expect(codes).toContain("gift_already_qb_linked");
+
+      // Both flags together resolve both in a single call.
+      const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+        outcome: "link_existing_gift",
+        giftId,
+        stripeChargeId: newChargeId,
+        switchStripeSource: true,
+        displaceLinkedPayment: true,
+      });
+      expect(res.status).toBe(200);
+      expect(res.json.ok).toBe(true);
+
+      // QB incumbent released; new payment linked.
+      const incumbent = await readStaged(incumbentId);
+      expect(incumbent.status).toBe("pending");
+      expect(incumbent.matchedGiftId).toBeNull();
+      expect((await readStaged(stagedId)).matchedGiftId).toBe(giftId);
+
+      // Stripe source switched: gift now sourced from the new charge; old charge
+      // orphaned back to the unmatched-money queue.
+      const gift = await readGift(giftId);
+      expect(gift.finalAmountStripeChargeId).toBe(newChargeId);
+      const oldCharge = await readCharge(oldChargeId);
+      expect(oldCharge.status).toBe("pending");
+      expect(oldCharge.matchedGiftId).toBeNull();
+    }, 30_000);
+  },
+);
+
 describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)", () => {
   it("mints a new gift for the chosen donor and stamps the Stripe GROSS (createdGiftId on the QB anchor, matchedGiftId on the charge)", async () => {
     const stagedId = await seedStaged("100.00");

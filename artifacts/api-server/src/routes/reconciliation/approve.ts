@@ -33,6 +33,7 @@ import {
   mintGiftInTx,
   linkGiftInTx,
 } from "../../lib/reconciliationCommit";
+import { qbLedgerPaymentIdForGiftExcludingPayment } from "../../lib/paymentApplications";
 
 const router: IRouter = Router();
 
@@ -778,6 +779,42 @@ router.post(
           });
         }
 
+        // ── Optional QB-link displacement (human-confirmed, Task #550) ─────────
+        // Tying THIS payment to a gift already QB-linked to a DIFFERENT staged
+        // payment collides with the ledger's one-QB-payment-per-gift guard. Look
+        // up the INCUMBENT payment (excluding this anchor) from the cash-
+        // application ledger — the SAME predicate the link commit's UPDATE guard
+        // uses, so detection and commit can never disagree. Both subquery args
+        // are bound params (not columns), so there is no bare-column footgun.
+        // When present, hard-block (gate: gift_already_qb_linked) unless the
+        // reviewer confirmed the displacement; then load + lock the incumbent so
+        // we can (a) surface its details in the 409 the UI describes and (b) hand
+        // it to the commit to disconnect back to the pending queue. Locking a
+        // second staged row after this anchor carries a rare deadlock risk under
+        // concurrent cross-displacement — Postgres aborts one txn (retryable),
+        // acceptable for this manual admin action (mirrors #546's charge lock).
+        const incumbentPaymentId = await tx
+          .execute<{ incumbent_id: string | null }>(
+            sql`SELECT ${qbLedgerPaymentIdForGiftExcludingPayment(
+              sql`${giftId}`,
+              sql`${stagedPaymentId}`,
+            )} AS incumbent_id`,
+          )
+          .then((r) => r.rows[0]?.incumbent_id ?? null);
+        const displaceLinkedPayment = body.displaceLinkedPayment === true;
+        let incumbentStagedPayment:
+          | typeof stagedPayments.$inferSelect
+          | null = null;
+        if (incumbentPaymentId) {
+          incumbentStagedPayment =
+            (await tx
+              .select()
+              .from(stagedPayments)
+              .where(eq(stagedPayments.id, incumbentPaymentId))
+              .for("update")
+              .then((r) => r[0])) ?? null;
+        }
+
         let opp: typeof opportunitiesAndPledges.$inferSelect | null = null;
         if (opportunityId) {
           opp =
@@ -958,6 +995,16 @@ router.post(
                 date: oldStripeCharge.dateReceived,
               }
             : null,
+          qbLinkedPaymentId: incumbentPaymentId,
+          displaceLinkedPayment,
+          currentQbPaymentDetails: incumbentStagedPayment
+            ? {
+                id: incumbentStagedPayment.id,
+                amount: incumbentStagedPayment.amount,
+                payerName: incumbentStagedPayment.payerName,
+                date: incumbentStagedPayment.dateReceived,
+              }
+            : null,
         });
         if (issues.length > 0) {
           throw new ApproveAbort(409, {
@@ -979,6 +1026,8 @@ router.post(
           donorSwitching,
           switchStripeSource,
           oldStripeCharge,
+          displaceLinkedPayment,
+          incumbentStagedPayment,
           userId: user.id,
           auditReq: req,
         });

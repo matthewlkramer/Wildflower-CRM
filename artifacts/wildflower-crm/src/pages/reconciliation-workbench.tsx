@@ -122,10 +122,12 @@ import {
   deriveCardStatus,
   extractGateIssues,
   extractStripeSourceConflict,
+  extractQbLinkConflict,
   deriveApproveBodyFromProposal,
   EXCLUSION_REASON_LABELS,
   MANUAL_EXCLUSION_FAMILIES,
   type StripeSourceConflict,
+  type QbLinkConflict,
 } from "@/lib/reconciliation";
 import { ReconciliationNodeTypeahead } from "@/components/reconciliation-node-typeahead";
 import { StrayGiftsWorklist } from "@/components/reconciliation-stray-gifts";
@@ -376,13 +378,16 @@ export default function ReconciliationWorkbench() {
   const [researchCard, setResearchCard] = useState<ReconciliationCard | null>(
     null,
   );
-  // A re-target that 409s because the target gift is already sourced from a
-  // DIFFERENT Stripe charge: stash the staged change + the current backing
-  // charge's details so the confirm dialog can describe the swap. Confirming
-  // re-applies that one change with switchStripeSource: true.
-  const [stripeSwitchConfirm, setStripeSwitchConfirm] = useState<{
+  // A re-target that 409s on one or BOTH re-source conflicts: the target gift is
+  // already sourced from a DIFFERENT Stripe charge (#546) and/or already linked
+  // to a DIFFERENT QuickBooks staged payment (#550). Stash the staged change +
+  // whichever conflict details apply so ONE confirm dialog can describe the full
+  // swap. Confirming re-applies that one change with switchStripeSource and/or
+  // displaceLinkedPayment set — a single server call resolves both at once.
+  const [retargetConflict, setRetargetConflict] = useState<{
     change: StagedChange;
-    conflict: StripeSourceConflict;
+    stripe: StripeSourceConflict | null;
+    qb: QbLinkConflict | null;
   } | null>(null);
   // Creating a gift from a multi-payment group: hold the derived approve body
   // here and ask whether each grouped subcomponent should become its own
@@ -770,19 +775,29 @@ export default function ReconciliationWorkbench() {
         applied += 1;
       } catch (err) {
         // A re-target to a gift already sourced from a DIFFERENT Stripe charge
-        // is recoverable: surface the current backing charge so the reviewer can
-        // confirm the switch (which re-applies with switchStripeSource: true).
-        // Keep the row staged with a reason and open the confirm dialog.
-        const conflict =
+        // (#546) and/or already linked to a DIFFERENT QuickBooks staged payment
+        // (#550) is recoverable: the server returns BOTH gate issues together, so
+        // surface whichever apply and open ONE confirm dialog. Confirming re-
+        // applies with switchStripeSource and/or displaceLinkedPayment set — a
+        // single server call resolves both. Keep the row staged with a reason.
+        const stripeConflict =
           change.kind === "retarget" && change.body
             ? extractStripeSourceConflict(err)
             : null;
-        if (conflict) {
-          setStripeSwitchConfirm({ change, conflict });
+        const qbConflict =
+          change.kind === "retarget" && change.body
+            ? extractQbLinkConflict(err)
+            : null;
+        if (stripeConflict || qbConflict) {
+          setRetargetConflict({ change, stripe: stripeConflict, qb: qbConflict });
+          const reasons: string[] = [];
+          if (stripeConflict)
+            reasons.push("already sourced from a different Stripe charge");
+          if (qbConflict)
+            reasons.push("already linked to a different QuickBooks payment");
           remaining.push({
             ...change,
-            failure:
-              "This gift is already sourced from a different Stripe charge — confirm the switch to re-source it.",
+            failure: `This gift is ${reasons.join(" and ")} — confirm to re-target it.`,
           });
           continue;
         }
@@ -849,38 +864,42 @@ export default function ReconciliationWorkbench() {
     return err instanceof Error ? err.message : "Something went wrong.";
   }, []);
 
-  // Reviewer confirmed re-sourcing the target gift from the newly chosen Stripe
-  // charge: re-apply the SAME staged change with `switchStripeSource: true`. On
-  // success the server orphans the old charge back to the unmatched-money queue
-  // and re-sources the gift; the row leaves the tray. On failure it stays with
-  // the new reason.
-  const confirmSwitchStripeSource = useCallback(async () => {
-    if (!stripeSwitchConfirm) return;
-    const { change } = stripeSwitchConfirm;
+  // Reviewer confirmed re-targeting the gift: re-apply the SAME staged change
+  // with the flags for whichever conflicts were detected —
+  // `switchStripeSource: true` (#546) re-sources the gift from the newly chosen
+  // Stripe charge (orphaning the old charge back to the unmatched-money queue)
+  // and/or `displaceLinkedPayment: true` (#550) disconnects the incumbent
+  // QuickBooks payment back to its pending queue. Both flags in ONE call so a
+  // Stripe-backed deposit that hits both conflicts resolves in a single confirm.
+  // On success the row leaves the tray; on failure it stays with the new reason.
+  const confirmResolveRetarget = useCallback(async () => {
+    if (!retargetConflict) return;
+    const { change, stripe, qb } = retargetConflict;
     if (!change.body) {
-      setStripeSwitchConfirm(null);
+      setRetargetConflict(null);
       return;
     }
     setApplying(true);
     try {
       await approveReconciliationCard(change.stagedPaymentId, {
         ...change.body,
-        switchStripeSource: true,
+        ...(stripe ? { switchStripeSource: true } : {}),
+        ...(qb ? { displaceLinkedPayment: true } : {}),
       });
       setStaged((prev) => prev.filter((s) => s.key !== change.key));
       invalidateAll();
-      toast({ title: "Switched the gift's Stripe source." });
+      toast({ title: "Re-targeted the gift." });
     } catch (err) {
       const reason = errMessage(err);
       setStaged((prev) =>
         prev.map((s) => (s.key === change.key ? { ...s, failure: reason } : s)),
       );
-      toast({ title: "Couldn't switch Stripe source", description: reason });
+      toast({ title: "Couldn't re-target the gift", description: reason });
     } finally {
       setApplying(false);
-      setStripeSwitchConfirm(null);
+      setRetargetConflict(null);
     }
-  }, [stripeSwitchConfirm, invalidateAll, toast, errMessage]);
+  }, [retargetConflict, invalidateAll, toast, errMessage]);
 
   const resolveM = useResolveStagedPayment();
   const createGiftM = useCreateGiftFromStagedPayment();
@@ -1867,48 +1886,85 @@ export default function ReconciliationWorkbench() {
           onPick={(gift) => stageRetarget(retargetCard, gift)}
         />
       )}
-      {stripeSwitchConfirm && (
+      {retargetConflict && (
         <AlertDialog
           open
           onOpenChange={(o) => {
-            if (!o) setStripeSwitchConfirm(null);
+            if (!o) setRetargetConflict(null);
           }}
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Switch this gift's Stripe source?</AlertDialogTitle>
+              <AlertDialogTitle>
+                {retargetConflict.stripe && retargetConflict.qb
+                  ? "Re-target this gift's Stripe source and QuickBooks link?"
+                  : retargetConflict.stripe
+                    ? "Switch this gift's Stripe source?"
+                    : "Move this gift's QuickBooks link?"}
+              </AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-3 text-sm">
-                  <p>
-                    This gift's amount is already sourced from a different Stripe
-                    charge. Confirming will re-source it to the newly selected
-                    charge and return the current one to the unmatched-money
-                    queue.
-                  </p>
-                  {stripeSwitchConfirm.conflict.currentCharge && (
+                  {retargetConflict.stripe && (
+                    <p>
+                      This gift's amount is already sourced from a different
+                      Stripe charge. Confirming will re-source it to the newly
+                      selected charge and return the current one to the
+                      unmatched-money queue.
+                    </p>
+                  )}
+                  {retargetConflict.qb && (
+                    <p>
+                      This gift is already linked to a different QuickBooks
+                      payment. Confirming will disconnect that payment (returning
+                      it to the pending queue) and link this one instead.
+                    </p>
+                  )}
+                  {retargetConflict.stripe?.currentCharge && (
                     <div className="rounded-md border bg-muted/40 p-3">
                       <div className="mb-1 font-medium text-foreground">
-                        Current backing charge
+                        Current backing Stripe charge
                       </div>
                       <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5">
                         <dt className="text-muted-foreground">Charge</dt>
                         <dd className="font-mono text-xs">
-                          {stripeSwitchConfirm.conflict.currentCharge.id}
+                          {retargetConflict.stripe.currentCharge.id}
                         </dd>
                         <dt className="text-muted-foreground">Amount</dt>
                         <dd>
-                          {money(
-                            stripeSwitchConfirm.conflict.currentCharge.amount,
-                          )}
+                          {money(retargetConflict.stripe.currentCharge.amount)}
                         </dd>
                         <dt className="text-muted-foreground">Payer</dt>
                         <dd>
-                          {stripeSwitchConfirm.conflict.currentCharge.payerName ??
-                            "—"}
+                          {retargetConflict.stripe.currentCharge.payerName ?? "—"}
                         </dd>
                         <dt className="text-muted-foreground">Date</dt>
                         <dd>
-                          {stripeSwitchConfirm.conflict.currentCharge.date ?? "—"}
+                          {retargetConflict.stripe.currentCharge.date ?? "—"}
+                        </dd>
+                      </dl>
+                    </div>
+                  )}
+                  {retargetConflict.qb?.currentPayment && (
+                    <div className="rounded-md border bg-muted/40 p-3">
+                      <div className="mb-1 font-medium text-foreground">
+                        Currently linked QuickBooks payment
+                      </div>
+                      <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5">
+                        <dt className="text-muted-foreground">Payment</dt>
+                        <dd className="font-mono text-xs">
+                          {retargetConflict.qb.currentPayment.id}
+                        </dd>
+                        <dt className="text-muted-foreground">Amount</dt>
+                        <dd>
+                          {money(retargetConflict.qb.currentPayment.amount)}
+                        </dd>
+                        <dt className="text-muted-foreground">Payer</dt>
+                        <dd>
+                          {retargetConflict.qb.currentPayment.payerName ?? "—"}
+                        </dd>
+                        <dt className="text-muted-foreground">Date</dt>
+                        <dd>
+                          {retargetConflict.qb.currentPayment.date ?? "—"}
                         </dd>
                       </dl>
                     </div>
@@ -1922,10 +1978,10 @@ export default function ReconciliationWorkbench() {
                 disabled={applying}
                 onClick={(e) => {
                   e.preventDefault();
-                  void confirmSwitchStripeSource();
+                  void confirmResolveRetarget();
                 }}
               >
-                Switch Stripe source
+                Re-target gift
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
