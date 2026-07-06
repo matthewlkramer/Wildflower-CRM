@@ -11,6 +11,7 @@ import {
   schools,
   stagedPayments,
   stripeStagedCharges,
+  opportunitiesAndPledges,
 } from "@workspace/db/schema";
 import { and, asc, count, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { asyncHandler } from "../../lib/helpers";
@@ -564,6 +565,13 @@ router.get(
           displayDate: displayDateSql,
           paymentMethod: giftsAndPayments.paymentMethod,
           finalAmountSource: giftsAndPayments.finalAmountSource,
+          opportunityId: giftsAndPayments.opportunityId,
+          opportunityName: opportunitiesAndPledges.name,
+          reimbursablePledge: sql<boolean>`EXISTS (
+            SELECT 1 FROM pledge_allocations
+            WHERE pledge_allocations.pledge_or_opportunity_id = ${giftsAndPayments.opportunityId}
+              AND pledge_allocations.conditional = 'reimbursable'
+          )`,
           organizationId: giftsAndPayments.organizationId,
           individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
           householdId: giftsAndPayments.householdId,
@@ -597,6 +605,10 @@ router.get(
           eq(people.id, giftsAndPayments.individualGiverPersonId),
         )
         .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
+        .leftJoin(
+          opportunitiesAndPledges,
+          eq(opportunitiesAndPledges.id, giftsAndPayments.opportunityId),
+        )
         .where(where)
         .orderBy(
           desc(giftsAndPayments.dateReceived),
@@ -684,6 +696,9 @@ router.get(
           schoolRecipientName: r.schoolRecipientName,
           grantYear: r.grantYear,
           finalAmountSource: r.finalAmountSource,
+          opportunityId: r.opportunityId,
+          opportunityName: r.opportunityName,
+          reimbursablePledge: r.reimbursablePledge,
         },
       };
     });

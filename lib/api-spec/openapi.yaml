@@ -7564,6 +7564,9 @@ components:
         schoolRecipientName: { type: string, nullable: true }
         grantYear:     { type: string, nullable: true, description: "The allocation's fiscal year (grant_year) id." }
         finalAmountSource: { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
+        opportunityId:   { type: string, nullable: true, description: "The linked opportunity/pledge (gifts_and_payments.opportunity_id) this gift books against, if any." }
+        opportunityName: { type: string, nullable: true, description: "Display name of the linked opportunity/pledge." }
+        reimbursablePledge: { type: boolean, description: "True when the linked opportunity is a reimbursable pledge (any pledge_allocations row conditional = 'reimbursable'). Such gifts are usually a placeholder award-amount gift to archive once real reimbursement payments are booked." }
         proposedPayment:
           $ref: "#/components/schemas/GiftMissingQbProposedPayment"
           nullable: true

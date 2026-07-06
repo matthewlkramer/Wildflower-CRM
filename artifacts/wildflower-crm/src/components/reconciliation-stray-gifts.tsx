@@ -10,6 +10,7 @@ import {
   useReconcileStagedPayment,
   useLinkStripeChargeToGift,
   useUpdateGiftAllocation,
+  useArchiveGiftOrPayment,
   useRevertGiftToOpportunity,
   GiftPaymentMethod,
   type GiftMissingQb,
@@ -20,6 +21,7 @@ import {
 } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -466,6 +468,7 @@ type RowDialog =
   | "edit"
   | "revert-opportunity"
   | "revert-pledge"
+  | "archive-gift"
   | "flag";
 
 /* ── One stray gift, rendered as a two-lane card ───────────────────────────
@@ -502,6 +505,7 @@ function StrayGiftCard({
   const reconcile = useReconcileStagedPayment();
   const linkStripe = useLinkStripeChargeToGift();
   const linking = reconcile.isPending || linkStripe.isPending;
+  const archiveGift = useArchiveGiftOrPayment();
 
   const onLinkSuccess = () => {
     void queryClient.invalidateQueries({ queryKey: [MISSING_QB_KEY_PREFIX] });
@@ -581,12 +585,28 @@ function StrayGiftCard({
           <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             CRM gift
           </div>
-          <Link
-            href={`/gifts/${g.id}`}
-            className="font-medium underline-offset-2 hover:underline"
-          >
-            {recordLabel}
-          </Link>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Link
+              href={`/gifts/${g.id}`}
+              className="font-medium underline-offset-2 hover:underline"
+            >
+              {recordLabel}
+            </Link>
+            {g.reimbursablePledge && (
+              <Badge
+                variant="outline"
+                className="border-amber-300 bg-amber-50 text-amber-700"
+                title={
+                  g.opportunityName
+                    ? `On reimbursable pledge “${g.opportunityName}”. Likely a placeholder award-amount gift — reimbursements should be booked as 1:1 payments on the pledge; archive this if it's a placeholder.`
+                    : "On a reimbursable pledge — likely a placeholder award-amount gift; archive if so."
+                }
+                data-testid={`stray-gift-reimbursable-${g.rowKey}`}
+              >
+                Reimbursable pledge
+              </Badge>
+            )}
+          </div>
           <div className="text-lg font-semibold tabular-nums">
             {amountText ?? (
               <span className="text-sm font-normal text-muted-foreground">
@@ -710,6 +730,12 @@ function StrayGiftCard({
                 Revert gift → pledge
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => setDialog("archive-gift")}
+              >
+                Archive gift
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setDialog("flag")}>
                 Flag for research
               </DropdownMenuItem>
@@ -743,6 +769,71 @@ function StrayGiftCard({
         open={dialog === "flag"}
         onOpenChange={(v) => (v ? setDialog("flag") : close())}
       />
+      <AlertDialog
+        open={dialog === "archive-gift"}
+        onOpenChange={(v) => (v ? setDialog("archive-gift") : close())}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive this gift?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {g.reimbursablePledge ? (
+                <>
+                  This gift is on the reimbursable pledge
+                  {g.opportunityName ? ` “${g.opportunityName}”` : ""}. If it&rsquo;s
+                  a placeholder award-amount gift, archive it and book each real
+                  reimbursement check as a 1:1 payment on the pledge instead.{" "}
+                </>
+              ) : null}
+              Archiving removes{" "}
+              <span className="font-medium">{recordLabel}</span> from lists and
+              financial totals. You can restore it later from the archive.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={archiveGift.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={archiveGift.isPending}
+              data-testid={`stray-gift-archive-confirm-${g.rowKey}`}
+              onClick={(e) => {
+                e.preventDefault();
+                archiveGift.mutate(
+                  { id: g.id },
+                  {
+                    onSuccess: () => {
+                      void queryClient.invalidateQueries({
+                        queryKey: [MISSING_QB_KEY_PREFIX],
+                      });
+                      toast({
+                        title: "Gift archived",
+                        description: `“${recordLabel}” was archived.`,
+                      });
+                      close();
+                    },
+                    onError: (err) =>
+                      toast({
+                        title: "Couldn't archive gift",
+                        description:
+                          err instanceof Error
+                            ? err.message
+                            : "Something went wrong.",
+                        variant: "destructive",
+                      }),
+                  },
+                );
+              }}
+            >
+              {archiveGift.isPending ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : null}
+              Archive gift
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

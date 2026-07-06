@@ -155,3 +155,4 @@
 - [Settlement-only confirm vs gift-report queue](reconciliation-settlement-only-confirm.md) — settlement-only confirm stamps deposit reconciled; gift-report queue must still show reconciled deposits with unbooked charges or money under-credits.
 - [Reconciliation re-target conflict composition](reconciliation-retarget-conflict-compose.md) — gate collects ALL issues so stripe re-source + QB-link displacement resolve in ONE confirm; displace only DIRECT-match incumbents.
 - [Audit-close gift freeze](gift-booking-lifecycle-audit-close.md) — records freeze by governing FY when its audit closes; fix in an open FY (under→new offsetting pledge, over→new gift), never mutate originals.
+- [Reimbursable grant = pledge](reimbursable-grant-payment-model.md) — reimbursable grants (conditional='reimbursable') are pledges; book each real QB/Stripe check as a 1:1 gift payment (create_gift_from_opportunity), never as placeholder award-amount gifts.

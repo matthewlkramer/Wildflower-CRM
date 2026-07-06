@@ -40,6 +40,7 @@ import {
   type DeferredRevenue,
   type GroupReconcileStagedPaymentsBody,
   type FlagForResearchBodyTargetType,
+  type OpportunityOrPledge,
 } from "@workspace/api-client-react";
 import {
   AlertCircle,
@@ -130,6 +131,7 @@ import {
   type QbLinkConflict,
 } from "@/lib/reconciliation";
 import { ReconciliationNodeTypeahead } from "@/components/reconciliation-node-typeahead";
+import { OppCombobox } from "@/components/opp-combobox";
 import { StrayGiftsWorklist } from "@/components/reconciliation-stray-gifts";
 import {
   MergeGiftsDialog,
@@ -459,6 +461,11 @@ export default function ReconciliationWorkbench() {
   const [searchGiftCard, setSearchGiftCard] =
     useState<ReconciliationCard | null>(null);
   const [donorCard, setDonorCard] = useState<ReconciliationCard | null>(null);
+  // A card being booked as a PAYMENT on an existing pledge (reimbursable grants:
+  // the award is the pledge, each real QB/Stripe reimbursement check is a 1:1
+  // gift payment). Opens a searchable pledge picker → approve
+  // create_gift_from_opportunity at the card's exact amount.
+  const [pledgeCard, setPledgeCard] = useState<ReconciliationCard | null>(null);
   const [splitCard, setSplitCard] = useState<ReconciliationCard | null>(null);
   const [excludeCard, setExcludeCard] = useState<ReconciliationCard | null>(
     null,
@@ -1329,6 +1336,47 @@ export default function ReconciliationWorkbench() {
     ],
   );
 
+  // Book this unmatched payment as a PAYMENT on an existing pledge (the
+  // reimbursable-grant model: the award is the pledge, each real reimbursement
+  // check is a 1:1 gift payment at its exact QB/Stripe amount). Mints a gift
+  // tied to the chosen opportunity via create_gift_from_opportunity; the opp
+  // derives to cash_in once fully paid. Stripe precedence is preserved by
+  // forwarding the card's own charge id (GROSS).
+  const handleRecordOnPledge = useCallback(
+    async (card: ReconciliationCard, opp: OpportunityOrPledge) => {
+      // A grouped card can't approve through the per-row endpoint (it 409s on
+      // group members); ungroup first, then record each payment on its pledge.
+      if (card.isSourceGroup) {
+        toast({
+          title: "Can't record a grouped payment on a pledge",
+          description:
+            "Ungroup this first, then record each payment on its pledge individually.",
+        });
+        return;
+      }
+      setApplyingCardId(card.stagedPaymentId);
+      try {
+        const body: ApproveCompleteMatchBody = {
+          outcome: "create_gift_from_opportunity",
+          opportunityId: opp.id,
+        };
+        if (card.stripeChargeId) body.stripeChargeId = card.stripeChargeId;
+        await approveReconciliationCard(card.stagedPaymentId, body);
+        invalidateAll();
+        setPledgeCard(null);
+        toast({
+          title: "Recorded as a payment",
+          description: `Booked as a payment on “${opp.name ?? opp.id}”.`,
+        });
+      } catch (err) {
+        toast({ title: "Couldn't record payment", description: errMessage(err) });
+      } finally {
+        setApplyingCardId(null);
+      }
+    },
+    [invalidateAll, toast, errMessage],
+  );
+
   // Fires the grouped create-gift the operator confirmed in the dialog. `split`
   // true → one allocation row per grouped payment; false → a single header-only
   // gift. Either way the gift amount is the group total.
@@ -1662,6 +1710,7 @@ export default function ReconciliationWorkbench() {
         onRetarget={() => setRetargetCard(card)}
         onSearchGift={() => setSearchGiftCard(card)}
         onCreateGift={() => handleCreateGift(card)}
+        onRecordOnPledge={() => setPledgeCard(card)}
         onChangeDonor={() => setDonorCard(card)}
         onExclude={() => setExcludeCard(card)}
         onSplit={() => setSplitCard(card)}
@@ -2087,6 +2136,16 @@ export default function ReconciliationWorkbench() {
         />
       )}
 
+      {/* Record this payment as a gift payment on an existing pledge */}
+      {pledgeCard && (
+        <RecordOnPledgeDialog
+          card={pledgeCard}
+          busy={applyingCardId === pledgeCard.stagedPaymentId}
+          onClose={() => setPledgeCard(null)}
+          onPick={(opp) => handleRecordOnPledge(pledgeCard, opp)}
+        />
+      )}
+
       {/* Split-across-gifts editor */}
       {splitCard && (
         <SplitEditorDialog
@@ -2195,6 +2254,7 @@ function ResolveMenu({
   onRetarget,
   onSearchGift,
   onCreateGift,
+  onRecordOnPledge,
   onChangeDonor,
   onExclude,
   onSplit,
@@ -2210,6 +2270,7 @@ function ResolveMenu({
   onRetarget: () => void;
   onSearchGift: () => void;
   onCreateGift: () => void;
+  onRecordOnPledge: () => void;
   onChangeDonor: () => void;
   onExclude: () => void;
   onSplit: () => void;
@@ -2249,6 +2310,11 @@ function ResolveMenu({
           onSearchGift,
           "Search for a gift…",
           "match this payment to an existing gift (same money)",
+        )}
+        {MI(
+          onRecordOnPledge,
+          "Record as a payment on a pledge…",
+          "book this reimbursement against a pledge (award)",
         )}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -2320,6 +2386,7 @@ function ReconCard({
   onRetarget,
   onSearchGift,
   onCreateGift,
+  onRecordOnPledge,
   onChangeDonor,
   onExclude,
   onSplit,
@@ -2342,6 +2409,7 @@ function ReconCard({
   onRetarget: () => void;
   onSearchGift: () => void;
   onCreateGift: () => void;
+  onRecordOnPledge: () => void;
   onChangeDonor: () => void;
   onExclude: () => void;
   onSplit: () => void;
@@ -2813,6 +2881,7 @@ function ReconCard({
                 onRetarget={onRetarget}
                 onSearchGift={onSearchGift}
                 onCreateGift={onCreateGift}
+                onRecordOnPledge={onRecordOnPledge}
                 onChangeDonor={onChangeDonor}
                 onExclude={onExclude}
                 onSplit={onSplit}
@@ -3378,6 +3447,82 @@ function GroupCreateGiftDialog({
               One allocation per payment
             </Button>
           </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Record-as-payment-on-a-pledge dialog ────────────────────────────────────
+
+/**
+ * Book an unmatched QB/Stripe payment as a gift PAYMENT on an existing pledge.
+ * Used for reimbursable grants (PELSB / DEED / Early Milestones): the award is a
+ * pledge, and every real reimbursement check is a 1:1 gift payment at its exact
+ * processor amount. The reviewer searches ALL opportunities & pledges (empty
+ * scope) and picks the pledge; approving mints a gift tied to it
+ * (create_gift_from_opportunity) at the card's own amount.
+ */
+function RecordOnPledgeDialog({
+  card,
+  busy,
+  onClose,
+  onPick,
+}: {
+  card: ReconciliationCard;
+  busy: boolean;
+  onClose: () => void;
+  onPick: (opp: OpportunityOrPledge) => void;
+}) {
+  const [selected, setSelected] = useState<OpportunityOrPledge | null>(null);
+  const payer = card.stripeChargeDonorName ?? card.payerName ?? "this payment";
+  const amount = money(card.amount ?? null);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Record as a payment on a pledge</DialogTitle>
+          <DialogDescription>
+            Book <span className="font-medium">{payer}</span>
+            {amount ? (
+              <>
+                {" "}
+                (<span className="font-medium tabular-nums">{amount}</span>)
+              </>
+            ) : null}{" "}
+            as a gift payment on an existing pledge (its award). Use this for
+            reimbursable grants where each reimbursement check pays down the
+            awarded pledge. The gift is created at this payment&rsquo;s exact
+            amount and the pledge derives to cash-in once fully paid.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium">Pledge (opportunity)</label>
+          <OppCombobox
+            scopeParams={{}}
+            selected={selected}
+            onSelect={setSelected}
+            onSkip={() => setSelected(null)}
+            showSkip={false}
+            placeholder="Search pledges by name…"
+            testIdPrefix="recon-pledge-pick"
+            disabled={busy}
+          />
+        </div>
+        <DialogFooter className="gap-2 sm:justify-between">
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => selected && onPick(selected)}
+            disabled={busy || !selected}
+            data-testid="button-recon-record-on-pledge"
+          >
+            {busy ? (
+              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+            ) : null}
+            Record payment
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

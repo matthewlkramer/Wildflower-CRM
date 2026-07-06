@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { Check, ChevronsUpDown, Link2, Plus, X } from "lucide-react";
+import { Plus } from "lucide-react";
 import {
   useCreateGiftOrPayment,
   useCreateOrganization,
@@ -30,41 +30,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
 import { AddIconButton } from "@/components/add-icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-import { formatEnum } from "@/lib/format";
+import { OppCombobox } from "@/components/opp-combobox";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Utilities
    ────────────────────────────────────────────────────────────────────────── */
-
-function useDebounced<T>(value: T, ms = 250): T {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return v;
-}
 
 function buildScopeParams(
   scope: LinkedRecordsScope | undefined,
@@ -112,186 +87,6 @@ function oppDonorFields(opp: OpportunityOrPledge): {
   if (opp.individualGiverPersonId)
     return { individualGiverPersonId: opp.individualGiverPersonId };
   return {};
-}
-
-function OppStatusBadge({ status }: { status?: string | null }) {
-  if (!status) return null;
-  const variant: "default" | "secondary" | "outline" =
-    status === "open"
-      ? "default"
-      : status === "pledge"
-        ? "secondary"
-        : "outline";
-  return (
-    <Badge variant={variant} className="shrink-0 text-xs font-normal">
-      {formatEnum(status)}
-    </Badge>
-  );
-}
-
-/* ──────────────────────────────────────────────────────────────────────────
-   Opportunity combobox (searchable, scope-filtered)
-   ────────────────────────────────────────────────────────────────────────── */
-
-function OppCombobox({
-  scopeParams,
-  selected,
-  onSelect,
-  onSkip,
-  disabled,
-}: {
-  scopeParams: Record<string, string>;
-  selected: OpportunityOrPledge | null;
-  onSelect: (opp: OpportunityOrPledge) => void;
-  onSkip: () => void;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const debounced = useDebounced(query);
-
-  useEffect(() => {
-    if (!open) setQuery("");
-  }, [open]);
-
-  const params = useMemo(
-    () => ({
-      ...scopeParams,
-      ...(debounced ? { search: debounced } : {}),
-      limit: 30,
-      page: 1,
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [JSON.stringify(scopeParams), debounced],
-  );
-
-  const { data: oppsResp, isLoading } = useListOpportunitiesAndPledges(
-    params,
-    {
-      query: {
-        queryKey: getListOpportunitiesAndPledgesQueryKey(params),
-        staleTime: 15_000,
-      },
-    },
-  );
-
-  const rows = oppsResp?.data ?? [];
-
-  return (
-    <div className="flex items-center gap-2">
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            disabled={disabled}
-            className="h-8 justify-between min-w-0 flex-1 font-normal"
-            data-testid="select-new-gift-opp"
-          >
-            {selected ? (
-              <span className="flex items-center gap-2 min-w-0 flex-1">
-                <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">
-                  {selected.name ?? selected.id}
-                </span>
-                <OppStatusBadge status={selected.status} />
-              </span>
-            ) : (
-              <span className="text-muted-foreground truncate">
-                Search opportunities &amp; pledges…
-              </span>
-            )}
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          className="p-0 w-[--radix-popover-trigger-width] min-w-[320px]"
-          align="start"
-        >
-          <Command shouldFilter={false}>
-            <CommandInput
-              value={query}
-              onValueChange={setQuery}
-              placeholder="Search by name…"
-              data-testid="select-new-gift-opp-search"
-            />
-            <CommandList>
-              {isLoading ? (
-                <div className="py-4 text-center text-sm text-muted-foreground">
-                  Loading…
-                </div>
-              ) : null}
-              {!isLoading && rows.length === 0 ? (
-                <CommandEmpty>No results.</CommandEmpty>
-              ) : null}
-              <CommandGroup>
-                <CommandItem
-                  value="__skip__"
-                  onSelect={() => {
-                    onSkip();
-                    setOpen(false);
-                  }}
-                  data-testid="select-new-gift-opp-skip"
-                >
-                  <X className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
-                  No linked opportunity
-                </CommandItem>
-              </CommandGroup>
-              {rows.length > 0 ? (
-                <>
-                  <CommandSeparator />
-                  <CommandGroup heading="Opportunities &amp; pledges">
-                    {rows.map((opp) => (
-                      <CommandItem
-                        key={opp.id}
-                        value={opp.id}
-                        onSelect={() => {
-                          onSelect(opp);
-                          setOpen(false);
-                        }}
-                        data-testid={`select-new-gift-opp-option-${opp.id}`}
-                      >
-                        <Check
-                          className={cn(
-                            "mr-2 h-4 w-4 shrink-0",
-                            selected?.id === opp.id
-                              ? "opacity-100"
-                              : "opacity-0",
-                          )}
-                        />
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <span className="truncate">
-                            {opp.name ?? opp.id}
-                          </span>
-                          <OppStatusBadge status={opp.status} />
-                        </div>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </>
-              ) : null}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-      {selected ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-          onClick={onSkip}
-          aria-label="Clear linked opportunity"
-          data-testid="button-new-gift-opp-clear"
-          disabled={disabled}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      ) : null}
-    </div>
-  );
 }
 
 /* ──────────────────────────────────────────────────────────────────────────

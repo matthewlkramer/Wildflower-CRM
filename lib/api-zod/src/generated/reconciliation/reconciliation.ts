@@ -678,6 +678,9 @@ export const ListGiftsMissingQbResponse = zod.object({
   "schoolRecipientName": zod.string().nullish(),
   "grantYear": zod.string().nullish().describe('The allocation\'s fiscal year (grant_year) id.'),
   "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).nullish().describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.'),
+  "opportunityId": zod.string().nullish().describe('The linked opportunity\/pledge (gifts_and_payments.opportunity_id) this gift books against, if any.'),
+  "opportunityName": zod.string().nullish().describe('Display name of the linked opportunity\/pledge.'),
+  "reimbursablePledge": zod.boolean().optional().describe('True when the linked opportunity is a reimbursable pledge (any pledge_allocations row conditional = \'reimbursable\'). Such gifts are usually a placeholder award-amount gift to archive once real reimbursement payments are booked.'),
   "proposedPayment": zod.object({
   "source": zod.enum(['quickbooks', 'stripe']).describe('Which processor this proposal comes from — determines the reconcile target and endpoint.'),
   "stagedPaymentId": zod.string().nullish().describe('staged_payments id — the reconcile target when source=quickbooks.'),
