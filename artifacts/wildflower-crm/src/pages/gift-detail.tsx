@@ -522,6 +522,18 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       highlights={highlights}
       left={
         <>
+          {gift.reimbursablePlaceholderWarning ? (
+            <div
+              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+              data-testid="warning-reimbursable-placeholder"
+            >
+              This gift looks like a <strong>full-award placeholder</strong> on a
+              reimbursable grant, with no linked QuickBooks or Stripe payment. A
+              reimbursable grant is a pledge paid as individual reimbursement
+              checks — book each real check as its own 1:1 payment rather than
+              one gift for the whole awarded amount.
+            </div>
+          ) : null}
           <FieldCard title="Classification">
             <div className="space-y-1">
               <Row label="Designated to school">

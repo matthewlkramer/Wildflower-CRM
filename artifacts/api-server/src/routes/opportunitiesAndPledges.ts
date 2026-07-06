@@ -70,6 +70,13 @@ const donorJoinSelect = {
     WHERE gp.opportunity_id = ${opportunitiesAndPledges.id}
       AND gp.archived_at IS NULL
   )`.as("paid_amount"),
+  // True when this pledge carries at least one reimbursable allocation. A
+  // reimbursable grant is paid as many real 1:1 reimbursement checks, so the
+  // UI warns before booking a single placeholder gift for the full award
+  // amount against it (see lib/reimbursablePlaceholder.ts).
+  reimbursable: reimbursablePledgeExistsSql(
+    sql`${opportunitiesAndPledges.id}`,
+  ).as("reimbursable"),
 };
 
 import {
@@ -100,6 +107,7 @@ import {
   canonicalWinProbability,
   deriveOppFields,
 } from "../lib/pledgeStage";
+import { reimbursablePledgeExistsSql } from "../lib/reimbursablePlaceholder";
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
 import {
   donorDisplayColumns,

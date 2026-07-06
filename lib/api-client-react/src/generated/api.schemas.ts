@@ -1794,6 +1794,8 @@ export interface OpportunityOrPledge {
   readonly conditionalRollup?: OpportunityConditional | null;
   /** Derived from the opportunity's pledge allocations: 'yes' only when every conditional allocation's conditions are met; otherwise 'no'. */
   readonly conditionsMetRollup?: OpportunityConditionsMet;
+  /** Derived from the opportunity's pledge allocations: true when ANY allocation is conditional='reimbursable'. A reimbursable grant is a pledge paid as many real 1:1 reimbursement checks, so the UI warns before booking a single placeholder gift for the full award amount against it. */
+  readonly reimbursable?: boolean;
   individualGiverPersonId?: string | null;
   individualAdvisorPersonId?: string | null;
   matchId?: string | null;
@@ -2215,6 +2217,8 @@ export interface GiftAuditCloseResolution {
 export type GiftOrPaymentDetail = GiftOrPayment & {
   allocations?: GiftAllocation[];
   auditClose: GiftAuditCloseResolution;
+  /** True when this gift is a full-award placeholder on a reimbursable pledge with NO settlement evidence: its amount equals the pledge's full awarded_amount, it is the sole active gift on that reimbursable pledge, and it carries no QuickBooks/Stripe/Donorbox ledger row or legacy final-amount pointer. Reimbursable grants are pledges paid as many real 1:1 reimbursement checks, so the UI nudges the user to book real checks instead of one award-amount lump. Non-blocking and reversible. */
+  readonly reimbursablePlaceholderWarning?: boolean;
 };
 
 export interface GiftOrPaymentList {

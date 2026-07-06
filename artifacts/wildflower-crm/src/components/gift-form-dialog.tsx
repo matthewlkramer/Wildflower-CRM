@@ -188,6 +188,22 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     initialDonor?.id ?? null,
   );
 
+  // Reimbursable-placeholder guard: a reimbursable grant is a pledge paid as
+  // many real 1:1 reimbursement checks, so booking a single gift for the full
+  // awarded amount recreates the placeholder that migration 0101 cleaned up.
+  // Non-blocking — we only warn.
+  const reimbursablePlaceholderWarning = useMemo(() => {
+    if (!linkedOpp?.reimbursable) return false;
+    const gift = Number(amount.trim());
+    const awarded = Number(linkedOpp.awardedAmount ?? "");
+    return (
+      Number.isFinite(gift) &&
+      Number.isFinite(awarded) &&
+      awarded > 0 &&
+      gift === awarded
+    );
+  }, [linkedOpp, amount]);
+
   // Duplicate guard: when the fundraiser hand-picks a donor (no linked opp),
   // surface any reconciliation money (QuickBooks/Stripe) already staged for that
   // donor so they don't double-enter money that's about to be booked.
@@ -552,6 +568,18 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                 placeholder="Optional"
                 data-testid="input-new-gift-amount"
               />
+              {reimbursablePlaceholderWarning ? (
+                <p
+                  className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                  data-testid="warning-reimbursable-placeholder"
+                >
+                  This is a <strong>reimbursable grant</strong> — a pledge paid
+                  as individual reimbursement checks. Booking one gift for the
+                  full awarded amount creates a placeholder, not real money.
+                  Record each actual QuickBooks/Stripe check as its own payment
+                  instead.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="new-gift-date">Date received</Label>

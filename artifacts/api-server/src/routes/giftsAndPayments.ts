@@ -136,6 +136,7 @@ import {
   qbLedgerExistsForGift,
   qbLedgerPaymentIdForGift,
 } from "../lib/paymentApplications";
+import { isReimbursablePlaceholderGift } from "../lib/reimbursablePlaceholder";
 import {
   derivedSettledAmountForGift,
   derivedProcessorFeeForGift,
@@ -422,13 +423,19 @@ async function buildGiftDetail(id: string, viewer: Viewer) {
   // read runs in a trivial read transaction because computeGiftSurplus takes a
   // Tx (via getGiftPaymentSummary).
   const giftFreeze = await resolveGiftFreeze(undefined, row.dateReceived);
-  const [overpaySurplusRaw, resolvedByGiftId] = await Promise.all([
-    db.transaction((tx) => computeGiftSurplus(tx, { id: row.id, amount: row.amount })),
-    findActiveOverpayChildGiftId(id),
-  ]);
+  const [overpaySurplusRaw, resolvedByGiftId, reimbursablePlaceholderWarning] =
+    await Promise.all([
+      db.transaction((tx) => computeGiftSurplus(tx, { id: row.id, amount: row.amount })),
+      findActiveOverpayChildGiftId(id),
+      // Guardrail: warn when this gift is a full-award placeholder on a
+      // reimbursable pledge with no settlement evidence (nudge to book real
+      // reimbursement checks instead — see lib/reimbursablePlaceholder.ts).
+      isReimbursablePlaceholderGift(id),
+    ]);
   return {
     ...masked,
     reconciliationLanes: deriveGiftLanes(masked.quickbooksTieStatus),
+    reimbursablePlaceholderWarning,
     allocations,
     thankYouAttachments,
     donorbox: donorboxEnrichmentOrNull(donorboxRow),

@@ -5843,6 +5843,7 @@ components:
         conditionsMet:              { allOf: [ { $ref: "#/components/schemas/OpportunityConditionsMet" } ], deprecated: true }
         conditionalRollup:          { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true, readOnly: true, description: "Derived from the opportunity's pledge allocations: conditional when ANY allocation carries a conditional condition, else unconditional. Drives win-probability. Null when no allocation is set." }
         conditionsMetRollup:        { allOf: [ { $ref: "#/components/schemas/OpportunityConditionsMet" } ], readOnly: true, description: "Derived from the opportunity's pledge allocations: 'yes' only when every conditional allocation's conditions are met; otherwise 'no'." }
+        reimbursable:               { type: boolean, readOnly: true, description: "Derived from the opportunity's pledge allocations: true when ANY allocation is conditional='reimbursable'. A reimbursable grant is a pledge paid as many real 1:1 reimbursement checks, so the UI warns before booking a single placeholder gift for the full award amount against it." }
         individualGiverPersonId:    { type: string, nullable: true }
         individualAdvisorPersonId:  { type: string, nullable: true }
         matchId:                    { type: string, nullable: true }
@@ -6186,6 +6187,7 @@ components:
           properties:
             allocations: { type: array, items: { $ref: "#/components/schemas/GiftAllocation" } }
             auditClose:  { $ref: "#/components/schemas/GiftAuditCloseResolution" }
+            reimbursablePlaceholderWarning: { type: boolean, readOnly: true, description: "True when this gift is a full-award placeholder on a reimbursable pledge with NO settlement evidence: its amount equals the pledge's full awarded_amount, it is the sole active gift on that reimbursable pledge, and it carries no QuickBooks/Stripe/Donorbox ledger row or legacy final-amount pointer. Reimbursable grants are pledges paid as many real 1:1 reimbursement checks, so the UI nudges the user to book real checks instead of one award-amount lump. Non-blocking and reversible." }
     GiftAuditCloseResolution:
       type: object
       readOnly: true
