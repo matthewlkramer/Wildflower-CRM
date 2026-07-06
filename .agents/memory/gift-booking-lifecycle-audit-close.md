@@ -28,13 +28,17 @@ Freeze scope & granularity:
 Discrepancy handling depends on lifecycle:
 - Pre-close: a genuine mismatch is just CORRECTED (money is authoritative); no
   acknowledge state.
-- Post-close under-payment → cannot edit the closed gift → **write-off**. Write-off =
-  a NEW transaction in the current open FY that books the shortfall as negative
-  revenue and zeroes the receivable (example: $100 pledge booked FY25; $80 paid FY26
-  reduces receivable; FY27 decide uncollectible → book −$20 revenue, receivable→0).
-  So write-off is a PLEDGE-receivable concept, not a gift edit — it does NOT
-  retroactively change closed-year booked revenue. The underpaid gift itself is set
-  to the cash that actually landed.
+- Post-close under-payment → cannot edit the closed gift → **write-off**. Write-off
+  is a PLEDGE concept, not a gift edit. The CRM is NOT the general ledger
+  (QuickBooks is), so we do NOT do double-entry: a write-off = ONE new
+  `pledge_allocation` with a NEGATIVE `sub_amount` (the shortfall), `grant_year` =
+  the current OPEN fiscal year, flagged as a write-off (labeled/auditable, drives
+  the resolved state). The pledge's expected is `SUM(pledge_allocations.sub_amount)`
+  (no positivity CHECK; remainder clamps at 0), so the negative line drops expected
+  to equal paid and the pledge stops reading as a mismatch, while the closed-year
+  allocations stay frozen. Mirrors the accounting "−$20 negative revenue in FY27"
+  (example: $100 pledge booked FY25; $80 paid FY26; FY27 uncollectible → −$20 line
+  in FY27). The underpaid gift itself is set to the cash that actually landed.
 - Post-close over-payment → cannot edit the closed gift → **book a NEW gift** for the
   surplus, recognized in the current open FY.
 
