@@ -847,12 +847,16 @@ export default function ReconciliationWorkbench() {
   }, []);
 
   // ── Column-2 bulk multi-select ("Money unlinked to a CRM record") ──────────
-  // Charge cards (from a multi-charge Stripe payout) are never selectable — they
-  // resolve immediately and don't enter the staging tray — so the selectable
-  // pool is the non-charge review/QBO cards. Selection reuses `selectedIds`
-  // (shared with the "Group into one gift" bar), keyed by cardKey.
+  // Every review/QBO card in the column is selectable, INCLUDING per-charge cards
+  // expanded from a multi-charge Stripe payout. Bulk Reject / Flag-for-research
+  // route each card to the right endpoint (charges resolve immediately on their
+  // Stripe charge id; deposits stage in the tray). Bulk Approve and the floating
+  // "Group into one gift" bar are deposit-level only — they disable themselves
+  // whenever a charge is in the selection. Selection reuses `selectedIds` (shared
+  // with the group bar), keyed by cardKey (a charge's key is a composite, never a
+  // bare stagedPaymentId — so group actions derive ids from the non-charge subset).
   const selectableReviewCards = useMemo(
-    () => donorNotCredited.filter((c) => !c.stripeChargeId),
+    () => donorNotCredited,
     [donorNotCredited],
   );
   const selectableReviewKeys = useMemo(
@@ -864,6 +868,17 @@ export default function ReconciliationWorkbench() {
     [selectableReviewCards, selectedIds],
   );
   const selectedReviewCount = selectedReviewCards.length;
+  // Deposit-level actions (bulk Approve, group-into-one-gift) can't act on an
+  // individual Stripe charge, so they disable themselves when a charge is
+  // selected; `groupableReviewCards` is the non-charge subset those actions use.
+  const chargeSelected = useMemo(
+    () => selectedReviewCards.some((c) => !!c.stripeChargeId),
+    [selectedReviewCards],
+  );
+  const groupableReviewCards = useMemo(
+    () => selectedReviewCards.filter((c) => !c.stripeChargeId),
+    [selectedReviewCards],
+  );
   const allReviewSelected =
     selectableReviewKeys.length > 0 &&
     selectableReviewKeys.every((k) => selectedIds.has(k));
@@ -891,8 +906,9 @@ export default function ReconciliationWorkbench() {
 
   /** Bulk "Approve" → stage a confirm for each selected review card. */
   const bulkApproveSelected = useCallback(async () => {
+    // Approve is deposit-level (stages a QB-deposit confirm); never a charge.
     const cards = selectedReviewCards.filter(
-      (c) => !stagedIds.has(c.stagedPaymentId),
+      (c) => !c.stripeChargeId && !stagedIds.has(c.stagedPaymentId),
     );
     if (cards.length === 0) {
       toast({
@@ -918,35 +934,96 @@ export default function ReconciliationWorkbench() {
     toast,
   ]);
 
-  /** Bulk "Reject" → stage a reject for each selected review card. */
-  const bulkRejectSelected = useCallback(() => {
-    const cards = selectedReviewCards.filter(
-      (c) => !stagedIds.has(c.stagedPaymentId),
+  /**
+   * Bulk "Reject" → charge cards reject immediately on their Stripe charge id
+   * (they never enter the deposit-keyed staging tray); deposit cards stage a
+   * reject in the tray for review.
+   */
+  const bulkRejectSelected = useCallback(async () => {
+    const chargeCards = selectedReviewCards.filter((c) => !!c.stripeChargeId);
+    const depositCards = selectedReviewCards.filter(
+      (c) => !c.stripeChargeId && !stagedIds.has(c.stagedPaymentId),
     );
-    if (cards.length === 0) {
+    if (chargeCards.length === 0 && depositCards.length === 0) {
       toast({
         title: "Nothing to reject",
         description: "The selected cards are already staged.",
       });
       return;
     }
-    for (const c of cards) stageReject(c);
+    for (const c of depositCards) stageReject(c);
+    let chargeOk = 0;
+    for (const c of chargeCards) {
+      try {
+        await rejectChargeM.mutateAsync({ id: c.stripeChargeId! });
+        chargeOk += 1;
+      } catch {
+        // Skip charges that changed state mid-run; the summary reflects reality.
+      }
+    }
+    if (chargeOk > 0) invalidateAll();
     clearSelectedReview();
+    const chargeFailed = chargeCards.length - chargeOk;
+    const parts: string[] = [];
+    if (depositCards.length > 0)
+      parts.push(
+        `staged ${depositCards.length} ${depositCards.length === 1 ? "rejection" : "rejections"}`,
+      );
+    if (chargeOk > 0)
+      parts.push(
+        `rejected ${chargeOk} Stripe ${chargeOk === 1 ? "charge" : "charges"}`,
+      );
+    if (parts.length === 0) {
+      toast({
+        title: "Bulk reject failed",
+        description:
+          "Those Stripe charges couldn't be rejected — they may have changed state. Refresh and try again.",
+      });
+      return;
+    }
+    const followUps: string[] = [];
+    if (depositCards.length > 0)
+      followUps.push("Review the tray, then Apply to CRM.");
+    if (chargeFailed > 0)
+      followUps.push(
+        `${chargeFailed} charge ${chargeFailed === 1 ? "rejection" : "rejections"} failed — refresh and retry.`,
+      );
     toast({
-      title: `Staged ${cards.length} ${cards.length === 1 ? "rejection" : "rejections"}`,
-      description: "Review the tray, then Apply to CRM.",
+      title: `Bulk reject — ${parts.join(", ")}`,
+      description: followUps.length > 0 ? followUps.join(" ") : "Done.",
     });
-  }, [selectedReviewCards, stagedIds, stageReject, clearSelectedReview, toast]);
+  }, [
+    selectedReviewCards,
+    stagedIds,
+    stageReject,
+    rejectChargeM,
+    invalidateAll,
+    clearSelectedReview,
+    toast,
+  ]);
 
-  /** Bulk "Flag for research" → snapshot targets and open the shared dialog. */
+  /**
+   * Bulk "Flag for research" → snapshot targets and open the shared dialog.
+   * A charge card has no cleanup-queue identity of its own, so it flags its
+   * deposit's staged payment (matching the single-card flow); several charges
+   * from the same payout collapse to that one deposit target.
+   */
   const openBulkFlagResearch = useCallback(() => {
     if (selectedReviewCards.length === 0) return;
-    setBulkFlagTargets(
-      selectedReviewCards.map((c) => ({
+    const seen = new Set<string>();
+    const targets: {
+      targetType: FlagForResearchBodyTargetType;
+      targetId: string;
+    }[] = [];
+    for (const c of selectedReviewCards) {
+      if (seen.has(c.stagedPaymentId)) continue;
+      seen.add(c.stagedPaymentId);
+      targets.push({
         targetType: "staged_payment" as FlagForResearchBodyTargetType,
         targetId: c.stagedPaymentId,
-      })),
-    );
+      });
+    }
+    setBulkFlagTargets(targets);
     setBulkFlagOpen(true);
   }, [selectedReviewCards]);
 
@@ -1272,7 +1349,9 @@ export default function ReconciliationWorkbench() {
   );
 
   const handleGroupSelected = useCallback(async () => {
-    const ids = [...selectedIds];
+    // Grouping is deposit-level: a charge card's key is a composite, not a bare
+    // stagedPaymentId, so only the non-charge selected cards can be grouped.
+    const ids = groupableReviewCards.map((c) => c.stagedPaymentId);
     if (ids.length < 2) return;
     const run = (confirmDonorConflict: boolean) =>
       groupM.mutateAsync({
@@ -1308,7 +1387,7 @@ export default function ReconciliationWorkbench() {
       title: `Grouped ${ids.length} payments`,
       description: "Reconcile the group from its card in Needs review.",
     });
-  }, [selectedIds, groupM, invalidateAll, toast, errMessage]);
+  }, [groupableReviewCards, groupM, invalidateAll, toast, errMessage]);
 
   // Shared card renderer for the Needs review / QBO-only / Research queues.
   const renderReconCard = (
@@ -1335,8 +1414,9 @@ export default function ReconciliationWorkbench() {
         }
         expanded={expanded === key}
         busy={busy || actionBusy || applyingCardId === card.stagedPaymentId}
-        // Grouping is deposit-level only; charge cards are never selectable.
-        selected={!isCharge && selectedIds.has(key)}
+        // Every review/QBO card is selectable (charges included); deposit-level
+        // bulk actions gate themselves on `chargeSelected`, not on the checkbox.
+        selected={selectedIds.has(key)}
         onToggleSelect={() => toggleSelect(key)}
         onToggle={() => setExpanded((e) => (e === key ? null : key))}
         onConfirm={() => confirmAndApply(card)}
@@ -1567,7 +1647,15 @@ export default function ReconciliationWorkbench() {
                         size="sm"
                         variant="outline"
                         disabled={
-                          selectedReviewCount === 0 || busy || actionBusy
+                          selectedReviewCount === 0 ||
+                          chargeSelected ||
+                          busy ||
+                          actionBusy
+                        }
+                        title={
+                          chargeSelected
+                            ? "Approve applies to deposit cards only — deselect the Stripe charge cards, or resolve each charge from its own card."
+                            : undefined
                         }
                         onClick={bulkApproveSelected}
                         data-testid="button-bulk-approve-review"
@@ -1725,7 +1813,14 @@ export default function ReconciliationWorkbench() {
             <Button
               size="sm"
               onClick={handleGroupSelected}
-              disabled={actionBusy || selectedIds.size < 2}
+              disabled={
+                actionBusy || chargeSelected || groupableReviewCards.length < 2
+              }
+              title={
+                chargeSelected
+                  ? "Grouping applies to deposit cards only — deselect the Stripe charge cards to group."
+                  : undefined
+              }
             >
               {groupM.isPending ? (
                 <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -2005,15 +2100,16 @@ function ReconCard({
       )}
     >
       <div className="flex items-stretch gap-0">
-        {/* Select for grouping — deposit-level only; a per-charge card has no
-            checkbox (its matching unit is the single charge, not the deposit). */}
+        {/* Multi-select for bulk actions (Approve / Reject / Flag) and grouping.
+            Charge cards are selectable too, but deposit-level actions (Approve,
+            group) disable themselves when a charge is in the selection. */}
         <div className="flex items-start p-3 pr-0">
-          {!isCharge && !readOnly && (
+          {!readOnly && (
             <Checkbox
               checked={selected}
               onCheckedChange={onToggleSelect}
               className="mt-1"
-              aria-label="Select for grouping"
+              aria-label="Select card"
             />
           )}
         </div>
