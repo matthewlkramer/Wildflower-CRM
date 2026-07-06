@@ -178,6 +178,89 @@ const FUNDING_SOURCES: { id: FundingSourceFilter; name: string }[] = [
   { id: "donorbox", name: "Donorbox" },
 ];
 
+// Sentinel for a column filter's "no selection" Select value (real entity ids
+// and payment methods never collide with it).
+const ALL = "__all__";
+
+// Self-contained filter for ONE Gift-report column (design: each column owns its
+// own search / funding source / entity / payment method / date range, scoped only
+// to that column). Cols 1 & 2 apply it client-side over their already-loaded
+// cards; col 3 (the stray-gifts worklist) filters server-side on its own.
+interface ColumnFilter {
+  search: string;
+  fundingSource: FundingSourceFilter;
+  entityId: string;
+  paymentMethod: string;
+  dateFrom: string;
+  dateTo: string;
+}
+
+const EMPTY_COLUMN_FILTER: ColumnFilter = {
+  search: "",
+  fundingSource: "all",
+  entityId: ALL,
+  paymentMethod: ALL,
+  dateFrom: "",
+  dateTo: "",
+};
+
+// True when a card passes every active facet of a column filter. Funding-source
+// qb_direct mirrors the server (cards.ts): anything NOT stripe/donorbox (incl.
+// null) counts as QuickBooks-direct. Date facets compare the card's received
+// date (ISO yyyy-mm-dd, lexically orderable) against the range bounds.
+function cardMatchesFilter(c: ReconciliationCard, f: ColumnFilter): boolean {
+  const q = f.search.trim().toLowerCase();
+  if (q) {
+    const hay = [
+      c.payerName,
+      c.proposedGiftName,
+      c.resolvedGiftName,
+      c.proposedDonorName,
+      c.qbDocNumber,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  if (f.fundingSource === "stripe" && c.fundingSource !== "stripe") return false;
+  if (f.fundingSource === "donorbox" && c.fundingSource !== "donorbox")
+    return false;
+  if (
+    f.fundingSource === "qb_direct" &&
+    (c.fundingSource === "stripe" || c.fundingSource === "donorbox")
+  )
+    return false;
+  if (f.entityId !== ALL && c.entityId !== f.entityId) return false;
+  if (f.paymentMethod !== ALL && c.qbPaymentMethod !== f.paymentMethod)
+    return false;
+  if (f.dateFrom && !(c.dateReceived && c.dateReceived >= f.dateFrom))
+    return false;
+  if (f.dateTo && !(c.dateReceived && c.dateReceived <= f.dateTo)) return false;
+  return true;
+}
+
+// Distinct entity + payment-method options present in a column's card set, used
+// to populate that column's own filter dropdowns (derived from the UNFILTERED
+// set so applying a filter never removes choices).
+function deriveCardOptions(cards: ReconciliationCard[]): {
+  entities: { id: string; name: string }[];
+  methods: string[];
+} {
+  const entities = new Map<string, string>();
+  const methods = new Set<string>();
+  for (const c of cards) {
+    if (c.entityId) entities.set(c.entityId, c.entityName || c.entityId);
+    if (c.qbPaymentMethod) methods.add(c.qbPaymentMethod);
+  }
+  return {
+    entities: [...entities]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    methods: [...methods].sort((a, b) => a.localeCompare(b)),
+  };
+}
+
 // Excluded queue is server-paginated (can be several thousand rows).
 const EXCLUDED_PAGE_SIZE = 100;
 
@@ -347,10 +430,17 @@ export default function ReconciliationWorkbench() {
   const [giftView, setGiftView] = useState<GiftView>(() =>
     initialQueueParam === "excluded" ? "excluded" : "reports",
   );
-  const [fundingSource, setFundingSource] =
+  // Each report column owns its own filter (client-side for cols 1 & 2). The old
+  // report-wide search box + funding-source pill nav are gone.
+  const [matchedFilter, setMatchedFilter] =
+    useState<ColumnFilter>(EMPTY_COLUMN_FILTER);
+  const [unlinkedFilter, setUnlinkedFilter] =
+    useState<ColumnFilter>(EMPTY_COLUMN_FILTER);
+  // Excluded sub-view: its own search + funding-source filter (plus the existing
+  // server-side reason filter + pagination offset).
+  const [excludedSearch, setExcludedSearch] = useState("");
+  const [excludedFundingSource, setExcludedFundingSource] =
     useState<FundingSourceFilter>("all");
-  const [search, setSearch] = useState("");
-  // Excluded queue: server-side reason filter + pagination offset.
   const [excludedReason, setExcludedReason] = useState<
     StagedPaymentExclusionReason | "all"
   >("all");
@@ -405,23 +495,18 @@ export default function ReconciliationWorkbench() {
     { targetType: FlagForResearchBodyTargetType; targetId: string }[]
   >([]);
 
-  // Funding-source filter param shared by the needs-review / matched / excluded
-  // queries (server-side, §4.5). `all` → omit the param.
-  const fundingSourceParam =
-    fundingSource === "all" ? undefined : fundingSource;
   // "Donor not credited" column = the needs-review queue: pulled money without a
-  // confirmed gift. Loaded once and split client-side into review/QBO buckets.
+  // confirmed gift. Loaded once and split client-side into review/QBO buckets,
+  // then filtered by that column's own filter.
   const cardsQuery = useListReconciliationCards({
     limit: 200,
     offset: 0,
-    fundingSource: fundingSourceParam,
   });
   // "Matched" column = the `done` queue: money already tied to a confirmed gift.
   const doneParams = {
     queue: "done" as const,
     limit: 200,
     offset: 0,
-    fundingSource: fundingSourceParam,
   };
   const doneQuery = useListReconciliationCards(doneParams, {
     query: {
@@ -436,11 +521,12 @@ export default function ReconciliationWorkbench() {
   // server-side reason filter + pagination.
   const excludedParams = {
     queue: "excluded" as const,
-    q: search.trim() || undefined,
+    q: excludedSearch.trim() || undefined,
     limit: EXCLUDED_PAGE_SIZE,
     offset: excludedOffset,
     exclusionReason: excludedReason === "all" ? undefined : excludedReason,
-    fundingSource: fundingSourceParam,
+    fundingSource:
+      excludedFundingSource === "all" ? undefined : excludedFundingSource,
   };
   const excludedQuery = useListReconciliationCards(excludedParams, {
     query: {
@@ -454,28 +540,25 @@ export default function ReconciliationWorkbench() {
     [cardsQuery.data],
   );
 
-  const matchSearch = useCallback(
-    (c: ReconciliationCard) => {
-      const q = search.trim().toLowerCase();
-      if (!q) return true;
-      const hay = [
-        c.payerName,
-        c.proposedGiftName,
-        c.resolvedGiftName,
-        c.proposedDonorName,
-        c.qbDocNumber,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
-    },
-    [search],
+  // The "Matched" column's full (unfiltered) card set + the filter-dropdown
+  // options derived from each column's full set.
+  const matchedSource = useMemo(
+    () => doneQuery.data?.data ?? [],
+    [doneQuery.data],
+  );
+  const matchedOptions = useMemo(
+    () => deriveCardOptions(matchedSource),
+    [matchedSource],
+  );
+  const unlinkedOptions = useMemo(
+    () => deriveCardOptions(allCards),
+    [allCards],
   );
 
+  // "Money unlinked" column, filtered by its own column filter before bucketing.
   const filtered = useMemo(
-    () => allCards.filter(matchSearch),
-    [allCards, matchSearch],
+    () => allCards.filter((c) => cardMatchesFilter(c, unlinkedFilter)),
+    [allCards, unlinkedFilter],
   );
 
   // Bucket the loaded needs_review cards: Needs review (has a candidate) vs
@@ -497,10 +580,10 @@ export default function ReconciliationWorkbench() {
   }, [filtered]);
 
   // "Matched" column = the `done` queue (money already tied to a confirmed
-  // gift), search-filtered client-side.
+  // gift), filtered client-side by its own column filter.
   const matchedCards = useMemo(
-    () => (doneQuery.data?.data ?? []).filter(matchSearch),
-    [doneQuery.data, matchSearch],
+    () => matchedSource.filter((c) => cardMatchesFilter(c, matchedFilter)),
+    [matchedSource, matchedFilter],
   );
 
   // "Donor not credited" column = every needs-review card (has-candidate review
@@ -521,7 +604,7 @@ export default function ReconciliationWorkbench() {
   // the search term, reason filter, or funding source changes.
   useEffect(() => {
     setExcludedOffset(0);
-  }, [search, excludedReason, fundingSource]);
+  }, [excludedSearch, excludedReason, excludedFundingSource]);
 
   const readyCount = useMemo(
     () => buckets.review.filter((c) => c.ready).length,
@@ -1669,72 +1752,35 @@ export default function ReconciliationWorkbench() {
             })}
           </nav>
 
-          {/* Gift-report filter bar — funding-source + views replace the old
-              six-queue sub-nav (design §4.5/§4.6). Settlement has its own filters. */}
+          {/* Gift-report view toggle — the three-column report vs the excluded
+              filter. Each report column now owns its own filter header; the old
+              report-wide search box + funding-source pill nav are gone. */}
           {report === "gift" && (
           <div className="flex flex-col gap-2 border-b pb-2">
-            <div className="flex flex-wrap items-center gap-1">
-              {/* View toggle: the three-column report vs the excluded-non-gifts
-                  filter. */}
-              <nav className="flex flex-wrap items-center gap-1">
-                {GIFT_VIEWS.map((v) => {
-                  const active = v.id === giftView;
-                  const count =
-                    v.id === "excluded"
-                      ? excludedQuery.data?.pagination.total
-                      : undefined;
-                  return (
-                    <button
-                      key={v.id}
-                      type="button"
-                      onClick={() => setGiftView(v.id)}
-                      className={cn(
-                        "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
-                        active
-                          ? "bg-muted font-medium text-foreground"
-                          : "text-muted-foreground hover:bg-muted/60",
-                      )}
-                      data-testid={`button-giftview-${v.id}`}
-                    >
-                      {v.name}
-                      {count !== undefined && count > 0 && (
-                        <Badge variant="secondary">{count}</Badge>
-                      )}
-                    </button>
-                  );
-                })}
-              </nav>
-              <div className="relative ml-auto">
-                <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search payer, gift, donor…"
-                  className="h-8 w-64 pl-7 text-sm"
-                />
-              </div>
-            </div>
-            {/* Funding-source filter (§4.5) — slices every card query server-side. */}
             <nav className="flex flex-wrap items-center gap-1">
-              <span className="mr-1 text-xs font-medium text-muted-foreground">
-                Funding source
-              </span>
-              {FUNDING_SOURCES.map((f) => {
-                const active = f.id === fundingSource;
+              {GIFT_VIEWS.map((v) => {
+                const active = v.id === giftView;
+                const count =
+                  v.id === "excluded"
+                    ? excludedQuery.data?.pagination.total
+                    : undefined;
                 return (
                   <button
-                    key={f.id}
+                    key={v.id}
                     type="button"
-                    onClick={() => setFundingSource(f.id)}
+                    onClick={() => setGiftView(v.id)}
                     className={cn(
-                      "rounded-full border px-3 py-1 text-xs transition-colors",
+                      "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
                       active
-                        ? "border-transparent bg-primary text-primary-foreground"
-                        : "border-border text-muted-foreground hover:bg-muted/60",
+                        ? "bg-muted font-medium text-foreground"
+                        : "text-muted-foreground hover:bg-muted/60",
                     )}
-                    data-testid={`button-funding-${f.id}`}
+                    data-testid={`button-giftview-${v.id}`}
                   >
-                    {f.name}
+                    {v.name}
+                    {count !== undefined && count > 0 && (
+                      <Badge variant="secondary">{count}</Badge>
+                    )}
                   </button>
                 );
               })}
@@ -1752,6 +1798,10 @@ export default function ReconciliationWorkbench() {
               total={excludedTotal}
               loading={excludedQuery.isLoading}
               error={excludedQuery.isError}
+              search={excludedSearch}
+              onSearchChange={setExcludedSearch}
+              fundingSource={excludedFundingSource}
+              onFundingSourceChange={setExcludedFundingSource}
               reason={excludedReason}
               onReasonChange={setExcludedReason}
               offset={excludedOffset}
@@ -1768,6 +1818,15 @@ export default function ReconciliationWorkbench() {
                 title="Matched"
                 hint="Money tied to a confirmed CRM gift."
                 count={doneQuery.isLoading ? undefined : matchedCards.length}
+                filters={
+                  <ColumnFilterHeader
+                    filter={matchedFilter}
+                    onChange={setMatchedFilter}
+                    entityOptions={matchedOptions.entities}
+                    methodOptions={matchedOptions.methods}
+                    testIdPrefix="filter-matched"
+                  />
+                }
               >
                 {doneQuery.isLoading ? (
                   <LoadingRow />
@@ -1789,6 +1848,15 @@ export default function ReconciliationWorkbench() {
                 hint="Pulled money with no confirmed gift."
                 count={
                   cardsQuery.isLoading ? undefined : donorNotCredited.length
+                }
+                filters={
+                  <ColumnFilterHeader
+                    filter={unlinkedFilter}
+                    onChange={setUnlinkedFilter}
+                    entityOptions={unlinkedOptions.entities}
+                    methodOptions={unlinkedOptions.methods}
+                    testIdPrefix="filter-unlinked"
+                  />
                 }
                 toolbar={
                   selectableReviewKeys.length > 0 ? (
@@ -3541,12 +3609,14 @@ function ReportColumn({
   title,
   hint,
   count,
+  filters,
   toolbar,
   children,
 }: {
   title: string;
   hint: string;
   count?: number;
+  filters?: ReactNode;
   toolbar?: ReactNode;
   children: ReactNode;
 }) {
@@ -3563,9 +3633,123 @@ function ReportColumn({
           </Badge>
         )}
       </header>
+      {filters && <div className="border-b bg-muted/10 px-2 py-2">{filters}</div>}
       {toolbar && <div className="border-b bg-muted/30 px-2 py-2">{toolbar}</div>}
       <div className="space-y-3 p-2">{children}</div>
     </section>
+  );
+}
+
+// Self-contained filter header for ONE Gift-report card column (cols 1 & 2):
+// search + funding source + entity + payment method + date range, all scoped to
+// that column only. Entity/payment-method options are the distinct values found
+// in the column's own cards. Page-level Selects (not in a modal) are safe here.
+function ColumnFilterHeader({
+  filter,
+  onChange,
+  entityOptions,
+  methodOptions,
+  testIdPrefix,
+}: {
+  filter: ColumnFilter;
+  onChange: (next: ColumnFilter) => void;
+  entityOptions: { id: string; name: string }[];
+  methodOptions: string[];
+  testIdPrefix: string;
+}) {
+  const set = (patch: Partial<ColumnFilter>) =>
+    onChange({ ...filter, ...patch });
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={filter.search}
+          onChange={(e) => set({ search: e.target.value })}
+          placeholder="Search payer, gift, donor…"
+          className="h-8 pl-7 text-sm"
+          data-testid={`${testIdPrefix}-search`}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Select
+          value={filter.fundingSource}
+          onValueChange={(v) =>
+            set({ fundingSource: v as FundingSourceFilter })
+          }
+        >
+          <SelectTrigger
+            className="h-8 text-xs"
+            data-testid={`${testIdPrefix}-funding`}
+          >
+            <SelectValue placeholder="Funding source" />
+          </SelectTrigger>
+          <SelectContent>
+            {FUNDING_SOURCES.map((f) => (
+              <SelectItem key={f.id} value={f.id}>
+                {f.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={filter.entityId}
+          onValueChange={(v) => set({ entityId: v })}
+        >
+          <SelectTrigger
+            className="h-8 text-xs"
+            data-testid={`${testIdPrefix}-entity`}
+          >
+            <SelectValue placeholder="Entity" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All entities</SelectItem>
+            {entityOptions.map((e) => (
+              <SelectItem key={e.id} value={e.id}>
+                {e.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={filter.paymentMethod}
+          onValueChange={(v) => set({ paymentMethod: v })}
+        >
+          <SelectTrigger
+            className="h-8 text-xs"
+            data-testid={`${testIdPrefix}-method`}
+          >
+            <SelectValue placeholder="Payment method" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All methods</SelectItem>
+            {methodOptions.map((m) => (
+              <SelectItem key={m} value={m}>
+                {m}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="grid grid-cols-2 gap-1">
+          <Input
+            type="date"
+            value={filter.dateFrom}
+            onChange={(e) => set({ dateFrom: e.target.value })}
+            className="h-8 px-1 text-xs"
+            aria-label="Date from"
+            data-testid={`${testIdPrefix}-date-from`}
+          />
+          <Input
+            type="date"
+            value={filter.dateTo}
+            onChange={(e) => set({ dateTo: e.target.value })}
+            className="h-8 px-1 text-xs"
+            aria-label="Date to"
+            data-testid={`${testIdPrefix}-date-to`}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3618,6 +3802,10 @@ function ExcludedTable({
   total,
   loading,
   error,
+  search,
+  onSearchChange,
+  fundingSource,
+  onFundingSourceChange,
   reason,
   onReasonChange,
   offset,
@@ -3630,6 +3818,10 @@ function ExcludedTable({
   total: number;
   loading: boolean;
   error: boolean;
+  search: string;
+  onSearchChange: (v: string) => void;
+  fundingSource: FundingSourceFilter;
+  onFundingSourceChange: (v: FundingSourceFilter) => void;
   reason: StagedPaymentExclusionReason | "all";
   onReasonChange: (r: StagedPaymentExclusionReason | "all") => void;
   offset: number;
@@ -3645,6 +3837,35 @@ function ExcludedTable({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search payer, gift, donor…"
+            className="h-8 w-64 pl-7 text-sm"
+            data-testid="excluded-search"
+          />
+        </div>
+        <span className="text-sm text-muted-foreground">Funding source</span>
+        <Select
+          value={fundingSource}
+          onValueChange={(v) => onFundingSourceChange(v as FundingSourceFilter)}
+        >
+          <SelectTrigger
+            className="h-8 w-44 text-sm"
+            data-testid="excluded-funding"
+          >
+            <SelectValue placeholder="All sources" />
+          </SelectTrigger>
+          <SelectContent>
+            {FUNDING_SOURCES.map((f) => (
+              <SelectItem key={f.id} value={f.id}>
+                {f.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <span className="text-sm text-muted-foreground">Reason</span>
         <Select
           value={reason}

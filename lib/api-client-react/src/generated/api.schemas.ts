@@ -9044,6 +9044,10 @@ entityId?: string;
  * Filter to one recorded gift payment method.
  */
 paymentMethod?: GiftPaymentMethod;
+/**
+ * Filter by the source of this gift's best-guess UNLINKED payment proposal (the same match the row's one-click Link surfaces): stripe = only a Stripe charge is plausible; qb_direct = a QuickBooks staged payment is plausible (preferred over Stripe); donorbox = no proposals originate from Donorbox (settles via Stripe), so this always yields none — kept only so the column's filter set matches the other two Gift-report columns.
+ */
+fundingSource?: ListGiftsMissingQbFundingSource;
 dateFrom?: string;
 dateTo?: string;
 /**
@@ -9056,6 +9060,15 @@ limit?: number;
  */
 offset?: number;
 };
+
+export type ListGiftsMissingQbFundingSource = typeof ListGiftsMissingQbFundingSource[keyof typeof ListGiftsMissingQbFundingSource];
+
+
+export const ListGiftsMissingQbFundingSource = {
+  stripe: 'stripe',
+  donorbox: 'donorbox',
+  qb_direct: 'qb_direct',
+} as const;
 
 export type ListReconciliationBundleAnchorsParams = {
 /**

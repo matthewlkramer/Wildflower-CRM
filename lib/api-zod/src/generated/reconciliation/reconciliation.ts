@@ -641,6 +641,7 @@ export const ListGiftsMissingQbQueryParams = zod.object({
   "q": zod.coerce.string().optional().describe('Free-text over donor name (organization \/ person \/ household).'),
   "entityId": zod.coerce.string().optional().describe('Filter to one Wildflower legal entity.'),
   "paymentMethod": zod.enum(['ach', 'check', 'wire', 'stock', 'donor_box', 'daf_ach', 'daf_check', 'daf_bill_com']).optional().describe('Filter to one recorded gift payment method.'),
+  "fundingSource": zod.enum(['stripe', 'donorbox', 'qb_direct']).optional().describe('Filter by the source of this gift\'s best-guess UNLINKED payment proposal (the same match the row\'s one-click Link surfaces): stripe = only a Stripe charge is plausible; qb_direct = a QuickBooks staged payment is plausible (preferred over Stripe); donorbox = no proposals originate from Donorbox (settles via Stripe), so this always yields none — kept only so the column\'s filter set matches the other two Gift-report columns.'),
   "dateFrom": zod.coerce.string().date().optional(),
   "dateTo": zod.coerce.string().date().optional(),
   "limit": zod.coerce.number().min(1).max(listGiftsMissingQbQueryLimitMax).default(listGiftsMissingQbQueryLimitDefault),

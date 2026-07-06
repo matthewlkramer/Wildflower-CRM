@@ -23,6 +23,7 @@ import {
   not,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import { alias, type PgSelect } from "drizzle-orm/pg-core";
 import { getAppUser } from "../../lib/appRequest";
@@ -365,16 +366,24 @@ export function escapeLike(s: string): string {
 // memo/reference, the single-line description, and any of the line-detail array
 // fields (items / accounts / classes). Array columns are flattened with
 // array_to_string so a substring match works across all elements at once.
+// Same field set as `stagedSearchWhere`, but matched against an arbitrary SQL
+// ILIKE pattern expression rather than a literal term. Lets a correlated
+// subquery search staged payments by a per-row column (e.g. a gift's donor name)
+// while keeping the search-field list defined in ONE place (lockstep).
+export function stagedSearchWhereExpr(pattern: SQL) {
+  return or(
+    sql`${stagedPayments.payerName} ILIKE ${pattern}`,
+    sql`${stagedPayments.rawReference} ILIKE ${pattern}`,
+    sql`${stagedPayments.lineDescription} ILIKE ${pattern}`,
+    sql`array_to_string(COALESCE(${stagedPayments.lineItemNames}, '{}'), ' ') ILIKE ${pattern}`,
+    sql`array_to_string(COALESCE(${stagedPayments.lineAccountNames}, '{}'), ' ') ILIKE ${pattern}`,
+    sql`array_to_string(COALESCE(${stagedPayments.lineClasses}, '{}'), ' ') ILIKE ${pattern}`,
+  );
+}
+
 export function stagedSearchWhere(term: string) {
   const like = `%${escapeLike(term)}%`;
-  return or(
-    ilike(stagedPayments.payerName, like),
-    ilike(stagedPayments.rawReference, like),
-    ilike(stagedPayments.lineDescription, like),
-    sql`array_to_string(COALESCE(${stagedPayments.lineItemNames}, '{}'), ' ') ILIKE ${like}`,
-    sql`array_to_string(COALESCE(${stagedPayments.lineAccountNames}, '{}'), ' ') ILIKE ${like}`,
-    sql`array_to_string(COALESCE(${stagedPayments.lineClasses}, '{}'), ' ') ILIKE ${like}`,
-  );
+  return stagedSearchWhereExpr(sql`${like}`);
 }
 
 export function queueWhere(queue: Queue) {

@@ -4373,6 +4373,7 @@ paths:
         - { name: q, in: query, schema: { type: string }, description: "Free-text over donor name (organization / person / household)." }
         - { name: entityId, in: query, schema: { type: string }, description: "Filter to one Wildflower legal entity." }
         - { name: paymentMethod, in: query, schema: { $ref: "#/components/schemas/GiftPaymentMethod" }, description: "Filter to one recorded gift payment method." }
+        - { name: fundingSource, in: query, schema: { type: string, enum: [stripe, donorbox, qb_direct] }, description: "Filter by the source of this gift's best-guess UNLINKED payment proposal (the same match the row's one-click Link surfaces): stripe = only a Stripe charge is plausible; qb_direct = a QuickBooks staged payment is plausible (preferred over Stripe); donorbox = no proposals originate from Donorbox (settles via Stripe), so this always yields none — kept only so the column's filter set matches the other two Gift-report columns." }
         - { name: dateFrom, in: query, schema: { type: string, format: date } }
         - { name: dateTo, in: query, schema: { type: string, format: date } }
         - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }

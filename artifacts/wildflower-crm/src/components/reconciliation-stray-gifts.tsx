@@ -14,6 +14,7 @@ import {
   GiftPaymentMethod,
   type GiftMissingQb,
   type ListGiftsMissingQbParams,
+  type ListGiftsMissingQbFundingSource,
   type SearchReconciliationQbStagedParams,
   type UpdateGiftAllocationBody,
 } from "@workspace/api-client-react";
@@ -116,12 +117,22 @@ const PAYMENT_METHODS: GiftPaymentMethod[] = [
 
 const ANY = "__any__";
 
+// Funding-source facet for this column only (server-side, mirrors the
+// gifts-missing-qb route). qb_direct = money not routed through Stripe/Donorbox.
+const FUNDING_SOURCES: { id: string; name: string }[] = [
+  { id: ANY, name: "All sources" },
+  { id: "stripe", name: "Stripe" },
+  { id: "qb_direct", name: "QuickBooks direct" },
+  { id: "donorbox", name: "Donorbox" },
+];
+
 export function StrayGiftsWorklist() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [entityId, setEntityId] = useState<string>(ANY);
   const [paymentMethod, setPaymentMethod] = useState<string>(ANY);
+  const [fundingSource, setFundingSource] = useState<string>(ANY);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(0);
@@ -144,7 +155,7 @@ export function StrayGiftsWorklist() {
   // Reset paging whenever any filter changes.
   useEffect(() => {
     setPage(0);
-  }, [debouncedSearch, entityId, paymentMethod, dateFrom, dateTo]);
+  }, [debouncedSearch, entityId, paymentMethod, fundingSource, dateFrom, dateTo]);
 
   const params = useMemo<ListGiftsMissingQbParams>(() => {
     const p: ListGiftsMissingQbParams = {
@@ -155,10 +166,20 @@ export function StrayGiftsWorklist() {
     if (entityId !== ANY) p.entityId = entityId;
     if (paymentMethod !== ANY)
       p.paymentMethod = paymentMethod as GiftPaymentMethod;
+    if (fundingSource !== ANY)
+      p.fundingSource = fundingSource as ListGiftsMissingQbFundingSource;
     if (dateFrom) p.dateFrom = dateFrom;
     if (dateTo) p.dateTo = dateTo;
     return p;
-  }, [debouncedSearch, entityId, paymentMethod, dateFrom, dateTo, page]);
+  }, [
+    debouncedSearch,
+    entityId,
+    paymentMethod,
+    fundingSource,
+    dateFrom,
+    dateTo,
+    page,
+  ]);
 
   const { data, isLoading, isError } = useListGiftsMissingQb(params);
 
@@ -305,6 +326,18 @@ export function StrayGiftsWorklist() {
             {PAYMENT_METHODS.map((m) => (
               <SelectItem key={m} value={m}>
                 {formatEnum(m)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={fundingSource} onValueChange={setFundingSource}>
+          <SelectTrigger className="h-9" data-testid="stray-gifts-funding">
+            <SelectValue placeholder="Funding source" />
+          </SelectTrigger>
+          <SelectContent>
+            {FUNDING_SOURCES.map((f) => (
+              <SelectItem key={f.id} value={f.id}>
+                {f.name}
               </SelectItem>
             ))}
           </SelectContent>

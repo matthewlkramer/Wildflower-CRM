@@ -15,7 +15,11 @@ import {
 import { and, asc, count, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { asyncHandler } from "../../lib/helpers";
 import { getViewer, maskName } from "../../lib/identityVisibility";
-import { escapeLike, stagedSearchWhere } from "../quickbooks/shared";
+import {
+  escapeLike,
+  stagedSearchWhere,
+  stagedSearchWhereExpr,
+} from "../quickbooks/shared";
 import { giftMatchAmountBoundsKnownNet } from "../../lib/giftMatch";
 import {
   qbLedgerExistsForGift,
@@ -156,14 +160,17 @@ async function proposeQbPaymentForGift(opts: {
 // Free-text donor filter for an unlinked Stripe charge — payer, payer email,
 // charge description, and the statement descriptor (mirrors stripe.ts's own
 // staged-charge search fields). Any substring hit counts.
+function stripeChargeSearchWhereExpr(pattern: SQL): SQL {
+  return or(
+    sql`${stripeStagedCharges.payerName} ILIKE ${pattern}`,
+    sql`${stripeStagedCharges.payerEmail} ILIKE ${pattern}`,
+    sql`${stripeStagedCharges.description} ILIKE ${pattern}`,
+    sql`${stripeStagedCharges.statementDescriptor} ILIKE ${pattern}`,
+  )!;
+}
 function stripeChargeSearchWhere(term: string): SQL {
   const like = `%${escapeLike(term)}%`;
-  return or(
-    ilike(stripeStagedCharges.payerName, like),
-    ilike(stripeStagedCharges.payerEmail, like),
-    ilike(stripeStagedCharges.description, like),
-    ilike(stripeStagedCharges.statementDescriptor, like),
-  )!;
+  return stripeChargeSearchWhereExpr(sql`${like}`);
 }
 
 // Best-guess UNLINKED Stripe staged charge for a stray gift row — the Stripe
@@ -274,6 +281,80 @@ async function proposePaymentForGift(opts: {
   return proposeStripeChargeForGift(opts);
 }
 
+// ─── Funding-source filter (correlated EXISTS) ──────────────────────────────
+// The fundingSource query param slices the worklist by the SOURCE of each row's
+// best-guess UNLINKED payment proposal (the same match the row's one-click Link
+// surfaces). Because the proposal is computed per-page in JS (proposePaymentForGift),
+// filtering it server-side — before pagination — needs the same matching logic as a
+// correlated EXISTS. These two builders MUST stay in lockstep with
+// proposeQbPaymentForGift / proposeStripeChargeForGift above (same gate, same
+// name/amount/date bands); if one changes, change the other or the filter and the
+// displayed proposal will disagree. `name` / `amount` / `date` are per-row SQL
+// expressions from the outer query (donor name, search amount, display date).
+
+// TRUE when at least one still-unlinked QuickBooks staged payment plausibly
+// matches this gift row → the row's proposal would be a QuickBooks payment.
+function qbProposalExistsSql(name: SQL, amount: SQL, date: SQL): SQL {
+  const namePattern = sql`('%' || ${name} || '%')`;
+  const hasText = sql`char_length(trim(COALESCE(${name}, ''))) >= 2`;
+  const hasAmount = sql`(${amount} IS NOT NULL AND ${amount} > 0)`;
+  return sql`(
+    (${hasText} OR ${hasAmount})
+    AND EXISTS (
+      SELECT 1 FROM ${stagedPayments}
+      WHERE ${stagedPayments.matchedGiftId} IS NULL
+        AND ${stagedPayments.createdGiftId} IS NULL
+        AND ${stagedPayments.groupReconciledGiftId} IS NULL
+        AND (NOT ${hasText} OR (${stagedSearchWhereExpr(namePattern)}))
+        AND (NOT ${hasAmount} OR (
+          ${stagedPayments.amount} IS NOT NULL
+          AND (${stagedPayments.amount})::numeric
+              BETWEEN LEAST(${amount} * 0.8, ${amount} - 50)
+                  AND GREATEST(${amount} * 1.2, ${amount} + 50)
+        ))
+        AND (${date} IS NULL OR (
+          ${stagedPayments.dateReceived} IS NOT NULL
+          AND ${stagedPayments.dateReceived}
+              BETWEEN ((${date})::date - 30) AND ((${date})::date + 30)
+        ))
+    )
+  )`;
+}
+
+// TRUE when at least one still-open, unlinked Stripe charge plausibly matches
+// this gift row. A row's proposal is Stripe only when NO QuickBooks payment
+// matches (QB is preferred), so callers pair this with NOT qbProposalExistsSql.
+function stripeProposalExistsSql(name: SQL, amount: SQL, date: SQL): SQL {
+  const namePattern = sql`('%' || ${name} || '%')`;
+  const hasText = sql`char_length(trim(COALESCE(${name}, ''))) >= 2`;
+  const hasAmount = sql`(${amount} IS NOT NULL AND ${amount} > 0)`;
+  return sql`(
+    (${hasText} OR ${hasAmount})
+    AND EXISTS (
+      SELECT 1 FROM ${stripeStagedCharges}
+      WHERE ${stripeStagedCharges.status} = 'pending'
+        AND ${stripeStagedCharges.matchedGiftId} IS NULL
+        AND ${stripeStagedCharges.createdGiftId} IS NULL
+        AND ${stripeStagedCharges.refunded} = false
+        AND ${stripeStagedCharges.disputed} = false
+        AND (NOT ${hasText} OR (${stripeChargeSearchWhereExpr(namePattern)}))
+        AND (NOT ${hasAmount} OR (
+          ${stripeStagedCharges.grossAmount} IS NOT NULL
+          AND ${giftMatchAmountBoundsKnownNet(
+            sql`${amount}`,
+            sql`(${stripeStagedCharges.grossAmount})::numeric`,
+            sql`(${stripeStagedCharges.netAmount})::numeric`,
+          )}
+        ))
+        AND (${date} IS NULL OR (
+          ${stripeStagedCharges.dateReceived} IS NOT NULL
+          AND ${stripeStagedCharges.dateReceived}
+              BETWEEN ((${date})::date - 30) AND ((${date})::date + 30)
+        ))
+    )
+  )`;
+}
+
 // ─── GET /reconciliation/gifts-missing-qb ──────────────────────────────────
 // The "gifts with no QuickBooks record" stray worklist. Because the main
 // reconciliation queue is QB-anchored (one card per QB money event), a gift that
@@ -297,6 +378,16 @@ router.get(
     const paymentMethod =
       paymentMethodRaw && PAYMENT_METHODS.has(paymentMethodRaw)
         ? paymentMethodRaw
+        : null;
+    const fundingSourceRaw =
+      typeof req.query["fundingSource"] === "string"
+        ? req.query["fundingSource"]
+        : null;
+    const fundingSource =
+      fundingSourceRaw === "stripe" ||
+      fundingSourceRaw === "donorbox" ||
+      fundingSourceRaw === "qb_direct"
+        ? fundingSourceRaw
         : null;
     const dateFrom =
       typeof req.query["dateFrom"] === "string" ? req.query["dateFrom"] : null;
@@ -376,6 +467,52 @@ router.get(
     }
     if (dateTo) {
       conds.push(sql`${giftsAndPayments.dateReceived} <= ${dateTo}::date`);
+    }
+
+    // Funding-source filter: slice by the SOURCE of the row's best-guess unlinked
+    // payment proposal. These per-row expressions mirror what proposePaymentForGift
+    // is fed in JS (raw donor name / search amount / display date), so the EXISTS
+    // predicates below agree with the proposal each row would actually surface.
+    if (fundingSource) {
+      const rawDonorNameSql = sql`COALESCE(${organizations.name}, ${personNameSql}, ${households.name})`;
+      const searchAmountSql = sql`COALESCE(
+        ${giftAllocations.subAmount},
+        ${giftsAndPayments.amount},
+        (
+          SELECT NULLIF(SUM(ga.sub_amount), 0)
+          FROM ${giftAllocations} ga
+          WHERE ga.gift_id = ${giftsAndPayments.id}
+        )
+      )::numeric`;
+      const searchDateSql = sql`COALESCE(
+        ${giftsAndPayments.dateReceived},
+        (
+          SELECT MIN(ga.spending_start)
+          FROM ${giftAllocations} ga
+          WHERE ga.gift_id = ${giftsAndPayments.id}
+        )
+      )`;
+      const qbExists = qbProposalExistsSql(
+        rawDonorNameSql,
+        searchAmountSql,
+        searchDateSql,
+      );
+      if (fundingSource === "qb_direct") {
+        conds.push(qbExists);
+      } else if (fundingSource === "stripe") {
+        // QuickBooks is preferred, so a Stripe proposal only wins when NO QB
+        // payment matches.
+        const stripeExists = stripeProposalExistsSql(
+          rawDonorNameSql,
+          searchAmountSql,
+          searchDateSql,
+        );
+        conds.push(sql`(NOT ${qbExists} AND ${stripeExists})`);
+      } else {
+        // Donorbox settles through Stripe and never originates a proposal here, so
+        // this filter yields no rows (kept only for parity with the other columns).
+        conds.push(sql`1 = 0`);
+      }
     }
 
     const where = and(...conds);
