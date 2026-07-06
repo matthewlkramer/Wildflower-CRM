@@ -58,6 +58,9 @@ export async function seedInitialGiftAllocation(
     intendedUsage?: (typeof giftAllocations.$inferInsert)["intendedUsage"];
     fundableProjectId?: string | null;
     countsTowardGoal?: boolean;
+    regionalRestrictionType?: (typeof giftAllocations.$inferInsert)["regionalRestrictionType"];
+    usageRestrictionType?: (typeof giftAllocations.$inferInsert)["usageRestrictionType"];
+    timeRestrictionType?: (typeof giftAllocations.$inferInsert)["timeRestrictionType"];
   },
 ): Promise<void> {
   const candidateFy =
@@ -86,6 +89,17 @@ export async function seedInitialGiftAllocation(
     ...(args.countsTowardGoal === undefined
       ? {}
       : { countsTowardGoal: args.countsTowardGoal }),
+    // Restriction axes are NOT NULL default 'unrestricted' — only override when
+    // a caller actually captured a value, so the DB default still applies.
+    ...(args.regionalRestrictionType
+      ? { regionalRestrictionType: args.regionalRestrictionType }
+      : {}),
+    ...(args.usageRestrictionType
+      ? { usageRestrictionType: args.usageRestrictionType }
+      : {}),
+    ...(args.timeRestrictionType
+      ? { timeRestrictionType: args.timeRestrictionType }
+      : {}),
   });
 }
 

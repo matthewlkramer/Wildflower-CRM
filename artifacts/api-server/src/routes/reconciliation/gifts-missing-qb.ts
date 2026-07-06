@@ -440,6 +440,10 @@ router.get(
     // the queue never lists money that is exempt or tied as if it were unreconciled.
     const conds: SQL[] = [
       isNull(giftsAndPayments.archivedAt),
+      // A gift explicitly parked as awaiting settlement (a won gift booked ahead
+      // of its imminent payment) is not yet expected to carry a QB record, so it
+      // must not surface here as if it were an un-reconciled data-quality miss.
+      sql`NOT ${giftsAndPayments.awaitingSettlement}`,
       noQbRecord,
       sql`NOT ${isProcessorSettledSql}`,
       sql`(${giftAllocations.id} IS NULL OR ${giftAllocations.entityId} IS NULL OR COALESCE(${entities.expectsPayment}, true) = true)`,

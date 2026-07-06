@@ -590,3 +590,31 @@ export const WriteOffPledgeBody = zod.object({
   "reason": zod.string().nullish().describe('Optional free-text note explaining why the pledge is being written off (recorded on the write-off pledge\'s usage notes).')
 }).describe('Optional metadata for an audit-close pledge write-off. The remainder and negative allocations are derived server-side; the client never supplies amounts.')
 
+/**
+ * Convert a worked opportunity or pledge into a CRM gift directly from its
+detail page — the proactive, human-initiated counterpart to the
+reconciliation "create gift from opportunity" flow. Mints a new gift
+HEADER linked to the opportunity via `opportunity_id`, deriving the donor
+from the opportunity (Donor XOR) and the amount from its awarded amount
+(falling back to the ask amount). All pledge allocations are copied onto
+the gift (reusing the forward-gift-intake allocation copy), so entity,
+fiscal year, restriction axes, and intended usage carry over; a
+full-amount default allocation is seeded if the opportunity has none.
+
+When `awaitingSettlement` is true, the gift is stamped
+`awaiting_settlement=true` so it is NOT flagged as a reconciliation error
+while it briefly has no cash tie (the "won gift awaiting imminent
+payment" action). Creation is never blocked on missing coding — an
+incompletely-coded gift simply surfaces in the Incomplete gift record
+queue. The opportunity's derived status/stage are recomputed after mint.
+
+ * @summary Proactively mint a won-gift from an opportunity/pledge (non-reconciliation).
+ */
+export const MintGiftFromOpportunityParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const MintGiftFromOpportunityBody = zod.object({
+  "awaitingSettlement": zod.boolean().optional().describe('When true, stamp the minted gift `awaiting_settlement=true` (the \'won gift awaiting imminent payment\' action) so it is not treated as a reconciliation error while it briefly has no cash tie. Defaults false (a plain \'won gift\').')
+}).describe('Options for proactively minting a gift from an opportunity\/pledge. All money\/donor\/scope is derived server-side from the opportunity; the client only chooses the settlement-expectation flavor.')
+

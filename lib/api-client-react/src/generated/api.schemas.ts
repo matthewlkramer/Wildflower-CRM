@@ -2335,6 +2335,13 @@ export interface CreateGiftOrPaymentBody {
   grantLetterFilename?: string;
   thankYouLetterUrl?: string;
   thankYouLetterFilename?: string;
+  sourceRecordUrl?: string;
+  entityId?: string;
+  intendedUsage?: IntendedUsage;
+  fundableProjectId?: string;
+  regionalRestrictionType?: RestrictionAxis;
+  usageRestrictionType?: RestrictionAxis;
+  timeRestrictionType?: RestrictionAxis;
 }
 
 export interface UpdateGiftOrPaymentBody {
@@ -4235,6 +4242,72 @@ falling back to the gift's display amount.
 
 export interface GiftMissingQbList {
   data: GiftMissingQb[];
+  pagination: Pagination;
+}
+
+/**
+ * A single failing item of the bookable-gift standard. missing_donor: not exactly
+one donor. missing_amount / missing_date: header value absent. no_allocations:
+gift has no allocation rows. missing_entity / missing_fiscal_year /
+missing_intended_usage: an allocation lacks that field. missing_fundable_project:
+a project-usage allocation has no fundable project. missing_restriction_evidence:
+a donor_restricted gift has neither a grant letter nor an online-source link.
+missing_reporting_deadline: the linked opportunity requires a written report but
+no reporting_deadline task exists.
+
+ */
+export type BookableReason = typeof BookableReason[keyof typeof BookableReason];
+
+
+export const BookableReason = {
+  missing_donor: 'missing_donor',
+  missing_amount: 'missing_amount',
+  missing_date: 'missing_date',
+  no_allocations: 'no_allocations',
+  missing_entity: 'missing_entity',
+  missing_fiscal_year: 'missing_fiscal_year',
+  missing_intended_usage: 'missing_intended_usage',
+  missing_fundable_project: 'missing_fundable_project',
+  missing_restriction_evidence: 'missing_restriction_evidence',
+  missing_reporting_deadline: 'missing_reporting_deadline',
+} as const;
+
+export type IncompleteGiftDonorKind = typeof IncompleteGiftDonorKind[keyof typeof IncompleteGiftDonorKind] | null;
+
+
+export const IncompleteGiftDonorKind = {
+  organization: 'organization',
+  person: 'person',
+  household: 'household',
+} as const;
+
+/**
+ * ONE ROW PER gift that fails the bookable-gift standard.
+ */
+export interface IncompleteGift {
+  /** Gift (gifts_and_payments) id. */
+  id: string;
+  /** Gift header name. */
+  giftName?: string | null;
+  /** Donor display name (anonymous-masked for the viewer). */
+  donorName?: string | null;
+  donorKind?: IncompleteGiftDonorKind;
+  /** Raw gift header amount (may be null). */
+  amount?: string | null;
+  /** Raw gift header date received (may be null). */
+  dateReceived?: string | null;
+  /** The linked opportunity/pledge, if any. */
+  opportunityId?: string | null;
+  /** Display name of the linked opportunity/pledge. */
+  opportunityName?: string | null;
+  /** Every failing checklist item for this gift (always non-empty). */
+  reasons: BookableReason[];
+  /** Human-readable label for each reason, index-aligned with `reasons`. */
+  reasonLabels?: string[];
+}
+
+export interface IncompleteGiftList {
+  data: IncompleteGift[];
   pagination: Pagination;
 }
 
@@ -7068,6 +7141,14 @@ export interface WriteOffPledgeBody {
 }
 
 /**
+ * Options for proactively minting a gift from an opportunity/pledge. All money/donor/scope is derived server-side from the opportunity; the client only chooses the settlement-expectation flavor.
+ */
+export interface MintGiftFromOpportunityBody {
+  /** When true, stamp the minted gift `awaiting_settlement=true` (the 'won gift awaiting imminent payment' action) so it is not treated as a reconciliation error while it briefly has no cash tie. Defaults false (a plain 'won gift'). */
+  awaitingSettlement?: boolean;
+}
+
+/**
  * Optional metadata for an audit-close gift over-payment resolution. The surplus amount is derived server-side from evidence precedence; the client never supplies amounts.
  */
 export interface ResolveGiftOverpayBody {
@@ -9127,6 +9208,26 @@ export const ListGiftsMissingQbFundingSource = {
   donorbox: 'donorbox',
   qb_direct: 'qb_direct',
 } as const;
+
+export type ListIncompleteGiftsParams = {
+/**
+ * Free-text over donor name (organization / person / household).
+ */
+q?: string;
+/**
+ * Filter to gifts with an allocation attributed to this Wildflower legal entity.
+ */
+entityId?: string;
+/**
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
+};
 
 export type ListReconciliationBundleAnchorsParams = {
 /**

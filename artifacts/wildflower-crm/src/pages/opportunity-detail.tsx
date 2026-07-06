@@ -5,6 +5,9 @@ import {
   useGetOpportunityOrPledge,
   useUpdateOpportunityOrPledge,
   useArchiveOpportunityOrPledge,
+  useMintGiftFromOpportunity,
+  getGetGiftOrPaymentQueryKey,
+  getListGiftsAndPaymentsQueryKey,
   useListEntities,
   useGetOrganization,
   useGetHousehold,
@@ -112,6 +115,14 @@ const CONDITIONS_MET_LABELS: Record<OpportunityConditionsMet, string> = {
 };
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { DerivedRow } from "@/components/derived-row";
 
@@ -156,6 +167,8 @@ function OppView({
   const [, navigate] = useLocation();
   const [reportingDialogOpen, setReportingDialogOpen] = useState(false);
   const [writeOffOpen, setWriteOffOpen] = useState(false);
+  const [flagResearchOpen, setFlagResearchOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(opp.name ?? "");
@@ -196,6 +209,33 @@ function OppView({
       onError: (err: unknown) => {
         toast({
           title: "Archive failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  // "Won gift" / "Won gift awaiting imminent payment" actions — proactively
+  // mint a real gift from this opportunity (money/donor/scope derived
+  // server-side). On success we land on the new gift's detail page.
+  const mintGift = useMintGiftFromOpportunity({
+    mutation: {
+      onSuccess: async (gift) => {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getGetOpportunityOrPledgeQueryKey(opp.id) }),
+          queryClient.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() }),
+          queryClient.invalidateQueries({ queryKey: getListGiftsAndPaymentsQueryKey() }),
+          gift?.id
+            ? queryClient.invalidateQueries({ queryKey: getGetGiftOrPaymentQueryKey(gift.id) })
+            : Promise.resolve(),
+        ]);
+        toast({ title: "Gift created" });
+        if (gift?.id) navigate(`/gifts/${gift.id}`);
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Could not create gift",
           description: err instanceof Error ? err.message : String(err),
           variant: "destructive",
         });
@@ -394,11 +434,68 @@ function OppView({
           Write off remainder
         </Button>
       ) : null}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={mintGift.isPending || archive.isPending}
+            data-testid="button-opp-actions"
+          >
+            Actions
+            <ChevronDown className="ml-1 h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {/* Conversions. Only meaningful on a live (non-write-off) record. */}
+          {!opp.isWriteOff ? (
+            <>
+              <DropdownMenuItem
+                onSelect={() => patch({ writtenPledge: true })}
+                data-testid="action-mark-committed-pledge"
+              >
+                Mark as committed pledge
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() =>
+                  mintGift.mutate({ id: opp.id, data: { awaitingSettlement: true } })
+                }
+                data-testid="action-mark-won-gift-awaiting"
+              >
+                Mark as won gift awaiting imminent payment
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() =>
+                  mintGift.mutate({ id: opp.id, data: { awaitingSettlement: false } })
+                }
+                data-testid="action-mark-won-gift"
+              >
+                Mark as won gift
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
+          <DropdownMenuItem
+            onSelect={() => setFlagResearchOpen(true)}
+            data-testid="action-flag-research-opp"
+          >
+            Flag for research
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => setArchiveOpen(true)}
+            data-testid="action-archive-opp"
+          >
+            Archive
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <FlagForResearchDialog
         targetType={entityLabel.toLowerCase() === "pledge" ? "pledge" : "opportunity"}
         targetId={opp.id}
         recordLabel={opp.name ?? `this ${entityLabel.toLowerCase()}`}
-        triggerTestId="button-flag-research-opp"
+        open={flagResearchOpen}
+        onOpenChange={setFlagResearchOpen}
+        hideTrigger
       />
       <ConfirmDeleteDialog
         title={`Archive this ${entityLabel.toLowerCase()}?`}
@@ -409,7 +506,8 @@ function OppView({
         destructive={false}
         onConfirm={() => archive.mutateAsync({ id: opp.id })}
         disabled={archive.isPending}
-        triggerTestId="button-archive-opp"
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
         confirmTestId="button-confirm-archive-opp"
       />
     </>
@@ -616,24 +714,24 @@ function OppView({
                     onSave={(next) => patch({ winProbability: next })}
                   />
                 </Row>
-                <Row label="Was pledge">
-                  {/*
-                    Sticky-true flag that pins a row to the Pledges page
-                    even after stage moves backward or status flips to
-                    cash_in. Auto-flipped true on stage ∈ (conditional,
-                    verbal, written) or grant-letter upload; also user-
-                    tickable here. Never auto-flipped back to false — only
-                    the user can clear it.
-                  */}
-                  <InlineEditBoolean
-                    label="Written pledge"
-                    testIdBase="opp-written-pledge"
-                    value={opp.writtenPledge ?? false}
-                    allowNull={false}
-                    display={opp.writtenPledge ? "Yes" : "No"}
-                    onSave={(next) => patch({ writtenPledge: next ?? false })}
-                  />
-                </Row>
+                {/*
+                  "Was pledge" is a sticky-true flag that pins a row to the
+                  Pledges page. It's meaningful on the pledge view; on the
+                  opportunity view it's noise (an opportunity that became a
+                  pledge is shown as a pledge), so hide the row there. (T#585)
+                */}
+                {entityLabel.toLowerCase() === "pledge" ? (
+                  <Row label="Was pledge">
+                    <InlineEditBoolean
+                      label="Written pledge"
+                      testIdBase="opp-written-pledge"
+                      value={opp.writtenPledge ?? false}
+                      allowNull={false}
+                      display={opp.writtenPledge ? "Yes" : "No"}
+                      onSave={(next) => patch({ writtenPledge: next ?? false })}
+                    />
+                  </Row>
+                ) : null}
                 {opp.auditClose.resolvedByWriteOffPledgeId ? (
                   <Row label="Uncollected remainder">
                     <Link

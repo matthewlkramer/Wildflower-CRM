@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
-import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, organizations, households, people, tasks, type NewPledgeAllocation } from "@workspace/db/schema";
+import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, giftAllocations, organizations, households, people, tasks, type NewPledgeAllocation } from "@workspace/db/schema";
 import { giftHeaderColumns } from "./giftsAndPayments";
 import { oppWorklistConds, type OppWorklist } from "../lib/worklists";
 import { alias } from "drizzle-orm/pg-core";
@@ -86,10 +86,18 @@ import {
   BulkUpdateOpportunitiesAndPledgesBody,
   BulkArchiveOpportunitiesAndPledgesBody,
   WriteOffPledgeBody,
+  MintGiftFromOpportunityBody,
   validateOppInvariants,
   legacyCategoryToLoanOrGrant,
   type InvariantIssue,
 } from "@workspace/api-zod";
+import { copyPledgeAllocationsToGift } from "../lib/reconciliationCommit";
+import {
+  seedInitialGiftAllocation,
+  assertGiftHasAllocations,
+} from "../lib/giftAllocationSeed";
+import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
+import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { resolvePledgeFreeze, resolvePledgeFreezeById, respondFrozen } from "../lib/freezeGuard";
@@ -803,6 +811,110 @@ router.post(
       );
     }
     res.status(201).json(final);
+  }),
+);
+
+// Proactively mint a real gift from an opportunity/pledge (the "won gift" and
+// "won gift awaiting imminent payment" actions on the opportunity detail). This
+// is the money-first counterpart to the reconciliation path: instead of a bank
+// event minting a gift, the fundraiser records the win up front. All money,
+// donor, and scope are DERIVED from the opportunity (never supplied by the
+// client) so the gift inherits the pledge's scope; the only choice is whether to
+// stamp `awaiting_settlement` (so the fresh, cash-tie-less gift is not treated
+// as a reconciliation error while payment is imminent). Never blocks: a scope-
+// less opp still mints a header + a seeded default allocation.
+router.post(
+  "/opportunities-and-pledges/:id/mint-gift",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const body = parseOrBadRequest(MintGiftFromOpportunityBody, req.body, res);
+    if (!body) return;
+
+    const opp = await db
+      .select()
+      .from(opportunitiesAndPledges)
+      .where(eq(opportunitiesAndPledges.id, id))
+      .then((r) => r[0]);
+    if (!opp) return notFound(res, "opportunity");
+
+    // A write-off is a negative offsetting correction, not a winnable ask — it
+    // must never mint a gift.
+    if (opp.isWriteOff) {
+      return res.status(409).json({
+        error: "invalid_mint_target",
+        message: "A write-off record cannot be turned into a gift.",
+      });
+    }
+
+    // Donor XOR: copy all three FKs straight from the opportunity (its own
+    // num_nonnulls = 1 CHECK guarantees exactly one is set), so the minted gift
+    // inherits the same single donor without re-deriving it.
+    const donorFks = {
+      organizationId: opp.organizationId,
+      individualGiverPersonId: opp.individualGiverPersonId,
+      householdId: opp.householdId,
+    };
+
+    // Recognised today (Chicago), which lands inside the current open FY window.
+    // Amount = the awarded amount when the ask has been sized, else the ask.
+    const dateReceived = todayInChicago();
+    const amount = opp.awardedAmount ?? opp.askAmount ?? null;
+    const awaitingSettlement = body.awaitingSettlement ?? false;
+
+    const giftId = newId();
+    await db.transaction(async (tx) => {
+      await tx.insert(giftsAndPayments).values({
+        id: giftId,
+        name: opp.name,
+        ...donorFks,
+        opportunityId: opp.id,
+        amount,
+        dateReceived,
+        awaitingSettlement,
+        // Authoritative loan-vs-grant flag carried over from the opportunity.
+        loanOrGrant: opp.loanOrGrant,
+      });
+      // Inherit the pledge's scope onto the gift's allocations, scaled to the
+      // gift amount (forward gift intake). Falls back to a single seeded
+      // default allocation when the opp has no allocation lines, so the gift
+      // never lands scope-less. Either way the gift-has-allocations invariant
+      // holds.
+      await copyPledgeAllocationsToGift(tx, opp.id, giftId, amount);
+      const [{ n: allocCount }] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(giftAllocations)
+        .where(eq(giftAllocations.giftId, giftId));
+      if (!allocCount) {
+        await seedInitialGiftAllocation(tx, {
+          giftId,
+          amount,
+          dateReceived,
+        });
+      }
+      await assertGiftHasAllocations(tx, giftId);
+    });
+
+    // Re-derive the opportunity's calculated lifecycle (a linked gift moves it
+    // toward cash_in) and stamp the new gift's QuickBooks tie status.
+    await applyDerivedOppFieldsMany(opp.id);
+    await applyGiftQbTieMany(giftId);
+
+    const gift = await db
+      .select(giftHeaderColumns)
+      .from(giftsAndPayments)
+      .where(eq(giftsAndPayments.id, giftId))
+      .then((r) => r[0]);
+    if (gift) {
+      await auditCreate(
+        req,
+        "gift",
+        gift.id,
+        awaitingSettlement
+          ? `Minted gift awaiting settlement from opportunity ${id}`
+          : `Minted gift from opportunity ${id}`,
+      );
+    }
+    res.status(201).json(gift);
   }),
 );
 

@@ -614,27 +614,46 @@ router.post(
     if (freeze.frozen) return respondFrozen(res, freeze);
     // Wrap in a transaction so the header + its seeded allocation land together:
     // every gift MUST have at least one allocation (the sole home of money scope).
+    // The non-blocking coding-capture fields (Task #585) live on the seeded
+    // allocation, NOT the gift header — pull them out before the header insert
+    // and thread them to the seed. `sourceRecordUrl` stays on the header.
+    const {
+      entityId: captureEntityId,
+      intendedUsage: captureIntendedUsage,
+      fundableProjectId: captureFundableProjectId,
+      regionalRestrictionType: captureRegionalRestrictionType,
+      usageRestrictionType: captureUsageRestrictionType,
+      timeRestrictionType: captureTimeRestrictionType,
+      ...headerBody
+    } = body;
     const [row] = await db.transaction(async (tx) => {
       const inserted = await tx
         .insert(giftsAndPayments)
         .values({
           id: newId(),
-          ...body,
+          ...headerBody,
           // Dual-write the authoritative loan_or_grant flag from the gift type
           // (legacy `type` stays the read source this phase).
-          loanOrGrant: giftTypeToLoanOrGrant(body.type),
+          loanOrGrant: giftTypeToLoanOrGrant(headerBody.type),
         })
         .returning(giftHeaderColumns);
       const created = inserted[0];
       if (created) {
         // Seed a single full-amount allocation (fiscal year from the gift date,
         // or the explicit grantYear if the body carried one) so the new gift is
-        // never scope-less. The fundraiser refines entity / restriction later.
+        // never scope-less. Coding captured at creation is threaded on here;
+        // anything left blank lands the gift in the incomplete-gift queue.
         await seedInitialGiftAllocation(tx, {
           giftId: created.id,
           amount: created.amount,
           dateReceived: created.dateReceived,
-          grantYear: body.grantYear,
+          grantYear: headerBody.grantYear,
+          entityId: captureEntityId,
+          intendedUsage: captureIntendedUsage,
+          fundableProjectId: captureFundableProjectId,
+          regionalRestrictionType: captureRegionalRestrictionType,
+          usageRestrictionType: captureUsageRestrictionType,
+          timeRestrictionType: captureTimeRestrictionType,
         });
         await assertGiftHasAllocations(tx, created.id);
       }

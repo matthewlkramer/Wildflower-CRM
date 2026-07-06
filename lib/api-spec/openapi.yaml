@@ -3685,6 +3685,35 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Cannot write off: not a written pledge, no uncollected remainder, governing FY not audit-closed, a write-off already exists, or no open fiscal year." }
+  /opportunities-and-pledges/{id}/mint-gift:
+    post:
+      operationId: mintGiftFromOpportunity
+      tags: [opportunities-and-pledges]
+      summary: "Proactively mint a won-gift from an opportunity/pledge (non-reconciliation)."
+      description: |
+        Convert a worked opportunity or pledge into a CRM gift directly from its
+        detail page — the proactive, human-initiated counterpart to the
+        reconciliation "create gift from opportunity" flow. Mints a new gift
+        HEADER linked to the opportunity via `opportunity_id`, deriving the donor
+        from the opportunity (Donor XOR) and the amount from its awarded amount
+        (falling back to the ask amount). All pledge allocations are copied onto
+        the gift (reusing the forward-gift-intake allocation copy), so entity,
+        fiscal year, restriction axes, and intended usage carry over; a
+        full-amount default allocation is seeded if the opportunity has none.
+
+        When `awaitingSettlement` is true, the gift is stamped
+        `awaiting_settlement=true` so it is NOT flagged as a reconciliation error
+        while it briefly has no cash tie (the "won gift awaiting imminent
+        payment" action). Creation is never blocked on missing coding — an
+        incompletely-coded gift simply surfaces in the Incomplete gift record
+        queue. The opportunity's derived status/stage are recomputed after mint.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: false, content: { application/json: { schema: { $ref: "#/components/schemas/MintGiftFromOpportunityBody" } } } }
+      responses:
+        "201": { description: "Created — the new gift.", content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Cannot mint: the opportunity has no single donor, or is itself a write-off." }
   /gifts-and-payments/{id}/resolve-overpay:
     post:
       operationId: resolveGiftOverpay
@@ -4380,6 +4409,31 @@ paths:
         - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftMissingQbList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /reconciliation/incomplete-gifts:
+    get:
+      operationId: listIncompleteGifts
+      tags: [reconciliation]
+      summary: Gifts still missing the critical coding info needed to book them (bookable-gift SOP worklist).
+      description: |
+        Lists every on-books gift that fails the bookable-gift standard — the critical
+        coding info the finance team needs to record it correctly in QuickBooks. ONE ROW
+        PER gift, each carrying the list of missing-info reasons and a link to fix it.
+        A gift is INCOMPLETE when any of: donor not set (needs exactly one), amount or
+        date received missing, any allocation missing entity / fiscal year / intended
+        usage (or a project allocation with no fundable project), a donor_restricted
+        allocation with neither a grant letter nor an online-source link, or a linked
+        opportunity that requires a written report with no reporting_deadline task.
+        Off-books gifts (all allocations on non-payment entities) are EXEMPT, mirroring
+        quickbooks_tie_status. The queue updates as gifts are completed. Donor names are
+        anonymous-masked for the viewer. Read-only.
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: "Free-text over donor name (organization / person / household)." }
+        - { name: entityId, in: query, schema: { type: string }, description: "Filter to gifts with an allocation attributed to this Wildflower legal entity." }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/IncompleteGiftList" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
   /reconciliation/bundle-anchors:
     get:
@@ -6308,6 +6362,18 @@ components:
         grantLetterFilename:        { type: string }
         thankYouLetterUrl:          { type: string }
         thankYouLetterFilename:     { type: string }
+        # Online-source link (e.g. a Donorbox donation page) — restriction
+        # evidence alternative to a grant letter for a donor-restricted gift.
+        sourceRecordUrl:            { type: string }
+        # ── Non-blocking coding capture (Task #585) ──────────────────────────
+        # Threaded onto the seeded starter allocation so a new gift lands with
+        # as much bookable coding as the human had at creation. All optional.
+        entityId:                   { type: string }
+        intendedUsage:              { $ref: "#/components/schemas/IntendedUsage" }
+        fundableProjectId:          { type: string }
+        regionalRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
+        usageRestrictionType:       { $ref: "#/components/schemas/RestrictionAxis" }
+        timeRestrictionType:        { $ref: "#/components/schemas/RestrictionAxis" }
     UpdateGiftOrPaymentBody:
       type: object
       properties:
@@ -7604,6 +7670,55 @@ components:
       required: [data, pagination]
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/GiftMissingQb" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    BookableReason:
+      type: string
+      enum:
+        - missing_donor
+        - missing_amount
+        - missing_date
+        - no_allocations
+        - missing_entity
+        - missing_fiscal_year
+        - missing_intended_usage
+        - missing_fundable_project
+        - missing_restriction_evidence
+        - missing_reporting_deadline
+      description: |
+        A single failing item of the bookable-gift standard. missing_donor: not exactly
+        one donor. missing_amount / missing_date: header value absent. no_allocations:
+        gift has no allocation rows. missing_entity / missing_fiscal_year /
+        missing_intended_usage: an allocation lacks that field. missing_fundable_project:
+        a project-usage allocation has no fundable project. missing_restriction_evidence:
+        a donor_restricted gift has neither a grant letter nor an online-source link.
+        missing_reporting_deadline: the linked opportunity requires a written report but
+        no reporting_deadline task exists.
+    IncompleteGift:
+      type: object
+      required: [id, reasons]
+      description: ONE ROW PER gift that fails the bookable-gift standard.
+      properties:
+        id:            { type: string, description: "Gift (gifts_and_payments) id." }
+        giftName:      { type: string, nullable: true, description: "Gift header name." }
+        donorName:     { type: string, nullable: true, description: "Donor display name (anonymous-masked for the viewer)." }
+        donorKind:     { type: string, enum: [organization, person, household], nullable: true }
+        amount:        { type: string, nullable: true, description: "Raw gift header amount (may be null)." }
+        dateReceived:  { type: string, format: date, nullable: true, description: "Raw gift header date received (may be null)." }
+        opportunityId:   { type: string, nullable: true, description: "The linked opportunity/pledge, if any." }
+        opportunityName: { type: string, nullable: true, description: "Display name of the linked opportunity/pledge." }
+        reasons:
+          type: array
+          items: { $ref: "#/components/schemas/BookableReason" }
+          description: "Every failing checklist item for this gift (always non-empty)."
+        reasonLabels:
+          type: array
+          items: { type: string }
+          description: "Human-readable label for each reason, index-aligned with `reasons`."
+    IncompleteGiftList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/IncompleteGift" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
     ReconciliationOutcome:
       type: string
@@ -9811,6 +9926,11 @@ components:
       description: "Optional metadata for an audit-close pledge write-off. The remainder and negative allocations are derived server-side; the client never supplies amounts."
       properties:
         reason: { type: string, nullable: true, description: "Optional free-text note explaining why the pledge is being written off (recorded on the write-off pledge's usage notes)." }
+    MintGiftFromOpportunityBody:
+      type: object
+      description: "Options for proactively minting a gift from an opportunity/pledge. All money/donor/scope is derived server-side from the opportunity; the client only chooses the settlement-expectation flavor."
+      properties:
+        awaitingSettlement: { type: boolean, description: "When true, stamp the minted gift `awaiting_settlement=true` (the 'won gift awaiting imminent payment' action) so it is not treated as a reconciliation error while it briefly has no cash tie. Defaults false (a plain 'won gift')." }
     ResolveGiftOverpayBody:
       type: object
       description: "Optional metadata for an audit-close gift over-payment resolution. The surplus amount is derived server-side from evidence precedence; the client never supplies amounts."

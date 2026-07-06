@@ -165,7 +165,14 @@ export const CreateGiftOrPaymentBody = zod.object({
   "grantLetterUrl": zod.string().optional(),
   "grantLetterFilename": zod.string().optional(),
   "thankYouLetterUrl": zod.string().optional(),
-  "thankYouLetterFilename": zod.string().optional()
+  "thankYouLetterFilename": zod.string().optional(),
+  "sourceRecordUrl": zod.string().optional(),
+  "entityId": zod.string().optional(),
+  "intendedUsage": zod.enum(['gen_ops', 'growth', 'school_startup', 'teacher_training', 'project']).optional(),
+  "fundableProjectId": zod.string().optional(),
+  "regionalRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).optional().describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "usageRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).optional().describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "timeRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).optional().describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.')
 })
 
 export const GetGiftOrPaymentParams = zod.object({

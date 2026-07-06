@@ -210,6 +210,14 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // restriction, etc.) and wants to come back to it. Never auto-derived and has
   // NO side effects on status / derivation / QB tie — a pure annotation.
   needsResearch: boolean("needs_research").default(false).notNull(),
+  // "Won gift awaiting imminent payment" (bookable-gift SOP). Set when a gift is
+  // minted from an opportunity that is expected to settle in cash shortly — the
+  // gift briefly has no QuickBooks/Stripe cash tie but that is EXPECTED, not a
+  // reconciliation error. While true the gift is excluded from the
+  // gifts-missing-qb data-quality worklist so it isn't flagged prematurely.
+  // Additive/nullable-defaulted; no side effects on status / QB-tie derivation.
+  // It naturally becomes moot once real payment evidence ties the gift.
+  awaitingSettlement: boolean("awaiting_settlement").default(false).notNull(),
   // TRANSITIONAL (intended for eventual retirement, but STILL LIVE — do NOT
   // drop). The design goal is to express reconciliation state through the
   // settled-vs-entered queue + the lane model instead of this "tie" signal, but
@@ -243,6 +251,13 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   grantLetterUrl: text("grant_letter_url"),
   grantLetterFilename: text("grant_letter_filename"),
   grantLetterUploadedAt: timestamp("grant_letter_uploaded_at", { mode: "string" }),
+  // ── Online-source record link (bookable-gift SOP, restriction evidence) ──
+  // A link to the external online record this money came from (e.g. a Donorbox
+  // donation page, a giving-platform receipt). For a donor_restricted gift the
+  // bookable-gift standard requires restriction evidence: EITHER a grant letter
+  // (grantLetterUrl) OR this online-source link. Additive/nullable; no side
+  // effects on status / derivation / QB tie.
+  sourceRecordUrl: text("source_record_url"),
   // ── Thank-you acknowledgement FILE ──
   // A durable copy of the thank-you acknowledgement document, either uploaded
   // directly or copied off the linked thank-you email's attachment when it is

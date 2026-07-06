@@ -1,17 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import {
   useCreateGiftOrPayment,
   useCreateOrganization,
   useUpdateOpportunityOrPledge,
   useListOpportunitiesAndPledges,
   useGetPendingStagedMoneyForDonor,
+  useListEntities,
+  useListFiscalYears,
+  useListFundableProjects,
+  useListPledgeAllocations,
   getGetPendingStagedMoneyForDonorQueryKey,
   getListGiftsAndPaymentsQueryKey,
   getListOrganizationsQueryKey,
   getListOpportunitiesAndPledgesQueryKey,
+  getListPledgeAllocationsQueryKey,
   type OpportunityOrPledge,
+  type IntendedUsage,
+  type RestrictionAxis,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -35,7 +42,62 @@ import { AddIconButton } from "@/components/add-icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { OppCombobox } from "@/components/opp-combobox";
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Non-blocking coding capture (Task #585)
+   ────────────────────────────────────────────────────────────────────────── */
+
+const NONE = "__none__";
+
+const INTENDED_USAGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "gen_ops", label: "Gen ops" },
+  { value: "growth", label: "Growth" },
+  { value: "school_startup", label: "School startup" },
+  { value: "teacher_training", label: "Teacher training" },
+  { value: "project", label: "Project" },
+];
+
+const RESTRICTION_AXIS_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "unrestricted", label: "Unrestricted" },
+  { value: "donor_restricted", label: "Donor-restricted" },
+  { value: "wf_restricted", label: "WF board-designated" },
+];
+
+/** Coding fields captured at gift creation, threaded onto the seeded allocation. */
+type CodingState = {
+  entityId: string;
+  grantYear: string;
+  intendedUsage: string;
+  fundableProjectId: string;
+  regionalRestrictionType: string;
+  usageRestrictionType: string;
+  timeRestrictionType: string;
+  sourceRecordUrl: string;
+};
+
+const EMPTY_CODING: CodingState = {
+  entityId: "",
+  grantYear: "",
+  intendedUsage: "",
+  fundableProjectId: "",
+  regionalRestrictionType: "unrestricted",
+  usageRestrictionType: "unrestricted",
+  timeRestrictionType: "unrestricted",
+  sourceRecordUrl: "",
+};
 
 /* ──────────────────────────────────────────────────────────────────────────
    Utilities
@@ -223,6 +285,17 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
   );
   const pendingCount = dupGuardActive ? (pendingMoney.data?.count ?? 0) : 0;
 
+  // Non-blocking coding capture (Task #585) — folded into a collapsible section.
+  const [coding, setCoding] = useState<CodingState>(EMPTY_CODING);
+  const [codingOpen, setCodingOpen] = useState(false);
+  // Track whether the user has hand-edited coding so opp-prefill never clobbers
+  // a deliberate choice.
+  const [codingDirty, setCodingDirty] = useState(false);
+  function setCode<K extends keyof CodingState>(k: K, v: CodingState[K]) {
+    setCodingDirty(true);
+    setCoding((c) => ({ ...c, [k]: v }));
+  }
+
   // Follow-up state — set after creation when the linked opp was "open"
   const [followUpOpp, setFollowUpOpp] = useState<{
     id: string;
@@ -233,6 +306,56 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  // ── Coding option sources ─────────────────────────────────────────────────
+  const entityOptions = (useListEntities().data ?? []).map((e) => ({
+    value: e.id,
+    label: e.name,
+  }));
+  const fiscalYearOptions = (useListFiscalYears().data ?? [])
+    .slice()
+    .sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+    .map((fy) => ({ value: fy.id, label: fy.label }));
+  const fundableProjectOptions = (useListFundableProjects().data ?? [])
+    .filter((p) => p.active || p.id === coding.fundableProjectId)
+    .map((p) => ({
+      value: p.id,
+      label: p.active ? p.name : `${p.name} (retired)`,
+    }));
+
+  // ── Prefill coding from the linked opportunity's first pledge allocation ────
+  const prefillOppId = open && linkedOpp ? linkedOpp.id : "";
+  const oppAllocations = useListPledgeAllocations(
+    { pledgeOrOpportunityId: prefillOppId },
+    {
+      query: {
+        enabled: !!prefillOppId,
+        queryKey: getListPledgeAllocationsQueryKey({
+          pledgeOrOpportunityId: prefillOppId,
+        }),
+      },
+    },
+  );
+  const firstOppAlloc = oppAllocations.data?.data?.[0] ?? null;
+  useEffect(() => {
+    // Only prefill when the user hasn't touched coding yet — never overwrite an
+    // explicit choice. Capture is a convenience, not a source of truth.
+    if (!firstOppAlloc || codingDirty) return;
+    setCoding((c) => ({
+      ...c,
+      entityId: firstOppAlloc.entityId ?? c.entityId,
+      grantYear: firstOppAlloc.grantYear ?? c.grantYear,
+      intendedUsage: firstOppAlloc.intendedUsage ?? c.intendedUsage,
+      fundableProjectId: firstOppAlloc.fundableProjectId ?? c.fundableProjectId,
+      regionalRestrictionType:
+        firstOppAlloc.regionalRestrictionType ?? c.regionalRestrictionType,
+      usageRestrictionType:
+        firstOppAlloc.usageRestrictionType ?? c.usageRestrictionType,
+      timeRestrictionType:
+        firstOppAlloc.timeRestrictionType ?? c.timeRestrictionType,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstOppAlloc?.id, codingDirty]);
 
   const scopeParams = useMemo(
     () => buildScopeParams(scope),
@@ -251,6 +374,12 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     }
   }
 
+  function resetCoding() {
+    setCoding(EMPTY_CODING);
+    setCodingOpen(false);
+    setCodingDirty(false);
+  }
+
   function resetForm() {
     setName("");
     setAmount("");
@@ -259,6 +388,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     setLinkedOpp(null);
     setDonorMode("auto");
     resetDonor();
+    resetCoding();
   }
 
   // Re-seed donor + opp state each time the dialog opens
@@ -268,6 +398,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
       resetDonor();
       setLinkedOpp(null);
       setDonorMode("auto");
+      resetCoding();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, scopeKey]);
@@ -380,6 +511,29 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
       };
     }
 
+    // Non-blocking coding capture — only send fields the human actually set.
+    const srcUrl = coding.sourceRecordUrl.trim();
+    const codingFields = {
+      ...(coding.entityId ? { entityId: coding.entityId } : {}),
+      ...(coding.grantYear ? { grantYear: coding.grantYear } : {}),
+      ...(coding.intendedUsage
+        ? { intendedUsage: coding.intendedUsage as IntendedUsage }
+        : {}),
+      ...(coding.intendedUsage === "project" && coding.fundableProjectId
+        ? { fundableProjectId: coding.fundableProjectId }
+        : {}),
+      ...(coding.regionalRestrictionType !== "unrestricted"
+        ? { regionalRestrictionType: coding.regionalRestrictionType as RestrictionAxis }
+        : {}),
+      ...(coding.usageRestrictionType !== "unrestricted"
+        ? { usageRestrictionType: coding.usageRestrictionType as RestrictionAxis }
+        : {}),
+      ...(coding.timeRestrictionType !== "unrestricted"
+        ? { timeRestrictionType: coding.timeRestrictionType as RestrictionAxis }
+        : {}),
+      ...(srcUrl ? { sourceRecordUrl: srcUrl } : {}),
+    };
+
     create.mutate({
       data: {
         name: trimmed,
@@ -388,6 +542,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
         ...(amt ? { amount: amt } : {}),
         ...(date ? { dateReceived: date } : {}),
         paymentExpected,
+        ...codingFields,
       },
     });
   }
@@ -395,15 +550,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
   function resetAndClose(next: boolean) {
     if (create.isPending) return;
     setOpen(next);
-    if (!next) {
-      setName("");
-      setAmount("");
-      setDateReceived("");
-      setPaymentExpected(true);
-      setLinkedOpp(null);
-      setDonorMode("auto");
-      resetDonor();
-    }
+    if (!next) resetForm();
   }
 
 
@@ -609,6 +756,172 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                 data-testid="switch-new-gift-payment-expected"
               />
             </div>
+
+            {/* ── Coding capture (optional, non-blocking) ── */}
+            <Collapsible open={codingOpen} onOpenChange={setCodingOpen}>
+              <CollapsibleTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="px-1 text-muted-foreground"
+                  data-testid="button-gift-coding"
+                >
+                  <ChevronDown
+                    className={`mr-1 h-4 w-4 transition-transform ${codingOpen ? "rotate-180" : ""}`}
+                  />
+                  Coding for QuickBooks (optional)
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-3 pt-2">
+                <p className="text-xs text-muted-foreground">
+                  Capture what you know now — entity, fiscal year, restriction,
+                  and intended usage. Anything left blank lands the gift in the
+                  Incomplete gift record queue to finish later. Nothing here
+                  blocks creating the gift.
+                </p>
+
+                <div className="space-y-1.5">
+                  <Label>Fund entity</Label>
+                  <Select
+                    value={coding.entityId || NONE}
+                    onValueChange={(v) => setCode("entityId", v === NONE ? "" : v)}
+                  >
+                    <SelectTrigger className="h-8 text-sm" data-testid="select-gift-entity">
+                      <SelectValue placeholder="— None —" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      <SelectItem value={NONE}>— None —</SelectItem>
+                      {entityOptions.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Fiscal year</Label>
+                  <Select
+                    value={coding.grantYear || NONE}
+                    onValueChange={(v) => setCode("grantYear", v === NONE ? "" : v)}
+                  >
+                    <SelectTrigger className="h-8 text-sm" data-testid="select-gift-fy">
+                      <SelectValue placeholder="— From gift date —" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      <SelectItem value={NONE}>— From gift date —</SelectItem>
+                      {fiscalYearOptions.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Intended usage</Label>
+                  <Select
+                    value={coding.intendedUsage || NONE}
+                    onValueChange={(v) =>
+                      setCode("intendedUsage", v === NONE ? "" : v)
+                    }
+                  >
+                    <SelectTrigger className="h-8 text-sm" data-testid="select-gift-usage">
+                      <SelectValue placeholder="— None —" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      <SelectItem value={NONE}>— None —</SelectItem>
+                      {INTENDED_USAGE_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {coding.intendedUsage === "project" ? (
+                  <div className="space-y-1.5">
+                    <Label>Fundable project</Label>
+                    <Select
+                      value={coding.fundableProjectId || NONE}
+                      onValueChange={(v) =>
+                        setCode("fundableProjectId", v === NONE ? "" : v)
+                      }
+                    >
+                      <SelectTrigger
+                        className="h-8 text-sm"
+                        data-testid="select-gift-project"
+                      >
+                        <SelectValue placeholder="— None —" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-72">
+                        <SelectItem value={NONE}>— None —</SelectItem>
+                        {fundableProjectOptions.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
+
+                <div className="space-y-3 rounded-md border border-border/60 p-3">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Restriction
+                  </p>
+                  {(
+                    [
+                      ["regionalRestrictionType", "Regional"],
+                      ["usageRestrictionType", "Fund use"],
+                      ["timeRestrictionType", "Time"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <div key={key} className="space-y-1.5">
+                      <Label>{label}</Label>
+                      <Select
+                        value={coding[key] || "unrestricted"}
+                        onValueChange={(v) => setCode(key, v)}
+                      >
+                        <SelectTrigger
+                          className="h-8 text-sm"
+                          data-testid={`select-gift-${key}`}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-72">
+                          {RESTRICTION_AXIS_OPTIONS.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-gift-source-url">Source record link</Label>
+                    <Input
+                      id="new-gift-source-url"
+                      type="url"
+                      value={coding.sourceRecordUrl}
+                      onChange={(e) => setCode("sourceRecordUrl", e.target.value)}
+                      placeholder="e.g. Donorbox donation URL"
+                      data-testid="input-gift-source-url"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      For a donor-restricted gift, provide either a grant letter
+                      (upload it on the gift after creating) or a link to the
+                      online source record here.
+                    </p>
+                  </div>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
 
             <DialogFooter>
               <Button

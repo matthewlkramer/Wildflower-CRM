@@ -31,7 +31,9 @@ import type {
   ConfirmSettlementLinkResult,
   CreateReconciliationProposalBody,
   GiftMissingQbList,
+  IncompleteGiftList,
   ListGiftsMissingQbParams,
+  ListIncompleteGiftsParams,
   ListReconciliationBundleAnchorsParams,
   ListReconciliationCardsParams,
   ListReconciliationProposalsParams,
@@ -1253,6 +1255,99 @@ export function useListGiftsMissingQb<TData = Awaited<ReturnType<typeof listGift
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListGiftsMissingQbQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Lists every on-books gift that fails the bookable-gift standard — the critical
+coding info the finance team needs to record it correctly in QuickBooks. ONE ROW
+PER gift, each carrying the list of missing-info reasons and a link to fix it.
+A gift is INCOMPLETE when any of: donor not set (needs exactly one), amount or
+date received missing, any allocation missing entity / fiscal year / intended
+usage (or a project allocation with no fundable project), a donor_restricted
+allocation with neither a grant letter nor an online-source link, or a linked
+opportunity that requires a written report with no reporting_deadline task.
+Off-books gifts (all allocations on non-payment entities) are EXEMPT, mirroring
+quickbooks_tie_status. The queue updates as gifts are completed. Donor names are
+anonymous-masked for the viewer. Read-only.
+
+ * @summary Gifts still missing the critical coding info needed to book them (bookable-gift SOP worklist).
+ */
+export const getListIncompleteGiftsUrl = (params?: ListIncompleteGiftsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reconciliation/incomplete-gifts?${stringifiedParams}` : `/api/reconciliation/incomplete-gifts`
+}
+
+export const listIncompleteGifts = async (params?: ListIncompleteGiftsParams, options?: RequestInit): Promise<IncompleteGiftList> => {
+  
+  return customFetch<IncompleteGiftList>(getListIncompleteGiftsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getListIncompleteGiftsQueryKey = (params?: ListIncompleteGiftsParams,) => {
+    return [
+    `/api/reconciliation/incomplete-gifts`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getListIncompleteGiftsQueryOptions = <TData = Awaited<ReturnType<typeof listIncompleteGifts>>, TError = ErrorType<BadRequestResponse>>(params?: ListIncompleteGiftsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listIncompleteGifts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListIncompleteGiftsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listIncompleteGifts>>> = ({ signal }) => listIncompleteGifts(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listIncompleteGifts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListIncompleteGiftsQueryResult = NonNullable<Awaited<ReturnType<typeof listIncompleteGifts>>>
+export type ListIncompleteGiftsQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Gifts still missing the critical coding info needed to book them (bookable-gift SOP worklist).
+ */
+
+export function useListIncompleteGifts<TData = Awaited<ReturnType<typeof listIncompleteGifts>>, TError = ErrorType<BadRequestResponse>>(
+ params?: ListIncompleteGiftsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listIncompleteGifts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListIncompleteGiftsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

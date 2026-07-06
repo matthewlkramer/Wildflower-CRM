@@ -700,6 +700,56 @@ export const ListGiftsMissingQbResponse = zod.object({
 })
 
 /**
+ * Lists every on-books gift that fails the bookable-gift standard — the critical
+coding info the finance team needs to record it correctly in QuickBooks. ONE ROW
+PER gift, each carrying the list of missing-info reasons and a link to fix it.
+A gift is INCOMPLETE when any of: donor not set (needs exactly one), amount or
+date received missing, any allocation missing entity / fiscal year / intended
+usage (or a project allocation with no fundable project), a donor_restricted
+allocation with neither a grant letter nor an online-source link, or a linked
+opportunity that requires a written report with no reporting_deadline task.
+Off-books gifts (all allocations on non-payment entities) are EXEMPT, mirroring
+quickbooks_tie_status. The queue updates as gifts are completed. Donor names are
+anonymous-masked for the viewer. Read-only.
+
+ * @summary Gifts still missing the critical coding info needed to book them (bookable-gift SOP worklist).
+ */
+export const listIncompleteGiftsQueryLimitDefault = 50;
+export const listIncompleteGiftsQueryLimitMax = 200;
+
+export const listIncompleteGiftsQueryOffsetDefault = 0;
+export const listIncompleteGiftsQueryOffsetMin = 0;
+
+
+
+export const ListIncompleteGiftsQueryParams = zod.object({
+  "q": zod.coerce.string().optional().describe('Free-text over donor name (organization \/ person \/ household).'),
+  "entityId": zod.coerce.string().optional().describe('Filter to gifts with an allocation attributed to this Wildflower legal entity.'),
+  "limit": zod.coerce.number().min(1).max(listIncompleteGiftsQueryLimitMax).default(listIncompleteGiftsQueryLimitDefault),
+  "offset": zod.coerce.number().min(listIncompleteGiftsQueryOffsetMin).default(listIncompleteGiftsQueryOffsetDefault)
+})
+
+export const ListIncompleteGiftsResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string().describe('Gift (gifts_and_payments) id.'),
+  "giftName": zod.string().nullish().describe('Gift header name.'),
+  "donorName": zod.string().nullish().describe('Donor display name (anonymous-masked for the viewer).'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "amount": zod.string().nullish().describe('Raw gift header amount (may be null).'),
+  "dateReceived": zod.string().date().nullish().describe('Raw gift header date received (may be null).'),
+  "opportunityId": zod.string().nullish().describe('The linked opportunity\/pledge, if any.'),
+  "opportunityName": zod.string().nullish().describe('Display name of the linked opportunity\/pledge.'),
+  "reasons": zod.array(zod.enum(['missing_donor', 'missing_amount', 'missing_date', 'no_allocations', 'missing_entity', 'missing_fiscal_year', 'missing_intended_usage', 'missing_fundable_project', 'missing_restriction_evidence', 'missing_reporting_deadline']).describe('A single failing item of the bookable-gift standard. missing_donor: not exactly\none donor. missing_amount \/ missing_date: header value absent. no_allocations:\ngift has no allocation rows. missing_entity \/ missing_fiscal_year \/\nmissing_intended_usage: an allocation lacks that field. missing_fundable_project:\na project-usage allocation has no fundable project. missing_restriction_evidence:\na donor_restricted gift has neither a grant letter nor an online-source link.\nmissing_reporting_deadline: the linked opportunity requires a written report but\nno reporting_deadline task exists.\n')).describe('Every failing checklist item for this gift (always non-empty).'),
+  "reasonLabels": zod.array(zod.string()).optional().describe('Human-readable label for each reason, index-aligned with `reasons`.')
+}).describe('ONE ROW PER gift that fails the bookable-gift standard.')),
+  "pagination": zod.object({
+  "page": zod.number(),
+  "limit": zod.number(),
+  "total": zod.number()
+})
+})
+
+/**
  * The unified anchor queue for the reactive settlement-bundle workbench. Returns
 BOTH anchor kinds in one deduped, paginated list so reconciliation can start
 from ANY anchor point:

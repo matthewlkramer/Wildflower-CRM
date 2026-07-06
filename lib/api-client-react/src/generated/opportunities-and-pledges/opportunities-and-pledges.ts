@@ -26,7 +26,9 @@ import type {
   BulkUpdateResult,
   CreateOpportunityOrPledgeBody,
   ForbiddenResponse,
+  GiftOrPayment,
   ListOpportunitiesAndPledgesParams,
+  MintGiftFromOpportunityBody,
   NotFoundResponse,
   OpportunityOrPledge,
   OpportunityOrPledgeDetail,
@@ -665,5 +667,93 @@ export const useWriteOffPledge = <TError = ErrorType<BadRequestResponse | NotFou
         TContext
       > => {
       return useMutation(getWriteOffPledgeMutationOptions(options));
+    }
+    /**
+ * Convert a worked opportunity or pledge into a CRM gift directly from its
+detail page — the proactive, human-initiated counterpart to the
+reconciliation "create gift from opportunity" flow. Mints a new gift
+HEADER linked to the opportunity via `opportunity_id`, deriving the donor
+from the opportunity (Donor XOR) and the amount from its awarded amount
+(falling back to the ask amount). All pledge allocations are copied onto
+the gift (reusing the forward-gift-intake allocation copy), so entity,
+fiscal year, restriction axes, and intended usage carry over; a
+full-amount default allocation is seeded if the opportunity has none.
+
+When `awaitingSettlement` is true, the gift is stamped
+`awaiting_settlement=true` so it is NOT flagged as a reconciliation error
+while it briefly has no cash tie (the "won gift awaiting imminent
+payment" action). Creation is never blocked on missing coding — an
+incompletely-coded gift simply surfaces in the Incomplete gift record
+queue. The opportunity's derived status/stage are recomputed after mint.
+
+ * @summary Proactively mint a won-gift from an opportunity/pledge (non-reconciliation).
+ */
+export const getMintGiftFromOpportunityUrl = (id: string,) => {
+
+
+  
+
+  return `/api/opportunities-and-pledges/${id}/mint-gift`
+}
+
+export const mintGiftFromOpportunity = async (id: string,
+    mintGiftFromOpportunityBody?: MintGiftFromOpportunityBody, options?: RequestInit): Promise<GiftOrPayment> => {
+  
+  return customFetch<GiftOrPayment>(getMintGiftFromOpportunityUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      mintGiftFromOpportunityBody,)
+  }
+);}
+  
+
+
+
+export const getMintGiftFromOpportunityMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof mintGiftFromOpportunity>>, TError,{id: string;data: BodyType<MintGiftFromOpportunityBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof mintGiftFromOpportunity>>, TError,{id: string;data: BodyType<MintGiftFromOpportunityBody>}, TContext> => {
+
+const mutationKey = ['mintGiftFromOpportunity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof mintGiftFromOpportunity>>, {id: string;data: BodyType<MintGiftFromOpportunityBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  mintGiftFromOpportunity(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MintGiftFromOpportunityMutationResult = NonNullable<Awaited<ReturnType<typeof mintGiftFromOpportunity>>>
+    export type MintGiftFromOpportunityMutationBody = BodyType<MintGiftFromOpportunityBody>
+    export type MintGiftFromOpportunityMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Proactively mint a won-gift from an opportunity/pledge (non-reconciliation).
+ */
+export const useMintGiftFromOpportunity = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof mintGiftFromOpportunity>>, TError,{id: string;data: BodyType<MintGiftFromOpportunityBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof mintGiftFromOpportunity>>,
+        TError,
+        {id: string;data: BodyType<MintGiftFromOpportunityBody>},
+        TContext
+      > => {
+      return useMutation(getMintGiftFromOpportunityMutationOptions(options));
     }
     
