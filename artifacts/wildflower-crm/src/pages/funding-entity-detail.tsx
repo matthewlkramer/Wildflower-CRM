@@ -60,6 +60,7 @@ import {
   InlineEditInterestsAges,
   InlineEditInterestsGovModels,
   InlineEditMultiRegionPicker,
+  InlineEditHistoricalNames,
 } from "@/components/multi-select-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -562,7 +563,13 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                     onSave={(next) => patch({ otherNames: next })}
                   />
                 </Row>
-                <TagRow label="Historical names" values={org.historicalNames} />
+                <TagEditRow label="Historical names">
+                  <InlineEditHistoricalNames
+                    testIdBase="organization-historical-names"
+                    value={org.historicalNames ?? []}
+                    onSave={(next) => patch({ historicalNames: next })}
+                  />
+                </TagEditRow>
                 <Row label="Tags">
                   <InlineEditText
                     label="Tags"
@@ -1014,30 +1021,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="flex items-baseline justify-between gap-2">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span className="text-right">{children}</span>
-    </div>
-  );
-}
-
-function TagRow({
-  label,
-  values,
-}: {
-  label: string;
-  values?: string[] | null;
-}) {
-  if (!values || values.length === 0) return null;
-  return (
-    <div>
-      <div className="text-xs font-medium text-muted-foreground mb-1">
-        {label}
-      </div>
-      <div className="flex flex-wrap gap-1">
-        {values.map((v) => (
-          <Badge key={v} variant="secondary">
-            {formatEnum(v)}
-          </Badge>
-        ))}
-      </div>
     </div>
   );
 }

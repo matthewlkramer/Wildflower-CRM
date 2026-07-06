@@ -582,6 +582,36 @@ export function InlineEditInterestsThematic({
   );
 }
 
+/**
+ * Free-text multi-value editor for an org's prior names (`historicalNames`).
+ * No suggestion set — every entry is an arbitrary proper name typed by the
+ * user, so we render chips verbatim (no enum formatting) and add each typed
+ * value via the "Add …" affordance. Saves as a `string[]`, clearing to
+ * `null` when empty.
+ */
+export function InlineEditHistoricalNames({
+  value,
+  onSave,
+  testIdBase,
+}: {
+  value: string[];
+  onSave: (next: string[] | null) => SaveResult;
+  testIdBase?: string;
+}) {
+  return (
+    <InlineEditMultiSelect
+      label="Historical names"
+      testIdBase={testIdBase}
+      value={value}
+      options={[]}
+      allowCustom
+      renderChipLabel={(v) => v}
+      onSave={onSave}
+      placeholder="Add a prior name…"
+    />
+  );
+}
+
 export function InlineEditInterestsAges({
   value,
   onSave,
