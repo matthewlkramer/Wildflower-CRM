@@ -23,6 +23,7 @@ import {
   GIFT_MATCH_WINDOW_DAYS,
 } from "../../lib/giftMatch";
 import { deriveEvidenceLanes } from "../../lib/reconciliationLanes";
+import { isQbGroupMemberSql } from "../../lib/unitGroupMembership";
 import { payoutStatusLabelSql } from "../../lib/settlementLink";
 import {
   entityWhere,
@@ -189,17 +190,22 @@ const stripeEvidenceExpr = sql<{
   LIMIT 1
 )`;
 
-// Collapse a manual "same physical gift" source group into ONE card: only the
-// group's representative row (the min id among members, compared byte-wise via
-// COLLATE "C" so it matches the approve route's JS code-unit sort) is returned;
-// ungrouped rows (sourceGroupId IS NULL) always pass. Applied to BOTH the page
-// query and the count so the pagination total is per-group.
+// Collapse a manual "same physical gift" group into ONE card: only the group's
+// representative row (the min id among members, compared byte-wise via COLLATE
+// "C" so it matches the approve route's JS code-unit sort) is returned; ungrouped
+// rows (no unit_group_members membership) always pass. Membership now lives in
+// `unit_group_members` (evidence_source='quickbooks', source_id = staged id), not
+// the retired `staged_payments.source_group_id`. Applied to BOTH the page query
+// and the count so the pagination total is per-group.
 const groupRepresentativeWhere: SQL = sql`(
-  ${stagedPayments.sourceGroupId} IS NULL
+  NOT ${isQbGroupMemberSql()}
   OR ${stagedPayments.id} = (
-    SELECT MIN(grp.id COLLATE "C")
-    FROM staged_payments grp
-    WHERE grp.source_group_id = ${stagedPayments.sourceGroupId}
+    SELECT MIN(m2.source_id COLLATE "C")
+    FROM unit_group_members m1
+    JOIN unit_group_members m2
+      ON m2.group_id = m1.group_id AND m2.evidence_source = 'quickbooks'
+    WHERE m1.evidence_source = 'quickbooks'
+      AND m1.source_id = ${stagedPayments.id}
   )
 )`;
 
@@ -223,7 +229,7 @@ const sourceGroupAggExpr = sql<{
   }>;
 } | null>`(
   CASE
-    WHEN ${stagedPayments.sourceGroupId} IS NULL THEN NULL
+    WHEN NOT ${isQbGroupMemberSql()} THEN NULL
     ELSE (
       SELECT jsonb_build_object(
         'count', COUNT(*)::int,
@@ -250,7 +256,14 @@ const sourceGroupAggExpr = sql<{
         )
       )
       FROM staged_payments m
-      WHERE m.source_group_id = ${stagedPayments.sourceGroupId}
+      JOIN unit_group_members mem
+        ON mem.source_id = m.id AND mem.evidence_source = 'quickbooks'
+      WHERE mem.group_id = (
+        SELECT g.group_id FROM unit_group_members g
+        WHERE g.evidence_source = 'quickbooks'
+          AND g.source_id = ${stagedPayments.id}
+        LIMIT 1
+      )
     )
   END
 )`;
@@ -540,7 +553,7 @@ router.get(
       )
       .where(
         sql`${shouldExpand ? sql`TRUE` : sql`FALSE`}
-          AND ${stagedPayments.sourceGroupId} IS NULL
+          AND NOT ${isQbGroupMemberSql()}
           AND ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id}`,
       )
       .as("charge_unit");
@@ -587,6 +600,17 @@ router.get(
           autoGiftPick: autoGiftPickExpr,
           cardReady: readyExpr,
           stripeEvidence: stripeEvidenceExpr,
+          // Grouping is now derived from unit_group_members (the retired
+          // staged_payments.source_group_id column is gone). Returns the unit
+          // group id (`ug_…`) for a grouped row, NULL otherwise. Non-representative
+          // members are already filtered out by groupRepresentativeWhere, so a
+          // returned grouped row is always its group's representative card.
+          sourceGroupId: sql<string | null>`(
+            SELECT ugm.group_id FROM unit_group_members ugm
+            WHERE ugm.evidence_source = 'quickbooks'
+              AND ugm.source_id = ${stagedPayments.id}
+            LIMIT 1
+          )`.as("source_group_id"),
           sourceGroupAgg: sourceGroupAggExpr,
           recOppId: recCardOpp.id,
           recOppName: recCardOpp.name,
@@ -639,9 +663,10 @@ router.get(
       // (stagedPaymentId, stripeChargeId); donor/gift/amount/lanes come from the
       // charge, NOT the QB deposit header (whose payer is "Stripe").
       const isCharge = row.chargeId != null;
-      // A returned row carrying a sourceGroupId is, by the representative filter,
-      // the group's anchor — this card stands in for the whole group. A charge
-      // card is never a group (the lateral requires sourceGroupId IS NULL).
+      // A returned row carrying a sourceGroupId (its unit group id) is, by the
+      // representative filter, the group's anchor — this card stands in for the
+      // whole group. A charge card is never a group (the lateral requires the row
+      // is not a unit_group member).
       const isSourceGroup = !isCharge && row.sourceGroupId != null;
       const groupAgg = isSourceGroup ? row.sourceGroupAgg : null;
       const donorId = isCharge

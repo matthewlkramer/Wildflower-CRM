@@ -10,27 +10,25 @@ Goal: flip group READS/GUARDS off legacy `staged_payments.source_group_id` +
 `unit_group_members` (helpers in `lib/unitGroupMembership.ts`: `isGroupMember`,
 `groupMemberIdsFor`), while KEEPING the legacy dual-writes until Phase 7.
 
-## What flips in Phase 3 vs. what stays legacy
+## COMPLETED — reads AND writes fully flipped, column dropped
 
-- **Flip now (guards + mutation-adjacent reads):** the group-expansion / group
-  guard reads in `quickbooks/matching.ts`, `quickbooks/actions.ts` (the resolve
-  guard, NOT the group/ungroup writes), `reconciliation/approve.ts` (group mint
-  expansion → `groupMemberIdsFor`, rep = `memberIds[0]`), `reconciliationGraph.ts`.
-- **Stay legacy through Phase 3 (query-layer read projections):**
-  `reconciliation/cards.ts` (representative filter + group aggregate lateral +
-  `isSourceGroup`/`sourceGroupId` output) and `reconciliation/bundleAnchors.ts`
-  (`s.source_group_id IS NULL` eligibility). Deferred to Phase 6/7 with the
-  two-report UI collapse — double-count-adjacent, and safe to leave because
-  dual-write parity makes the legacy read equivalent.
-- **Writes stay (dual-write until Phase 7):** `actions.ts` group/ungroup write
-  BOTH `source_group_id` AND `unit_groups`/`unit_group_members` (deterministic
-  `ug_<sourceGroupId>`), plus the approve mint still writes the representative +
-  `group_reconciled_gift_id` pointer dance.
+The Phase-3 partial flip is now finished: `source_group_id` is retired. See
+`unit-groups-dualwrite.md` for the final state. What changed since:
+- **Query-layer reads flipped too:** `reconciliation/cards.ts` (representative,
+  group aggregate, `isSourceGroup`, derived `sourceGroupId`) and
+  `reconciliation/bundleAnchors.ts` (eligibility = `NOT EXISTS unit_group_members`)
+  now read the new table.
+- **Writes no longer dual-write:** `actions.ts` group/ungroup write ONLY
+  `unit_groups`/`unit_group_members`; the group id is a fresh `ug_<newId()>`
+  (no longer deterministic `ug_<source_group_id>`).
+- **Column gone:** dropped from schema + migration `0104`. The
+  `group_reconciled_gift_id` reconciliation-linkage pointer is a SEPARATE concern
+  and stays (revert still keys off it).
 
-**Why mixed reads are safe:** each read surface must source group membership from
-EXACTLY ONE representation (never sum both). Dual-write + the parity gates
-(`parity-group-readflip.ts`, `parity-unit-groups.ts`, both prod-gated green) keep
-the two representations equivalent, so some-flipped/some-legacy is correct.
+**Historical note (mixed-read era):** while some reads were flipped and others
+legacy, each read surface sourced membership from EXACTLY ONE representation, and
+dual-write + parity gates kept them equivalent. That constraint no longer matters
+now that there is one store.
 
 ## Revert path needs NO flip (it is a Phase-3 no-op)
 

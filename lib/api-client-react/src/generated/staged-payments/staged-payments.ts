@@ -1314,8 +1314,8 @@ to approved with groupReconciledGiftId = the gift; one deterministic
 representative member also carries matchedGiftId so the gift shows linked.
 The group adopts the gift's donor (Donor XOR). Guards: at least two rows,
 all pending and unresolved, all sharing one grouping key (deposit or
-payer) — OR all already belonging to one "same physical gift" source
-group (sharing a single non-null sourceGroupId), which bypasses the
+payer) — OR all already belonging to one "same physical gift" unit
+group (sharing a single unit group id), which bypasses the
 deposit/payer coherence check since the human already asserted the rows
 are one gift (the multi-date confirmation and amount-mismatch check below
 still apply); the gift exists with a single valid donor and is not already
@@ -1401,7 +1401,8 @@ export const useGroupReconcileStagedPayments = <TError = ErrorType<BadRequestRes
     }
     /**
  * Marks two or more staged payments as a single "same physical gift"
-source group by stamping a shared sourceGroupId. UNLIKE group-reconcile
+group, stored in the polymorphic unit_groups / unit_group_members tables.
+The returned sourceGroupId is the unit group id. UNLIKE group-reconcile
 (which ties a deposit's members to ONE existing gift at reconcile time),
 this groups FREELY across different bank deposits AND dates and BEFORE
 any gift exists — for a gift a donor entered as several QuickBooks
@@ -1483,10 +1484,10 @@ export const useGroupStagedPayments = <TError = ErrorType<BadRequestResponse | N
       return useMutation(getGroupStagedPaymentsMutationOptions(options));
     }
     /**
- * Clears sourceGroupId on the given rows, removing them from their source
-group. If this leaves a group with fewer than two members, the remaining
-orphan is cleared too (a group requires >= 2). Does not change donor or
-gift links. A no-op for rows that aren't grouped.
+ * Removes the given rows from their unit group. If this leaves a group with
+fewer than two members, the remaining orphan is removed too and the empty
+group is deleted (a group requires >= 2). Does not change donor or gift
+links. A no-op for rows that aren't grouped.
 
  * @summary Remove staged payments from their "same physical gift" source group.
  */

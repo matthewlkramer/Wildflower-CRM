@@ -17,8 +17,8 @@ import { payoutStatusLabelSql } from "../../lib/settlementLink";
  *
  * Money-safety (no double-book): a QB deposit that IS tied to a Stripe payout is
  * OMITTED — it reconciles THROUGH the payout's bundle (assemble canonicalizes a
- * tied QB id to its payout). Rows already grouped (source_group_id) stay in the
- * group-reconcile flow and are omitted. Rejected/excluded QB rows are not anchors
+ * tied QB id to its payout). Rows already grouped (a unit_group_members member)
+ * stay in the group-reconcile flow and are omitted. Rejected/excluded QB rows are not anchors
  * (this also drops processor_payout exclusions). Read-only.
  */
 const router: IRouter = Router();
@@ -79,7 +79,10 @@ function stripeWhere(queue: AnchorQueue): SQL {
 // only `stripe`, `donorbox` (Donorbox frequently settles through Stripe), and
 // NULL (unknown — no signal either way, so never hide it).
 function qbWhere(queue: AnchorQueue): SQL {
-  const eligible = sql`s.source_group_id IS NULL AND NOT EXISTS (
+  const eligible = sql`NOT EXISTS (
+      SELECT 1 FROM unit_group_members ugm
+      WHERE ugm.evidence_source = 'quickbooks' AND ugm.source_id = s.id
+    ) AND NOT EXISTS (
       SELECT 1 FROM settlement_links sl
       WHERE sl.deposit_staged_payment_id = s.id
     )`;

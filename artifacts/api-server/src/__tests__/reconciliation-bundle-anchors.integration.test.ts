@@ -79,6 +79,8 @@ let schema: {
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   stagedPayments: Db["stagedPayments"];
+  unitGroups: Db["unitGroups"];
+  unitGroupMembers: Db["unitGroupMembers"];
   paymentApplications: Db["paymentApplications"];
   reconciliationBundleDrafts: Db["reconciliationBundleDrafts"];
   settlementLinks: Db["settlementLinks"];
@@ -92,6 +94,7 @@ const draftIds: string[] = [];
 const payoutIds: string[] = [];
 const chargeIds: string[] = [];
 const stagedIds: string[] = [];
+const unitGroupIds: string[] = [];
 const seededGiftIds: string[] = [];
 const createdGiftIds: string[] = [];
 const createdDonorIds: string[] = [];
@@ -240,7 +243,6 @@ async function seedStaged(opts: {
     dateReceived: futureDate(),
     payerName: opts.payerName ?? `Zztest Anchor Payer ${RUN}`,
     status: opts.status as never,
-    sourceGroupId: opts.group ?? null,
     exclusionReason: (opts.exclusionReason ?? null) as never,
     // A deposit's inferred origin. Clear non-Stripe origins (check/cash/wire/…)
     // are dropped from the "Needs payout tie" anchor column; stripe/donorbox/NULL
@@ -252,6 +254,22 @@ async function seedStaged(opts: {
     createdGiftId: opts.createdGiftId ?? null,
   });
   stagedIds.push(id);
+  // Grouping is now first-class: membership lives in unit_groups /
+  // unit_group_members (evidence_source='quickbooks', source_id=staged id), not
+  // on staged_payments. A grouped row must be OMITTED from anchor eligibility.
+  if (opts.group) {
+    await db
+      .insert(schema.unitGroups)
+      .values({ id: opts.group, createdByUserId: TEST_USER_ID })
+      .onConflictDoNothing();
+    unitGroupIds.push(opts.group);
+    await db.insert(schema.unitGroupMembers).values({
+      id: `ugm_${id}`,
+      groupId: opts.group,
+      evidenceSource: "quickbooks",
+      sourceId: id,
+    });
+  }
   return id;
 }
 
@@ -324,6 +342,8 @@ beforeAll(async () => {
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     stagedPayments: dbMod.stagedPayments,
+    unitGroups: dbMod.unitGroups,
+    unitGroupMembers: dbMod.unitGroupMembers,
     paymentApplications: dbMod.paymentApplications,
     reconciliationBundleDrafts: dbMod.reconciliationBundleDrafts,
     settlementLinks: dbMod.settlementLinks,
@@ -401,6 +421,11 @@ afterAll(async () => {
     await db
       .delete(schema.stripePayouts)
       .where(inArrayFn(schema.stripePayouts.id, payoutIds));
+  // unit_group_members cascade off unit_groups; delete the groups this run made.
+  if (unitGroupIds.length)
+    await db
+      .delete(schema.unitGroups)
+      .where(inArrayFn(schema.unitGroups.id, unitGroupIds));
   if (stagedIds.length)
     await db
       .delete(schema.stagedPayments)

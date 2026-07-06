@@ -305,16 +305,20 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     expect(reSplit.status).toBe(200);
   }, 30_000);
 
-  it("rejects fewer than two gifts at the schema layer → 400 validation_error", async () => {
+  it("rejects fewer than two links (one gift, no remainder) → 400 split_too_small", async () => {
     const giftA = await seedGift("600.00");
     const spId = await seedStaged("600.00");
 
+    // A single existing gift with no remainder is a valid SHAPE (giftIds has
+    // minItems 1, since a real split can be one gift + a minted remainder), so it
+    // passes the schema layer and is caught by the app-layer "at least two links"
+    // guard instead.
     const res = await api(`/api/staged-payments/${spId}/split`, {
       giftIds: [giftA],
     });
 
     expect(res.status).toBe(400);
-    expect(res.json.error).toBe("validation_error");
+    expect(res.json.error).toBe("split_too_small");
     await expectUntouchedPending(spId);
   }, 30_000);
 

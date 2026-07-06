@@ -2937,8 +2937,6 @@ export interface StagedPayment {
   createdGiftId?: string | null;
   /** Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert. */
   groupReconciledGiftId?: string | null;
-  /** Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift). */
-  sourceGroupId?: string | null;
   autoApplied: boolean;
   approvedByUserId?: string | null;
   approvedAt?: string | null;
@@ -3975,9 +3973,9 @@ export interface ReconciliationCard {
   fundingSource?: StagedPaymentFundingSource | null;
   /** Whether fundingSource was derived (auto) or human-pinned (manual). Null on a group card whose members disagree. */
   fundingSourceProvenance?: StagedPaymentFundingSourceProvenance | null;
-  /** Set when this card represents a manual 'same physical gift' group; null for a single staged payment. */
+  /** The unit group id when this card represents a manual 'same physical gift' group; null for a single staged payment. Derived from unit_group_members. */
   sourceGroupId?: string | null;
-  /** True when this card collapses several staged payments a human grouped as one physical gift (rows sharing sourceGroupId). The card's stagedPaymentId is the representative member; approve acts on the whole group. */
+  /** True when this card collapses several staged payments a human grouped as one physical gift (rows in one unit group). The card's stagedPaymentId is the representative member; approve acts on the whole group. */
   isSourceGroup: boolean;
   /** Number of staged payments in the group (>= 2). Null when not a group. */
   sourceGroupCount?: number | null;
@@ -5790,7 +5788,7 @@ export interface SetStagedPaymentCodingBody {
 }
 
 /**
- * Mark two or more staged payments as ONE physical gift entered separately in QuickBooks (a 'same physical gift' source group). Stamps a shared sourceGroupId. Does not change donor or gift links and never reconciles by itself.
+ * Mark two or more staged payments as ONE physical gift entered separately in QuickBooks (a 'same physical gift' group), stored in the unit_groups / unit_group_members tables. Does not change donor or gift links and never reconciles by itself.
  */
 export interface GroupStagedPaymentsBody {
   /**
@@ -5803,9 +5801,9 @@ export interface GroupStagedPaymentsBody {
 }
 
 export interface GroupStagedPaymentsResponse {
-  /** The shared id stamped on every member. */
+  /** The unit group id shared by every member. */
   sourceGroupId: string;
-  /** All member ids now carrying the sourceGroupId. */
+  /** All member ids now belonging to the unit group. */
   stagedPaymentIds: string[];
   /** The deterministic representative member (the one the group card is anchored on and that carries the gift link on group approve). */
   representativeStagedPaymentId: string;
@@ -5814,7 +5812,7 @@ export interface GroupStagedPaymentsResponse {
 }
 
 /**
- * Remove staged payments from their 'same physical gift' source group by clearing sourceGroupId. If removing rows leaves a group with fewer than two members, the remaining orphan is cleared too (a group requires >= 2).
+ * Remove staged payments from their 'same physical gift' unit group. If removing rows leaves a group with fewer than two members, the remaining orphan is removed too and the empty group is deleted (a group requires >= 2).
  */
 export interface UngroupStagedPaymentsBody {
   /**
@@ -5825,9 +5823,9 @@ export interface UngroupStagedPaymentsBody {
 }
 
 export interface UngroupStagedPaymentsResponse {
-  /** Ids whose sourceGroupId was cleared (includes any auto-dissolved orphans). */
+  /** Ids removed from their unit group (includes any auto-dissolved orphans). */
   ungroupedIds: string[];
-  /** Source-group ids that no longer exist after this call (fully dissolved). */
+  /** Unit group ids that no longer exist after this call (fully dissolved). */
   dissolvedGroupIds?: string[];
 }
 

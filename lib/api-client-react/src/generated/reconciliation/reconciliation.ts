@@ -505,7 +505,7 @@ precedence over the QB net when a charge is selected; nothing is archived.
 Minting a gift is human-only. Idempotent: re-approving a reconciled card
 returns its current state.
 
-Source groups (a card whose stagedPaymentId carries a sourceGroupId)
+Source groups (a card whose stagedPaymentId belongs to a unit group)
 approve as a WHOLE: the create-* outcomes mint ONE gift whose amount sums
 every non-archived member, with a deterministic representative carrying
 createdGiftId and the other members groupReconciledGiftId (so no slice can
@@ -1367,7 +1367,7 @@ from ANY anchor point:
 A QB deposit that IS tied to a Stripe payout is deliberately OMITTED: it
 reconciles THROUGH the payout's bundle (assemble canonicalizes a tied QB id to
 its payout), so listing it separately would double-book the same money. Rows
-already grouped (source_group_id) stay in the existing group-reconcile flow and
+already grouped (a unit_group_members member) stay in the existing group-reconcile flow and
 are omitted here. Rejected/excluded QB rows are not anchors. Read-only.
 
  * @summary List every settlement anchor the bundle workbench can reconcile — Stripe payouts AND standalone QuickBooks deposits/payments.

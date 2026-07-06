@@ -10,6 +10,7 @@ import {
 } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
 import { asyncHandler, notFound, parseOrBadRequest, newId } from "../../lib/helpers";
+import { isGroupMember } from "../../lib/unitGroupMembership";
 import { getAppUser } from "../../lib/appRequest";
 import { getViewer } from "../../lib/identityVisibility";
 import {
@@ -1009,7 +1010,6 @@ router.post(
             id: stagedPayments.id,
             qbEntityType: stagedPayments.qbEntityType,
             status: stagedPayments.status,
-            sourceGroupId: stagedPayments.sourceGroupId,
           })
           .from(stagedPayments)
           .where(eq(stagedPayments.id, pickedDepositId))
@@ -1028,7 +1028,7 @@ router.post(
               "The chosen QuickBooks deposit is no longer an open deposit. Refresh and retry.",
           });
         }
-        if (deposit.sourceGroupId) {
+        if (await isGroupMember(tx, pickedDepositId)) {
           throw new ReconcileAbort(409, {
             error: "deposit_grouped",
             message:

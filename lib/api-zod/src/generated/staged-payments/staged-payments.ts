@@ -75,7 +75,6 @@ export const ListStagedPaymentsResponse = zod.object({
   "matchedGiftId": zod.string().nullish(),
   "createdGiftId": zod.string().nullish(),
   "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
-  "sourceGroupId": zod.string().nullish().describe('Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -253,7 +252,6 @@ export const ResolveStagedPaymentResponse = zod.object({
   "matchedGiftId": zod.string().nullish(),
   "createdGiftId": zod.string().nullish(),
   "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
-  "sourceGroupId": zod.string().nullish().describe('Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -360,7 +358,6 @@ export const RejectStagedPaymentResponse = zod.object({
   "matchedGiftId": zod.string().nullish(),
   "createdGiftId": zod.string().nullish(),
   "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
-  "sourceGroupId": zod.string().nullish().describe('Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -460,7 +457,6 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   "matchedGiftId": zod.string().nullish(),
   "createdGiftId": zod.string().nullish(),
   "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
-  "sourceGroupId": zod.string().nullish().describe('Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -571,7 +567,6 @@ export const SetStagedPaymentEntityResponse = zod.object({
   "matchedGiftId": zod.string().nullish(),
   "createdGiftId": zod.string().nullish(),
   "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
-  "sourceGroupId": zod.string().nullish().describe('Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -682,7 +677,6 @@ export const SetStagedPaymentFundingSourceResponse = zod.object({
   "matchedGiftId": zod.string().nullish(),
   "createdGiftId": zod.string().nullish(),
   "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
-  "sourceGroupId": zod.string().nullish().describe('Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -803,7 +797,6 @@ export const SetStagedPaymentCodingResponse = zod.object({
   "matchedGiftId": zod.string().nullish(),
   "createdGiftId": zod.string().nullish(),
   "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
-  "sourceGroupId": zod.string().nullish().describe('Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -914,7 +907,6 @@ export const ExcludeStagedPaymentResponse = zod.object({
   "matchedGiftId": zod.string().nullish(),
   "createdGiftId": zod.string().nullish(),
   "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
-  "sourceGroupId": zod.string().nullish().describe('Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -1349,8 +1341,8 @@ to approved with groupReconciledGiftId = the gift; one deterministic
 representative member also carries matchedGiftId so the gift shows linked.
 The group adopts the gift's donor (Donor XOR). Guards: at least two rows,
 all pending and unresolved, all sharing one grouping key (deposit or
-payer) — OR all already belonging to one "same physical gift" source
-group (sharing a single non-null sourceGroupId), which bypasses the
+payer) — OR all already belonging to one "same physical gift" unit
+group (sharing a single unit group id), which bypasses the
 deposit/payer coherence check since the human already asserted the rows
 are one gift (the multi-date confirmation and amount-mismatch check below
 still apply); the gift exists with a single valid donor and is not already
@@ -1471,7 +1463,8 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
 
 /**
  * Marks two or more staged payments as a single "same physical gift"
-source group by stamping a shared sourceGroupId. UNLIKE group-reconcile
+group, stored in the polymorphic unit_groups / unit_group_members tables.
+The returned sourceGroupId is the unit group id. UNLIKE group-reconcile
 (which ties a deposit's members to ONE existing gift at reconcile time),
 this groups FREELY across different bank deposits AND dates and BEFORE
 any gift exists — for a gift a donor entered as several QuickBooks
@@ -1492,20 +1485,20 @@ export const groupStagedPaymentsBodyStagedPaymentIdsMin = 2;
 export const GroupStagedPaymentsBody = zod.object({
   "stagedPaymentIds": zod.array(zod.string()).min(groupStagedPaymentsBodyStagedPaymentIdsMin).describe('Ids of the staged payments to group. Must be at least two distinct, existing, non-archived, still-unreconciled rows. Rows already in another group are rejected unless they are all already in the same group (idempotent re-group).'),
   "confirmDonorConflict": zod.boolean().optional().describe('Must be true when the members already resolve to more than one distinct donor. Guards against grouping unrelated gifts. Without it such a group is rejected 400 donor_conflict. The client prompts the operator to confirm before sending this.')
-}).describe('Mark two or more staged payments as ONE physical gift entered separately in QuickBooks (a \'same physical gift\' source group). Stamps a shared sourceGroupId. Does not change donor or gift links and never reconciles by itself.')
+}).describe('Mark two or more staged payments as ONE physical gift entered separately in QuickBooks (a \'same physical gift\' group), stored in the unit_groups \/ unit_group_members tables. Does not change donor or gift links and never reconciles by itself.')
 
 export const GroupStagedPaymentsResponse = zod.object({
-  "sourceGroupId": zod.string().describe('The shared id stamped on every member.'),
-  "stagedPaymentIds": zod.array(zod.string()).describe('All member ids now carrying the sourceGroupId.'),
+  "sourceGroupId": zod.string().describe('The unit group id shared by every member.'),
+  "stagedPaymentIds": zod.array(zod.string()).describe('All member ids now belonging to the unit group.'),
   "representativeStagedPaymentId": zod.string().describe('The deterministic representative member (the one the group card is anchored on and that carries the gift link on group approve).'),
   "totalAmount": zod.string().nullish().describe('Summed amount of all members.')
 })
 
 /**
- * Clears sourceGroupId on the given rows, removing them from their source
-group. If this leaves a group with fewer than two members, the remaining
-orphan is cleared too (a group requires >= 2). Does not change donor or
-gift links. A no-op for rows that aren't grouped.
+ * Removes the given rows from their unit group. If this leaves a group with
+fewer than two members, the remaining orphan is removed too and the empty
+group is deleted (a group requires >= 2). Does not change donor or gift
+links. A no-op for rows that aren't grouped.
 
  * @summary Remove staged payments from their "same physical gift" source group.
  */
@@ -1514,11 +1507,11 @@ gift links. A no-op for rows that aren't grouped.
 
 export const UngroupStagedPaymentsBody = zod.object({
   "stagedPaymentIds": zod.array(zod.string()).min(1).describe('Ids of the staged payments to remove from their group. A no-op for rows that aren\'t grouped.')
-}).describe('Remove staged payments from their \'same physical gift\' source group by clearing sourceGroupId. If removing rows leaves a group with fewer than two members, the remaining orphan is cleared too (a group requires >= 2).')
+}).describe('Remove staged payments from their \'same physical gift\' unit group. If removing rows leaves a group with fewer than two members, the remaining orphan is removed too and the empty group is deleted (a group requires >= 2).')
 
 export const UngroupStagedPaymentsResponse = zod.object({
-  "ungroupedIds": zod.array(zod.string()).describe('Ids whose sourceGroupId was cleared (includes any auto-dissolved orphans).'),
-  "dissolvedGroupIds": zod.array(zod.string()).optional().describe('Source-group ids that no longer exist after this call (fully dissolved).')
+  "ungroupedIds": zod.array(zod.string()).describe('Ids removed from their unit group (includes any auto-dissolved orphans).'),
+  "dissolvedGroupIds": zod.array(zod.string()).optional().describe('Unit group ids that no longer exist after this call (fully dissolved).')
 })
 
 /**
@@ -1632,7 +1625,6 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   "matchedGiftId": zod.string().nullish(),
   "createdGiftId": zod.string().nullish(),
   "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
-  "sourceGroupId": zod.string().nullish().describe('Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -1732,7 +1724,6 @@ export const UnmatchStagedPaymentResponse = zod.object({
   "matchedGiftId": zod.string().nullish(),
   "createdGiftId": zod.string().nullish(),
   "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
-  "sourceGroupId": zod.string().nullish().describe('Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -1839,7 +1830,6 @@ export const RevertStagedPaymentResponse = zod.object({
   "matchedGiftId": zod.string().nullish(),
   "createdGiftId": zod.string().nullish(),
   "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
-  "sourceGroupId": zod.string().nullish().describe('Shared opaque id tying separately-entered QuickBooks records that are really ONE physical gift, grouped freely across deposits and dates and BEFORE any gift exists. Pure human review state; the sync never writes it. The group is exactly the rows carrying this id (>= 2 members). Null when ungrouped. Distinct from qbDepositId (one bank deposit) and groupReconciledGiftId (members tied to one existing gift).'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),

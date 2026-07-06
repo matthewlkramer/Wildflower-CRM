@@ -11,22 +11,22 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
 /**
- * End-to-end coverage for the `unit_groups` DUAL-WRITE (WS2 — Plane 2 cleanup,
- * docs/reconciliation-design.md §4.6b, Decision 7).
- *
- * The `/staged-payments/group` and `/staged-payments/ungroup` endpoints write
- * `staged_payments.source_group_id` AND, in the SAME transaction, a first-class
- * `unit_groups` + `unit_group_members` association. Reads are NOT flipped to the
- * new table yet; this suite proves the two stay in lockstep:
- *   - group 2 units        → ug_<sgid> exists with exactly those 2 quickbooks members
+ * End-to-end coverage for `unit_groups` as the SOLE grouping store (WS2 — Plane 2
+ * cleanup, docs/reconciliation-design.md §4.6b, Decision 7). The legacy
+ * `staged_payments.source_group_id` column has been retired (migration 0104); the
+ * `/staged-payments/group` and `/staged-payments/ungroup` endpoints now write
+ * membership entirely to a first-class `unit_groups` + `unit_group_members`
+ * association, and the group's identity IS the `unit_groups.id` (returned as
+ * `sourceGroupId`). This suite proves:
+ *   - group 2 units        → the unit group exists with exactly those 2 quickbooks members
  *   - idempotent re-group  → no duplicate members, same group id
  *   - add a 3rd unit       → membership grows to 3 (delete-then-insert stays exact)
- *   - ungroup below 2      → group auto-dissolves: ug_ row + all membership gone
+ *   - ungroup below 2      → group auto-dissolves: unit_groups row + all membership gone
  *   - ungroup one of three → group survives with the remaining 2 members
  *
  * Same seam as the group-reconcile suites: only `requireAuth` is mocked to inject
- * a seeded user; the transaction, locking and the real dual-write code run. All
- * rows use a unique run prefix and are cleaned up. Skips without a real DB.
+ * a seeded user; the transaction, locking and the real code run. All rows use a
+ * unique run prefix and are cleaned up. Skips without a real DB.
  */
 
 const RAW_DB_URL = process.env.DATABASE_URL;
@@ -196,8 +196,8 @@ beforeEach(() => {
   }
 });
 
-describe.skipIf(!HAS_DB)("unit_groups dual-write (integration)", () => {
-  it("grouping two units mirrors into ug_<sgid> with exactly those members", async () => {
+describe.skipIf(!HAS_DB)("unit_groups grouping store (integration)", () => {
+  it("grouping two units creates a unit group with exactly those members", async () => {
     const a = await seedStaged("50.00");
     const b = await seedStaged("50.00");
 
@@ -208,7 +208,7 @@ describe.skipIf(!HAS_DB)("unit_groups dual-write (integration)", () => {
     const sgid = res.json.sourceGroupId as string;
     expect(sgid).toBeTruthy();
 
-    const ugId = `ug_${sgid}`;
+    const ugId = sgid;
     expect(await groupExists(ugId)).toBe(true);
     expect(await membersOf(ugId)).toEqual([a, b].sort());
 
@@ -228,13 +228,13 @@ describe.skipIf(!HAS_DB)("unit_groups dual-write (integration)", () => {
       stagedPaymentIds: [a, b],
     });
     const sgid = first.json.sourceGroupId as string;
-    const ugId = `ug_${sgid}`;
+    const ugId = sgid;
 
     const second = await api("/api/staged-payments/group", {
       stagedPaymentIds: [a, b],
     });
     expect(second.status).toBe(200);
-    // Same source group id → same ug id, still exactly two members.
+    // Same members → same unit group id, still exactly two members.
     expect(second.json.sourceGroupId).toBe(sgid);
     expect(await membersOf(ugId)).toEqual([a, b].sort());
   }, 30_000);
@@ -248,7 +248,7 @@ describe.skipIf(!HAS_DB)("unit_groups dual-write (integration)", () => {
       stagedPaymentIds: [a, b, c],
     });
     expect(res.status).toBe(200);
-    const ugId = `ug_${res.json.sourceGroupId as string}`;
+    const ugId = res.json.sourceGroupId as string;
     expect(await membersOf(ugId)).toEqual([a, b, c].sort());
   }, 30_000);
 
@@ -261,12 +261,12 @@ describe.skipIf(!HAS_DB)("unit_groups dual-write (integration)", () => {
       stagedPaymentIds: [a, b, c],
     });
     const sgid = first.json.sourceGroupId as string;
-    const ugId = `ug_${sgid}`;
+    const ugId = sgid;
     expect(await membersOf(ugId)).toEqual([a, b, c].sort());
 
     // Pass only a subset of an existing group: the handler recomputes membership
-    // from source_group_id, so the dual-write still reflects ALL three members
-    // (never dropping the un-passed one).
+    // from the existing unit_group_members, so it still reflects ALL three
+    // members (never dropping the un-passed one).
     const again = await api("/api/staged-payments/group", {
       stagedPaymentIds: [a, b],
     });
@@ -275,7 +275,7 @@ describe.skipIf(!HAS_DB)("unit_groups dual-write (integration)", () => {
     expect(await membersOf(ugId)).toEqual([a, b, c].sort());
   }, 30_000);
 
-  it("ungrouping below two auto-dissolves: ug_ row + all membership gone", async () => {
+  it("ungrouping below two auto-dissolves: unit_groups row + all membership gone", async () => {
     const a = await seedStaged("50.00");
     const b = await seedStaged("50.00");
 
@@ -283,7 +283,7 @@ describe.skipIf(!HAS_DB)("unit_groups dual-write (integration)", () => {
       stagedPaymentIds: [a, b],
     });
     const sgid = grouped.json.sourceGroupId as string;
-    const ugId = `ug_${sgid}`;
+    const ugId = sgid;
     expect(await groupExists(ugId)).toBe(true);
 
     // Ungroup one member; the lone remaining orphan is auto-cleared, the group
@@ -296,15 +296,12 @@ describe.skipIf(!HAS_DB)("unit_groups dual-write (integration)", () => {
 
     expect(await groupExists(ugId)).toBe(false);
     expect(await membersOf(ugId)).toEqual([]);
-    // Both staged rows are back to ungrouped.
-    const rows = await db
-      .select({
-        id: schema.stagedPayments.id,
-        sourceGroupId: schema.stagedPayments.sourceGroupId,
-      })
-      .from(schema.stagedPayments)
-      .where(inArrayFn(schema.stagedPayments.id, [a, b]));
-    for (const r of rows) expect(r.sourceGroupId).toBeNull();
+    // Neither staged row belongs to any unit group anymore.
+    const memberRows = await db
+      .select({ sourceId: schema.unitGroupMembers.sourceId })
+      .from(schema.unitGroupMembers)
+      .where(inArrayFn(schema.unitGroupMembers.sourceId, [a, b]));
+    expect(memberRows).toEqual([]);
   }, 30_000);
 
   it("ungrouping one of three keeps the group with the remaining two members", async () => {
@@ -316,7 +313,7 @@ describe.skipIf(!HAS_DB)("unit_groups dual-write (integration)", () => {
       stagedPaymentIds: [a, b, c],
     });
     const sgid = grouped.json.sourceGroupId as string;
-    const ugId = `ug_${sgid}`;
+    const ugId = sgid;
     expect(await membersOf(ugId)).toEqual([a, b, c].sort());
 
     const res = await api("/api/staged-payments/ungroup", {

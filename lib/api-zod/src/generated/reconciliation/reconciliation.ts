@@ -100,8 +100,8 @@ export const ListReconciliationCardsResponse = zod.object({
 }).describe('The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).').optional().describe('Two independently-tracked reconciliation lanes (INV-4) for this anchor\'s money, derived read-only from status + donor\/gift state: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge.'),
   "fundingSource": zod.enum(['stripe', 'brokerage', 'daf', 'donorbox', 'paypal', 'wire_ach', 'check', 'cash', 'employer_match', 'other']).nullish().describe('Origin of this money (Stripe, brokerage, DAF, …). For a group card this is the members\' common source, or null when they differ. Distinct from qbPaymentMethod (the instrument) and the funding lane.'),
   "fundingSourceProvenance": zod.enum(['auto', 'manual']).nullish().describe('Whether fundingSource was derived (auto) or human-pinned (manual). Null on a group card whose members disagree.'),
-  "sourceGroupId": zod.string().nullish().describe('Set when this card represents a manual \'same physical gift\' group; null for a single staged payment.'),
-  "isSourceGroup": zod.boolean().describe('True when this card collapses several staged payments a human grouped as one physical gift (rows sharing sourceGroupId). The card\'s stagedPaymentId is the representative member; approve acts on the whole group.'),
+  "sourceGroupId": zod.string().nullish().describe('The unit group id when this card represents a manual \'same physical gift\' group; null for a single staged payment. Derived from unit_group_members.'),
+  "isSourceGroup": zod.boolean().describe('True when this card collapses several staged payments a human grouped as one physical gift (rows in one unit group). The card\'s stagedPaymentId is the representative member; approve acts on the whole group.'),
   "sourceGroupCount": zod.number().nullish().describe('Number of staged payments in the group (>= 2). Null when not a group.'),
   "sourceGroupTotalAmount": zod.string().nullish().describe('Summed amount of all group members (the amount the group reconciles for). Null when not a group.'),
   "sourceGroupMembers": zod.array(zod.object({
@@ -349,7 +349,7 @@ precedence over the QB net when a charge is selected; nothing is archived.
 Minting a gift is human-only. Idempotent: re-approving a reconciled card
 returns its current state.
 
-Source groups (a card whose stagedPaymentId carries a sourceGroupId)
+Source groups (a card whose stagedPaymentId belongs to a unit group)
 approve as a WHOLE: the create-* outcomes mint ONE gift whose amount sums
 every non-archived member, with a deterministic representative carrying
 createdGiftId and the other members groupReconciledGiftId (so no slice can
@@ -759,7 +759,7 @@ from ANY anchor point:
 A QB deposit that IS tied to a Stripe payout is deliberately OMITTED: it
 reconciles THROUGH the payout's bundle (assemble canonicalizes a tied QB id to
 its payout), so listing it separately would double-book the same money. Rows
-already grouped (source_group_id) stay in the existing group-reconcile flow and
+already grouped (a unit_group_members member) stay in the existing group-reconcile flow and
 are omitted here. Rejected/excluded QB rows are not anchors. Read-only.
 
  * @summary List every settlement anchor the bundle workbench can reconcile — Stripe payouts AND standalone QuickBooks deposits/payments.

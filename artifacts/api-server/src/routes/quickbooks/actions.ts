@@ -576,10 +576,12 @@ router.post(
 
 // ─── POST /staged-payments/group ───────────────────────────────────────────
 // Mark two or more staged payments as ONE physical gift entered separately in
-// QuickBooks (a "same physical gift" source group). Stamps a shared opaque
-// sourceGroupId. Pure review state — it never changes donor or gift links and
-// never reconciles by itself; the reconciliation card collapses the members
-// into one group card and approval acts on the whole group.
+// QuickBooks (a "same physical gift" group). Membership is stored in the
+// polymorphic unit_groups / unit_group_members tables (the retired
+// staged_payments.source_group_id column is gone); the returned `sourceGroupId`
+// is the unit group id (`ug_…`). Pure review state — it never changes donor or
+// gift links and never reconciles by itself; the reconciliation card collapses
+// the members into one group card and approval acts on the whole group.
 router.post(
   "/staged-payments/group",
   asyncHandler(async (req, res) => {
@@ -639,17 +641,33 @@ router.post(
         // Existing-group rule: forming a fresh group requires every member to be
         // currently ungrouped. If all members already share ONE group it is an
         // idempotent re-group (return that id). Any other mix (some grouped, or
-        // two different groups) is rejected — ungroup first.
-        const memberGroups = locked.map((r) => r.sourceGroupId);
-        const distinctGroups = Array.from(
-          new Set(memberGroups.filter((g): g is string => g != null)),
+        // two different groups) is rejected — ungroup first. Membership is read
+        // from `unit_group_members` (the source of truth now that
+        // `staged_payments.source_group_id` is retired).
+        const existingMemberships = await tx
+          .select({
+            sourceId: unitGroupMembers.sourceId,
+            groupId: unitGroupMembers.groupId,
+          })
+          .from(unitGroupMembers)
+          .where(
+            and(
+              eq(unitGroupMembers.evidenceSource, "quickbooks"),
+              inArray(unitGroupMembers.sourceId, ids),
+            ),
+          );
+        const groupBySource = new Map(
+          existingMemberships.map((m) => [m.sourceId, m.groupId]),
         );
-        const anyUngrouped = memberGroups.some((g) => g == null);
-        let sourceGroupId: string;
+        const anyUngrouped = ids.some((id) => !groupBySource.has(id));
+        const distinctGroups = Array.from(
+          new Set(existingMemberships.map((m) => m.groupId)),
+        );
+        let unitGroupId: string;
         if (distinctGroups.length === 0) {
-          sourceGroupId = newId();
+          unitGroupId = `ug_${newId()}`;
         } else if (distinctGroups.length === 1 && !anyUngrouped) {
-          sourceGroupId = distinctGroups[0];
+          unitGroupId = distinctGroups[0];
         } else {
           throw new Error(DIFF_GROUP);
         }
@@ -671,9 +689,34 @@ router.post(
           throw new Error(DONOR_CONFLICT);
         }
 
+        // Write the durable unit_groups association (the sole group store).
+        // Repoint the passed units into this group idempotently: ensure the
+        // group row exists, drop any stale membership for these units, then
+        // (re)insert one row per member.
+        await tx
+          .insert(unitGroups)
+          .values({ id: unitGroupId, createdByUserId: user?.id ?? null })
+          .onConflictDoNothing({ target: unitGroups.id });
+        await tx
+          .delete(unitGroupMembers)
+          .where(
+            and(
+              eq(unitGroupMembers.evidenceSource, "quickbooks"),
+              inArray(unitGroupMembers.sourceId, ids),
+            ),
+          );
+        await tx.insert(unitGroupMembers).values(
+          ids.map((sid) => ({
+            id: `ugm_${sid}`,
+            groupId: unitGroupId,
+            evidenceSource: "quickbooks" as const,
+            sourceId: sid,
+          })),
+        );
+        // Touch updatedAt so list caches keyed off the staged rows refresh.
         await tx
           .update(stagedPayments)
-          .set({ sourceGroupId, updatedAt: new Date() })
+          .set({ updatedAt: new Date() })
           .where(inArray(stagedPayments.id, ids));
 
         // Recompute full membership (an idempotent re-group may already include
@@ -685,43 +728,19 @@ router.post(
             amount: stagedPayments.amount,
           })
           .from(stagedPayments)
-          .where(eq(stagedPayments.sourceGroupId, sourceGroupId));
+          .innerJoin(
+            unitGroupMembers,
+            and(
+              eq(unitGroupMembers.sourceId, stagedPayments.id),
+              eq(unitGroupMembers.evidenceSource, "quickbooks"),
+            ),
+          )
+          .where(eq(unitGroupMembers.groupId, unitGroupId));
         const memberIds = members.map((m) => m.id).sort();
         const total = members.reduce((acc, m) => acc + Number(m.amount ?? 0), 0);
 
-        // ── Dual-write the durable unit_groups association (WS2) ────────────
-        // Additive mirror of source_group_id (docs/reconciliation-design.md
-        // §4.6b). Group id is deterministic (`ug_<sourceGroupId>`) so this and
-        // the 0088 backfill converge. Membership follows the just-written
-        // sourceGroupId exactly: delete any stale membership for these units,
-        // then (re)insert one row per member. Kept in the same tx as the
-        // source_group_id write so the two never diverge. Reads are NOT flipped
-        // to this table yet.
-        const unitGroupId = `ug_${sourceGroupId}`;
-        await tx
-          .insert(unitGroups)
-          .values({ id: unitGroupId, createdByUserId: user?.id ?? null })
-          .onConflictDoNothing({ target: unitGroups.id });
-        if (memberIds.length) {
-          await tx
-            .delete(unitGroupMembers)
-            .where(
-              and(
-                eq(unitGroupMembers.evidenceSource, "quickbooks"),
-                inArray(unitGroupMembers.sourceId, memberIds),
-              ),
-            );
-          await tx.insert(unitGroupMembers).values(
-            memberIds.map((sid) => ({
-              id: `ugm_${sid}`,
-              groupId: unitGroupId,
-              evidenceSource: "quickbooks" as const,
-              sourceId: sid,
-            })),
-          );
-        }
         result = {
-          sourceGroupId,
+          sourceGroupId: unitGroupId,
           stagedPaymentIds: memberIds,
           representativeStagedPaymentId: memberIds[0] ?? ids[0],
           totalAmount: members.length ? total.toFixed(2) : null,
@@ -762,10 +781,10 @@ router.post(
 );
 
 // ─── POST /staged-payments/ungroup ─────────────────────────────────────────
-// Clear sourceGroupId on the given rows, removing them from their source group.
-// If this leaves a group with fewer than two non-archived members, the
-// remaining orphan is cleared too (a group requires >= 2). Pure review state;
-// a no-op for rows that aren't grouped.
+// Remove the given rows from their unit group (delete their unit_group_members
+// rows). If this leaves a group with fewer than two members, the remaining
+// orphan is removed too and the empty unit_groups row is deleted (a group
+// requires >= 2). Pure review state; a no-op for rows that aren't grouped.
 router.post(
   "/staged-payments/ungroup",
   asyncHandler(async (req, res) => {
@@ -787,31 +806,46 @@ router.post(
     } | null = null;
     try {
       await db.transaction(async (tx) => {
-        const targets = await tx
-          .select({
-            id: stagedPayments.id,
-            sourceGroupId: stagedPayments.sourceGroupId,
-          })
+        // Lock the target staged rows FOR UPDATE to serialize with group()
+        // (membership itself lives in unit_group_members now, but the units are
+        // the natural lock granularity shared with the group path).
+        const lockedTargets = await tx
+          .select({ id: stagedPayments.id })
           .from(stagedPayments)
           .where(inArray(stagedPayments.id, ids))
           .for("update");
-        if (targets.length !== ids.length) throw new Error(NOT_FOUND);
+        if (lockedTargets.length !== ids.length) throw new Error(NOT_FOUND);
 
+        // Read current membership from unit_group_members (the sole group store).
+        const memberships = await tx
+          .select({
+            sourceId: unitGroupMembers.sourceId,
+            groupId: unitGroupMembers.groupId,
+          })
+          .from(unitGroupMembers)
+          .where(
+            and(
+              eq(unitGroupMembers.evidenceSource, "quickbooks"),
+              inArray(unitGroupMembers.sourceId, ids),
+            ),
+          );
         const affectedGroups = Array.from(
-          new Set(
-            targets
-              .map((t) => t.sourceGroupId)
-              .filter((g): g is string => g != null),
-          ),
+          new Set(memberships.map((m) => m.groupId)),
         );
-        const toClear = targets
-          .filter((t) => t.sourceGroupId != null)
-          .map((t) => t.id);
+        const toClear = memberships.map((m) => m.sourceId);
         const ungroupedIds: string[] = [...toClear];
         if (toClear.length) {
           await tx
+            .delete(unitGroupMembers)
+            .where(
+              and(
+                eq(unitGroupMembers.evidenceSource, "quickbooks"),
+                inArray(unitGroupMembers.sourceId, toClear),
+              ),
+            );
+          await tx
             .update(stagedPayments)
-            .set({ sourceGroupId: null, updatedAt: new Date() })
+            .set({ updatedAt: new Date() })
             .where(inArray(stagedPayments.id, toClear));
         }
 
@@ -820,46 +854,46 @@ router.post(
         const dissolvedGroupIds: string[] = [];
         for (const g of affectedGroups) {
           const remaining = await tx
-            .select({ id: stagedPayments.id })
-            .from(stagedPayments)
-            .where(eq(stagedPayments.sourceGroupId, g))
+            .select({ sourceId: unitGroupMembers.sourceId })
+            .from(unitGroupMembers)
+            .innerJoin(
+              stagedPayments,
+              eq(stagedPayments.id, unitGroupMembers.sourceId),
+            )
+            .where(
+              and(
+                eq(unitGroupMembers.groupId, g),
+                eq(unitGroupMembers.evidenceSource, "quickbooks"),
+              ),
+            )
             .for("update");
           if (remaining.length < 2) {
             if (remaining.length === 1) {
+              const orphanId = remaining[0].sourceId;
+              await tx
+                .delete(unitGroupMembers)
+                .where(
+                  and(
+                    eq(unitGroupMembers.evidenceSource, "quickbooks"),
+                    eq(unitGroupMembers.sourceId, orphanId),
+                  ),
+                );
               await tx
                 .update(stagedPayments)
-                .set({ sourceGroupId: null, updatedAt: new Date() })
-                .where(eq(stagedPayments.id, remaining[0].id));
-              ungroupedIds.push(remaining[0].id);
+                .set({ updatedAt: new Date() })
+                .where(eq(stagedPayments.id, orphanId));
+              ungroupedIds.push(orphanId);
             }
             dissolvedGroupIds.push(g);
           }
         }
 
-        // ── Dual-write: keep unit_groups in lockstep with source_group_id ───
-        // Drop membership for every unit whose sourceGroupId we just cleared
-        // (removed members + any auto-cleared orphan), then delete the group
-        // rows for fully-dissolved groups (cascade would clear their remaining
-        // membership, but the source rows were all cleared above so there is
-        // none left). Kept in the same tx so the two never diverge.
-        const clearedIds = Array.from(new Set(ungroupedIds));
-        if (clearedIds.length) {
-          await tx
-            .delete(unitGroupMembers)
-            .where(
-              and(
-                eq(unitGroupMembers.evidenceSource, "quickbooks"),
-                inArray(unitGroupMembers.sourceId, clearedIds),
-              ),
-            );
-        }
+        // Delete the group rows for fully-dissolved groups (their membership was
+        // already cleared above; the cascade FK would clear any remainder).
         if (dissolvedGroupIds.length) {
-          await tx.delete(unitGroups).where(
-            inArray(
-              unitGroups.id,
-              dissolvedGroupIds.map((g) => `ug_${g}`),
-            ),
-          );
+          await tx
+            .delete(unitGroups)
+            .where(inArray(unitGroups.id, dissolvedGroupIds));
         }
         result = {
           ungroupedIds: Array.from(new Set(ungroupedIds)),

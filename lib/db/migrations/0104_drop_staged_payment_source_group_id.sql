@@ -1,0 +1,66 @@
+-- Migration 0104: Physically DROP staged_payments.source_group_id (+ its index).
+--
+-- BACKGROUND. "Same physical gift" grouping — the human act of marking two or
+-- more separately-entered QuickBooks records as ONE physical gift — now lives in
+-- the polymorphic unit_groups / unit_group_members tables
+-- (docs/reconciliation-design.md §4.6b, Decision 7). Membership is
+-- unit_group_members rows with evidence_source = 'quickbooks' and
+-- source_id = staged_payments.id. Every read (workbench card collapse /
+-- representative pick / group rollup, settlement bundle anchor eligibility,
+-- reconciliation graph, approve) AND every write (POST /staged-payments/group and
+-- /ungroup) was flipped onto unit_group_members in this task's code. The
+-- source_group_id column is therefore fully dead: unread and unwritten by the new
+-- build.
+--
+-- This drops:
+--   staged_payments.source_group_id                 (text, NULLABLE)
+--   staged_payments_source_group_id_idx             (index on source_group_id)
+--
+-- SAFE TO DROP: unit_group_members is the SOLE authoritative home for grouping.
+-- Parity between the legacy column and unit_group_members was proven on PROD
+-- (parity-unit-groups / parity-group-readflip) during the dual-write phase before
+-- the read+write flip. This CANNOT move a counted dollar: source_group_id was a
+-- pure staged-payments review-state pointer — it never fed a gift, a paid-amount
+-- derivation, or a goal SUM (those flow through gifts_and_payments /
+-- gift_allocations / payment_applications, untouched here). groupReconciledGiftId
+-- (the separate "members tied to one existing gift" pointer) is a DIFFERENT
+-- concern and is intentionally NOT dropped.
+--
+-- IF EXISTS -> idempotent / re-runnable (a second run is a no-op). Dropping a
+-- column auto-removes any index that references only it (so the index drop below
+-- is belt-and-suspenders, not strictly required).
+--
+-- ORDERING (prod) — Publish FIRST, THEN this SQL. The currently-deployed prod
+-- build still WRITES source_group_id (the dual-write), so dropping it BEFORE the
+-- new code deploys would 500 every group/ungroup call. Publish diffs dev-DB vs
+-- prod-DB (not the schema source), so keep BOTH DBs holding this column THROUGH
+-- Publish (do NOT drop dev alone first, or Publish would see a prod-only column
+-- and propose a destructive prod drop that aborts the whole diff). Only AFTER the
+-- new code is live in prod (it no longer writes source_group_id) apply this file
+-- to prod AND dev. See the runbook for the full sequence.
+--
+-- Apply with psql -1 (wraps the file in ONE transaction; do NOT add BEGIN/COMMIT
+-- or it nests and warns):
+--   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0104_drop_staged_payment_source_group_id.sql   (prod)
+--   psql "$DATABASE_URL"      -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0104_drop_staged_payment_source_group_id.sql   (dev)
+
+DROP INDEX IF EXISTS staged_payments_source_group_id_idx;
+
+ALTER TABLE staged_payments
+  DROP COLUMN IF EXISTS source_group_id;
+
+-- Verification (run by hand AFTER applying) -----------------------------------
+--   -- Column gone (expect zero rows) + the index gone:
+--   SELECT column_name FROM information_schema.columns
+--   WHERE table_name = 'staged_payments' AND column_name = 'source_group_id';
+--   SELECT to_regclass('public.staged_payments_source_group_id_idx');  -- expect: NULL
+--
+--   -- unit_group_members (the authoritative store) is untouched. Every QB group
+--   -- still has >= 2 members (expect zero rows):
+--   SELECT group_id, count(*) FROM unit_group_members
+--   WHERE evidence_source = 'quickbooks'
+--   GROUP BY group_id HAVING count(*) < 2;
+--
+--   -- groupReconciledGiftId (the separate concern) is untouched (expect one row):
+--   SELECT column_name FROM information_schema.columns
+--   WHERE table_name = 'staged_payments' AND column_name = 'group_reconciled_gift_id';
