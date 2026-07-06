@@ -5,6 +5,7 @@ import {
   useRejectSettlementProposal,
   type BundleAnchor,
   type BundleAnchorType,
+  type PayoutChargeSummary,
 } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,32 @@ function errMessage(err: unknown): string {
   const issues = extractGateIssues(err);
   if (issues.length > 0) return issues.join(" · ");
   return err instanceof Error ? err.message : "Something went wrong.";
+}
+
+/**
+ * Per-charge breakdown for a Stripe payout — each charge's payer name + amount so
+ * a reviewer sees who the money is from without drilling in. Capped/scrollable so
+ * a many-charge payout stays readable; renders nothing when there are no charges
+ * (the count fallback in the card header covers that case).
+ */
+export function ChargeList({
+  charges,
+}: {
+  charges: PayoutChargeSummary[] | undefined;
+}) {
+  if (!charges || charges.length === 0) return null;
+  return (
+    <ul className="mt-1 max-h-28 space-y-0.5 overflow-y-auto pr-1 text-xs text-muted-foreground">
+      {charges.map((c) => (
+        <li key={c.id} className="flex items-center justify-between gap-2">
+          <span className="truncate">{c.payerName?.trim() || "(no name)"}</span>
+          <span className="shrink-0 tabular-nums">
+            {c.amount != null ? formatCurrency(c.amount) : "—"}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /**
@@ -162,9 +189,12 @@ export function SettlementCard({
           </div>
           <div className="mt-0.5 text-xs text-muted-foreground">
             {a.date ? formatDate(a.date) : "—"}
-            {a.chargeCount != null ? ` · ${a.chargeCount} charges` : ""}
+            {(a.charges?.length ?? 0) === 0 && a.chargeCount != null
+              ? ` · ${a.chargeCount} charges`
+              : ""}
             {a.payerName ? ` · ${a.payerName}` : ""}
           </div>
+          <ChargeList charges={a.charges} />
 
           {/* Proposed counterpart inline */}
           {proposal && (

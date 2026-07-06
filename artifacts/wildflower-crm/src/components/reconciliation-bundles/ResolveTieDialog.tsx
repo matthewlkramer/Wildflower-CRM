@@ -4,6 +4,7 @@ import {
   useSearchReconciliationPayouts,
   useSearchReconciliationQbStaged,
   type BundleAnchor,
+  type PayoutChargeSummary,
 } from "@workspace/api-client-react";
 import {
   Dialog,
@@ -23,6 +24,8 @@ interface ResultRow {
   secondary: string | null;
   amount: string | null;
   date: string | null;
+  /** Per-charge breakdown for a Stripe-payout candidate (empty for deposits). */
+  charges: PayoutChargeSummary[];
 }
 
 /**
@@ -132,9 +135,12 @@ function PayoutResults({
   const rows: ResultRow[] = (data?.data ?? []).map((c) => ({
     id: c.id,
     primary: shortId(c.id),
+    // The charge breakdown replaces the count subtitle; keep the count as a
+    // fallback for a payout whose charges couldn't be enumerated.
     secondary: c.chargeCount != null ? `${c.chargeCount} charges` : null,
     amount: c.amount ?? null,
     date: c.date ?? null,
+    charges: c.charges ?? [],
   }));
   return (
     <ResultsList rows={rows} isFetching={isFetching} isError={isError} busy={busy} onPick={onPick} />
@@ -169,6 +175,7 @@ function DepositResults({
     secondary: c.sublabel ?? null,
     amount: c.amount ?? null,
     date: c.date ?? null,
+    charges: [],
   }));
   return (
     <ResultsList rows={rows} isFetching={isFetching} isError={isError} busy={busy} onPick={onPick} />
@@ -222,10 +229,25 @@ function ResultsList({
         >
           <span className="flex min-w-0 flex-col">
             <span className="truncate text-sm font-medium">{r.primary}</span>
-            {r.secondary && (
-              <span className="truncate text-xs text-muted-foreground">
-                {r.secondary}
+            {r.charges.length > 0 ? (
+              <span className="mt-0.5 flex max-h-24 flex-col gap-0.5 overflow-y-auto pr-1 text-xs text-muted-foreground">
+                {r.charges.map((c) => (
+                  <span key={c.id} className="flex items-center gap-1.5">
+                    <span className="truncate">
+                      {c.payerName?.trim() || "(no name)"}
+                    </span>
+                    <span className="shrink-0 tabular-nums">
+                      {c.amount != null ? formatCurrency(c.amount) : "—"}
+                    </span>
+                  </span>
+                ))}
               </span>
+            ) : (
+              r.secondary && (
+                <span className="truncate text-xs text-muted-foreground">
+                  {r.secondary}
+                </span>
+              )
             )}
           </span>
           <span className="flex shrink-0 flex-col items-end">

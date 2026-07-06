@@ -4031,6 +4031,20 @@ export interface ReconciliationSearchList {
 }
 
 /**
+ * One Stripe charge rolled into a payout, for at-a-glance display on the Settlement report (who the money is from without drilling in).
+ */
+export interface PayoutChargeSummary {
+  /** Stripe charge id (ch_...). */
+  id: string;
+  /** Charge payer name, falling back to the charge description; null when neither is set. */
+  payerName?: string | null;
+  /** Charge gross amount (major units). */
+  amount?: string | null;
+  /** Calendar date the charge is credited to (date_received). */
+  date?: string | null;
+}
+
+/**
  * One orphan Stripe payout returned by the reverse payout search.
  */
 export interface PayoutSearchCandidate {
@@ -4042,6 +4056,8 @@ export interface PayoutSearchCandidate {
   date?: string | null;
   /** Number of charges in the payout. */
   chargeCount?: number | null;
+  /** Per-charge breakdown (payer name + amount) inside the payout, capped and ordered by amount desc. Empty when unknown. */
+  charges?: PayoutChargeSummary[];
 }
 
 export interface PayoutSearchList {
@@ -4639,6 +4655,8 @@ export interface BundleAnchor {
   payerName?: string | null;
   /** Stripe charges behind the payout; null for QB-only money. */
   chargeCount?: number | null;
+  /** Per-charge breakdown (payer name + amount) inside a Stripe payout, capped and ordered by amount desc. Empty for QB-only anchors. */
+  charges?: PayoutChargeSummary[];
   /** Raw source status for the display badge: the Stripe payout's reconciliation status (derived from its settlement link), or the QB staged-payment status. */
   statusLabel: string;
   batchStatus: SettlementBatchStatus;

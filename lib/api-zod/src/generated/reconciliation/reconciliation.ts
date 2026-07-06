@@ -554,7 +554,13 @@ export const SearchReconciliationPayoutsResponse = zod.object({
   "id": zod.string().describe('Stripe payout id (po_...).'),
   "amount": zod.string().nullish().describe('Payout net (net_total, falling back to amount), in major units.'),
   "date": zod.string().date().nullish().describe('Payout arrival date.'),
-  "chargeCount": zod.number().nullish().describe('Number of charges in the payout.')
+  "chargeCount": zod.number().nullish().describe('Number of charges in the payout.'),
+  "charges": zod.array(zod.object({
+  "id": zod.string().describe('Stripe charge id (ch_...).'),
+  "payerName": zod.string().nullish().describe('Charge payer name, falling back to the charge description; null when neither is set.'),
+  "amount": zod.string().nullish().describe('Charge gross amount (major units).'),
+  "date": zod.string().date().nullish().describe('Calendar date the charge is credited to (date_received).')
+}).describe('One Stripe charge rolled into a payout, for at-a-glance display on the Settlement report (who the money is from without drilling in).')).optional().describe('Per-charge breakdown (payer name + amount) inside the payout, capped and ordered by amount desc. Empty when unknown.')
 }).describe('One orphan Stripe payout returned by the reverse payout search.'))
 })
 
@@ -727,6 +733,12 @@ export const ListReconciliationBundleAnchorsResponse = zod.object({
   "date": zod.string().date().nullish().describe('Stripe arrival date, or the QB date received.'),
   "payerName": zod.string().nullish().describe('QB payer name (the tied\/candidate deposit\'s payer for a Stripe payout, or the staged row\'s payer for QB-only money).'),
   "chargeCount": zod.number().nullish().describe('Stripe charges behind the payout; null for QB-only money.'),
+  "charges": zod.array(zod.object({
+  "id": zod.string().describe('Stripe charge id (ch_...).'),
+  "payerName": zod.string().nullish().describe('Charge payer name, falling back to the charge description; null when neither is set.'),
+  "amount": zod.string().nullish().describe('Charge gross amount (major units).'),
+  "date": zod.string().date().nullish().describe('Calendar date the charge is credited to (date_received).')
+}).describe('One Stripe charge rolled into a payout, for at-a-glance display on the Settlement report (who the money is from without drilling in).')).optional().describe('Per-charge breakdown (payer name + amount) inside a Stripe payout, capped and ordered by amount desc. Empty for QB-only anchors.'),
   "statusLabel": zod.string().describe('Raw source status for the display badge: the Stripe payout\'s reconciliation status (derived from its settlement link), or the QB staged-payment status.'),
   "batchStatus": zod.enum(['settled', 'proposed', 'orphan']).describe('Derived Plane-1 settlement status for one anchor (design §4.4 batch), used by the\nSettlement report to group anchors into its three columns. settled: a confirmed\npayout↔deposit settlement link exists. proposed: only a proposed link exists\n(awaiting human confirm — the \"needs review\" filter). orphan: no settlement link\n(a Stripe payout that never booked to a deposit, or a standalone QB deposit with no\npayout). Combined with anchorType this fully places a row: Stripe orphan → the\n\"missing deposit\" column; QB orphan → the \"missing payout\" column.\n'),
   "proposedMatch": zod.object({

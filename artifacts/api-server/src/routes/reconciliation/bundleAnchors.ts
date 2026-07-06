@@ -98,6 +98,13 @@ function qbWhere(queue: AnchorQueue): SQL {
   return sql`${eligible} AND ${plausiblyStripe} AND ${statusClause}`;
 }
 
+interface PayoutChargeRow {
+  id: string;
+  payerName: string | null;
+  amount: string | null;
+  date: string | null;
+}
+
 interface AnchorRow {
   anchor_type: AnchorSource;
   anchor_id: string;
@@ -105,6 +112,7 @@ interface AnchorRow {
   anchor_date: string | null;
   payer_name: string | null;
   charge_count: number | null;
+  charges: PayoutChargeRow[] | null;
   status_label: string;
   batch_status: "settled" | "proposed" | "orphan";
   // Proposed counterpart facts (non-null only for a proposed Stripe payout).
@@ -161,6 +169,21 @@ router.get(
         sp.arrival_date::text AS anchor_date,
         ad.payer_name AS payer_name,
         sp.charge_count AS charge_count,
+        COALESCE((
+          SELECT json_agg(json_build_object(
+              'id', c.id,
+              'payerName', COALESCE(c.payer_name, c.description),
+              'amount', c.gross_amount::text,
+              'date', c.date_received::text
+            ) ORDER BY c.gross_amount DESC NULLS LAST)
+          FROM (
+            SELECT cc.id, cc.payer_name, cc.description, cc.gross_amount, cc.date_received
+            FROM stripe_staged_charges cc
+            WHERE cc.stripe_payout_id = sp.id
+            ORDER BY cc.gross_amount DESC NULLS LAST
+            LIMIT 50
+          ) c
+        ), '[]'::json) AS charges,
         ${payoutStatusLabelSql}::text AS status_label,
         (CASE
           WHEN EXISTS (SELECT 1 FROM settlement_links sl2
@@ -195,6 +218,7 @@ router.get(
         s.date_received::text AS anchor_date,
         s.payer_name AS payer_name,
         NULL::int AS charge_count,
+        '[]'::json AS charges,
         s.status::text AS status_label,
         'orphan'::text AS batch_status,
         NULL::text AS proposed_counterpart_type,
@@ -221,7 +245,7 @@ router.get(
       db.execute(sql`
         SELECT
           anchor_type, anchor_id, amount, anchor_date,
-          payer_name, charge_count, status_label, batch_status,
+          payer_name, charge_count, charges, status_label, batch_status,
           proposed_counterpart_type, proposed_counterpart_id, proposed_amount,
           proposed_date, proposed_payer_name, proposed_charge_count,
           proposed_conflict_gift_id,
@@ -244,6 +268,7 @@ router.get(
         date: r.anchor_date,
         payerName: r.payer_name,
         chargeCount: r.charge_count,
+        charges: r.charges ?? [],
         statusLabel: r.status_label,
         batchStatus: r.batch_status,
         proposedMatch: r.proposed_counterpart_id

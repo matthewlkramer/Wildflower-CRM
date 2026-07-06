@@ -1351,11 +1351,19 @@ async function searchQb(p: RecSearchParams): Promise<RecCandidate[]> {
 // against. Only ORPHAN payouts (no settlement link at all) are offered — a payout
 // already tied (proposed or confirmed) belongs to another deposit's bundle.
 // Requires at least one positive criterion so it never dumps the whole table.
+export interface RecPayoutCharge {
+  id: string;
+  payerName: string | null;
+  amount: string | null;
+  date: string | null;
+}
+
 export interface RecPayoutCandidate {
   id: string;
   amount: string | null;
   date: string | null;
   chargeCount: number | null;
+  charges: RecPayoutCharge[];
 }
 
 export interface RecPayoutSearchParams {
@@ -1420,6 +1428,23 @@ export async function searchPayouts(
       amount: sql<string | null>`COALESCE(${stripePayouts.netTotal}, ${stripePayouts.amount})`,
       arrivalDate: stripePayouts.arrivalDate,
       chargeCount: stripePayouts.chargeCount,
+      // Per-charge breakdown (payer name + amount) so a reviewer can see who is
+      // inside a payout candidate. Capped at 50 (amount desc) to bound the row.
+      charges: sql<RecPayoutCharge[]>`COALESCE((
+        SELECT json_agg(json_build_object(
+            'id', c.id,
+            'payerName', COALESCE(c.payer_name, c.description),
+            'amount', c.gross_amount::text,
+            'date', c.date_received::text
+          ) ORDER BY c.gross_amount DESC NULLS LAST)
+        FROM (
+          SELECT cc.id, cc.payer_name, cc.description, cc.gross_amount, cc.date_received
+          FROM stripe_staged_charges cc
+          WHERE cc.stripe_payout_id = ${stripePayouts.id}
+          ORDER BY cc.gross_amount DESC NULLS LAST
+          LIMIT 50
+        ) c
+      ), '[]'::json)`,
     })
     .from(stripePayouts)
     .where(and(...conds))
@@ -1431,6 +1456,7 @@ export async function searchPayouts(
     amount: r.amount,
     date: r.arrivalDate,
     chargeCount: r.chargeCount,
+    charges: r.charges ?? [],
   }));
 }
 
