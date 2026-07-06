@@ -21,7 +21,9 @@ import type {
 
 import type {
   BadRequestResponse,
+  CloseFiscalYearBody,
   FiscalYear,
+  FiscalYearPreCloseChecklist,
   ForbiddenResponse,
   ListFiscalYearsParams,
   NotFoundResponse,
@@ -374,4 +376,217 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUnarchiveFiscalYearMutationOptions(options));
     }
+    /**
+ * @summary Admin: close this fiscal year's audit. Freezes every gift/pledge governed by this FY.
+ */
+export const getCloseFiscalYearAuditUrl = (id: string,) => {
+
+
+  
+
+  return `/api/fiscal-years/${id}/close`
+}
+
+export const closeFiscalYearAudit = async (id: string,
+    closeFiscalYearBody?: CloseFiscalYearBody, options?: RequestInit): Promise<FiscalYear> => {
+  
+  return customFetch<FiscalYear>(getCloseFiscalYearAuditUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      closeFiscalYearBody,)
+  }
+);}
+  
+
+
+
+export const getCloseFiscalYearAuditMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeFiscalYearAudit>>, TError,{id: string;data: BodyType<CloseFiscalYearBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof closeFiscalYearAudit>>, TError,{id: string;data: BodyType<CloseFiscalYearBody>}, TContext> => {
+
+const mutationKey = ['closeFiscalYearAudit'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof closeFiscalYearAudit>>, {id: string;data: BodyType<CloseFiscalYearBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  closeFiscalYearAudit(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CloseFiscalYearAuditMutationResult = NonNullable<Awaited<ReturnType<typeof closeFiscalYearAudit>>>
+    export type CloseFiscalYearAuditMutationBody = BodyType<CloseFiscalYearBody>
+    export type CloseFiscalYearAuditMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Admin: close this fiscal year's audit. Freezes every gift/pledge governed by this FY.
+ */
+export const useCloseFiscalYearAudit = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeFiscalYearAudit>>, TError,{id: string;data: BodyType<CloseFiscalYearBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof closeFiscalYearAudit>>,
+        TError,
+        {id: string;data: BodyType<CloseFiscalYearBody>},
+        TContext
+      > => {
+      return useMutation(getCloseFiscalYearAuditMutationOptions(options));
+    }
+    /**
+ * @summary Admin: reopen this fiscal year's audit (safety valve). Unfreezes governed records.
+ */
+export const getReopenFiscalYearAuditUrl = (id: string,) => {
+
+
+  
+
+  return `/api/fiscal-years/${id}/reopen`
+}
+
+export const reopenFiscalYearAudit = async (id: string, options?: RequestInit): Promise<FiscalYear> => {
+  
+  return customFetch<FiscalYear>(getReopenFiscalYearAuditUrl(id),
+  {      
+    ...options,
+    method: 'POST'
     
+    
+  }
+);}
+  
+
+
+
+export const getReopenFiscalYearAuditMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reopenFiscalYearAudit>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reopenFiscalYearAudit>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['reopenFiscalYearAudit'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reopenFiscalYearAudit>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  reopenFiscalYearAudit(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReopenFiscalYearAuditMutationResult = NonNullable<Awaited<ReturnType<typeof reopenFiscalYearAudit>>>
+    
+    export type ReopenFiscalYearAuditMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Admin: reopen this fiscal year's audit (safety valve). Unfreezes governed records.
+ */
+export const useReopenFiscalYearAudit = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reopenFiscalYearAudit>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reopenFiscalYearAudit>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getReopenFiscalYearAuditMutationOptions(options));
+    }
+    /**
+ * @summary Read-only: unresolved gifts/pledges that will freeze when this FY's audit closes.
+ */
+export const getGetFiscalYearPreCloseChecklistUrl = (id: string,) => {
+
+
+  
+
+  return `/api/fiscal-years/${id}/pre-close-checklist`
+}
+
+export const getFiscalYearPreCloseChecklist = async (id: string, options?: RequestInit): Promise<FiscalYearPreCloseChecklist> => {
+  
+  return customFetch<FiscalYearPreCloseChecklist>(getGetFiscalYearPreCloseChecklistUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetFiscalYearPreCloseChecklistQueryKey = (id: string,) => {
+    return [
+    `/api/fiscal-years/${id}/pre-close-checklist`
+    ] as const;
+    }
+
+    
+export const getGetFiscalYearPreCloseChecklistQueryOptions = <TData = Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFiscalYearPreCloseChecklistQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>> = ({ signal }) => getFiscalYearPreCloseChecklist(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetFiscalYearPreCloseChecklistQueryResult = NonNullable<Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>>
+export type GetFiscalYearPreCloseChecklistQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Read-only: unresolved gifts/pledges that will freeze when this FY's audit closes.
+ */
+
+export function useGetFiscalYearPreCloseChecklist<TData = Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>, TError = ErrorType<NotFoundResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetFiscalYearPreCloseChecklistQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+

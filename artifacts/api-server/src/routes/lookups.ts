@@ -1,15 +1,26 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { fundableProjects, fiscalYears, giftAllocations } from "@workspace/db/schema";
-import { asc, eq, sql } from "drizzle-orm";
+import {
+  fundableProjects,
+  fiscalYears,
+  giftAllocations,
+  giftsAndPayments,
+  opportunitiesAndPledges,
+  pledgeAllocations,
+} from "@workspace/db/schema";
+import { and, asc, desc, eq, gte, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import {
   CreateFundableProjectBody,
   UpdateFundableProjectBody,
   UpdateFiscalYearBody,
+  CloseFiscalYearAuditBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound, paramId, parseOrBadRequest } from "../lib/helpers";
-import { activeOnlyUnlessAdmin, archiveOne, unarchiveOne } from "../lib/archive";
+import { activeOnlyUnlessAdmin, archiveOne, requireAdmin, unarchiveOne } from "../lib/archive";
+import { safeRecordAudit } from "../lib/audit";
+import { getAppUser } from "../lib/appRequest";
+import { unresolvedGiftAmountCondition } from "../lib/giftAmountResolution";
 
 // NOTE: /entities (GET/POST/PATCH) and /fiscal-year-entity-goals routes live
 // in their own files (entities.ts, fiscalYearEntityGoals.ts). This file holds
@@ -190,6 +201,152 @@ router.post(
   "/fiscal-years/:id/unarchive",
   asyncHandler(async (req, res) => {
     await unarchiveOne(req, res, { entity: "fiscal year", table: fiscalYears });
+  }),
+);
+
+// ─── Fiscal-year audit close / reopen ──────────────────────────────────────
+// Closing a FY's external audit is the "freeze" trigger: once `auditClosedAt`
+// is set, every gift/pledge governed by this FY becomes immutable and later
+// corrections must be booked as NEW records in the current open FY. Admin-only;
+// reopen is a safety valve. See lib/governingFiscalYear.ts for the governing-FY
+// rule and the pre-close checklist below for what freezes.
+router.post(
+  "/fiscal-years/:id/close",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const body = parseOrBadRequest(CloseFiscalYearAuditBody, req.body ?? {}, res);
+    if (!body) return;
+    const closedAt = body.auditClosedAt ? new Date(body.auditClosedAt) : new Date();
+    const [row] = await db
+      .update(fiscalYears)
+      .set({
+        auditClosedAt: closedAt,
+        auditClosedByUserId: getAppUser(req)?.id ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(fiscalYears.id, paramId(req)))
+      .returning();
+    if (!row) return notFound(res, "fiscal year");
+    await safeRecordAudit(req, {
+      action: "update",
+      entityType: "fiscal_year",
+      entityId: row.id,
+      summary: `Closed audit for fiscal year ${row.label}`,
+      metadata: { auditClosed: true, auditClosedAt: closedAt.toISOString() },
+    });
+    res.json(row);
+  }),
+);
+
+router.post(
+  "/fiscal-years/:id/reopen",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const [row] = await db
+      .update(fiscalYears)
+      .set({ auditClosedAt: null, auditClosedByUserId: null, updatedAt: new Date() })
+      .where(eq(fiscalYears.id, paramId(req)))
+      .returning();
+    if (!row) return notFound(res, "fiscal year");
+    await safeRecordAudit(req, {
+      action: "update",
+      entityType: "fiscal_year",
+      entityId: row.id,
+      summary: `Reopened audit for fiscal year ${row.label}`,
+      metadata: { auditClosed: false },
+    });
+    res.json(row);
+  }),
+);
+
+// Read-only advisory shown before an admin closes a FY: what freezes, and what
+// is still unresolved. Any authenticated user may view it.
+router.get(
+  "/fiscal-years/:id/pre-close-checklist",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const [fy] = await db.select().from(fiscalYears).where(eq(fiscalYears.id, id));
+    if (!fy) return notFound(res, "fiscal year");
+
+    // A gift is governed by this FY when its date_received falls in the FY
+    // window. Without a start/end date the window is undefined → govern nothing.
+    const hasRange = !!fy.startDate && !!fy.endDate;
+    const giftGoverned = hasRange
+      ? and(
+          isNull(giftsAndPayments.archivedAt),
+          isNotNull(giftsAndPayments.dateReceived),
+          gte(giftsAndPayments.dateReceived, fy.startDate as string),
+          lte(giftsAndPayments.dateReceived, fy.endDate as string),
+        )
+      : sql`false`;
+    // Unresolved = governed AND amount doesn't tie to accounting. The predicate
+    // lives in one place (giftAmountResolution.ts) so P3/P6 can swap the
+    // definition without touching this route. Off-books gifts are 'exempt' and
+    // excluded naturally.
+    const giftUnresolved = and(giftGoverned, unresolvedGiftAmountCondition());
+
+    const [{ n: giftsGoverned }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(giftsAndPayments)
+      .where(giftGoverned);
+    const [{ n: giftsUnresolved }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(giftsAndPayments)
+      .where(giftUnresolved);
+    const sampleGifts = hasRange
+      ? await db
+          .select({
+            id: giftsAndPayments.id,
+            amount: giftsAndPayments.amount,
+            dateReceived: giftsAndPayments.dateReceived,
+            quickbooksTieStatus: giftsAndPayments.quickbooksTieStatus,
+          })
+          .from(giftsAndPayments)
+          .where(giftUnresolved)
+          .orderBy(desc(giftsAndPayments.dateReceived))
+          .limit(25)
+      : [];
+
+    // Underpaid written pledges touching this FY (committed > paid). Raw SQL to
+    // keep the GROUP BY / HAVING / correlated-EXISTS explicit and avoid the
+    // drizzle bare-column footgun. `paid` is the persisted linked-gift rollup.
+    const pledgeResult = await db.execute(sql`
+      SELECT o.id AS id,
+             COALESCE(SUM(pa.sub_amount), 0)::text AS expected,
+             COALESCE(o.paid, 0)::text AS paid
+      FROM ${opportunitiesAndPledges} o
+      JOIN ${pledgeAllocations} pa ON pa.pledge_or_opportunity_id = o.id
+      WHERE o.written_pledge = true
+        AND o.archived_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM ${pledgeAllocations} pax
+          WHERE pax.pledge_or_opportunity_id = o.id AND pax.grant_year = ${id}
+        )
+      GROUP BY o.id, o.paid
+      HAVING COALESCE(SUM(pa.sub_amount), 0) > COALESCE(o.paid, 0)
+      ORDER BY (COALESCE(SUM(pa.sub_amount), 0) - COALESCE(o.paid, 0)) DESC
+    `);
+    const pledges = (
+      pledgeResult.rows as unknown as { id: string; expected: string; paid: string }[]
+    ).map((r) => ({
+      id: r.id,
+      expectedAmount: r.expected,
+      paidAmount: r.paid,
+      remainder: Math.max(0, Number(r.expected) - Number(r.paid)).toFixed(2),
+    }));
+
+    res.json({
+      fiscalYearId: fy.id,
+      label: fy.label,
+      startDate: fy.startDate,
+      endDate: fy.endDate,
+      auditClosedAt: fy.auditClosedAt,
+      giftsGoverned,
+      giftsUnresolved,
+      pledgesUnderpaid: pledges.length,
+      sampleGifts,
+      samplePledges: pledges.slice(0, 25),
+    });
   }),
 );
 

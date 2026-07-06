@@ -3793,6 +3793,37 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYear" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /fiscal-years/{id}/close:
+    post:
+      operationId: closeFiscalYearAudit
+      tags: [fiscal-years]
+      summary: "Admin: close this fiscal year's audit. Freezes every gift/pledge governed by this FY."
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: false, content: { application/json: { schema: { $ref: "#/components/schemas/CloseFiscalYearBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYear" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /fiscal-years/{id}/reopen:
+    post:
+      operationId: reopenFiscalYearAudit
+      tags: [fiscal-years]
+      summary: "Admin: reopen this fiscal year's audit (safety valve). Unfreezes governed records."
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYear" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /fiscal-years/{id}/pre-close-checklist:
+    get:
+      operationId: getFiscalYearPreCloseChecklist
+      tags: [fiscal-years]
+      summary: "Read-only: unresolved gifts/pledges that will freeze when this FY's audit closes."
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FiscalYearPreCloseChecklist" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /storage/uploads/request-url:
     post:
@@ -4773,9 +4804,47 @@ components:
         label:      { type: string }
         startDate:  { type: string, format: date, nullable: true }
         endDate:    { type: string, format: date, nullable: true }
+        auditClosedAt:       { type: string, format: date-time, nullable: true, description: "The date this FY's external audit CLOSED. Non-null = closed: every gift/pledge governed by this FY is frozen (a gift by its date_received FY; a pledge by its recognized FY). Corrections become NEW linked records in the current open FY. Null = still mutable." }
+        auditClosedByUserId: { type: string, nullable: true, description: "The admin who closed (or last re-closed) the audit. Null if never closed or that user row was removed." }
         archivedAt: { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:  { type: string, format: date-time }
         updatedAt:  { type: string, format: date-time }
+    CloseFiscalYearBody:
+      type: object
+      description: "Admin: close a fiscal year's external audit. Once closed, every gift/pledge governed by this FY is frozen and corrections become new records in the current open FY. Reopen is available as a safety valve."
+      properties:
+        auditClosedAt: { type: string, format: date-time, nullable: true, description: "The real-world date the audit closed. Omit or null to use the current time." }
+    FiscalYearPreCloseChecklist:
+      type: object
+      description: "Read-only advisory: what will freeze — and what is still unresolved — when this FY's audit closes."
+      required: [fiscalYearId, label, auditClosedAt, giftsGoverned, giftsUnresolved, pledgesUnderpaid, sampleGifts, samplePledges]
+      properties:
+        fiscalYearId:     { type: string }
+        label:            { type: string }
+        startDate:        { type: string, format: date, nullable: true }
+        endDate:          { type: string, format: date, nullable: true }
+        auditClosedAt:    { type: string, format: date-time, nullable: true, description: "Non-null = this FY is already closed." }
+        giftsGoverned:    { type: integer, description: "Non-archived gifts whose date_received falls within this FY — the records that freeze on close. Zero when the FY has no start/end date set." }
+        giftsUnresolved:  { type: integer, description: "Subset of governed gifts whose recorded amount does not tie to accounting (quickbooks_tie_status = amount_mismatch or missing). Resolve these before closing." }
+        pledgesUnderpaid: { type: integer, description: "Written pledges with an allocation in this FY whose paid amount is below committed (informational; a multi-year pledge appears under each grant year it touches until the governing-FY freeze lands)." }
+        sampleGifts:      { type: array, items: { $ref: "#/components/schemas/PreCloseGift" }, description: "Up to 25 unresolved governed gifts, newest first." }
+        samplePledges:    { type: array, items: { $ref: "#/components/schemas/PreClosePledge" }, description: "Up to 25 underpaid pledges touching this FY." }
+    PreCloseGift:
+      type: object
+      required: [id]
+      properties:
+        id:                  { type: string }
+        amount:              { type: string, nullable: true }
+        dateReceived:        { type: string, format: date, nullable: true }
+        quickbooksTieStatus: { type: string, nullable: true }
+    PreClosePledge:
+      type: object
+      required: [id, expectedAmount, paidAmount, remainder]
+      properties:
+        id:             { type: string }
+        expectedAmount: { type: string, description: "Sum of pledge_allocations.sub_amount." }
+        paidAmount:     { type: string }
+        remainder:      { type: string, description: "expectedAmount − paidAmount, clamped at 0." }
 
     # ─── Analytics (aggregate read-only response shapes) ──────────────────────
     DashboardCounts:

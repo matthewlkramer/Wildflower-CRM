@@ -17,6 +17,8 @@ export const ListFiscalYearsResponseItem = zod.object({
   "label": zod.string(),
   "startDate": zod.string().date().nullish(),
   "endDate": zod.string().date().nullish(),
+  "auditClosedAt": zod.string().datetime({}).nullish().describe('The date this FY\'s external audit CLOSED. Non-null = closed: every gift\/pledge governed by this FY is frozen (a gift by its date_received FY; a pledge by its recognized FY). Corrections become NEW linked records in the current open FY. Null = still mutable.'),
+  "auditClosedByUserId": zod.string().nullish().describe('The admin who closed (or last re-closed) the audit. Null if never closed or that user row was removed.'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -32,6 +34,8 @@ export const GetFiscalYearResponse = zod.object({
   "label": zod.string(),
   "startDate": zod.string().date().nullish(),
   "endDate": zod.string().date().nullish(),
+  "auditClosedAt": zod.string().datetime({}).nullish().describe('The date this FY\'s external audit CLOSED. Non-null = closed: every gift\/pledge governed by this FY is frozen (a gift by its date_received FY; a pledge by its recognized FY). Corrections become NEW linked records in the current open FY. Null = still mutable.'),
+  "auditClosedByUserId": zod.string().nullish().describe('The admin who closed (or last re-closed) the audit. Null if never closed or that user row was removed.'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -56,6 +60,8 @@ export const UpdateFiscalYearResponse = zod.object({
   "label": zod.string(),
   "startDate": zod.string().date().nullish(),
   "endDate": zod.string().date().nullish(),
+  "auditClosedAt": zod.string().datetime({}).nullish().describe('The date this FY\'s external audit CLOSED. Non-null = closed: every gift\/pledge governed by this FY is frozen (a gift by its date_received FY; a pledge by its recognized FY). Corrections become NEW linked records in the current open FY. Null = still mutable.'),
+  "auditClosedByUserId": zod.string().nullish().describe('The admin who closed (or last re-closed) the audit. Null if never closed or that user row was removed.'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -70,6 +76,8 @@ export const ArchiveFiscalYearResponse = zod.object({
   "label": zod.string(),
   "startDate": zod.string().date().nullish(),
   "endDate": zod.string().date().nullish(),
+  "auditClosedAt": zod.string().datetime({}).nullish().describe('The date this FY\'s external audit CLOSED. Non-null = closed: every gift\/pledge governed by this FY is frozen (a gift by its date_received FY; a pledge by its recognized FY). Corrections become NEW linked records in the current open FY. Null = still mutable.'),
+  "auditClosedByUserId": zod.string().nullish().describe('The admin who closed (or last re-closed) the audit. Null if never closed or that user row was removed.'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -84,8 +92,82 @@ export const UnarchiveFiscalYearResponse = zod.object({
   "label": zod.string(),
   "startDate": zod.string().date().nullish(),
   "endDate": zod.string().date().nullish(),
+  "auditClosedAt": zod.string().datetime({}).nullish().describe('The date this FY\'s external audit CLOSED. Non-null = closed: every gift\/pledge governed by this FY is frozen (a gift by its date_received FY; a pledge by its recognized FY). Corrections become NEW linked records in the current open FY. Null = still mutable.'),
+  "auditClosedByUserId": zod.string().nullish().describe('The admin who closed (or last re-closed) the audit. Null if never closed or that user row was removed.'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })
+
+/**
+ * @summary Admin: close this fiscal year's audit. Freezes every gift/pledge governed by this FY.
+ */
+export const CloseFiscalYearAuditParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const CloseFiscalYearAuditBody = zod.object({
+  "auditClosedAt": zod.string().datetime({}).nullish().describe('The real-world date the audit closed. Omit or null to use the current time.')
+}).describe('Admin: close a fiscal year\'s external audit. Once closed, every gift\/pledge governed by this FY is frozen and corrections become new records in the current open FY. Reopen is available as a safety valve.')
+
+export const CloseFiscalYearAuditResponse = zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "startDate": zod.string().date().nullish(),
+  "endDate": zod.string().date().nullish(),
+  "auditClosedAt": zod.string().datetime({}).nullish().describe('The date this FY\'s external audit CLOSED. Non-null = closed: every gift\/pledge governed by this FY is frozen (a gift by its date_received FY; a pledge by its recognized FY). Corrections become NEW linked records in the current open FY. Null = still mutable.'),
+  "auditClosedByUserId": zod.string().nullish().describe('The admin who closed (or last re-closed) the audit. Null if never closed or that user row was removed.'),
+  "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
+/**
+ * @summary Admin: reopen this fiscal year's audit (safety valve). Unfreezes governed records.
+ */
+export const ReopenFiscalYearAuditParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ReopenFiscalYearAuditResponse = zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "startDate": zod.string().date().nullish(),
+  "endDate": zod.string().date().nullish(),
+  "auditClosedAt": zod.string().datetime({}).nullish().describe('The date this FY\'s external audit CLOSED. Non-null = closed: every gift\/pledge governed by this FY is frozen (a gift by its date_received FY; a pledge by its recognized FY). Corrections become NEW linked records in the current open FY. Null = still mutable.'),
+  "auditClosedByUserId": zod.string().nullish().describe('The admin who closed (or last re-closed) the audit. Null if never closed or that user row was removed.'),
+  "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
+/**
+ * @summary Read-only: unresolved gifts/pledges that will freeze when this FY's audit closes.
+ */
+export const GetFiscalYearPreCloseChecklistParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetFiscalYearPreCloseChecklistResponse = zod.object({
+  "fiscalYearId": zod.string(),
+  "label": zod.string(),
+  "startDate": zod.string().date().nullish(),
+  "endDate": zod.string().date().nullish(),
+  "auditClosedAt": zod.string().datetime({}).nullable().describe('Non-null = this FY is already closed.'),
+  "giftsGoverned": zod.number().describe('Non-archived gifts whose date_received falls within this FY — the records that freeze on close. Zero when the FY has no start\/end date set.'),
+  "giftsUnresolved": zod.number().describe('Subset of governed gifts whose recorded amount does not tie to accounting (quickbooks_tie_status = amount_mismatch or missing). Resolve these before closing.'),
+  "pledgesUnderpaid": zod.number().describe('Written pledges with an allocation in this FY whose paid amount is below committed (informational; a multi-year pledge appears under each grant year it touches until the governing-FY freeze lands).'),
+  "sampleGifts": zod.array(zod.object({
+  "id": zod.string(),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().date().nullish(),
+  "quickbooksTieStatus": zod.string().nullish()
+})).describe('Up to 25 unresolved governed gifts, newest first.'),
+  "samplePledges": zod.array(zod.object({
+  "id": zod.string(),
+  "expectedAmount": zod.string().describe('Sum of pledge_allocations.sub_amount.'),
+  "paidAmount": zod.string(),
+  "remainder": zod.string().describe('expectedAmount − paidAmount, clamped at 0.')
+})).describe('Up to 25 underpaid pledges touching this FY.')
+}).describe('Read-only advisory: what will freeze — and what is still unresolved — when this FY\'s audit closes.')
 

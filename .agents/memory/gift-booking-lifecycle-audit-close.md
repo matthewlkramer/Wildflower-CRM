@@ -28,17 +28,24 @@ Freeze scope & granularity:
 Discrepancy handling depends on lifecycle:
 - Pre-close: a genuine mismatch is just CORRECTED (money is authoritative); no
   acknowledge state.
-- Post-close under-payment → cannot edit the closed gift → **write-off**. Write-off
-  is a PLEDGE concept, not a gift edit. The CRM is NOT the general ledger
-  (QuickBooks is), so we do NOT do double-entry: a write-off = ONE new
-  `pledge_allocation` with a NEGATIVE `sub_amount` (the shortfall), `grant_year` =
-  the current OPEN fiscal year, flagged as a write-off (labeled/auditable, drives
-  the resolved state). The pledge's expected is `SUM(pledge_allocations.sub_amount)`
-  (no positivity CHECK; remainder clamps at 0), so the negative line drops expected
-  to equal paid and the pledge stops reading as a mismatch, while the closed-year
-  allocations stay frozen. Mirrors the accounting "−$20 negative revenue in FY27"
-  (example: $100 pledge booked FY25; $80 paid FY26; FY27 uncollectible → −$20 line
-  in FY27). The underpaid gift itself is set to the cash that actually landed.
+- Post-close under-payment → cannot touch the closed pledge AT ALL (its allocations
+  ARE the audited transactions — you can't even add a negative allocation to it) →
+  **write-off = a brand-new offsetting PLEDGE** created in the current OPEN fiscal
+  year, LINKED back to the original pledge, with negative allocation(s) summing to
+  the uncollected remainder (grant_year = current open FY, mirroring the original's
+  entity/restriction/usage buckets), flagged as a write-off. The two pledges net to
+  zero across years; the original pledge is NEVER mutated. The original's unpaid
+  remainder reads as RESOLVED because it has a linked write-off pledge — not because
+  its own numbers changed. CRM is NOT the general ledger (QuickBooks is) — no
+  double-entry. Mirrors the accounting "−$20 in FY27" (example: $100 pledge booked
+  FY25; $80 paid FY26; FY27 uncollectible → new −$20 write-off pledge in FY27 linked
+  to the FY25 pledge). The write-off pledge must stay OUT of open-pipeline ask (it's
+  settled, not an open ask) yet count as a current-FY negative. The underpaid gift
+  itself is set to the cash that actually landed. (pledge_allocations.sub_amount has
+  NO positivity CHECK, so negative lines store fine; remainder clamps at 0.)
+- General principle: a CLOSED record is immutable; every correction, write-off, or
+  overpayment becomes a NEW linked record in the current open FY (write-off = new
+  offsetting pledge; overpay = new gift), never an in-place edit of the audited row.
 - Post-close over-payment → cannot edit the closed gift → **book a NEW gift** for the
   surplus, recognized in the current open FY.
 
@@ -59,3 +66,20 @@ bulk, merge, QB revert hard-delete, reconciliation stamp, archive) with a shared
 assertMutable() keyed to the governing FY's audit-close date; drive the amount-
 mismatch worklist + resolution actions off the derived status + lifecycle. Do §4.3
 one-count before flipping any consumer to the all-source SUM.
+
+Implementation constraints carried forward (from P1 review — honor in P4/P5):
+- **assertMutable must guard BOTH sides of a mutation.** Block mutating a record
+  whose governing FY is closed, AND block *moving* a record into a closed FY — e.g.
+  editing/adding a pledge_allocation with an earlier `grant_year` can silently drag a
+  pledge's governing FY (earliest grant-year allocation) back into an already-closed
+  year (retroactive freeze), and moving an allocation INTO a closed FY must also be
+  refused. Guard the resulting governing FY, not just the current one.
+- **Null-governing-FY records are always mutable (state it explicitly).** A gift with
+  no `date_received` (or a date outside every FY window) and a pledge whose allocations
+  all have null `grant_year` have no governing FY, so freeze never applies. Decide/keep
+  this as "always mutable" rather than accidentally unfreezable.
+- **Underpaid-pledge detection must exclude already-resolved pledges.** The pre-close
+  checklist / worklist flags underpaid written pledges via `SUM(allocations) > paid`.
+  A P5 write-off resolves via a *linked* new offsetting pledge (the original's numbers
+  never change), so this query will keep flagging the original FOREVER unless it also
+  excludes pledges that already have a linked write-off. Add that exclusion in P5.

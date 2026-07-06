@@ -817,10 +817,60 @@ export interface FiscalYear {
   label: string;
   startDate?: string | null;
   endDate?: string | null;
+  /** The date this FY's external audit CLOSED. Non-null = closed: every gift/pledge governed by this FY is frozen (a gift by its date_received FY; a pledge by its recognized FY). Corrections become NEW linked records in the current open FY. Null = still mutable. */
+  auditClosedAt?: string | null;
+  /** The admin who closed (or last re-closed) the audit. Null if never closed or that user row was removed. */
+  auditClosedByUserId?: string | null;
   /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
   archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Admin: close a fiscal year's external audit. Once closed, every gift/pledge governed by this FY is frozen and corrections become new records in the current open FY. Reopen is available as a safety valve.
+ */
+export interface CloseFiscalYearBody {
+  /** The real-world date the audit closed. Omit or null to use the current time. */
+  auditClosedAt?: string | null;
+}
+
+export interface PreCloseGift {
+  id: string;
+  amount?: string | null;
+  dateReceived?: string | null;
+  quickbooksTieStatus?: string | null;
+}
+
+export interface PreClosePledge {
+  id: string;
+  /** Sum of pledge_allocations.sub_amount. */
+  expectedAmount: string;
+  paidAmount: string;
+  /** expectedAmount − paidAmount, clamped at 0. */
+  remainder: string;
+}
+
+/**
+ * Read-only advisory: what will freeze — and what is still unresolved — when this FY's audit closes.
+ */
+export interface FiscalYearPreCloseChecklist {
+  fiscalYearId: string;
+  label: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  /** Non-null = this FY is already closed. */
+  auditClosedAt: string | null;
+  /** Non-archived gifts whose date_received falls within this FY — the records that freeze on close. Zero when the FY has no start/end date set. */
+  giftsGoverned: number;
+  /** Subset of governed gifts whose recorded amount does not tie to accounting (quickbooks_tie_status = amount_mismatch or missing). Resolve these before closing. */
+  giftsUnresolved: number;
+  /** Written pledges with an allocation in this FY whose paid amount is below committed (informational; a multi-year pledge appears under each grant year it touches until the governing-FY freeze lands). */
+  pledgesUnderpaid: number;
+  /** Up to 25 unresolved governed gifts, newest first. */
+  sampleGifts: PreCloseGift[];
+  /** Up to 25 underpaid pledges touching this FY. */
+  samplePledges: PreClosePledge[];
 }
 
 export interface DashboardCounts {
