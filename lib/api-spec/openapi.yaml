@@ -9415,6 +9415,15 @@ components:
         emailMessageId:  { type: string, nullable: true }
         emailSentAt:     { type: string, format: date-time, nullable: true }
         createdAt:       { type: string, format: date-time }
+    GrantLeadSourceEmail:
+      type: object
+      description: "Compact reference to a source email ('sighting') that produced this lead, for opening the original message from the list."
+      required: [emailMessageId, gmailMessageId, mailboxUserName, emailSentAt]
+      properties:
+        emailMessageId:  { type: string, nullable: true, description: "Internal email_messages row id, if the message has been synced into the CRM." }
+        gmailMessageId:  { type: string, nullable: true, description: "Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced." }
+        mailboxUserName: { type: string, nullable: true, description: "Display name of the mailbox that received this email." }
+        emailSentAt:     { type: string, format: date-time, nullable: true, description: "When the source email was sent." }
     GrantLead:
       type: object
       required: [id, dedupeKey, status, title, createdAt, updatedAt]
@@ -9442,6 +9451,7 @@ components:
         updatedAt:                { type: string, format: date-time }
         sightingCount:            { type: integer, description: "Number of inboxes that received this lead." }
         sightingUserIds:          { type: array, items: { type: string }, description: "Mailbox user IDs who received this lead (for display)." }
+        sourceEmails:             { type: array, items: { $ref: "#/components/schemas/GrantLeadSourceEmail" }, description: "Source emails that produced this lead, most-recent first, for opening the original message." }
     GrantLeadDetail:
       allOf:
         - { $ref: "#/components/schemas/GrantLead" }

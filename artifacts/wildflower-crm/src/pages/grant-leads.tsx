@@ -40,9 +40,10 @@ import {
   usePersonName,
   useHouseholdName,
 } from "@/components/entity-picker";
-import { Lightbulb, MoreHorizontal, ExternalLink, Inbox, UserCheck, ClipboardList, ChevronDown, ChevronUp } from "lucide-react";
-import type { GrantLead } from "@workspace/api-client-react";
+import { Lightbulb, MoreHorizontal, ExternalLink, Inbox, UserCheck, ClipboardList, ChevronDown, ChevronUp, Mail } from "lucide-react";
+import type { GrantLead, GrantLeadSourceEmail } from "@workspace/api-client-react";
 import { TasksPanel, AddTaskDialog } from "@/components/tasks-panel";
+import { EmailDetailDialog } from "@/components/email-detail-dialog";
 
 type StatusFilter = "active" | "all" | "archived" | "converted";
 
@@ -201,6 +202,95 @@ function ConvertDialog({
   );
 }
 
+function gmailDeepLink(gmailMessageId: string): string {
+  return `https://mail.google.com/mail/u/0/#all/${gmailMessageId}`;
+}
+
+function sourceLabel(src: GrantLeadSourceEmail): string {
+  const who = src.mailboxUserName ?? "Unknown inbox";
+  const when = src.emailSentAt
+    ? new Date(src.emailSentAt).toLocaleDateString()
+    : null;
+  return when ? `${who} · ${when}` : who;
+}
+
+/**
+ * "View source email" affordance for a grant lead. Opens the internal email
+ * viewer when the source is synced (emailMessageId), otherwise falls back to a
+ * Gmail deep link. Renders nothing when there is no usable source reference.
+ */
+function SourceEmailLink({ sources }: { sources: GrantLeadSourceEmail[] }) {
+  const [openEmailId, setOpenEmailId] = useState<string | null>(null);
+
+  const usable = sources.filter((s) => s.emailMessageId || s.gmailMessageId);
+  if (usable.length === 0) return null;
+
+  const openSource = (src: GrantLeadSourceEmail) => {
+    if (src.emailMessageId) {
+      setOpenEmailId(src.emailMessageId);
+    } else if (src.gmailMessageId) {
+      window.open(gmailDeepLink(src.gmailMessageId), "_blank", "noreferrer");
+    }
+  };
+
+  const dialog = (
+    <EmailDetailDialog emailId={openEmailId} onClose={() => setOpenEmailId(null)} />
+  );
+
+  if (usable.length === 1) {
+    const src = usable[0]!;
+    return (
+      <>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-primary hover:underline"
+          onClick={(e) => {
+            e.stopPropagation();
+            openSource(src);
+          }}
+        >
+          <Mail className="h-3 w-3" />
+          View source email
+        </button>
+        {dialog}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-primary hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Mail className="h-3 w-3" />
+            View source email
+            <ChevronDown className="h-3 w-3" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="max-w-xs">
+          {usable.map((src, i) => (
+            <DropdownMenuItem
+              key={src.emailMessageId ?? src.gmailMessageId ?? i}
+              onClick={() => openSource(src)}
+            >
+              <Mail className="h-3.5 w-3.5 mr-2 shrink-0" />
+              <span className="truncate">{sourceLabel(src)}</span>
+              {!src.emailMessageId && src.gmailMessageId && (
+                <ExternalLink className="h-3 w-3 ml-2 shrink-0 text-muted-foreground" />
+              )}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {dialog}
+    </>
+  );
+}
+
 function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => void }) {
   const { user } = useUser();
   const { toast } = useToast();
@@ -329,6 +419,9 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
               <span>
                 {lead.sightingCount === 1 ? "1 inbox" : `${lead.sightingCount} inboxes`}
               </span>
+            )}
+            {lead.sourceEmails && lead.sourceEmails.length > 0 && (
+              <SourceEmailLink sources={lead.sourceEmails} />
             )}
             {lead.assigneeUserId && (
               <span className="flex items-center gap-1">

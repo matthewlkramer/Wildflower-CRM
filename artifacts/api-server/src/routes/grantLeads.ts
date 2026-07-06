@@ -41,11 +41,19 @@ router.use(requireAuth);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+type GrantLeadSourceEmail = {
+  emailMessageId: string | null;
+  gmailMessageId: string | null;
+  mailboxUserName: string | null;
+  emailSentAt: string | null;
+};
+
 function grantLeadRow(row: typeof grantLeads.$inferSelect & {
   targetOrganizationName?: string | null;
   assigneeUserName?: string | null;
   sightingCount?: number;
   sightingUserIds?: string[];
+  sourceEmails?: GrantLeadSourceEmail[];
 }) {
   return {
     id: row.id,
@@ -71,6 +79,7 @@ function grantLeadRow(row: typeof grantLeads.$inferSelect & {
     updatedAt: row.updatedAt.toISOString(),
     sightingCount: row.sightingCount ?? 0,
     sightingUserIds: row.sightingUserIds ?? [],
+    sourceEmails: row.sourceEmails ?? [],
   };
 }
 
@@ -83,7 +92,7 @@ async function enrichLeads(rows: (typeof grantLeads.$inferSelect)[]) {
     ...rows.map((r) => r.assigneeUserId).filter(Boolean) as string[],
   ])];
 
-  const [orgRows, userRows, sightingAgg] = await Promise.all([
+  const [orgRows, userRows, sightingAgg, sourceRows] = await Promise.all([
     orgIds.length > 0
       ? db.select({ id: organizations.id, name: organizations.name })
           .from(organizations)
@@ -103,11 +112,45 @@ async function enrichLeads(rows: (typeof grantLeads.$inferSelect)[]) {
       .from(grantLeadSightings)
       .where(inArray(grantLeadSightings.grantLeadId, ids))
       .groupBy(grantLeadSightings.grantLeadId),
+    db
+      .select({
+        grantLeadId: grantLeadSightings.grantLeadId,
+        emailMessageId: grantLeadSightings.emailMessageId,
+        gmailMessageId: grantLeadSightings.gmailMessageId,
+        emailSentAt: grantLeadSightings.emailSentAt,
+        createdAt: grantLeadSightings.createdAt,
+        mailboxUserName: sql<string | null>`(SELECT concat_ws(' ', first_name, last_name) FROM users WHERE id = ${grantLeadSightings.mailboxUserId})`,
+      })
+      .from(grantLeadSightings)
+      .where(inArray(grantLeadSightings.grantLeadId, ids))
+      // Most-recent first; undated sightings sort last (plain DESC would
+      // put NULLs first in Postgres). Single-table query, so the bare
+      // column reference qualifies unambiguously.
+      .orderBy(
+        sql`${grantLeadSightings.emailSentAt} DESC NULLS LAST`,
+        desc(grantLeadSightings.createdAt),
+      ),
   ]);
 
   const orgMap = new Map(orgRows.map((o) => [o.id, o.name]));
   const userMap = new Map(userRows.map((u) => [u.id, [u.firstName, u.lastName].filter(Boolean).join(" ")]));
   const sightingMap = new Map(sightingAgg.map((s) => [s.grantLeadId, s]));
+
+  // Group source emails per lead, preserving the most-recent-first order and
+  // keeping only entries that can actually open a message (internal record or
+  // Gmail id). Ordering is stable from the query's ORDER BY above.
+  const sourceMap = new Map<string, GrantLeadSourceEmail[]>();
+  for (const s of sourceRows) {
+    if (!s.emailMessageId && !s.gmailMessageId) continue;
+    const list = sourceMap.get(s.grantLeadId) ?? [];
+    list.push({
+      emailMessageId: s.emailMessageId ?? null,
+      gmailMessageId: s.gmailMessageId ?? null,
+      mailboxUserName: s.mailboxUserName ?? null,
+      emailSentAt: s.emailSentAt?.toISOString() ?? null,
+    });
+    sourceMap.set(s.grantLeadId, list);
+  }
 
   return rows.map((row) => {
     const s = sightingMap.get(row.id);
@@ -117,6 +160,7 @@ async function enrichLeads(rows: (typeof grantLeads.$inferSelect)[]) {
       assigneeUserName: row.assigneeUserId ? (userMap.get(row.assigneeUserId) ?? null) : null,
       sightingCount: s ? Number(s.sightingCount) : 0,
       sightingUserIds: s?.sightingUserIds ?? [],
+      sourceEmails: sourceMap.get(row.id) ?? [],
     });
   });
 }

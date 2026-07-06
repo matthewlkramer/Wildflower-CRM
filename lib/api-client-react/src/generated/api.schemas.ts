@@ -6614,6 +6614,20 @@ export interface GrantLeadSighting {
   createdAt: string;
 }
 
+/**
+ * Compact reference to a source email ('sighting') that produced this lead, for opening the original message from the list.
+ */
+export interface GrantLeadSourceEmail {
+  /** Internal email_messages row id, if the message has been synced into the CRM. */
+  emailMessageId: string | null;
+  /** Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced. */
+  gmailMessageId: string | null;
+  /** Display name of the mailbox that received this email. */
+  mailboxUserName: string | null;
+  /** When the source email was sent. */
+  emailSentAt: string | null;
+}
+
 export interface GrantLead {
   id: string;
   dedupeKey: string;
@@ -6642,6 +6656,8 @@ export interface GrantLead {
   sightingCount?: number;
   /** Mailbox user IDs who received this lead (for display). */
   sightingUserIds?: string[];
+  /** Source emails that produced this lead, most-recent first, for opening the original message. */
+  sourceEmails?: GrantLeadSourceEmail[];
 }
 
 export type GrantLeadDetail = GrantLead & {

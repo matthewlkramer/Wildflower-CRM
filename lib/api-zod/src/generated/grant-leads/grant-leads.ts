@@ -51,7 +51,13 @@ export const ListGrantLeadsResponse = zod.object({
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
-  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).')
+  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "sourceEmails": zod.array(zod.object({
+  "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
+  "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
+  "mailboxUserName": zod.string().nullable().describe('Display name of the mailbox that received this email.'),
+  "emailSentAt": zod.string().datetime({}).nullable().describe('When the source email was sent.')
+}).describe('Compact reference to a source email (\'sighting\') that produced this lead, for opening the original message from the list.')).optional().describe('Source emails that produced this lead, most-recent first, for opening the original message.')
 })),
   "pagination": zod.object({
   "page": zod.number(),
@@ -87,7 +93,13 @@ export const GetGrantLeadResponse = zod.object({
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
-  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).')
+  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "sourceEmails": zod.array(zod.object({
+  "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
+  "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
+  "mailboxUserName": zod.string().nullable().describe('Display name of the mailbox that received this email.'),
+  "emailSentAt": zod.string().datetime({}).nullable().describe('When the source email was sent.')
+}).describe('Compact reference to a source email (\'sighting\') that produced this lead, for opening the original message from the list.')).optional().describe('Source emails that produced this lead, most-recent first, for opening the original message.')
 }).and(zod.object({
   "sightings": zod.array(zod.object({
   "id": zod.string(),
@@ -131,7 +143,13 @@ export const ClaimGrantLeadResponse = zod.object({
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
-  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).')
+  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "sourceEmails": zod.array(zod.object({
+  "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
+  "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
+  "mailboxUserName": zod.string().nullable().describe('Display name of the mailbox that received this email.'),
+  "emailSentAt": zod.string().datetime({}).nullable().describe('When the source email was sent.')
+}).describe('Compact reference to a source email (\'sighting\') that produced this lead, for opening the original message from the list.')).optional().describe('Source emails that produced this lead, most-recent first, for opening the original message.')
 })
 
 /**
@@ -168,7 +186,13 @@ export const AssignGrantLeadResponse = zod.object({
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
-  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).')
+  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "sourceEmails": zod.array(zod.object({
+  "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
+  "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
+  "mailboxUserName": zod.string().nullable().describe('Display name of the mailbox that received this email.'),
+  "emailSentAt": zod.string().datetime({}).nullable().describe('When the source email was sent.')
+}).describe('Compact reference to a source email (\'sighting\') that produced this lead, for opening the original message from the list.')).optional().describe('Source emails that produced this lead, most-recent first, for opening the original message.')
 })
 
 /**
@@ -201,7 +225,13 @@ export const ArchiveGrantLeadResponse = zod.object({
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
-  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).')
+  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "sourceEmails": zod.array(zod.object({
+  "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
+  "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
+  "mailboxUserName": zod.string().nullable().describe('Display name of the mailbox that received this email.'),
+  "emailSentAt": zod.string().datetime({}).nullable().describe('When the source email was sent.')
+}).describe('Compact reference to a source email (\'sighting\') that produced this lead, for opening the original message from the list.')).optional().describe('Source emails that produced this lead, most-recent first, for opening the original message.')
 })
 
 /**
@@ -245,7 +275,13 @@ export const SplitGrantLeadResponse = zod.object({
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
-  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).')
+  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "sourceEmails": zod.array(zod.object({
+  "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
+  "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
+  "mailboxUserName": zod.string().nullable().describe('Display name of the mailbox that received this email.'),
+  "emailSentAt": zod.string().datetime({}).nullable().describe('When the source email was sent.')
+}).describe('Compact reference to a source email (\'sighting\') that produced this lead, for opening the original message from the list.')).optional().describe('Source emails that produced this lead, most-recent first, for opening the original message.')
 }),
   "splitOff": zod.object({
   "id": zod.string(),
@@ -270,7 +306,13 @@ export const SplitGrantLeadResponse = zod.object({
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
-  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).')
+  "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "sourceEmails": zod.array(zod.object({
+  "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
+  "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
+  "mailboxUserName": zod.string().nullable().describe('Display name of the mailbox that received this email.'),
+  "emailSentAt": zod.string().datetime({}).nullable().describe('When the source email was sent.')
+}).describe('Compact reference to a source email (\'sighting\') that produced this lead, for opening the original message from the list.')).optional().describe('Source emails that produced this lead, most-recent first, for opening the original message.')
 }).and(zod.object({
   "sightings": zod.array(zod.object({
   "id": zod.string(),
