@@ -43,6 +43,10 @@ vi.mock("../middlewares/requireAuth", () => ({
 const RUN = `lorg_${Date.now()}`;
 const ORG_ID = `${RUN}_org`;
 const ENTITY_ID = `${RUN}_entity`;
+// A dedicated entity for the A002 read-source block so its FY-scoped goal /
+// allocation rows can't collide with the dual-write block's route-created goal
+// on ENTITY_ID (breakdown reads are scoped to this entity).
+const ENTITY_RS = `${RUN}_entity_rs`;
 const FY_ID = `${RUN}_fy`;
 
 type Db = typeof import("@workspace/db");
@@ -135,6 +139,92 @@ async function seedGift(
   return id;
 }
 
+// ── A002 read-source seeds ──────────────────────────────────────────────────
+// Each of these deliberately DESYNCS the legacy signal from the authoritative
+// `loan_or_grant` flag, then asserts the analytics category buckets follow the
+// FLAG. If any bucket still read the legacy type / fundraising_category, the row
+// would land in the wrong track and the assertion would fail — so these tests
+// prove the read cutover, not just the dual-write. All rows sit on ENTITY_RS and
+// the breakdown reads are scoped to it, isolating them from the dual-write block.
+
+/** Seed a goal-counting gift + allocation with type ⟂ loan_or_grant. */
+async function seedGiftDesynced(
+  subAmount: string,
+  type: "standard_gift" | "loan_fund_investment",
+  loanOrGrant: "loan" | "grant",
+): Promise<string> {
+  const id = nextId("rs_gift");
+  await db.insert(schema.giftsAndPayments).values({
+    id,
+    amount: subAmount,
+    organizationId: ORG_ID,
+    type,
+    loanOrGrant,
+  });
+  await db.insert(schema.giftAllocations).values({
+    id: nextId("rs_alloc"),
+    giftId: id,
+    subAmount,
+    entityId: ENTITY_RS,
+    grantYear: FY_ID,
+  });
+  seededGiftIds.push(id);
+  return id;
+}
+
+/** Seed an OPEN opp + pledge allocation with fundraising_category ⟂ loan_or_grant. */
+async function seedOpenOppDesynced(
+  subAmount: string,
+  fundraisingCategory: "revenue" | "loan_capital",
+  loanOrGrant: "loan" | "grant",
+): Promise<string> {
+  const id = nextId("rs_opp");
+  await db.insert(schema.opportunitiesAndPledges).values({
+    id,
+    name: `LorG readsrc ${id}`,
+    organizationId: ORG_ID,
+    status: "open",
+    stage: "in_conversation",
+    fundraisingCategory,
+    loanOrGrant,
+  });
+  await db.insert(schema.pledgeAllocations).values({
+    id: nextId("rs_palloc"),
+    pledgeOrOpportunityId: id,
+    subAmount,
+    entityId: ENTITY_RS,
+    grantYear: FY_ID,
+  });
+  seededPledgeIds.push(id);
+  return id;
+}
+
+/** Seed a per-entity FY goal with category ⟂ loan_or_grant (PK is by category). */
+async function seedGoalDesynced(
+  goalAmount: string,
+  category: "revenue" | "loan_capital",
+  loanOrGrant: "loan" | "grant",
+): Promise<void> {
+  await db.insert(schema.fiscalYearEntityGoals).values({
+    fiscalYearId: FY_ID,
+    entityId: ENTITY_RS,
+    category,
+    goalAmount,
+    loanOrGrant,
+  });
+}
+
+async function readSourceBreakdown(): Promise<any> {
+  const res = await fetch(
+    `${baseUrl}/api/fiscal-year-breakdown/${FY_ID}?entityId=${ENTITY_RS}`,
+  );
+  const json = await res.json();
+  if (res.status !== 200) {
+    throw new Error(`breakdown ${res.status}: ${JSON.stringify(json)}`);
+  }
+  return json;
+}
+
 beforeAll(async () => {
   if (!HAS_DB) return;
   const dbMod = await import("@workspace/db");
@@ -164,6 +254,7 @@ beforeAll(async () => {
   });
   await db.insert(schema.organizations).values({ id: ORG_ID, name: `LorG Org ${RUN}` });
   await db.insert(schema.entities).values({ id: ENTITY_ID, name: `LorG Entity ${RUN}` });
+  await db.insert(schema.entities).values({ id: ENTITY_RS, name: `LorG Entity RS ${RUN}` });
   await db.insert(schema.fiscalYears).values({ id: FY_ID, label: `FY ${RUN}` });
 
   const { default: app } = await import("../app");
@@ -203,6 +294,7 @@ afterAll(async () => {
     .where(eqFn(schema.bulkOperations.actorUserId, TEST_USER_ID));
   await db.delete(schema.fiscalYears).where(eqFn(schema.fiscalYears.id, FY_ID));
   await db.delete(schema.entities).where(eqFn(schema.entities.id, ENTITY_ID));
+  await db.delete(schema.entities).where(eqFn(schema.entities.id, ENTITY_RS));
   await db.delete(schema.organizations).where(eqFn(schema.organizations.id, ORG_ID));
   await db.delete(schema.users).where(eqFn(schema.users.id, TEST_USER_ID));
 }, 60_000);
@@ -405,3 +497,51 @@ describe.skipIf(!HAS_DB)("loan_or_grant dual-write", () => {
     expect(pledge?.fundraisingCategory).toBe("loan_capital");
   });
 });
+
+describe.skipIf(!HAS_DB)(
+  "loan_or_grant read source (A002) — analytics bucket by the flag, not the legacy signal",
+  () => {
+    it("buckets a gift by loan_or_grant even when the legacy `type` disagrees", async () => {
+      // type=standard_gift (→ legacy grant) but flag=loan ⇒ must land in loan capital.
+      const flagLoan = await seedGiftDesynced("1000.00", "standard_gift", "loan");
+      // type=loan_fund_investment (→ legacy loan) but flag=grant ⇒ must land in revenue.
+      const flagGrant = await seedGiftDesynced("2000.00", "loan_fund_investment", "grant");
+
+      const body = await readSourceBreakdown();
+      const loanIds = body.loanCapital.received.rows.map((r: { giftId: string }) => r.giftId);
+      const revIds = body.revenue.received.rows.map((r: { giftId: string }) => r.giftId);
+
+      expect(loanIds).toContain(flagLoan);
+      expect(revIds).not.toContain(flagLoan);
+      expect(revIds).toContain(flagGrant);
+      expect(loanIds).not.toContain(flagGrant);
+    });
+
+    it("buckets an open opp by loan_or_grant even when the legacy fundraising_category disagrees", async () => {
+      const flagLoan = await seedOpenOppDesynced("3000.00", "revenue", "loan");
+      const flagGrant = await seedOpenOppDesynced("4000.00", "loan_capital", "grant");
+
+      const body = await readSourceBreakdown();
+      const loanIds = body.loanCapital.openPipeline.rows.map(
+        (r: { opportunityId: string }) => r.opportunityId,
+      );
+      const revIds = body.revenue.openPipeline.rows.map(
+        (r: { opportunityId: string }) => r.opportunityId,
+      );
+
+      expect(loanIds).toContain(flagLoan);
+      expect(revIds).not.toContain(flagLoan);
+      expect(revIds).toContain(flagGrant);
+      expect(loanIds).not.toContain(flagGrant);
+    });
+
+    it("buckets an FY goal by loan_or_grant even when the legacy category disagrees", async () => {
+      await seedGoalDesynced("5000.00", "revenue", "loan"); // flag loan → loan capital
+      await seedGoalDesynced("700.00", "loan_capital", "grant"); // flag grant → revenue
+
+      const body = await readSourceBreakdown();
+      expect(body.loanCapital.goal).toBe("5000.00");
+      expect(body.revenue.goal).toBe("700.00");
+    });
+  },
+);
