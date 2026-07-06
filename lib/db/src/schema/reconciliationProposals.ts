@@ -31,13 +31,17 @@ export const reconciliationProposals = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
-    // Newest-first listing of one card's comments.
+    // Newest-first listing of one card's comments. Plain ascending btree — a
+    // DESC ORDER BY scans it backward at no cost. Do NOT use .desc() here:
+    // drizzle-kit records the DESC ordering in its snapshot but emits CREATE
+    // INDEX without it, so Publish (which diffs the dev DB vs prod) re-issues
+    // the same DROP+CREATE on every deploy and never converges.
     index("reconciliation_proposals_staged_payment_id_created_at_idx").on(
       t.stagedPaymentId,
-      t.createdAt.desc(),
+      t.createdAt,
     ),
-    // Newest-first cross-card feed.
-    index("reconciliation_proposals_created_at_idx").on(t.createdAt.desc()),
+    // Newest-first cross-card feed. Plain ascending btree (see note above).
+    index("reconciliation_proposals_created_at_idx").on(t.createdAt),
   ],
 );
 
