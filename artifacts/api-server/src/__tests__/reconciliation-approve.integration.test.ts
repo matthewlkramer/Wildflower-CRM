@@ -78,6 +78,7 @@ let schema: {
   stripeStagedCharges: Db["stripeStagedCharges"];
   settlementLinks: Db["settlementLinks"];
   giftAmountAllocationReview: Db["giftAmountAllocationReview"];
+  paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -395,6 +396,7 @@ beforeAll(async () => {
     stripeStagedCharges: dbMod.stripeStagedCharges,
     settlementLinks: dbMod.settlementLinks,
     giftAmountAllocationReview: dbMod.giftAmountAllocationReview,
+    paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -758,6 +760,50 @@ describe.skipIf(!HAS_DB)(
       const staged = await readStaged(stagedId);
       expect(staged.status).toBe("reconciled");
       expect(staged.matchedGiftId).toBe(giftId);
+    }, 30_000);
+
+    it("re-targeting a payment already applied to another gift returns a handled 409, not a raw 500", async () => {
+      // Reproduce the QB worker autoApply end-state (Task #553): the payment is
+      // left APPROVED (still approvable) while holding a COUNTED cash-application
+      // to gift A. Re-targeting it onto gift B would apply one payment's money to
+      // two gifts, so the book-once guard throws PaymentOverApplicationError deep
+      // in linkGiftInTx. That must surface as a handled 409 (mapped through the
+      // ReconcileAbort channel), never escape to the global 500 handler.
+      const giftA = await seedGift("100.00");
+      const paymentId = await seedStaged("100.00", { payerName: "Dionne Kirby" });
+      await db
+        .update(schema.stagedPayments)
+        .set({
+          status: "approved",
+          matchStatus: "matched",
+          matchedGiftId: giftA,
+          autoApplied: true,
+        })
+        .where(eqFn(schema.stagedPayments.id, paymentId));
+      await db.insert(schema.paymentApplications).values({
+        id: nextId("pa"),
+        paymentId,
+        giftId: giftA,
+        amountApplied: "100.00",
+        evidenceSource: "quickbooks",
+        matchMethod: "system",
+        linkRole: "counted",
+        lifecycle: "confirmed",
+      });
+
+      const giftB = await seedGift("100.00");
+      const res = await api(`/api/reconciliation/cards/${paymentId}/approve`, {
+        outcome: "link_existing_gift",
+        giftId: giftB,
+      });
+      expect(res.status).toBe(409);
+      expect(res.status).not.toBe(500);
+      expect(res.json.error).toBe("payment_already_applied");
+      expect(typeof res.json.message).toBe("string");
+
+      // The failed re-target rolled back cleanly: the payment still holds gift A.
+      const after = await readStaged(paymentId);
+      expect(after.matchedGiftId).toBe(giftA);
     }, 30_000);
 
     it("composes with the Stripe source switch: one confirmation resolves BOTH conflicts", async () => {

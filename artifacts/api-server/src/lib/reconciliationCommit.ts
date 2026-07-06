@@ -16,6 +16,7 @@ import { buildGiftValuesFromStaged } from "./quickbooksGift";
 import {
   applyPaymentApplication,
   bookStripeChargeApplication,
+  PaymentOverApplicationError,
   qbLedgerExistsForGiftExcludingPayment,
   removePaymentApplicationsForPayment,
   removePaymentApplicationsForStripeCharge,
@@ -801,16 +802,34 @@ export async function linkGiftInTx(
   // charge is separate evidence (it sets the gift's GROSS amount); the QB ledger
   // row still records the QB-settled amount.
   if (staged.amount && Number(staged.amount) > 0) {
-    await applyPaymentApplication(tx, {
-      paymentId: stagedPaymentId,
-      giftId,
-      amountApplied: staged.amount,
-      evidenceSource: "quickbooks",
-      matchMethod: "human",
-      confirmedByUserId: userId,
-      confirmedAt: new Date(),
-      createdTheGift: false,
-    });
+    try {
+      await applyPaymentApplication(tx, {
+        paymentId: stagedPaymentId,
+        giftId,
+        amountApplied: staged.amount,
+        evidenceSource: "quickbooks",
+        matchMethod: "human",
+        confirmedByUserId: userId,
+        confirmedAt: new Date(),
+        createdTheGift: false,
+      });
+    } catch (e) {
+      // The book-once guard refuses to over-apply this payment: it is still
+      // holding a COUNTED cash-application to a DIFFERENT gift (e.g. the QB
+      // worker's auto-match left it `approved` with a system ledger row). A
+      // re-target here would apply one payment's money to two gifts. Surface it
+      // as a handled 409 (like every other in-tx conflict) instead of letting a
+      // raw PaymentOverApplicationError escape to the global 500 handler. The
+      // reviewer must revert that existing match before re-targeting.
+      if (e instanceof PaymentOverApplicationError) {
+        throw new ReconcileAbort(409, {
+          error: "payment_already_applied",
+          message:
+            "This payment is already applied to another gift (an existing match). Revert that reconciliation first, then re-target it here.",
+        });
+      }
+      throw e;
+    }
   }
 
   // Mark the Stripe charge + its payout as permanent reconciled evidence.

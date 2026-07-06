@@ -107,8 +107,11 @@ app.use(
     if (res.headersSent) return next(err);
     const anyErr = err as { status?: number; statusCode?: number; message?: string } | undefined;
     const status = anyErr?.status ?? anyErr?.statusCode ?? 500;
-    (req as unknown as { log?: { error: (...a: unknown[]) => void } }).log?.error(
-      { err },
+    // Always log via the singleton logger (never the optional req.log, which is
+    // silently skipped when pino-http didn't attach) so an unexpected error is
+    // never swallowed. `err` is serialized with its stack trace by pino.
+    logger.error(
+      { err, method: req.method, url: req.originalUrl, status },
       "Unhandled API error",
     );
     res.status(status).json({
