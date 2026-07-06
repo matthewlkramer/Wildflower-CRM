@@ -31,7 +31,8 @@
     "backfill:email-domains": "tsx src/scripts/backfill-email-domains.ts",
     "backfill:task-suggestions": "tsx src/scripts/backfill-task-suggestions.ts",
     "refresh:task-suggestions": "tsx src/scripts/refresh-task-suggestions.ts",
-    "migrate:organizations": "tsx src/scripts/migrate-organizations.ts"
+    "migrate:organizations": "tsx src/scripts/migrate-organizations.ts",
+    "analyze:coding-form-conflicts": "tsx src/scripts/analyze-coding-form-conflicts.ts"
   },
   "dependencies": {
     "@clerk/express": "^2.1.4",

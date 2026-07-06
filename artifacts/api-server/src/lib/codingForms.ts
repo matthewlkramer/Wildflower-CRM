@@ -12,7 +12,11 @@ import {
   tasks,
 } from "@workspace/db/schema";
 import { and, eq, sql, type SQL } from "drizzle-orm";
-import { scoreStagedPayment } from "./quickbooksMatch";
+import {
+  scoreStagedPayment,
+  type MatchMethod,
+  type MatchTier,
+} from "./quickbooksMatch";
 import { newId } from "./helpers";
 
 /**
@@ -159,14 +163,31 @@ async function bestOpportunityFor(
 }
 
 /**
- * Compute and persist a fresh proposed match for a row (donor via the shared
- * scored matcher, then a same-donor opportunity + gift). Clears any prior human
- * confirmation. Donor XOR holds because scoreStagedPayment returns at most one
- * donor FK.
+ * The proposed match for a row: the donor (via the shared scored matcher), the
+ * single unambiguous gift the matcher resolved, and a same-donor opportunity.
+ * Donor XOR holds because scoreStagedPayment returns at most one donor FK.
  */
-export async function rematchRow(
+export interface ProposedMatch {
+  organizationId: string | null;
+  individualGiverPersonId: string | null;
+  householdId: string | null;
+  matchedGiftId: string | null;
+  matchedOpportunityId: string | null;
+  matchScore: number;
+  matchMethod: MatchMethod | null;
+  matchTier: MatchTier;
+}
+
+/**
+ * Compute (READ-ONLY — no write) a fresh proposed match for a row: donor via the
+ * shared scored matcher, then a same-donor opportunity. Extracted so the exact
+ * live match can be reused by read-only tooling (the one-time conflict-analysis
+ * script) without persisting or clearing anything. `rematchRow` layers the write
+ * (+ confirmation reset) on top of this.
+ */
+export async function computeProposedMatch(
   row: CodingFormRowSelect,
-): Promise<CodingFormRowSelect> {
+): Promise<ProposedMatch> {
   const scored = await scoreStagedPayment({
     payerName: row.donorNameRaw,
     payerEmail: null,
@@ -176,24 +197,52 @@ export async function rematchRow(
     dateReceived: row.donationDate ? String(row.donationDate) : null,
   });
 
-  const next: Partial<CodingFormRowSelect> = {
+  const donor = {
     organizationId: scored.donor.organizationId,
     individualGiverPersonId: scored.donor.individualGiverPersonId,
     householdId: scored.donor.householdId,
+  };
+  const withDonor = {
+    ...row,
+    ...donor,
     matchedGiftId: scored.matchedGiftId,
+  } as CodingFormRowSelect;
+  const matchedOpportunityId = await bestOpportunityFor(withDonor);
+
+  return {
+    ...donor,
+    matchedGiftId: scored.matchedGiftId,
+    matchedOpportunityId,
     matchScore: scored.score,
     matchMethod: scored.method,
     matchTier: scored.tier,
-    matchConfirmedAt: null,
-    matchConfirmedByUserId: null,
   };
+}
 
-  const withDonor = { ...row, ...next } as CodingFormRowSelect;
-  next.matchedOpportunityId = await bestOpportunityFor(withDonor);
+/**
+ * Compute and persist a fresh proposed match for a row. Clears any prior human
+ * confirmation.
+ */
+export async function rematchRow(
+  row: CodingFormRowSelect,
+): Promise<CodingFormRowSelect> {
+  const m = await computeProposedMatch(row);
 
   const [updated] = await db
     .update(codingFormRows)
-    .set({ ...next, updatedAt: new Date() })
+    .set({
+      organizationId: m.organizationId,
+      individualGiverPersonId: m.individualGiverPersonId,
+      householdId: m.householdId,
+      matchedGiftId: m.matchedGiftId,
+      matchedOpportunityId: m.matchedOpportunityId,
+      matchScore: m.matchScore,
+      matchMethod: m.matchMethod,
+      matchTier: m.matchTier,
+      matchConfirmedAt: null,
+      matchConfirmedByUserId: null,
+      updatedAt: new Date(),
+    })
     .where(eq(codingFormRows.id, row.id))
     .returning();
   return updated;

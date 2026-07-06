@@ -33,3 +33,16 @@ an admin at `/coding-form-import`.
 
 **Out of scope:** Drive PDF fetch (link captured only), Stripe/Donorbox PII,
 auto-creating opps/gifts (unmatched rows stay flagged for a human).
+
+**PROD row seed + conflict analysis (migration 0100).** Agent can't run `import:coding-forms`
+against prod, so a GENERATOR (`gen:coding-forms-seed` in @workspace/scripts) emits
+a STATIC `0100_seed_coding_form_rows.sql` — one `INSERT ... ON CONFLICT(id) DO
+UPDATE` byte-identical to the importer's write (verify: seed vs importer 30-col
+dump must `diff` empty). Read-only conflict-analysis CSV script lives in
+**api-server** (`analyze:coding-form-conflicts`), NOT scripts: it must reuse the
+live matcher (`scoreStagedPayment`) + `crossChecksFor`, which a leaf pkg can't
+cross-import (rootDir:"src" → TS6059). It reuses `computeProposedMatch` — a
+read-only extraction of `rematchRow` (same match, no write) — so analysis stays in
+lockstep with the app; run with `DATABASE_URL="$PROD_DATABASE_URL"`. One CSV row
+per coding-form row incl. `no_match` (nothing hidden). Dev matching is SPARSE
+(QBO/live money is prod-only) — the meaningful pass is prod.
