@@ -9,6 +9,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { resolveGiftAllocationFreeze, respondFrozen } from "../lib/freezeGuard";
 import { giftAllocationCodingPreview } from "../lib/revenueCoding";
 
 const router: IRouter = Router();
@@ -36,6 +37,9 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateGiftAllocationBody, req.body, res);
     if (!body) return;
+    // Freeze guard: gated by the parent gift's governing FY.
+    const freeze = await resolveGiftAllocationFreeze(body.giftId);
+    if (freeze.frozen) return respondFrozen(res, freeze);
     const [row] = await db
       .insert(giftAllocations)
       .values({
@@ -55,6 +59,15 @@ router.patch(
     const id = paramId(req);
     const [existing] = await db.select().from(giftAllocations).where(eq(giftAllocations.id, id));
     if (!existing) return notFound(res, "allocation");
+    // Freeze guard: block if the current OR (when re-pointed) the target gift's
+    // governing FY is audit-closed.
+    const freeze = await resolveGiftAllocationFreeze(existing.giftId);
+    if (freeze.frozen) return respondFrozen(res, freeze);
+    const targetGiftId = (body as { giftId?: string }).giftId;
+    if (targetGiftId && targetGiftId !== existing.giftId) {
+      const targetFreeze = await resolveGiftAllocationFreeze(targetGiftId);
+      if (targetFreeze.frozen) return respondFrozen(res, targetFreeze);
+    }
     const [row] = await db
       .update(giftAllocations)
       .set({
@@ -83,7 +96,14 @@ router.get(
 router.delete(
   "/gift-allocations/:id",
   asyncHandler(async (req, res) => {
-    await db.delete(giftAllocations).where(eq(giftAllocations.id, paramId(req)));
+    const id = paramId(req);
+    const [existing] = await db.select().from(giftAllocations).where(eq(giftAllocations.id, id));
+    if (existing) {
+      // Freeze guard: gated by the parent gift's governing FY.
+      const freeze = await resolveGiftAllocationFreeze(existing.giftId);
+      if (freeze.frozen) return respondFrozen(res, freeze);
+    }
+    await db.delete(giftAllocations).where(eq(giftAllocations.id, id));
     res.status(204).end();
   }),
 );

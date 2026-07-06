@@ -899,16 +899,18 @@ preserve precision — format with `formatCurrency` on the client.
 
  */
 export interface FiscalYearCategoryMetrics {
-  /** SUM(pledge_allocations.sub_amount) for status='open' opps (of this category) with grant_year = this FY. */
+  /** SUM(pledge_allocations.sub_amount) for status='open', NON-write-off opps (of this category) with grant_year = this FY. */
   openPipelineAsk: string;
-  /** SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps (of this category) with grant_year = this FY. */
+  /** SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open', NON-write-off opps (of this category) with grant_year = this FY. */
   openPipelineWeighted: string;
-  /** Per-pledge UNPAID remainder (at 100%) for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only). */
+  /** Per-pledge UNPAID remainder (at 100%) for status='pledge', NON-write-off opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only). */
   committed: string;
-  /** Per-pledge UNPAID remainder discounted by the pledge's win_probability (0.90 non-conditional / 0.75 conditional) for status='pledge' opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed. */
+  /** Per-pledge UNPAID remainder discounted by the pledge's win_probability (0.90 non-conditional / 0.75 conditional) for status='pledge', NON-write-off opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed. */
   committedWeighted: string;
   /** SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else). */
   received: string;
+  /** SUM(pledge_allocations.sub_amount) for is_write_off pledges (of this category) with grant_year = this FY. Allocations are NEGATIVE, so this is a non-positive number, rendered as its own 'written off' line. NOT folded into committed/received — CRM ≠ GL. */
+  writtenOff: string;
   /** Fundraising goal for the FY+category; null if not set. */
   goal: string | null;
 }
@@ -1798,6 +1800,10 @@ export interface OpportunityOrPledge {
   individualGiverPersonId?: string | null;
   individualAdvisorPersonId?: string | null;
   matchId?: string | null;
+  /** True when this row IS an audit-close write-off: a NEGATIVE offsetting pledge booked in the current open FY against an audited, frozen, under-paid original. Excluded from open-pipeline / committed / win-probability analytics and surfaced as its own negative 'written off' line. */
+  readonly isWriteOff?: boolean;
+  /** When set, the audited original pledge this write-off offsets. On an audited original, the PRESENCE of an active (non-archived) write-off pointing back at it is what marks it 'resolved' in the underpaid-pledge checklist (its own numbers are never mutated). */
+  readonly writeOffOfPledgeId?: string | null;
   readonly status?: OpportunityStatus | null;
   lossType?: OpportunityLossType | null;
   projectedCloseDate?: string | null;
@@ -1953,6 +1959,8 @@ export interface GiftOrPayment {
   advisorPersonId?: string | null;
   grantYear?: string | null;
   giftBeingMatchedId?: string | null;
+  /** When set, the audited original gift this surplus gift offsets. Booked in the current open FY when an audited, frozen gift is over-paid. The original stays quickbooks_tie_status='amount_mismatch' forever; the PRESENCE of an active (non-archived) linked surplus gift is what marks the original 'resolved' in the worklist. */
+  readonly overpayOfGiftId?: string | null;
   primaryContactPersonId?: string | null;
   paymentIntermediaryId?: string | null;
   ownerUserId?: string | null;
@@ -2006,9 +2014,29 @@ export interface GiftOrPayment {
   updatedAt: string;
 }
 
+/**
+ * Derived (never persisted) audit-close state for a pledge, driving the
+post-close "write off remainder" action. A pledge is `frozen` when its
+governing fiscal year (the FY of its made/won date) has closed its audit;
+once frozen its audited numbers can't change, so an uncollected remainder
+is booked as a NEW offsetting write-off pledge in the current open FY.
+
+ */
+export interface PledgeAuditCloseResolution {
+  /** True when the pledge's governing fiscal year has closed its audit. */
+  readonly frozen: boolean;
+  /** Label of the audit-closed governing fiscal year, when frozen. */
+  readonly frozenFiscalYearLabel?: string | null;
+  /** Committed (sum of allocation sub-amounts) minus paid, clamped at 0 ('0.00' when none). Derived server-side; the write-off amount is never supplied by the client. */
+  readonly uncollectedRemainder: string;
+  /** The active (non-archived) write-off pledge that resolves this under-paid audited pledge, if one already exists. */
+  readonly resolvedByWriteOffPledgeId: string | null;
+}
+
 export type OpportunityOrPledgeDetail = OpportunityOrPledge & {
   allocations?: PledgeAllocation[];
   payments?: GiftOrPayment[];
+  auditClose: PledgeAuditCloseResolution;
 };
 
 export interface OpportunityOrPledgeList {
@@ -2158,8 +2186,30 @@ export interface GiftAllocation {
   updatedAt: string;
 }
 
+/**
+ * Derived (never persisted) audit-close state for a gift, driving the
+post-close "book surplus gift" action. A gift is `frozen` when its
+governing fiscal year (the FY of its date_received) has closed its audit;
+once frozen its audited numbers can't change, so an over-payment surplus
+is booked as a NEW gift in the current open FY (the original stays
+quickbooks_tie_status='amount_mismatch' forever and reads as resolved only
+because an active linked surplus gift exists).
+
+ */
+export interface GiftAuditCloseResolution {
+  /** True when the gift's governing fiscal year has closed its audit. */
+  readonly frozen: boolean;
+  /** Label of the audit-closed governing fiscal year, when frozen. */
+  readonly frozenFiscalYearLabel?: string | null;
+  /** Settled evidence gross minus the recorded gift amount, clamped at 0 ('0.00' when none). Derived server-side; the surplus amount is never supplied by the client. */
+  readonly overpaySurplus: string;
+  /** The active (non-archived) surplus gift that resolves this over-paid audited gift, if one already exists. */
+  readonly resolvedByGiftId: string | null;
+}
+
 export type GiftOrPaymentDetail = GiftOrPayment & {
   allocations?: GiftAllocation[];
+  auditClose: GiftAuditCloseResolution;
 };
 
 export interface GiftOrPaymentList {
@@ -6949,6 +6999,22 @@ export interface MergeIntoPledgeResult {
 export interface SplitGiftIntoPledgeBody {
   /** Name for the new pledge. Defaults to the gift's name. */
   name?: string | null;
+}
+
+/**
+ * Optional metadata for an audit-close pledge write-off. The remainder and negative allocations are derived server-side; the client never supplies amounts.
+ */
+export interface WriteOffPledgeBody {
+  /** Optional free-text note explaining why the pledge is being written off (recorded on the write-off pledge's usage notes). */
+  reason?: string | null;
+}
+
+/**
+ * Optional metadata for an audit-close gift over-payment resolution. The surplus amount is derived server-side from evidence precedence; the client never supplies amounts.
+ */
+export interface ResolveGiftOverpayBody {
+  /** Optional free-text note explaining the over-payment (recorded on the surplus gift's details). */
+  reason?: string | null;
 }
 
 /**

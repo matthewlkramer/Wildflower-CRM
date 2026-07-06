@@ -5,6 +5,7 @@ import { eq, inArray, isNull, type SQL } from "drizzle-orm";
 import { newId, notFound, paramId, parseOrBadRequest } from "./helpers";
 import { getAppUser } from "./appRequest";
 import { recordAudit } from "./audit";
+import { freezeMessage, respondFrozen, type FreezeDecision } from "./freezeGuard";
 
 interface ZodLike<T> {
   safeParse(
@@ -81,6 +82,14 @@ export interface ArchiveOneConfig {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   responseColumns?: Record<string, any>;
+  /**
+   * Optional freeze gate (fiscal-year audit close). Resolved by record id BEFORE
+   * the archive/unarchive write; when frozen the request 409s and nothing is
+   * written — archiving or restoring an audit-closed gift/pledge would change an
+   * audited year's totals. Wire this for gifts_and_payments /
+   * opportunities_and_pledges.
+   */
+  freezeResolver?: (id: string) => Promise<FreezeDecision>;
 }
 
 /**
@@ -96,6 +105,13 @@ export async function archiveOne(
 ): Promise<void> {
   const now = new Date();
   const id = paramId(req);
+  if (cfg.freezeResolver) {
+    const freeze = await cfg.freezeResolver(id);
+    if (freeze.frozen) {
+      respondFrozen(res, freeze);
+      return;
+    }
+  }
   // Update + audit row commit atomically (mirrors the bulk_operations pattern).
   const row = await db.transaction(async (tx) => {
     const upd = tx
@@ -133,6 +149,13 @@ export async function unarchiveOne(
   if (!requireAdmin(req, res)) return;
   const now = new Date();
   const id = paramId(req);
+  if (cfg.freezeResolver) {
+    const freeze = await cfg.freezeResolver(id);
+    if (freeze.frozen) {
+      respondFrozen(res, freeze);
+      return;
+    }
+  }
   const row = await db.transaction(async (tx) => {
     const upd = tx
       .update(cfg.table)
@@ -170,6 +193,12 @@ export interface BulkArchiveConfig {
   table: any;
   /** Zod schema for the body ({ ids }). */
   bodySchema: ZodLike<BulkArchiveBody>;
+  /**
+   * Optional per-row freeze gate (fiscal-year audit close). A frozen row is
+   * SKIPPED (recorded in failed[]) and left unarchived. Wire this for
+   * gifts_and_payments / opportunities_and_pledges.
+   */
+  freezeResolver?: (id: string) => Promise<FreezeDecision>;
 }
 
 /**
@@ -208,8 +237,18 @@ export async function executeBulkArchive(
   const succeededIds: string[] = [];
   const failed: BulkFailure[] = [];
   for (const id of uniqueIds) {
-    if (existingIds.has(id)) succeededIds.push(id);
-    else failed.push({ id, message: "not found" });
+    if (!existingIds.has(id)) {
+      failed.push({ id, message: "not found" });
+      continue;
+    }
+    if (cfg.freezeResolver) {
+      const freeze = await cfg.freezeResolver(id);
+      if (freeze.frozen) {
+        failed.push({ id, message: freezeMessage(freeze) });
+        continue;
+      }
+    }
+    succeededIds.push(id);
   }
 
   const actor = getAppUser(req);

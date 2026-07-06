@@ -39,6 +39,7 @@ import type {
   MergeIntoPledgeResult,
   MergeResult,
   NotFoundResponse,
+  ResolveGiftOverpayBody,
   RevertGiftToOpportunityBody,
   RevertGiftToOpportunityResult,
   SplitGiftIntoPledgeBody,
@@ -1124,6 +1125,91 @@ export const useBulkArchiveGiftsAndPayments = <TError = ErrorType<BadRequestResp
         TContext
       > => {
       return useMutation(getBulkArchiveGiftsAndPaymentsMutationOptions(options));
+    }
+    /**
+ * Non-destructively resolves an audited (frozen) gift that was over-paid
+(settled/linked evidence exceeds the entered amount). The original gift is
+NEVER touched — it stays `quickbooks_tie_status='amount_mismatch'`. A NEW
+surplus gift is booked in the CURRENT OPEN fiscal year for the derived
+surplus amount (computed server-side from evidence precedence vs the
+original's amount — NEVER supplied by the client), inheriting the original's
+donor (Donor XOR) and seeded with a starter allocation. The surplus gift
+points back at the original via `overpay_of_gift_id`, which is what marks
+the original "resolved" in the amount-mismatch worklist.
+
+Returns 409 unless ALL hold: the fiscal year GOVERNING the original is
+audit-closed (frozen); the derived surplus is > 0; no active surplus gift
+already exists for it; and a current OPEN fiscal year exists to book into.
+
+ * @summary Book an audit-close surplus gift for an over-paid, frozen gift.
+ */
+export const getResolveGiftOverpayUrl = (id: string,) => {
+
+
+  
+
+  return `/api/gifts-and-payments/${id}/resolve-overpay`
+}
+
+export const resolveGiftOverpay = async (id: string,
+    resolveGiftOverpayBody?: ResolveGiftOverpayBody, options?: RequestInit): Promise<GiftOrPayment> => {
+  
+  return customFetch<GiftOrPayment>(getResolveGiftOverpayUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      resolveGiftOverpayBody,)
+  }
+);}
+  
+
+
+
+export const getResolveGiftOverpayMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveGiftOverpay>>, TError,{id: string;data: BodyType<ResolveGiftOverpayBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resolveGiftOverpay>>, TError,{id: string;data: BodyType<ResolveGiftOverpayBody>}, TContext> => {
+
+const mutationKey = ['resolveGiftOverpay'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveGiftOverpay>>, {id: string;data: BodyType<ResolveGiftOverpayBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  resolveGiftOverpay(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResolveGiftOverpayMutationResult = NonNullable<Awaited<ReturnType<typeof resolveGiftOverpay>>>
+    export type ResolveGiftOverpayMutationBody = BodyType<ResolveGiftOverpayBody>
+    export type ResolveGiftOverpayMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Book an audit-close surplus gift for an over-paid, frozen gift.
+ */
+export const useResolveGiftOverpay = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveGiftOverpay>>, TError,{id: string;data: BodyType<ResolveGiftOverpayBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resolveGiftOverpay>>,
+        TError,
+        {id: string;data: BodyType<ResolveGiftOverpayBody>},
+        TContext
+      > => {
+      return useMutation(getResolveGiftOverpayMutationOptions(options));
     }
     export const getArchiveGiftOrPaymentUrl = (id: string,) => {
 

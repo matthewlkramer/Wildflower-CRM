@@ -32,6 +32,7 @@ import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { ThankYouPanel } from "@/components/thank-you-panel";
 import { TasksPanel } from "@/components/tasks-panel";
 import { SplitGiftIntoPledgeDialog } from "@/components/gift-merge-dialogs";
+import { BookSurplusGiftDialog } from "@/components/audit-close-dialogs";
 import {
   InlineEditBoolean,
   InlineEditCurrency,
@@ -122,6 +123,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [splitOpen, setSplitOpen] = useState(false);
+  const [surplusOpen, setSurplusOpen] = useState(false);
   // "Matching gift" editor — link this gift to the gift it matches (e.g. a
   // corporate match → the employee's original gift) via giftBeingMatchedId.
   const [matchOpen, setMatchOpen] = useState(false);
@@ -363,6 +365,19 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
           Split into pledge
         </Button>
       ) : null}
+      {gift.auditClose.frozen &&
+      Number(gift.auditClose.overpaySurplus) > 0 &&
+      !gift.auditClose.resolvedByGiftId &&
+      !gift.overpayOfGiftId ? (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setSurplusOpen(true)}
+          data-testid="button-book-surplus-gift"
+        >
+          Book surplus gift
+        </Button>
+      ) : null}
       <FlagForResearchDialog
         targetType="gift"
         targetId={gift.id}
@@ -528,8 +543,30 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                 />
               </Row>
               <Row label="QuickBooks tie">
-                <GiftQbTieBadge status={gift.quickbooksTieStatus} />
+                <div className="flex flex-col items-end gap-1">
+                  <GiftQbTieBadge status={gift.quickbooksTieStatus} />
+                  {gift.auditClose.resolvedByGiftId ? (
+                    <Link
+                      href={`/gifts/${gift.auditClose.resolvedByGiftId}`}
+                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                      data-testid="link-surplus-gift"
+                    >
+                      Over-payment resolved via a linked gift →
+                    </Link>
+                  ) : null}
+                </div>
               </Row>
+              {gift.overpayOfGiftId ? (
+                <Row label="Over-payment of">
+                  <Link
+                    href={`/gifts/${gift.overpayOfGiftId}`}
+                    className="text-sm underline-offset-2 hover:underline"
+                    data-testid="link-original-gift"
+                  >
+                    Original gift →
+                  </Link>
+                </Row>
+              ) : null}
               <Row label="Reconciliation">
                 <ReconciliationLaneBadges lanes={gift.reconciliationLanes} />
               </Row>
@@ -835,6 +872,12 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       onOpenChange={setSplitOpen}
       gift={gift}
       onDone={(pledgeId) => navigate(`/pledges/${pledgeId}`)}
+    />
+    <BookSurplusGiftDialog
+      open={surplusOpen}
+      onOpenChange={setSurplusOpen}
+      gift={gift}
+      onDone={(giftId) => navigate(`/gifts/${giftId}`)}
     />
     <GiftSearchDialog
       open={matchOpen}

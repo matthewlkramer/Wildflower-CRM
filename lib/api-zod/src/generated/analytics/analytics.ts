@@ -46,19 +46,21 @@ export const GetDashboardSummaryResponse = zod.object({
   "endDate": zod.string().date()
 }),
   "revenue": zod.object({
-  "openPipelineAsk": zod.string().describe('SUM(pledge_allocations.sub_amount) for status=\'open\' opps (of this category) with grant_year = this FY.'),
-  "openPipelineWeighted": zod.string().describe('SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status=\'open\' opps (of this category) with grant_year = this FY.'),
-  "committed": zod.string().describe('Per-pledge UNPAID remainder (at 100%) for status=\'pledge\' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status=\'open\' only).'),
-  "committedWeighted": zod.string().describe('Per-pledge UNPAID remainder discounted by the pledge\'s win_probability (0.90 non-conditional \/ 0.75 conditional) for status=\'pledge\' opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.'),
+  "openPipelineAsk": zod.string().describe('SUM(pledge_allocations.sub_amount) for status=\'open\', NON-write-off opps (of this category) with grant_year = this FY.'),
+  "openPipelineWeighted": zod.string().describe('SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status=\'open\', NON-write-off opps (of this category) with grant_year = this FY.'),
+  "committed": zod.string().describe('Per-pledge UNPAID remainder (at 100%) for status=\'pledge\', NON-write-off opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status=\'open\' only).'),
+  "committedWeighted": zod.string().describe('Per-pledge UNPAID remainder discounted by the pledge\'s win_probability (0.90 non-conditional \/ 0.75 conditional) for status=\'pledge\', NON-write-off opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.'),
   "received": zod.string().describe('SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else).'),
+  "writtenOff": zod.string().describe('SUM(pledge_allocations.sub_amount) for is_write_off pledges (of this category) with grant_year = this FY. Allocations are NEGATIVE, so this is a non-positive number, rendered as its own \'written off\' line. NOT folded into committed\/received — CRM ≠ GL.'),
   "goal": zod.string().nullable().describe('Fundraising goal for the FY+category; null if not set.')
 }).describe('Fundraising metrics for one category (revenue OR loan_capital) within a\nfiscal year. All money values are decimal strings (PostgreSQL numeric) to\npreserve precision — format with `formatCurrency` on the client.\n'),
   "loanCapital": zod.object({
-  "openPipelineAsk": zod.string().describe('SUM(pledge_allocations.sub_amount) for status=\'open\' opps (of this category) with grant_year = this FY.'),
-  "openPipelineWeighted": zod.string().describe('SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status=\'open\' opps (of this category) with grant_year = this FY.'),
-  "committed": zod.string().describe('Per-pledge UNPAID remainder (at 100%) for status=\'pledge\' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status=\'open\' only).'),
-  "committedWeighted": zod.string().describe('Per-pledge UNPAID remainder discounted by the pledge\'s win_probability (0.90 non-conditional \/ 0.75 conditional) for status=\'pledge\' opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.'),
+  "openPipelineAsk": zod.string().describe('SUM(pledge_allocations.sub_amount) for status=\'open\', NON-write-off opps (of this category) with grant_year = this FY.'),
+  "openPipelineWeighted": zod.string().describe('SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status=\'open\', NON-write-off opps (of this category) with grant_year = this FY.'),
+  "committed": zod.string().describe('Per-pledge UNPAID remainder (at 100%) for status=\'pledge\', NON-write-off opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status=\'open\' only).'),
+  "committedWeighted": zod.string().describe('Per-pledge UNPAID remainder discounted by the pledge\'s win_probability (0.90 non-conditional \/ 0.75 conditional) for status=\'pledge\', NON-write-off opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.'),
   "received": zod.string().describe('SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else).'),
+  "writtenOff": zod.string().describe('SUM(pledge_allocations.sub_amount) for is_write_off pledges (of this category) with grant_year = this FY. Allocations are NEGATIVE, so this is a non-positive number, rendered as its own \'written off\' line. NOT folded into committed\/received — CRM ≠ GL.'),
   "goal": zod.string().nullable().describe('Fundraising goal for the FY+category; null if not set.')
 }).describe('Fundraising metrics for one category (revenue OR loan_capital) within a\nfiscal year. All money values are decimal strings (PostgreSQL numeric) to\npreserve precision — format with `formatCurrency` on the client.\n')
 }).describe('Per-fiscal-year fundraising metrics, split into two parallel tracks:\n`revenue` (gifts\/grants) and `loanCapital` (loan-fund principal). Loan\nmoney is never mixed into revenue.\n')).describe('Per-FY metrics for the current FY and the next FY (in that order).')

@@ -31,6 +31,7 @@ import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
 import { GrantLetterUpload } from "@/components/grant-letter-upload";
 import { ReportingDeadlinesDialog } from "@/components/reporting-deadlines-dialog";
+import { WriteOffPledgeDialog } from "@/components/audit-close-dialogs";
 import {
   InlineEditBoolean,
   InlineEditDate,
@@ -154,6 +155,7 @@ function OppView({
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [reportingDialogOpen, setReportingDialogOpen] = useState(false);
+  const [writeOffOpen, setWriteOffOpen] = useState(false);
 
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(opp.name ?? "");
@@ -378,6 +380,20 @@ function OppView({
       >
         Edit name
       </Button>
+      {opp.auditClose.frozen &&
+      opp.writtenPledge &&
+      !opp.isWriteOff &&
+      Number(opp.auditClose.uncollectedRemainder) > 0 &&
+      !opp.auditClose.resolvedByWriteOffPledgeId ? (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setWriteOffOpen(true)}
+          data-testid="button-write-off-pledge"
+        >
+          Write off remainder
+        </Button>
+      ) : null}
       <FlagForResearchDialog
         targetType={entityLabel.toLowerCase() === "pledge" ? "pledge" : "opportunity"}
         targetId={opp.id}
@@ -575,7 +591,9 @@ function OppView({
                 !opp.applicationDeadline &&
                 !opp.winProbability &&
                 !opp.writtenPledge &&
-                !opp.grantLetterUrl
+                !opp.grantLetterUrl &&
+                !opp.writeOffOfPledgeId &&
+                !opp.auditClose.resolvedByWriteOffPledgeId
               }
             >
               <div className="space-y-1">
@@ -616,6 +634,28 @@ function OppView({
                     onSave={(next) => patch({ writtenPledge: next ?? false })}
                   />
                 </Row>
+                {opp.auditClose.resolvedByWriteOffPledgeId ? (
+                  <Row label="Uncollected remainder">
+                    <Link
+                      href={`/pledges/${opp.auditClose.resolvedByWriteOffPledgeId}`}
+                      className="text-sm underline-offset-2 hover:underline"
+                      data-testid="link-write-off-pledge"
+                    >
+                      Written off via a linked pledge →
+                    </Link>
+                  </Row>
+                ) : null}
+                {opp.writeOffOfPledgeId ? (
+                  <Row label="Write-off of">
+                    <Link
+                      href={`/pledges/${opp.writeOffOfPledgeId}`}
+                      className="text-sm underline-offset-2 hover:underline"
+                      data-testid="link-original-pledge"
+                    >
+                      Original pledge →
+                    </Link>
+                  </Row>
+                ) : null}
                 <Row label="Grant letter">
                   {/*
                     File upload via presigned URL → /api/storage/objects/<id>.
@@ -869,6 +909,12 @@ function OppView({
         funderName={funderName ?? null}
         open={reportingDialogOpen}
         onOpenChange={setReportingDialogOpen}
+      />
+      <WriteOffPledgeDialog
+        open={writeOffOpen}
+        onOpenChange={setWriteOffOpen}
+        opp={opp}
+        onDone={(pledgeId) => navigate(`/pledges/${pledgeId}`)}
       />
     </>
   );

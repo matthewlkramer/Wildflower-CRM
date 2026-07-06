@@ -107,6 +107,11 @@ type CategoryMetrics = {
   committed: string;
   committedWeighted: string;
   received: string;
+  // Audit-close write-offs booked into THIS FY: the (negative) sum of
+  // is_write_off pledge allocations. A settled correction, not an open ask —
+  // surfaced as its own negative "written off" line, never folded into
+  // committed / open-pipeline / received.
+  writtenOff: string;
   goal: string | null;
 };
 
@@ -117,6 +122,7 @@ function emptyCategoryMetrics(): CategoryMetrics {
     committed: "0",
     committedWeighted: "0",
     received: "0",
+    writtenOff: "0",
     goal: null,
   };
 }
@@ -162,6 +168,10 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
     .where(
       and(
         eq(opportunitiesAndPledges.status, "pledge"),
+        // Audit-close write-offs are status='pledge' too, but they are a
+        // settled negative correction — keep them out of `committed` (they get
+        // their own `writtenOff` line below).
+        eq(opportunitiesAndPledges.isWriteOff, false),
         eq(pledgeAllocations.grantYear, fy.id),
         pledgeAllocCountsTowardGoal,
         hasEntityFilter ? inArray(pledgeAllocations.entityId, entityIds!) : undefined,
@@ -196,7 +206,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
     .groupBy(giftsAndPayments.opportunityId)
     .as("paid_per_opp");
 
-  const [openRows, committedRows, receivedRows, goalRows] = await Promise.all([
+  const [openRows, committedRows, receivedRows, writtenOffRows, goalRows] = await Promise.all([
     db
       .select({
         category: oppCategorySql,
@@ -211,6 +221,9 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
       .where(
         and(
           eq(opportunitiesAndPledges.status, "open"),
+          // A write-off never reads status='open' (it's a written pledge), but
+          // exclude it explicitly so the open-pipeline ask can never absorb one.
+          eq(opportunitiesAndPledges.isWriteOff, false),
           eq(pledgeAllocations.grantYear, fy.id),
           pledgeAllocCountsTowardGoal,
           hasEntityFilter
@@ -260,6 +273,32 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
         ),
       )
       .groupBy(giftCategorySql),
+    // Audit-close write-offs booked INTO this FY. The write-off pledge's
+    // allocations carry grant_year = the open FY they were recognised in and a
+    // NEGATIVE sub_amount, so this sums to a negative "written off" line per
+    // category. Keyed on is_write_off (not status) so it's independent of the
+    // derived pledge status.
+    db
+      .select({
+        category: oppCategorySql,
+        v: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
+      })
+      .from(pledgeAllocations)
+      .innerJoin(
+        opportunitiesAndPledges,
+        eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
+      )
+      .where(
+        and(
+          eq(opportunitiesAndPledges.isWriteOff, true),
+          eq(pledgeAllocations.grantYear, fy.id),
+          pledgeAllocCountsTowardGoal,
+          hasEntityFilter
+            ? inArray(pledgeAllocations.entityId, entityIds!)
+            : undefined,
+        ),
+      )
+      .groupBy(opportunitiesAndPledges.loanOrGrant),
     db
       .select({
         category: goalCategorySql,
@@ -294,6 +333,10 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
   for (const r of receivedRows) {
     if (!isFundraisingCategory(r.category)) continue;
     byCategory[r.category].received = r.v;
+  }
+  for (const r of writtenOffRows) {
+    if (!isFundraisingCategory(r.category)) continue;
+    byCategory[r.category].writtenOff = r.v;
   }
   for (const r of goalRows) {
     if (!isFundraisingCategory(r.category)) continue;

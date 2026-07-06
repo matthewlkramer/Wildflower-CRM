@@ -31,7 +31,8 @@ import type {
   OpportunityOrPledge,
   OpportunityOrPledgeDetail,
   OpportunityOrPledgeList,
-  UpdateOpportunityOrPledgeBody
+  UpdateOpportunityOrPledgeBody,
+  WriteOffPledgeBody
 } from '../api.schemas';
 
 import { customFetch } from '../../custom-fetch';
@@ -577,5 +578,92 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getUnarchiveOpportunityOrPledgeMutationOptions(options));
+    }
+    /**
+ * Non-destructively resolves an audited (frozen) written pledge that was
+under-paid and whose remaining money can no longer be collected. The
+original pledge is NEVER touched. Instead a brand-new offsetting pledge is
+created in the CURRENT OPEN fiscal year with `is_write_off=true`,
+`written_pledge=true`, a negative awarded amount, and NEGATIVE
+pledge_allocations (pro-rata across the original's allocation buckets)
+summing EXACTLY to the uncollected remainder. The write-off points back at
+the original via `write_off_of_pledge_id`, which is what marks the original
+"resolved" in the underpaid-pledge checklist.
+
+Returns 409 unless ALL hold: the original is a written pledge; its
+remainder (SUM(pledge_allocations.sub_amount) − paid) is > 0; the fiscal
+year GOVERNING the original is audit-closed (frozen); no active write-off
+already exists for it; and a current OPEN fiscal year exists to book the
+write-off into.
+
+ * @summary Book an audit-close write-off for an under-paid, frozen written pledge.
+ */
+export const getWriteOffPledgeUrl = (id: string,) => {
+
+
+  
+
+  return `/api/opportunities-and-pledges/${id}/write-off`
+}
+
+export const writeOffPledge = async (id: string,
+    writeOffPledgeBody?: WriteOffPledgeBody, options?: RequestInit): Promise<OpportunityOrPledge> => {
+  
+  return customFetch<OpportunityOrPledge>(getWriteOffPledgeUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      writeOffPledgeBody,)
+  }
+);}
+  
+
+
+
+export const getWriteOffPledgeMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof writeOffPledge>>, TError,{id: string;data: BodyType<WriteOffPledgeBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof writeOffPledge>>, TError,{id: string;data: BodyType<WriteOffPledgeBody>}, TContext> => {
+
+const mutationKey = ['writeOffPledge'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof writeOffPledge>>, {id: string;data: BodyType<WriteOffPledgeBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  writeOffPledge(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type WriteOffPledgeMutationResult = NonNullable<Awaited<ReturnType<typeof writeOffPledge>>>
+    export type WriteOffPledgeMutationBody = BodyType<WriteOffPledgeBody>
+    export type WriteOffPledgeMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Book an audit-close write-off for an under-paid, frozen written pledge.
+ */
+export const useWriteOffPledge = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof writeOffPledge>>, TError,{id: string;data: BodyType<WriteOffPledgeBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof writeOffPledge>>,
+        TError,
+        {id: string;data: BodyType<WriteOffPledgeBody>},
+        TContext
+      > => {
+      return useMutation(getWriteOffPledgeMutationOptions(options));
     }
     

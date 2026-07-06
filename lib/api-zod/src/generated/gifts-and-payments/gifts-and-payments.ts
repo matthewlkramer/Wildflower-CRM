@@ -67,6 +67,7 @@ export const ListGiftsAndPaymentsResponse = zod.object({
   "advisorPersonId": zod.string().nullish(),
   "grantYear": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
+  "overpayOfGiftId": zod.string().nullish().describe('When set, the audited original gift this surplus gift offsets. Booked in the current open FY when an audited, frozen gift is over-paid. The original stays quickbooks_tie_status=\'amount_mismatch\' forever; the PRESENCE of an active (non-archived) linked surplus gift is what marks the original \'resolved\' in the worklist.'),
   "primaryContactPersonId": zod.string().nullish(),
   "paymentIntermediaryId": zod.string().nullish(),
   "ownerUserId": zod.string().nullish(),
@@ -184,6 +185,7 @@ export const GetGiftOrPaymentResponse = zod.object({
   "advisorPersonId": zod.string().nullish(),
   "grantYear": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
+  "overpayOfGiftId": zod.string().nullish().describe('When set, the audited original gift this surplus gift offsets. Booked in the current open FY when an audited, frozen gift is over-paid. The original stays quickbooks_tie_status=\'amount_mismatch\' forever; the PRESENCE of an active (non-archived) linked surplus gift is what marks the original \'resolved\' in the worklist.'),
   "primaryContactPersonId": zod.string().nullish(),
   "paymentIntermediaryId": zod.string().nullish(),
   "ownerUserId": zod.string().nullish(),
@@ -264,7 +266,13 @@ export const GetGiftOrPaymentResponse = zod.object({
   "reimbursableShare": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)').nullish().describe('@deprecated — renamed to reimbursementType.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
-})).optional()
+})).optional(),
+  "auditClose": zod.object({
+  "frozen": zod.boolean().describe('True when the gift\'s governing fiscal year has closed its audit.'),
+  "frozenFiscalYearLabel": zod.string().nullish().describe('Label of the audit-closed governing fiscal year, when frozen.'),
+  "overpaySurplus": zod.string().describe('Settled evidence gross minus the recorded gift amount, clamped at 0 (\'0.00\' when none). Derived server-side; the surplus amount is never supplied by the client.'),
+  "resolvedByGiftId": zod.string().nullable().describe('The active (non-archived) surplus gift that resolves this over-paid audited gift, if one already exists.')
+}).describe('Derived (never persisted) audit-close state for a gift, driving the\npost-close \"book surplus gift\" action. A gift is `frozen` when its\ngoverning fiscal year (the FY of its date_received) has closed its audit;\nonce frozen its audited numbers can\'t change, so an over-payment surplus\nis booked as a NEW gift in the current open FY (the original stays\nquickbooks_tie_status=\'amount_mismatch\' forever and reads as resolved only\nbecause an active linked surplus gift exists).\n')
 }))
 
 export const UpdateGiftOrPaymentParams = zod.object({
@@ -319,6 +327,7 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   "advisorPersonId": zod.string().nullish(),
   "grantYear": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
+  "overpayOfGiftId": zod.string().nullish().describe('When set, the audited original gift this surplus gift offsets. Booked in the current open FY when an audited, frozen gift is over-paid. The original stays quickbooks_tie_status=\'amount_mismatch\' forever; the PRESENCE of an active (non-archived) linked surplus gift is what marks the original \'resolved\' in the worklist.'),
   "primaryContactPersonId": zod.string().nullish(),
   "paymentIntermediaryId": zod.string().nullish(),
   "ownerUserId": zod.string().nullish(),
@@ -436,6 +445,7 @@ export const LinkThankYouEmailResponse = zod.object({
   "advisorPersonId": zod.string().nullish(),
   "grantYear": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
+  "overpayOfGiftId": zod.string().nullish().describe('When set, the audited original gift this surplus gift offsets. Booked in the current open FY when an audited, frozen gift is over-paid. The original stays quickbooks_tie_status=\'amount_mismatch\' forever; the PRESENCE of an active (non-archived) linked surplus gift is what marks the original \'resolved\' in the worklist.'),
   "primaryContactPersonId": zod.string().nullish(),
   "paymentIntermediaryId": zod.string().nullish(),
   "ownerUserId": zod.string().nullish(),
@@ -516,7 +526,13 @@ export const LinkThankYouEmailResponse = zod.object({
   "reimbursableShare": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)').nullish().describe('@deprecated — renamed to reimbursementType.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
-})).optional()
+})).optional(),
+  "auditClose": zod.object({
+  "frozen": zod.boolean().describe('True when the gift\'s governing fiscal year has closed its audit.'),
+  "frozenFiscalYearLabel": zod.string().nullish().describe('Label of the audit-closed governing fiscal year, when frozen.'),
+  "overpaySurplus": zod.string().describe('Settled evidence gross minus the recorded gift amount, clamped at 0 (\'0.00\' when none). Derived server-side; the surplus amount is never supplied by the client.'),
+  "resolvedByGiftId": zod.string().nullable().describe('The active (non-archived) surplus gift that resolves this over-paid audited gift, if one already exists.')
+}).describe('Derived (never persisted) audit-close state for a gift, driving the\npost-close \"book surplus gift\" action. A gift is `frozen` when its\ngoverning fiscal year (the FY of its date_received) has closed its audit;\nonce frozen its audited numbers can\'t change, so an over-payment surplus\nis booked as a NEW gift in the current open FY (the original stays\nquickbooks_tie_status=\'amount_mismatch\' forever and reads as resolved only\nbecause an active linked surplus gift exists).\n')
 }))
 
 export const UnlinkThankYouEmailParams = zod.object({
@@ -760,6 +776,31 @@ export const BulkArchiveGiftsAndPaymentsResponse = zod.object({
 }))
 })
 
+/**
+ * Non-destructively resolves an audited (frozen) gift that was over-paid
+(settled/linked evidence exceeds the entered amount). The original gift is
+NEVER touched — it stays `quickbooks_tie_status='amount_mismatch'`. A NEW
+surplus gift is booked in the CURRENT OPEN fiscal year for the derived
+surplus amount (computed server-side from evidence precedence vs the
+original's amount — NEVER supplied by the client), inheriting the original's
+donor (Donor XOR) and seeded with a starter allocation. The surplus gift
+points back at the original via `overpay_of_gift_id`, which is what marks
+the original "resolved" in the amount-mismatch worklist.
+
+Returns 409 unless ALL hold: the fiscal year GOVERNING the original is
+audit-closed (frozen); the derived surplus is > 0; no active surplus gift
+already exists for it; and a current OPEN fiscal year exists to book into.
+
+ * @summary Book an audit-close surplus gift for an over-paid, frozen gift.
+ */
+export const ResolveGiftOverpayParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ResolveGiftOverpayBody = zod.object({
+  "reason": zod.string().nullish().describe('Optional free-text note explaining the over-payment (recorded on the surplus gift\'s details).')
+}).describe('Optional metadata for an audit-close gift over-payment resolution. The surplus amount is derived server-side from evidence precedence; the client never supplies amounts.')
+
 export const ArchiveGiftOrPaymentParams = zod.object({
   "id": zod.coerce.string()
 })
@@ -787,6 +828,7 @@ export const ArchiveGiftOrPaymentResponse = zod.object({
   "advisorPersonId": zod.string().nullish(),
   "grantYear": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
+  "overpayOfGiftId": zod.string().nullish().describe('When set, the audited original gift this surplus gift offsets. Booked in the current open FY when an audited, frozen gift is over-paid. The original stays quickbooks_tie_status=\'amount_mismatch\' forever; the PRESENCE of an active (non-archived) linked surplus gift is what marks the original \'resolved\' in the worklist.'),
   "primaryContactPersonId": zod.string().nullish(),
   "paymentIntermediaryId": zod.string().nullish(),
   "ownerUserId": zod.string().nullish(),
@@ -873,6 +915,7 @@ export const UnarchiveGiftOrPaymentResponse = zod.object({
   "advisorPersonId": zod.string().nullish(),
   "grantYear": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
+  "overpayOfGiftId": zod.string().nullish().describe('When set, the audited original gift this surplus gift offsets. Booked in the current open FY when an audited, frozen gift is over-paid. The original stays quickbooks_tie_status=\'amount_mismatch\' forever; the PRESENCE of an active (non-archived) linked surplus gift is what marks the original \'resolved\' in the worklist.'),
   "primaryContactPersonId": zod.string().nullish(),
   "paymentIntermediaryId": zod.string().nullish(),
   "ownerUserId": zod.string().nullish(),

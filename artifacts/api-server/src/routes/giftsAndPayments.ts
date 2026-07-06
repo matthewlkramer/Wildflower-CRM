@@ -105,6 +105,7 @@ import {
   MergeGiftsIntoPledgeBody,
   SplitGiftIntoPledgeBody,
   RevertGiftToOpportunityBody,
+  ResolveGiftOverpayBody,
   validateGiftInvariants,
   validateOppInvariants,
   giftTypeToLoanOrGrant,
@@ -113,6 +114,12 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
+import { resolveGiftFreeze, resolveGiftFreezeById, respondFrozen } from "../lib/freezeGuard";
+import { getCurrentOpenFiscalYear, todayInChicago } from "../lib/governingFiscalYear";
+import {
+  computeGiftSurplus,
+  findActiveOverpayChildGiftId,
+} from "../lib/auditCloseResolution";
 import {
   seedInitialGiftAllocation,
   assertGiftHasAllocations,
@@ -408,12 +415,28 @@ async function buildGiftDetail(id: string, viewer: Viewer) {
     .then((r) => r[0] ?? null);
 
   const masked = maskGiftDonorRow(row, viewer);
+  // Derived audit-close resolution state (never persisted — see the
+  // GiftAuditCloseResolution schema). Drives the "book surplus gift" action;
+  // the surplus reuses the resolve-overpay route's shared helper. The surplus
+  // read runs in a trivial read transaction because computeGiftSurplus takes a
+  // Tx (via getGiftPaymentSummary).
+  const giftFreeze = await resolveGiftFreeze(undefined, row.dateReceived);
+  const [overpaySurplusRaw, resolvedByGiftId] = await Promise.all([
+    db.transaction((tx) => computeGiftSurplus(tx, { id: row.id, amount: row.amount })),
+    findActiveOverpayChildGiftId(id),
+  ]);
   return {
     ...masked,
     reconciliationLanes: deriveGiftLanes(masked.quickbooksTieStatus),
     allocations,
     thankYouAttachments,
     donorbox: donorboxEnrichmentOrNull(donorboxRow),
+    auditClose: {
+      frozen: giftFreeze.frozen,
+      frozenFiscalYearLabel: giftFreeze.frozen ? giftFreeze.fiscalYearLabel : null,
+      overpaySurplus: Math.max(0, overpaySurplusRaw).toFixed(2),
+      resolvedByGiftId,
+    },
   };
 }
 
@@ -434,6 +457,13 @@ router.post(
       entity: "gifts_and_payments",
       table: giftsAndPayments,
       bodySchema: BulkUpdateGiftsAndPaymentsBody,
+      // Fiscal-year freeze: skip (fail) any gift whose governing FY is
+      // audit-closed, or a re-date that would move it into a closed FY.
+      freezeCheck: (existing, cleanPatch) =>
+        resolveGiftFreeze(
+          (existing as Record<string, unknown>).dateReceived as string | null | undefined,
+          (cleanPatch as Record<string, unknown>).dateReceived as string | null | undefined,
+        ),
       allowedFields: ["ownerUserId", "type", "paymentMethod", "dateReceived"],
       // Mirror the authoritative loan_or_grant flag whenever a bulk edit
       // changes the gift `type` (legacy `type` stays the read source this
@@ -571,6 +601,9 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateGiftOrPaymentBodyRefined, req.body, res);
     if (!body) return;
+    // Freeze guard: refuse to create a gift dated into an audit-closed FY.
+    const freeze = await resolveGiftFreeze(undefined, body.dateReceived);
+    if (freeze.frozen) return respondFrozen(res, freeze);
     // Wrap in a transaction so the header + its seeded allocation land together:
     // every gift MUST have at least one allocation (the sole home of money scope).
     const [row] = await db.transaction(async (tx) => {
@@ -614,6 +647,128 @@ router.post(
   }),
 );
 
+// Resolve an over-paid, audited (frozen) gift by booking the SURPLUS as a NEW
+// gift in the current open FY, linked back via overpay_of_gift_id. The audited
+// original is NEVER mutated — it stays quickbooks_tie_status='amount_mismatch'
+// forever and reads as "resolved" only because this active linked child exists.
+// Guards: governing FY must actually be audit-closed (pre-close mismatches are
+// corrected in place), the gift must not already have an active surplus child,
+// an open FY must exist to book into, and there must be a positive surplus
+// (derived server-side from settled evidence, never trusted from the client).
+router.post(
+  "/gifts-and-payments/:id/resolve-overpay",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const body = parseOrBadRequest(ResolveGiftOverpayBody, req.body, res);
+    if (!body) return;
+
+    const original = await db
+      .select()
+      .from(giftsAndPayments)
+      .where(eq(giftsAndPayments.id, id))
+      .then((r) => r[0]);
+    if (!original) return notFound(res, "gift");
+
+    // The governing FY must be audit-closed. If it is still open, the mismatch
+    // is corrected in place — the surplus gift is the post-close mechanism.
+    const freeze = await resolveGiftFreeze(undefined, original.dateReceived);
+    if (!freeze.frozen) {
+      return res.status(409).json({
+        error: "fiscal_year_not_closed",
+        message:
+          "This gift's fiscal year is still open — correct it in place instead of booking a surplus gift.",
+      });
+    }
+
+    // At most one active surplus child per audited gift (also enforced by the
+    // partial-unique index on overpay_of_gift_id).
+    const [{ n: existing }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(giftsAndPayments)
+      .where(
+        and(
+          eq(giftsAndPayments.overpayOfGiftId, id),
+          isNull(giftsAndPayments.archivedAt),
+        ),
+      );
+    if (existing > 0) {
+      return res.status(409).json({
+        error: "overpay_resolution_exists",
+        message: "This gift already has an active surplus gift.",
+      });
+    }
+
+    // Surplus lands in the current open FY; if none is open there is nowhere
+    // valid to recognise it.
+    const openFy = await getCurrentOpenFiscalYear();
+    if (!openFy) {
+      return res.status(409).json({
+        error: "no_open_fiscal_year",
+        message: "There is no open fiscal year to book the surplus gift into.",
+      });
+    }
+
+    // Compute the surplus (settled evidence gross minus recorded amount) inside
+    // the mint transaction; a non-positive surplus aborts the mint (nothing is
+    // inserted) and returns 409.
+    const surplusGiftId = newId();
+    let surplus = 0;
+    const row = await db.transaction(async (tx) => {
+      surplus = await computeGiftSurplus(tx, {
+        id: original.id,
+        amount: original.amount,
+      });
+      if (surplus <= 0) return null;
+      const inserted = await tx
+        .insert(giftsAndPayments)
+        .values({
+          id: surplusGiftId,
+          name: original.name ? `Overpayment — ${original.name}` : "Overpayment",
+          // Donor XOR: copy all three FKs (exactly one is non-null on the source).
+          organizationId: original.organizationId,
+          individualGiverPersonId: original.individualGiverPersonId,
+          householdId: original.householdId,
+          amount: surplus.toFixed(2),
+          dateReceived: todayInChicago(),
+          type: original.type,
+          loanOrGrant: giftTypeToLoanOrGrant(original.type),
+          overpayOfGiftId: id,
+          details: body.reason ?? null,
+        })
+        .returning(giftHeaderColumns);
+      const created = inserted[0];
+      if (created) {
+        // Seed the mandatory full-amount allocation in the open FY so the
+        // surplus gift is never scope-less.
+        await seedInitialGiftAllocation(tx, {
+          giftId: created.id,
+          amount: created.amount,
+          dateReceived: created.dateReceived,
+          grantYear: openFy.id,
+        });
+        await assertGiftHasAllocations(tx, created.id);
+      }
+      return created;
+    });
+    if (surplus <= 0) {
+      return res.status(409).json({
+        error: "no_surplus",
+        message: "This gift is not over-paid — there is no surplus to book.",
+      });
+    }
+    await applyGiftQbTieMany(row?.id);
+    if (row) {
+      await auditCreate(
+        req,
+        "gift",
+        row.id,
+        `Booked overpayment surplus of gift ${id}`,
+      );
+    }
+    res.status(201).json(row);
+  }),
+);
+
 router.patch(
   "/gifts-and-payments/:id",
   asyncHandler(async (req, res) => {
@@ -636,6 +791,11 @@ router.patch(
       householdId: merged.householdId,
     });
     if (issues.length) return respondInvariantFailure(res, issues);
+
+    // Freeze guard: block edits to a gift whose governing FY is audit-closed, and
+    // block moving date_received into a closed FY.
+    const freeze = await resolveGiftFreeze(existing.dateReceived, merged.dateReceived);
+    if (freeze.frozen) return respondFrozen(res, freeze);
 
     // Mirror loan_or_grant whenever the legacy `type` is touched (derive from
     // the merged state so an explicit type change maps correctly).
@@ -681,6 +841,7 @@ router.post(
       entity: "gifts_and_payments",
       table: giftsAndPayments,
       bodySchema: BulkArchiveGiftsAndPaymentsBody,
+      freezeResolver: resolveGiftFreezeById,
     });
   }),
 );
@@ -692,6 +853,7 @@ router.post(
       entity: "gift",
       table: giftsAndPayments,
       responseColumns: giftHeaderColumns,
+      freezeResolver: resolveGiftFreezeById,
     });
   }),
 );
@@ -703,6 +865,7 @@ router.post(
       entity: "gift",
       table: giftsAndPayments,
       responseColumns: giftHeaderColumns,
+      freezeResolver: resolveGiftFreezeById,
     });
   }),
 );

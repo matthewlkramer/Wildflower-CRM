@@ -57,6 +57,8 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "individualAdvisorPersonId": zod.string().nullish(),
   "matchId": zod.string().nullish(),
+  "isWriteOff": zod.boolean().optional().describe('True when this row IS an audit-close write-off: a NEGATIVE offsetting pledge booked in the current open FY against an audited, frozen, under-paid original. Excluded from open-pipeline \/ committed \/ win-probability analytics and surfaced as its own negative \'written off\' line.'),
+  "writeOffOfPledgeId": zod.string().nullish().describe('When set, the audited original pledge this write-off offsets. On an audited original, the PRESENCE of an active (non-archived) write-off pointing back at it is what marks it \'resolved\' in the underpaid-pledge checklist (its own numbers are never mutated).'),
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from the\nwrittenPledge outcome flag + payments + lossType on every write:\n  lossType set                              → status = lossType\n  else fully paid (paid ≥ awarded)          → cash_in\n  else writtenPledge = true                 → pledge\n  else                                      → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed but not fully paid; UI labels this\n            \"Waiting for payment\" (stored value stays `pledge`)\n  cash_in — fully paid (sum of non-archived payments ≥ awarded)\n  dormant — paused (mirrors lossType=\'dormant\')\n  lost    — declined\/withdrawn (mirrors lossType=\'lost\')\nTo mark a row dormant\/lost, set the `lossType` field instead. The\ncommitment outcome is the writtenPledge flag — cultivation `stage` no\nlonger feeds status.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
@@ -147,6 +149,8 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "individualAdvisorPersonId": zod.string().nullish(),
   "matchId": zod.string().nullish(),
+  "isWriteOff": zod.boolean().optional().describe('True when this row IS an audit-close write-off: a NEGATIVE offsetting pledge booked in the current open FY against an audited, frozen, under-paid original. Excluded from open-pipeline \/ committed \/ win-probability analytics and surfaced as its own negative \'written off\' line.'),
+  "writeOffOfPledgeId": zod.string().nullish().describe('When set, the audited original pledge this write-off offsets. On an audited original, the PRESENCE of an active (non-archived) write-off pointing back at it is what marks it \'resolved\' in the underpaid-pledge checklist (its own numbers are never mutated).'),
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from the\nwrittenPledge outcome flag + payments + lossType on every write:\n  lossType set                              → status = lossType\n  else fully paid (paid ≥ awarded)          → cash_in\n  else writtenPledge = true                 → pledge\n  else                                      → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed but not fully paid; UI labels this\n            \"Waiting for payment\" (stored value stays `pledge`)\n  cash_in — fully paid (sum of non-archived payments ≥ awarded)\n  dormant — paused (mirrors lossType=\'dormant\')\n  lost    — declined\/withdrawn (mirrors lossType=\'lost\')\nTo mark a row dormant\/lost, set the `lossType` field instead. The\ncommitment outcome is the writtenPledge flag — cultivation `stage` no\nlonger feeds status.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
@@ -228,6 +232,7 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "advisorPersonId": zod.string().nullish(),
   "grantYear": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
+  "overpayOfGiftId": zod.string().nullish().describe('When set, the audited original gift this surplus gift offsets. Booked in the current open FY when an audited, frozen gift is over-paid. The original stays quickbooks_tie_status=\'amount_mismatch\' forever; the PRESENCE of an active (non-archived) linked surplus gift is what marks the original \'resolved\' in the worklist.'),
   "primaryContactPersonId": zod.string().nullish(),
   "paymentIntermediaryId": zod.string().nullish(),
   "ownerUserId": zod.string().nullish(),
@@ -285,7 +290,13 @@ export const GetOpportunityOrPledgeResponse = zod.object({
 }).describe('Read-only Donorbox donation facts joined onto a Stripe-sourced record\n(a Stripe staged charge or a gift minted\/matched from one) by\ndonorbox_donations.stripe_charge_id = stripe_staged_charges.id — a 1:1\njoin present only for Stripe-type Donorbox donations. Enrichment only:\nit NEVER mints a gift (the Stripe sync already pulls those charges). The\nverbatim Donorbox payload, custom questions, and review\/donor-match\nstate are deliberately omitted.\n').nullish().describe('Donorbox donation facts for this gift, joined via its linked Stripe charge (donorbox_donations.stripe_charge_id = the gift\'s matched\/created stripe_staged_charges.id). Populated only on the detail endpoint. Enrichment only — never mints a gift.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
-})).optional()
+})).optional(),
+  "auditClose": zod.object({
+  "frozen": zod.boolean().describe('True when the pledge\'s governing fiscal year has closed its audit.'),
+  "frozenFiscalYearLabel": zod.string().nullish().describe('Label of the audit-closed governing fiscal year, when frozen.'),
+  "uncollectedRemainder": zod.string().describe('Committed (sum of allocation sub-amounts) minus paid, clamped at 0 (\'0.00\' when none). Derived server-side; the write-off amount is never supplied by the client.'),
+  "resolvedByWriteOffPledgeId": zod.string().nullable().describe('The active (non-archived) write-off pledge that resolves this under-paid audited pledge, if one already exists.')
+}).describe('Derived (never persisted) audit-close state for a pledge, driving the\npost-close \"write off remainder\" action. A pledge is `frozen` when its\ngoverning fiscal year (the FY of its made\/won date) has closed its audit;\nonce frozen its audited numbers can\'t change, so an uncollected remainder\nis booked as a NEW offsetting write-off pledge in the current open FY.\n')
 }))
 
 export const UpdateOpportunityOrPledgeParams = zod.object({
@@ -340,6 +351,8 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "individualAdvisorPersonId": zod.string().nullish(),
   "matchId": zod.string().nullish(),
+  "isWriteOff": zod.boolean().optional().describe('True when this row IS an audit-close write-off: a NEGATIVE offsetting pledge booked in the current open FY against an audited, frozen, under-paid original. Excluded from open-pipeline \/ committed \/ win-probability analytics and surfaced as its own negative \'written off\' line.'),
+  "writeOffOfPledgeId": zod.string().nullish().describe('When set, the audited original pledge this write-off offsets. On an audited original, the PRESENCE of an active (non-archived) write-off pointing back at it is what marks it \'resolved\' in the underpaid-pledge checklist (its own numbers are never mutated).'),
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from the\nwrittenPledge outcome flag + payments + lossType on every write:\n  lossType set                              → status = lossType\n  else fully paid (paid ≥ awarded)          → cash_in\n  else writtenPledge = true                 → pledge\n  else                                      → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed but not fully paid; UI labels this\n            \"Waiting for payment\" (stored value stays `pledge`)\n  cash_in — fully paid (sum of non-archived payments ≥ awarded)\n  dormant — paused (mirrors lossType=\'dormant\')\n  lost    — declined\/withdrawn (mirrors lossType=\'lost\')\nTo mark a row dormant\/lost, set the `lossType` field instead. The\ncommitment outcome is the writtenPledge flag — cultivation `stage` no\nlonger feeds status.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
@@ -448,6 +461,8 @@ export const ArchiveOpportunityOrPledgeResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "individualAdvisorPersonId": zod.string().nullish(),
   "matchId": zod.string().nullish(),
+  "isWriteOff": zod.boolean().optional().describe('True when this row IS an audit-close write-off: a NEGATIVE offsetting pledge booked in the current open FY against an audited, frozen, under-paid original. Excluded from open-pipeline \/ committed \/ win-probability analytics and surfaced as its own negative \'written off\' line.'),
+  "writeOffOfPledgeId": zod.string().nullish().describe('When set, the audited original pledge this write-off offsets. On an audited original, the PRESENCE of an active (non-archived) write-off pointing back at it is what marks it \'resolved\' in the underpaid-pledge checklist (its own numbers are never mutated).'),
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from the\nwrittenPledge outcome flag + payments + lossType on every write:\n  lossType set                              → status = lossType\n  else fully paid (paid ≥ awarded)          → cash_in\n  else writtenPledge = true                 → pledge\n  else                                      → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed but not fully paid; UI labels this\n            \"Waiting for payment\" (stored value stays `pledge`)\n  cash_in — fully paid (sum of non-archived payments ≥ awarded)\n  dormant — paused (mirrors lossType=\'dormant\')\n  lost    — declined\/withdrawn (mirrors lossType=\'lost\')\nTo mark a row dormant\/lost, set the `lossType` field instead. The\ncommitment outcome is the writtenPledge flag — cultivation `stage` no\nlonger feeds status.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
@@ -503,6 +518,8 @@ export const UnarchiveOpportunityOrPledgeResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "individualAdvisorPersonId": zod.string().nullish(),
   "matchId": zod.string().nullish(),
+  "isWriteOff": zod.boolean().optional().describe('True when this row IS an audit-close write-off: a NEGATIVE offsetting pledge booked in the current open FY against an audited, frozen, under-paid original. Excluded from open-pipeline \/ committed \/ win-probability analytics and surfaced as its own negative \'written off\' line.'),
+  "writeOffOfPledgeId": zod.string().nullish().describe('When set, the audited original pledge this write-off offsets. On an audited original, the PRESENCE of an active (non-archived) write-off pointing back at it is what marks it \'resolved\' in the underpaid-pledge checklist (its own numbers are never mutated).'),
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from the\nwrittenPledge outcome flag + payments + lossType on every write:\n  lossType set                              → status = lossType\n  else fully paid (paid ≥ awarded)          → cash_in\n  else writtenPledge = true                 → pledge\n  else                                      → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed but not fully paid; UI labels this\n            \"Waiting for payment\" (stored value stays `pledge`)\n  cash_in — fully paid (sum of non-archived payments ≥ awarded)\n  dormant — paused (mirrors lossType=\'dormant\')\n  lost    — declined\/withdrawn (mirrors lossType=\'lost\')\nTo mark a row dormant\/lost, set the `lossType` field instead. The\ncommitment outcome is the writtenPledge flag — cultivation `stage` no\nlonger feeds status.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
@@ -534,4 +551,31 @@ export const UnarchiveOpportunityOrPledgeResponse = zod.object({
   "updatedAt": zod.string().datetime({}),
   "promptForReportingDeadlines": zod.boolean().optional()
 })
+
+/**
+ * Non-destructively resolves an audited (frozen) written pledge that was
+under-paid and whose remaining money can no longer be collected. The
+original pledge is NEVER touched. Instead a brand-new offsetting pledge is
+created in the CURRENT OPEN fiscal year with `is_write_off=true`,
+`written_pledge=true`, a negative awarded amount, and NEGATIVE
+pledge_allocations (pro-rata across the original's allocation buckets)
+summing EXACTLY to the uncollected remainder. The write-off points back at
+the original via `write_off_of_pledge_id`, which is what marks the original
+"resolved" in the underpaid-pledge checklist.
+
+Returns 409 unless ALL hold: the original is a written pledge; its
+remainder (SUM(pledge_allocations.sub_amount) − paid) is > 0; the fiscal
+year GOVERNING the original is audit-closed (frozen); no active write-off
+already exists for it; and a current OPEN fiscal year exists to book the
+write-off into.
+
+ * @summary Book an audit-close write-off for an under-paid, frozen written pledge.
+ */
+export const WriteOffPledgeParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const WriteOffPledgeBody = zod.object({
+  "reason": zod.string().nullish().describe('Optional free-text note explaining why the pledge is being written off (recorded on the write-off pledge\'s usage notes).')
+}).describe('Optional metadata for an audit-close pledge write-off. The remainder and negative allocations are derived server-side; the client never supplies amounts.')
 

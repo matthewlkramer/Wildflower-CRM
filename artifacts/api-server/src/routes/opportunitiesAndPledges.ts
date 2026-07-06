@@ -78,12 +78,20 @@ import {
   UpdateOpportunityOrPledgeBody,
   BulkUpdateOpportunitiesAndPledgesBody,
   BulkArchiveOpportunitiesAndPledgesBody,
+  WriteOffPledgeBody,
   validateOppInvariants,
   legacyCategoryToLoanOrGrant,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
+import { resolvePledgeFreeze, resolvePledgeFreezeById, respondFrozen } from "../lib/freezeGuard";
+import { getCurrentOpenFiscalYear, todayInChicago } from "../lib/governingFiscalYear";
+import {
+  computePledgeUncollectedRemainder,
+  findActiveWriteOffChildPledgeId,
+  proRataNegativeShares,
+} from "../lib/auditCloseResolution";
 import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
@@ -346,12 +354,30 @@ router.get(
       .where(eq(opportunitiesAndPledges.id, id))
       .then((r) => r[0]);
     if (!row) return notFound(res, "opportunity");
-    const [allocations, payments] = await Promise.all([
+    const [
+      allocations,
+      payments,
+      pledgeFreeze,
+      uncollectedRaw,
+      resolvedByWriteOffPledgeId,
+    ] = await Promise.all([
       db.select().from(pledgeAllocations).where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
       // Named gift-header projection for the nested `payments` array.
       db.select(giftHeaderColumns).from(giftsAndPayments).where(eq(giftsAndPayments.opportunityId, id)),
+      // Derived audit-close resolution state (never persisted — see the
+      // PledgeAuditCloseResolution schema). Drives the "write off remainder"
+      // action; the amount reuses the write-off route's shared helper.
+      resolvePledgeFreeze(undefined, row.actualCompletionDate),
+      computePledgeUncollectedRemainder(id),
+      findActiveWriteOffChildPledgeId(id),
     ]);
-    res.json({ ...maskOppDonorRow(row, getViewer(req)), allocations, payments });
+    const auditClose = {
+      frozen: pledgeFreeze.frozen,
+      frozenFiscalYearLabel: pledgeFreeze.frozen ? pledgeFreeze.fiscalYearLabel : null,
+      uncollectedRemainder: Math.max(0, uncollectedRaw).toFixed(2),
+      resolvedByWriteOffPledgeId,
+    };
+    res.json({ ...maskOppDonorRow(row, getViewer(req)), allocations, payments, auditClose });
   }),
 );
 
@@ -362,6 +388,19 @@ router.post(
       entity: "opportunities_and_pledges",
       table: opportunitiesAndPledges,
       bodySchema: BulkUpdateOpportunitiesAndPledgesBody,
+      // Fiscal-year freeze: skip (fail) any pledge whose governing FY (its
+      // made/won year) is audit-closed, or a completion-date move into one.
+      freezeCheck: (existing, cleanPatch) =>
+        resolvePledgeFreeze(
+          (existing as Record<string, unknown>).actualCompletionDate as
+            | string
+            | null
+            | undefined,
+          (cleanPatch as Record<string, unknown>).actualCompletionDate as
+            | string
+            | null
+            | undefined,
+        ),
       allowedFields: [
         "ownerUserId",
         "lossType",
@@ -525,6 +564,13 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateOpportunityOrPledgeBodyRefined, req.body, res);
     if (!body) return;
+    // Freeze guard: refuse to create a pledge whose made/won date lands in an
+    // audit-closed FY.
+    const freeze = await resolvePledgeFreeze(
+      undefined,
+      body.actualCompletionDate as string | Date | null | undefined,
+    );
+    if (freeze.frozen) return respondFrozen(res, freeze);
     // Stamp canonical win_probability on insert when caller provided a
     // stage/lossType but no explicit win_probability — same rule as the
     // PATCH path. status is fully calculated, so derive it first and key
@@ -583,6 +629,175 @@ router.post(
   }),
 );
 
+// Write off the uncollected remainder of an audited (frozen), under-paid written
+// pledge. The audited original is NEVER mutated — a write-off is a NEW negative
+// offsetting pledge booked in the current open FY (see the audit-close model).
+// It reads as "resolved" in the underpaid checklist purely because this active
+// linked child exists. Guards: target must be a non-write-off written pledge,
+// its governing FY must actually be audit-closed (pre-close mismatches are just
+// corrected in place), it must not already have an active write-off, must have a
+// positive uncollected remainder, and an open FY must exist to book into.
+router.post(
+  "/opportunities-and-pledges/:id/write-off",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const body = parseOrBadRequest(WriteOffPledgeBody, req.body, res);
+    if (!body) return;
+
+    const original = await db
+      .select()
+      .from(opportunitiesAndPledges)
+      .where(eq(opportunitiesAndPledges.id, id))
+      .then((r) => r[0]);
+    if (!original) return notFound(res, "opportunity");
+
+    if (original.isWriteOff) {
+      return res.status(409).json({
+        error: "invalid_write_off_target",
+        message: "This record is itself a write-off and cannot be written off.",
+      });
+    }
+    if (!original.writtenPledge) {
+      return res.status(409).json({
+        error: "invalid_write_off_target",
+        message: "Only a written pledge can be written off.",
+      });
+    }
+
+    // The governing FY must be audit-closed. If it is still open, the mismatch
+    // is corrected in place (edit the pledge/allocations) — the write-off is the
+    // post-close mechanism, not a shortcut around ordinary edits.
+    const freeze = await resolvePledgeFreeze(
+      undefined,
+      original.actualCompletionDate,
+    );
+    if (!freeze.frozen) {
+      return res.status(409).json({
+        error: "fiscal_year_not_closed",
+        message:
+          "This pledge's fiscal year is still open — correct it in place instead of writing it off.",
+      });
+    }
+
+    // At most one active write-off per audited pledge (also enforced by the
+    // partial-unique index on write_off_of_pledge_id).
+    const [{ n: existingWriteOffs }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(opportunitiesAndPledges)
+      .where(
+        and(
+          eq(opportunitiesAndPledges.writeOffOfPledgeId, id),
+          isNull(opportunitiesAndPledges.archivedAt),
+        ),
+      );
+    if (existingWriteOffs > 0) {
+      return res.status(409).json({
+        error: "write_off_exists",
+        message: "This pledge already has an active write-off.",
+      });
+    }
+
+    // Remainder = committed (sum of allocation sub-amounts) minus paid (sum of
+    // non-archived linked gift amounts), computed fresh so it can't go stale.
+    // Derived by the shared helper so the detail's `uncollectedRemainder` and
+    // the amount booked here can never diverge. The allocation rows are still
+    // fetched separately because the pro-rata split needs each bucket.
+    const allocs = await db
+      .select()
+      .from(pledgeAllocations)
+      .where(eq(pledgeAllocations.pledgeOrOpportunityId, id));
+    const remainder = await computePledgeUncollectedRemainder(id);
+    if (remainder <= 0) {
+      return res.status(409).json({
+        error: "nothing_to_write_off",
+        message:
+          "This pledge has no uncollected remainder to write off.",
+      });
+    }
+
+    // The write-off is booked in the current open FY; if none is open there is
+    // nowhere valid to recognise the correction.
+    const openFy = await getCurrentOpenFiscalYear();
+    if (!openFy) {
+      return res.status(409).json({
+        error: "no_open_fiscal_year",
+        message:
+          "There is no open fiscal year to book the write-off into.",
+      });
+    }
+
+    // Split the remainder across the positive-weight source buckets (weight =
+    // the original allocation's sub_amount). remainder > 0 guarantees at least
+    // one such bucket, so proRataNegativeShares never throws here.
+    const buckets = allocs.filter((a) => Number(a.subAmount ?? 0) > 0);
+    const shares = proRataNegativeShares(
+      buckets.map((a) => Number(a.subAmount)),
+      remainder,
+    );
+
+    const writeOffId = newId();
+    await db.transaction(async (tx) => {
+      await tx.insert(opportunitiesAndPledges).values({
+        id: writeOffId,
+        name: original.name ? `Write-off — ${original.name}` : "Write-off",
+        // Donor XOR: copy all three FKs (exactly one is non-null on the source).
+        organizationId: original.organizationId,
+        individualGiverPersonId: original.individualGiverPersonId,
+        householdId: original.householdId,
+        writtenPledge: true,
+        isWriteOff: true,
+        writeOffOfPledgeId: id,
+        awardedAmount: (-remainder).toFixed(2),
+        // Recognised today, which falls inside the open FY window — keeps the
+        // write-off itself governed by an open (mutable) FY.
+        actualCompletionDate: todayInChicago(),
+        loanOrGrant: original.loanOrGrant,
+        fundraisingCategory: original.fundraisingCategory,
+        usageNotes: body.reason ?? null,
+      });
+      // Mirror each source bucket's scope with a NEGATIVE sub_amount, all booked
+      // in the open FY so the write-off lands there in the analytics rollups.
+      for (let i = 0; i < buckets.length; i++) {
+        const b = buckets[i]!;
+        await tx.insert(pledgeAllocations).values({
+          id: newId(),
+          pledgeOrOpportunityId: writeOffId,
+          subAmount: shares[i]!,
+          grantYear: openFy.id,
+          entityId: b.entityId,
+          intendedUsage: b.intendedUsage,
+          fundableProjectId: b.fundableProjectId,
+          schoolRecipientId: b.schoolRecipientId,
+          directToSchool: b.directToSchool,
+          regionalRestrictionType: b.regionalRestrictionType,
+          usageRestrictionType: b.usageRestrictionType,
+          timeRestrictionType: b.timeRestrictionType,
+          reimbursementType: b.reimbursementType,
+          regionIds: b.regionIds,
+        });
+      }
+    });
+    // Derive status/stage/win_probability on the new write-off. writtenPledge is
+    // sticky-true (never cleared) so it derives as status='pledge'; the negative
+    // awarded amount keeps it out of cash_in (which needs awarded > 0).
+    await applyDerivedOppFields(writeOffId);
+    const final = await db
+      .select()
+      .from(opportunitiesAndPledges)
+      .where(eq(opportunitiesAndPledges.id, writeOffId))
+      .then((r) => r[0]);
+    if (final) {
+      await auditCreate(
+        req,
+        "opportunity",
+        final.id,
+        `Wrote off uncollected remainder of pledge ${id}`,
+      );
+    }
+    res.status(201).json(final);
+  }),
+);
+
 router.patch(
   "/opportunities-and-pledges/:id",
   asyncHandler(async (req, res) => {
@@ -607,6 +822,14 @@ router.patch(
       actualCompletionDate: merged.actualCompletionDate,
     });
     if (issues.length) return respondInvariantFailure(res, issues);
+
+    // Freeze guard: block edits to a pledge whose governing FY is audit-closed,
+    // and block moving actual_completion_date into a closed FY.
+    const freeze = await resolvePledgeFreeze(
+      existing.actualCompletionDate,
+      merged.actualCompletionDate as string | Date | null | undefined,
+    );
+    if (freeze.frozen) return respondFrozen(res, freeze);
 
     // Canonical-win-probability rule: whenever the PATCH touches stage
     // or lossType, re-derive win_probability from the new (calculated
@@ -704,6 +927,7 @@ router.post(
       entity: "opportunities_and_pledges",
       table: opportunitiesAndPledges,
       bodySchema: BulkArchiveOpportunitiesAndPledgesBody,
+      freezeResolver: resolvePledgeFreezeById,
     });
   }),
 );
@@ -714,6 +938,7 @@ router.post(
     await archiveOne(req, res, {
       entity: "opportunity",
       table: opportunitiesAndPledges,
+      freezeResolver: resolvePledgeFreezeById,
     });
   }),
 );
@@ -724,6 +949,7 @@ router.post(
     await unarchiveOne(req, res, {
       entity: "opportunity",
       table: opportunitiesAndPledges,
+      freezeResolver: resolvePledgeFreezeById,
     });
   }),
 );

@@ -3657,6 +3657,60 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /opportunities-and-pledges/{id}/write-off:
+    post:
+      operationId: writeOffPledge
+      tags: [opportunities-and-pledges]
+      summary: "Book an audit-close write-off for an under-paid, frozen written pledge."
+      description: |
+        Non-destructively resolves an audited (frozen) written pledge that was
+        under-paid and whose remaining money can no longer be collected. The
+        original pledge is NEVER touched. Instead a brand-new offsetting pledge is
+        created in the CURRENT OPEN fiscal year with `is_write_off=true`,
+        `written_pledge=true`, a negative awarded amount, and NEGATIVE
+        pledge_allocations (pro-rata across the original's allocation buckets)
+        summing EXACTLY to the uncollected remainder. The write-off points back at
+        the original via `write_off_of_pledge_id`, which is what marks the original
+        "resolved" in the underpaid-pledge checklist.
+
+        Returns 409 unless ALL hold: the original is a written pledge; its
+        remainder (SUM(pledge_allocations.sub_amount) − paid) is > 0; the fiscal
+        year GOVERNING the original is audit-closed (frozen); no active write-off
+        already exists for it; and a current OPEN fiscal year exists to book the
+        write-off into.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: false, content: { application/json: { schema: { $ref: "#/components/schemas/WriteOffPledgeBody" } } } }
+      responses:
+        "201": { description: "Created — the new write-off pledge.", content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Cannot write off: not a written pledge, no uncollected remainder, governing FY not audit-closed, a write-off already exists, or no open fiscal year." }
+  /gifts-and-payments/{id}/resolve-overpay:
+    post:
+      operationId: resolveGiftOverpay
+      tags: [gifts-and-payments]
+      summary: "Book an audit-close surplus gift for an over-paid, frozen gift."
+      description: |
+        Non-destructively resolves an audited (frozen) gift that was over-paid
+        (settled/linked evidence exceeds the entered amount). The original gift is
+        NEVER touched — it stays `quickbooks_tie_status='amount_mismatch'`. A NEW
+        surplus gift is booked in the CURRENT OPEN fiscal year for the derived
+        surplus amount (computed server-side from evidence precedence vs the
+        original's amount — NEVER supplied by the client), inheriting the original's
+        donor (Donor XOR) and seeded with a starter allocation. The surplus gift
+        points back at the original via `overpay_of_gift_id`, which is what marks
+        the original "resolved" in the amount-mismatch worklist.
+
+        Returns 409 unless ALL hold: the fiscal year GOVERNING the original is
+        audit-closed (frozen); the derived surplus is > 0; no active surplus gift
+        already exists for it; and a current OPEN fiscal year exists to book into.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: false, content: { application/json: { schema: { $ref: "#/components/schemas/ResolveGiftOverpayBody" } } } }
+      responses:
+        "201": { description: "Created — the new surplus gift.", content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Cannot resolve: governing FY not audit-closed, no positive surplus, a surplus gift already exists, or no open fiscal year." }
   /gifts-and-payments/{id}/archive:
     post:
       operationId: archiveGiftOrPayment
@@ -4870,17 +4924,18 @@ components:
         endDate:   { type: string, format: date }
     FiscalYearCategoryMetrics:
       type: object
-      required: [openPipelineAsk, openPipelineWeighted, committed, committedWeighted, received, goal]
+      required: [openPipelineAsk, openPipelineWeighted, committed, committedWeighted, received, writtenOff, goal]
       description: |
         Fundraising metrics for one category (revenue OR loan_capital) within a
         fiscal year. All money values are decimal strings (PostgreSQL numeric) to
         preserve precision — format with `formatCurrency` on the client.
       properties:
-        openPipelineAsk:      { type: string, description: "SUM(pledge_allocations.sub_amount) for status='open' opps (of this category) with grant_year = this FY." }
-        openPipelineWeighted: { type: string, description: "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open' opps (of this category) with grant_year = this FY." }
-        committed:            { type: string, description: "Per-pledge UNPAID remainder (at 100%) for status='pledge' opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only)." }
-        committedWeighted:    { type: string, description: "Per-pledge UNPAID remainder discounted by the pledge's win_probability (0.90 non-conditional / 0.75 conditional) for status='pledge' opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed." }
+        openPipelineAsk:      { type: string, description: "SUM(pledge_allocations.sub_amount) for status='open', NON-write-off opps (of this category) with grant_year = this FY." }
+        openPipelineWeighted: { type: string, description: "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open', NON-write-off opps (of this category) with grant_year = this FY." }
+        committed:            { type: string, description: "Per-pledge UNPAID remainder (at 100%) for status='pledge', NON-write-off opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only)." }
+        committedWeighted:    { type: string, description: "Per-pledge UNPAID remainder discounted by the pledge's win_probability (0.90 non-conditional / 0.75 conditional) for status='pledge', NON-write-off opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed." }
         received:             { type: string, description: "SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else)." }
+        writtenOff:           { type: string, description: "SUM(pledge_allocations.sub_amount) for is_write_off pledges (of this category) with grant_year = this FY. Allocations are NEGATIVE, so this is a non-positive number, rendered as its own 'written off' line. NOT folded into committed/received — CRM ≠ GL." }
         goal:                 { type: string, nullable: true, description: "Fundraising goal for the FY+category; null if not set." }
     FiscalYearMetrics:
       type: object
@@ -5793,6 +5848,10 @@ components:
         individualGiverPersonId:    { type: string, nullable: true }
         individualAdvisorPersonId:  { type: string, nullable: true }
         matchId:                    { type: string, nullable: true }
+        # Audit-close WRITE-OFF (never settable via create/update; only via the
+        # POST /opportunities-and-pledges/{id}/write-off action).
+        isWriteOff:                 { type: boolean, readOnly: true, description: "True when this row IS an audit-close write-off: a NEGATIVE offsetting pledge booked in the current open FY against an audited, frozen, under-paid original. Excluded from open-pipeline / committed / win-probability analytics and surfaced as its own negative 'written off' line." }
+        writeOffOfPledgeId:         { type: string, nullable: true, readOnly: true, description: "When set, the audited original pledge this write-off offsets. On an audited original, the PRESENCE of an active (non-archived) write-off pointing back at it is what marks it 'resolved' in the underpaid-pledge checklist (its own numbers are never mutated)." }
         status:                     { allOf: [ { $ref: "#/components/schemas/OpportunityStatus" } ], nullable: true, readOnly: true }
         lossType:                   { allOf: [ { $ref: "#/components/schemas/OpportunityLossType" } ], nullable: true }
         projectedCloseDate:         { type: string, format: date, nullable: true }
@@ -5854,9 +5913,26 @@ components:
       allOf:
         - { $ref: "#/components/schemas/OpportunityOrPledge" }
         - type: object
+          required: [auditClose]
           properties:
             allocations: { type: array, items: { $ref: "#/components/schemas/PledgeAllocation" } }
             payments:    { type: array, items: { $ref: "#/components/schemas/GiftOrPayment" } }
+            auditClose:  { $ref: "#/components/schemas/PledgeAuditCloseResolution" }
+    PledgeAuditCloseResolution:
+      type: object
+      readOnly: true
+      required: [frozen, uncollectedRemainder, resolvedByWriteOffPledgeId]
+      description: |
+        Derived (never persisted) audit-close state for a pledge, driving the
+        post-close "write off remainder" action. A pledge is `frozen` when its
+        governing fiscal year (the FY of its made/won date) has closed its audit;
+        once frozen its audited numbers can't change, so an uncollected remainder
+        is booked as a NEW offsetting write-off pledge in the current open FY.
+      properties:
+        frozen:                     { type: boolean, description: "True when the pledge's governing fiscal year has closed its audit." }
+        frozenFiscalYearLabel:      { type: string, nullable: true, description: "Label of the audit-closed governing fiscal year, when frozen." }
+        uncollectedRemainder:       { type: string, description: "Committed (sum of allocation sub-amounts) minus paid, clamped at 0 ('0.00' when none). Derived server-side; the write-off amount is never supplied by the client." }
+        resolvedByWriteOffPledgeId: { type: string, nullable: true, description: "The active (non-archived) write-off pledge that resolves this under-paid audited pledge, if one already exists." }
     OpportunityOrPledgeList:
       type: object
       required: [data, pagination]
@@ -6043,6 +6119,9 @@ components:
         advisorPersonId:            { type: string, nullable: true }
         grantYear:                  { type: string, nullable: true }
         giftBeingMatchedId:         { type: string, nullable: true }
+        # Audit-close OVER-payment resolution (never settable via create/update;
+        # only via the POST /gifts-and-payments/{id}/resolve-overpay action).
+        overpayOfGiftId:            { type: string, nullable: true, readOnly: true, description: "When set, the audited original gift this surplus gift offsets. Booked in the current open FY when an audited, frozen gift is over-paid. The original stays quickbooks_tie_status='amount_mismatch' forever; the PRESENCE of an active (non-archived) linked surplus gift is what marks the original 'resolved' in the worklist." }
         primaryContactPersonId:     { type: string, nullable: true }
         paymentIntermediaryId:      { type: string, nullable: true }
         ownerUserId:                      { type: string, nullable: true }
@@ -6093,8 +6172,27 @@ components:
       allOf:
         - { $ref: "#/components/schemas/GiftOrPayment" }
         - type: object
+          required: [auditClose]
           properties:
             allocations: { type: array, items: { $ref: "#/components/schemas/GiftAllocation" } }
+            auditClose:  { $ref: "#/components/schemas/GiftAuditCloseResolution" }
+    GiftAuditCloseResolution:
+      type: object
+      readOnly: true
+      required: [frozen, overpaySurplus, resolvedByGiftId]
+      description: |
+        Derived (never persisted) audit-close state for a gift, driving the
+        post-close "book surplus gift" action. A gift is `frozen` when its
+        governing fiscal year (the FY of its date_received) has closed its audit;
+        once frozen its audited numbers can't change, so an over-payment surplus
+        is booked as a NEW gift in the current open FY (the original stays
+        quickbooks_tie_status='amount_mismatch' forever and reads as resolved only
+        because an active linked surplus gift exists).
+      properties:
+        frozen:                { type: boolean, description: "True when the gift's governing fiscal year has closed its audit." }
+        frozenFiscalYearLabel: { type: string, nullable: true, description: "Label of the audit-closed governing fiscal year, when frozen." }
+        overpaySurplus:        { type: string, description: "Settled evidence gross minus the recorded gift amount, clamped at 0 ('0.00' when none). Derived server-side; the surplus amount is never supplied by the client." }
+        resolvedByGiftId:      { type: string, nullable: true, description: "The active (non-archived) surplus gift that resolves this over-paid audited gift, if one already exists." }
     GiftOrPaymentList:
       type: object
       required: [data, pagination]
@@ -9656,6 +9754,16 @@ components:
       description: "Optional overrides when splitting a gift into a pledge. The pledge inherits the gift's donor and uses the gift amount as its awarded amount; each gift_allocation becomes one payment gift."
       properties:
         name: { type: string, nullable: true, description: "Name for the new pledge. Defaults to the gift's name." }
+    WriteOffPledgeBody:
+      type: object
+      description: "Optional metadata for an audit-close pledge write-off. The remainder and negative allocations are derived server-side; the client never supplies amounts."
+      properties:
+        reason: { type: string, nullable: true, description: "Optional free-text note explaining why the pledge is being written off (recorded on the write-off pledge's usage notes)." }
+    ResolveGiftOverpayBody:
+      type: object
+      description: "Optional metadata for an audit-close gift over-payment resolution. The surplus amount is derived server-side from evidence precedence; the client never supplies amounts."
+      properties:
+        reason: { type: string, nullable: true, description: "Optional free-text note explaining the over-payment (recorded on the surplus gift's details)." }
     RevertGiftToOpportunityBody:
       type: object
       description: "Options for reverting a gift back into an opportunity. The new record inherits the gift's donor and amount; the gift's allocations are mirrored onto pledge_allocations and the gift is archived."

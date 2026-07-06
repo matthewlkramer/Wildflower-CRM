@@ -151,6 +151,19 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
     (): AnyPgColumn => giftsAndPayments.id,
     { onDelete: "set null" },
   ),
+  // Audit-close OVER-payment resolution (see gift-booking-lifecycle / audit-close
+  // model). When an audited (frozen) gift is over-paid, the original is NEVER
+  // touched — a NEW surplus gift is booked in the current OPEN fiscal year and
+  // this self-FK points it back at the audited original. The original stays
+  // quickbooks_tie_status='amount_mismatch' forever, so the worklist "resolved"
+  // test keys off the PRESENCE of an active (non-archived) linked overpay gift.
+  // RESTRICT: the audited original must not be deletable out from under its
+  // surplus gift. A partial UNIQUE index (WHERE non-null AND archived_at IS NULL)
+  // enforces at most one active overpay gift per original.
+  overpayOfGiftId: text("overpay_of_gift_id").references(
+    (): AnyPgColumn => giftsAndPayments.id,
+    { onDelete: "restrict" },
+  ),
   // SET NULL: primary contact is a soft pointer.
   primaryContactPersonId: text("primary_contact_person_id").references(
     () => people.id,
@@ -244,6 +257,11 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   index("gifts_and_payments_individual_giver_person_id_idx").on(t.individualGiverPersonId),
   index("gifts_and_payments_household_id_idx").on(t.householdId),
   index("gifts_and_payments_opportunity_id_idx").on(t.opportunityId),
+  // At most one ACTIVE (non-archived) surplus gift per audited original.
+  uniqueIndex("gifts_and_payments_active_overpay_uq")
+    .on(t.overpayOfGiftId)
+    .where(sql`${t.overpayOfGiftId} IS NOT NULL AND ${t.archivedAt} IS NULL`),
+  index("gifts_and_payments_overpay_of_gift_id_idx").on(t.overpayOfGiftId),
   index("gifts_and_payments_advisor_person_id_idx").on(t.advisorPersonId),
   index("gifts_and_payments_gift_being_matched_id_idx").on(t.giftBeingMatchedId),
   index("gifts_and_payments_primary_contact_person_id_idx").on(t.primaryContactPersonId),

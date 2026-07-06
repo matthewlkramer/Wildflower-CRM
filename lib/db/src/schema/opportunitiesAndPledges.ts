@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   index,
+  uniqueIndex,
   pgTable,
   text,
   timestamp,
@@ -147,6 +148,26 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
     (): AnyPgColumn => opportunitiesAndPledges.id,
     { onDelete: "set null" },
   ),
+  // Audit-close WRITE-OFF (see gift-booking-lifecycle / audit-close model). When
+  // an audited (frozen) written pledge is under-paid and its money can no longer
+  // be collected, the original is NEVER touched — instead a brand-new offsetting
+  // pledge is created in the CURRENT OPEN fiscal year with is_write_off=true and
+  // NEGATIVE allocations summing to the uncollected remainder. This self-FK points
+  // that offsetting pledge back at the audited original.
+  //   * is_write_off — this row IS a write-off (excluded from open-pipeline ask,
+  //     committed, and win-probability analytics; surfaced as its own negative
+  //     "written off" line in goal/FY rollups).
+  //   * write_off_of_pledge_id — the audited original this write-off offsets. Its
+  //     PRESENCE (active, non-archived) is what makes the original read "resolved"
+  //     in the underpaid-pledge checklist, without mutating the original's numbers.
+  // RESTRICT: the audited original must not be deletable out from under its
+  // write-off. A partial UNIQUE index (write_off_of_pledge_id WHERE non-null AND
+  // archived_at IS NULL) enforces at most one active write-off per original.
+  isWriteOff: boolean("is_write_off").default(false).notNull(),
+  writeOffOfPledgeId: text("write_off_of_pledge_id").references(
+    (): AnyPgColumn => opportunitiesAndPledges.id,
+    { onDelete: "restrict" },
+  ),
   // FULLY CALCULATED — derived server-side from stage + payments +
   // loss_type on every write (see applyDerivedOppFields). Not a
   // user-writable field.
@@ -203,6 +224,10 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   index("opportunities_and_pledges_household_id_idx").on(t.householdId),
   index("opportunities_and_pledges_individual_advisor_person_id_idx").on(t.individualAdvisorPersonId),
   index("opportunities_and_pledges_match_id_idx").on(t.matchId),
+  // At most one ACTIVE (non-archived) write-off pledge per audited original.
+  uniqueIndex("opportunities_and_pledges_active_write_off_uq")
+    .on(t.writeOffOfPledgeId)
+    .where(sql`${t.writeOffOfPledgeId} IS NOT NULL AND ${t.archivedAt} IS NULL`),
   index("opportunities_and_pledges_owner_user_id_idx").on(t.ownerUserId),
   index("opportunities_and_pledges_primary_contact_person_id_idx").on(t.primaryContactPersonId),
   index("opportunities_and_pledges_archived_at_idx").on(t.archivedAt),

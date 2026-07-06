@@ -9,6 +9,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { resolvePledgeAllocationFreeze, respondFrozen } from "../lib/freezeGuard";
 import { pledgeAllocationCodingPreview } from "../lib/revenueCoding";
 import { applyDerivedOppFields } from "../lib/pledgeStage";
 
@@ -37,6 +38,9 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreatePledgeAllocationBody, req.body, res);
     if (!body) return;
+    // Freeze guard: gated by the parent pledge's governing FY.
+    const freeze = await resolvePledgeAllocationFreeze(body.pledgeOrOpportunityId);
+    if (freeze.frozen) return respondFrozen(res, freeze);
     // A concrete school recipient implies the funds flow directly to a school.
     const directToSchool = body.schoolRecipientId ? true : body.directToSchool;
     const [row] = await db
@@ -62,6 +66,15 @@ router.patch(
     const id = paramId(req);
     const [existing] = await db.select().from(pledgeAllocations).where(eq(pledgeAllocations.id, id));
     if (!existing) return notFound(res, "allocation");
+    // Freeze guard: block if the current OR (when re-pointed) the target pledge's
+    // governing FY is audit-closed.
+    const freeze = await resolvePledgeAllocationFreeze(existing.pledgeOrOpportunityId);
+    if (freeze.frozen) return respondFrozen(res, freeze);
+    const targetParent = (body as { pledgeOrOpportunityId?: string }).pledgeOrOpportunityId;
+    if (targetParent && targetParent !== existing.pledgeOrOpportunityId) {
+      const targetFreeze = await resolvePledgeAllocationFreeze(targetParent);
+      if (targetFreeze.frozen) return respondFrozen(res, targetFreeze);
+    }
     // Keep schoolRecipientId <-> directToSchool coherent: a concrete school
     // implies direct-to-school; explicitly unchecking direct-to-school clears
     // the school link. Only the keys the caller actually touched are overridden.
@@ -109,6 +122,11 @@ router.delete(
   asyncHandler(async (req, res) => {
     const id = paramId(req);
     const [existing] = await db.select().from(pledgeAllocations).where(eq(pledgeAllocations.id, id));
+    if (existing) {
+      // Freeze guard: gated by the parent pledge's governing FY.
+      const freeze = await resolvePledgeAllocationFreeze(existing.pledgeOrOpportunityId);
+      if (freeze.frozen) return respondFrozen(res, freeze);
+    }
     await db.delete(pledgeAllocations).where(eq(pledgeAllocations.id, id));
     // Removing an allocation can change the header conditional rollup.
     await applyDerivedOppFields(existing?.pledgeOrOpportunityId);

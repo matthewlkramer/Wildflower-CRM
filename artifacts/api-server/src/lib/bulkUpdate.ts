@@ -6,6 +6,7 @@ import { newId, parseOrBadRequest } from "./helpers";
 import type { Request } from "express";
 import { getAppUser } from "./appRequest";
 import { recordAudit } from "./audit";
+import { freezeMessage, type FreezeDecision } from "./freezeGuard";
 
 interface ZodLike<T> {
   safeParse(
@@ -94,6 +95,16 @@ export interface BulkUpdateConfig<Row, P extends object> {
    * invoked when there is a column patch; return {} to write nothing.
    */
   deriveColumns?: (cleanPatch: Partial<P>) => Record<string, unknown>;
+  /**
+   * Optional per-row freeze gate (fiscal-year audit close). Runs BEFORE the
+   * row's update; when it returns a frozen decision the row is SKIPPED (recorded
+   * in failed[]) and left untouched — an audit-closed gift/pledge is immutable.
+   * Receives the existing row and the whitelisted column patch so it can check
+   * both the current governing FY and a recognition-date move into a closed FY.
+   * Wire this for every bulk endpoint on gifts_and_payments /
+   * opportunities_and_pledges.
+   */
+  freezeCheck?: (existing: Row, cleanPatch: Partial<P>) => Promise<FreezeDecision>;
 }
 
 interface BulkFailure {
@@ -189,6 +200,13 @@ export async function executeBulkUpdate<Row extends Record<string, unknown>, P e
         const err = cfg.validateRow(existing, cleanPatch);
         if (err) {
           failed.push({ id, message: err });
+          continue;
+        }
+      }
+      if (cfg.freezeCheck) {
+        const freeze = await cfg.freezeCheck(existing, cleanPatch);
+        if (freeze.frozen) {
+          failed.push({ id, message: freezeMessage(freeze) });
           continue;
         }
       }
