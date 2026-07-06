@@ -1398,6 +1398,22 @@ export async function searchPayouts(
     );
   }
 
+  // Surface the best candidates first: closest NET amount to the target, then
+  // (when an anchor date is given) fewest days from the target date. Recency is
+  // only the final tiebreak / the sole order for a text-only search.
+  const orderBy: SQL[] = [];
+  if (hasAmount) {
+    orderBy.push(
+      sql`ABS((COALESCE(${stripePayouts.netTotal}, ${stripePayouts.amount}))::numeric - ${amt})`,
+    );
+  }
+  if (p.date) {
+    orderBy.push(
+      sql`ABS((${stripePayouts.arrivalDate})::date - ${p.date}::date)`,
+    );
+  }
+  orderBy.push(desc(stripePayouts.arrivalDate));
+
   const rows = await db
     .select({
       id: stripePayouts.id,
@@ -1407,7 +1423,7 @@ export async function searchPayouts(
     })
     .from(stripePayouts)
     .where(and(...conds))
-    .orderBy(desc(stripePayouts.arrivalDate))
+    .orderBy(...orderBy)
     .limit(p.limit);
 
   return rows.map((r) => ({
@@ -1461,6 +1477,20 @@ export async function searchQbStaged(
     );
   }
 
+  // Surface the best candidates first: closest amount to the target payout, then
+  // (when an anchor date is given) fewest days from the target date. Recency is
+  // only the final tiebreak / the sole order for a text-only search.
+  const orderBy: SQL[] = [];
+  if (hasAmount) {
+    orderBy.push(sql`ABS((${stagedPayments.amount})::numeric - ${amt})`);
+  }
+  if (p.date) {
+    orderBy.push(
+      sql`ABS((${stagedPayments.dateReceived})::date - ${p.date}::date)`,
+    );
+  }
+  orderBy.push(desc(stagedPayments.dateReceived));
+
   const rows = await db
     .select({
       id: stagedPayments.id,
@@ -1471,7 +1501,7 @@ export async function searchQbStaged(
     })
     .from(stagedPayments)
     .where(and(...conds))
-    .orderBy(desc(stagedPayments.dateReceived))
+    .orderBy(...orderBy)
     .limit(p.limit);
 
   return rows.map((r) =>

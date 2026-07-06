@@ -88,6 +88,7 @@ export function ResolveTieDialog({
             <PayoutResults
               q={q}
               amount={anchor.amount ?? null}
+              date={anchor.date ?? null}
               busy={busy}
               onPick={onPick}
             />
@@ -95,6 +96,7 @@ export function ResolveTieDialog({
             <DepositResults
               q={q}
               amount={anchor.amount ?? null}
+              date={anchor.date ?? null}
               busy={busy}
               onPick={onPick}
             />
@@ -108,17 +110,23 @@ export function ResolveTieDialog({
 function PayoutResults({
   q,
   amount,
+  date,
   busy,
   onPick,
 }: {
   q: string;
   amount: string | null;
+  date: string | null;
   busy: boolean;
   onPick: (id: string) => void;
 }) {
   const { data, isFetching, isError } = useSearchReconciliationPayouts({
     q: q.trim() || undefined,
     amount: amount ?? undefined,
+    // Pass the anchor date so the server can rank by proximity to it; keep the
+    // window wide (a year) so it orders rather than hides distant candidates.
+    date: date ?? undefined,
+    days: 365,
     limit: 25,
   });
   const rows: ResultRow[] = (data?.data ?? []).map((c) => ({
@@ -136,17 +144,23 @@ function PayoutResults({
 function DepositResults({
   q,
   amount,
+  date,
   busy,
   onPick,
 }: {
   q: string;
   amount: string | null;
+  date: string | null;
   busy: boolean;
   onPick: (id: string) => void;
 }) {
   const { data, isFetching, isError } = useSearchReconciliationQbStaged({
     q: q.trim() || undefined,
     amount: amount ?? undefined,
+    // Pass the anchor date so the server can rank by proximity to it; keep the
+    // window wide (a year) so it orders rather than hides distant candidates.
+    date: date ?? undefined,
+    days: 365,
     limit: 25,
   });
   const rows: ResultRow[] = (data?.data ?? []).map((c) => ({
@@ -154,7 +168,7 @@ function DepositResults({
     primary: c.label ?? shortId(c.id),
     secondary: c.sublabel ?? null,
     amount: c.amount ?? null,
-    date: null,
+    date: c.date ?? null,
   }));
   return (
     <ResultsList rows={rows} isFetching={isFetching} isError={isError} busy={busy} onPick={onPick} />
