@@ -10,6 +10,8 @@ import {
   useGetPaymentIntermediary,
   useGetGiftStripeChain,
   useGetGiftAuditReconciliation,
+  useGetOpportunityOrPledge,
+  getGetOpportunityOrPledgeQueryKey,
   getGetGiftOrPaymentQueryKey,
   getGetOrganizationQueryKey,
   getGetHouseholdQueryKey,
@@ -64,6 +66,7 @@ import {
   type Highlight,
 } from "@/components/record-layout";
 import { GiftPledgeLink, type PledgeDonorScope } from "@/components/pledge-picker";
+import { FileUploadField } from "@/components/grant-letter-upload";
 import { DonorboxEnrichmentPanel } from "@/components/donorbox-enrichment-panel";
 import {
   GiftSearchDialog,
@@ -166,6 +169,17 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
     },
   });
 
+  // The linked pledge (if any) so we can show its grant letter read-only on the
+  // gift — a payment often has no letter of its own but inherits the grant
+  // letter uploaded on its parent pledge.
+  const linkedPledge = useGetOpportunityOrPledge(gift.opportunityId ?? "", {
+    query: {
+      queryKey: getGetOpportunityOrPledgeQueryKey(gift.opportunityId ?? ""),
+      enabled: !!gift.opportunityId,
+    },
+  });
+  const pledgeGrantLetterUrl = linkedPledge.data?.grantLetterUrl ?? null;
+
   const associatedPeople: PeopleEntityRole[] = [];
   const seenPeople = new Set<string>();
   for (const role of [
@@ -187,46 +201,56 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(gift.name ?? "");
 
-  let donorDisplay: ReactNode = (
+  // Donor is rendered two ways: the header subtitle keeps a type prefix
+  // ("Funder:"/"Individual:"/"Household:") for at-a-glance context, while the
+  // Donor card omits the prefix (the card already labels the row "Donor") — see
+  // donorDisplayPlain below.
+  const noDonor: ReactNode = (
     <span className="text-muted-foreground">No donor linked.</span>
   );
+  let donorLink: ReactNode = null;
+  let donorPrefix: string | null = null;
   if (gift.organizationId) {
-    donorDisplay = (
-      <span>
-        <span className="text-muted-foreground mr-1">Funder:</span>
-        <Link
-          href={`/organizations/${gift.organizationId}`}
-          className="text-primary hover:underline"
-        >
-          {organizationName ?? gift.organizationId}
-        </Link>
-      </span>
+    donorPrefix = "Funder";
+    donorLink = (
+      <Link
+        href={`/organizations/${gift.organizationId}`}
+        className="text-primary hover:underline"
+      >
+        {organizationName ?? gift.organizationId}
+      </Link>
     );
   } else if (gift.individualGiverPersonId) {
-    donorDisplay = (
-      <span>
-        <span className="text-muted-foreground mr-1">Individual:</span>
-        <Link
-          href={`/individuals/${gift.individualGiverPersonId}`}
-          className="text-primary hover:underline"
-        >
-          {giverName ?? gift.individualGiverPersonId}
-        </Link>
-      </span>
+    donorPrefix = "Individual";
+    donorLink = (
+      <Link
+        href={`/individuals/${gift.individualGiverPersonId}`}
+        className="text-primary hover:underline"
+      >
+        {giverName ?? gift.individualGiverPersonId}
+      </Link>
     );
   } else if (gift.householdId) {
-    donorDisplay = (
-      <span>
-        <span className="text-muted-foreground mr-1">Household:</span>
-        <Link
-          href={`/households/${gift.householdId}`}
-          className="text-primary hover:underline"
-        >
-          {householdName ?? gift.householdId}
-        </Link>
-      </span>
+    donorPrefix = "Household";
+    donorLink = (
+      <Link
+        href={`/households/${gift.householdId}`}
+        className="text-primary hover:underline"
+      >
+        {householdName ?? gift.householdId}
+      </Link>
     );
   }
+
+  const donorDisplay: ReactNode = donorLink ? (
+    <span>
+      <span className="text-muted-foreground mr-1">{donorPrefix}:</span>
+      {donorLink}
+    </span>
+  ) : (
+    noDonor
+  );
+  const donorDisplayPlain: ReactNode = donorLink ?? noDonor;
 
   const advisorDisplay: ReactNode = gift.advisorPersonId ? (
     <Link
@@ -542,41 +566,13 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                   onSave={(next) => patch({ needsResearch: next ?? false })}
                 />
               </Row>
-              <Row label="QuickBooks tie">
-                <div className="flex flex-col items-end gap-1">
-                  <GiftQbTieBadge status={gift.quickbooksTieStatus} />
-                  {gift.auditClose.resolvedByGiftId ? (
-                    <Link
-                      href={`/gifts/${gift.auditClose.resolvedByGiftId}`}
-                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                      data-testid="link-surplus-gift"
-                    >
-                      Over-payment resolved via a linked gift →
-                    </Link>
-                  ) : null}
-                </div>
-              </Row>
-              {gift.overpayOfGiftId ? (
-                <Row label="Over-payment of">
-                  <Link
-                    href={`/gifts/${gift.overpayOfGiftId}`}
-                    className="text-sm underline-offset-2 hover:underline"
-                    data-testid="link-original-gift"
-                  >
-                    Original gift →
-                  </Link>
-                </Row>
-              ) : null}
-              <Row label="Reconciliation">
-                <ReconciliationLaneBadges lanes={gift.reconciliationLanes} />
-              </Row>
             </div>
             {gift.donorbox && (
               <DonorboxEnrichmentPanel donorbox={gift.donorbox} />
             )}
           </FieldCard>
 
-          <GiftQbPaymentsCard giftId={gift.id} />
+          <GiftPaymentsReconciliationCard gift={gift} />
 
           <RelatedCard title="Allocations" count={allocations.length}>
             <div className="px-2 py-1">
@@ -589,6 +585,42 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
           </RelatedCard>
 
           <ThankYouPanel gift={gift} />
+
+          <FieldCard title="Grant letter">
+            <div className="space-y-3">
+              <Row label="Grant letter">
+                <FileUploadField
+                  url={gift.grantLetterUrl ?? null}
+                  filename={gift.grantLetterFilename ?? null}
+                  uploadLabel="Upload grant letter"
+                  toastTitle="Grant letter uploaded"
+                  testIdBase="gift-grant-letter"
+                  onUploaded={(next) =>
+                    patch({
+                      grantLetterUrl: next.url,
+                      grantLetterFilename: next.filename,
+                    })
+                  }
+                  onCleared={() =>
+                    patch({ grantLetterUrl: null, grantLetterFilename: null })
+                  }
+                />
+              </Row>
+              {gift.opportunityId && pledgeGrantLetterUrl ? (
+                <Row label="Pledge grant letter">
+                  <a
+                    href={pledgeGrantLetterUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary hover:underline truncate max-w-[240px]"
+                    data-testid="gift-pledge-grant-letter-link"
+                  >
+                    {linkedPledge.data?.grantLetterFilename ?? "View pledge letter"}
+                  </a>
+                </Row>
+              ) : null}
+            </div>
+          </FieldCard>
 
           <FieldCard title="Other details" defaultOpen={false}>
             <div className="space-y-4">
@@ -717,7 +749,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                       gift.individualGiverPersonId ?? null,
                     householdId: gift.householdId ?? null,
                   }}
-                  display={donorDisplay}
+                  display={donorDisplayPlain}
                   onSave={saveDonor}
                 />
               </Row>
@@ -996,22 +1028,26 @@ const QB_LINK_TYPE_LABELS: Record<
   split: "Split",
 };
 
-// Read-only audit view of the QuickBooks payment record(s) this gift is tied to,
-// plus the key reconciliation summary fields, so it's clear at a glance what
-// money records are attached. Off-books gifts (offBooks) legitimately carry no
-// QuickBooks records — they get the muted empty message, not an error.
-function GiftQbPaymentsCard({ giftId }: { giftId: string }) {
-  const { data, isLoading } = useGetGiftAuditReconciliation(giftId, {
+// One consolidated "Payments & reconciliation" card: the gift's QuickBooks tie
+// (Missing flagged), two-lane reconciliation status, over-payment / audit-close
+// links, and the QuickBooks record(s) it appears in — split into COUNTED
+// cash-application evidence (the money trail) and CORROBORATING audit-only rows
+// (e.g. a coarse QB deposit line that corroborates a Stripe-settled gift; never
+// summed). Off-books gifts legitimately carry no QuickBooks records — they get a
+// muted empty message, not an error.
+function GiftPaymentsReconciliationCard({ gift }: { gift: GiftOrPaymentDetail }) {
+  const { data, isLoading } = useGetGiftAuditReconciliation(gift.id, {
     query: {
-      queryKey: getGetGiftAuditReconciliationQueryKey(giftId),
-      enabled: !!giftId,
+      queryKey: getGetGiftAuditReconciliationQueryKey(gift.id),
+      enabled: !!gift.id,
     },
   });
 
-  const records = data?.quickbooksRecords ?? [];
+  const counted = data?.quickbooksRecords ?? [];
+  const corroborating = data?.corroboratingRecords ?? [];
 
   return (
-    <FieldCard title="Linked QuickBooks payments">
+    <FieldCard title="Payments & reconciliation">
       {isLoading ? (
         <div className="space-y-2" data-testid="gift-qb-payments-loading">
           <Skeleton className="h-4 w-2/3" />
@@ -1022,10 +1058,36 @@ function GiftQbPaymentsCard({ giftId }: { giftId: string }) {
         <div className="space-y-4">
           <div className="space-y-1">
             <Row label="QuickBooks tie">
-              <GiftQbTieBadge status={data?.quickbooksTieStatus} />
+              <div className="flex flex-col items-end gap-1">
+                <GiftQbTieBadge
+                  status={data?.quickbooksTieStatus ?? gift.quickbooksTieStatus}
+                />
+                {gift.auditClose.resolvedByGiftId ? (
+                  <Link
+                    href={`/gifts/${gift.auditClose.resolvedByGiftId}`}
+                    className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    data-testid="link-surplus-gift"
+                  >
+                    Over-payment resolved via a linked gift →
+                  </Link>
+                ) : null}
+              </div>
             </Row>
+            {gift.overpayOfGiftId ? (
+              <Row label="Over-payment of">
+                <Link
+                  href={`/gifts/${gift.overpayOfGiftId}`}
+                  className="text-sm underline-offset-2 hover:underline"
+                  data-testid="link-original-gift"
+                >
+                  Original gift →
+                </Link>
+              </Row>
+            ) : null}
             <Row label="Reconciliation">
-              <ReconciliationLaneBadges lanes={data?.reconciliationLanes} />
+              <ReconciliationLaneBadges
+                lanes={data?.reconciliationLanes ?? gift.reconciliationLanes}
+              />
             </Row>
             <Row label="Off-books">{data?.offBooks ? "Yes" : "No"}</Row>
             {data?.amount != null ? (
@@ -1033,41 +1095,84 @@ function GiftQbPaymentsCard({ giftId }: { giftId: string }) {
             ) : null}
           </div>
 
-          {records.length === 0 ? (
-            <p
-              className="text-sm text-muted-foreground"
-              data-testid="gift-qb-payments-empty"
-            >
-              No linked QuickBooks payments
-            </p>
-          ) : (
-            <div className="space-y-2" data-testid="gift-qb-payments-list">
-              {records.map((record) => (
-                <div
-                  key={record.stagedPaymentId}
-                  className="rounded-md border px-3 py-2"
-                  data-testid={`gift-qb-payment-${record.stagedPaymentId}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <Badge variant="secondary">
-                      {QB_LINK_TYPE_LABELS[record.linkType]}
-                    </Badge>
-                    <span className="text-sm font-semibold tabular-nums">
-                      {formatCurrency(record.amount)}
-                    </span>
-                  </div>
-                  <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-                    <div>Doc #: {record.qbDocNumber || "—"}</div>
-                    <div>Deposit to: {record.qbDepositToAccountName || "—"}</div>
-                    <div>Received: {formatDate(record.dateReceived)}</div>
-                  </div>
-                </div>
-              ))}
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-muted-foreground">
+              Counted QuickBooks payments
             </div>
-          )}
+            {counted.length === 0 ? (
+              <p
+                className="text-sm text-muted-foreground"
+                data-testid="gift-qb-payments-empty"
+              >
+                No linked QuickBooks payments
+              </p>
+            ) : (
+              <div className="space-y-2" data-testid="gift-qb-payments-list">
+                {counted.map((record) => (
+                  <QbRecordRow key={record.stagedPaymentId} record={record} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {corroborating.length > 0 ? (
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">
+                Corroborating evidence (audit only)
+              </div>
+              <div
+                className="space-y-2"
+                data-testid="gift-qb-corroborating-list"
+              >
+                {corroborating.map((record) => (
+                  <QbRecordRow
+                    key={record.stagedPaymentId}
+                    record={record}
+                    corroborating
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </FieldCard>
+  );
+}
+
+// A single QuickBooks record row inside the Payments & reconciliation card.
+// Corroborating rows carry no counted amount (amount is always null server-side)
+// so they render an "Audit only" chip instead of a currency figure.
+function QbRecordRow({
+  record,
+  corroborating,
+}: {
+  record: GiftAuditReconciliationRecord;
+  corroborating?: boolean;
+}) {
+  return (
+    <div
+      className="rounded-md border px-3 py-2"
+      data-testid={`gift-qb-payment-${record.stagedPaymentId}`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <Badge variant="secondary">
+          {QB_LINK_TYPE_LABELS[record.linkType]}
+        </Badge>
+        {corroborating || record.amount == null ? (
+          <span className="text-xs text-muted-foreground">Audit only</span>
+        ) : (
+          <span className="text-sm font-semibold tabular-nums">
+            {formatCurrency(record.amount)}
+          </span>
+        )}
+      </div>
+      <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+        <div>Doc #: {record.qbDocNumber || "—"}</div>
+        <div>Deposit to: {record.qbDepositToAccountName || "—"}</div>
+        <div>Received: {formatDate(record.dateReceived)}</div>
+      </div>
+    </div>
   );
 }
 

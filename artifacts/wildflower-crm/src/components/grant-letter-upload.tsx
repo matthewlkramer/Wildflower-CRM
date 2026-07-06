@@ -3,21 +3,29 @@ import { Upload, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
-interface GrantLetterUploadProps {
+interface FileUploadFieldProps {
   url: string | null;
   filename: string | null;
-  onUploaded: (next: { grantLetterUrl: string; grantLetterFilename: string }) => void;
+  onUploaded: (next: { url: string; filename: string }) => void;
   onCleared: () => void;
   disabled?: boolean;
+  // Button label when there is no file yet (e.g. "Upload grant letter").
+  uploadLabel?: string;
+  toastTitle?: string;
+  // Prefix for data-testid hooks so multiple uploaders on one page stay unique.
+  testIdBase?: string;
 }
 
-export function GrantLetterUpload({
+export function FileUploadField({
   url,
   filename,
   onUploaded,
   onCleared,
   disabled,
-}: GrantLetterUploadProps) {
+  uploadLabel = "Upload file",
+  toastTitle = "File uploaded",
+  testIdBase = "grant-letter",
+}: FileUploadFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const { toast } = useToast();
@@ -49,10 +57,10 @@ export function GrantLetterUpload({
       if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
 
       onUploaded({
-        grantLetterUrl: `/api/storage${objectPath}`,
-        grantLetterFilename: file.name,
+        url: `/api/storage${objectPath}`,
+        filename: file.name,
       });
-      toast({ title: "Grant letter uploaded", description: file.name });
+      toast({ title: toastTitle, description: file.name });
     } catch (err) {
       toast({
         title: "Upload failed",
@@ -73,9 +81,9 @@ export function GrantLetterUpload({
           target="_blank"
           rel="noreferrer"
           className="text-primary hover:underline truncate max-w-[240px]"
-          data-testid="opp-grant-letter-link"
+          data-testid={`${testIdBase}-link`}
         >
-          {filename ?? "View letter"}
+          {filename ?? "View file"}
         </a>
         <Button
           variant="ghost"
@@ -83,8 +91,8 @@ export function GrantLetterUpload({
           className="h-7 w-7"
           disabled={disabled || isUploading}
           onClick={() => onCleared()}
-          aria-label="Remove grant letter"
-          data-testid="opp-grant-letter-clear"
+          aria-label="Remove file"
+          data-testid={`${testIdBase}-clear`}
         >
           <X className="h-4 w-4" />
         </Button>
@@ -93,7 +101,7 @@ export function GrantLetterUpload({
           size="sm"
           disabled={disabled || isUploading}
           onClick={() => inputRef.current?.click()}
-          data-testid="opp-grant-letter-replace"
+          data-testid={`${testIdBase}-replace`}
         >
           {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Replace"}
         </Button>
@@ -118,14 +126,14 @@ export function GrantLetterUpload({
         size="sm"
         disabled={disabled || isUploading}
         onClick={() => inputRef.current?.click()}
-        data-testid="opp-grant-letter-upload"
+        data-testid={`${testIdBase}-upload`}
       >
         {isUploading ? (
           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
         ) : (
           <Upload className="h-4 w-4 mr-2" />
         )}
-        {isUploading ? "Uploading…" : "Upload grant letter"}
+        {isUploading ? "Uploading…" : uploadLabel}
       </Button>
       <input
         ref={inputRef}

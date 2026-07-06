@@ -113,6 +113,7 @@ import {
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
+import { ObjectStorageService } from "../lib/objectStorage";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { resolveGiftFreeze, resolveGiftFreezeById, respondFrozen } from "../lib/freezeGuard";
 import { getCurrentOpenFiscalYear, todayInChicago } from "../lib/governingFiscalYear";
@@ -799,9 +800,21 @@ router.patch(
 
     // Mirror loan_or_grant whenever the legacy `type` is touched (derive from
     // the merged state so an explicit type change maps correctly).
-    const giftWrite: typeof body & { loanOrGrant?: "loan" | "grant" } = { ...body };
+    const giftWrite: typeof body & {
+      loanOrGrant?: "loan" | "grant";
+      grantLetterUploadedAt?: string | null;
+      thankYouLetterUploadedAt?: string | null;
+    } = { ...body };
     if (body.type !== undefined) {
       giftWrite.loanOrGrant = giftTypeToLoanOrGrant(merged.type);
+    }
+    // Stamp the file-upload timestamps server-side: set to now when a URL is
+    // provided, cleared to null when the URL is removed. Never client-settable.
+    if (body.grantLetterUrl !== undefined) {
+      giftWrite.grantLetterUploadedAt = body.grantLetterUrl ? new Date().toISOString() : null;
+    }
+    if (body.thankYouLetterUrl !== undefined) {
+      giftWrite.thankYouLetterUploadedAt = body.thankYouLetterUrl ? new Date().toISOString() : null;
     }
     const [row] = await db
       .update(giftsAndPayments)
@@ -1969,11 +1982,53 @@ router.post(
       ))
       .then((r) => r[0]);
     if (!msg) return notFound(res, "email message");
+
+    // Marking an email as the acknowledgement also captures a DURABLE copy of
+    // its first document attachment onto the gift (thankYouLetter*), so the
+    // acknowledgement file survives an eventual email purge. We only overwrite
+    // the gift's letter when the linked email actually has a document
+    // attachment — linking an attachment-less email leaves any existing
+    // manually-uploaded letter untouched.
+    const docAtt = await db
+      .select({
+        filename: emailAttachments.filename,
+        mimeType: emailAttachments.mimeType,
+        storageKey: emailAttachments.storageKey,
+      })
+      .from(emailAttachments)
+      .where(eq(emailAttachments.emailMessageId, msg.id))
+      .then((rows) => rows.find((a) => isDocumentMime(a.mimeType)) ?? null);
+
+    let letterFields: {
+      thankYouLetterUrl: string;
+      thankYouLetterFilename: string | null;
+      thankYouLetterUploadedAt: string;
+    } | null = null;
+    if (docAtt?.storageKey) {
+      try {
+        const objectPath = await new ObjectStorageService().copyObjectToUploads(
+          docAtt.storageKey,
+        );
+        letterFields = {
+          thankYouLetterUrl: `/api/storage${objectPath}`,
+          thankYouLetterFilename: docAtt.filename ?? "acknowledgement",
+          thankYouLetterUploadedAt: new Date().toISOString(),
+        };
+      } catch (err) {
+        // A copy failure must not block linking the pointer — log and continue.
+        req.log.error(
+          { err, giftId: id, emailMessageId: msg.id },
+          "Failed to copy thank-you attachment onto gift",
+        );
+      }
+    }
+
     const [updated] = await db
       .update(giftsAndPayments)
       .set({
         thankYouSentAt: msg.sentAt.toISOString().slice(0, 10),
         thankYouEmailMessageId: msg.id,
+        ...(letterFields ?? {}),
         updatedAt: new Date(),
       })
       .where(eq(giftsAndPayments.id, id))
@@ -2164,6 +2219,7 @@ router.get(
         dateReceived: gift.dateReceived,
         donor: null,
         quickbooksRecords: [],
+        corroboratingRecords: [],
         restrictions: [],
       });
     }
@@ -2263,6 +2319,65 @@ router.get(
       dateReceived: r.dateReceived,
     }));
 
+    // CORROBORATING — non-counting QB evidence rows (link_role='corroborating',
+    // e.g. a coarse deposit line that corroborates a Stripe-settled gift). These
+    // are audit-only and MUST NOT be summed into the money trail, so amount is
+    // always null (mirrors payment_applications.amount_applied being null there).
+    const corroboratingRows = await db
+      .select({
+        stagedPaymentId: paymentApplications.paymentId,
+        createdTheGift: paymentApplications.createdTheGift,
+        realmId: stagedPayments.realmId,
+        qbEntityType: stagedPayments.qbEntityType,
+        qbEntityId: stagedPayments.qbEntityId,
+        qbDocNumber: stagedPayments.qbDocNumber,
+        qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
+        qbPaymentMethod: stagedPayments.qbPaymentMethod,
+        payerName: stagedPayments.payerName,
+        dateReceived: stagedPayments.dateReceived,
+        groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
+        splitMarker: stagedPaymentSplits.stagedPaymentId,
+      })
+      .from(paymentApplications)
+      .innerJoin(
+        stagedPayments,
+        eq(stagedPayments.id, paymentApplications.paymentId),
+      )
+      .leftJoin(
+        stagedPaymentSplits,
+        and(
+          eq(stagedPaymentSplits.stagedPaymentId, paymentApplications.paymentId),
+          eq(stagedPaymentSplits.giftId, id),
+        ),
+      )
+      .where(
+        and(
+          eq(paymentApplications.giftId, id),
+          eq(paymentApplications.evidenceSource, "quickbooks"),
+          eq(paymentApplications.linkRole, "corroborating"),
+        ),
+      );
+
+    const corroboratingRecords = corroboratingRows.map((r) => ({
+      stagedPaymentId: r.stagedPaymentId,
+      linkType: (r.splitMarker != null
+        ? "split"
+        : r.createdTheGift
+          ? "created"
+          : r.groupReconciledGiftId === id
+            ? "group"
+            : "matched") as "matched" | "created" | "group" | "split",
+      realmId: r.realmId,
+      qbEntityType: r.qbEntityType,
+      qbEntityId: r.qbEntityId,
+      qbDocNumber: r.qbDocNumber,
+      qbDepositToAccountName: r.qbDepositToAccountName,
+      qbPaymentMethod: r.qbPaymentMethod,
+      payerName: r.payerName,
+      amount: null,
+      dateReceived: r.dateReceived,
+    }));
+
     // RESTRICTIONS — the per-allocation restriction coding under this gift.
     const restrictions = await db
       .select({
@@ -2288,6 +2403,7 @@ router.get(
       dateReceived: gift.dateReceived,
       donor,
       quickbooksRecords,
+      corroboratingRecords,
       restrictions,
     });
   }),

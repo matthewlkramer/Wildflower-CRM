@@ -6148,6 +6148,18 @@ components:
           readOnly: true
           description: "Document attachments on the linked thank-you email (PDF / DOCX / etc.). Populated only on the detail endpoint."
           items: { $ref: "#/components/schemas/ThankYouAttachment" }
+        # ── Grant-letter file uploaded directly onto this gift (object storage). ──
+        # Mirrors the pledge's grant_letter_* columns; distinct from the linked
+        # pledge's own grant letter (which the gift page surfaces read-only).
+        grantLetterUrl:             { type: string, nullable: true }
+        grantLetterFilename:        { type: string, nullable: true }
+        grantLetterUploadedAt:      { type: string, format: date-time, nullable: true, readOnly: true, description: "Stamped server-side when grantLetterUrl is set; cleared when it is removed." }
+        # ── Thank-you acknowledgement FILE (durable copy). ──
+        # Uploaded directly or copied off the thank-you email's attachment when
+        # marked as the acknowledgement. Independent of thankYouEmailMessageId.
+        thankYouLetterUrl:          { type: string, nullable: true }
+        thankYouLetterFilename:     { type: string, nullable: true }
+        thankYouLetterUploadedAt:   { type: string, format: date-time, nullable: true, readOnly: true, description: "Stamped server-side when thankYouLetterUrl is set; cleared when it is removed." }
         # Denormalized display names, joined server-side. See
         # OpportunityOrPledge for rationale.
         organizationName:                 { type: string, nullable: true }
@@ -6233,7 +6245,7 @@ components:
         name: { type: string, nullable: true }
     GiftAuditReconciliation:
       type: object
-      required: [giftId, quickbooksTieStatus, reconciliationLanes, offBooks, auditExcluded, quickbooksRecords, restrictions]
+      required: [giftId, quickbooksTieStatus, reconciliationLanes, offBooks, auditExcluded, quickbooksRecords, corroboratingRecords, restrictions]
       description: |
         Per-gift audit-reconciliation view: when the money arrived, the
         QuickBooks record(s) it appears in, who gave it, and its restrictions.
@@ -6251,8 +6263,14 @@ components:
         dateReceived:        { type: string, format: date, nullable: true }
         # WHO
         donor:               { allOf: [ { $ref: "#/components/schemas/GiftAuditReconciliationDonor" } ], nullable: true }
-        # WHERE
+        # WHERE — counted cash-application evidence (money-trail; counted once).
         quickbooksRecords:
+          type: array
+          items: { $ref: "#/components/schemas/GiftAuditReconciliationRecord" }
+        # CORROBORATING — non-counting evidence rows (link_role='corroborating',
+        # e.g. a coarse QB deposit line that corroborates a Stripe-settled gift).
+        # Audit-only; never summed into the money trail. amount is always null.
+        corroboratingRecords:
           type: array
           items: { $ref: "#/components/schemas/GiftAuditReconciliationRecord" }
         # RESTRICTIONS
@@ -6284,6 +6302,10 @@ components:
         paymentExpected:            { type: boolean }
         needsResearch:              { type: boolean }
         tags:                       { type: string }
+        grantLetterUrl:             { type: string }
+        grantLetterFilename:        { type: string }
+        thankYouLetterUrl:          { type: string }
+        thankYouLetterFilename:     { type: string }
     UpdateGiftOrPaymentBody:
       type: object
       properties:
@@ -6309,6 +6331,10 @@ components:
         paymentExpected:            { type: boolean }
         needsResearch:              { type: boolean }
         tags:                       { type: string, nullable: true }
+        grantLetterUrl:             { type: string, nullable: true }
+        grantLetterFilename:        { type: string, nullable: true }
+        thankYouLetterUrl:          { type: string, nullable: true }
+        thankYouLetterFilename:     { type: string, nullable: true }
     ThankYouAttachment:
       type: object
       required: [id, downloadUrl]

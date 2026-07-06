@@ -235,6 +235,22 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // The link is updateable from the gift page so a wrong auto-link
   // can be relinked to the correct message.
   thankYouEmailMessageId: text("thank_you_email_message_id"),
+  // ── Grant-letter file (mirrors opportunities_and_pledges.grant_letter_*) ──
+  // A grant/award letter uploaded directly onto this gift via object storage
+  // (presigned GCS URL → /api/storage/objects/<id>). Distinct from the linked
+  // pledge's own grant letter, which the gift page also surfaces read-only.
+  // Additive/nullable; NO side effects on status / derivation / QB tie.
+  grantLetterUrl: text("grant_letter_url"),
+  grantLetterFilename: text("grant_letter_filename"),
+  grantLetterUploadedAt: timestamp("grant_letter_uploaded_at", { mode: "string" }),
+  // ── Thank-you acknowledgement FILE ──
+  // A durable copy of the thank-you acknowledgement document, either uploaded
+  // directly or copied off the linked thank-you email's attachment when it is
+  // marked as the acknowledgement. Independent of thankYouEmailMessageId (which
+  // is only a pointer to the source email) so the file survives email purge.
+  thankYouLetterUrl: text("thank_you_letter_url"),
+  thankYouLetterFilename: text("thank_you_letter_filename"),
+  thankYouLetterUploadedAt: timestamp("thank_you_letter_uploaded_at", { mode: "string" }),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
   // ── Coding-form reference (one-time Donation Revenue Coding Form import) ──

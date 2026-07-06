@@ -29,7 +29,7 @@ import { TasksPanel } from "@/components/tasks-panel";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
-import { GrantLetterUpload } from "@/components/grant-letter-upload";
+import { FileUploadField } from "@/components/grant-letter-upload";
 import { ReportingDeadlinesDialog } from "@/components/reporting-deadlines-dialog";
 import { WriteOffPledgeDialog } from "@/components/audit-close-dialogs";
 import {
@@ -662,13 +662,16 @@ function OppView({
                     Setting a URL also flips was_pledge sticky-true on
                     the server side (see applyDerivedOppFields).
                   */}
-                  <GrantLetterUpload
+                  <FileUploadField
                     url={opp.grantLetterUrl ?? null}
                     filename={opp.grantLetterFilename ?? null}
+                    uploadLabel="Upload grant letter"
+                    toastTitle="Grant letter uploaded"
+                    testIdBase="opp-grant-letter"
                     onUploaded={(next) =>
                       patch({
-                        grantLetterUrl: next.grantLetterUrl,
-                        grantLetterFilename: next.grantLetterFilename,
+                        grantLetterUrl: next.url,
+                        grantLetterFilename: next.filename,
                       })
                     }
                     onCleared={() =>

@@ -14,6 +14,8 @@ import {
   useDeleteNote,
   useUpdateTask,
   useDeleteTask,
+  useLinkThankYouEmail,
+  getGetGiftOrPaymentQueryKey,
   getListInteractionsQueryKey,
   getListEmailMessagesQueryKey,
   getListCalendarEventsQueryKey,
@@ -82,7 +84,10 @@ import {
   CheckSquare,
   Trash2,
   Check,
+  Search,
+  Heart,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 interface NotesContext {
   personId?: string;
@@ -123,6 +128,49 @@ type Item =
   | { source: "intel"; at: string; row: EmailProposal }
   | { source: "meeting"; at: string; row: MeetingNote }
   | { source: "media"; at: string; row: MediaMention };
+
+// Flattens the human-readable text of a feed item into one lowercase string
+// so the activity search box can match across every in-scope source.
+function searchTextForItem(it: Item): string {
+  const parts: (string | null | undefined)[] = [];
+  switch (it.source) {
+    case "note":
+      parts.push(it.row.body);
+      break;
+    case "task":
+      parts.push(it.row.title, it.row.description);
+      break;
+    case "interaction":
+      parts.push(it.row.summary, it.row.location, it.row.notes);
+      break;
+    case "email":
+      parts.push(
+        it.row.subject,
+        it.row.snippet,
+        it.row.fromEmail,
+        ...(it.row.toEmails ?? []),
+      );
+      break;
+    case "calendar":
+      parts.push(
+        it.row.summary,
+        it.row.location,
+        it.row.description,
+        ...(it.row.attendeeEmails ?? []),
+      );
+      break;
+    case "intel":
+      parts.push(it.row.subjectName, it.row.subjectEmail);
+      break;
+    case "meeting":
+      parts.push(it.row.title, it.row.aiSummary);
+      break;
+    case "media":
+      parts.push(it.row.title, it.row.aiSummary, it.row.publicationName);
+      break;
+  }
+  return parts.filter(Boolean).join(" ").toLowerCase();
+}
 
 type Source = Item["source"];
 
@@ -213,6 +261,7 @@ export function UnifiedActivityFeed({
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [openEmailId, setOpenEmailId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   // Notes/tasks scope — falls back to the relationship scope when no
   // explicit context is given (the common funder/person/household case).
@@ -366,6 +415,27 @@ export function UnifiedActivityFeed({
       },
     },
   });
+  const linkThankYou = useLinkThankYouEmail({
+    mutation: {
+      onSuccess: async () => {
+        if (nt.giftId) {
+          await queryClient.invalidateQueries({
+            queryKey: getGetGiftOrPaymentQueryKey(nt.giftId),
+          });
+        }
+        toast({
+          title: "Marked as thank-you acknowledgement",
+          description: "Any document attachments were copied onto the gift.",
+        });
+      },
+      onError: (err: unknown) =>
+        toast({
+          title: "Could not mark thank-you",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    },
+  });
 
   // ---- Merge + sort newest-first ----------------------------------
   const allItems: Item[] = useMemo(() => {
@@ -427,13 +497,14 @@ export function UnifiedActivityFeed({
     hideTasks,
   ]);
 
-  const items = useMemo(
-    () =>
-      activeSource
-        ? allItems.filter((it) => it.source === activeSource)
-        : allItems,
-    [allItems, activeSource],
-  );
+  const items = useMemo(() => {
+    const bySource = activeSource
+      ? allItems.filter((it) => it.source === activeSource)
+      : allItems;
+    const q = search.trim().toLowerCase();
+    if (!q) return bySource;
+    return bySource.filter((it) => searchTextForItem(it).includes(q));
+  }, [allItems, activeSource, search]);
 
   const loading =
     notes.isLoading ||
@@ -583,6 +654,18 @@ export function UnifiedActivityFeed({
               {createNote.isPending ? "Saving…" : "Save note"}
             </Button>
           </div>
+        </div>
+
+        {/* Full-text search across every in-scope activity source. */}
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search activity…"
+            className="pl-8"
+            data-testid="activity-search"
+          />
         </div>
 
         {/* Source filter chips. */}
@@ -860,6 +943,26 @@ export function UnifiedActivityFeed({
                       <span className="text-xs text-muted-foreground">
                         {fmtWhen(r.sentAt)}
                       </span>
+                      {nt.giftId && r.direction === "sent" ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="ml-auto h-6 gap-1 px-2 text-xs"
+                          disabled={linkThankYou.isPending}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            linkThankYou.mutate({
+                              id: nt.giftId as string,
+                              data: { emailMessageId: r.id },
+                            });
+                          }}
+                          data-testid={`mark-thank-you-${r.id}`}
+                        >
+                          <Heart className="h-3 w-3" />
+                          Mark as thank-you
+                        </Button>
+                      ) : null}
                     </div>
                     <div className="truncate font-medium">
                       {r.subject ? decodeHtmlEntities(r.subject) : "(no subject)"}

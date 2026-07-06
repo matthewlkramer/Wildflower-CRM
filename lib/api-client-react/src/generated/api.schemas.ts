@@ -1989,6 +1989,14 @@ export interface GiftOrPayment {
   thankYouEmailMessageId?: string | null;
   /** Document attachments on the linked thank-you email (PDF / DOCX / etc.). Populated only on the detail endpoint. */
   readonly thankYouAttachments?: readonly ThankYouAttachment[] | null;
+  grantLetterUrl?: string | null;
+  grantLetterFilename?: string | null;
+  /** Stamped server-side when grantLetterUrl is set; cleared when it is removed. */
+  readonly grantLetterUploadedAt?: string | null;
+  thankYouLetterUrl?: string | null;
+  thankYouLetterFilename?: string | null;
+  /** Stamped server-side when thankYouLetterUrl is set; cleared when it is removed. */
+  readonly thankYouLetterUploadedAt?: string | null;
   organizationName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
@@ -2292,6 +2300,7 @@ export interface GiftAuditReconciliation {
   dateReceived?: string | null;
   donor?: GiftAuditReconciliationDonor | null;
   quickbooksRecords: GiftAuditReconciliationRecord[];
+  corroboratingRecords: GiftAuditReconciliationRecord[];
   restrictions: GiftAuditReconciliationRestriction[];
 }
 
@@ -2318,6 +2327,10 @@ export interface CreateGiftOrPaymentBody {
   paymentExpected?: boolean;
   needsResearch?: boolean;
   tags?: string;
+  grantLetterUrl?: string;
+  grantLetterFilename?: string;
+  thankYouLetterUrl?: string;
+  thankYouLetterFilename?: string;
 }
 
 export interface UpdateGiftOrPaymentBody {
@@ -2343,6 +2356,10 @@ export interface UpdateGiftOrPaymentBody {
   paymentExpected?: boolean;
   needsResearch?: boolean;
   tags?: string | null;
+  grantLetterUrl?: string | null;
+  grantLetterFilename?: string | null;
+  thankYouLetterUrl?: string | null;
+  thankYouLetterFilename?: string | null;
 }
 
 export type QuickbooksEntityType = typeof QuickbooksEntityType[keyof typeof QuickbooksEntityType];

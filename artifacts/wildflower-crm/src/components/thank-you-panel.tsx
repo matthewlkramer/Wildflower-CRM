@@ -4,6 +4,7 @@ import {
   useListCandidateThankYouEmails,
   useLinkThankYouEmail,
   useUnlinkThankYouEmail,
+  useUpdateGiftOrPayment,
   getGetGiftOrPaymentQueryKey,
   type GiftOrPaymentDetail,
   type CandidateThankYouEmail,
@@ -11,6 +12,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { FileUploadField } from "@/components/grant-letter-upload";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +32,21 @@ export function ThankYouPanel({ gift }: Props) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const linked = !!gift.thankYouEmailMessageId;
+  const updateMut = useUpdateGiftOrPayment({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({
+          queryKey: getGetGiftOrPaymentQueryKey(gift.id),
+        });
+      },
+      onError: (err: unknown) =>
+        toast({
+          title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
+    },
+  });
   const unlinkMut = useUnlinkThankYouEmail({
     mutation: {
       onSuccess: async () => {
@@ -120,6 +137,34 @@ export function ThankYouPanel({ gift }: Props) {
             you can link one manually.
           </p>
         )}
+        <div className="pt-1 border-t">
+          <div className="text-xs font-medium text-muted-foreground mb-2">
+            Thank-you letter
+          </div>
+          <FileUploadField
+            url={gift.thankYouLetterUrl ?? null}
+            filename={gift.thankYouLetterFilename ?? null}
+            uploadLabel="Upload thank-you letter"
+            toastTitle="Thank-you letter uploaded"
+            testIdBase="gift-thank-you-letter"
+            disabled={updateMut.isPending}
+            onUploaded={(next) =>
+              updateMut.mutate({
+                id: gift.id,
+                data: {
+                  thankYouLetterUrl: next.url,
+                  thankYouLetterFilename: next.filename,
+                },
+              })
+            }
+            onCleared={() =>
+              updateMut.mutate({
+                id: gift.id,
+                data: { thankYouLetterUrl: null, thankYouLetterFilename: null },
+              })
+            }
+          />
+        </div>
       </CardContent>
       {open && (
         <LinkDialog

@@ -128,6 +128,26 @@ export class ObjectStorageService {
     });
   }
 
+  // Server-side copy of an existing private-bucket object (e.g. an email
+  // attachment, identified by its full object name) into a fresh
+  // `uploads/<uuid>` entity, returning the normalized `/objects/...` path.
+  // Used when marking an email as a thank-you acknowledgement so the gift keeps
+  // a durable copy of the attachment that survives email purge.
+  async copyObjectToUploads(sourceObjectName: string): Promise<string> {
+    const privateObjectDir = this.getPrivateObjectDir();
+    const objectId = randomUUID();
+    const fullPath = `${privateObjectDir}/uploads/${objectId}`;
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const sourceFile = bucket.file(sourceObjectName);
+    const [exists] = await sourceFile.exists();
+    if (!exists) {
+      throw new ObjectNotFoundError();
+    }
+    await sourceFile.copy(bucket.file(objectName));
+    return `/objects/uploads/${objectId}`;
+  }
+
   async getObjectEntityFile(objectPath: string): Promise<File> {
     if (!objectPath.startsWith("/objects/")) {
       throw new ObjectNotFoundError();
