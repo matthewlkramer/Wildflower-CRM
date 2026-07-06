@@ -43,7 +43,7 @@ export type ClerkIdentityFetcher = (
 
 export type AuthResult =
   | { ok: true; user: User }
-  | { ok: false; status: 401 | 403 | 500; error: string };
+  | { ok: false; status: 401 | 403 | 500 | 503; error: string; cause?: unknown };
 
 /**
  * Resolve the application user for an authenticated Clerk session.
@@ -68,61 +68,73 @@ export async function resolveAuthenticatedUser(
   repo: UserRepo,
   identityFetcher: ClerkIdentityFetcher = fetchClerkIdentity,
 ): Promise<AuthResult> {
-  let user = await repo.findByClerkId(clerkId);
+  try {
+    let user = await repo.findByClerkId(clerkId);
 
-  if (!user) {
-    // Clerk does not put `email` in session claims by default, so claimEmail
-    // is almost always undefined. We fetch the real identity (email + name)
-    // from the Clerk backend so the seeded-row adoption branch can actually
-    // fire for real sign-ins and so provisioning doesn't fall back to a
-    // nameless `<clerkId>@unknown.com` row that owns nothing.
-    const normalizedClaim = claimEmail?.trim() || undefined;
-    const identity = await identityFetcher(clerkId);
-    const email = normalizedClaim ?? identity?.email ?? undefined;
+    if (!user) {
+      // Clerk does not put `email` in session claims by default, so claimEmail
+      // is almost always undefined. We fetch the real identity (email + name)
+      // from the Clerk backend so the seeded-row adoption branch can actually
+      // fire for real sign-ins and so provisioning doesn't fall back to a
+      // nameless `<clerkId>@unknown.com` row that owns nothing.
+      const normalizedClaim = claimEmail?.trim() || undefined;
+      const identity = await identityFetcher(clerkId);
+      const email = normalizedClaim ?? identity?.email ?? undefined;
 
-    // First-login adoption: if a pre-seeded user row exists with the same
-    // email, claim it by updating its clerkId rather than inserting a
-    // duplicate. BUT do not silently resurrect an archived user — signing
-    // back in should be denied (403) so an operator has to explicitly
-    // unarchive, otherwise archive is meaningless as access control.
-    if (email) {
-      const existing = await repo.findByEmail(email);
-      if (existing) {
-        if (existing.archivedAt) {
-          return { ok: false, status: 403, error: "user_archived" };
+      // First-login adoption: if a pre-seeded user row exists with the same
+      // email, claim it by updating its clerkId rather than inserting a
+      // duplicate. BUT do not silently resurrect an archived user — signing
+      // back in should be denied (403) so an operator has to explicitly
+      // unarchive, otherwise archive is meaningless as access control.
+      if (email) {
+        const existing = await repo.findByEmail(email);
+        if (existing) {
+          if (existing.archivedAt) {
+            return { ok: false, status: 403, error: "user_archived" };
+          }
+          user = await repo.adoptByEmail(existing, clerkId, identity);
         }
-        user = await repo.adoptByEmail(existing, clerkId, identity);
+      }
+
+      if (!user) {
+        // First-login provisioning. The frontend fires multiple parallel API
+        // requests on first page load, so several requireAuth invocations race
+        // here for the same Clerk userId. provision() must be idempotent on
+        // conflict so all concurrent first-login requests resolve to the same
+        // user row.
+        user = await repo.provision(
+          clerkId,
+          email ?? `${clerkId}@unknown.com`,
+          identity,
+        );
       }
     }
 
     if (!user) {
-      // First-login provisioning. The frontend fires multiple parallel API
-      // requests on first page load, so several requireAuth invocations race
-      // here for the same Clerk userId. provision() must be idempotent on
-      // conflict so all concurrent first-login requests resolve to the same
-      // user row.
-      user = await repo.provision(
-        clerkId,
-        email ?? `${clerkId}@unknown.com`,
-        identity,
-      );
+      return { ok: false, status: 500, error: "user_provision_failed" };
     }
-  }
 
-  if (!user) {
-    return { ok: false, status: 500, error: "user_provision_failed" };
-  }
+    // Deny archived users at the auth boundary. The Google SSO restriction to
+    // @wildflowerschools.org is the primary access gate, but archive is
+    // defense-in-depth: an admin can immediately revoke a team member's access
+    // without waiting on Google Workspace propagation, and it also blocks any
+    // pre-seeded placeholder rows that were archived before being claimed.
+    if (user.archivedAt) {
+      return { ok: false, status: 403, error: "user_archived" };
+    }
 
-  // Deny archived users at the auth boundary. The Google SSO restriction to
-  // @wildflowerschools.org is the primary access gate, but archive is
-  // defense-in-depth: an admin can immediately revoke a team member's access
-  // without waiting on Google Workspace propagation, and it also blocks any
-  // pre-seeded placeholder rows that were archived before being claimed.
-  if (user.archivedAt) {
-    return { ok: false, status: 403, error: "user_archived" };
+    return { ok: true, user };
+  } catch (cause) {
+    // The only remaining throw surface here is a database error while looking
+    // up / adopting / provisioning the users row (fetchClerkIdentity already
+    // swallows its own failures). A transient DB hiccup must NOT surface as a
+    // page-breaking bare 500 that blocks an already-provisioned returning user
+    // from a whole page (e.g. the FY Report). Report it as a retryable 503 so
+    // the client can back off and recover; the returning-user fast path still
+    // never touches the Clerk backend. 401 (no token) and 403 (archived) are
+    // explicit returns above and are unaffected.
+    return { ok: false, status: 503, error: "auth_unavailable", cause };
   }
-
-  return { ok: true, user };
 }
 
 /** Real Drizzle/Postgres-backed implementation of {@link UserRepo}. */
@@ -190,6 +202,14 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
     );
 
     if (!result.ok) {
+      // Capture the exact underlying error for a transient (503) failure so
+      // the origin is recorded server-side instead of vanishing into a bare
+      // 500 — this is the failure surface that previously broke the FY Report.
+      if (result.status === 503) {
+        (
+          req as unknown as { log?: { error: (...a: unknown[]) => void } }
+        ).log?.error({ err: result.cause }, "Auth resolution failed (transient)");
+      }
       res.status(result.status).json({ error: result.error });
       return;
     }

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   resolveAuthenticatedUser,
   type UserRepo,
@@ -218,6 +218,44 @@ describe("resolveAuthenticatedUser", () => {
     );
 
     expect(result).toEqual({ ok: false, status: 403, error: "user_archived" });
+  });
+
+  it("returns a retryable 503 (not a thrown 500) when a DB lookup fails", async () => {
+    const { repo } = makeRepo([]);
+    const boom = new Error("db connection reset");
+    repo.findByClerkId = async () => {
+      throw boom;
+    };
+
+    const result = await resolveAuthenticatedUser(
+      "clerk_transient",
+      undefined,
+      repo,
+      identityFetcherFor("whoever@wildflowerschools.org"),
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      status: 503,
+      error: "auth_unavailable",
+      cause: boom,
+    });
+  });
+
+  it("does not touch the Clerk backend on the returning-user fast path", async () => {
+    const existing = makeUser({ id: "u1", clerkId: "clerk_known" });
+    const { repo } = makeRepo([existing]);
+    const identityFetcher = vi.fn(async (): Promise<ClerkIdentity | null> => null);
+
+    const result = await resolveAuthenticatedUser(
+      "clerk_known",
+      undefined,
+      repo,
+      identityFetcher,
+    );
+
+    expect(result).toEqual({ ok: true, user: existing });
+    expect(identityFetcher).not.toHaveBeenCalled();
   });
 
   it("uses the session-claim email and skips the Clerk backend lookup for email", async () => {

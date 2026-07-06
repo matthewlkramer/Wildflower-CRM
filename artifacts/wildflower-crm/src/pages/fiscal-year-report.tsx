@@ -110,6 +110,15 @@ export default function FiscalYearReport() {
     query: {
       queryKey: getGetFiscalYearReportQueryKey(fyId, reportParams),
       enabled: Boolean(fyId) && !isAlias,
+      // A transient auth/DB hiccup (surfaced as a 5xx) should self-recover
+      // rather than break the page. Retry server/network failures a few times
+      // with backoff, but never retry a 4xx — those won't fix themselves.
+      retry: (failureCount, error) => {
+        const status = (error as { status?: number } | null | undefined)?.status;
+        if (status != null && status >= 400 && status < 500) return false;
+        return failureCount < 3;
+      },
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     },
   });
   const fyListQ = useListFiscalYears(undefined, {
@@ -167,6 +176,12 @@ export default function FiscalYearReport() {
   const hasGoal = goalNum != null;
   const overGoal = hasGoal && projection > goalNum;
   const coverage = hasGoal ? projection / goalNum! : null;
+
+  // A hard error with no data to fall back on: show a calm, retryable state
+  // instead of a red "HTTP 500" banner layered over misleading $0 tiles.
+  // While a retry is in flight we keep the loading affordances rather than the
+  // error card so the page doesn't flash between states.
+  const showError = reportQ.isError && !reportQ.isFetching && !data;
 
   const entityScopeNote =
     selectedEntityIds.length === 0
@@ -250,65 +265,84 @@ export default function FiscalYearReport() {
         </div>
       </div>
 
-      {/* Reconciling header — mirrors the dashboard progress bar. */}
-      <Card data-testid="report-summary">
-        <CardHeader className="pb-3">
-          <div className="flex items-baseline justify-between gap-4">
-            <CardTitle className="text-lg">Progress to goal</CardTitle>
-            <div className="text-sm text-right" data-testid="report-summary-total">
-              {reportQ.isLoading ? (
-                <span className="text-muted-foreground">…</span>
-              ) : hasGoal ? (
-                <span>
-                  <span className="font-semibold text-foreground">{formatCurrency(projection)}</span>
-                  <span className="text-muted-foreground"> of {formatCurrency(goalNum!)} goal</span>
-                  <span className="ml-2 font-medium text-foreground">{Math.round(coverage! * 100)}%</span>
-                  {overGoal ? (
-                    <span className="ml-1 text-emerald-600">(+{formatCurrency(projection - goalNum!)} over)</span>
-                  ) : null}
-                </span>
-              ) : (
-                <span className="text-muted-foreground">
-                  <span className="font-semibold text-foreground">{formatCurrency(projection)}</span>{" "}
-                  projected · No goal set
-                </span>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <SummaryTile label="Received" value={formatCurrency(received)} testId="tile-received" />
-            <SummaryTile label="Committed (weighted)" value={formatCurrency(committedWeighted)} testId="tile-committed" />
-            <SummaryTile label="Weighted open pipeline" value={formatCurrency(openWeighted)} testId="tile-open" />
-            <SummaryTile label="Goal" value={fmt(totals?.goal ?? null)} testId="tile-goal" />
-          </div>
-        </CardContent>
-      </Card>
+      {showError ? (
+        <Card data-testid="report-error">
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <p className="text-sm font-medium text-foreground">
+              We couldn't load this report just now.
+            </p>
+            <p className="max-w-md text-sm text-muted-foreground">
+              This is usually a brief connection hiccup — nothing is lost. Try
+              again in a moment.
+            </p>
+            <button
+              type="button"
+              data-testid="report-retry"
+              onClick={() => reportQ.refetch()}
+              disabled={reportQ.isFetching}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+            >
+              {reportQ.isFetching ? "Retrying…" : "Try again"}
+            </button>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Reconciling header — mirrors the dashboard progress bar. */}
+          <Card data-testid="report-summary">
+            <CardHeader className="pb-3">
+              <div className="flex items-baseline justify-between gap-4">
+                <CardTitle className="text-lg">Progress to goal</CardTitle>
+                <div className="text-sm text-right" data-testid="report-summary-total">
+                  {reportQ.isLoading ? (
+                    <span className="text-muted-foreground">…</span>
+                  ) : hasGoal ? (
+                    <span>
+                      <span className="font-semibold text-foreground">{formatCurrency(projection)}</span>
+                      <span className="text-muted-foreground"> of {formatCurrency(goalNum!)} goal</span>
+                      <span className="ml-2 font-medium text-foreground">{Math.round(coverage! * 100)}%</span>
+                      {overGoal ? (
+                        <span className="ml-1 text-emerald-600">(+{formatCurrency(projection - goalNum!)} over)</span>
+                      ) : null}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      <span className="font-semibold text-foreground">{formatCurrency(projection)}</span>{" "}
+                      projected · No goal set
+                    </span>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <SummaryTile label="Received" value={formatCurrency(received)} testId="tile-received" />
+                <SummaryTile label="Committed (weighted)" value={formatCurrency(committedWeighted)} testId="tile-committed" />
+                <SummaryTile label="Weighted open pipeline" value={formatCurrency(openWeighted)} testId="tile-open" />
+                <SummaryTile label="Goal" value={fmt(totals?.goal ?? null)} testId="tile-goal" />
+              </div>
+            </CardContent>
+          </Card>
 
-      {reportQ.isError ? (
-        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive" data-testid="report-error">
-          {reportQ.error instanceof Error ? reportQ.error.message : "Failed to load fiscal year report."}
-        </div>
-      ) : null}
-
-      <ReceivedTable
-        rows={receivedRows}
-        total={totals?.received ?? "0"}
-        isLoading={reportQ.isLoading}
-      />
-      <CommittedTable
-        rows={committedRows}
-        totalAmount={totals?.committed ?? "0"}
-        totalWeighted={totals?.committedWeighted ?? "0"}
-        isLoading={reportQ.isLoading}
-      />
-      <OpenTable
-        rows={openRows}
-        totalAsk={totals?.openAsk ?? "0"}
-        totalWeighted={totals?.openWeighted ?? "0"}
-        isLoading={reportQ.isLoading}
-      />
+          <ReceivedTable
+            rows={receivedRows}
+            total={totals?.received ?? "0"}
+            isLoading={reportQ.isLoading}
+          />
+          <CommittedTable
+            rows={committedRows}
+            totalAmount={totals?.committed ?? "0"}
+            totalWeighted={totals?.committedWeighted ?? "0"}
+            isLoading={reportQ.isLoading}
+          />
+          <OpenTable
+            rows={openRows}
+            totalAsk={totals?.openAsk ?? "0"}
+            totalWeighted={totals?.openWeighted ?? "0"}
+            isLoading={reportQ.isLoading}
+          />
+        </>
+      )}
     </div>
   );
 }
