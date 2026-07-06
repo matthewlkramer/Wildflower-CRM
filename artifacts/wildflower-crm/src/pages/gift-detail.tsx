@@ -80,6 +80,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { NeedsResearchBadge } from "@/components/needs-research-badge";
 
 const GIFT_TYPE_OPTIONS = [
   { value: "standard_gift", label: "Standard gift" },
@@ -517,6 +518,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       backLabel="Back to gifts"
       title={title}
       typeBadge="Gift"
+      headerBadges={<NeedsResearchBadge flagged={gift.flaggedForResearch} />}
       subtitle={donorDisplay}
       actions={actions}
       highlights={highlights}
@@ -566,16 +568,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                   allowNull={false}
                   display={gift.paymentExpected ? "Yes" : "No"}
                   onSave={(next) => patch({ paymentExpected: next ?? true })}
-                />
-              </Row>
-              <Row label="Needs research">
-                <InlineEditBoolean
-                  label="Needs research"
-                  testIdBase="gift-needs-research"
-                  value={gift.needsResearch}
-                  allowNull={false}
-                  display={gift.needsResearch ? "Yes" : "No"}
-                  onSave={(next) => patch({ needsResearch: next ?? false })}
                 />
               </Row>
             </div>

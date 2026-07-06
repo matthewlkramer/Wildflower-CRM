@@ -1342,6 +1342,8 @@ export type OrganizationDetail = Organization & ({
   phoneNumbers?: PhoneNumber[];
   addresses?: Address[];
   readonly paymentIntermediary?: PaymentIntermediary | null;
+  /** Derived (never persisted): true when an OPEN Cleanup Queue item with reason_code='needs_research' targets this record. Drives the passive 'Needs research' detail-page badge; set only via the Cleanup Queue, never writable here. */
+  readonly flaggedForResearch?: boolean;
 });
 
 export interface OrganizationList {
@@ -1575,6 +1577,8 @@ export type PersonDetail = Person & {
   emails?: Email[];
   phoneNumbers?: PhoneNumber[];
   addresses?: Address[];
+  /** Derived (never persisted): true when an OPEN Cleanup Queue item with reason_code='needs_research' targets this record. Drives the passive 'Needs research' detail-page badge; set only via the Cleanup Queue, never writable here. */
+  readonly flaggedForResearch?: boolean;
 };
 
 export interface PersonList {
@@ -1968,8 +1972,6 @@ export interface GiftOrPayment {
   offBooksFiscalSponsor: boolean;
   /** When false, no QuickBooks record will ever arrive (e.g. fiscal-sponsor-era or direct-to-school money), so the gift is treated as exempt from QuickBooks-tie status (alongside offBooksFiscalSponsor / designatedToSchool). Defaults true. */
   paymentExpected: boolean;
-  /** Plain human-set flag: this money record hasn't been fully figured out yet (unknown donor, ambiguous coding, unclear restriction, etc.). Never auto-derived; flipping it has no side effects on status / derivation / QuickBooks tie. */
-  needsResearch: boolean;
   /** Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update. */
   readonly quickbooksTieStatus: GiftQuickbooksTie;
   /** Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition. */
@@ -2044,6 +2046,8 @@ export type OpportunityOrPledgeDetail = OpportunityOrPledge & {
   allocations?: PledgeAllocation[];
   payments?: GiftOrPayment[];
   auditClose: PledgeAuditCloseResolution;
+  /** Derived (never persisted): true when an OPEN Cleanup Queue item with reason_code='needs_research' targets this record. Drives the passive 'Needs research' detail-page badge; set only via the Cleanup Queue, never writable here. */
+  readonly flaggedForResearch?: boolean;
 };
 
 export interface OpportunityOrPledgeList {
@@ -2217,6 +2221,8 @@ export interface GiftAuditCloseResolution {
 export type GiftOrPaymentDetail = GiftOrPayment & {
   allocations?: GiftAllocation[];
   auditClose: GiftAuditCloseResolution;
+  /** Derived (never persisted): true when an OPEN Cleanup Queue item with reason_code='needs_research' targets this record. Drives the passive 'Needs research' detail-page badge; set only via the Cleanup Queue, never writable here. Replaces the deprecated writable needsResearch column. */
+  readonly flaggedForResearch?: boolean;
   /** True when this gift is a full-award placeholder on a reimbursable pledge with NO settlement evidence: its amount equals the pledge's full awarded_amount, it is the sole active gift on that reimbursable pledge, and it carries no QuickBooks/Stripe/Donorbox ledger row or legacy final-amount pointer. Reimbursable grants are pledges paid as many real 1:1 reimbursement checks, so the UI nudges the user to book real checks instead of one award-amount lump. Non-blocking and reversible. */
   readonly reimbursablePlaceholderWarning?: boolean;
 };
@@ -2329,7 +2335,6 @@ export interface CreateGiftOrPaymentBody {
   designatedToSchool?: boolean;
   offBooksFiscalSponsor?: boolean;
   paymentExpected?: boolean;
-  needsResearch?: boolean;
   tags?: string;
   grantLetterUrl?: string;
   grantLetterFilename?: string;
@@ -2365,7 +2370,6 @@ export interface UpdateGiftOrPaymentBody {
   designatedToSchool?: boolean;
   offBooksFiscalSponsor?: boolean;
   paymentExpected?: boolean;
-  needsResearch?: boolean;
   tags?: string | null;
   grantLetterUrl?: string | null;
   grantLetterFilename?: string | null;

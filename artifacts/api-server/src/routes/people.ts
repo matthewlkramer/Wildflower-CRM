@@ -19,6 +19,7 @@ import { mergeEntity, PERSON_MERGE_CONFIG } from "../lib/mergeEntities";
 import { inArray } from "drizzle-orm";
 import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
+import { isFlaggedForResearch } from "../lib/flaggedForResearch";
 import { syncPersonToFlodeskInBackground } from "../lib/flodeskSync";
 
 // JSON object shape carried by the active/past organization-name aggregates so
@@ -344,12 +345,15 @@ router.get(
     const id = paramId(req);
     const row = await db.select(peopleListSelect).from(people).where(eq(people.id, id)).then((r) => r[0]);
     if (!row) return notFound(res, "person");
-    const [roles, emailRows, phoneRows, addressRows] = await Promise.all([
-      peopleEntityRolesQuery().where(eq(peopleEntityRoles.personId, id)),
-      db.select().from(emails).where(eq(emails.personId, id)),
-      db.select().from(phoneNumbers).where(eq(phoneNumbers.personId, id)),
-      db.select().from(addresses).where(eq(addresses.personId, id)),
-    ]);
+    const [roles, emailRows, phoneRows, addressRows, flaggedForResearch] =
+      await Promise.all([
+        peopleEntityRolesQuery().where(eq(peopleEntityRoles.personId, id)),
+        db.select().from(emails).where(eq(emails.personId, id)),
+        db.select().from(phoneNumbers).where(eq(phoneNumbers.personId, id)),
+        db.select().from(addresses).where(eq(addresses.personId, id)),
+        // Passive "Needs research" badge — driven solely by the Cleanup Queue.
+        isFlaggedForResearch(id),
+      ]);
     const viewer = getViewer(req);
     res.json({
       ...maskPersonRow(row, viewer),
@@ -357,6 +361,7 @@ router.get(
       emails: emailRows,
       phoneNumbers: phoneRows,
       addresses: addressRows,
+      flaggedForResearch,
     });
   }),
 );

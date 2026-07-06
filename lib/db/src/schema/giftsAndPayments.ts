@@ -205,10 +205,14 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // off-books / QB-tie exemption, and the split-gift path copies it onto new rows.
   // Retained (see designatedToSchool).
   paymentExpected: boolean("payment_expected").default(true).notNull(),
-  // Plain human-set flag: a fundraiser/finance reviewer hasn't fully figured
-  // this money record out yet (unknown donor, ambiguous coding, unclear
-  // restriction, etc.) and wants to come back to it. Never auto-derived and has
-  // NO side effects on status / derivation / QB tie — a pure annotation.
+  // @deprecated DO NOT DROP (invariant #7 — non-destructive). Superseded by the
+  // Cleanup Queue as the single source of truth for "needs research": a passive,
+  // read-only `flaggedForResearch` badge is now DERIVED on the detail endpoints
+  // from an OPEN cleanup_queue row (reason_code='needs_research'). This column is
+  // no longer written (removed from the create/update API bodies) or read into
+  // any response projection (stripped from giftHeaderColumns). Retained so dev
+  // push stays additive and prod Publish never auto-drops it; a physical DROP
+  // must ship later as a reviewed SQL file once no data depends on it.
   needsResearch: boolean("needs_research").default(false).notNull(),
   // "Won gift awaiting imminent payment" (bookable-gift SOP). Set when a gift is
   // minted from an opportunity that is expected to settle in cash shortly — the

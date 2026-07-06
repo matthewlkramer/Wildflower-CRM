@@ -150,6 +150,7 @@ const PRIORITY_OPTIONS = [
 ] as const satisfies ReadonlyArray<InlineSelectOption<Priority>>;
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { NeedsResearchBadge } from "@/components/needs-research-badge";
 import { PriorityTooltip } from "@/components/priority-tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -428,6 +429,7 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       backLabel="Back to funders"
       title={title}
       typeBadge="Organization"
+      headerBadges={<NeedsResearchBadge flagged={org.flaggedForResearch} />}
       subtitle={
         <div className="w-full space-y-2">
           <InlineEditSelect

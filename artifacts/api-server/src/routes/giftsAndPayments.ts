@@ -50,7 +50,13 @@ const maskGiftDonorRow = maskDonorDisplayFields;
 // Named gift-header projection, reused by the QuickBooks reconcile/mint routes
 // (matching.ts, actions.ts) that echo a gift row directly, plus the opportunities
 // payments projection and the archive/unarchive routes.
-const giftHeaderColumns = getTableColumns(giftsAndPayments);
+// `needs_research` is deprecated (replaced by the Cleanup-Queue-derived
+// `flaggedForResearch` detail badge). Strip it here so it leaks through NO gift
+// response projection — every full-row select flows through this named column
+// set (see deprecated-column-response-leak). The physical column is retained
+// (invariant #7); it is simply never read into a response.
+const { needsResearch: _deprecatedNeedsResearch, ...giftHeaderColumns } =
+  getTableColumns(giftsAndPayments);
 export { giftHeaderColumns };
 const donorJoinSelect = {
   ...giftHeaderColumns,
@@ -137,6 +143,7 @@ import {
   qbLedgerPaymentIdForGift,
 } from "../lib/paymentApplications";
 import { isReimbursablePlaceholderGift } from "../lib/reimbursablePlaceholder";
+import { isFlaggedForResearch } from "../lib/flaggedForResearch";
 import {
   derivedSettledAmountForGift,
   derivedProcessorFeeForGift,
@@ -423,19 +430,26 @@ async function buildGiftDetail(id: string, viewer: Viewer) {
   // read runs in a trivial read transaction because computeGiftSurplus takes a
   // Tx (via getGiftPaymentSummary).
   const giftFreeze = await resolveGiftFreeze(undefined, row.dateReceived);
-  const [overpaySurplusRaw, resolvedByGiftId, reimbursablePlaceholderWarning] =
-    await Promise.all([
-      db.transaction((tx) => computeGiftSurplus(tx, { id: row.id, amount: row.amount })),
-      findActiveOverpayChildGiftId(id),
-      // Guardrail: warn when this gift is a full-award placeholder on a
-      // reimbursable pledge with no settlement evidence (nudge to book real
-      // reimbursement checks instead — see lib/reimbursablePlaceholder.ts).
-      isReimbursablePlaceholderGift(id),
-    ]);
+  const [
+    overpaySurplusRaw,
+    resolvedByGiftId,
+    reimbursablePlaceholderWarning,
+    flaggedForResearch,
+  ] = await Promise.all([
+    db.transaction((tx) => computeGiftSurplus(tx, { id: row.id, amount: row.amount })),
+    findActiveOverpayChildGiftId(id),
+    // Guardrail: warn when this gift is a full-award placeholder on a
+    // reimbursable pledge with no settlement evidence (nudge to book real
+    // reimbursement checks instead — see lib/reimbursablePlaceholder.ts).
+    isReimbursablePlaceholderGift(id),
+    // Passive "Needs research" badge — driven solely by the Cleanup Queue.
+    isFlaggedForResearch(id),
+  ]);
   return {
     ...masked,
     reconciliationLanes: deriveGiftLanes(masked.quickbooksTieStatus),
     reimbursablePlaceholderWarning,
+    flaggedForResearch,
     allocations,
     thankYouAttachments,
     donorbox: donorboxEnrichmentOrNull(donorboxRow),

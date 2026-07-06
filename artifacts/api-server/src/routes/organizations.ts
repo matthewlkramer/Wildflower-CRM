@@ -48,6 +48,7 @@ import { mergeEntity, ORGANIZATION_MERGE_CONFIG } from "../lib/mergeEntities";
 import { auditCreate, auditUpdate } from "../lib/audit";
 import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
+import { isFlaggedForResearch } from "../lib/flaggedForResearch";
 
 const ORGANIZATIONS_ARRAY_PARAMS = [
   "entityType",
@@ -312,8 +313,14 @@ router.get(
       .where(eq(organizations.id, id))
       .then((r) => r[0]);
     if (!row) return notFound(res, "organization");
-    const [people, emailRows, phoneRows, addressRows, paymentIntermediary] =
-      await Promise.all([
+    const [
+      people,
+      emailRows,
+      phoneRows,
+      addressRows,
+      paymentIntermediary,
+      flaggedForResearch,
+    ] = await Promise.all([
         peopleEntityRolesQuery().where(
           eq(peopleEntityRoles.organizationId, id),
         ),
@@ -329,6 +336,8 @@ router.get(
               )
               .then((r) => r[0] ?? null)
           : Promise.resolve(null),
+        // Passive "Needs research" badge — driven solely by the Cleanup Queue.
+        isFlaggedForResearch(id),
       ]);
     const viewer = getViewer(req);
     res.json({
@@ -338,6 +347,7 @@ router.get(
       phoneNumbers: phoneRows,
       addresses: addressRows,
       paymentIntermediary,
+      flaggedForResearch,
     });
   }),
 );

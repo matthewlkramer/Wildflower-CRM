@@ -248,7 +248,8 @@ export const GetOrganizationResponse = zod.object({
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
-}).nullish()
+}).nullish(),
+  "flaggedForResearch": zod.boolean().optional().describe('Derived (never persisted): true when an OPEN Cleanup Queue item with reason_code=\'needs_research\' targets this record. Drives the passive \'Needs research\' detail-page badge; set only via the Cleanup Queue, never writable here.')
 }))
 
 export const UpdateOrganizationParams = zod.object({

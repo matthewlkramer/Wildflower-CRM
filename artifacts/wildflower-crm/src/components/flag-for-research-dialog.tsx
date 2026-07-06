@@ -19,6 +19,17 @@ import { useToast } from "@/hooks/use-toast";
 
 const CLEANUP_KEY_PREFIX = "/api/cleanup-queue";
 
+// Map a flag target type to the API key prefix of the record's detail query, so
+// flagging refreshes the passive "Needs research" badge on that detail page.
+// `staged_payment` has no such badge, so it is intentionally omitted.
+const DETAIL_KEY_PREFIX: Partial<Record<FlagForResearchBodyTargetType, string>> = {
+  organization: "/api/organizations",
+  person: "/api/people",
+  opportunity: "/api/opportunities-and-pledges",
+  pledge: "/api/opportunities-and-pledges",
+  gift: "/api/gifts-and-payments",
+};
+
 /**
  * "Flag for research" action — adds the current record to the Cleanup Queue
  * with reason_code='needs_research'. Shared across opportunity/pledge,
@@ -70,6 +81,10 @@ export function FlagForResearchDialog({
           void queryClient.invalidateQueries({
             queryKey: [CLEANUP_KEY_PREFIX],
           });
+          const detailPrefix = DETAIL_KEY_PREFIX[targetType];
+          if (detailPrefix) {
+            void queryClient.invalidateQueries({ queryKey: [detailPrefix] });
+          }
           setOpen(false);
           setNote("");
           toast({

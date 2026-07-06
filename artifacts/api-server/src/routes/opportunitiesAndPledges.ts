@@ -116,6 +116,7 @@ import {
   deriveOppFields,
 } from "../lib/pledgeStage";
 import { reimbursablePledgeExistsSql } from "../lib/reimbursablePlaceholder";
+import { isFlaggedForResearch } from "../lib/flaggedForResearch";
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
 import {
   donorDisplayColumns,
@@ -376,6 +377,7 @@ router.get(
       pledgeFreeze,
       uncollectedRaw,
       resolvedByWriteOffPledgeId,
+      flaggedForResearch,
     ] = await Promise.all([
       db.select().from(pledgeAllocations).where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
       // Named gift-header projection for the nested `payments` array.
@@ -386,6 +388,8 @@ router.get(
       resolvePledgeFreeze(undefined, row.actualCompletionDate),
       computePledgeUncollectedRemainder(id),
       findActiveWriteOffChildPledgeId(id),
+      // Passive "Needs research" badge — driven solely by the Cleanup Queue.
+      isFlaggedForResearch(id),
     ]);
     const auditClose = {
       frozen: pledgeFreeze.frozen,
@@ -393,7 +397,7 @@ router.get(
       uncollectedRemainder: Math.max(0, uncollectedRaw).toFixed(2),
       resolvedByWriteOffPledgeId,
     };
-    res.json({ ...maskOppDonorRow(row, getViewer(req)), allocations, payments, auditClose });
+    res.json({ ...maskOppDonorRow(row, getViewer(req)), allocations, payments, auditClose, flaggedForResearch });
   }),
 );
 

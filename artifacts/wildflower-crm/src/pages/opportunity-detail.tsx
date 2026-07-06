@@ -114,6 +114,7 @@ const CONDITIONS_MET_LABELS: Record<OpportunityConditionsMet, string> = {
   yes: "Yes",
 };
 import { Badge } from "@/components/ui/badge";
+import { NeedsResearchBadge } from "@/components/needs-research-badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -665,6 +666,7 @@ function OppView({
           {opp.fiscalYear}
         </Badge>
       ) : null}
+      <NeedsResearchBadge flagged={opp.flaggedForResearch} />
     </>
   );
 

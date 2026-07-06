@@ -140,6 +140,7 @@ import { useToast } from "@/hooks/use-toast";
 import { personDisplayName } from "@/lib/person";
 import { canSeeIdentity, canManageIdentity, ANONYMOUS_LABEL } from "@/lib/visibility";
 import { Badge } from "@/components/ui/badge";
+import { NeedsResearchBadge } from "@/components/needs-research-badge";
 import { PriorityTooltip } from "@/components/priority-tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -489,6 +490,7 @@ function PersonView({ person }: { person: PersonDetail }) {
       backLabel="Back to individuals"
       title={title}
       typeBadge="Individual"
+      headerBadges={<NeedsResearchBadge flagged={person.flaggedForResearch} />}
       subtitle={
         <div className="w-full space-y-2">
           {person.pronouns ? <div>{formatEnum(person.pronouns)}</div> : null}
