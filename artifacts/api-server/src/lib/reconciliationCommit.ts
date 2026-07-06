@@ -17,12 +17,14 @@ import {
   applyPaymentApplication,
   bookStripeChargeApplication,
   qbLedgerExistsForGiftExcludingPayment,
+  removePaymentApplicationsForStripeCharge,
 } from "./paymentApplications";
 import { recordAudit } from "./audit";
 import { APPROVABLE_STAGED_STATUSES } from "./reconciliationGate";
 import {
   stampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
+  unstampGiftFinalAmount,
 } from "./giftFinalAmount";
 import { donorOf, type LinkDonor } from "./quickbooksLink";
 import { upsertSettlementLink } from "./settlementLink";
@@ -546,6 +548,13 @@ export interface LinkGiftInTxArgs {
   effectiveGiftDonor: LinkDonor;
   /** Whether the reviewer confirmed a gift-donor switch (re-points the gift). */
   donorSwitching: boolean;
+  /** Whether the reviewer confirmed re-sourcing the gift from `charge` even
+   *  though it is currently sourced from `oldStripeCharge`. */
+  switchStripeSource?: boolean;
+  /** The Stripe charge that currently backs the gift's amount, ALREADY locked,
+   *  when a source switch was confirmed — orphaned back to the queue before the
+   *  new charge is stamped. Null unless switching. */
+  oldStripeCharge?: typeof stripeStagedCharges.$inferSelect | null;
   /** App user id stamped as the confirmer. */
   userId: string;
   /** Request used for audit attribution. */
@@ -574,10 +583,18 @@ export async function linkGiftInTx(
     auditReq,
     effectiveGiftDonor,
     donorSwitching,
+    switchStripeSource = false,
+    oldStripeCharge = null,
   } = args;
 
   const rederivePledgeIds: string[] = [];
   const finalDonor = effectiveGiftDonor;
+  // Did we actually orphan an old backing charge? (drives the audit summary)
+  const switchedStripeSource =
+    switchStripeSource &&
+    !!oldStripeCharge &&
+    !!charge &&
+    oldStripeCharge.id !== charge.id;
 
   // Tie the staged row to the gift. Only succeeds if still approvable AND no
   // other staged payment already QB-claims this gift in the ledger — the ledger
@@ -630,6 +647,60 @@ export async function linkGiftInTx(
         updatedAt: new Date(),
       })
       .where(eq(giftsAndPayments.id, giftId));
+  }
+
+  // Source switch (Task #546): the reviewer confirmed re-sourcing this gift from
+  // the newly selected charge even though a DIFFERENT charge currently backs it.
+  // Orphan the old charge FIRST — the partial-unique on matched_gift_id forbids
+  // two charges pointing at one gift, and the unstamp is pointer-safe (it only
+  // fires while the gift still points at the OLD charge), so the old pointer must
+  // be cleared before the new charge is stamped below. Mirrors the single-charge
+  // revert (stripe.ts): drop the old charge's ledger row, unstamp the gift (a
+  // no-op for the amount when it was Stripe-sourced — Stripe amount is derived),
+  // then return the charge to the unmatched-money queue. We never delete the
+  // gift here even if the old charge minted it: the gift is the switch target.
+  if (switchedStripeSource && oldStripeCharge) {
+    await removePaymentApplicationsForStripeCharge(tx, oldStripeCharge.id);
+    const unstamped = await unstampGiftFinalAmount(tx, giftId, {
+      source: "stripe",
+      stripeChargeId: oldStripeCharge.id,
+    });
+    if (unstamped.restored) {
+      await adjustSingleAllocationOrFlag(
+        tx,
+        giftId,
+        unstamped.oldAmount,
+        unstamped.newAmount,
+        "stripe",
+      );
+    }
+    const oldHasDonor =
+      !!oldStripeCharge.organizationId ||
+      !!oldStripeCharge.individualGiverPersonId ||
+      !!oldStripeCharge.householdId;
+    await tx
+      .update(stripeStagedCharges)
+      .set({
+        status: "pending",
+        matchedGiftId: null,
+        createdGiftId: null,
+        autoApplied: false,
+        matchStatus: oldHasDonor ? "suggested" : "unmatched",
+        matchConfirmedAt: null,
+        matchConfirmedByUserId: null,
+        approvedAt: null,
+        approvedByUserId: null,
+        ...(oldStripeCharge.refundPropagationStatus === "proposed"
+          ? {
+              refundPropagationStatus: "none" as const,
+              refundPropagationKind: null,
+              refundPropagationGiftId: null,
+              refundProposedAmount: null,
+            }
+          : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(stripeStagedCharges.id, oldStripeCharge.id));
   }
 
   // Stamp the gift's FINAL amount + rebalance its single allocation (or flag a
@@ -754,13 +825,14 @@ export async function linkGiftInTx(
     rederivePledgeIds.push(opp.id);
   }
 
+  const summaryParts = ["Reconciled QuickBooks payment to gift"];
+  if (donorSwitching) summaryParts.push("switched its donor");
+  if (switchedStripeSource) summaryParts.push("switched its Stripe source");
   await recordAudit(tx, auditReq, {
     action: "update",
     entityType: "gift",
     entityId: giftId,
-    summary: donorSwitching
-      ? `Reconciled QuickBooks payment to gift and switched its donor (complete match)`
-      : `Reconciled QuickBooks payment to gift (complete match)`,
+    summary: `${summaryParts.join(" and ")} (complete match)`,
     metadata: {
       stagedPaymentId,
       stripeChargeId: charge?.id ?? null,
@@ -768,6 +840,13 @@ export async function linkGiftInTx(
       outcome: "link_existing_gift",
       ...(donorSwitching
         ? { switchedGiftDonor: true, fromDonor: donorOf(gift), toDonor: effectiveGiftDonor }
+        : {}),
+      ...(switchedStripeSource && oldStripeCharge
+        ? {
+            switchedStripeSource: true,
+            fromStripeChargeId: oldStripeCharge.id,
+            toStripeChargeId: charge?.id ?? null,
+          }
         : {}),
     },
   });

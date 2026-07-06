@@ -874,6 +874,30 @@ router.post(
           }
         }
 
+        // ── Optional Stripe-source switch (human-confirmed) ────────────────────
+        // Re-targeting to a gift already sourced from a DIFFERENT Stripe charge
+        // hard-blocks (gate: gift_already_stripe_sourced) unless the reviewer
+        // confirmed the switch. When a switch is in play, load + lock the charge
+        // that currently backs the gift so we can (a) surface its details in the
+        // 409 the UI describes and (b) hand it to the commit to orphan back to the
+        // queue. Only meaningful when a new charge is selected and it differs.
+        let oldStripeCharge: typeof stripeStagedCharges.$inferSelect | null = null;
+        const switchingStripeSource =
+          !!charge &&
+          gift.finalAmountSource === "stripe" &&
+          !!gift.finalAmountStripeChargeId &&
+          gift.finalAmountStripeChargeId !== charge.id;
+        if (switchingStripeSource && gift.finalAmountStripeChargeId) {
+          oldStripeCharge =
+            (await tx
+              .select()
+              .from(stripeStagedCharges)
+              .where(eq(stripeStagedCharges.id, gift.finalAmountStripeChargeId))
+              .for("update")
+              .then((r) => r[0])) ?? null;
+        }
+        const switchStripeSource = body.switchStripeSource === true;
+
         // Stripe GROSS wins when a charge is selected; else the QB staged amount.
         const evidenceAmount = charge ? charge.grossAmount : staged.amount;
 
@@ -925,6 +949,15 @@ router.post(
           stripeChargesAvailable,
           overrideAmountMismatchReason:
             body.overrideAmountMismatchReason ?? null,
+          switchStripeSource,
+          currentStripeChargeDetails: oldStripeCharge
+            ? {
+                id: oldStripeCharge.id,
+                amount: oldStripeCharge.grossAmount,
+                payerName: oldStripeCharge.payerName,
+                date: oldStripeCharge.dateReceived,
+              }
+            : null,
         });
         if (issues.length > 0) {
           throw new ApproveAbort(409, {
@@ -944,6 +977,8 @@ router.post(
           evidenceAmount,
           effectiveGiftDonor,
           donorSwitching,
+          switchStripeSource,
+          oldStripeCharge,
           userId: user.id,
           auditReq: req,
         });

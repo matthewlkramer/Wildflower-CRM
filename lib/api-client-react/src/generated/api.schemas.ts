@@ -4133,6 +4133,8 @@ export interface ApproveCompleteMatchBody {
   paymentIntermediaryId?: string | null;
   /** For link_existing_gift ONLY: when true, re-point the existing gift's donor to the single donor FK supplied in this body (after explicit human confirmation in the UI). Blocked (409 gift_pledge_donor_conflict) when the gift is a payment on a pledge/opportunity owned by a different donor — fix the pledge first. */
   switchGiftDonor?: boolean | null;
+  /** For link_existing_gift ONLY: when true, re-source the existing gift from the Stripe charge selected in stripeChargeId, orphaning the charge that currently backs it (which returns to the unmatched-money queue as pending) and recording an audit entry — after explicit human confirmation in the UI. When omitted and the gift is already sourced from a DIFFERENT charge, the approve is blocked (409 consistency_gate, issue code gift_already_stripe_sourced) whose details carry the current backing charge (id, amount, payer, date) so the UI can describe the switch. */
+  switchStripeSource?: boolean | null;
   /** The Stripe charge whose GROSS becomes the gift's final amount (Stripe precedence). Omit for QB-only money (brokerage/check). */
   stripeChargeId?: string | null;
   /** Required to approve when the evidence amount and the gift amount fall outside the fee-band tolerance. */

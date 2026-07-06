@@ -387,6 +387,47 @@ describe("runConsistencyGate", () => {
     ).not.toContain("gift_already_stripe_sourced");
   });
 
+  it("switchStripeSource confirmed → re-point allowed (no block)", () => {
+    expect(
+      codes(
+        baseInput({
+          stripeCharge: { id: "c-new", stripePayoutId: "po1" },
+          stagedPayoutIds: ["po1"],
+          switchStripeSource: true,
+          gift: {
+            ...baseInput().gift,
+            finalAmountSource: "stripe",
+            finalAmountStripeChargeId: "c-old",
+          },
+        }),
+      ),
+    ).not.toContain("gift_already_stripe_sourced");
+  });
+
+  it("gift_already_stripe_sourced issue carries the current charge details", () => {
+    const issues = runConsistencyGate(
+      baseInput({
+        stripeCharge: { id: "c-new", stripePayoutId: "po1" },
+        stagedPayoutIds: ["po1"],
+        currentStripeChargeDetails: {
+          id: "c-old",
+          amount: "100.00",
+          payerName: "Jane Donor",
+          date: "2026-01-15",
+        },
+        gift: {
+          ...baseInput().gift,
+          finalAmountSource: "stripe",
+          finalAmountStripeChargeId: "c-old",
+        },
+      }),
+    );
+    const issue = issues.find((i) => i.code === "gift_already_stripe_sourced");
+    expect(issue?.details?.currentStripeCharge?.id).toBe("c-old");
+    expect(issue?.details?.currentStripeCharge?.payerName).toBe("Jane Donor");
+    expect(issue?.details?.targetStripeChargeId).toBe("c-new");
+  });
+
   it("gift sourced from human/QB → selecting a charge is allowed", () => {
     expect(
       codes(

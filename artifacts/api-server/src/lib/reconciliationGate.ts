@@ -39,9 +39,28 @@ export type GateIssueCode =
   | "gift_already_stripe_sourced"
   | "amount_out_of_band";
 
+/** Human-readable snapshot of the Stripe charge that currently backs a gift,
+ *  surfaced in the `gift_already_stripe_sourced` issue so the UI can describe the
+ *  swap the reviewer is about to confirm. */
+export interface GateStripeChargeDetails {
+  id: string;
+  amount: string | null;
+  payerName: string | null;
+  date: string | null;
+}
+
+export interface GateIssueDetails {
+  /** The Stripe charge presently sourcing the gift (for gift_already_stripe_sourced). */
+  currentStripeCharge?: GateStripeChargeDetails;
+  /** The charge the reviewer is trying to switch TO. */
+  targetStripeChargeId?: string;
+}
+
 export interface GateIssue {
   code: GateIssueCode;
   message: string;
+  /** Extra machine-readable context for the reviewer's confirmation UI. */
+  details?: GateIssueDetails;
 }
 
 export interface GateStaged {
@@ -101,6 +120,14 @@ export interface ConsistencyGateInput {
   stripeChargesAvailable?: number;
   /** A human's free-text reason that waives the amount-band check. */
   overrideAmountMismatchReason?: string | null;
+  /** When true (link_existing_gift + human-confirmed), allow re-sourcing a gift
+   *  from the selected charge even though it is already sourced from a different
+   *  one; the commit orphans the old charge back to the queue. */
+  switchStripeSource?: boolean;
+  /** The charge presently backing the gift's amount, loaded under lock by the
+   *  route. Attached to the `gift_already_stripe_sourced` issue so the UI can
+   *  describe what it is about to swap. */
+  currentStripeChargeDetails?: GateStripeChargeDetails | null;
 }
 
 /** Processor fees lower the QB/bank net below the human gross by up to ~10% + $1. */
@@ -182,6 +209,8 @@ export function runConsistencyGate(input: ConsistencyGateInput): GateIssue[] {
     stagedPayoutIds = [],
     stripeChargesAvailable = 0,
     overrideAmountMismatchReason,
+    switchStripeSource = false,
+    currentStripeChargeDetails = null,
   } = input;
 
   // ── QuickBooks anchor ──────────────────────────────────────────────────────
@@ -252,16 +281,26 @@ export function runConsistencyGate(input: ConsistencyGateInput): GateIssue[] {
     }
     // Re-pointing a gift already sourced from a DIFFERENT Stripe charge would
     // silently orphan that charge's evidence (the DB unique index only stops a
-    // charge from backing two gifts, not a gift from swapping charges). Block it.
+    // charge from backing two gifts, not a gift from swapping charges). Block it
+    // UNLESS the reviewer explicitly confirmed a source switch — the commit then
+    // orphans the old charge back to the unmatched-money queue and re-sources the
+    // gift to this one.
     if (
       gift.finalAmountSource === "stripe" &&
       gift.finalAmountStripeChargeId &&
-      gift.finalAmountStripeChargeId !== stripeCharge.id
+      gift.finalAmountStripeChargeId !== stripeCharge.id &&
+      !switchStripeSource
     ) {
       issues.push({
         code: "gift_already_stripe_sourced",
         message:
           "This gift's amount is already sourced from a different Stripe charge.",
+        details: {
+          ...(currentStripeChargeDetails
+            ? { currentStripeCharge: currentStripeChargeDetails }
+            : {}),
+          targetStripeChargeId: stripeCharge.id,
+        },
       });
     }
   } else if (stripeChargesAvailable > 0) {

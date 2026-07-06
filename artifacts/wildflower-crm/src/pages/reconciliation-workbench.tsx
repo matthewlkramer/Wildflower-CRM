@@ -74,6 +74,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectGroup,
@@ -111,9 +121,11 @@ import {
   laneBadges,
   deriveCardStatus,
   extractGateIssues,
+  extractStripeSourceConflict,
   deriveApproveBodyFromProposal,
   EXCLUSION_REASON_LABELS,
   MANUAL_EXCLUSION_FAMILIES,
+  type StripeSourceConflict,
 } from "@/lib/reconciliation";
 import { ReconciliationNodeTypeahead } from "@/components/reconciliation-node-typeahead";
 import { StrayGiftsWorklist } from "@/components/reconciliation-stray-gifts";
@@ -364,6 +376,14 @@ export default function ReconciliationWorkbench() {
   const [researchCard, setResearchCard] = useState<ReconciliationCard | null>(
     null,
   );
+  // A re-target that 409s because the target gift is already sourced from a
+  // DIFFERENT Stripe charge: stash the staged change + the current backing
+  // charge's details so the confirm dialog can describe the swap. Confirming
+  // re-applies that one change with switchStripeSource: true.
+  const [stripeSwitchConfirm, setStripeSwitchConfirm] = useState<{
+    change: StagedChange;
+    conflict: StripeSourceConflict;
+  } | null>(null);
   // Creating a gift from a multi-payment group: hold the derived approve body
   // here and ask whether each grouped subcomponent should become its own
   // allocation row on the new gift (or a single header-only lump).
@@ -749,6 +769,23 @@ export default function ReconciliationWorkbench() {
         }
         applied += 1;
       } catch (err) {
+        // A re-target to a gift already sourced from a DIFFERENT Stripe charge
+        // is recoverable: surface the current backing charge so the reviewer can
+        // confirm the switch (which re-applies with switchStripeSource: true).
+        // Keep the row staged with a reason and open the confirm dialog.
+        const conflict =
+          change.kind === "retarget" && change.body
+            ? extractStripeSourceConflict(err)
+            : null;
+        if (conflict) {
+          setStripeSwitchConfirm({ change, conflict });
+          remaining.push({
+            ...change,
+            failure:
+              "This gift is already sourced from a different Stripe charge — confirm the switch to re-source it.",
+          });
+          continue;
+        }
         const issues = extractGateIssues(err);
         const reason =
           issues.length > 0
@@ -811,6 +848,39 @@ export default function ReconciliationWorkbench() {
     if (issues.length > 0) return issues.join(" · ");
     return err instanceof Error ? err.message : "Something went wrong.";
   }, []);
+
+  // Reviewer confirmed re-sourcing the target gift from the newly chosen Stripe
+  // charge: re-apply the SAME staged change with `switchStripeSource: true`. On
+  // success the server orphans the old charge back to the unmatched-money queue
+  // and re-sources the gift; the row leaves the tray. On failure it stays with
+  // the new reason.
+  const confirmSwitchStripeSource = useCallback(async () => {
+    if (!stripeSwitchConfirm) return;
+    const { change } = stripeSwitchConfirm;
+    if (!change.body) {
+      setStripeSwitchConfirm(null);
+      return;
+    }
+    setApplying(true);
+    try {
+      await approveReconciliationCard(change.stagedPaymentId, {
+        ...change.body,
+        switchStripeSource: true,
+      });
+      setStaged((prev) => prev.filter((s) => s.key !== change.key));
+      invalidateAll();
+      toast({ title: "Switched the gift's Stripe source." });
+    } catch (err) {
+      const reason = errMessage(err);
+      setStaged((prev) =>
+        prev.map((s) => (s.key === change.key ? { ...s, failure: reason } : s)),
+      );
+      toast({ title: "Couldn't switch Stripe source", description: reason });
+    } finally {
+      setApplying(false);
+      setStripeSwitchConfirm(null);
+    }
+  }, [stripeSwitchConfirm, invalidateAll, toast, errMessage]);
 
   const resolveM = useResolveStagedPayment();
   const createGiftM = useCreateGiftFromStagedPayment();
@@ -1796,6 +1866,70 @@ export default function ReconciliationWorkbench() {
           onClose={() => setRetargetCard(null)}
           onPick={(gift) => stageRetarget(retargetCard, gift)}
         />
+      )}
+      {stripeSwitchConfirm && (
+        <AlertDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setStripeSwitchConfirm(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Switch this gift's Stripe source?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-3 text-sm">
+                  <p>
+                    This gift's amount is already sourced from a different Stripe
+                    charge. Confirming will re-source it to the newly selected
+                    charge and return the current one to the unmatched-money
+                    queue.
+                  </p>
+                  {stripeSwitchConfirm.conflict.currentCharge && (
+                    <div className="rounded-md border bg-muted/40 p-3">
+                      <div className="mb-1 font-medium text-foreground">
+                        Current backing charge
+                      </div>
+                      <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5">
+                        <dt className="text-muted-foreground">Charge</dt>
+                        <dd className="font-mono text-xs">
+                          {stripeSwitchConfirm.conflict.currentCharge.id}
+                        </dd>
+                        <dt className="text-muted-foreground">Amount</dt>
+                        <dd>
+                          {money(
+                            stripeSwitchConfirm.conflict.currentCharge.amount,
+                          )}
+                        </dd>
+                        <dt className="text-muted-foreground">Payer</dt>
+                        <dd>
+                          {stripeSwitchConfirm.conflict.currentCharge.payerName ??
+                            "—"}
+                        </dd>
+                        <dt className="text-muted-foreground">Date</dt>
+                        <dd>
+                          {stripeSwitchConfirm.conflict.currentCharge.date ?? "—"}
+                        </dd>
+                      </dl>
+                    </div>
+                  )}
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={applying}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={applying}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void confirmSwitchStripeSource();
+                }}
+              >
+                Switch Stripe source
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
       {searchGiftCard && (
         <GiftSearchDialog
