@@ -70,10 +70,24 @@ function stripeWhere(queue: AnchorQueue): SQL {
 
 // Standalone QB anchors: eligible (not grouped, not tied to a payout via a
 // settlement link, an active status) AND in the requested bucket.
+//
+// A standalone QB deposit is only worth surfacing as a "may still need a Stripe
+// payout tie" anchor when its origin is plausibly Stripe. Most deposits never
+// come from Stripe (checks, ACH/wires, brokerage/stock, DAFs, PayPal, employer
+// matches, …); framing those as "Missing payout" buries the genuine gaps. So we
+// drop rows whose `funding_source` carries a clear NON-Stripe signal, keeping
+// only `stripe`, `donorbox` (Donorbox frequently settles through Stripe), and
+// NULL (unknown — no signal either way, so never hide it).
 function qbWhere(queue: AnchorQueue): SQL {
   const eligible = sql`s.source_group_id IS NULL AND NOT EXISTS (
       SELECT 1 FROM settlement_links sl
       WHERE sl.deposit_staged_payment_id = s.id
+    )`;
+  const plausiblyStripe = sql`(
+      s.funding_source IS NULL
+      OR s.funding_source NOT IN (
+        'brokerage','daf','paypal','wire_ach','check','cash','employer_match','other'
+      )
     )`;
   const statusClause =
     queue === "confirmed"
@@ -81,7 +95,7 @@ function qbWhere(queue: AnchorQueue): SQL {
       : queue === "needs_review"
         ? sql`s.status = 'pending'`
         : sql`s.status IN ('pending','approved','reconciled')`;
-  return sql`${eligible} AND ${statusClause}`;
+  return sql`${eligible} AND ${plausiblyStripe} AND ${statusClause}`;
 }
 
 interface AnchorRow {

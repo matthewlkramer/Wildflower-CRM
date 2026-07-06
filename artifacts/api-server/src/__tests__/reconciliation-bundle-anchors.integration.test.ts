@@ -227,6 +227,7 @@ async function seedStaged(opts: {
   amount?: string;
   payerName?: string;
   createdGiftId?: string | null;
+  fundingSource?: string | null;
 }): Promise<string> {
   const id = nextId("sp");
   await db.insert(schema.stagedPayments).values({
@@ -241,6 +242,10 @@ async function seedStaged(opts: {
     status: opts.status as never,
     sourceGroupId: opts.group ?? null,
     exclusionReason: (opts.exclusionReason ?? null) as never,
+    // A deposit's inferred origin. Clear non-Stripe origins (check/cash/wire/…)
+    // are dropped from the "Needs payout tie" anchor column; stripe/donorbox/NULL
+    // stay visible.
+    fundingSource: (opts.fundingSource ?? null) as never,
     // A booked QB deposit/payment carries the gift it was minted into. A real
     // conflict_approved deposit is always linked (that link is where
     // qbConflictGiftId came from), so tests that confirm-keep must wire it.
@@ -474,6 +479,23 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
       exclusionReason: "processor_payout",
     });
 
+    // Funding-source filter: a clear non-Stripe deposit (a check) drops out of
+    // the standalone-QB anchor column; a `stripe`-sourced and a NULL-source
+    // (unknown, no signal) deposit stay — a real Stripe gap is never hidden.
+    const sCheck = await seedStaged({ status: "pending", fundingSource: "check" });
+    const sStripeSource = await seedStaged({
+      status: "pending",
+      fundingSource: "stripe",
+    });
+    const sDonorbox = await seedStaged({
+      status: "pending",
+      fundingSource: "donorbox",
+    });
+    const sUnknownSource = await seedStaged({
+      status: "pending",
+      fundingSource: null,
+    });
+
     const map = await listAnchors("needs_review");
 
     // Present (proposed/conflict payout ties + a standalone deposit).
@@ -481,6 +503,11 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     expect(map.has(`qb_staged_payment:${sStandalone}`)).toBe(true);
     expect(map.has(`stripe_payout:${pProposed}`)).toBe(true);
     expect(map.has(`stripe_payout:${pConflict}`)).toBe(true);
+
+    // Present: plausibly-Stripe and unknown-origin standalone deposits.
+    expect(map.has(`qb_staged_payment:${sStripeSource}`)).toBe(true);
+    expect(map.has(`qb_staged_payment:${sDonorbox}`)).toBe(true);
+    expect(map.has(`qb_staged_payment:${sUnknownSource}`)).toBe(true);
 
     // Omitted. Every staged row tied to a payout drops out (its payout is the
     // anchor). A `confirmed` (settled) payout is not needs_review work either.
@@ -491,6 +518,8 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     expect(map.has(`qb_staged_payment:${sGrouped}`)).toBe(false);
     expect(map.has(`qb_staged_payment:${sRejected}`)).toBe(false);
     expect(map.has(`qb_staged_payment:${sProcessorPayout}`)).toBe(false);
+    // Omitted: a clear non-Stripe origin (a check) is not a settlement anchor.
+    expect(map.has(`qb_staged_payment:${sCheck}`)).toBe(false);
 
     // Normalized projection on the standalone QB anchor.
     const row = map.get(`qb_staged_payment:${sStandalone}`);

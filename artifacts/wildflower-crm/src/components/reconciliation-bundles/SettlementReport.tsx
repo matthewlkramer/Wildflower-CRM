@@ -291,8 +291,8 @@ export function SettlementReport() {
             onChanged={handleChanged}
           />
           <SettlementColumn
-            title="Missing payout"
-            hint="QB deposit, no Stripe payout"
+            title="Needs payout tie"
+            hint="QB deposits that may still need a Stripe payout (known non-Stripe money excluded)"
             rows={missingPayout}
             selectable
             selection={selection}
