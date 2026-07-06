@@ -553,16 +553,6 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
               </div>
               <Separator />
               <div className="space-y-4">
-                <Row label="Other names">
-                  <InlineEditText
-                    label="Other names"
-                    testIdBase="organization-other-names"
-                    value={org.otherNames ?? null}
-                    placeholder="Aliases, abbreviations…"
-                    display={org.otherNames ?? "—"}
-                    onSave={(next) => patch({ otherNames: next })}
-                  />
-                </Row>
                 <TagEditRow label="Historical names">
                   <InlineEditHistoricalNames
                     testIdBase="organization-historical-names"

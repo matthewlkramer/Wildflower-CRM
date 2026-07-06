@@ -5235,7 +5235,6 @@ components:
         priorityAreasNotes:    { type: string, nullable: true }
         about:                 { type: string, nullable: true }
         activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
-        otherNames:            { type: string, nullable: true }
         historicalNames:       { type: array, items: { type: string }, nullable: true }
         details:               { type: string, nullable: true }
         emailDomain:           { type: string, nullable: true }
@@ -5300,7 +5299,6 @@ components:
         priorityAreasNotes:    { type: string }
         about:                 { type: string }
         activeStatus:          { $ref: "#/components/schemas/ActiveStatus" }
-        otherNames:            { type: string }
         historicalNames:       { type: array, items: { type: string } }
         details:               { type: string }
         emailDomain:           { type: string }
@@ -5339,7 +5337,6 @@ components:
         priorityAreasNotes:    { type: string, nullable: true }
         about:                 { type: string, nullable: true }
         activeStatus:          { allOf: [ { $ref: "#/components/schemas/ActiveStatus" } ], nullable: true }
-        otherNames:            { type: string, nullable: true }
         historicalNames:       { type: array, items: { type: string }, nullable: true }
         details:               { type: string, nullable: true }
         emailDomain:           { type: string, nullable: true }

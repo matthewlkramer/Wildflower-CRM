@@ -509,11 +509,10 @@ interface PersonContext {
     connection: string | null;
     externalTitleOrRole: string | null;
     current: string;
-    // The role entity's known prior names + free-text aliases, so the model
-    // can recognize a signature still naming a former/alias name as the SAME
-    // employer (no rename / no duplicate-org proposal).
+    // The role entity's known prior names, so the model can recognize a
+    // signature still naming a former name as the SAME employer (no rename /
+    // no duplicate-org proposal).
     entityHistoricalNames: string[] | null;
-    entityOtherNames: string | null;
   }[];
 }
 
@@ -551,7 +550,6 @@ async function loadPersonContext(personId: string): Promise<PersonContext | null
         organizationId: peopleEntityRoles.organizationId,
         organizationName: organizations.name,
         organizationHistoricalNames: organizations.historicalNames,
-        organizationOtherNames: organizations.otherNames,
         connection: peopleEntityRoles.connection,
         externalTitleOrRole: peopleEntityRoles.externalTitleOrRole,
         current: peopleEntityRoles.current,
@@ -585,7 +583,6 @@ async function loadPersonContext(personId: string): Promise<PersonContext | null
       externalTitleOrRole: r.externalTitleOrRole,
       current: r.current,
       entityHistoricalNames: r.organizationHistoricalNames ?? null,
-      entityOtherNames: r.organizationOtherNames ?? null,
     })),
   };
 }
@@ -624,11 +621,10 @@ interface OrganizationCandidate {
 
 // Search organizations table by name — covers both grantmakers (issuesGrants=true)
 // and non-grantmakers (issuesGrants=false). Also matches an org's known PRIOR
-// names (`historicalNames`) and free-text aliases (`otherNames`) so a signature
-// still referencing a former name resolves to the existing org instead of
-// looking brand-new. Two-pass on the primary name (exact-ish, then loose
-// substring); prior/other names match on substring. Cap at 5 so the prompt
-// stays small.
+// names (`historicalNames`) so a signature still referencing a former name
+// resolves to the existing org instead of looking brand-new. Two-pass on the
+// primary name (exact-ish, then loose substring); prior names match on
+// substring. Cap at 5 so the prompt stays small.
 async function findOrganizationCandidates(
   name: string | null | undefined,
 ): Promise<OrganizationCandidate[]> {
@@ -642,7 +638,6 @@ async function findOrganizationCandidates(
         ilike(organizations.name, term),
         ilike(organizations.name, `%${term}%`),
         sql`EXISTS (SELECT 1 FROM unnest(${organizations.historicalNames}) AS hn WHERE hn ILIKE ${`%${term}%`})`,
-        ilike(organizations.otherNames, `%${term}%`),
       ),
     )
     .limit(5);
@@ -685,12 +680,11 @@ function emailDomainOf(email: string | null | undefined): string | null {
 // Both create_org_with_per and create_funder_with_per name an employer the
 // model believes is missing. Before we propose creating it, look the name
 // up in the organizations table: if any organization of that name already
-// exists — under its primary name, a known PRIOR name (`historicalNames`,
-// exact element match), or its free-text aliases (`otherNames`, substring) —
-// rewrite to a plain create_per against that existing entity so we never
-// propose a duplicate for a renamed/aliased org. Primary/prior-name matching
-// is case-insensitive; % / _ are escaped so names can't act as LIKE
-// wildcards. With no match the action is kept exactly as the model emitted it.
+// exists — under its primary name or a known PRIOR name (`historicalNames`,
+// case-insensitive match) — rewrite to a plain create_per against that existing
+// entity so we never propose a duplicate for a renamed org. Matching is
+// case-insensitive; % / _ are escaped so names can't act as LIKE wildcards.
+// With no match the action is kept exactly as the model emitted it.
 async function reconcileCreateOrgWithPer(
   actions: ProposedAction[],
 ): Promise<ProposedAction[]> {
@@ -720,7 +714,6 @@ async function reconcileCreateOrgWithPer(
         or(
           ilike(organizations.name, pattern),
           sql`EXISTS (SELECT 1 FROM unnest(${organizations.historicalNames}) AS hn WHERE hn ILIKE ${pattern})`,
-          ilike(organizations.otherNames, `%${pattern}%`),
         ),
       )
       .limit(1);
@@ -1049,9 +1042,6 @@ function buildUserPrompt(args: {
       const aka: string[] = [];
       if (r.entityHistoricalNames && r.entityHistoricalNames.length > 0) {
         aka.push(`prior names: ${r.entityHistoricalNames.join(", ")}`);
-      }
-      if (r.entityOtherNames && r.entityOtherNames.trim().length > 0) {
-        aka.push(`other names: ${r.entityOtherNames.trim()}`);
       }
       if (aka.length > 0) {
         lines.push(

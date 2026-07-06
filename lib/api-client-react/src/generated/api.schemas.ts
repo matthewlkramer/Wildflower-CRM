@@ -1218,7 +1218,6 @@ export interface Organization {
   priorityAreasNotes?: string | null;
   about?: string | null;
   activeStatus?: ActiveStatus | null;
-  otherNames?: string | null;
   historicalNames?: string[] | null;
   details?: string | null;
   emailDomain?: string | null;
@@ -1361,7 +1360,6 @@ export interface CreateOrganizationBody {
   priorityAreasNotes?: string;
   about?: string;
   activeStatus?: ActiveStatus;
-  otherNames?: string;
   historicalNames?: string[];
   details?: string;
   emailDomain?: string;
@@ -1400,7 +1398,6 @@ export interface UpdateOrganizationBody {
   priorityAreasNotes?: string | null;
   about?: string | null;
   activeStatus?: ActiveStatus | null;
-  otherNames?: string | null;
   historicalNames?: string[] | null;
   details?: string | null;
   emailDomain?: string | null;

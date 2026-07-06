@@ -111,8 +111,15 @@ const orgsOpenOppCountExpr = sql`(
     WHERE organization_id = ${ORGS_ID} AND status = 'open'
 )`;
 
+// Deprecated `otherNames` (consolidated into `historicalNames`, migration 0099)
+// is retained physically but never returned. Omit it from the shared column set
+// used by every org response projection so it can't leak through the full-column
+// spread (list/detail) or `.returning()` (POST/PATCH).
+const { otherNames: _deprecatedOtherNames, ...orgColumns } =
+  getTableColumns(organizations);
+
 const orgsListSelect = {
-  ...getTableColumns(organizations),
+  ...orgColumns,
   primaryContactPersonId: sql<string | null>`${orgsPrimaryContactIdExpr}`.as(
     "primary_contact_person_id",
   ),
@@ -437,7 +444,7 @@ router.post(
     const [row] = await db
       .insert(organizations)
       .values({ id: newId(), ...body, entityType: (body.entityType ?? null) as never })
-      .returning();
+      .returning(orgColumns);
     if (row) await auditCreate(req, "organization", row.id, `Created organization ${row.name}`);
     res.status(201).json(row);
   }),
@@ -465,7 +472,7 @@ router.patch(
       .update(organizations)
       .set({ ...body, updatedAt: new Date() } as never)
       .where(eq(organizations.id, id))
-      .returning();
+      .returning(orgColumns);
     if (!row) return notFound(res, "organization");
 
     // Write history entries for any tracked fields that actually changed.
