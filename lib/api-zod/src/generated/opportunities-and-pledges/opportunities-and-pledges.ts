@@ -232,7 +232,6 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift']).nullish(),
   "opportunityId": zod.string().nullish(),
   "advisorPersonId": zod.string().nullish(),
-  "grantYear": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
   "overpayOfGiftId": zod.string().nullish().describe('When set, the audited original gift this surplus gift offsets. Booked in the current open FY when an audited, frozen gift is over-paid. The original stays quickbooks_tie_status=\'amount_mismatch\' forever; the PRESENCE of an active (non-archived) linked surplus gift is what marks the original \'resolved\' in the worklist.'),
   "primaryContactPersonId": zod.string().nullish(),

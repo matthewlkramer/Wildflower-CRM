@@ -427,7 +427,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const fyDisplay =
     gift.grantYears && gift.grantYears.length > 0
       ? gift.grantYears.join(", ")
-      : (gift.grantYear ?? "—");
+      : "—";
 
   const highlights: Highlight[] = [
     {

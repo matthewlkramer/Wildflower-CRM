@@ -50,13 +50,13 @@ const maskGiftDonorRow = maskDonorDisplayFields;
 // Named gift-header projection, reused by the QuickBooks reconcile/mint routes
 // (matching.ts, actions.ts) that echo a gift row directly, plus the opportunities
 // payments projection and the archive/unarchive routes.
-// `needs_research` is deprecated (replaced by the Cleanup-Queue-derived
-// `flaggedForResearch` detail badge). Strip it here so it leaks through NO gift
-// response projection — every full-row select flows through this named column
-// set (see deprecated-column-response-leak). The physical column is retained
-// (invariant #7); it is simply never read into a response.
-const { needsResearch: _deprecatedNeedsResearch, ...giftHeaderColumns } =
-  getTableColumns(giftsAndPayments);
+// This is the single named column set every full-row gift select flows through
+// (see deprecated-column-response-leak). Deprecated-but-physical columns still
+// present in the schema (e.g. processorFee) are intentionally echoed here to
+// match their deprecated OpenAPI response fields; columns fully retired from the
+// schema (grant_year, needs_research — Task #598) simply fall out of
+// getTableColumns and never reach a response.
+const giftHeaderColumns = getTableColumns(giftsAndPayments);
 export { giftHeaderColumns };
 const donorJoinSelect = {
   ...giftHeaderColumns,
@@ -634,9 +634,10 @@ router.post(
     if (freeze.frozen) return respondFrozen(res, freeze);
     // Wrap in a transaction so the header + its seeded allocation land together:
     // every gift MUST have at least one allocation (the sole home of money scope).
-    // The non-blocking coding-capture fields (Task #585) live on the seeded
-    // allocation, NOT the gift header — pull them out before the header insert
-    // and thread them to the seed. `sourceRecordUrl` stays on the header.
+    // The non-blocking coding-capture fields (Task #585) plus grantYear (Task
+    // #598 — grant year is allocation-level now) live on the seeded allocation,
+    // NOT the gift header — pull them out before the header insert and thread them
+    // to the seed. `sourceRecordUrl` stays on the header.
     const {
       entityId: captureEntityId,
       intendedUsage: captureIntendedUsage,
@@ -644,6 +645,7 @@ router.post(
       regionalRestrictionType: captureRegionalRestrictionType,
       usageRestrictionType: captureUsageRestrictionType,
       timeRestrictionType: captureTimeRestrictionType,
+      grantYear: captureGrantYear,
       ...headerBody
     } = body;
     const [row] = await db.transaction(async (tx) => {
@@ -667,7 +669,7 @@ router.post(
           giftId: created.id,
           amount: created.amount,
           dateReceived: created.dateReceived,
-          grantYear: headerBody.grantYear,
+          grantYear: captureGrantYear,
           entityId: captureEntityId,
           intendedUsage: captureIntendedUsage,
           fundableProjectId: captureFundableProjectId,
@@ -1612,7 +1614,6 @@ router.post(
         .set({
           amount: first.subAmount,
           opportunityId: pledgeId,
-          grantYear: first.grantYear ?? gift.grantYear,
           updatedAt: new Date(),
         })
         .where(eq(giftsAndPayments.id, gift.id));
@@ -1635,7 +1636,6 @@ router.post(
           loanOrGrant: gift.loanOrGrant,
           opportunityId: pledgeId,
           advisorPersonId: gift.advisorPersonId,
-          grantYear: a.grantYear ?? gift.grantYear,
           primaryContactPersonId: gift.primaryContactPersonId,
           paymentIntermediaryId: gift.paymentIntermediaryId,
           ownerUserId: gift.ownerUserId,
@@ -1655,7 +1655,7 @@ router.post(
           id: newId(),
           actorUserId: actor.id,
           entity: "gifts-and-payments/split-into-pledge",
-          fields: ["amount", "opportunityId", "grantYear"],
+          fields: ["amount", "opportunityId"],
           targetIds: [gift.id],
           succeededIds: giftIds,
           failedIds: [],

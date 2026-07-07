@@ -167,9 +167,25 @@ export const stagedSelect = {
   resolvedGiftName: resolvedGift.name,
   resolvedGiftAmount: resolvedGift.amount,
   resolvedGiftDate: resolvedGift.dateReceived,
-  // Fiscal-year slug (grantYear) of the resolved gift's header, for the card's
-  // CRM-gift side.
-  resolvedGiftFiscalYear: resolvedGift.grantYear,
+  // Fiscal-year slug (grantYear) of the resolved gift, for the card's CRM-gift
+  // side. The deprecated gifts_and_payments.grant_year header column was retired
+  // (Task #598); grant_year now lives on the allocation lines, so derive a single
+  // representative slug from the earliest non-null allocation. Correlated on the
+  // staged row's gift-link COLUMNS (matched/created/group), NOT on the resolvedGift
+  // alias — a bare aliased column interpolated into a correlated subquery renders
+  // unqualified and would bind to the inner table.
+  resolvedGiftFiscalYear: sql<string | null>`(
+    SELECT ga.grant_year
+    FROM gift_allocations ga
+    WHERE ga.gift_id = COALESCE(
+      ${stagedPayments.matchedGiftId},
+      ${stagedPayments.createdGiftId},
+      ${stagedPayments.groupReconciledGiftId}
+    )
+      AND ga.grant_year IS NOT NULL
+    ORDER BY ga.created_at, ga.id
+    LIMIT 1
+  )`.as("resolved_gift_fiscal_year"),
   // Intended-usage rollup of the resolved gift's allocation lines (entity +
   // usage label + restriction), so a reviewer can judge the match on the card.
   // Correlated on the staged row's gift-link COLUMNS (matched/created/group),

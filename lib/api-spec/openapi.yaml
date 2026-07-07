@@ -6174,7 +6174,6 @@ components:
         type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
         opportunityId:          { type: string, nullable: true }
         advisorPersonId:            { type: string, nullable: true }
-        grantYear:                  { type: string, nullable: true }
         giftBeingMatchedId:         { type: string, nullable: true }
         # Audit-close OVER-payment resolution (never settable via create/update;
         # only via the POST /gifts-and-payments/{id}/resolve-overpay action).
@@ -6387,7 +6386,6 @@ components:
         type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
         opportunityId:          { type: string, nullable: true }
         advisorPersonId:            { type: string, nullable: true }
-        grantYear:                  { type: string, nullable: true }
         giftBeingMatchedId:         { type: string, nullable: true }
         primaryContactPersonId:     { type: string, nullable: true }
         paymentIntermediaryId:      { type: string, nullable: true }

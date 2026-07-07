@@ -23,7 +23,6 @@ import { people } from "./people";
 import { opportunitiesAndPledges } from "./opportunitiesAndPledges";
 import { paymentIntermediaries } from "./paymentIntermediaries";
 import { users } from "./users";
-import { fiscalYears } from "./fiscalYears";
 import { households } from "./households";
 // NOTE: circular table refs (these tables also reference giftsAndPayments). The
 // `(): AnyPgColumn =>` lazy callbacks below defer the access until after both
@@ -134,17 +133,13 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   advisorPersonId: text("advisor_person_id").references(() => people.id, {
     onDelete: "set null",
   }),
-  // TRANSITIONAL (intended for eventual retirement, but STILL LIVE — do NOT
-  // drop). Grant year is moving to gift_allocations.grant_year (a normal gift
-  // create seeds it on the allocation, not the header), but the split-gift path
-  // still READS the original gift's header grant_year and WRITES it onto each new
-  // split row. Retained so dev push stays additive and prod Publish never
-  // auto-drops it; a physical DROP must wait until the split path stops copying it
-  // and ships as a reviewed SQL file (the backfill seeds the allocation copy
-  // first).
-  grantYear: text("grant_year").references(() => fiscalYears.id, {
-    onDelete: "restrict",
-  }),
+  // RETIRED (Task #598): the header `grant_year` column is GONE from the schema.
+  // Grant year lives ONLY on gift_allocations.grant_year now — gift create seeds
+  // it on the allocation and the split-gift path copies each allocation's own
+  // grant year (no header copy remains). Physically dropped from both DBs by
+  // migration 0105 AFTER this schema-removal build is Published (the deployed
+  // build still SELECTs it via getTableColumns until the new build ships — see
+  // the 0105 runbook for the Publish-first ordering).
   // Self-ref to the gift this one matches. SET NULL: deleting the original
   // shouldn't cascade-delete the matching gift; just clear the pointer.
   giftBeingMatchedId: text("gift_being_matched_id").references(
@@ -189,15 +184,11 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // migration 0104 AFTER this schema-removal build is Published (the currently-
   // deployed build still SELECTs them via getTableColumns until the new build
   // ships — see the 0104 runbook for the Publish-first deploy ordering).
-  // @deprecated DO NOT DROP (invariant #7 — non-destructive). Superseded by the
-  // Cleanup Queue as the single source of truth for "needs research": a passive,
-  // read-only `flaggedForResearch` badge is now DERIVED on the detail endpoints
-  // from an OPEN cleanup_queue row (reason_code='needs_research'). This column is
-  // no longer written (removed from the create/update API bodies) or read into
-  // any response projection (stripped from giftHeaderColumns). Retained so dev
-  // push stays additive and prod Publish never auto-drops it; a physical DROP
-  // must ship later as a reviewed SQL file once no data depends on it.
-  needsResearch: boolean("needs_research").default(false).notNull(),
+  // RETIRED (Task #598): the deprecated header `needs_research` boolean is GONE
+  // from the schema — superseded by the Cleanup Queue (the derived, read-only
+  // `flaggedForResearch` badge from an OPEN cleanup_queue row). It was already
+  // stripped from every response projection, so no deployed build selects it.
+  // Physically dropped from both DBs by migration 0105 (bundled with grant_year).
   // "Won gift awaiting imminent payment" (bookable-gift SOP). Set when a gift is
   // minted from an opportunity that is expected to settle in cash shortly — the
   // gift briefly has no QuickBooks/Stripe cash tie but that is EXPECTED, not a
@@ -286,7 +277,6 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   index("gifts_and_payments_primary_contact_person_id_idx").on(t.primaryContactPersonId),
   index("gifts_and_payments_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
   index("gifts_and_payments_owner_user_id_idx").on(t.ownerUserId),
-  index("gifts_and_payments_grant_year_idx").on(t.grantYear),
   // Date-range / sort scans (gifts list defaults to date_received DESC, and the
   // analytics fiscal-year buckets filter on date_received). Mirrors the existing
   // index on staged_payments(date_received).

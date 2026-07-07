@@ -1,0 +1,62 @@
+-- Migration 0105: Physically DROP two retired gift-header columns on
+-- gifts_and_payments (Task #598). Both are superseded and no longer part of the
+-- schema after this build:
+--
+-- DROPS:
+--   gifts_and_payments.grant_year      header copy of the grant fiscal year — grant
+--                                       year now lives ONLY on gift_allocations.grant_year.
+--                                       A gift create seeds it on the allocation and
+--                                       the split-gift path copies each allocation's
+--                                       own grant year (no header copy remains).
+--   gifts_and_payments.needs_research  deprecated "needs research" boolean — superseded
+--                                       by the Cleanup Queue (the derived, read-only
+--                                       `flaggedForResearch` badge from an OPEN
+--                                       cleanup_queue row, reason_code='needs_research').
+--
+-- SAFE TO DROP — verified read-only against the schema-removal build:
+--   * grant_year: no longer read or written by application code. Gift create pulls
+--     grantYear out of the body and seeds it on the allocation; the split-gift path
+--     copies each allocation's own grant year; the detail UI reads only the derived
+--     grantYears[] array; the OpenAPI spec drops grant_year from the Gift response
+--     and the update body (it stays on the CREATE body, where it seeds the
+--     allocation). The column's FK to fiscal_years and its index
+--     (gifts_and_payments_grant_year_idx) are auto-dropped with the column.
+--   * needs_research: already stripped from EVERY response projection (giftHeaderColumns)
+--     and removed from the create/update API bodies in a prior task — no deployed
+--     build selects or writes it. It has no index, FK, or enum dependency.
+--
+-- IF EXISTS -> idempotent / re-runnable (a second run is a no-op).
+--
+-- ORDERING (prod) — Publish FIRST, THEN this SQL (same direction as 0104). The
+-- gate is grant_year: it is no longer written, but the currently-deployed prod
+-- build still SELECTs it — select()/getTableColumns emit every schema column (the
+-- response is scrubbed only AFTER the read). Dropping it before the schema-removal
+-- code deploys would 500 every gift read. (needs_research is already unselected, so
+-- it is safe either way; it is bundled here purely to consolidate the DROP.)
+-- Publish diffs the dev-DB vs the prod-DB (NOT the schema source), so keep BOTH DBs
+-- holding these columns THROUGH Publish (do NOT drop dev alone first, or Publish
+-- would see a prod-only column and propose a destructive prod drop that aborts the
+-- whole diff). Only AFTER the new code is live in prod apply this file to prod AND
+-- dev, back-to-back, with NO Publish in between.
+--
+-- Apply with psql -1 (wraps the file in ONE transaction; do NOT add BEGIN/COMMIT):
+--   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0105_drop_gift_grant_year_needs_research.sql   (prod)
+--   psql "$DATABASE_URL"      -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0105_drop_gift_grant_year_needs_research.sql   (dev)
+
+ALTER TABLE gifts_and_payments
+  DROP COLUMN IF EXISTS grant_year,
+  DROP COLUMN IF EXISTS needs_research;
+
+-- Verification (run by hand AFTER applying) -----------------------------------
+--   -- Both columns gone (expect ZERO rows):
+--   SELECT column_name FROM information_schema.columns
+--   WHERE table_name = 'gifts_and_payments'
+--     AND column_name IN ('grant_year','needs_research');
+--
+--   -- The dropped index is gone too (expect ZERO rows):
+--   SELECT indexname FROM pg_indexes
+--   WHERE tablename = 'gifts_and_payments'
+--     AND indexname = 'gifts_and_payments_grant_year_idx';
+--
+--   -- Grant year still lives on the allocations (expect a healthy non-zero count):
+--   SELECT count(*) FROM gift_allocations WHERE grant_year IS NOT NULL;

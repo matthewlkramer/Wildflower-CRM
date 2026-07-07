@@ -145,7 +145,7 @@ async function seedGiftWithAllocation(
 async function seedGiftWithAllocations(
   allocs: Array<{ subAmount: string; grantYear?: string | null }>,
   donor: DonorFields = { organizationId: ORG_ID },
-  giftOverrides: { amount?: string; grantYear?: string | null } = {},
+  giftOverrides: { amount?: string } = {},
 ): Promise<string> {
   const id = nextId("gift");
   const sumCents = allocs.reduce(
@@ -159,7 +159,6 @@ async function seedGiftWithAllocations(
     organizationId: donor.organizationId ?? null,
     individualGiverPersonId: donor.individualGiverPersonId ?? null,
     householdId: donor.householdId ?? null,
-    grantYear: giftOverrides.grantYear ?? null,
   });
   for (const a of allocs) {
     await db.insert(schema.giftAllocations).values({
@@ -714,7 +713,6 @@ describe.skipIf(!HAS_DB)(
           { subAmount: "40000.00", grantYear: FY_B_ID },
         ],
         { organizationId: ORG_ID },
-        { grantYear: FY_A_ID },
       );
 
       const res = await api(
@@ -758,25 +756,27 @@ describe.skipIf(!HAS_DB)(
       expect(pAllocs.length).toBe(2);
       expect(pAllocs.every((a) => a.status === "superseded_by_gift")).toBe(true);
 
-      // Original gift: amount = first allocation, points at the pledge, FY_A.
+      // Original gift: amount = first allocation, points at the pledge; the kept
+      // allocation carries FY_A (grant year is allocation-level now).
       const original = await readGift(giftId);
       expect(Number(original.amount)).toBeCloseTo(60000);
       expect(original.opportunityId).toBe(pledgeId);
-      expect(original.grantYear).toBe(FY_A_ID);
       const originalAllocs = await allocationsFor(giftId);
       expect(originalAllocs.length).toBe(1);
       expect(Number(originalAllocs[0].subAmount)).toBeCloseTo(60000);
+      expect(originalAllocs[0].grantYear).toBe(FY_A_ID);
 
-      // Minted gift: amount = second allocation, points at the pledge, FY_B.
+      // Minted gift: amount = second allocation, points at the pledge; its
+      // re-pointed allocation carries FY_B (grant year is allocation-level now).
       const mintedId = giftIds.find((g) => g !== giftId)!;
       const minted = await readGift(mintedId);
       expect(Number(minted.amount)).toBeCloseTo(40000);
       expect(minted.opportunityId).toBe(pledgeId);
       expect(minted.organizationId).toBe(ORG_ID);
-      expect(minted.grantYear).toBe(FY_B_ID);
       const mintedAllocs = await allocationsFor(mintedId);
       expect(mintedAllocs.length).toBe(1);
       expect(Number(mintedAllocs[0].subAmount)).toBeCloseTo(40000);
+      expect(mintedAllocs[0].grantYear).toBe(FY_B_ID);
     }, 30_000);
 
     it("rejects (400 allocation_sum_mismatch) when allocations don't add up to the amount", async () => {

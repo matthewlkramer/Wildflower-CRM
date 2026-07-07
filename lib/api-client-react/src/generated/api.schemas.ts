@@ -1960,7 +1960,6 @@ export interface GiftOrPayment {
   type?: GiftType | null;
   opportunityId?: string | null;
   advisorPersonId?: string | null;
-  grantYear?: string | null;
   giftBeingMatchedId?: string | null;
   /** When set, the audited original gift this surplus gift offsets. Booked in the current open FY when an audited, frozen gift is over-paid. The original stays quickbooks_tie_status='amount_mismatch' forever; the PRESENCE of an active (non-archived) linked surplus gift is what marks the original 'resolved' in the worklist. */
   readonly overpayOfGiftId?: string | null;
@@ -2356,7 +2355,6 @@ export interface UpdateGiftOrPaymentBody {
   type?: GiftType | null;
   opportunityId?: string | null;
   advisorPersonId?: string | null;
-  grantYear?: string | null;
   giftBeingMatchedId?: string | null;
   primaryContactPersonId?: string | null;
   paymentIntermediaryId?: string | null;
