@@ -63,6 +63,7 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   paymentApplications: Db["paymentApplications"];
   settlementLinks: Db["settlementLinks"];
+  stagedPaymentSplits: Db["stagedPaymentSplits"];
 };
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -71,6 +72,7 @@ let baseUrl = "";
 
 const stagedIds: string[] = [];
 const giftIds: string[] = [];
+const splitIds: string[] = [];
 const payoutIds: string[] = [];
 const chargeIds: string[] = [];
 const allocationIds: string[] = [];
@@ -109,6 +111,7 @@ async function seedStaged(opts: {
   status: "pending" | "approved" | "reconciled";
   matchedGiftId?: string | null;
   createdGiftId?: string | null;
+  groupReconciledGiftId?: string | null;
   amount?: string;
 }): Promise<string> {
   const id = nextId("sp");
@@ -125,8 +128,29 @@ async function seedStaged(opts: {
     matchStatus: "matched",
     matchedGiftId: opts.matchedGiftId ?? null,
     createdGiftId: opts.createdGiftId ?? null,
+    groupReconciledGiftId: opts.groupReconciledGiftId ?? null,
   });
   stagedIds.push(id);
+  return id;
+}
+
+// Link a staged payment to a pre-existing gift as part of a SPLIT (the split
+// route writes these rows and carries NONE of the matched/created/group id
+// columns — its resolution lives entirely here).
+async function seedSplit(
+  stagedPaymentId: string,
+  giftId: string,
+  subAmount: string,
+): Promise<string> {
+  const id = nextId("split");
+  await db.insert(schema.stagedPaymentSplits).values({
+    id,
+    stagedPaymentId,
+    giftId,
+    subAmount,
+    createdByUserId: TEST_USER_ID,
+  });
+  splitIds.push(id);
   return id;
 }
 
@@ -268,6 +292,7 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     paymentApplications: dbMod.paymentApplications,
     settlementLinks: dbMod.settlementLinks,
+    stagedPaymentSplits: dbMod.stagedPaymentSplits,
   };
   inArrayFn = drizzle.inArray;
   eqFn = drizzle.eq;
@@ -302,6 +327,10 @@ afterAll(async () => {
     await db
       .delete(schema.stripePayouts)
       .where(inArrayFn(schema.stripePayouts.id, payoutIds));
+  if (splitIds.length)
+    await db
+      .delete(schema.stagedPaymentSplits)
+      .where(inArrayFn(schema.stagedPaymentSplits.id, splitIds));
   await clearPaymentApplicationsForStagedIds(stagedIds);
   if (stagedIds.length)
     await db
@@ -385,6 +414,50 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
     expect(done.has(reconciledId)).toBe(true);
     expect(done.has(pendingId)).toBe(false);
     expect(done.has(approvedMatchedId)).toBe(false);
+  }, 30_000);
+
+  it("excludes an approved SPLIT payment and a group-reconciled row (resolution not in the id columns)", async () => {
+    // The reported bug (Frey Foundation): a payment split across two existing
+    // gifts kept showing as unlinked money. A split carries NONE of
+    // matchedGiftId / createdGiftId / groupReconciledGiftId — its resolution
+    // lives entirely in staged_payment_splits — so the old predicate (which only
+    // checked matched/created) wrongly re-admitted it to the live queue.
+    const splitGiftA = await seedGift("60.00");
+    const splitGiftB = await seedGift("40.00");
+    const splitId = await seedStaged({
+      label: "approved-split-nostripe",
+      status: "approved",
+      amount: "100.00",
+    });
+    await seedSplit(splitId, splitGiftA, "60.00");
+    await seedSplit(splitId, splitGiftB, "40.00");
+
+    // A split that STILL has Stripe to tie in remains real work — the
+    // settlement_link re-admits it (mirrors the matched+stripe leg above).
+    const splitGiftC = await seedGift("100.00");
+    const splitStripeId = await seedStaged({
+      label: "approved-split-stripe",
+      status: "approved",
+      amount: "100.00",
+    });
+    await seedSplit(splitStripeId, splitGiftC, "100.00");
+    await seedPayoutFor(splitStripeId);
+
+    // A group-reconciled member row (groupReconciledGiftId set, no matched/
+    // created) is likewise resolved and must drop out of the live queue.
+    const groupGift = await seedGift("100.00");
+    const groupReconciledId = await seedStaged({
+      label: "approved-groupreconciled-nostripe",
+      status: "approved",
+      groupReconciledGiftId: groupGift,
+    });
+
+    const def = await cardIds();
+    // Split + group-reconciled resolutions are DONE — out of the live queue.
+    expect(def.has(splitId)).toBe(false);
+    expect(def.has(groupReconciledId)).toBe(false);
+    // ...unless Stripe is still pending on it.
+    expect(def.has(splitStripeId)).toBe(true);
   }, 30_000);
 });
 

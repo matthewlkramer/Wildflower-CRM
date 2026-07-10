@@ -279,8 +279,14 @@ const sourceGroupAggExpr = sql<{
 // (createdGiftId) or linked (matchedGiftId) a gift. Such an already-approved
 // QB↔gift link is DONE and should "stay approved" — it only re-enters this queue
 // when there is still Stripe to tie in (a payout matched/proposed to it). So an
-// approved row is excluded iff it has a gift link AND no Stripe to link;
-// otherwise (no gift, or Stripe pending) it stays as real work.
+// approved row is excluded iff it is RESOLVED to a gift AND has no Stripe to
+// link; otherwise (unresolved, or Stripe pending) it stays as real work.
+// "Resolved to a gift" covers ALL resolution forms: a 1:1 match (matchedGiftId),
+// a mint (createdGiftId), a group reconcile (groupReconciledGiftId), OR a split
+// (staged_payment_splits rows). A split deliberately carries NONE of the three
+// id columns (its resolution lives entirely in staged_payment_splits), so it
+// must be detected via the splits table — otherwise a fully-split payment would
+// wrongly re-enter the live "unlinked money" queue.
 // `reconciled` deposits are normally terminal, EXCEPT a Stripe-payout deposit
 // whose payout↔deposit settlement has been confirmed (Plane 1) but whose backing
 // charges are not yet all credited to gifts (Plane 2). The settlement report now
@@ -301,7 +307,15 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
       OR (
         ${stagedPayments.status} = 'approved'
         AND NOT (
-          (${stagedPayments.matchedGiftId} IS NOT NULL OR ${stagedPayments.createdGiftId} IS NOT NULL)
+          (
+            ${stagedPayments.matchedGiftId} IS NOT NULL
+            OR ${stagedPayments.createdGiftId} IS NOT NULL
+            OR ${stagedPayments.groupReconciledGiftId} IS NOT NULL
+            OR EXISTS (
+              SELECT 1 FROM staged_payment_splits sps
+              WHERE sps.staged_payment_id = ${stagedPayments.id}
+            )
+          )
           AND NOT EXISTS (
             SELECT 1 FROM settlement_links sl
             WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
