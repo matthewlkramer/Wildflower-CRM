@@ -41,6 +41,7 @@ import {
   ilike,
   inArray,
   isNull,
+  or,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -109,6 +110,10 @@ export interface RecCandidate {
    *  donor, so the client can detect a picked-donor-vs-gift-donor mismatch. */
   donorId: string | null;
   alreadyLinkedStagedPaymentId: string | null;
+  /** For QB staged-payment candidates (the reverse picker): the gift this
+   *  payment is already matched to / created / group-reconciled onto, so the
+   *  client can gray the row and offer an unlink to free it before re-linking. */
+  alreadyLinkedGiftId: string | null;
   conflictReason: string | null;
 }
 
@@ -183,6 +188,7 @@ function candidate(init: CandidateInit): RecCandidate {
     donorKind: null,
     donorId: null,
     alreadyLinkedStagedPaymentId: null,
+    alreadyLinkedGiftId: null,
     conflictReason: null,
     ...init,
   };
@@ -414,24 +420,41 @@ async function fetchGiftCandidates(opts: {
         sql`${opts.amount}::numeric`,
         donorScoped,
       );
-  const conds: SQL[] = [amountBound, isNull(giftsAndPayments.archivedAt)];
-  if (opts.donorFilter) conds.push(opts.donorFilter);
-  // A lump payment routinely covers gifts booked across many months, so a tight
-  // ± days window would hide legitimate split candidates: relax it in split mode
-  // (order by recency below instead). For a donor-scoped 1:1 match, widen to at
-  // least GIFT_MATCH_WINDOW_DAYS — the booked gift date routinely trails the
-  // settlement/charge date. Otherwise keep the caller's window.
-  const windowDays =
-    !split && donorScoped
-      ? Math.max(opts.days, GIFT_MATCH_WINDOW_DAYS)
-      : opts.days;
-  if (opts.date && !split)
-    conds.push(
-      sql`(${giftsAndPayments.dateReceived} IS NULL OR ABS(${giftsAndPayments.dateReceived} - ${opts.date}::date) <= ${windowDays})`,
-    );
   const q = (opts.q ?? "").trim();
-  if (q.length >= 2)
-    conds.push(ilike(giftsAndPayments.name, `%${escapeLike(q)}%`));
+  const textSearch = q.length >= 2;
+  const conds: SQL[] = [isNull(giftsAndPayments.archivedAt)];
+  if (opts.donorFilter) conds.push(opts.donorFilter);
+  if (textSearch) {
+    // Free-text search: the fundraiser is hunting for a SPECIFIC gift by name,
+    // so the amount band + date window would only hide the very gift they want
+    // (a gift booked at the net, in a different month, or well outside the
+    // fee band). Drop those constraints and match across the gift name AND its
+    // donor names (organization / household / person). alreadyLinkedStagedPaymentId
+    // is still computed per row, so already-matched gifts still surface (grayed).
+    const like = `%${escapeLike(q)}%`;
+    const textMatch = or(
+      ilike(giftsAndPayments.name, like),
+      ilike(organizations.name, like),
+      ilike(households.name, like),
+      ilike(personNameSql, like),
+    );
+    if (textMatch) conds.push(textMatch);
+  } else {
+    conds.push(amountBound);
+    // A lump payment routinely covers gifts booked across many months, so a tight
+    // ± days window would hide legitimate split candidates: relax it in split mode
+    // (order by recency below instead). For a donor-scoped 1:1 match, widen to at
+    // least GIFT_MATCH_WINDOW_DAYS — the booked gift date routinely trails the
+    // settlement/charge date. Otherwise keep the caller's window.
+    const windowDays =
+      !split && donorScoped
+        ? Math.max(opts.days, GIFT_MATCH_WINDOW_DAYS)
+        : opts.days;
+    if (opts.date && !split)
+      conds.push(
+        sql`(${giftsAndPayments.dateReceived} IS NULL OR ABS(${giftsAndPayments.dateReceived} - ${opts.date}::date) <= ${windowDays})`,
+      );
+  }
 
   // 1:1 match: cluster by proximity to the full amount. Split: proximity to the
   // full amount is meaningless (candidates are fractions), so prefer date
@@ -1524,6 +1547,9 @@ export async function searchQbStaged(
       rawReference: stagedPayments.rawReference,
       amount: stagedPayments.amount,
       dateReceived: stagedPayments.dateReceived,
+      matchedGiftId: stagedPayments.matchedGiftId,
+      createdGiftId: stagedPayments.createdGiftId,
+      groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
     })
     .from(stagedPayments)
     .where(and(...conds))
@@ -1539,6 +1565,11 @@ export async function searchQbStaged(
       amount: r.amount,
       date: r.dateReceived,
       source: "manual",
+      // A QB payment already tied to a gift (matched / created / group-
+      // reconciled) can't be re-linked without double-counting — surface the
+      // owning gift so the picker can gray the row and offer an unlink.
+      alreadyLinkedGiftId:
+        r.matchedGiftId ?? r.createdGiftId ?? r.groupReconciledGiftId ?? null,
     }),
   );
 }

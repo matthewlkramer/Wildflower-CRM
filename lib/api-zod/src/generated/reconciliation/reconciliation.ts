@@ -165,6 +165,7 @@ export const GetReconciliationGraphResponse = zod.object({
   "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
   "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
+  "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or group-reconciled onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
 }))
 })),
@@ -334,6 +335,7 @@ export const SearchReconciliationNodeResponse = zod.object({
   "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
   "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
+  "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or group-reconciled onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
 }))
 })
@@ -519,6 +521,7 @@ export const SearchReconciliationQbStagedResponse = zod.object({
   "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
   "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
+  "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or group-reconciled onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
 }))
 })
@@ -893,6 +896,7 @@ export const AssembleReconciliationBundleResponse = zod.object({
   "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
   "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
+  "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or group-reconciled onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
 })).describe('Scored alternative donors for the picker.')
 }).describe('The proposed donor for a bundle row. existing: link an existing record. new: mint one on confirm. unresolved: no confident proposal (needs a human).'),
@@ -924,6 +928,7 @@ export const AssembleReconciliationBundleResponse = zod.object({
   "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
   "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
+  "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or group-reconciled onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
 })).describe('Scored alternative gifts for the picker (already-linked gifts flagged via alreadyLinkedStagedPaymentId).')
 }).describe('What to do with this row\'s money on the CRM-gift side.\nmatch: link an existing gift (giftId). mint: create a new gift from the evidence (mintDraft). research: park for later (no gift). exclude: file as a non-gift (exclusionReason).\n'),
@@ -1020,6 +1025,7 @@ export const GetReconciliationBundleResponse = zod.object({
   "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
   "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
+  "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or group-reconciled onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
 })).describe('Scored alternative donors for the picker.')
 }).describe('The proposed donor for a bundle row. existing: link an existing record. new: mint one on confirm. unresolved: no confident proposal (needs a human).'),
@@ -1051,6 +1057,7 @@ export const GetReconciliationBundleResponse = zod.object({
   "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
   "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
+  "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or group-reconciled onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
 })).describe('Scored alternative gifts for the picker (already-linked gifts flagged via alreadyLinkedStagedPaymentId).')
 }).describe('What to do with this row\'s money on the CRM-gift side.\nmatch: link an existing gift (giftId). mint: create a new gift from the evidence (mintDraft). research: park for later (no gift). exclude: file as a non-gift (exclusionReason).\n'),
@@ -1176,6 +1183,7 @@ export const DeriveReconciliationBundleResponse = zod.object({
   "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
   "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
+  "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or group-reconciled onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
 })).describe('Scored alternative donors for the picker.')
 }).describe('The proposed donor for a bundle row. existing: link an existing record. new: mint one on confirm. unresolved: no confident proposal (needs a human).'),
@@ -1207,6 +1215,7 @@ export const DeriveReconciliationBundleResponse = zod.object({
   "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
   "donorId": zod.string().nullish().describe('For gift\/opportunity candidates: the record id of the candidate\'s CURRENT donor (organization\/person\/household), so the client can detect when a picked donor differs from the gift\'s existing donor.'),
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
+  "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or group-reconciled onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate conflicts with a locked node (set only when state=conflict).')
 })).describe('Scored alternative gifts for the picker (already-linked gifts flagged via alreadyLinkedStagedPaymentId).')
 }).describe('What to do with this row\'s money on the CRM-gift side.\nmatch: link an existing gift (giftId). mint: create a new gift from the evidence (mintDraft). research: park for later (no gift). exclude: file as a non-gift (exclusionReason).\n'),

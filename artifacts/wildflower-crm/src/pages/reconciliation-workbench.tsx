@@ -7,6 +7,7 @@ import {
   useGetReconciliationLineage,
   useResolveStagedPayment,
   useCreateGiftFromStagedPayment,
+  useRevertStagedPayment,
   useExcludeStagedPayment,
   useReIncludeStagedPayment,
   useSetStagedPaymentCoding,
@@ -48,6 +49,8 @@ import {
   Check,
   CheckCheck,
   ChevronDown,
+  Eye,
+  EyeOff,
   Flag,
   GitMerge,
   Layers,
@@ -112,12 +115,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import {
-  GiftSearchDialog,
-  giftDonorName as giftRowDonorName,
-} from "@/components/gift-search-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useIsAdmin } from "@/hooks/use-is-admin";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import {
   laneBadges,
   deriveCardStatus,
@@ -434,6 +434,14 @@ export default function ReconciliationWorkbench() {
   const [giftView, setGiftView] = useState<GiftView>(() =>
     initialQueueParam === "excluded" ? "excluded" : "reports",
   );
+  // The "Matched" column (the `done` queue — money already tied to a confirmed
+  // gift) is reference noise for day-to-day reconciliation, so it's hidden by
+  // default and revealed via a per-tab toggle. Gating its query on this keeps us
+  // from fetching the whole done queue until the user asks to see it.
+  const [showMatched, setShowMatched] = usePersistedState<boolean>(
+    "recon.gift.showMatched",
+    false,
+  );
   // Each report column owns its own filter (client-side for cols 1 & 2). The old
   // report-wide search box + funding-source pill nav are gone.
   const [matchedFilter, setMatchedFilter] =
@@ -519,7 +527,7 @@ export default function ReconciliationWorkbench() {
   };
   const doneQuery = useListReconciliationCards(doneParams, {
     query: {
-      enabled: report === "gift" && giftView === "reports",
+      enabled: report === "gift" && giftView === "reports" && showMatched,
       queryKey: getListReconciliationCardsQueryKey(doneParams),
     },
   });
@@ -995,6 +1003,7 @@ export default function ReconciliationWorkbench() {
 
   const resolveM = useResolveStagedPayment();
   const createGiftM = useCreateGiftFromStagedPayment();
+  const revertStagedPaymentM = useRevertStagedPayment();
   const excludeM = useExcludeStagedPayment();
   const reIncludeM = useReIncludeStagedPayment();
   const groupM = useGroupStagedPayments();
@@ -1517,6 +1526,27 @@ export default function ReconciliationWorkbench() {
     [tryLinkMultiChargeCard, deriveConfirmBody, stage, stageGroupedLink, toast],
   );
 
+  // Immediately unlink a gift from the OTHER QuickBooks payment that currently
+  // owns it (a revert on that staged payment), freeing the gift so it can be
+  // re-linked here. This is a real mutation — it is NOT staged in the pending
+  // tray. A manually-created gift can't be reverted (the server 409s
+  // "not_revertible") — surface that message rather than failing silently.
+  const unlinkOwningStagedPayment = useCallback(
+    async (owningStagedPaymentId: string) => {
+      try {
+        await revertStagedPaymentM.mutateAsync({ id: owningStagedPaymentId });
+        invalidateAll();
+        toast({
+          title: "Unlinked",
+          description: "Freed the gift from the other QuickBooks payment.",
+        });
+      } catch (err) {
+        toast({ title: "Couldn't unlink", description: errMessage(err) });
+      }
+    },
+    [revertStagedPaymentM, invalidateAll, toast, errMessage],
+  );
+
   // One-click Approve: derive the auto-proposal (or re-targeted gift) body and
   // apply it to the CRM immediately, no staging-tray hop. Mirrors handleCreateGift
   // (invalidate + toast on success, gate issues surfaced via errMessage). The
@@ -1810,6 +1840,7 @@ export default function ReconciliationWorkbench() {
               report-wide search box + funding-source pill nav are gone. */}
           {report === "gift" && (
           <div className="flex flex-col gap-2 border-b pb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
             <nav className="flex flex-wrap items-center gap-1">
               {GIFT_VIEWS.map((v) => {
                 const active = v.id === giftView;
@@ -1838,6 +1869,27 @@ export default function ReconciliationWorkbench() {
                 );
               })}
             </nav>
+            {giftView === "reports" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowMatched((s) => !s)}
+                data-testid="button-toggle-matched"
+                title={
+                  showMatched
+                    ? "Hide the Matched column (money already tied to a confirmed gift)."
+                    : "Show the Matched column (money already tied to a confirmed gift)."
+                }
+              >
+                {showMatched ? (
+                  <EyeOff className="mr-1 h-3.5 w-3.5" />
+                ) : (
+                  <Eye className="mr-1 h-3.5 w-3.5" />
+                )}
+                {showMatched ? "Hide matched" : "Show matched"}
+              </Button>
+            )}
+            </div>
           </div>
           )}
         </header>
@@ -1868,36 +1920,43 @@ export default function ReconciliationWorkbench() {
           ) : (
             // Gift report — three columns (design §4.5): Matched (done queue) ·
             // Donor not credited (needs-review) · Gift with no money (stray gifts).
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              <ReportColumn
-                title="Matched"
-                hint="Money tied to a confirmed CRM gift."
-                count={doneQuery.isLoading ? undefined : matchedCards.length}
-                filters={
-                  <ColumnFilterHeader
-                    filter={matchedFilter}
-                    onChange={setMatchedFilter}
-                    entityOptions={matchedOptions.entities}
-                    methodOptions={matchedOptions.methods}
-                    testIdPrefix="filter-matched"
-                  />
-                }
-              >
-                {doneQuery.isLoading ? (
-                  <LoadingRow />
-                ) : doneQuery.isError ? (
-                  <ErrorRow label="matched queue" />
-                ) : matchedCards.length === 0 ? (
-                  <ColumnEmpty label="No matched money yet." />
-                ) : (
-                  matchedCards.map((card) =>
-                    renderReconCard(card, {
-                      readOnly: true,
-                      hideStateBadges: true,
-                    }),
-                  )
-                )}
-              </ReportColumn>
+            <div
+              className={cn(
+                "grid grid-cols-1 gap-4",
+                showMatched ? "xl:grid-cols-3" : "xl:grid-cols-2",
+              )}
+            >
+              {showMatched && (
+                <ReportColumn
+                  title="Matched"
+                  hint="Money tied to a confirmed CRM gift."
+                  count={doneQuery.isLoading ? undefined : matchedCards.length}
+                  filters={
+                    <ColumnFilterHeader
+                      filter={matchedFilter}
+                      onChange={setMatchedFilter}
+                      entityOptions={matchedOptions.entities}
+                      methodOptions={matchedOptions.methods}
+                      testIdPrefix="filter-matched"
+                    />
+                  }
+                >
+                  {doneQuery.isLoading ? (
+                    <LoadingRow />
+                  ) : doneQuery.isError ? (
+                    <ErrorRow label="matched queue" />
+                  ) : matchedCards.length === 0 ? (
+                    <ColumnEmpty label="No matched money yet." />
+                  ) : (
+                    matchedCards.map((card) =>
+                      renderReconCard(card, {
+                        readOnly: true,
+                        hideStateBadges: true,
+                      }),
+                    )
+                  )}
+                </ReportColumn>
+              )}
               <ReportColumn
                 title="Money unlinked to CRM record"
                 hint="Pulled money with no confirmed gift."
@@ -2007,6 +2066,7 @@ export default function ReconciliationWorkbench() {
           busy={busy}
           onClose={() => setRetargetCard(null)}
           onPick={(gift) => stageRetarget(retargetCard, gift)}
+          onUnlink={unlinkOwningStagedPayment}
         />
       )}
       {retargetConflict && (
@@ -2111,25 +2171,15 @@ export default function ReconciliationWorkbench() {
         </AlertDialog>
       )}
       {searchGiftCard && (
-        <GiftSearchDialog
-          open
-          onOpenChange={(o) => {
-            if (!o) setSearchGiftCard(null);
-          }}
+        <RetargetDialog
+          card={searchGiftCard}
           busy={busy}
           title="Match payment to an existing gift"
           description="Search all gifts and link this QuickBooks payment to the one recording the same money."
-          footnote="Approving will match this payment to the chosen gift (same money) and adopt that gift's donor."
-          onPick={(g) =>
-            stageRetarget(searchGiftCard, {
-              nodeType: "gift",
-              id: g.id,
-              label: giftRowDonorName(g),
-              sublabel: g.name ?? null,
-              amount: g.amount ?? null,
-              date: g.dateReceived ?? null,
-            })
-          }
+          footnote="Matching will link this payment to the chosen gift (same money) and adopt that gift's donor. A gift already matched to another QuickBooks payment is grayed out — unlink it there first."
+          onClose={() => setSearchGiftCard(null)}
+          onPick={(gift) => stageRetarget(searchGiftCard, gift)}
+          onUnlink={unlinkOwningStagedPayment}
         />
       )}
       {groupCreateGift && (
@@ -3540,17 +3590,31 @@ function RecordOnPledgeDialog({
 function RetargetDialog({
   card,
   busy,
+  title = "Re-target match",
+  description,
+  footnote,
   onClose,
   onPick,
+  onUnlink,
 }: {
   card: ReconciliationCard;
   busy: boolean;
+  title?: string;
+  description?: ReactNode;
+  footnote?: ReactNode;
   onClose: () => void;
   onPick: (gift: ReconciliationCandidate) => void;
+  /**
+   * Immediately unlink a gift from the OTHER QuickBooks payment that currently
+   * owns it (a revert), freeing it to be picked here. Resolves once the revert
+   * has finished so the dialog can re-run its search. Omit to hide the action.
+   */
+  onUnlink?: (owningStagedPaymentId: string) => Promise<void>;
 }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<ReconciliationCandidate[]>([]);
   const [searching, setSearching] = useState(false);
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
 
   const runSearch = useCallback(async () => {
     setSearching(true);
@@ -3568,14 +3632,33 @@ function RetargetDialog({
     }
   }, [card.stagedPaymentId, q]);
 
+  const handleUnlink = useCallback(
+    async (owningStagedPaymentId: string) => {
+      if (!onUnlink) return;
+      setUnlinkingId(owningStagedPaymentId);
+      try {
+        await onUnlink(owningStagedPaymentId);
+        // Re-run the search so the just-freed gift becomes pickable in place.
+        await runSearch();
+      } finally {
+        setUnlinkingId(null);
+      }
+    },
+    [onUnlink, runSearch],
+  );
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Re-target match</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Link {card.payerName ?? "this payment"} ({money(card.amount)}) to a
-            different existing gift.
+            {description ?? (
+              <>
+                Link {card.payerName ?? "this payment"} ({money(card.amount)}) to
+                a different existing gift.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
         <div className="flex gap-2">
@@ -3602,37 +3685,69 @@ function RetargetDialog({
             </p>
           ) : (
             results.map((g) => {
-              const linked = g.alreadyLinkedStagedPaymentId != null;
+              const owningId = g.alreadyLinkedStagedPaymentId ?? null;
+              const linked = owningId != null;
+              const canUnlink = linked && Boolean(onUnlink);
               return (
-                <button
+                <div
                   key={g.id}
-                  type="button"
-                  disabled={linked || busy}
-                  onClick={() => onPick(g)}
                   className={cn(
-                    "flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                    linked ? "cursor-not-allowed opacity-50" : "hover:bg-muted",
+                    "flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                    linked ? "opacity-60" : "hover:bg-muted",
                   )}
                 >
-                  <span>
-                    <span className="font-medium">{g.label}</span>
-                    {g.sublabel && (
-                      <span className="block text-xs text-muted-foreground">
-                        {g.sublabel}
-                      </span>
+                  <button
+                    type="button"
+                    disabled={linked || busy}
+                    onClick={() => onPick(g)}
+                    className={cn(
+                      "flex min-w-0 flex-1 items-center justify-between gap-2 text-left",
+                      linked ? "cursor-not-allowed" : "",
                     )}
-                  </span>
-                  <span className="tabular-nums text-muted-foreground">
-                    {money(g.amount)}
-                    {linked && (
-                      <span className="ml-1 text-[10px]">(linked)</span>
-                    )}
-                  </span>
-                </button>
+                    data-testid={`button-pick-gift-${g.id}`}
+                  >
+                    <span className="min-w-0">
+                      <span className="font-medium">{g.label}</span>
+                      {g.sublabel && (
+                        <span className="block text-xs text-muted-foreground">
+                          {g.sublabel}
+                        </span>
+                      )}
+                      {linked && (
+                        <span className="block text-[10px] text-amber-600">
+                          Already linked to another QuickBooks payment.
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {money(g.amount)}
+                    </span>
+                  </button>
+                  {canUnlink && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 text-xs"
+                      disabled={busy || unlinkingId != null}
+                      onClick={() => handleUnlink(owningId!)}
+                      data-testid={`button-unlink-gift-${g.id}`}
+                    >
+                      {unlinkingId === owningId ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        "Unlink"
+                      )}
+                    </Button>
+                  )}
+                </div>
               );
             })
           )}
         </div>
+        {footnote && (
+          <p className="text-xs text-muted-foreground">{footnote}</p>
+        )}
       </DialogContent>
     </Dialog>
   );

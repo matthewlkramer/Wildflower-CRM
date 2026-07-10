@@ -3777,6 +3777,8 @@ export interface ReconciliationCandidate {
   donorId?: string | null;
   /** For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting. */
   alreadyLinkedStagedPaymentId?: string | null;
+  /** For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or group-reconciled onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting. */
+  alreadyLinkedGiftId?: string | null;
   /** Why this candidate conflicts with a locked node (set only when state=conflict). */
   conflictReason?: string | null;
 }

@@ -8,6 +8,7 @@ import {
   useSearchReconciliationQbStaged,
   getSearchReconciliationQbStagedQueryKey,
   useReconcileStagedPayment,
+  useRevertStagedPayment,
   useLinkStripeChargeToGift,
   useUpdateGiftAllocation,
   useArchiveGiftOrPayment,
@@ -877,10 +878,44 @@ function PaymentLinkDialog({
   const candidates = searchQ.data?.data ?? [];
 
   const reconcile = useReconcileStagedPayment();
+  const revert = useRevertStagedPayment();
 
   // "Link allocation → payment" records the chosen allocation onto the ledger
   // row; "Link gift → payment" links the header only (no allocation pointer).
   const allocationLink = scope === "allocation" && g.allocationId != null;
+
+  // Free a QuickBooks payment that's already tied to ANOTHER gift by reverting
+  // that link, then refresh the search so the row becomes linkable. A minted
+  // (created) gift can't be reverted — the server 409s "not_revertible";
+  // surface that message rather than failing silently.
+  const unlink = (stagedPaymentId: string) => {
+    revert.mutate(
+      { id: stagedPaymentId },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({
+            queryKey: getSearchReconciliationQbStagedQueryKey(searchParams),
+          });
+          // Reverting the other link also frees that gift back into the
+          // gifts-missing-QB worklist, so refresh it too (mirrors `link`).
+          void queryClient.invalidateQueries({
+            queryKey: [MISSING_QB_KEY_PREFIX],
+          });
+          toast({
+            title: "Unlinked",
+            description: "Freed the payment from the other gift.",
+          });
+        },
+        onError: (err) =>
+          toast({
+            title: "Couldn't unlink",
+            description:
+              err instanceof Error ? err.message : "Something went wrong.",
+            variant: "destructive",
+          }),
+      },
+    );
+  };
 
   const link = (stagedPaymentId: string) => {
     reconcile.mutate(
@@ -950,11 +985,17 @@ function PaymentLinkDialog({
             ) : (
               <ul className="divide-y">
                 {candidates.map((c) => {
-                  const blocked = c.alreadyLinkedStagedPaymentId != null;
+                  // This QuickBooks payment is already tied to another gift —
+                  // gray it and offer an unlink instead of a second (double-
+                  // counting) link.
+                  const blocked = c.alreadyLinkedGiftId != null;
                   return (
                     <li
                       key={c.id}
-                      className="flex items-center justify-between gap-3 p-3"
+                      className={cn(
+                        "flex items-center justify-between gap-3 p-3",
+                        blocked && "opacity-60",
+                      )}
                     >
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">
@@ -969,22 +1010,41 @@ function PaymentLinkDialog({
                             .filter(Boolean)
                             .join(" · ")}
                         </div>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={blocked || reconcile.isPending}
-                        onClick={() => link(c.id)}
-                        data-testid={`payment-link-pick-${c.id}`}
-                      >
-                        {blocked ? (
-                          "Already linked"
-                        ) : reconcile.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          "Link"
+                        {blocked && (
+                          <div className="mt-0.5 truncate text-xs text-amber-600">
+                            Already linked to another gift
+                          </div>
                         )}
-                      </Button>
+                      </div>
+                      {blocked ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={revert.isPending}
+                          onClick={() => unlink(c.id)}
+                          data-testid={`payment-link-unlink-${c.id}`}
+                        >
+                          {revert.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "Unlink"
+                          )}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={reconcile.isPending}
+                          onClick={() => link(c.id)}
+                          data-testid={`payment-link-pick-${c.id}`}
+                        >
+                          {reconcile.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "Link"
+                          )}
+                        </Button>
+                      )}
                     </li>
                   );
                 })}
