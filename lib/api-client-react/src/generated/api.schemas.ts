@@ -4168,6 +4168,14 @@ export interface PayoutChargeSummary {
   payerName?: string | null;
   /** Charge gross amount (major units). */
   amount?: string | null;
+  /** Stripe processor fee for this charge (major units). */
+  fee?: string | null;
+  /** Charge net amount after the processor fee (major units). */
+  net?: string | null;
+  /** Charge description (charge.description) — often the real donor name / memo. */
+  description?: string | null;
+  /** Card statement descriptor shown on the payer's statement. */
+  statementDescriptor?: string | null;
   /** Calendar date the charge is credited to (date_received). */
   date?: string | null;
 }
@@ -4824,6 +4832,18 @@ export interface BundleAnchorProposedMatch {
   payerName?: string | null;
   /** Stripe charges behind the counterpart payout; null for a QB deposit. */
   chargeCount?: number | null;
+  /** QB counterpart's deposit line / memo description (the proposed deposit for a Stripe payout). */
+  lineDescription?: string | null;
+  /** QB counterpart's transaction-level memo (PrivateNote). */
+  memo?: string | null;
+  /** QB counterpart's human-readable reference (doc/payment ref). */
+  reference?: string | null;
+  /** QB counterpart's line item names captured at pull time. */
+  lineItemNames?: string[] | null;
+  /** QB counterpart's line account names captured at pull time. */
+  lineAccountNames?: string[] | null;
+  /** QB counterpart's line class names captured at pull time. */
+  lineClasses?: string[] | null;
   /** The already-approved QB gift the proposal collided with (a conflict tie awaiting a keep decision), if any. */
   conflictGiftId?: string | null;
 }
@@ -4849,6 +4869,10 @@ export interface BundleAnchor {
   anchorId: string;
   /** Net deposited (Stripe net_total, falling back to payout amount) or the QB staged amount, major units. */
   amount?: string | null;
+  /** Stripe payout gross total before processor fees (major units); null for QB-only money. */
+  grossTotal?: string | null;
+  /** Stripe payout processor-fee total (major units); null for QB-only money. */
+  feeTotal?: string | null;
   /** Stripe arrival date, or the QB date received. */
   date?: string | null;
   /** QB payer name (the tied/candidate deposit's payer for a Stripe payout, or the staged row's payer for QB-only money). */
@@ -4857,6 +4881,18 @@ export interface BundleAnchor {
   chargeCount?: number | null;
   /** Per-charge breakdown (payer name + amount) inside a Stripe payout, capped and ordered by amount desc. Empty for QB-only anchors. */
   charges?: PayoutChargeSummary[];
+  /** QB anchor only: the deposit line / memo description. Null for a Stripe payout. */
+  lineDescription?: string | null;
+  /** QB anchor only: the transaction-level memo (PrivateNote). Null for a Stripe payout. */
+  memo?: string | null;
+  /** QB anchor only: the human-readable reference (doc/payment ref). Null for a Stripe payout. */
+  reference?: string | null;
+  /** QB anchor only: line item names captured at pull time. */
+  lineItemNames?: string[] | null;
+  /** QB anchor only: line account names captured at pull time. */
+  lineAccountNames?: string[] | null;
+  /** QB anchor only: line class names captured at pull time. */
+  lineClasses?: string[] | null;
   /** Raw source status for the display badge: the Stripe payout's reconciliation status (derived from its settlement link), or the QB staged-payment status. */
   statusLabel: string;
   batchStatus: SettlementBatchStatus;

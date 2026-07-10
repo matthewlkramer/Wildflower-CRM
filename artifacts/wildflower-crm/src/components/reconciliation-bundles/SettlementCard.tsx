@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { decodeHtmlEntities, formatCurrency, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { extractGateIssues } from "@/lib/reconciliation";
 import { ResolveTieDialog } from "./ResolveTieDialog";
@@ -29,11 +29,85 @@ function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Something went wrong.";
 }
 
+/** Deduped, trimmed, non-empty entries from a QB line-item text array. */
+function uniqNonEmpty(values: string[] | null | undefined): string[] {
+  if (!values) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const v of values) {
+    const t = decodeHtmlEntities(v).trim();
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      out.push(t);
+    }
+  }
+  return out;
+}
+
 /**
- * Per-charge breakdown for a Stripe payout — each charge's payer name + amount so
- * a reviewer sees who the money is from without drilling in. Capped/scrollable so
- * a many-charge payout stays readable; renders nothing when there are no charges
- * (the count fallback in the card header covers that case).
+ * QuickBooks descriptive context for a deposit anchor (or the proposed QB
+ * counterpart of a Stripe payout): reference, memo/description, and a compact
+ * summary of the deposit's line items (item names, account names, classes) so a
+ * reviewer can eyeball the tie without leaving the card. Capped/scrollable for a
+ * many-line deposit; renders nothing when there is no QB detail (e.g. a Stripe
+ * payout anchor, whose QB fields are all null).
+ */
+export function QbDetails({
+  lineDescription,
+  memo,
+  reference,
+  lineItemNames,
+  lineAccountNames,
+  lineClasses,
+}: {
+  lineDescription?: string | null;
+  memo?: string | null;
+  reference?: string | null;
+  lineItemNames?: string[] | null;
+  lineAccountNames?: string[] | null;
+  lineClasses?: string[] | null;
+}) {
+  const desc = decodeHtmlEntities(lineDescription ?? "").trim();
+  const m = decodeHtmlEntities(memo ?? "").trim();
+  const ref = (reference ?? "").trim();
+  const items = uniqNonEmpty(lineItemNames);
+  const accounts = uniqNonEmpty(lineAccountNames);
+  const classes = uniqNonEmpty(lineClasses);
+  if (
+    !desc &&
+    !m &&
+    !ref &&
+    items.length === 0 &&
+    accounts.length === 0 &&
+    classes.length === 0
+  ) {
+    return null;
+  }
+  return (
+    <div className="mt-1 max-h-24 space-y-0.5 overflow-y-auto pr-1 text-[11px] leading-snug text-muted-foreground">
+      {ref && <div className="truncate">Ref: {ref}</div>}
+      {desc && <div className="truncate">{desc}</div>}
+      {m && m !== desc && <div className="truncate">Memo: {m}</div>}
+      {items.length > 0 && (
+        <div className="truncate">Items: {items.join(", ")}</div>
+      )}
+      {accounts.length > 0 && (
+        <div className="truncate">Accounts: {accounts.join(", ")}</div>
+      )}
+      {classes.length > 0 && (
+        <div className="truncate">Classes: {classes.join(", ")}</div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Per-charge breakdown for a Stripe payout — each charge's payer name and gross,
+ * with the processor fee / net and the charge description / statement descriptor
+ * so a reviewer sees who the money is from and how much Stripe took without
+ * drilling in. Capped/scrollable so a many-charge payout stays readable; renders
+ * nothing when there are no charges (the count fallback in the card header
+ * covers that case).
  */
 export function ChargeList({
   charges,
@@ -42,15 +116,36 @@ export function ChargeList({
 }) {
   if (!charges || charges.length === 0) return null;
   return (
-    <ul className="mt-1 max-h-28 space-y-0.5 overflow-y-auto pr-1 text-xs text-muted-foreground">
-      {charges.map((c) => (
-        <li key={c.id} className="flex items-center justify-between gap-2">
-          <span className="truncate">{c.payerName?.trim() || "(no name)"}</span>
-          <span className="shrink-0 tabular-nums">
-            {c.amount != null ? formatCurrency(c.amount) : "—"}
-          </span>
-        </li>
-      ))}
+    <ul className="mt-1 max-h-32 space-y-1 overflow-y-auto pr-1 text-xs text-muted-foreground">
+      {charges.map((c) => {
+        const subtitle = decodeHtmlEntities(
+          c.description ?? c.statementDescriptor ?? "",
+        ).trim();
+        return (
+          <li key={c.id} className="border-b border-border/40 pb-1 last:border-0">
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate">
+                {c.payerName?.trim() || "(no name)"}
+              </span>
+              <span className="shrink-0 tabular-nums">
+                {c.amount != null ? formatCurrency(c.amount) : "—"}
+              </span>
+            </div>
+            {subtitle && (
+              <div className="truncate text-[10px] text-muted-foreground/70">
+                {subtitle}
+              </div>
+            )}
+            {(c.fee != null || c.net != null) && (
+              <div className="text-[10px] tabular-nums text-muted-foreground/70">
+                {c.fee != null ? `fee ${formatCurrency(c.fee)}` : ""}
+                {c.fee != null && c.net != null ? " · " : ""}
+                {c.net != null ? `net ${formatCurrency(c.net)}` : ""}
+              </div>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -194,7 +289,25 @@ export function SettlementCard({
               : ""}
             {a.payerName ? ` · ${a.payerName}` : ""}
           </div>
+          {(a.grossTotal != null || a.feeTotal != null) && (
+            <div className="mt-0.5 text-[11px] tabular-nums text-muted-foreground/70">
+              {a.grossTotal != null ? `gross ${formatCurrency(a.grossTotal)}` : ""}
+              {a.grossTotal != null && a.feeTotal != null ? " · " : ""}
+              {a.feeTotal != null ? `fee ${formatCurrency(a.feeTotal)}` : ""}
+              {(a.grossTotal != null || a.feeTotal != null) && a.amount != null
+                ? ` · net ${formatCurrency(a.amount)}`
+                : ""}
+            </div>
+          )}
           <ChargeList charges={a.charges} />
+          <QbDetails
+            lineDescription={a.lineDescription}
+            memo={a.memo}
+            reference={a.reference}
+            lineItemNames={a.lineItemNames}
+            lineAccountNames={a.lineAccountNames}
+            lineClasses={a.lineClasses}
+          />
 
           {/* Proposed counterpart inline */}
           {proposal && (
@@ -212,7 +325,16 @@ export function SettlementCard({
                 {proposal.chargeCount != null
                   ? ` · ${proposal.chargeCount} charges`
                   : ""}
+                {proposal.payerName ? ` · ${proposal.payerName}` : ""}
               </div>
+              <QbDetails
+                lineDescription={proposal.lineDescription}
+                memo={proposal.memo}
+                reference={proposal.reference}
+                lineItemNames={proposal.lineItemNames}
+                lineAccountNames={proposal.lineAccountNames}
+                lineClasses={proposal.lineClasses}
+              />
               {proposal.conflictGiftId && (
                 <div className="mt-1 text-amber-700">
                   Conflicts with an approved QB gift — approving keeps it.

@@ -105,6 +105,10 @@ interface PayoutChargeRow {
   id: string;
   payerName: string | null;
   amount: string | null;
+  fee: string | null;
+  net: string | null;
+  description: string | null;
+  statementDescriptor: string | null;
   date: string | null;
 }
 
@@ -112,10 +116,19 @@ interface AnchorRow {
   anchor_type: AnchorSource;
   anchor_id: string;
   amount: string | null;
+  gross_total: string | null;
+  fee_total: string | null;
   anchor_date: string | null;
   payer_name: string | null;
   charge_count: number | null;
   charges: PayoutChargeRow[] | null;
+  // QB-anchor-only descriptive context (null for a Stripe payout).
+  line_description: string | null;
+  memo: string | null;
+  reference: string | null;
+  line_item_names: string[] | null;
+  line_account_names: string[] | null;
+  line_classes: string[] | null;
   status_label: string;
   batch_status: "settled" | "proposed" | "orphan";
   // Proposed counterpart facts (non-null only for a proposed Stripe payout).
@@ -125,6 +138,12 @@ interface AnchorRow {
   proposed_date: string | null;
   proposed_payer_name: string | null;
   proposed_charge_count: number | null;
+  proposed_line_description: string | null;
+  proposed_memo: string | null;
+  proposed_reference: string | null;
+  proposed_line_item_names: string[] | null;
+  proposed_line_account_names: string[] | null;
+  proposed_line_classes: string[] | null;
   proposed_conflict_gift_id: string | null;
   // Cached confirm-readiness from the anchor's latest bundle-draft snapshot.
   readiness_ready: boolean | null;
@@ -169,6 +188,8 @@ router.get(
         'stripe_payout'::text AS anchor_type,
         sp.id AS anchor_id,
         COALESCE(sp.net_total, sp.amount)::text AS amount,
+        sp.gross_total::text AS gross_total,
+        sp.fee_total::text AS fee_total,
         sp.arrival_date::text AS anchor_date,
         ad.payer_name AS payer_name,
         sp.charge_count AS charge_count,
@@ -177,16 +198,27 @@ router.get(
               'id', c.id,
               'payerName', COALESCE(c.payer_name, c.description),
               'amount', c.gross_amount::text,
+              'fee', c.fee_amount::text,
+              'net', c.net_amount::text,
+              'description', c.description,
+              'statementDescriptor', c.statement_descriptor,
               'date', c.date_received::text
             ) ORDER BY c.gross_amount DESC NULLS LAST)
           FROM (
-            SELECT cc.id, cc.payer_name, cc.description, cc.gross_amount, cc.date_received
+            SELECT cc.id, cc.payer_name, cc.description, cc.statement_descriptor,
+                   cc.gross_amount, cc.fee_amount, cc.net_amount, cc.date_received
             FROM stripe_staged_charges cc
             WHERE cc.stripe_payout_id = sp.id
             ORDER BY cc.gross_amount DESC NULLS LAST
             LIMIT 50
           ) c
         ), '[]'::json) AS charges,
+        NULL::text AS line_description,
+        NULL::text AS memo,
+        NULL::text AS reference,
+        NULL::text[] AS line_item_names,
+        NULL::text[] AS line_account_names,
+        NULL::text[] AS line_classes,
         ${payoutStatusLabelSql}::text AS status_label,
         (CASE
           WHEN EXISTS (SELECT 1 FROM settlement_links sl2
@@ -204,6 +236,12 @@ router.get(
         (CASE WHEN sl.lifecycle = 'proposed' THEN ad.date_received::text END)::text AS proposed_date,
         (CASE WHEN sl.lifecycle = 'proposed' THEN ad.payer_name END)::text AS proposed_payer_name,
         NULL::int AS proposed_charge_count,
+        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.line_description END)::text AS proposed_line_description,
+        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.qb_transaction_memo END)::text AS proposed_memo,
+        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.raw_reference END)::text AS proposed_reference,
+        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.line_item_names END) AS proposed_line_item_names,
+        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.line_account_names END) AS proposed_line_account_names,
+        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.line_classes END) AS proposed_line_classes,
         (CASE WHEN sl.lifecycle = 'proposed' THEN sl.conflict_gift_id END)::text AS proposed_conflict_gift_id,
         ${readinessSelect("d")}
       FROM stripe_payouts sp
@@ -218,10 +256,18 @@ router.get(
         'qb_staged_payment'::text AS anchor_type,
         s.id AS anchor_id,
         s.amount::text AS amount,
+        NULL::text AS gross_total,
+        NULL::text AS fee_total,
         s.date_received::text AS anchor_date,
         s.payer_name AS payer_name,
         NULL::int AS charge_count,
         '[]'::json AS charges,
+        s.line_description AS line_description,
+        s.qb_transaction_memo AS memo,
+        s.raw_reference AS reference,
+        s.line_item_names AS line_item_names,
+        s.line_account_names AS line_account_names,
+        s.line_classes AS line_classes,
         s.status::text AS status_label,
         'orphan'::text AS batch_status,
         NULL::text AS proposed_counterpart_type,
@@ -230,6 +276,12 @@ router.get(
         NULL::text AS proposed_date,
         NULL::text AS proposed_payer_name,
         NULL::int AS proposed_charge_count,
+        NULL::text AS proposed_line_description,
+        NULL::text AS proposed_memo,
+        NULL::text AS proposed_reference,
+        NULL::text[] AS proposed_line_item_names,
+        NULL::text[] AS proposed_line_account_names,
+        NULL::text[] AS proposed_line_classes,
         NULL::text AS proposed_conflict_gift_id,
         ${readinessSelect("d")}
       FROM staged_payments s
@@ -247,10 +299,15 @@ router.get(
     const [dataResult, totalResult] = await Promise.all([
       db.execute(sql`
         SELECT
-          anchor_type, anchor_id, amount, anchor_date,
-          payer_name, charge_count, charges, status_label, batch_status,
+          anchor_type, anchor_id, amount, gross_total, fee_total, anchor_date,
+          payer_name, charge_count, charges,
+          line_description, memo, reference,
+          line_item_names, line_account_names, line_classes,
+          status_label, batch_status,
           proposed_counterpart_type, proposed_counterpart_id, proposed_amount,
           proposed_date, proposed_payer_name, proposed_charge_count,
+          proposed_line_description, proposed_memo, proposed_reference,
+          proposed_line_item_names, proposed_line_account_names, proposed_line_classes,
           proposed_conflict_gift_id,
           readiness_ready, readiness_warning, readiness_blocker
         FROM ( ${merged} ) AS anchors
@@ -268,10 +325,18 @@ router.get(
         anchorType: r.anchor_type,
         anchorId: r.anchor_id,
         amount: r.amount,
+        grossTotal: r.gross_total,
+        feeTotal: r.fee_total,
         date: r.anchor_date,
         payerName: r.payer_name,
         chargeCount: r.charge_count,
         charges: r.charges ?? [],
+        lineDescription: r.line_description,
+        memo: r.memo,
+        reference: r.reference,
+        lineItemNames: r.line_item_names,
+        lineAccountNames: r.line_account_names,
+        lineClasses: r.line_classes,
         statusLabel: r.status_label,
         batchStatus: r.batch_status,
         proposedMatch: r.proposed_counterpart_id
@@ -282,6 +347,12 @@ router.get(
               date: r.proposed_date,
               payerName: r.proposed_payer_name,
               chargeCount: r.proposed_charge_count,
+              lineDescription: r.proposed_line_description,
+              memo: r.proposed_memo,
+              reference: r.proposed_reference,
+              lineItemNames: r.proposed_line_item_names,
+              lineAccountNames: r.proposed_line_account_names,
+              lineClasses: r.proposed_line_classes,
               conflictGiftId: r.proposed_conflict_gift_id,
             }
           : null,

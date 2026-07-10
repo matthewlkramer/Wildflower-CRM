@@ -7635,6 +7635,10 @@ components:
         id:        { type: string, description: "Stripe charge id (ch_...)." }
         payerName: { type: string, nullable: true, description: "Charge payer name, falling back to the charge description; null when neither is set." }
         amount:    { type: string, nullable: true, description: "Charge gross amount (major units)." }
+        fee:       { type: string, nullable: true, description: "Stripe processor fee for this charge (major units)." }
+        net:       { type: string, nullable: true, description: "Charge net amount after the processor fee (major units)." }
+        description:         { type: string, nullable: true, description: "Charge description (charge.description) — often the real donor name / memo." }
+        statementDescriptor: { type: string, nullable: true, description: "Card statement descriptor shown on the payer's statement." }
         date:      { type: string, format: date, nullable: true, description: "Calendar date the charge is credited to (date_received)." }
     PayoutSearchCandidate:
       type: object
@@ -8027,10 +8031,18 @@ components:
         anchorType:  { $ref: "#/components/schemas/BundleAnchorType" }
         anchorId:    { type: string, description: "stripe_payouts.id (po_...) or staged_payments.id." }
         amount:      { type: string, nullable: true, description: "Net deposited (Stripe net_total, falling back to payout amount) or the QB staged amount, major units." }
+        grossTotal:  { type: string, nullable: true, description: "Stripe payout gross total before processor fees (major units); null for QB-only money." }
+        feeTotal:    { type: string, nullable: true, description: "Stripe payout processor-fee total (major units); null for QB-only money." }
         date:        { type: string, format: date, nullable: true, description: "Stripe arrival date, or the QB date received." }
         payerName:   { type: string, nullable: true, description: "QB payer name (the tied/candidate deposit's payer for a Stripe payout, or the staged row's payer for QB-only money)." }
         chargeCount: { type: integer, nullable: true, description: "Stripe charges behind the payout; null for QB-only money." }
         charges:     { type: array, items: { $ref: "#/components/schemas/PayoutChargeSummary" }, description: "Per-charge breakdown (payer name + amount) inside a Stripe payout, capped and ordered by amount desc. Empty for QB-only anchors." }
+        lineDescription: { type: string, nullable: true, description: "QB anchor only: the deposit line / memo description. Null for a Stripe payout." }
+        memo:            { type: string, nullable: true, description: "QB anchor only: the transaction-level memo (PrivateNote). Null for a Stripe payout." }
+        reference:       { type: string, nullable: true, description: "QB anchor only: the human-readable reference (doc/payment ref). Null for a Stripe payout." }
+        lineItemNames:    { type: array, items: { type: string }, nullable: true, description: "QB anchor only: line item names captured at pull time." }
+        lineAccountNames: { type: array, items: { type: string }, nullable: true, description: "QB anchor only: line account names captured at pull time." }
+        lineClasses:      { type: array, items: { type: string }, nullable: true, description: "QB anchor only: line class names captured at pull time." }
         statusLabel: { type: string, description: "Raw source status for the display badge: the Stripe payout's reconciliation status (derived from its settlement link), or the QB staged-payment status." }
         batchStatus: { $ref: "#/components/schemas/SettlementBatchStatus" }
         proposedMatch:
@@ -8064,6 +8076,12 @@ components:
         date:            { type: string, format: date, nullable: true, description: "Counterpart date (QB date received or Stripe arrival date)." }
         payerName:       { type: string, nullable: true, description: "Counterpart payer name." }
         chargeCount:     { type: integer, nullable: true, description: "Stripe charges behind the counterpart payout; null for a QB deposit." }
+        lineDescription: { type: string, nullable: true, description: "QB counterpart's deposit line / memo description (the proposed deposit for a Stripe payout)." }
+        memo:            { type: string, nullable: true, description: "QB counterpart's transaction-level memo (PrivateNote)." }
+        reference:       { type: string, nullable: true, description: "QB counterpart's human-readable reference (doc/payment ref)." }
+        lineItemNames:    { type: array, items: { type: string }, nullable: true, description: "QB counterpart's line item names captured at pull time." }
+        lineAccountNames: { type: array, items: { type: string }, nullable: true, description: "QB counterpart's line account names captured at pull time." }
+        lineClasses:      { type: array, items: { type: string }, nullable: true, description: "QB counterpart's line class names captured at pull time." }
         conflictGiftId:  { type: string, nullable: true, description: "The already-approved QB gift the proposal collided with (a conflict tie awaiting a keep decision), if any." }
     BundleAnchorReadiness:
       type: object
