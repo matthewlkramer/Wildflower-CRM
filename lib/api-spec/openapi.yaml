@@ -6158,12 +6158,11 @@ components:
         # Computed at read time from the payments LINKED to the gift (QuickBooks
         # payment_applications + Stripe charges + non-stripe Donorbox), via the one
         # shared {settledGross, totalFees} helper. Replaces the deprecated header
-        # processorFee / final_amount_* / originalHumanCrmAmount columns.
+        # final_amount_* / originalHumanCrmAmount columns (processorFee already dropped).
         derivedSettledAmount:       { type: string, nullable: true, readOnly: true, description: "Settled GROSS actually landed for this gift, derived from all linked payments (QuickBooks + Stripe + non-stripe Donorbox). Null when no payment is linked yet. The UI shows 'you entered $X, settled $Y' by comparing with `amount`." }
         derivedProcessorFee:        { type: string, nullable: true, readOnly: true, description: "Total processor fees withheld across the gift's linked payments (Stripe + Donorbox; QuickBooks carries none). Donor is credited the GROSS `amount`; net = derivedSettledAmount − derivedProcessorFee. Null when no fee-bearing payment is linked." }
         # ── DEPRECATED final-amount provenance (Task #448). Retained on the read
         # ── model only during deprecate-then-drop; superseded by derivedSettledAmount.
-        processorFee:               { type: string, nullable: true, readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — use derivedProcessorFee. No longer written; derived fees come from linked payments." }
         originalHumanCrmAmount:     { type: string, nullable: true, readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount." }
         finalAmountSource:          { allOf: [ { $ref: "#/components/schemas/GiftFinalAmountSource" } ], readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — `amount` is always the human-entered amount now; settled money is derivedSettledAmount." }
         finalAmountStripeChargeId:  { type: string, nullable: true, readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — Stripe linkage lives on stripe_staged_charges; settled amount is derived." }

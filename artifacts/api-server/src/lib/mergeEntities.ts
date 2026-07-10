@@ -142,7 +142,6 @@ const ORGANIZATION_OVERRIDE_FIELDS: ReadonlyArray<string> = [
   "priorityAreasNotes",
   "about",
   "activeStatus",
-  "otherNames",
   "details",
   "emailDomain",
   "orgEmail",

@@ -38,9 +38,8 @@ export function buildGiftValuesFromStripeCharge(
     id: giftId,
     name,
     amount: staged.grossAmount,
-    // Donor is credited GROSS; the processor fee is recorded separately so net
-    // (= amount − processor_fee) can be derived for payout reconciliation.
-    processorFee: staged.feeAmount,
+    // Donor is credited GROSS; the processor fee is derived at read time from the
+    // gift's linked Stripe charge (derivedProcessorFee), not stored on the header.
     dateReceived: staged.dateReceived,
     organizationId: staged.organizationId,
     individualGiverPersonId: staged.individualGiverPersonId,

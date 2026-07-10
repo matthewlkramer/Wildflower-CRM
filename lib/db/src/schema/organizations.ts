@@ -47,14 +47,6 @@ export const organizations = pgTable("organizations", {
   priorityAreasNotes: text("priority_areas_notes"),
   about: text("about"),
   activeStatus: activeStatusEnum("active_status"),
-  /**
-   * @deprecated Consolidated into `historicalNames` (migration 0099). No longer
-   * read or written by the app (removed from the API spec, UI, and email
-   * intelligence). The physical column is retained as a dead safety copy until
-   * a follow-up migration drops it (deprecate → backfill → drop). Do not
-   * reference it in new code or expose it in responses.
-   */
-  otherNames: text("other_names"),
   historicalNames: text("historical_names").array(),
   details: text("details"),
   emailDomain: text("email_domain"),

@@ -1931,11 +1931,6 @@ export interface GiftOrPayment {
   /** Total processor fees withheld across the gift's linked payments (Stripe + Donorbox; QuickBooks carries none). Donor is credited the GROSS `amount`; net = derivedSettledAmount − derivedProcessorFee. Null when no fee-bearing payment is linked. */
   readonly derivedProcessorFee?: string | null;
   /**
-   * DEPRECATED (Task #448) — use derivedProcessorFee. No longer written; derived fees come from linked payments.
-   * @deprecated
-   */
-  readonly processorFee?: string | null;
-  /**
    * DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount.
    * @deprecated
    */

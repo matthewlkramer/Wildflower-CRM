@@ -52,10 +52,10 @@ const maskGiftDonorRow = maskDonorDisplayFields;
 // payments projection and the archive/unarchive routes.
 // This is the single named column set every full-row gift select flows through
 // (see deprecated-column-response-leak). Deprecated-but-physical columns still
-// present in the schema (e.g. processorFee) are intentionally echoed here to
-// match their deprecated OpenAPI response fields; columns fully retired from the
-// schema (grant_year, needs_research — Task #598) simply fall out of
-// getTableColumns and never reach a response.
+// present in the schema (e.g. originalHumanCrmAmount, final_amount_*) are
+// intentionally echoed here to match their deprecated OpenAPI response fields;
+// columns fully retired from the schema (grant_year, needs_research, processor_fee)
+// simply fall out of getTableColumns and never reach a response.
 const giftHeaderColumns = getTableColumns(giftsAndPayments);
 export { giftHeaderColumns };
 const donorJoinSelect = {
@@ -94,8 +94,9 @@ const donorJoinSelect = {
   ),
   // Task #448 — settled amount + processor fees derived at read time from the
   // gift's LINKED payments (QuickBooks + Stripe + non-stripe Donorbox), via the
-  // one shared {settledGross, totalFees} helper. Replaces the deprecated header
-  // processorFee / final_amount_* columns. NULL when nothing has landed yet.
+  // one shared {settledGross, totalFees} helper. Replaces the now-dropped header
+  // processorFee and the deprecated final_amount_* columns. NULL when nothing has
+  // landed yet.
   derivedSettledAmount: derivedSettledAmountForGift().as(
     "derived_settled_amount",
   ),

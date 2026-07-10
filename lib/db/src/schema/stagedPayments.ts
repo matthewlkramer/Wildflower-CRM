@@ -314,13 +314,6 @@ export const stagedPayments = pgTable(
       .notNull()
       .default("auto"),
 
-    // @deprecated Research-flagging is consolidated into the Cleanup Queue
-    // (cleanup_queue rows with target_type='staged_payment'). This column is no
-    // longer written or read by the app and is excluded from every API response
-    // projection; it is retained (not dropped) so Publish never proposes a
-    // destructive drop against the live prod column. Do not reintroduce reads.
-    needsResearch: boolean("needs_research").notNull().default(false),
-
     // ── Revenue-accounting / QuickBooks coding snapshot (Task #449) ──────────
     // The derived QBO coding snapshot describes a QuickBooks PAYMENT, so it lives
     // HERE (moved off gift_allocations / pledge_allocations). A reviewer edits it

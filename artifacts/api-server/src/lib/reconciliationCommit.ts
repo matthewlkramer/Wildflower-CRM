@@ -268,7 +268,6 @@ export async function mintGiftInTx(
     ...(opportunityId ? { opportunityId } : {}),
     ...(charge
       ? {
-          processorFee: charge.feeAmount,
           finalAmountSource: "stripe" as const,
           finalAmountStripeChargeId: charge.id,
           finalAmountQbStagedPaymentId: null,
@@ -780,7 +779,6 @@ export async function linkGiftInTx(
         source: "stripe",
         stripeChargeId: charge.id,
         amount: charge.grossAmount,
-        processorFee: charge.feeAmount,
       })
     : await stampGiftFinalAmount(tx, giftId, {
         source: "quickbooks",

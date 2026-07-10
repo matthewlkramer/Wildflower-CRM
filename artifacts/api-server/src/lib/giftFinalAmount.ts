@@ -27,8 +27,6 @@ export interface StampFinalAmountArgs {
   qbStagedPaymentId?: string | null;
   /** The new FINAL gift amount (Stripe GROSS, or the QB staged amount). */
   amount: string | null;
-  /** Processor fee withheld (Stripe only); ignored for QuickBooks. */
-  processorFee?: string | null;
 }
 
 export interface StampResult {
@@ -64,7 +62,8 @@ function amountsEqual(a: string | null, b: string | null): boolean {
  * - Snapshots original_human_crm_amount from the CURRENT amount the first time
  *   the gift is stamped (so the human-entered figure is never lost).
  * - Sets amount, final_amount_source, and the single XOR pointer for the source
- *   (clearing the other), plus processor_fee for Stripe.
+ *   (clearing the other). The processor fee is no longer stored — it is DERIVED
+ *   at read time from the gift's linked payments (see derivedProcessorFee).
  *
  * Caller MUST hold an open transaction and is responsible for rebalancing the
  * gift's allocations afterward (see adjustSingleAllocationOrFlag).
@@ -147,9 +146,9 @@ export async function stampGiftFinalAmount(
   // read time from the linked Stripe charge (gross) + Donorbox/QB ledger — see
   // giftPaymentSummary. So a Stripe stamp NO LONGER overwrites the human-entered
   // `amount`; it only records the provenance pointer (deprecated, still read by
-  // transitional reconciliation code until those readers are retired). `amount`,
-  // `processor_fee`, and `original_human_crm_amount` are left untouched so the
-  // entered figure is preserved and any settled≠entered disagreement surfaces in
+  // transitional reconciliation code until those readers are retired). `amount`
+  // and `original_human_crm_amount` are left untouched so the entered
+  // figure is preserved and any settled≠entered disagreement surfaces in
   // the reconciliation queue instead of silently rescaling allocations.
   // changed=false ⇒ callers' adjustSingleAllocationOrFlag no-ops.
   await tx
@@ -195,9 +194,10 @@ export interface UnstampResult {
  *   - reverting one Stripe charge can't disturb a gift now stamped from another.
  *
  * On restore: amount ← original_human_crm_amount (snapshot), source ← 'human',
- * both pointers ← NULL, original_human_crm_amount ← NULL, and processor_fee is
- * cleared for the Stripe path (QuickBooks never set it). Caller MUST hold an
- * open transaction and is responsible for rebalancing allocations afterward
+ * both pointers ← NULL, and original_human_crm_amount ← NULL. (The processor fee
+ * is no longer a stored column — it is derived from the gift's linked payments.)
+ * Caller MUST hold an open transaction and is responsible for rebalancing
+ * allocations afterward
  * (see adjustSingleAllocationOrFlag) exactly as the stamp path does.
  */
 export async function unstampGiftFinalAmount(
@@ -254,7 +254,6 @@ export async function unstampGiftFinalAmount(
     .update(giftsAndPayments)
     .set({
       amount: newAmount,
-      ...(args.source === "stripe" ? { processorFee: null } : {}),
       originalHumanCrmAmount: null,
       finalAmountSource: "human",
       finalAmountStripeChargeId: null,

@@ -1,0 +1,72 @@
+-- Migration 0108: Physically DROP one long-deprecated, fully-inert column:
+--
+-- DROPS:
+--   gifts_and_payments.processor_fee   superseded by the DERIVED read-model field
+--                                      `derivedProcessorFee` (giftPaymentSummary.ts:
+--                                      NULLIF(SUM of the fees of the gift's LINKED
+--                                      payments, 0) — Stripe charges' fee_amount plus
+--                                      non-stripe Donorbox donations' processing_fee).
+--                                      The donor is credited the GROSS `amount`; the
+--                                      fee/net is derived at read time, never stored.
+--
+-- SCOPE — this migration drops ONLY processor_fee. The sibling deprecated columns
+--   original_human_crm_amount and final_amount_source / final_amount_stripe_charge_id
+--   / final_amount_qb_staged_payment_id are DELIBERATELY LEFT IN PLACE:
+--     * original_human_crm_amount still holds real legacy snapshots (704 of 793 prod
+--       gifts non-null) that unstampGiftFinalAmount reads to restore the pre-stamp
+--       human amount on a QB/Stripe revert — dropping it would lose that restore data.
+--     * final_amount_* is still WRITTEN by QB matching/actions and still READ by the
+--       gifts list filter + financialCorrections.ts.
+--   Those ship in a later migration once their readers/writers are retired.
+--
+-- SAFE TO DROP — verified read-only against the schema-removal build:
+--   * processor_fee is NOT read anywhere: every consumer switched to derivedProcessorFee
+--     (derived from linked payments), and the frontend never referenced it.
+--   * All writers were removed in this task (the Stripe mint in stripeGift.ts, the
+--     reconciliation/bundle commit paths, and the stampGiftFinalAmount args interface +
+--     its unstamp null-clear). No deployed code names the column.
+--   * It is a plain scalar numeric — no index, FK, enum, CHECK, or default depends on
+--     it — so nothing else is auto-dropped.
+--   * Prod holds only 8 non-null processor_fee rows, and those stored values are
+--     already ignored: the fee is derived from each gift's linked Stripe/Donorbox
+--     payments, not from this column, so the drop changes no read result.
+--
+-- IF EXISTS -> idempotent / re-runnable (a second run is a no-op).
+--
+-- ORDERING (prod) — Publish FIRST, THEN this SQL (same direction as 0104/0105/0107).
+-- processor_fee is ALREADY unselected by the deployed build, so a drop would not 500
+-- reads either way. The binding constraint is the Publish DIFF: Publish compares the
+-- dev-DB against the prod-DB (NOT the schema source). If you drop dev alone first,
+-- the next Publish sees a prod-only column and proposes a DESTRUCTIVE prod drop that
+-- aborts the whole diff (additive changes skipped -> 500 healthcheck). So keep BOTH
+-- DBs holding this column THROUGH Publish, and only AFTER the new (schema-removal)
+-- code is live in prod apply this file to prod AND dev, back-to-back, with NO Publish
+-- in between.
+--
+-- Apply with psql -1 (wraps the file in ONE transaction; do NOT add BEGIN/COMMIT):
+--   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0108_drop_gift_processor_fee.sql   (prod)
+--   psql "$DATABASE_URL"      -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0108_drop_gift_processor_fee.sql   (dev)
+
+ALTER TABLE gifts_and_payments
+  DROP COLUMN IF EXISTS processor_fee;
+
+-- Verification (run by hand AFTER applying) -----------------------------------
+--   -- Column gone (expect ZERO rows):
+--   SELECT table_name, column_name FROM information_schema.columns
+--   WHERE table_name = 'gifts_and_payments' AND column_name = 'processor_fee';
+--
+--   -- The derived fee still resolves from linked Stripe charges (expect the fee to
+--   -- match the linked charge's fee_amount for a gift that has one):
+--   SELECT g.id,
+--          NULLIF(COALESCE((SELECT SUM(ssc.fee_amount) FROM stripe_staged_charges ssc
+--                           WHERE ssc.matched_gift_id = g.id
+--                              OR ssc.created_gift_id = g.id), 0), 0) AS derived_fee
+--   FROM gifts_and_payments g
+--   WHERE EXISTS (SELECT 1 FROM stripe_staged_charges ssc
+--                 WHERE (ssc.matched_gift_id = g.id OR ssc.created_gift_id = g.id)
+--                   AND ssc.fee_amount IS NOT NULL)
+--   LIMIT 5;
+--
+--   -- The deliberately-retained siblings are still present (expect a non-zero count
+--   -- for original_human_crm_amount; these are NOT dropped here):
+--   SELECT count(*) FROM gifts_and_payments WHERE original_human_crm_amount IS NOT NULL;

@@ -112,12 +112,10 @@ const orgsOpenOppCountExpr = sql`(
     WHERE organization_id = ${ORGS_ID} AND status = 'open'
 )`;
 
-// Deprecated `otherNames` (consolidated into `historicalNames`, migration 0099)
-// is retained physically but never returned. Omit it from the shared column set
-// used by every org response projection so it can't leak through the full-column
-// spread (list/detail) or `.returning()` (POST/PATCH).
-const { otherNames: _deprecatedOtherNames, ...orgColumns } =
-  getTableColumns(organizations);
+// Shared column set used by every org response projection (list/detail spread
+// and `.returning()` on POST/PATCH). The retired `otherNames` column has been
+// physically dropped (migration 0107), so no scrubbing is needed.
+const orgColumns = getTableColumns(organizations);
 
 const orgsListSelect = {
   ...orgColumns,

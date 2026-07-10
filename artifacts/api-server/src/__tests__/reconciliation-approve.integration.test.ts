@@ -912,7 +912,9 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)",
     expect(gift.finalAmountStripeChargeId).toBe(chargeId);
     expect(gift.finalAmountQbStagedPaymentId).toBeNull();
     expect(gift.originalHumanCrmAmount).toBeNull();
-    expect(gift.processorFee).toBe("3.00");
+    // processor_fee header column is dropped; the fee now lives on the linked charge
+    // (derivedProcessorFee sums exactly this) — assert it at the source.
+    expect((await readCharge(chargeId)).feeAmount).toBe("3.00");
 
     // The QB anchor OWNS the mint (createdGiftId, not auto-applied); the charge
     // is matchedGiftId-linked precise evidence; the payout is confirmed.
@@ -1341,11 +1343,13 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     expect(gift.finalAmountSource).toBe("stripe");
     expect(gift.finalAmountStripeChargeId).toBe(chargeId);
     expect(gift.finalAmountQbStagedPaymentId).toBeNull();
-    expect(gift.processorFee).toBe("3.00");
 
     const charge = await readCharge(chargeId);
     expect(charge.status).toBe("reconciled");
     expect(charge.matchedGiftId).toBe(giftId);
+    // processor_fee header column is dropped; the fee now lives on the linked charge
+    // (derivedProcessorFee sums exactly this).
+    expect(charge.feeAmount).toBe("3.00");
 
     const link = await readLink(payoutId);
     expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");

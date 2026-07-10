@@ -53,14 +53,6 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   dateReceived: date("date_received"),
   paymentMethod: giftPaymentMethodEnum("payment_method"),
   amount: numeric("amount", { precision: 14, scale: 2 }),
-  // @deprecated — the processor fee is no longer stored on the header. It is now
-  // DERIVED at read time as the SUM of the fees of a gift's linked payments
-  // (see giftPaymentSummary.ts: `derivedProcessorFee`), the same way net is
-  // derived. The header column is no longer read or written by application code.
-  // Retained ONLY so dev push stays additive and prod Publish never auto-drops it
-  // (prod invariant #7); the physical DROP ships as a reviewed, human-applied SQL
-  // file in lib/db/migrations/.
-  processorFee: numeric("processor_fee", { precision: 14, scale: 2 }),
   // TRANSITIONAL (intended for eventual retirement, but STILL LIVE — do NOT
   // drop). The design goal: the human-entered `amount` stays the authoritative
   // donor credit and what actually settled is DERIVED at read time from the

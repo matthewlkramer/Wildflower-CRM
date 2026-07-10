@@ -308,7 +308,6 @@ export async function linkChargeToGiftInTx(
     source: "stripe",
     stripeChargeId: charge.id,
     amount: charge.grossAmount,
-    processorFee: charge.feeAmount,
   });
   if (!stamp.skipped) {
     await adjustSingleAllocationOrFlag(
