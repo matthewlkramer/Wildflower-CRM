@@ -20,8 +20,113 @@ author = "agent"
 task = "workflow.run"
 args = "typecheck"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "libs"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "api"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "web"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "codegen"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "test-api"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "test-web"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "full"
+
 [[workflows.workflow]]
 name = "typecheck"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm run typecheck"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "libs"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm run typecheck:libs"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "api"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/api-server run typecheck"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "web"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/wildflower-crm run typecheck"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "codegen"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/api-spec run codegen:check"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "test-api"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/api-server run test"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "test-web"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/wildflower-crm run test"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "full"
 author = "agent"
 
 [[workflows.workflow.tasks]]

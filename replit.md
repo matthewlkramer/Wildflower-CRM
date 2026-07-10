@@ -97,6 +97,34 @@ pnpm --filter @workspace/scripts run cleanup:test-users # Archive test users aft
 stay in sync (stale declarations show up as "property does not exist" on the leaf
 typecheck — trust `pnpm run typecheck`, which builds libs first).
 
+### Fast scoped checks (verify just what you touched)
+
+Prefer these over a full rebuild — each is scoped as tightly as possible, so after
+the first warm build later runs finish in seconds. They are registered as named
+validation checks (run on demand, each returns a pass/fail summary + log path) and
+also exist as root `check:*` scripts for a plain shell:
+
+| Check      | Root script          | What it does                                            |
+|------------|----------------------|---------------------------------------------------------|
+| `libs`     | `pnpm check:libs`    | Build the shared libs (run before leaf checks)          |
+| `api`      | `pnpm check:api`     | Typecheck only the API server                           |
+| `web`      | `pnpm check:web`     | Typecheck only the CRM frontend                         |
+| `codegen`  | `pnpm check:codegen` | Regenerate hooks/Zod from the spec + verify they compile |
+| `test-api` | `pnpm check:test-api`| Run only the API server tests                           |
+| `test-web` | `pnpm check:test-web`| Run only the frontend tests                             |
+| `full`     | `pnpm check:full`    | The complete `pnpm run typecheck` (unchanged safety net)|
+
+**Which check after which change:**
+
+- Edited `lib/api-spec/openapi.yaml` (the contract) → run `codegen`.
+- Edited API server code → run `api` (+ `test-api` if logic changed).
+- Edited CRM frontend code → run `web` (+ `test-web` if logic changed).
+- A leaf check reports missing `@workspace/*` types → run `libs` first, then re-run
+  the leaf check (stale lib declarations, not a real error).
+- Before finishing / when unsure → run `full`.
+
+The first run of a check warms the incremental cache (slow); subsequent runs are fast.
+
 ## Database
 
 Schema lives in `lib/db/src/schema/`. Every entity uses its Airtable record ID as
