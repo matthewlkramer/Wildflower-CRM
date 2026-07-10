@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import {
   useListGiftsMissingQb,
   useListEntities,
@@ -13,8 +13,11 @@ import {
   useUpdateGiftAllocation,
   useArchiveGiftOrPayment,
   useRevertGiftToOpportunity,
+  getGetGiftOrPaymentQueryOptions,
+  getGetGiftOrPaymentQueryKey,
   GiftPaymentMethod,
   type GiftMissingQb,
+  type GiftOrPaymentDetail,
   type ListGiftsMissingQbParams,
   type ListGiftsMissingQbFundingSource,
   type SearchReconciliationQbStagedParams,
@@ -64,6 +67,7 @@ import {
   BulkFlagForResearchDialog,
 } from "@/components/flag-for-research-dialog";
 import { BulkSelectBar } from "@/components/bulk-select-bar";
+import { MergeGiftsDialog } from "@/components/gift-merge-dialogs";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
@@ -71,6 +75,7 @@ import { cn } from "@/lib/utils";
 import {
   ArrowRight,
   Check,
+  Combine,
   Flag,
   Loader2,
   MoreHorizontal,
@@ -297,6 +302,43 @@ export function StrayGiftsWorklist() {
     setFlagOpen(true);
   };
 
+  // Combine selected gifts (design §4.6a) — collapse an over-split gift (one real
+  // gift entered as several, e.g. once per restriction) into ONE gift with several
+  // allocation rows, via the shared MergeGiftsDialog. Rows here are per-allocation,
+  // so a gift split across allocations selects as several rows — dedupe to distinct
+  // gift ids and require at least two. Snapshot the ids on open so the `[data]`
+  // reset effect can't empty the dialog mid-review, then load each gift's full
+  // detail (the dialog blocks submit until every selected gift resolves).
+  const distinctSelectedGiftCount = new Set(selectedRows.map((r) => r.id)).size;
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
+  const openCombine = () => {
+    const ids = Array.from(new Set(selectedRows.map((r) => r.id)));
+    if (ids.length < 2) return;
+    setMergeGiftIds(ids);
+    setMergeOpen(true);
+  };
+  const mergeQueries = useQueries({
+    queries: mergeGiftIds.map((id) =>
+      getGetGiftOrPaymentQueryOptions(id, {
+        query: {
+          enabled: mergeOpen,
+          staleTime: 30_000,
+          queryKey: getGetGiftOrPaymentQueryKey(id),
+        },
+      }),
+    ),
+  });
+  const mergeRecords = useMemo<GiftOrPaymentDetail[]>(
+    () =>
+      mergeQueries
+        .map((q) => q.data)
+        .filter((d): d is GiftOrPaymentDetail => !!d),
+    [mergeQueries],
+  );
+  const mergeExpectedCount = mergeGiftIds.length;
+  const mergeLoadError = mergeQueries.some((q) => q.isError);
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -406,6 +448,17 @@ export function StrayGiftsWorklist() {
                 <Flag className="mr-1 h-3.5 w-3.5" />
                 Flag for research
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={distinctSelectedGiftCount < 2 || bulkBusy}
+                onClick={openCombine}
+                title="Combine the selected gifts into one gift with several allocation rows (for a single grant entered as several gifts)."
+                data-testid="button-bulk-combine-stray"
+              >
+                <Combine className="mr-1 h-3.5 w-3.5" />
+                Combine gifts
+              </Button>
             </BulkSelectBar>
           </div>
           <div className="space-y-3">
@@ -427,6 +480,20 @@ export function StrayGiftsWorklist() {
         open={flagOpen}
         onOpenChange={setFlagOpen}
         onDone={() => setSelectedKeys(new Set())}
+      />
+
+      <MergeGiftsDialog
+        open={mergeOpen}
+        onOpenChange={setMergeOpen}
+        gifts={mergeRecords}
+        expectedCount={mergeExpectedCount}
+        loadError={mergeLoadError}
+        onDone={() => {
+          setSelectedKeys(new Set());
+          void queryClient.invalidateQueries({
+            queryKey: [MISSING_QB_KEY_PREFIX],
+          });
+        }}
       />
 
       {total > PAGE_SIZE ? (

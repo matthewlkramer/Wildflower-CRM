@@ -157,12 +157,15 @@ import { BulkSelectBar } from "@/components/bulk-select-bar";
 // Two three-column reports (design §4.5). The Settlement report (Plane 1) owns
 // what used to be the "Settlement bundles" queue; the Gift report (Plane 2) owns
 // the remaining unit↔gift queues below.
-type ReportId = "settlement" | "gift" | "incomplete";
+type ReportId = "settlement" | "gift";
 
 // The Gift report's orthogonal "view" (design §4.5/§4.6): the three-column
-// reconciliation report, or the excluded-non-gifts filter that doesn't fit a
-// match-state column. (Research-flagging now lives in the Cleanup Queue.)
-type GiftView = "reports" | "excluded";
+// reconciliation report, the excluded-non-gifts filter that doesn't fit a
+// match-state column, or the incomplete-gift-record worklist (on-books gifts
+// still missing critical coding). All three are slices of the ONE Gift report —
+// there are only two top-level reports (Settlement + Gift, design §4.5).
+// (Research-flagging now lives in the Cleanup Queue.)
+type GiftView = "reports" | "excluded" | "incomplete";
 
 // Funding-source filter for the Gift report (design §4.5). qb_direct = money not
 // routed through a known processor (checks, ACH, cash, and unclassified rows).
@@ -171,12 +174,12 @@ type FundingSourceFilter = "all" | "stripe" | "qb_direct" | "donorbox";
 const REPORTS: { id: ReportId; name: string }[] = [
   { id: "settlement", name: "Settlement" },
   { id: "gift", name: "Gift" },
-  { id: "incomplete", name: "Incomplete gift record" },
 ];
 
 const GIFT_VIEWS: { id: GiftView; name: string }[] = [
   { id: "reports", name: "Reports" },
   { id: "excluded", name: "Excluded" },
+  { id: "incomplete", name: "Incomplete gift record" },
 ];
 
 const FUNDING_SOURCES: { id: FundingSourceFilter; name: string }[] = [
@@ -1841,7 +1844,7 @@ export default function ReconciliationWorkbench() {
               <p className="text-sm text-muted-foreground">
                 {report === "settlement"
                   ? "Settlement — match Stripe payouts to their QuickBooks deposits."
-                  : report === "incomplete"
+                  : giftView === "incomplete"
                     ? "Incomplete gift record — on-books gifts still missing the critical coding info needed to book them. Open each and fill in what's flagged."
                     : "Gift — reconcile pulled money to CRM gifts across three columns: matched, money unlinked to CRM record, and CRM gifts unlinked to money."}{" "}
                 Pull-only: nothing is written to QuickBooks, Stripe, or Donorbox.
@@ -1965,7 +1968,7 @@ export default function ReconciliationWorkbench() {
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-28 pr-1">
           {report === "settlement" ? (
             <SettlementReport />
-          ) : report === "incomplete" ? (
+          ) : giftView === "incomplete" ? (
             <IncompleteGiftsWorklist />
           ) : giftView === "excluded" ? (
             <ExcludedTable

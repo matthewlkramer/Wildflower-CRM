@@ -13,10 +13,10 @@ single approve returns every conflict together; the frontend detects each with
 its own `extract*Conflict` helper, opens ONE combined confirm dialog, and re-
 POSTs with whichever confirmation flags apply. One server call clears both.
 
-**Why:** a Stripe-backed deposit (e.g. Dionne/Jamie) legitimately trips both at
-once; forcing two sequential confirmations would be a dead-end (resolving one
-still 409s on the other). Keeping the gate additive is what lets new conflict
-types compose for free.
+**Why:** a Stripe-backed deposit legitimately trips both at once; forcing two
+sequential confirmations would be a dead-end (resolving one still 409s on the
+other). Keeping the gate additive is what lets new conflict types compose for
+free.
 
 **How to apply:**
 - New re-target conflict type = add a gate issue code + a body confirmation flag

@@ -9,9 +9,9 @@ A Stripe payout that fans out to MORE THAN ONE charge settles into a single
 QuickBooks deposit "lump". On the reconciliation workbench, a per-charge card in
 that situation cannot route its Approve through the DEPOSIT-level approve: the
 deposit's reconciliation graph carries `evidence.stripe.chargeId === null` when
-charges > 1, so the deposit-approve gate 409s (`stripe_charge_required`). This was
-the reported "Ayeisha" bug — "tried to approve, wouldn't work because it has stripe
-detail."
+charges > 1, so the deposit-approve gate 409s (`stripe_charge_required`). This was the reported
+per-charge multi-charge-payout bug — "tried to approve, wouldn't work because it
+has stripe detail."
 
 **Rule:** for a per-charge card of a multi-charge payout, LINK the individual
 charge to its existing gift as evidence via the dedicated per-charge money path
