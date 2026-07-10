@@ -66,10 +66,6 @@ export const stripePayouts = pgTable(
     // rows keep their value. Do not write to it on the new path.
     qbSupersedeStatus: text("qb_supersede_status").notNull().default("none"),
 
-    // Free-text "something is off here" note from the finance review pass
-    // (edited-tables import). Human-maintained.
-    issuesToAddress: text("issues_to_address"),
-
     rawPayout: jsonb("raw_payout"),
 
     createdAt: timestamp("created_at").defaultNow().notNull(),

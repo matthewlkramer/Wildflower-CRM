@@ -362,8 +362,6 @@ export const stagedPayments = pgTable(
     regional: text("regional"),
     // Money belonging to the Seed Fund initiative (cuts across entity/project).
     seedFund: boolean("seed_fund").notNull().default(false),
-    // Free-text "something is off here" note from the finance review pass.
-    issuesToAddress: text("issues_to_address"),
 
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "set null",

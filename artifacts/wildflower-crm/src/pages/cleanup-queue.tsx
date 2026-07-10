@@ -32,6 +32,7 @@ const STATUS_LABEL: Record<CleanupQueueStatus, string> = {
 const REASON_LABEL: Record<string, string> = {
   conditional_commitment_stage: "Conditional commitment",
   needs_research: "Research needed",
+  issues_to_address: "Issue to address",
 };
 
 function targetHref(type: string, id: string): string {
@@ -47,8 +48,9 @@ function targetHref(type: string, id: string): string {
     case "gift":
       return `/gifts/${id}`;
     case "staged_payment":
-      // Staged payments have no standalone detail page; send the reviewer to the
-      // Reconciliation Workbench where the flagged payment lives.
+    case "stripe_payout":
+      // Staged payments and Stripe payouts have no standalone detail page; send
+      // the reviewer to the Reconciliation Workbench where the flagged money lives.
       return "/reconciliation-workbench";
     default:
       return `/pledges/${id}`;
