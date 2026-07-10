@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Check, Loader2, X } from "lucide-react";
+import { AlertCircle, Check, Eye, EyeOff, Loader2, X } from "lucide-react";
 import {
   useConfirmSettlementLink,
   useListReconciliationBundleAnchors,
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useRowSelection } from "@/hooks/use-row-selection";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { BulkFlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import { SettlementCard } from "./SettlementCard";
 import { is409 } from "./settlement-actions";
@@ -54,6 +55,13 @@ export function SettlementReport() {
   const selection = useRowSelection();
   const [bulkBusy, setBulkBusy] = useState(false);
   const [flagOpen, setFlagOpen] = useState(false);
+  // The "Matched" column (payout ↔ deposit already confirmed) is reference noise
+  // for day-to-day reconciliation, so it's hidden by default and revealed via a
+  // toggle — mirroring the Gift report's behavior.
+  const [showMatched, setShowMatched] = usePersistedState<boolean>(
+    "recon.settlement.showMatched",
+    false,
+  );
 
   const confirmM = useConfirmSettlementLink();
   const rejectM = useRejectSettlementProposal();
@@ -200,6 +208,27 @@ export function SettlementReport() {
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-end">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowMatched((s) => !s)}
+          data-testid="button-settlement-toggle-matched"
+          title={
+            showMatched
+              ? "Hide the Matched column (payout ↔ deposit already confirmed)."
+              : "Show the Matched column (payout ↔ deposit already confirmed)."
+          }
+        >
+          {showMatched ? (
+            <EyeOff className="mr-1 h-3.5 w-3.5" />
+          ) : (
+            <Eye className="mr-1 h-3.5 w-3.5" />
+          )}
+          {showMatched ? "Hide matched" : "Show matched"}
+        </Button>
+      </div>
+
       {truncated && (
         <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
           <AlertCircle className="h-4 w-4 shrink-0" /> Showing {rows.length} of{" "}
@@ -273,15 +302,21 @@ export function SettlementReport() {
           <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <SettlementColumn
-            title="Matched"
-            hint="Payout ↔ deposit confirmed"
-            rows={matched}
-            selectable={false}
-            selection={selection}
-            onChanged={handleChanged}
-          />
+        <div
+          className={`grid grid-cols-1 gap-3 ${
+            showMatched ? "lg:grid-cols-3" : "lg:grid-cols-2"
+          }`}
+        >
+          {showMatched && (
+            <SettlementColumn
+              title="Matched"
+              hint="Payout ↔ deposit confirmed"
+              rows={matched}
+              selectable={false}
+              selection={selection}
+              onChanged={handleChanged}
+            />
+          )}
           <SettlementColumn
             title="Missing deposit"
             hint="Stripe payout, no confirmed deposit"

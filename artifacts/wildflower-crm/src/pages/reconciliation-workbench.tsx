@@ -446,7 +446,9 @@ export default function ReconciliationWorkbench() {
   // default and revealed via a per-tab toggle. Gating its query on this keeps us
   // from fetching the whole done queue until the user asks to see it.
   const [showMatched, setShowMatched] = usePersistedState<boolean>(
-    "recon.gift.showMatched",
+    // Bumped to .v2 to shed any stale "shown" preference persisted before the
+    // hidden-by-default behavior, so the Matched column starts hidden again.
+    "recon.gift.showMatched.v2",
     false,
   );
   // Each report column owns its own filter (client-side for cols 1 & 2). The old
