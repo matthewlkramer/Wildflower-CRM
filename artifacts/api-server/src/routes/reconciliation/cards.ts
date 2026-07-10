@@ -495,8 +495,12 @@ router.get(
           WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
         )`.as("charge_resolved_gift_date"),
         resolvedGiftFiscalYear: sql<string | null>`(
-          SELECT g.grant_year FROM gifts_and_payments g
-          WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+          SELECT ga.grant_year
+          FROM gift_allocations ga
+          WHERE ga.gift_id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+            AND ga.grant_year IS NOT NULL
+          ORDER BY ga.created_at, ga.id
+          LIMIT 1
         )`.as("charge_resolved_gift_fy"),
         resolvedGiftAllocations: sql<
           | {
