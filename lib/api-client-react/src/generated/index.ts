@@ -48,6 +48,7 @@ export * from "./reconciliation/reconciliation";
 export * from "./reconciliation-crosscheck/reconciliation-crosscheck";
 export * from "./regions/regions";
 export * from "./revenue-coding/revenue-coding";
+export * from "./revenue-extractor/revenue-extractor";
 export * from "./saved-views/saved-views";
 export * from "./schools/schools";
 export * from "./search/search";

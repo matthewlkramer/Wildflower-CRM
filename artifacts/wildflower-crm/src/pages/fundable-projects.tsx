@@ -25,6 +25,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { LOCATIONS } from "@workspace/api-zod";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -452,6 +460,7 @@ function FundableProjectFormDialog({
   const [spendingStart, setSpendingStart] = useState(project?.spendingStart ?? "");
   const [spendingEnd, setSpendingEnd] = useState(project?.spendingEnd ?? "");
   const [goal, setGoal] = useState(project?.fundraisingGoal ?? "");
+  const [locationCode, setLocationCode] = useState(project?.locationCode ?? "");
 
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: getListFundableProjectsQueryKey() });
@@ -517,6 +526,7 @@ function FundableProjectFormDialog({
       spendingStart: blankToNull(spendingStart),
       spendingEnd: blankToNull(spendingEnd),
       fundraisingGoal: normalizedGoal === "" ? null : normalizedGoal,
+      locationCode: locationCode.trim() === "" ? null : locationCode,
     };
     if (isEdit) {
       update.mutate({ id: project.id, data: shared });
@@ -632,6 +642,33 @@ function FundableProjectFormDialog({
               autoComplete="off"
             />
             {goalError ? <p className="text-xs text-destructive">{goalError}</p> : null}
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="fp-location-code">Revenue Location</Label>
+            <Select
+              value={locationCode === "" ? "__none__" : locationCode}
+              onValueChange={(v) => setLocationCode(v === "__none__" ? "" : v)}
+            >
+              <SelectTrigger id="fp-location-code" data-testid="fp-location-code">
+                <SelectValue placeholder="Foundation General (default)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">
+                  Foundation General (default)
+                </SelectItem>
+                {LOCATIONS.map((loc) => (
+                  <SelectItem key={loc} value={loc}>
+                    {loc}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              QuickBooks Revenue Location a project-specific grant codes to when
+              no entity rule or regional hub applies. Leave as default to fall
+              back to Foundation General.
+            </p>
           </div>
 
           <div className="flex items-center gap-2">

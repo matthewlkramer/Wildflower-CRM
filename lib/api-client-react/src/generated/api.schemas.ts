@@ -774,6 +774,8 @@ export interface FundableProject {
   spendingEnd?: string | null;
   /** Decimal string (numeric(14,2)). Null on legacy rows. */
   fundraisingGoal?: string | null;
+  /** QuickBooks Revenue Location a project-specific grant codes to when no entity coding rule and no regional hub apply. One of the closed LOCATIONS list; null = fall back to Foundation General (surfaces a project_location_missing review flag). */
+  locationCode?: string | null;
   /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
   archivedAt?: string | null;
   createdAt: string;
@@ -793,6 +795,8 @@ export interface CreateFundableProjectBody {
   spendingEnd?: string | null;
   /** Decimal string. Use plain digits with optional decimal, no commas. */
   fundraisingGoal?: string | null;
+  /** QuickBooks Revenue Location for project-specific grants. One of the closed LOCATIONS list. */
+  locationCode?: string | null;
 }
 
 export interface UpdateFundableProjectBody {
@@ -805,6 +809,8 @@ export interface UpdateFundableProjectBody {
   spendingEnd?: string | null;
   /** Decimal string. Use plain digits with optional decimal, no commas. */
   fundraisingGoal?: string | null;
+  /** QuickBooks Revenue Location for project-specific grants. One of the closed LOCATIONS list. */
+  locationCode?: string | null;
 }
 
 export interface FundableProjectProgress {
@@ -1926,6 +1932,10 @@ export interface GiftOrPayment {
   paymentMethod?: GiftPaymentMethod | null;
   /** The human-entered gift amount. NO LONGER auto-overwritten by reconciliation (Task #448) — evidence is linked, the entered amount is preserved, and disagreements surface in the settled-vs-entered reconciliation queue. Compare against derivedSettledAmount. */
   amount?: string | null;
+  /** Grant title or reference number, carried to the Revenue Extractor report ("Title / Reference #"). No effect on derivation / analytics / QB tie. */
+  titleReference?: string | null;
+  /** Memo / description line finance keys into QuickBooks, carried to the Revenue Extractor report. No effect on derivation / analytics / QB tie. */
+  memoDescription?: string | null;
   /** Settled GROSS actually landed for this gift, derived from all linked payments (QuickBooks + Stripe + non-stripe Donorbox). Null when no payment is linked yet. The UI shows 'you entered $X, settled $Y' by comparing with `amount`. */
   readonly derivedSettledAmount?: string | null;
   /** Total processor fees withheld across the gift's linked payments (Stripe + Donorbox; QuickBooks carries none). Donor is credited the GROSS `amount`; net = derivedSettledAmount − derivedProcessorFee. Null when no fee-bearing payment is linked. */
@@ -2313,6 +2323,8 @@ export interface CreateGiftOrPaymentBody {
   dateReceived?: string;
   paymentMethod?: GiftPaymentMethod;
   amount?: string;
+  titleReference?: string;
+  memoDescription?: string;
   organizationId?: string;
   individualGiverPersonId?: string;
   householdId?: string;
@@ -2345,6 +2357,8 @@ export interface UpdateGiftOrPaymentBody {
   dateReceived?: string | null;
   paymentMethod?: GiftPaymentMethod | null;
   amount?: string | null;
+  titleReference?: string | null;
+  memoDescription?: string | null;
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
@@ -2783,6 +2797,30 @@ export interface ApplyRuleToPendingResult {
 }
 
 /**
+ * Derived revenue type: grant when a grant letter, reporting requirement, or any donor restriction is present; otherwise donation.
+ */
+export type RevenueCodingPreviewRevenueType = typeof RevenueCodingPreviewRevenueType[keyof typeof RevenueCodingPreviewRevenueType] | null;
+
+
+export const RevenueCodingPreviewRevenueType = {
+  grant: 'grant',
+  donation: 'donation',
+} as const;
+
+/**
+ * Derived restriction label from the three restriction axes (regional/usage ⇒ Purpose, time ⇒ Time).
+ */
+export type RevenueCodingPreviewRestrictionType = typeof RevenueCodingPreviewRestrictionType[keyof typeof RevenueCodingPreviewRestrictionType] | null;
+
+
+export const RevenueCodingPreviewRestrictionType = {
+  Unrestricted: 'Unrestricted',
+  Purpose: 'Purpose',
+  Time: 'Time',
+  Both: 'Both',
+} as const;
+
+/**
  * Live, on-demand revenue-coding instructions derived from an allocation's
 scope (donor kind, fund entity, restriction axes, region). NOT persisted
 on the allocation — a read-only preview the reviewer copies onto the
@@ -2796,8 +2834,84 @@ export interface RevenueCodingPreview {
   location: string | null;
   /** Derived Suggested Class. */
   revenueClass: string | null;
-  /** Ambiguities surfaced for human review (e.g. location_default, payer_type_assumed, loan_no_revenue_account). */
+  /** Derived revenue type: grant when a grant letter, reporting requirement, or any donor restriction is present; otherwise donation. */
+  revenueType?: RevenueCodingPreviewRevenueType;
+  /** Derived restriction label from the three restriction axes (regional/usage ⇒ Purpose, time ⇒ Time). */
+  restrictionType?: RevenueCodingPreviewRestrictionType;
+  /** Human-readable restriction evidence hint derived from the axes + verbatim purpose (empty for unrestricted lines). */
+  restrictionEvidence?: string | null;
+  /** Ambiguities surfaced for human review (e.g. payer_type_assumed, project_location_missing, loan_no_revenue_account). A complete gift derives with zero flags. */
   flags: string[];
+}
+
+/**
+ * One Revenue Extractor line — either a gift allocation (isFeeLine=false) or a
+separate negative processor-fee line for a gift (isFeeLine=true). The 19
+report columns are the fields objectCode..sourceFile; the remaining fields
+are keys + the QuickBooks coding comparison (Step 4, QB authoritative).
+
+ */
+export interface RevenueExtractorRow {
+  /** Stable key: giftId, giftId:allocationId, or giftId:fee. */
+  rowKey: string;
+  giftId: string;
+  /** Null on the fee line. */
+  allocationId?: string | null;
+  /** True for the separate negative processor-fee line. */
+  isFeeLine: boolean;
+  /** Col 1 — derived Object Code. */
+  objectCode: string | null;
+  /** Col 2 — gift date_received. */
+  transactionDate: string | null;
+  /** Col 3 — donor name, anonymous-masked for non-owners. */
+  name: string | null;
+  /** Col 4 — derived Revenue Location. */
+  location: string | null;
+  /** Col 5 — gift memo / description. */
+  memoDescription: string | null;
+  /** Col 6 — allocation sub_amount; negative on the fee line. */
+  amount: string | null;
+  /** Col 7 — grant / donation. */
+  revenueType: string | null;
+  /** Col 8 — grant title / reference #. */
+  titleReference: string | null;
+  /** Col 9 — allocation spending period start (grant period). */
+  periodStart: string | null;
+  /** Col 10 — allocation spending period end. */
+  periodEnd: string | null;
+  /** Col 11 — payment-schedule descriptor (one-time vs pledge installment). */
+  paymentSchedule: string | null;
+  /** Col 12 — Unrestricted / Purpose / Time / Both. */
+  restrictionType: string | null;
+  /** Col 13 — donor's restriction language, verbatim. */
+  purpose: string | null;
+  /** Col 14 — derived Suggested Class. */
+  suggestedClass: string | null;
+  /** Col 15 — Yes when the booked fiscal year starts after the transaction date, else No. */
+  deferredRevenue: string | null;
+  /** Col 16 — restriction evidence hint. */
+  restrictionEvidence: string | null;
+  /** Col 17 — human-readable questions for incomplete gifts (empty when complete). */
+  questionsFlags: string | null;
+  /** Col 18 — gift details / free-text notes. */
+  notes: string | null;
+  /** Col 19 — provenance of the record (e.g. Wildflower CRM, or the online source URL). */
+  sourceFile: string | null;
+  /** Object Code from the linked QuickBooks staged-payment coding snapshot (effective = override ?? derived), if any. */
+  readonly qbObjectCode?: string | null;
+  /** Revenue Location from the linked QuickBooks staged-payment coding snapshot. */
+  readonly qbLocation?: string | null;
+  /** Class from the linked QuickBooks staged-payment coding snapshot. */
+  readonly qbClass?: string | null;
+  /** True when the CRM-derived coding disagrees with the linked QuickBooks snapshot (any of object code / location / class). QuickBooks stays authoritative. */
+  codingDisagreement: boolean;
+}
+
+export interface RevenueExtractorReport {
+  startDate: string;
+  endDate: string;
+  generatedAt: string;
+  rows: RevenueExtractorRow[];
 }
 
 export type RevenueAccountKind = typeof RevenueAccountKind[keyof typeof RevenueAccountKind];
@@ -8509,6 +8623,17 @@ limit?: LimitParameter;
  * @minimum 1
  */
 page?: PageParameter;
+};
+
+export type GetRevenueExtractorReportParams = {
+/**
+ * Inclusive lower bound on gift date_received (YYYY-MM-DD).
+ */
+startDate: string;
+/**
+ * Inclusive upper bound on gift date_received (YYYY-MM-DD).
+ */
+endDate: string;
 };
 
 export type ListInteractionsParams = {

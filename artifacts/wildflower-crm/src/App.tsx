@@ -32,6 +32,7 @@ import AuditLog from "@/pages/audit-log";
 import PotentialDuplicates from "@/pages/potential-duplicates";
 import CleanupQueue from "@/pages/cleanup-queue";
 import ReconciliationCrosscheck from "@/pages/reconciliation-crosscheck";
+import RevenueExtractor from "@/pages/revenue-extractor";
 import CodingFormImport from "@/pages/coding-form-import";
 import FundableProjects from "@/pages/fundable-projects";
 import Settings from "@/pages/settings";
@@ -239,6 +240,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/audit-log"><ProtectedRoute component={AuditLog} /></Route>
           <Route path="/potential-duplicates"><ProtectedRoute component={PotentialDuplicates} /></Route>
           <Route path="/reconciliation-crosscheck"><ProtectedRoute component={ReconciliationCrosscheck} /></Route>
+          <Route path="/revenue-extractor"><ProtectedRoute component={RevenueExtractor} /></Route>
           <Route path="/financial-corrections"><Redirect to="/reconciliation-workbench?queue=split" /></Route>
           <Route path="/cleanup-queue"><ProtectedRoute component={CleanupQueue} /></Route>
           <Route path="/coding-form-import"><ProtectedRoute component={CodingFormImport} /></Route>

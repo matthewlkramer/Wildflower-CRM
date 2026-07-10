@@ -281,16 +281,39 @@ export interface CodingInput {
   // intended_usage + fundable_project for location hints.
   intendedUsage?: string | null;
   fundableProjectId?: string | null;
+  // The fundable project's configured Revenue Location (fundable_projects
+  // .location_code). Used for project-specific grants when no entity rule and no
+  // regional hub apply. When a project is set but this is null, a
+  // `project_location_missing` flag is surfaced.
+  fundableProjectLocation?: string | null;
   // State abbreviations for the allocation's region(s) (for Hub mapping).
   regionStates?: (string | null | undefined)[];
+  // ── Revenue-type / evidence signals (Task #607) ──
+  // Present when a grant/award letter is on file (gift or linked pledge).
+  hasGrantLetter?: boolean;
+  // Present when the gift carries a reporting requirement / reporting deadline.
+  hasReportingRequirement?: boolean;
+  // The donor's restriction language, verbatim (gift_allocations.purpose_verbatim).
+  purposeVerbatim?: string | null;
 }
 
 export interface CodingResult {
   objectCode: string | null;
   location: Location | null;
   revenueClass: string | null;
+  // Derived revenue type: 'grant' when a grant letter / reporting requirement /
+  // any donor restriction is present, else 'donation'.
+  revenueType: RevenueType;
+  // Human-facing restriction label derived from the axes.
+  restrictionType: RestrictionLabel;
+  // Human-readable restriction-evidence hint ("" for unrestricted lines).
+  restrictionEvidence: string;
   flags: string[];
 }
+
+// ── Revenue type + restriction label (Task #607) ────────────────────────────
+export type RevenueType = "grant" | "donation";
+export type RestrictionLabel = "Unrestricted" | "Purpose" | "Time" | "Both";
 
 /**
  * Suggested Class. Entity rules win; otherwise Charter work — which derives to
@@ -326,28 +349,13 @@ export function deriveRevenueCoding(
     input.loanOrGrant != null
       ? input.loanOrGrant === "loan"
       : input.giftType === "loan_fund_investment";
-  if (isLoan) {
-    return {
-      objectCode: null,
-      location: deriveLocation(input, entityRules, flags),
-      revenueClass: null,
-      flags: [...flags, "loan_no_revenue_account"],
-    };
-  }
-
-  const rule = entityRules.find(
-    (r) => r.enabled && r.entityId === input.entityId,
-  );
-
-  // Location + Class are independent of the restriction outcome, so derive them
-  // once here and reuse on every return path.
-  const location = deriveLocation(input, entityRules, flags);
-  const revenueClass = deriveRevenueClass(rule, location);
-
   // Restriction status: an entity rule can force restricted; otherwise the line
   // is restricted when ANY restriction axis is donor_restricted. wf_restricted
   // and unrestricted both code as unrestricted (4000.x). Axes default
   // unrestricted, so there is no "unclear" path to flag.
+  const rule = entityRules.find(
+    (r) => r.enabled && r.entityId === input.entityId,
+  );
   const restricted =
     rule?.forceRestricted === true ||
     anyDonorRestricted(
@@ -355,6 +363,30 @@ export function deriveRevenueCoding(
       input.usageRestrictionType,
       input.timeRestrictionType,
     );
+
+  const restrictionType = deriveRestrictionLabel(input, rule);
+  const revenueType = deriveRevenueType(input, restricted);
+  const restrictionEvidence = deriveRestrictionEvidence(
+    input,
+    restrictionType,
+  );
+
+  if (isLoan) {
+    return {
+      objectCode: null,
+      location: deriveLocation(input, entityRules, flags),
+      revenueClass: null,
+      revenueType,
+      restrictionType,
+      restrictionEvidence,
+      flags: [...flags, "loan_no_revenue_account"],
+    };
+  }
+
+  // Location + Class are independent of the restriction outcome, so derive them
+  // once here and reuse on every return path.
+  const location = deriveLocation(input, entityRules, flags);
+  const revenueClass = deriveRevenueClass(rule, location);
 
   const { payerType, assumed } = derivePayerType(
     input.donorKind,
@@ -364,7 +396,15 @@ export function deriveRevenueCoding(
 
   const objectCode = contributionAccount(restricted, payerType);
 
-  return { objectCode, location, revenueClass, flags };
+  return {
+    objectCode,
+    location,
+    revenueClass,
+    revenueType,
+    restrictionType,
+    restrictionEvidence,
+    flags,
+  };
 }
 
 /**
@@ -372,7 +412,10 @@ export function deriveRevenueCoding(
  *   1. entity coding rule location (SPO / Loans),
  *   2. charter fundable-project → Spo- Charter,
  *   3. region state → Hub,
- *   4. default Foundation General (+ flag).
+ *   4. fundable-project configured location code,
+ *   5. default Foundation General.
+ * A `project_location_missing` flag is surfaced when a project is set but its
+ * location code is unresolved (nothing above it matched either).
  */
 export function deriveLocation(
   input: CodingInput,
@@ -395,8 +438,127 @@ export function deriveLocation(
     if (st && STATE_TO_HUB[st]) return STATE_TO_HUB[st];
   }
 
-  flags.push("location_default");
+  // Project-specific location code, when the project configures one.
+  const projLoc = input.fundableProjectLocation;
+  if (projLoc && (LOCATIONS as readonly string[]).includes(projLoc)) {
+    return projLoc as Location;
+  }
+
+  // A project was set but resolved to no location — surface for review.
+  if (input.fundableProjectId) flags.push("project_location_missing");
   return DEFAULT_LOCATION;
+}
+
+/**
+ * Restriction label from the three axes (+ an entity forceRestricted rule):
+ *   - regional or usage donor_restricted ⇒ Purpose,
+ *   - time donor_restricted ⇒ Time,
+ *   - both ⇒ Both, neither ⇒ Unrestricted.
+ * A forceRestricted entity rule (fiscal sponsee) counts as a purpose restriction.
+ */
+export function deriveRestrictionLabel(
+  input: CodingInput,
+  rule: EntityCodingRule | undefined,
+): RestrictionLabel {
+  const purpose =
+    rule?.forceRestricted === true ||
+    anyDonorRestricted(
+      input.regionalRestrictionType,
+      input.usageRestrictionType,
+    );
+  const time = anyDonorRestricted(input.timeRestrictionType);
+  if (purpose && time) return "Both";
+  if (purpose) return "Purpose";
+  if (time) return "Time";
+  return "Unrestricted";
+}
+
+/**
+ * Revenue type: a gift is a `grant` when a grant/award letter or a reporting
+ * requirement is on file, or when the money is donor-restricted; otherwise it is
+ * an unrestricted `donation`.
+ */
+export function deriveRevenueType(
+  input: CodingInput,
+  restricted: boolean,
+): RevenueType {
+  if (input.hasGrantLetter || input.hasReportingRequirement || restricted) {
+    return "grant";
+  }
+  return "donation";
+}
+
+/**
+ * Human-readable restriction-evidence hint. Empty for unrestricted lines. For
+ * restricted lines: the donor's verbatim purpose language when present, plus a
+ * "Grant letter on file" note when applicable.
+ */
+export function deriveRestrictionEvidence(
+  input: CodingInput,
+  restrictionType: RestrictionLabel,
+): string {
+  if (restrictionType === "Unrestricted") return "";
+  const parts: string[] = [];
+  const verbatim = input.purposeVerbatim?.trim();
+  if (verbatim) parts.push(verbatim);
+  if (input.hasGrantLetter) parts.push("Grant letter on file");
+  if (input.hasReportingRequirement) parts.push("Reporting requirement");
+  return parts.join("; ");
+}
+
+/**
+ * Deferred revenue is a FISCAL-YEAR comparison, not a raw-date one: revenue is
+ * deferred when an allocation is booked to a fiscal year LATER than the fiscal
+ * year the money was received in (received now, earned in a future FY).
+ *
+ * Both arguments are the ISO (YYYY-MM-DD) *start dates* of the fiscal years in
+ * question — the transaction date's fiscal year, and the allocation's booked
+ * fiscal year. Fiscal years are contiguous and identified by their start date,
+ * so comparing FY start dates orders the years. Returns "yes" when the
+ * allocation FY starts after the transaction FY, "no" when it does not, and
+ * "na" when either fiscal year is unknown.
+ */
+export function deriveDeferredRevenue(
+  transactionFyStart: string | null | undefined,
+  allocationFyStart: string | null | undefined,
+): DeferredRevenue {
+  if (!transactionFyStart || !allocationFyStart) return "na";
+  return allocationFyStart > transactionFyStart ? "yes" : "no";
+}
+
+/**
+ * Describe the payment schedule for the Revenue Extractor. A standalone gift is
+ * "Single payment"; a pledge installment is "Pledge payment[ N of M]".
+ */
+export function describePaymentSchedule(input: {
+  isPledgePayment?: boolean;
+  installmentNumber?: number | null;
+  totalInstallments?: number | null;
+  remainingExpected?: number | null;
+  nextExpectedDate?: string | null;
+}): string {
+  if (!input.isPledgePayment) return "Single payment";
+  const {
+    installmentNumber,
+    totalInstallments,
+    remainingExpected,
+    nextExpectedDate,
+  } = input;
+  let base = "Pledge payment";
+  if (installmentNumber && totalInstallments) {
+    base = `Pledge payment ${installmentNumber} of ${totalInstallments}`;
+  } else if (installmentNumber) {
+    base = `Pledge payment ${installmentNumber}`;
+  }
+  // "what else is still expected" — help finance match against prior entries.
+  const notes: string[] = [];
+  if (nextExpectedDate) notes.push(`next expected ${nextExpectedDate}`);
+  if (remainingExpected != null && remainingExpected > 0) {
+    notes.push(
+      `${remainingExpected} more expected`,
+    );
+  }
+  return notes.length > 0 ? `${base} (${notes.join(", ")})` : base;
 }
 
 /** Effective value = manual override when set, else the derived snapshot. */

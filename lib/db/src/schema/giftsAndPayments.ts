@@ -46,6 +46,16 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // stored WITHOUT the "donorbox campaign: " prefix). Plain text for now; a
   // campaigns table is a possible follow-on if these need management.
   fundraisingCampaign: text("fundraising_campaign"),
+  // ── Revenue Extractor capture (Task #607) ────────────────────────────────
+  // Fundraiser-captured inputs that finance keys into QuickBooks. Both are
+  // additive/nullable free text with NO effect on derivation / analytics /
+  // QuickBooks-tie logic — they are carried through to the Revenue Extractor
+  // report so finance has the grant/reference identifier and a memo/description
+  // line straight from the gift record.
+  //   titleReference — the grant title or reference number ("Title / Reference #").
+  //   memoDescription — the memo / description line for the QuickBooks entry.
+  titleReference: text("title_reference"),
+  memoDescription: text("memo_description"),
   dateReceived: date("date_received"),
   paymentMethod: giftPaymentMethodEnum("payment_method"),
   amount: numeric("amount", { precision: 14, scale: 2 }),

@@ -231,6 +231,8 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [dateReceived, setDateReceived] = useState("");
+  const [titleReference, setTitleReference] = useState("");
+  const [memoDescription, setMemoDescription] = useState("");
 
   // Opportunity link
   const [linkedOpp, setLinkedOpp] = useState<OpportunityOrPledge | null>(null);
@@ -380,6 +382,8 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     setName("");
     setAmount("");
     setDateReceived("");
+    setTitleReference("");
+    setMemoDescription("");
     setLinkedOpp(null);
     setDonorMode("auto");
     resetDonor();
@@ -536,6 +540,10 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
         ...(linkedOpp ? { opportunityId: linkedOpp.id } : {}),
         ...(amt ? { amount: amt } : {}),
         ...(date ? { dateReceived: date } : {}),
+        ...(titleReference.trim() ? { titleReference: titleReference.trim() } : {}),
+        ...(memoDescription.trim()
+          ? { memoDescription: memoDescription.trim() }
+          : {}),
         ...codingFields,
       },
     });
@@ -730,6 +738,26 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                 value={dateReceived}
                 onChange={(e) => setDateReceived(e.target.value)}
                 data-testid="input-new-gift-date"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-gift-title-reference">Title / reference</Label>
+              <Input
+                id="new-gift-title-reference"
+                value={titleReference}
+                onChange={(e) => setTitleReference(e.target.value)}
+                placeholder="Optional — e.g. grant name or check number"
+                data-testid="input-new-gift-title-reference"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-gift-memo">Memo / description</Label>
+              <Input
+                id="new-gift-memo"
+                value={memoDescription}
+                onChange={(e) => setMemoDescription(e.target.value)}
+                placeholder="Optional — short memo for the finance report"
+                data-testid="input-new-gift-memo"
               />
             </div>
 

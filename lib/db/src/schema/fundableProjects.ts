@@ -21,6 +21,14 @@ export const fundableProjects = pgTable("fundable_projects", {
   // Fundraising goal in dollars. Decimal string convention (numeric(14,2)),
   // mirroring fiscal_year_entity_goals.goalAmount.
   fundraisingGoal: numeric("fundraising_goal", { precision: 14, scale: 2 }),
+  // ── Revenue coding: project location code (Task #607) ─────────────────────
+  // The QuickBooks Revenue Location a project-specific grant codes to when no
+  // entity coding rule and no regional hub apply (precedence: entity rule →
+  // regional hub → project location code → Foundation General). One of the
+  // closed LOCATIONS list (see @workspace/api-zod revenue-coding). Additive /
+  // nullable; a null here just means the project falls back to Foundation
+  // General (and surfaces a `project_location_missing` review flag).
+  locationCode: text("location_code"),
   // Soft-delete: non-null = archived (hidden from non-admins). Separate from
   // the `active` flag, which is a real lifecycle status.
   archivedAt: timestamp("archived_at"),

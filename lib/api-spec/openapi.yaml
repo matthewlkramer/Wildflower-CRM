@@ -1732,6 +1732,28 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RevenueCodingPreview" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  # ─── Revenue Extractor report (finance) ───────────────────────────────────
+  /revenue-extractor:
+    get:
+      operationId: getRevenueExtractorReport
+      tags: [revenue-extractor]
+      summary: Finance-facing Revenue Extractor — one row per gift allocation (plus a negative processor-fee line) with derived QuickBooks coding.
+      description: |
+        Returns the Revenue Extractor rows for all non-archived gifts whose
+        date_received falls in the [startDate, endDate] range (inclusive). One row
+        per gift allocation, plus a separate negative processor-fee line per gift
+        that carries fees. Every column (Object Code, Location, Revenue Type,
+        Restriction Type, etc.) is DERIVED on demand from the CRM record via the
+        shared coding engine — the CRM stays the definitive source of the coding
+        inputs; QuickBooks stays authoritative on disagreement (surfaced via the
+        qb* comparison fields). Names are anonymous-masked for non-owners.
+      parameters:
+        - { name: startDate, in: query, required: true, schema: { type: string, format: date }, description: "Inclusive lower bound on gift date_received (YYYY-MM-DD)." }
+        - { name: endDate, in: query, required: true, schema: { type: string, format: date }, description: "Inclusive upper bound on gift date_received (YYYY-MM-DD)." }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RevenueExtractorReport" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   # ─── Interactions (manual touchpoints) ────────────────────────────────────
   /interactions:
     get:
@@ -4873,6 +4895,7 @@ components:
         spendingStart:    { type: string, format: date, nullable: true }
         spendingEnd:      { type: string, format: date, nullable: true }
         fundraisingGoal:  { type: string, nullable: true, description: "Decimal string (numeric(14,2)). Null on legacy rows." }
+        locationCode:     { type: string, nullable: true, description: "QuickBooks Revenue Location a project-specific grant codes to when no entity coding rule and no regional hub apply. One of the closed LOCATIONS list; null = fall back to Foundation General (surfaces a project_location_missing review flag)." }
         archivedAt:       { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:        { type: string, format: date-time }
         updatedAt:        { type: string, format: date-time }
@@ -4889,6 +4912,7 @@ components:
         spendingStart:    { type: string, format: date, nullable: true }
         spendingEnd:      { type: string, format: date, nullable: true }
         fundraisingGoal:  { type: string, nullable: true, description: "Decimal string. Use plain digits with optional decimal, no commas." }
+        locationCode:     { type: string, nullable: true, description: "QuickBooks Revenue Location for project-specific grants. One of the closed LOCATIONS list." }
     UpdateFundableProjectBody:
       type: object
       properties:
@@ -4900,6 +4924,7 @@ components:
         spendingStart:    { type: string, format: date, nullable: true }
         spendingEnd:      { type: string, format: date, nullable: true }
         fundraisingGoal:  { type: string, nullable: true, description: "Decimal string. Use plain digits with optional decimal, no commas." }
+        locationCode:     { type: string, nullable: true, description: "QuickBooks Revenue Location for project-specific grants. One of the closed LOCATIONS list." }
     FundableProjectProgress:
       type: object
       required: [fundableProjectId, raised]
@@ -6154,6 +6179,8 @@ components:
         dateReceived:               { type: string, format: date, nullable: true }
         paymentMethod:              { allOf: [ { $ref: "#/components/schemas/GiftPaymentMethod" } ], nullable: true }
         amount:                     { type: string, nullable: true, description: "The human-entered gift amount. NO LONGER auto-overwritten by reconciliation (Task #448) — evidence is linked, the entered amount is preserved, and disagreements surface in the settled-vs-entered reconciliation queue. Compare against derivedSettledAmount." }
+        titleReference:             { type: string, nullable: true, description: "Grant title or reference number, carried to the Revenue Extractor report (\"Title / Reference #\"). No effect on derivation / analytics / QB tie." }
+        memoDescription:            { type: string, nullable: true, description: "Memo / description line finance keys into QuickBooks, carried to the Revenue Extractor report. No effect on derivation / analytics / QB tie." }
         # ── Derived settled amount + fees (Task #448 Step 2/3). ──
         # Computed at read time from the payments LINKED to the gift (QuickBooks
         # payment_applications + Stripe charges + non-stripe Donorbox), via the one
@@ -6342,6 +6369,8 @@ components:
         dateReceived:               { type: string, format: date }
         paymentMethod:              { $ref: "#/components/schemas/GiftPaymentMethod" }
         amount:                     { type: string }
+        titleReference:             { type: string }
+        memoDescription:            { type: string }
         organizationId:                   { type: string }
         individualGiverPersonId:    { type: string }
         householdId:                { type: string }
@@ -6379,6 +6408,8 @@ components:
         dateReceived:               { type: string, format: date, nullable: true }
         paymentMethod:              { allOf: [ { $ref: "#/components/schemas/GiftPaymentMethod" } ], nullable: true }
         amount:                     { type: string, nullable: true }
+        titleReference:             { type: string, nullable: true }
+        memoDescription:            { type: string, nullable: true }
         organizationId:                   { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
@@ -6561,7 +6592,62 @@ components:
         objectCode:   { type: string, nullable: true, description: "Derived Object Code (e.g. 4000.1 / 4100.2), or null when it can't be resolved cleanly." }
         location:     { type: string, nullable: true, description: "Derived Revenue Location." }
         revenueClass: { type: string, nullable: true, description: "Derived Suggested Class." }
-        flags:        { type: array, items: { type: string }, description: "Ambiguities surfaced for human review (e.g. location_default, payer_type_assumed, loan_no_revenue_account)." }
+        revenueType:      { type: string, nullable: true, enum: [grant, donation], description: "Derived revenue type: grant when a grant letter, reporting requirement, or any donor restriction is present; otherwise donation." }
+        restrictionType:  { type: string, nullable: true, enum: [Unrestricted, Purpose, Time, Both], description: "Derived restriction label from the three restriction axes (regional/usage ⇒ Purpose, time ⇒ Time)." }
+        restrictionEvidence: { type: string, nullable: true, description: "Human-readable restriction evidence hint derived from the axes + verbatim purpose (empty for unrestricted lines)." }
+        flags:        { type: array, items: { type: string }, description: "Ambiguities surfaced for human review (e.g. payer_type_assumed, project_location_missing, loan_no_revenue_account). A complete gift derives with zero flags." }
+    RevenueExtractorReport:
+      type: object
+      required: [startDate, endDate, generatedAt, rows]
+      properties:
+        startDate:   { type: string, format: date }
+        endDate:     { type: string, format: date }
+        generatedAt: { type: string, format: date-time }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/RevenueExtractorRow" }
+    RevenueExtractorRow:
+      type: object
+      description: |
+        One Revenue Extractor line — either a gift allocation (isFeeLine=false) or a
+        separate negative processor-fee line for a gift (isFeeLine=true). The 19
+        report columns are the fields objectCode..sourceFile; the remaining fields
+        are keys + the QuickBooks coding comparison (Step 4, QB authoritative).
+      required:
+        [rowKey, giftId, isFeeLine, objectCode, transactionDate, name, location,
+         memoDescription, amount, revenueType, titleReference, periodStart, periodEnd,
+         paymentSchedule, restrictionType, purpose, suggestedClass, deferredRevenue,
+         restrictionEvidence, questionsFlags, notes, sourceFile, codingDisagreement]
+      properties:
+        rowKey:          { type: string, description: "Stable key: giftId, giftId:allocationId, or giftId:fee." }
+        giftId:          { type: string }
+        allocationId:    { type: string, nullable: true, description: "Null on the fee line." }
+        isFeeLine:       { type: boolean, description: "True for the separate negative processor-fee line." }
+        # ── The 19 report columns ──
+        objectCode:      { type: string, nullable: true, description: "Col 1 — derived Object Code." }
+        transactionDate: { type: string, format: date, nullable: true, description: "Col 2 — gift date_received." }
+        name:            { type: string, nullable: true, description: "Col 3 — donor name, anonymous-masked for non-owners." }
+        location:        { type: string, nullable: true, description: "Col 4 — derived Revenue Location." }
+        memoDescription: { type: string, nullable: true, description: "Col 5 — gift memo / description." }
+        amount:          { type: string, nullable: true, description: "Col 6 — allocation sub_amount; negative on the fee line." }
+        revenueType:     { type: string, nullable: true, description: "Col 7 — grant / donation." }
+        titleReference:  { type: string, nullable: true, description: "Col 8 — grant title / reference #." }
+        periodStart:     { type: string, format: date, nullable: true, description: "Col 9 — allocation spending period start (grant period)." }
+        periodEnd:       { type: string, format: date, nullable: true, description: "Col 10 — allocation spending period end." }
+        paymentSchedule: { type: string, nullable: true, description: "Col 11 — payment-schedule descriptor (one-time vs pledge installment)." }
+        restrictionType: { type: string, nullable: true, description: "Col 12 — Unrestricted / Purpose / Time / Both." }
+        purpose:         { type: string, nullable: true, description: "Col 13 — donor's restriction language, verbatim." }
+        suggestedClass:  { type: string, nullable: true, description: "Col 14 — derived Suggested Class." }
+        deferredRevenue: { type: string, nullable: true, description: "Col 15 — Yes when the booked fiscal year starts after the transaction date, else No." }
+        restrictionEvidence: { type: string, nullable: true, description: "Col 16 — restriction evidence hint." }
+        questionsFlags:  { type: string, nullable: true, description: "Col 17 — human-readable questions for incomplete gifts (empty when complete)." }
+        notes:           { type: string, nullable: true, description: "Col 18 — gift details / free-text notes." }
+        sourceFile:      { type: string, nullable: true, description: "Col 19 — provenance of the record (e.g. Wildflower CRM, or the online source URL)." }
+        # ── QuickBooks coding comparison (Step 4, QB authoritative) ──
+        qbObjectCode:    { type: string, nullable: true, readOnly: true, description: "Object Code from the linked QuickBooks staged-payment coding snapshot (effective = override ?? derived), if any." }
+        qbLocation:      { type: string, nullable: true, readOnly: true, description: "Revenue Location from the linked QuickBooks staged-payment coding snapshot." }
+        qbClass:         { type: string, nullable: true, readOnly: true, description: "Class from the linked QuickBooks staged-payment coding snapshot." }
+        codingDisagreement: { type: boolean, description: "True when the CRM-derived coding disagrees with the linked QuickBooks snapshot (any of object code / location / class). QuickBooks stays authoritative." }
     RevenueAccount:
       type: object
       required: [code, name, kind, sortOrder, active, createdAt, updatedAt]

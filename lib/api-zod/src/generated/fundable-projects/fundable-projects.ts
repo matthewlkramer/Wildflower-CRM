@@ -22,6 +22,7 @@ export const ListFundableProjectsResponseItem = zod.object({
   "spendingStart": zod.string().date().nullish(),
   "spendingEnd": zod.string().date().nullish(),
   "fundraisingGoal": zod.string().nullish().describe('Decimal string (numeric(14,2)). Null on legacy rows.'),
+  "locationCode": zod.string().nullish().describe('QuickBooks Revenue Location a project-specific grant codes to when no entity coding rule and no regional hub apply. One of the closed LOCATIONS list; null = fall back to Foundation General (surfaces a project_location_missing review flag).'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -37,7 +38,8 @@ export const CreateFundableProjectBody = zod.object({
   "fundraisingEnd": zod.string().date().nullish(),
   "spendingStart": zod.string().date().nullish(),
   "spendingEnd": zod.string().date().nullish(),
-  "fundraisingGoal": zod.string().nullish().describe('Decimal string. Use plain digits with optional decimal, no commas.')
+  "fundraisingGoal": zod.string().nullish().describe('Decimal string. Use plain digits with optional decimal, no commas.'),
+  "locationCode": zod.string().nullish().describe('QuickBooks Revenue Location for project-specific grants. One of the closed LOCATIONS list.')
 })
 
 export const GetFundableProjectParams = zod.object({
@@ -54,6 +56,7 @@ export const GetFundableProjectResponse = zod.object({
   "spendingStart": zod.string().date().nullish(),
   "spendingEnd": zod.string().date().nullish(),
   "fundraisingGoal": zod.string().nullish().describe('Decimal string (numeric(14,2)). Null on legacy rows.'),
+  "locationCode": zod.string().nullish().describe('QuickBooks Revenue Location a project-specific grant codes to when no entity coding rule and no regional hub apply. One of the closed LOCATIONS list; null = fall back to Foundation General (surfaces a project_location_missing review flag).'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -71,7 +74,8 @@ export const UpdateFundableProjectBody = zod.object({
   "fundraisingEnd": zod.string().date().nullish(),
   "spendingStart": zod.string().date().nullish(),
   "spendingEnd": zod.string().date().nullish(),
-  "fundraisingGoal": zod.string().nullish().describe('Decimal string. Use plain digits with optional decimal, no commas.')
+  "fundraisingGoal": zod.string().nullish().describe('Decimal string. Use plain digits with optional decimal, no commas.'),
+  "locationCode": zod.string().nullish().describe('QuickBooks Revenue Location for project-specific grants. One of the closed LOCATIONS list.')
 })
 
 export const UpdateFundableProjectResponse = zod.object({
@@ -84,6 +88,7 @@ export const UpdateFundableProjectResponse = zod.object({
   "spendingStart": zod.string().date().nullish(),
   "spendingEnd": zod.string().date().nullish(),
   "fundraisingGoal": zod.string().nullish().describe('Decimal string (numeric(14,2)). Null on legacy rows.'),
+  "locationCode": zod.string().nullish().describe('QuickBooks Revenue Location a project-specific grant codes to when no entity coding rule and no regional hub apply. One of the closed LOCATIONS list; null = fall back to Foundation General (surfaces a project_location_missing review flag).'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -117,6 +122,7 @@ export const ArchiveFundableProjectResponse = zod.object({
   "spendingStart": zod.string().date().nullish(),
   "spendingEnd": zod.string().date().nullish(),
   "fundraisingGoal": zod.string().nullish().describe('Decimal string (numeric(14,2)). Null on legacy rows.'),
+  "locationCode": zod.string().nullish().describe('QuickBooks Revenue Location a project-specific grant codes to when no entity coding rule and no regional hub apply. One of the closed LOCATIONS list; null = fall back to Foundation General (surfaces a project_location_missing review flag).'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -136,6 +142,7 @@ export const UnarchiveFundableProjectResponse = zod.object({
   "spendingStart": zod.string().date().nullish(),
   "spendingEnd": zod.string().date().nullish(),
   "fundraisingGoal": zod.string().nullish().describe('Decimal string (numeric(14,2)). Null on legacy rows.'),
+  "locationCode": zod.string().nullish().describe('QuickBooks Revenue Location a project-specific grant codes to when no entity coding rule and no regional hub apply. One of the closed LOCATIONS list; null = fall back to Foundation General (surfaces a project_location_missing review flag).'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})

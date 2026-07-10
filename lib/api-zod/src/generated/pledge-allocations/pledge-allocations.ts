@@ -157,6 +157,9 @@ export const GetPledgeAllocationCodingPreviewResponse = zod.object({
   "objectCode": zod.string().nullable().describe('Derived Object Code (e.g. 4000.1 \/ 4100.2), or null when it can\'t be resolved cleanly.'),
   "location": zod.string().nullable().describe('Derived Revenue Location.'),
   "revenueClass": zod.string().nullable().describe('Derived Suggested Class.'),
-  "flags": zod.array(zod.string()).describe('Ambiguities surfaced for human review (e.g. location_default, payer_type_assumed, loan_no_revenue_account).')
+  "revenueType": zod.enum(['grant', 'donation']).nullish().describe('Derived revenue type: grant when a grant letter, reporting requirement, or any donor restriction is present; otherwise donation.'),
+  "restrictionType": zod.enum(['Unrestricted', 'Purpose', 'Time', 'Both']).nullish().describe('Derived restriction label from the three restriction axes (regional\/usage ⇒ Purpose, time ⇒ Time).'),
+  "restrictionEvidence": zod.string().nullish().describe('Human-readable restriction evidence hint derived from the axes + verbatim purpose (empty for unrestricted lines).'),
+  "flags": zod.array(zod.string()).describe('Ambiguities surfaced for human review (e.g. payer_type_assumed, project_location_missing, loan_no_revenue_account). A complete gift derives with zero flags.')
 }).describe('Live, on-demand revenue-coding instructions derived from an allocation\'s\nscope (donor kind, fund entity, restriction axes, region). NOT persisted\non the allocation — a read-only preview the reviewer copies onto the\nlinked staged_payments coding snapshot.\n')
 

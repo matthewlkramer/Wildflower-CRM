@@ -7,8 +7,10 @@ import {
   organizations,
   regions,
   entityCodingRules,
+  fundableProjects,
+  tasks,
 } from "@workspace/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, arrayContains, eq, inArray } from "drizzle-orm";
 import {
   deriveRevenueCoding,
   type CodingInput,
@@ -36,6 +38,10 @@ export interface AllocationCodingFields {
   intendedUsage?: string | null;
   fundableProjectId?: string | null;
   regionIds?: string[] | null;
+  // The donor's verbatim restriction language (drives restriction evidence).
+  purposeVerbatim?: string | null;
+  // The fundable project's configured Revenue Location (Location precedence).
+  fundableProjectLocation?: string | null;
 }
 
 /** Load the live (enabled) entity coding rules from the DB. */
@@ -56,6 +62,27 @@ interface ParentDonor {
   organizationId: string | null;
   giftType: string | null;
   loanOrGrant: string | null;
+  // Revenue-type signals (grant letter / reporting requirement on file).
+  hasGrantLetter: boolean;
+  hasReportingRequirement: boolean;
+}
+
+/** Whether any reporting-deadline task links this opportunity. */
+async function oppHasReportingRequirement(
+  oppId: string | null | undefined,
+): Promise<boolean> {
+  if (!oppId) return false;
+  const [row] = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.kind, "reporting_deadline"),
+        arrayContains(tasks.opportunityIds, [oppId]),
+      ),
+    )
+    .limit(1);
+  return !!row;
 }
 
 async function loadGiftDonor(giftId: string): Promise<ParentDonor | null> {
@@ -66,8 +93,15 @@ async function loadGiftDonor(giftId: string): Promise<ParentDonor | null> {
       householdId: giftsAndPayments.householdId,
       type: giftsAndPayments.type,
       loanOrGrant: giftsAndPayments.loanOrGrant,
+      grantLetterUrl: giftsAndPayments.grantLetterUrl,
+      opportunityId: giftsAndPayments.opportunityId,
+      oppGrantLetterUrl: opportunitiesAndPledges.grantLetterUrl,
     })
     .from(giftsAndPayments)
+    .leftJoin(
+      opportunitiesAndPledges,
+      eq(opportunitiesAndPledges.id, giftsAndPayments.opportunityId),
+    )
     .where(eq(giftsAndPayments.id, giftId));
   if (!row) return null;
   return {
@@ -75,6 +109,8 @@ async function loadGiftDonor(giftId: string): Promise<ParentDonor | null> {
     organizationId: row.organizationId ?? null,
     giftType: row.type ?? null,
     loanOrGrant: row.loanOrGrant ?? null,
+    hasGrantLetter: !!(row.grantLetterUrl || row.oppGrantLetterUrl),
+    hasReportingRequirement: await oppHasReportingRequirement(row.opportunityId),
   };
 }
 
@@ -84,6 +120,7 @@ async function loadOppDonor(oppId: string): Promise<ParentDonor | null> {
       organizationId: opportunitiesAndPledges.organizationId,
       individualGiverPersonId: opportunitiesAndPledges.individualGiverPersonId,
       householdId: opportunitiesAndPledges.householdId,
+      grantLetterUrl: opportunitiesAndPledges.grantLetterUrl,
     })
     .from(opportunitiesAndPledges)
     .where(eq(opportunitiesAndPledges.id, oppId));
@@ -95,6 +132,8 @@ async function loadOppDonor(oppId: string): Promise<ParentDonor | null> {
     // Opportunity/pledge allocations were never coded as loans via this path
     // (gifts only). Keep that behavior — pass null so isLoan stays false.
     loanOrGrant: null,
+    hasGrantLetter: !!row.grantLetterUrl,
+    hasReportingRequirement: await oppHasReportingRequirement(oppId),
   };
 }
 
@@ -127,6 +166,18 @@ async function regionStates(regionIds: string[] | null | undefined): Promise<(st
   return rows.map((r) => r.state ?? null);
 }
 
+/** Load a fundable project's configured Revenue Location code. */
+async function fundableProjectLocationOf(
+  projectId: string | null | undefined,
+): Promise<string | null> {
+  if (!projectId) return null;
+  const [row] = await db
+    .select({ locationCode: fundableProjects.locationCode })
+    .from(fundableProjects)
+    .where(eq(fundableProjects.id, projectId));
+  return row?.locationCode ?? null;
+}
+
 async function computeFromDonor(
   donor: ParentDonor | null,
   fields: AllocationCodingFields,
@@ -134,6 +185,11 @@ async function computeFromDonor(
 ): Promise<CodingResult> {
   const entityType = await orgEntityType(donor?.organizationId ?? null);
   const states = await regionStates(fields.regionIds);
+  // Resolve the project location for the Location precedence when the caller
+  // didn't pass one (preview-by-id callers pass only fundableProjectId).
+  const projectLocation =
+    fields.fundableProjectLocation ??
+    (await fundableProjectLocationOf(fields.fundableProjectId));
   const input: CodingInput = {
     donorKind: donor?.donorKind ?? null,
     orgEntityType: entityType,
@@ -145,7 +201,11 @@ async function computeFromDonor(
     entityId: fields.entityId ?? null,
     intendedUsage: fields.intendedUsage ?? null,
     fundableProjectId: fields.fundableProjectId ?? null,
+    fundableProjectLocation: projectLocation,
     regionStates: states,
+    purposeVerbatim: fields.purposeVerbatim ?? null,
+    hasGrantLetter: donor?.hasGrantLetter ?? false,
+    hasReportingRequirement: donor?.hasReportingRequirement ?? false,
   };
   return deriveRevenueCoding(input, rules);
 }
@@ -189,6 +249,7 @@ export async function giftAllocationCodingPreview(
     intendedUsage: a.intendedUsage,
     fundableProjectId: a.fundableProjectId,
     regionIds: a.regionIds,
+    purposeVerbatim: a.purposeVerbatim,
   });
 }
 
@@ -205,6 +266,7 @@ export async function pledgeAllocationCodingPreview(
     .where(eq(pledgeAllocations.id, allocationId));
   if (!a) return null;
   return derivePledgeAllocationCoding(a.pledgeOrOpportunityId, {
+    purposeVerbatim: a.purposeVerbatim,
     regionalRestrictionType: a.regionalRestrictionType,
     usageRestrictionType: a.usageRestrictionType,
     timeRestrictionType: a.timeRestrictionType,
