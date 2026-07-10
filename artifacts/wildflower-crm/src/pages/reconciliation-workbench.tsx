@@ -22,6 +22,7 @@ import {
   getGetReconciliationGraphQueryOptions,
   approveReconciliationCard,
   groupReconcileStagedPayments,
+  listReconciliationCards,
   rejectStagedPayment,
   searchReconciliationNode,
   splitStagedPayment,
@@ -124,11 +125,14 @@ import {
   extractGateIssues,
   extractStripeSourceConflict,
   extractQbLinkConflict,
+  isAlreadyResolvedError,
+  changeReachedIntendedState,
   deriveApproveBodyFromProposal,
   EXCLUSION_REASON_LABELS,
   MANUAL_EXCLUSION_FAMILIES,
   type StripeSourceConflict,
   type QbLinkConflict,
+  type ResolvedStateProbe,
 } from "@/lib/reconciliation";
 import { ReconciliationNodeTypeahead } from "@/components/reconciliation-node-typeahead";
 import { OppCombobox } from "@/components/opp-combobox";
@@ -874,6 +878,70 @@ export default function ReconciliationWorkbench() {
         }
         applied += 1;
       } catch (err) {
+        // The resolve endpoints aren't idempotent: a staged payment that already
+        // flipped out of `pending` (a lost success response, a double Apply, or a
+        // sync / another reviewer resolving it) 409s with `not_pending`. That is
+        // NOT a real failure — re-fetch the row's true server state and reconcile
+        // the tray instead of showing a scary raw "HTTP 409 …". If it reached the
+        // outcome this change staged, count it applied and drop it silently;
+        // otherwise keep it with a calm note (the end-of-loop invalidation
+        // refreshes the card either way).
+        if (isAlreadyResolvedError(err)) {
+          let reached = false;
+          try {
+            const targetGiftId =
+              change.groupReconcile?.giftId ??
+              (change.body?.outcome === "link_existing_gift"
+                ? (change.body.giftId ?? null)
+                : null);
+            const probe: ResolvedStateProbe = {
+              kind: change.kind,
+              stagedPaymentId: change.stagedPaymentId,
+              targetGiftId,
+            };
+            if (change.kind === "reject") {
+              const [rejected, excluded] = await Promise.all([
+                listReconciliationCards({
+                  queue: "rejected",
+                  limit: 500,
+                  offset: 0,
+                }),
+                listReconciliationCards({
+                  queue: "excluded",
+                  limit: 500,
+                  offset: 0,
+                }),
+              ]);
+              reached = changeReachedIntendedState(probe, {
+                done: [],
+                terminal: [...rejected.data, ...excluded.data],
+              });
+            } else {
+              const done = await listReconciliationCards({
+                queue: "done",
+                limit: 500,
+                offset: 0,
+              });
+              reached = changeReachedIntendedState(probe, {
+                done: done.data,
+                terminal: [],
+              });
+            }
+          } catch {
+            // Couldn't re-fetch to confirm — fall through to the calm note below
+            // rather than the raw error; the refresh still runs.
+            reached = false;
+          }
+          if (reached) {
+            applied += 1;
+          } else {
+            remaining.push({
+              ...change,
+              failure: "Already resolved — refreshed to show the current state.",
+            });
+          }
+          continue;
+        }
         // A re-target to a gift already sourced from a DIFFERENT Stripe charge
         // (#546) and/or already linked to a DIFFERENT QuickBooks staged payment
         // (#550) is recoverable: the server returns BOTH gate issues together, so

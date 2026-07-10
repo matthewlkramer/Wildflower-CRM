@@ -352,6 +352,69 @@ export function extractGateIssues(err: unknown): string[] {
   return out;
 }
 
+/**
+ * The staged-payment resolve endpoints (split / reject / reconcile / group) are
+ * NOT idempotent: once a row flips from `pending` to a terminal state they
+ * return `409 { error: "not_pending" }` ("This staged payment has already been
+ * resolved."). If a successful apply's response was lost (network/timeout) or the
+ * reviewer clicked Apply twice, the second pass 409s even though the money was
+ * already booked. Recognize that specific case so Apply-to-CRM can self-heal
+ * instead of surfacing a scary raw "HTTP 409 …" error. Duck-types the generated
+ * `ApiError` (status + parsed `.data.error`) like the other helpers here.
+ */
+export function isAlreadyResolvedError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  if ((err as { status?: unknown }).status !== 409) return false;
+  const data = (err as { data?: unknown }).data;
+  if (!data || typeof data !== "object") return false;
+  return (data as { error?: unknown }).error === "not_pending";
+}
+
+/**
+ * A staged change awaiting Apply, reduced to just what's needed to decide whether
+ * an already-resolved staged payment reached the outcome the reviewer staged.
+ * `targetGiftId` is the existing gift a confirm/re-target/group links to; it is
+ * null for outcomes without a single pre-chosen gift (create-a-new-gift, a
+ * split across several gifts, or a reject).
+ */
+export interface ResolvedStateProbe {
+  kind: "confirm" | "retarget" | "reject" | "split";
+  stagedPaymentId: string;
+  targetGiftId: string | null;
+}
+
+/**
+ * Given the current server state (the resolved "done" cards + the terminal
+ * rejected/excluded cards) for a staged payment that returned the
+ * already-resolved 409, decide whether it reached the outcome the reviewer
+ * staged. Used to self-heal Apply-to-CRM: a match means the change quietly
+ * counts as applied; a mismatch (resolved into a DIFFERENT state by a sync or
+ * another user) keeps the change with a calm "already resolved" note.
+ *
+ *  - reject  → intended when the row now sits in a terminal (rejected/excluded)
+ *              card, i.e. it is no longer a live gift row.
+ *  - split / create-a-new-gift (no `targetGiftId`) → intended when the row now
+ *              appears as a resolved "done" card at all (the money is booked).
+ *  - confirm / re-target / group (a specific `targetGiftId`) → intended only
+ *              when a resolved "done" card for the row ties to THAT gift.
+ */
+export function changeReachedIntendedState(
+  probe: ResolvedStateProbe,
+  cards: {
+    done: { stagedPaymentId: string; resolvedGiftId?: string | null }[];
+    terminal: { stagedPaymentId: string }[];
+  },
+): boolean {
+  const spId = probe.stagedPaymentId;
+  if (probe.kind === "reject") {
+    return cards.terminal.some((c) => c.stagedPaymentId === spId);
+  }
+  const done = cards.done.filter((c) => c.stagedPaymentId === spId);
+  if (done.length === 0) return false;
+  if (!probe.targetGiftId) return true;
+  return done.some((c) => c.resolvedGiftId === probe.targetGiftId);
+}
+
 /** Snapshot of the Stripe charge currently sourcing a gift, as returned in the
  *  `gift_already_stripe_sourced` gate issue's `details.currentStripeCharge`. */
 export interface StripeSourceConflict {
