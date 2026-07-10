@@ -593,20 +593,6 @@ function StrayGiftCard({
             >
               {recordLabel}
             </Link>
-            {g.reimbursablePledge && (
-              <Badge
-                variant="outline"
-                className="border-amber-300 bg-amber-50 text-amber-700"
-                title={
-                  g.opportunityName
-                    ? `On reimbursable pledge “${g.opportunityName}”. Likely a placeholder award-amount gift — reimbursements should be booked as 1:1 payments on the pledge; archive this if it's a placeholder.`
-                    : "On a reimbursable pledge — likely a placeholder award-amount gift; archive if so."
-                }
-                data-testid={`stray-gift-reimbursable-${g.rowKey}`}
-              >
-                Reimbursable pledge
-              </Badge>
-            )}
           </div>
           <div className="text-lg font-semibold tabular-nums">
             {amountText ?? (
@@ -778,14 +764,6 @@ function StrayGiftCard({
           <AlertDialogHeader>
             <AlertDialogTitle>Archive this gift?</AlertDialogTitle>
             <AlertDialogDescription>
-              {g.reimbursablePledge ? (
-                <>
-                  This gift is on the reimbursable pledge
-                  {g.opportunityName ? ` “${g.opportunityName}”` : ""}. If it&rsquo;s
-                  a placeholder award-amount gift, archive it and book each real
-                  reimbursement check as a 1:1 payment on the pledge instead.{" "}
-                </>
-              ) : null}
               Archiving removes{" "}
               <span className="font-medium">{recordLabel}</span> from lists and
               financial totals. You can restore it later from the archive.

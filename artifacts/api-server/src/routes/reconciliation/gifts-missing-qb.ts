@@ -27,6 +27,7 @@ import {
   stripeLedgerExistsForGift,
   donorboxLedgerExistsForGift,
 } from "../../lib/paymentApplications";
+import { reimbursablePledgeExistsSql } from "../../lib/reimbursablePlaceholder";
 
 const router: IRouter = Router();
 
@@ -447,6 +448,14 @@ router.get(
       noQbRecord,
       sql`NOT ${isProcessorSettledSql}`,
       sql`(${giftAllocations.id} IS NULL OR ${giftAllocations.entityId} IS NULL OR COALESCE(${entities.expectsPayment}, true) = true)`,
+      // Reimbursement grants are PLEDGES: each real QuickBooks / Stripe check is
+      // booked as its own 1:1 gift payment on the award pledge (via the "Record as
+      // a payment on a pledge" resolve action → create_gift_from_opportunity), so
+      // their gifts do NOT tie to QuickBooks the usual per-gift way. Exclude any
+      // gift whose opportunity carries a reimbursable pledge allocation so it never
+      // surfaces here as a data-quality miss. (Null opportunityId → EXISTS false →
+      // the gift is kept.)
+      sql`NOT ${reimbursablePledgeExistsSql(sql`${giftsAndPayments.opportunityId}`)}`,
     ];
 
     if (q.length >= 2) {
@@ -571,11 +580,6 @@ router.get(
           finalAmountSource: giftsAndPayments.finalAmountSource,
           opportunityId: giftsAndPayments.opportunityId,
           opportunityName: opportunitiesAndPledges.name,
-          reimbursablePledge: sql<boolean>`EXISTS (
-            SELECT 1 FROM pledge_allocations
-            WHERE pledge_allocations.pledge_or_opportunity_id = ${giftsAndPayments.opportunityId}
-              AND pledge_allocations.conditional = 'reimbursable'
-          )`,
           organizationId: giftsAndPayments.organizationId,
           individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
           householdId: giftsAndPayments.householdId,
@@ -702,7 +706,6 @@ router.get(
           finalAmountSource: r.finalAmountSource,
           opportunityId: r.opportunityId,
           opportunityName: r.opportunityName,
-          reimbursablePledge: r.reimbursablePledge,
         },
       };
     });

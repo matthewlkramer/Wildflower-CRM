@@ -4336,8 +4336,6 @@ export interface GiftMissingQb {
   opportunityId?: string | null;
   /** Display name of the linked opportunity/pledge. */
   opportunityName?: string | null;
-  /** True when the linked opportunity is a reimbursable pledge (any pledge_allocations row conditional = 'reimbursable'). Such gifts are usually a placeholder award-amount gift to archive once real reimbursement payments are booked. */
-  reimbursablePledge?: boolean;
   /** Best-guess UNLINKED payment for this gift row (a QuickBooks staged payment
 OR a Stripe staged charge), or null when none is a plausible match.
 Read-only convenience so the card can offer a one-click "Link" — the same
