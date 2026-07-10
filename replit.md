@@ -14,6 +14,14 @@ donor lifecycle — pipeline → commitments → cash in — with money, communi
 (Gmail/Calendar), and accounting (QuickBooks/Stripe) all reconciled against the same
 donor records, replacing a hand-stitched mix of Copper, spreadsheets, and inboxes.
 
+## Change recipe map
+
+For the common edits (add a field end-to-end, add a list filter/column, add an
+API endpoint, ship a prod migration, change a derived field, change a validation
+rule), [`docs/change-recipes.md`](docs/change-recipes.md) gives the exact entry
+files, ordered steps, invariants at risk, and which fast check to run — start
+there before re-tracing a routine change.
+
 ## Design principles (the invariants to protect)
 
 These recur across the whole app — keep them true whenever you change things:
