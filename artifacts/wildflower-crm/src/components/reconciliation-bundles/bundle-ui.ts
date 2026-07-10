@@ -1,6 +1,5 @@
 // Shared helpers + label maps for the settlement-bundle reconciliation UI.
 import type {
-  BundleConfidenceTier,
   BundleDonorProposalDonorKind,
   BundleRowOverrideDonorRecordKind,
   BundleWarningSeverity,

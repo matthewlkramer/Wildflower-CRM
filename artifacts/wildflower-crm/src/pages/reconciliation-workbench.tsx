@@ -122,6 +122,7 @@ import { usePersistedState } from "@/hooks/use-persisted-state";
 import {
   laneBadges,
   deriveCardStatus,
+  isSettledGiftLink,
   extractGateIssues,
   extractStripeSourceConflict,
   extractQbLinkConflict,
@@ -594,10 +595,11 @@ export default function ReconciliationWorkbench() {
     const review: ReconciliationCard[] = [];
     const qbo: ReconciliationCard[] = [];
     for (const c of filtered) {
-      // Cards whose gift link is already settled ("Link to gift confirmed")
-      // drop out of the review surface — they belong in the Confirmed queue, not
-      // Needs review. Partial/multiple (amounts still diverge) stay visible.
-      if (deriveCardStatus(c).key === "confirmed") continue;
+      // Cards whose gift link is already settled (a resolved gift whose amount
+      // matches within the fee band) drop out of the review surface — they
+      // belong in the Matched column. A resolved gift whose amount still
+      // diverges stays visible so the rest of the money can be tied to it.
+      if (isSettledGiftLink(c)) continue;
       if (c.proposedGiftId || c.proposedDonorId || c.resolvedGiftId)
         review.push(c);
       else qbo.push(c);
@@ -788,7 +790,7 @@ export default function ReconciliationWorkbench() {
   /**
    * Stage a confirm (or grouped link-to-existing-gift) for each given card,
    * skipping any whose match graph no longer derives a valid body. Shared by the
-   * "approve all high-confidence" and the bulk-select "Approve" actions. Toggles
+   * "approve all proposed" and the bulk-select "Approve" actions. Toggles
    * `busy` while it works and returns per-run counts for the caller's toast.
    */
   const stageConfirmBatch = useCallback(
@@ -843,13 +845,13 @@ export default function ReconciliationWorkbench() {
     if (ready.length === 0) {
       toast({
         title: "Nothing to approve",
-        description: "No high-confidence cards.",
+        description: "No proposed matches ready to approve.",
       });
       return;
     }
     const { stagedOk, skipped } = await stageConfirmBatch(ready);
     toast({
-      title: `Staged ${stagedOk} high-confidence ${stagedOk === 1 ? "match" : "matches"}`,
+      title: `Staged ${stagedOk} proposed ${stagedOk === 1 ? "match" : "matches"}`,
       description:
         skipped > 0
           ? `${skipped} couldn't be staged (changed state) and were skipped.`
@@ -1879,7 +1881,7 @@ export default function ReconciliationWorkbench() {
                   ) : (
                     <Sparkles className="mr-1 h-4 w-4" />
                   )}
-                  Approve all high-confidence ({readyCount})
+                  Approve all proposed ({readyCount})
                 </Button>
               )}
             </div>

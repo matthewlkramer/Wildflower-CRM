@@ -175,9 +175,6 @@ export function ReconciliationNodeTypeahead({
                             </span>
                           ) : null}
                           {c.date ? <span>{formatDate(c.date)}</span> : null}
-                          {typeof c.confidence === "number" ? (
-                            <span>{c.confidence}% match</span>
-                          ) : null}
                           {c.source ? (
                             <Badge variant="outline" className="px-1 py-0 text-[10px]">
                               {CANDIDATE_SOURCE_LABEL[c.source]}

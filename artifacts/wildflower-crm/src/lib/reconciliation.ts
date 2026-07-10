@@ -59,14 +59,16 @@ export function laneBadges(
   return out;
 }
 
-/** A reconciliation card's single human "Status:" line key. */
-export type ReconCardStatusKey =
-  | "create_new"
-  | "awaiting"
-  | "partial"
-  | "multiple"
-  | "confirmed"
-  | "none";
+/**
+ * A reconciliation match's status — collapsed to three states so a reviewer
+ * doesn't have to juggle a taxonomy:
+ *   - none     — the matcher hasn't found anything yet.
+ *   - proposal — the matcher thinks it has a match (a candidate gift or donor)
+ *                that a human still has to confirm.
+ *   - matched  — the money is tied to a resolved CRM gift (a human set the match
+ *                or approved the matcher's proposal).
+ */
+export type ReconCardStatusKey = "none" | "proposal" | "matched";
 
 export interface ReconCardStatus {
   key: ReconCardStatusKey;
@@ -81,82 +83,63 @@ function toAmount(v: string | null | undefined): number | null {
 }
 
 /**
- * The single human "Status:" line a reconciliation card leads with — replaces
- * the old, opaque "Funding: Unlinked/Confirmed" lane badge. It describes, in the
- * reviewer's language, what approving the card will do to the CRM gift:
+ * The single human "Status:" line a reconciliation card leads with. There are
+ * only three states by design — the reviewer shouldn't have to juggle a
+ * taxonomy of "awaiting / partial / multiple":
  *
- *  - create_new — no existing gift; approving mints a new one for the donor.
- *  - awaiting    — a candidate gift is proposed (or several are); approving links it.
- *  - partial     — the linked gift is BIGGER than this deposit, so this deposit is
- *                  a partial payment and other deposits will tie to the same gift.
- *  - multiple    — this deposit is BIGGER than the linked gift, so it covers
- *                  several gifts. (Multi-gift right-side rendering is a follow-up.)
- *  - confirmed   — the gift link is already settled; hidden from the review list
- *                  (these belong in the Confirmed queue, not Needs review).
- *  - none        — neither a donor nor a gift candidate yet.
- *
- * The partial/multiple split only fires for a RESOLVED gift whose amount diverges
- * from the deposit beyond the fee band (10% + $1, mirroring the auto-match band)
- * so small processor fees don't read as a split.
+ *  - matched  — the money is tied to a resolved CRM gift (a human set the match
+ *               or approved the matcher's proposal).
+ *  - proposal — the matcher has a candidate (a proposed gift, a determined /
+ *               ambiguous gift edge, or a proposed donor to create a gift for)
+ *               that a human still has to confirm.
+ *  - none     — no gift or donor candidate yet.
  */
 export function deriveCardStatus(card: {
   resolvedGiftId?: string | null;
-  resolvedGiftAmount?: string | null;
   proposedGiftId?: string | null;
   proposedDonorId?: string | null;
   proposedDonorName?: string | null;
   giftState?: ReconciliationEdgeState;
-  amount?: string | null;
-  sourceGroupTotalAmount?: string | null;
 }): ReconCardStatus {
   if (card.resolvedGiftId) {
-    // A grouped card reconciles for the group's summed total, not the lone
-    // representative row's amount — compare the gift against the right figure
-    // so confirmed grouped payments aren't mislabeled partial/multiple.
-    const dep = toAmount(card.sourceGroupTotalAmount ?? card.amount);
-    const gift = toAmount(card.resolvedGiftAmount);
-    if (dep != null && gift != null) {
-      if (gift > dep * 1.1 + 1)
-        return {
-          key: "partial",
-          label: "Link to gift as partial payment — awaiting confirmation",
-          variant: "secondary",
-        };
-      if (dep > gift * 1.1 + 1)
-        return {
-          key: "multiple",
-          label: "Link to multiple gifts",
-          variant: "secondary",
-        };
-    }
-    return {
-      key: "confirmed",
-      label: "Link to gift confirmed",
-      variant: "default",
-    };
+    return { key: "matched", label: "Matched", variant: "default" };
   }
 
   if (
     card.proposedGiftId ||
     card.giftState === "determined" ||
-    card.giftState === "ambiguous"
+    card.giftState === "ambiguous" ||
+    card.proposedDonorId ||
+    card.proposedDonorName
   ) {
-    return {
-      key: "awaiting",
-      label: "Link to gift — awaiting confirmation",
-      variant: "secondary",
-    };
+    return { key: "proposal", label: "Proposed match", variant: "secondary" };
   }
 
-  if (card.proposedDonorId || card.proposedDonorName) {
-    return {
-      key: "create_new",
-      label: "Proposal to create new gift",
-      variant: "secondary",
-    };
-  }
+  return { key: "none", label: "No match yet", variant: "outline" };
+}
 
-  return { key: "none", label: "No donor or gift yet", variant: "outline" };
+/**
+ * Whether a card's gift link is fully SETTLED — a resolved gift whose amount
+ * matches the deposit within the auto-match fee band (10% + $1, using the group
+ * total for grouped cards). This is a BUCKETING signal only (it decides whether
+ * a resolved card can drop out of the review column), kept deliberately separate
+ * from the user-facing 3-state status: an amount-divergent resolved gift still
+ * reads as "Matched" but stays in review so the rest of the money can be tied to
+ * it.
+ */
+export function isSettledGiftLink(card: {
+  resolvedGiftId?: string | null;
+  resolvedGiftAmount?: string | null;
+  amount?: string | null;
+  sourceGroupTotalAmount?: string | null;
+}): boolean {
+  if (!card.resolvedGiftId) return false;
+  const dep = toAmount(card.sourceGroupTotalAmount ?? card.amount);
+  const gift = toAmount(card.resolvedGiftAmount);
+  if (dep == null || gift == null) return true;
+  if (gift > dep * 1.1 + 1) return false;
+  if (dep > gift * 1.1 + 1) return false;
+  return true;
 }
 
 /** Edge-state → badge label + variant for the node summaries. */
