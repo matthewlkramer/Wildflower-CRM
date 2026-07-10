@@ -22,6 +22,8 @@ import {
   stagedPaymentEntitySourceEnum,
   stagedPaymentFundingSourceEnum,
   stagedPaymentFundingSourceProvenanceEnum,
+  stagedPaymentPayerTypeEnum,
+  stagedPaymentPaymentTypeEnum,
   deferredRevenueEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
@@ -338,6 +340,37 @@ export const stagedPayments = pgTable(
     // Deferred-revenue capture (CRM captures the answer; it does NOT compute AR).
     deferredRevenue: deferredRevenueEnum("deferred_revenue"),
     deferredRevenueReason: text("deferred_revenue_reason"),
+
+    // ── Human-reviewed bookkeeping dimensions (edited-tables import) ─────────
+    // All hand-maintained review facts; the sync/re-pull NEVER writes them.
+    // WHO the payer is, semantically (distinct from qbPayerType = QB name kind).
+    payerType: stagedPaymentPayerTypeEnum("payer_type"),
+    // WHAT the money is, semantically (distinct from exclusionReason and
+    // fundingSource).
+    paymentType: stagedPaymentPaymentTypeEnum("payment_type"),
+    // The conduit (DAF sponsor / giving platform) this money came THROUGH,
+    // hand-identified from the payer/memo. Parallel to
+    // matchedPaymentIntermediaryId, which belongs to the donor-matching flow —
+    // this one is the reviewed bookkeeping fact.
+    intermediaryId: text("intermediary_id").references(
+      () => paymentIntermediaries.id,
+      { onDelete: "set null" },
+    ),
+    // The true payer when the QB payer name is a conduit or mislabel (e.g. QB
+    // says the DAF sponsor; this holds the actual grantor).
+    realPayerName: text("real_payer_name"),
+    // Human-synthesized payment-method slug (e.g. "stripe", "eft",
+    // "direct_wire", "daf") — reviewed origin instrument, distinct from the raw
+    // qbPaymentMethod string.
+    synthesizedPaymentMethod: text("synthesized_payment_method"),
+    // Region slug this money is associated with (plain text, NOT an FK — the
+    // region model rethink is a planned follow-on; values like "minnesota",
+    // "mid_atlantic", plus legacy buckets like "nor_cal" / "radicle").
+    regional: text("regional"),
+    // Money belonging to the Seed Fund initiative (cuts across entity/project).
+    seedFund: boolean("seed_fund").notNull().default(false),
+    // Free-text "something is off here" note from the finance review pass.
+    issuesToAddress: text("issues_to_address"),
 
     approvedByUserId: text("approved_by_user_id").references(() => users.id, {
       onDelete: "set null",

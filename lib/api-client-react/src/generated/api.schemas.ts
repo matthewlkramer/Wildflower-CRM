@@ -443,6 +443,7 @@ export const GiftType = {
   directed_gift: 'directed_gift',
   loan_fund_investment: 'loan_fund_investment',
   matching_gift: 'matching_gift',
+  reimbursement: 'reimbursement',
 } as const;
 
 /**

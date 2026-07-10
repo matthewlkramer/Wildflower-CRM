@@ -8,15 +8,18 @@ import {
   date,
 } from "drizzle-orm/pg-core";
 import {
+  designationTypeEnum,
   intendedUsageEnum,
   reimbursementTypeEnum,
   restrictionAxisEnum,
+  schoolSupportTypeEnum,
 } from "./_enums";
 import { giftsAndPayments } from "./giftsAndPayments";
 import { entities } from "./entities";
 import { fundableProjects } from "./fundableProjects";
 import { schools } from "./schools";
 import { fiscalYears } from "./fiscalYears";
+import { charters } from "./charters";
 
 export const giftAllocations = pgTable("gift_allocations", {
   id: text("id").primaryKey(),
@@ -96,9 +99,31 @@ export const giftAllocations = pgTable("gift_allocations", {
   // The donor's restriction language, verbatim. Still active — the only
   // free-text restriction evidence the allocation keeps.
   purposeVerbatim: text("purpose_verbatim"),
+  // ── Human-reviewed dimensions (edited-tables import) ──────────────────────
+  // The charter legal recipient this allocation is earmarked for (parallel to
+  // schoolRecipientId, which points at an individual school site).
+  charterRecipientId: text("charter_recipient_id").references(
+    () => charters.id,
+    { onDelete: "restrict" },
+  ),
+  // Money belonging to the Seed Fund initiative (cuts across entity/project).
+  seedFund: boolean("seed_fund").notNull().default(false),
+  // Startup vs ongoing support, for school-support allocations.
+  schoolSupportType: schoolSupportTypeEnum("school_support_type"),
+  // Per-scope-axis designation provenance: WHO chose each scope dimension and
+  // how binding it is (see designationTypeEnum in _enums.ts). Nullable = the
+  // axis carries no recorded intent. Target state: these REPLACE the legacy
+  // regional/usage/time restriction axes above ("restricted" = any axis
+  // donor_restricted); until that consolidation ships, the legacy axes stay
+  // authoritative for revenue coding.
+  schoolDesignationType: designationTypeEnum("school_designation_type"),
+  entityDesignationType: designationTypeEnum("entity_designation_type"),
+  regionalDesignationType: designationTypeEnum("regional_designation_type"),
+  projectDesignationType: designationTypeEnum("project_designation_type"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
+  index("gift_allocations_charter_recipient_id_idx").on(t.charterRecipientId),
   index("gift_allocations_gift_id_idx").on(t.giftId),
   index("gift_allocations_entity_id_idx").on(t.entityId),
   index("gift_allocations_fundable_project_id_idx").on(t.fundableProjectId),

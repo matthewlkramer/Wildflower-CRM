@@ -92,6 +92,7 @@ const TYPES: GiftType[] = [
   "directed_gift",
   "loan_fund_investment",
   "matching_gift",
+  "reimbursement",
 ];
 const PAYMENT_METHODS: GiftPaymentMethod[] = [
   "ach",

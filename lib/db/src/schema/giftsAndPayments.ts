@@ -42,6 +42,14 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   legacyGiftId: text("legacy_gift_id"),
   name: text("name"),
   details: text("details"),
+  // Free-text "something is off here" note from the finance review pass
+  // (edited-tables import). Human-maintained; surfaced for follow-up, never
+  // drives derivations.
+  issuesToAddress: text("issues_to_address"),
+  // The campaign this gift came in through (e.g. a Donorbox campaign name,
+  // stored WITHOUT the "donorbox campaign: " prefix). Plain text for now; a
+  // campaigns table is a possible follow-on if these need management.
+  fundraisingCampaign: text("fundraising_campaign"),
   dateReceived: date("date_received"),
   paymentMethod: giftPaymentMethodEnum("payment_method"),
   amount: numeric("amount", { precision: 14, scale: 2 }),

@@ -155,3 +155,4 @@
 - [Audit-close gift freeze](gift-booking-lifecycle-audit-close.md) — records freeze by governing FY when its audit closes; fix in an open FY (under→new offsetting pledge, over→new gift), never mutate originals.
 - [Reimbursable grant = pledge](reimbursable-grant-payment-model.md) — reimbursable grants (conditional='reimbursable') are pledges; book each real QB/Stripe check as a 1:1 gift payment (create_gift_from_opportunity), never as placeholder award-amount gifts.
 - [Deprecated-column drop audit](deprecated-column-drop-audit.md) — a "pure drop" grep must cover .col dot-access, col: object-key writes, AND table alias() reads (resolvedGift.col); trust full typecheck over grep + stale @deprecated comments.
+- [Raw-SQL PA insert guards](raw-sql-pa-insert-guards.md) — migration-file PA inserts must guard on matched_gift_id=target (not existence) or drift-window rematches double-book.

@@ -19,6 +19,7 @@ export * from "./entities";
 export * from "./revenueAccounts";
 export * from "./entityCodingRules";
 export * from "./fundableProjects";
+export * from "./charters";
 export * from "./fiscalYears";
 export * from "./fiscalYearEntityGoals";
 export * from "./interactions";

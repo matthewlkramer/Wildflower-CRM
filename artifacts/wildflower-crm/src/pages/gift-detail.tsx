@@ -88,6 +88,7 @@ const GIFT_TYPE_OPTIONS = [
   { value: "directed_gift", label: "Directed gift" },
   { value: "loan_fund_investment", label: "Loan fund investment" },
   { value: "matching_gift", label: "Matching gift" },
+  { value: "reimbursement", label: "Reimbursement" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<GiftType>>;
 
 const PAYMENT_METHOD_OPTIONS = [

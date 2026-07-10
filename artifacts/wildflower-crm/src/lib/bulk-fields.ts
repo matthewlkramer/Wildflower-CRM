@@ -348,6 +348,7 @@ export const GIFTS_BULK_FIELDS: ReadonlyArray<BulkField> = [
       { value: "directed_gift", label: "Directed gift" },
       { value: "loan_fund_investment", label: "Loan fund investment" },
       { value: "matching_gift", label: "Matching gift" },
+      { value: "reimbursement", label: "Reimbursement" },
     ],
   },
   {

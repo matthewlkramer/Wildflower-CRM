@@ -4655,7 +4655,7 @@ components:
         'no' (none met), 'partial' (some met), or 'yes' (fully met).
         Replaces the prior boolean flag (false→'no', true→'yes').
     PledgeAllocationStatus: { type: string, enum: [working, committed, superseded, committed_with_conditions, superseded_by_pledge, superseded_by_gift, abandoned] }
-    GiftType: { type: string, enum: [standard_gift, pledge_payment, directed_gift, loan_fund_investment, matching_gift] }
+    GiftType: { type: string, enum: [standard_gift, pledge_payment, directed_gift, loan_fund_investment, matching_gift, reimbursement] }
     FundraisingCategory:
       type: string
       enum: [revenue, loan_capital]

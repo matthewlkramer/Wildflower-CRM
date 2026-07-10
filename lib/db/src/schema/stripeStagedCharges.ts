@@ -28,6 +28,8 @@ import { giftsAndPayments } from "./giftsAndPayments";
 import { users } from "./users";
 import { stripePayouts } from "./stripePayouts";
 import { stagedPayments } from "./stagedPayments";
+import { entities } from "./entities";
+import { fundableProjects } from "./fundableProjects";
 
 /**
  * Review queue for incoming Stripe charges, one row per charge grouped under
@@ -77,6 +79,25 @@ export const stripeStagedCharges = pgTable(
     // Calendar date the gift is credited to (derived from chargeCreated in
     // America/Chicago). Used by the matcher and minted onto the gift.
     dateReceived: date("date_received"),
+
+    // ── Human-reviewed bookkeeping dimensions (edited-tables import) ────────
+    // Hand-maintained review facts; the Stripe re-pull NEVER writes them.
+    // Which Wildflower legal entity this charge's money belongs to (parallel
+    // to staged_payments.entityId, but human-attributed — there is no
+    // detectEntity for Stripe charges).
+    entityId: text("entity_id").references(() => entities.id, {
+      onDelete: "set null",
+    }),
+    // Region slug (plain text, NOT an FK — region model rethink is a planned
+    // follow-on). Same convention as staged_payments.regional.
+    regional: text("regional"),
+    // The specific fundable project this charge's money funds, when known.
+    fundableProjectId: text("fundable_project_id").references(
+      () => fundableProjects.id,
+      { onDelete: "set null" },
+    ),
+    // Money belonging to the Seed Fund initiative.
+    seedFund: boolean("seed_fund").notNull().default(false),
 
     // ── Donor-identifying Stripe facts (read-only; refreshed on re-pull) ──
     payerName: text("payer_name"),

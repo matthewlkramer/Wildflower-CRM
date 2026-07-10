@@ -295,6 +295,11 @@ export const giftTypeEnum = pgEnum("gift_type", [
   "directed_gift",
   "loan_fund_investment",
   "matching_gift",
+  // A payment received against a reimbursable grant (conditional='reimbursable'
+  // pledge). Behaves EXACTLY like pledge_payment in every derivation (pledge
+  // paid-amount, opp status, loan_or_grant mapping) — it exists so reimbursement
+  // checks are visually distinguishable from ordinary pledge installments.
+  "reimbursement",
 ]);
 
 export const giftPaymentMethodEnum = pgEnum("gift_payment_method", [
@@ -306,6 +311,98 @@ export const giftPaymentMethodEnum = pgEnum("gift_payment_method", [
   "daf_ach",
   "daf_check",
   "daf_bill_com",
+]);
+
+// ---- Human-reviewed bookkeeping dimensions (edited-tables import) ----
+// WHO the payer is, semantically (a hand-reviewed category, distinct from
+// qb_payer_type which is just the QB name-list kind Customer/Vendor/Employee).
+export const stagedPaymentPayerTypeEnum = pgEnum("staged_payment_payer_type", [
+  "wildflower_school",
+  "school",
+  "donor",
+  "stripe",
+  "government",
+  "bank_brokerage",
+  "wildflower_person",
+  "daf",
+  "benefits_provider",
+  "vendor",
+  "intercompany_transfer",
+  "platform",
+  "insurer",
+  "lender_cdfi",
+  "lender_bank",
+  "competition",
+  "other",
+]);
+
+// WHAT the money is, semantically (hand-reviewed; distinct from the noise
+// classifier's exclusion_reason and from funding_source, which is the origin
+// rail). Vocabulary comes verbatim from the reviewed export (ERC/PPP folded
+// to lowercase).
+export const stagedPaymentPaymentTypeEnum = pgEnum(
+  "staged_payment_payment_type",
+  [
+    "membership_fee",
+    "donation",
+    "zero_amount",
+    "loan_payment",
+    "loan_repayment",
+    "loan",
+    "investment_gain_or_interest",
+    "reimbursement",
+    "reimbursement_recovery",
+    "service_agreement",
+    "cobra",
+    "refund",
+    "returned_wire",
+    "guaranty_fee",
+    "brokerage_settlement",
+    "directed_gift",
+    "matching_gift",
+    "employer_match",
+    "tax_refund",
+    "stipend",
+    "prize",
+    "erc",
+    "ppp",
+    "verification",
+    "expense_reversal",
+    "honorarium",
+    "passthrough_out",
+    "passthrough_in",
+    "other",
+  ],
+);
+
+// Per-scope-axis designation provenance on gift_allocations: WHO chose this
+// scope dimension and how binding it is. One shared vocabulary across the
+// school / entity / regional / project axes:
+//   donor_restricted      — formal, legally binding donor restriction
+//   donor_designated      — the donor asked (soft encouragement, not binding)
+//   wildflower_designated — Wildflower's own choice
+//   default               — nobody chose; landed there by default (entity axis)
+//   informational         — noted for context only, carries no intent
+//   unrestricted          — explicitly no strings attached
+// Target state: these axes REPLACE the legacy regional/usage/time
+// restriction_axis columns — "restricted" = any axis donor_restricted. The
+// consolidation (incl. migrating the legacy usage donor_restricted rows and
+// rewiring revenue coding) is a planned follow-on; until then both models
+// coexist and the legacy axes stay authoritative for coding.
+export const designationTypeEnum = pgEnum("designation_type", [
+  "donor_restricted",
+  "donor_designated",
+  "wildflower_designated",
+  "default",
+  "informational",
+  "unrestricted",
+]);
+
+// Whether a school-support allocation funds a school's startup phase or its
+// ongoing (post-startup) operations.
+export const schoolSupportTypeEnum = pgEnum("school_support_type", [
+  "startup",
+  "post_startup",
 ]);
 
 // What a contribution is intended to fund. When the value is "project",

@@ -229,7 +229,7 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
-  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift']).nullish(),
+  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).nullish(),
   "opportunityId": zod.string().nullish(),
   "advisorPersonId": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
