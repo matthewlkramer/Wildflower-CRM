@@ -311,46 +311,54 @@ function OppView({
     ? associatedPeople.filter((p) => p.current !== "past")
     : associatedPeople;
 
-  let donorDisplay: ReactNode = (
+  // Donor is rendered two ways: the header subtitle keeps a type prefix
+  // ("Funder:"/"Individual:"/"Household:") for at-a-glance context, while the
+  // Donor card shows just the link (the card is already titled "Donor").
+  const noDonor: ReactNode = (
     <span className="text-muted-foreground">No donor linked.</span>
   );
+  let donorLink: ReactNode = null;
+  let donorPrefix: string | null = null;
   if (opp.organizationId) {
-    donorDisplay = (
-      <span>
-        <span className="text-muted-foreground mr-1">Funder:</span>
-        <Link
-          href={`/organizations/${opp.organizationId}`}
-          className="text-primary hover:underline"
-        >
-          {funderName ?? opp.organizationId}
-        </Link>
-      </span>
+    donorPrefix = "Funder";
+    donorLink = (
+      <Link
+        href={`/organizations/${opp.organizationId}`}
+        className="text-primary hover:underline"
+      >
+        {funderName ?? opp.organizationId}
+      </Link>
     );
   } else if (opp.individualGiverPersonId) {
-    donorDisplay = (
-      <span>
-        <span className="text-muted-foreground mr-1">Individual:</span>
-        <Link
-          href={`/individuals/${opp.individualGiverPersonId}`}
-          className="text-primary hover:underline"
-        >
-          {giverName ?? opp.individualGiverPersonId}
-        </Link>
-      </span>
+    donorPrefix = "Individual";
+    donorLink = (
+      <Link
+        href={`/individuals/${opp.individualGiverPersonId}`}
+        className="text-primary hover:underline"
+      >
+        {giverName ?? opp.individualGiverPersonId}
+      </Link>
     );
   } else if (opp.householdId) {
-    donorDisplay = (
-      <span>
-        <span className="text-muted-foreground mr-1">Household:</span>
-        <Link
-          href={`/households/${opp.householdId}`}
-          className="text-primary hover:underline"
-        >
-          {householdName ?? opp.householdId}
-        </Link>
-      </span>
+    donorPrefix = "Household";
+    donorLink = (
+      <Link
+        href={`/households/${opp.householdId}`}
+        className="text-primary hover:underline"
+      >
+        {householdName ?? opp.householdId}
+      </Link>
     );
   }
+  const donorDisplay: ReactNode = donorLink ? (
+    <span>
+      <span className="text-muted-foreground mr-1">{donorPrefix}:</span>
+      {donorLink}
+    </span>
+  ) : (
+    noDonor
+  );
+  const donorDisplayPlain: ReactNode = donorLink ?? noDonor;
   const advisorDisplay: ReactNode = opp.individualAdvisorPersonId ? (
     <Link
       href={`/individuals/${opp.individualAdvisorPersonId}`}
@@ -717,13 +725,14 @@ function OppView({
                   />
                 </Row>
                 {/*
-                  "Was pledge" is a sticky-true flag that pins a row to the
-                  Pledges page. It's meaningful on the pledge view; on the
-                  opportunity view it's noise (an opportunity that became a
-                  pledge is shown as a pledge), so hide the row there. (T#585)
+                  "Closed as pledge" (was_pledge) is a sticky-true flag that
+                  pins a row to the Pledges page. It's meaningful on the pledge
+                  view; on the opportunity view it's noise (an opportunity that
+                  became a pledge is shown as a pledge), so hide the row there.
+                  (T#585)
                 */}
                 {entityLabel.toLowerCase() === "pledge" ? (
-                  <Row label="Was pledge">
+                  <Row label="Closed as pledge">
                     <InlineEditBoolean
                       label="Written pledge"
                       testIdBase="opp-written-pledge"
@@ -923,19 +932,17 @@ function OppView({
           <>
             <RelatedCard title="Donor">
               <div className="space-y-1 px-2 py-1">
-                <Row label="Donor">
-                  <InlineEditDonor
-                    testIdBase="opp-donor"
-                    value={{
-                      organizationId: opp.organizationId ?? null,
-                      individualGiverPersonId:
-                        opp.individualGiverPersonId ?? null,
-                      householdId: opp.householdId ?? null,
-                    }}
-                    display={donorDisplay}
-                    onSave={saveDonor}
-                  />
-                </Row>
+                <InlineEditDonor
+                  testIdBase="opp-donor"
+                  value={{
+                    organizationId: opp.organizationId ?? null,
+                    individualGiverPersonId:
+                      opp.individualGiverPersonId ?? null,
+                    householdId: opp.householdId ?? null,
+                  }}
+                  display={donorDisplayPlain}
+                  onSave={saveDonor}
+                />
               </div>
             </RelatedCard>
 

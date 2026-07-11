@@ -203,7 +203,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
 
   // Donor is rendered two ways: the header subtitle keeps a type prefix
   // ("Funder:"/"Individual:"/"Household:") for at-a-glance context, while the
-  // Donor card omits the prefix (the card already labels the row "Donor") — see
+  // Donor card shows just the link (the card is already titled "Donor") — see
   // donorDisplayPlain below.
   const noDonor: ReactNode = (
     <span className="text-muted-foreground">No donor linked.</span>
@@ -716,19 +716,17 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
         <>
           <RelatedCard title="Donor">
             <div className="space-y-1 px-2 py-1">
-              <Row label="Donor">
-                <InlineEditDonor
-                  testIdBase="gift-donor"
-                  value={{
-                    organizationId: gift.organizationId ?? null,
-                    individualGiverPersonId:
-                      gift.individualGiverPersonId ?? null,
-                    householdId: gift.householdId ?? null,
-                  }}
-                  display={donorDisplayPlain}
-                  onSave={saveDonor}
-                />
-              </Row>
+              <InlineEditDonor
+                testIdBase="gift-donor"
+                value={{
+                  organizationId: gift.organizationId ?? null,
+                  individualGiverPersonId:
+                    gift.individualGiverPersonId ?? null,
+                  householdId: gift.householdId ?? null,
+                }}
+                display={donorDisplayPlain}
+                onSave={saveDonor}
+              />
               <Row label="Payment intermediary">
                 <InlineEditIntermediaryPicker
                   testIdBase="gift-intermediary"
