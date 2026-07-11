@@ -782,9 +782,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
             </div>
             {visibleAssociatedPeople.length > 0 ? (
               <div className="border-t pt-1">
-                <div className="px-3 py-1 text-xs font-medium text-muted-foreground">
-                  Associated contacts
-                </div>
                 {visibleAssociatedPeople.map((role) => {
                   const subtitle =
                     role.externalTitleOrRole ??

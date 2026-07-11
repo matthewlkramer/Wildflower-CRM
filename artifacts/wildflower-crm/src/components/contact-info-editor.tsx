@@ -249,8 +249,7 @@ export function EmailsEditor({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <div className="text-xs font-medium text-muted-foreground">Emails</div>
+      <div className="flex items-center justify-end mb-1">
         <Button
           variant="ghost"
           size="sm"
@@ -259,7 +258,7 @@ export function EmailsEditor({
           data-testid="btn-add-email"
         >
           <Plus className="h-3.5 w-3.5 mr-1" />
-          Add
+          Add email
         </Button>
       </div>
       {list.length > 0 ? (
@@ -548,10 +547,7 @@ export function PhoneNumbersEditor({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <div className="text-xs font-medium text-muted-foreground">
-          Phone numbers
-        </div>
+      <div className="flex items-center justify-end mb-1">
         <Button
           variant="ghost"
           size="sm"
@@ -560,7 +556,7 @@ export function PhoneNumbersEditor({
           data-testid="btn-add-phone"
         >
           <Plus className="h-3.5 w-3.5 mr-1" />
-          Add
+          Add phone
         </Button>
       </div>
       {list.length > 0 ? (
@@ -878,10 +874,7 @@ export function AddressesEditor({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <div className="text-xs font-medium text-muted-foreground">
-          Addresses
-        </div>
+      <div className="flex items-center justify-end mb-1">
         <Button
           variant="ghost"
           size="sm"
@@ -890,7 +883,7 @@ export function AddressesEditor({
           data-testid="btn-add-address"
         >
           <Plus className="h-3.5 w-3.5 mr-1" />
-          Add
+          Add address
         </Button>
       </div>
       {list.length > 0 ? (

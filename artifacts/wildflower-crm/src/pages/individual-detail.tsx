@@ -795,18 +795,12 @@ function PersonView({ person }: { person: PersonDetail }) {
           <FieldCard
             title="Engagement"
             empty={
-              person.ownerUserId == null &&
               person.newsletter == null &&
               person.unsubscribedToNewsletter == null
             }
           >
+            {/* Owner lives in the header highlights bar, not here. */}
             <div className="space-y-1">
-              <Row label="Owner">
-                <InlineEditUserPicker testIdBase="person-owner"
-                  value={person.ownerUserId ?? null}
-                  display={ownerDisplay}
-                  onSave={(next) => patch({ ownerUserId: next })} />
-              </Row>
               <Row label="Newsletter">
                 <InlineEditBoolean
                   label="Newsletter subscribed"

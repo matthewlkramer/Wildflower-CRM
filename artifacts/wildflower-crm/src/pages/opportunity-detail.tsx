@@ -8,7 +8,6 @@ import {
   useMintGiftFromOpportunity,
   getGetGiftOrPaymentQueryKey,
   getListGiftsAndPaymentsQueryKey,
-  useListEntities,
   useGetOrganization,
   useGetHousehold,
   getGetOpportunityOrPledgeQueryKey,
@@ -87,13 +86,6 @@ const STATUS_LABEL: Record<string, string> = {
   dormant: "Dormant",
   lost: "Lost",
 };
-
-// `status` is fully calculated server-side and shown read-only. The only
-// user-settable override is `lossType` (None / Dormant / Lost).
-const LOSS_TYPE_OPTIONS = [
-  { value: "dormant", label: "Dormant" },
-  { value: "lost", label: "Lost" },
-] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityLossType>>;
 
 const TYPE_OPTIONS = [
   { value: "solicitation", label: "Solicitation" },
@@ -257,16 +249,6 @@ function OppView({
     await patch({ name: trimmed || null });
     setEditingName(false);
   }
-
-  // Resolve entity slugs (from pledge_allocations) to human names so
-  // the Allocations summary list can show real labels.
-  const entitiesQ = useListEntities();
-  const entityNameById = new Map(
-    (entitiesQ.data ?? []).map((e) => [e.id, e.name]),
-  );
-  const entityLabels = (opp.entityIds ?? []).map(
-    (id) => entityNameById.get(id) ?? id,
-  );
 
   const userNames = useUserNameMap();
   const ownerDisplay = opp.ownerUserId
@@ -470,6 +452,27 @@ function OppView({
                 Mark as won gift
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              {/*
+                Loss-type override (the only user-settable lifecycle input).
+                The derived status badge in the header reflects the result.
+              */}
+              <DropdownMenuItem
+                onSelect={() =>
+                  saveLossType(opp.lossType === "dormant" ? null : "dormant")
+                }
+                data-testid="action-toggle-dormant"
+              >
+                {opp.lossType === "dormant" ? "Unmark as dormant" : "Mark as dormant"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() =>
+                  saveLossType(opp.lossType === "lost" ? null : "lost")
+                }
+                data-testid="action-toggle-lost"
+              >
+                {opp.lossType === "lost" ? "Unmark as lost" : "Mark as lost"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
             </>
           ) : null}
           <DropdownMenuItem
@@ -539,23 +542,9 @@ function OppView({
   const amountIsAwarded = opp.awardedAmount != null;
   const closeIsActual = opp.actualCompletionDate != null;
 
+  // Loss type is set via the Actions menu (Mark as lost / dormant), not a
+  // highlight — the derived status badge in the header shows the result.
   const highlights: Highlight[] = [
-    {
-      label: "Loss type",
-      value: (
-        <InlineEditSelect
-          align="left"
-          label="Loss type"
-          testIdBase="opp-loss-type"
-          value={opp.lossType ?? null}
-          options={LOSS_TYPE_OPTIONS}
-          allowNull
-          nullLabel="— None —"
-          display={opp.lossType ? formatEnum(opp.lossType) : "—"}
-          onSave={saveLossType}
-        />
-      ),
-    },
     {
       label: "Stage",
       accent: true,
@@ -698,7 +687,8 @@ function OppView({
             <FieldCard
               title="Pipeline"
               empty={
-                !opp.applicationDeadline &&
+                (entityLabel.toLowerCase() === "pledge" ||
+                  !opp.applicationDeadline) &&
                 !opp.winProbability &&
                 !opp.writtenPledge &&
                 !opp.grantLetterUrl &&
@@ -707,18 +697,24 @@ function OppView({
               }
             >
               <div className="space-y-1">
-                <Row label="Application deadline">
-                  <InlineEditDate
-                    label="Application deadline"
-                    testIdBase="opp-app-deadline"
-                    value={opp.applicationDeadline ?? null}
-                    display={formatDate(opp.applicationDeadline)}
-                    onSave={(next) => patch({ applicationDeadline: next })}
-                  />
-                </Row>
-                <Row label="Win probability">
+                {/*
+                  Application deadline is a pre-award field; on a pledge the
+                  award is already committed, so the row is hidden there.
+                */}
+                {entityLabel.toLowerCase() !== "pledge" ? (
+                  <Row label="Application deadline">
+                    <InlineEditDate
+                      label="Application deadline"
+                      testIdBase="opp-app-deadline"
+                      value={opp.applicationDeadline ?? null}
+                      display={formatDate(opp.applicationDeadline)}
+                      onSave={(next) => patch({ applicationDeadline: next })}
+                    />
+                  </Row>
+                ) : null}
+                <Row label="Payment probability">
                   <InlineEditText
-                    label="Win probability"
+                    label="Payment probability"
                     testIdBase="opp-winprob"
                     value={opp.winProbability ?? null}
                     placeholder="e.g. 75% or 0.75"
@@ -801,9 +797,16 @@ function OppView({
                 <DerivedRow label="Conditional" hint="derived from allocations">
                   {formatEnum(opp.conditionalRollup) || "—"}
                 </DerivedRow>
-                <DerivedRow label="Conditions met" hint="derived from allocations">
-                  {CONDITIONS_MET_LABELS[opp.conditionsMetRollup ?? "no"]}
-                </DerivedRow>
+                {/*
+                  "Conditions met" is meaningless when nothing is conditional
+                  (rollup is null with no allocations, "unconditional" when
+                  allocations exist but none are conditional).
+                */}
+                {opp.conditionalRollup && opp.conditionalRollup !== "unconditional" ? (
+                  <DerivedRow label="Conditions met" hint="derived from allocations">
+                    {CONDITIONS_MET_LABELS[opp.conditionsMetRollup ?? "no"]}
+                  </DerivedRow>
+                ) : null}
               </div>
             </FieldCard>
 
@@ -844,16 +847,6 @@ function OppView({
               }
             >
               <div className="space-y-4 px-2 py-1">
-                <div className="space-y-2 text-sm">
-                  <DerivedRow label="Covered FYs" hint="derived from allocations">
-                    {opp.coveredFiscalYears && opp.coveredFiscalYears.length > 0
-                      ? opp.coveredFiscalYears.join(", ")
-                      : "—"}
-                  </DerivedRow>
-                  <DerivedRow label="Entities" hint="derived from allocations">
-                    {entityLabels.length === 0 ? "—" : entityLabels.join(", ")}
-                  </DerivedRow>
-                </div>
                 <PledgeAllocationsEditor
                   pledgeOrOpportunityId={opp.id}
                   allocations={opp.allocations ?? []}
@@ -971,9 +964,6 @@ function OppView({
               </div>
               {visibleAssociatedPeople.length > 0 ? (
                 <div className="border-t pt-1">
-                  <div className="px-3 py-1 text-xs font-medium text-muted-foreground">
-                    Associated contacts
-                  </div>
                   {visibleAssociatedPeople.map((role) => {
                     const subtitle =
                       role.externalTitleOrRole ??
