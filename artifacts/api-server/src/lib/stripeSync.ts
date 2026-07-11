@@ -304,8 +304,10 @@ async function propagateRefundsForPayout(
  * we only refresh read-only Stripe facts (amounts, payer, refund/dispute flags,
  * payout link) and NEVER touch review state (status / donor match / gift
  * linkage). `enrichAllStatuses` lifts the status guard for a full backfill.
+ * Exported for DB-backed tests (the failed-charge CASE flip is raw SQL that
+ * only real execution can validate).
  */
-function buildStagedChargeUpsert(
+export function buildStagedChargeUpsert(
   values: typeof stripeStagedCharges.$inferInsert,
   opts: { enrichAllStatuses?: boolean } = {},
 ) {
@@ -331,6 +333,13 @@ function buildStagedChargeUpsert(
     refunded: sql`excluded.refunded`,
     disputed: sql`excluded.disputed`,
     rawCharge: sql`coalesce(excluded.raw_charge, ${stripeStagedCharges.rawCharge})`,
+    // A charge that transitioned to failed AFTER staging (an ACH debit can
+    // bounce days later) must stop looking like real money: flip a still-
+    // pending, auto-classified row to excluded/failed_charge. Rows a human has
+    // resolved (status guard) or pinned via re-include (manual) are never
+    // touched.
+    status: sql`CASE WHEN ${stripeStagedCharges.status} = 'pending' AND ${stripeStagedCharges.classificationSource} = 'auto' AND excluded.raw_charge->>'status' = 'failed' THEN 'excluded'::staged_payment_status ELSE ${stripeStagedCharges.status} END`,
+    exclusionReason: sql`CASE WHEN ${stripeStagedCharges.status} = 'pending' AND ${stripeStagedCharges.classificationSource} = 'auto' AND excluded.raw_charge->>'status' = 'failed' THEN 'failed_charge'::staged_payment_exclusion_reason ELSE ${stripeStagedCharges.exclusionReason} END`,
     updatedAt: new Date(),
   };
   const base = db
@@ -500,6 +509,10 @@ async function stagePayoutAndCharges(
     if (!charge) continue;
 
     const facts = extractChargeFacts(charge);
+    // A failed charge (e.g. an ACH debit that bounced; Stripe retries create a
+    // NEW charge) is staged so the mirror stays 1:1 with Stripe, but classified
+    // excluded up front so it never surfaces as real money in the queues.
+    const chargeFailed = charge.status === "failed";
     const scored = await scoreStripeCharge({
       payerName: facts.payerName,
       payerEmail: facts.payerEmail,
@@ -548,7 +561,8 @@ async function stagePayoutAndCharges(
         refunded: facts.refunded,
         disputed: facts.disputed,
         rawCharge: charge as unknown as Record<string, unknown>,
-        status: "pending",
+        status: chargeFailed ? "excluded" : "pending",
+        exclusionReason: chargeFailed ? "failed_charge" : null,
         classificationSource: "auto",
         matchStatus,
         matchScore: scored.method ? scored.score : null,
@@ -570,8 +584,9 @@ async function stagePayoutAndCharges(
     if (scored.method && scored.tier !== "none") matched += 1;
 
     // Reconcile-only auto-apply (mirrors QuickBooks): link to the single
-    // existing gift when confident; never mint here.
-    if (scored.tier === "high" && scored.matchedGiftId) {
+    // existing gift when confident; never mint here. A failed charge is not
+    // money — never auto-link it to a gift.
+    if (!chargeFailed && scored.tier === "high" && scored.matchedGiftId) {
       const did = await stripeAutoApply(charge.id, scored.matchedGiftId);
       if (did) autoApplied += 1;
     }

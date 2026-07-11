@@ -753,6 +753,7 @@ export const EXCLUSION_REASON_LABELS: Record<
   returned_wire: "Returned wire (non-gift)",
   other: "Other (not a gift)",
   processor_payout: "Processor payout (reconciled to Stripe)",
+  failed_charge: "Failed charge (never settled)",
   loan: "Loan activity (legacy)",
   government_reimbursement: "Government reimbursement (legacy)",
   fiscally_sponsored: "Fiscally sponsored (legacy)",

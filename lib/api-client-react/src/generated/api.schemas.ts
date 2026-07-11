@@ -2412,7 +2412,7 @@ export const StagedPaymentStatus = {
 } as const;
 
 /**
- * Why a staged QuickBooks payment was filtered from the queue. loan / government_reimbursement / fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).
+ * Why a staged QuickBooks payment / Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan / government_reimbursement / fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).
  */
 export type StagedPaymentExclusionReason = typeof StagedPaymentExclusionReason[keyof typeof StagedPaymentExclusionReason];
 
@@ -2435,6 +2435,7 @@ export const StagedPaymentExclusionReason = {
   loan_proceeds: 'loan_proceeds',
   note_payable: 'note_payable',
   miscoded_withdrawal: 'miscoded_withdrawal',
+  failed_charge: 'failed_charge',
   loan: 'loan',
   government_reimbursement: 'government_reimbursement',
   fiscally_sponsored: 'fiscally_sponsored',

@@ -743,6 +743,10 @@ export const stagedPaymentStatusEnum = pgEnum("staged_payment_status", [
 // — Not real money —
 //   zero_amount              — amount is null or <= 0
 //   note_payable             — a liability booking (Note Payable account), not a real cash receipt
+//   failed_charge            — Stripe-only: the charge never settled (raw Stripe status = 'failed',
+//                              e.g. a failed ACH debit later retried as a NEW charge). Ingested so the
+//                              staged tables mirror Stripe 1:1, but auto-excluded so it never surfaces
+//                              as real money. Auto-only (never offered in the manual exclude picker).
 // — Earned & other income (real revenue, not a gift) —
 //   membership               — school membership contributions (matched by QB item / income account)
 //   earned_income            — fees-for-service / program revenue (4020 Services - Earned Income) + guaranty fees; never a gift
@@ -797,6 +801,8 @@ export const stagedPaymentExclusionReasonEnum = pgEnum(
     "loan_proceeds",
     "note_payable",
     "miscoded_withdrawal",
+    // Stripe-only, auto-set at ingest: charge never settled (raw status 'failed').
+    "failed_charge",
   ],
 );
 

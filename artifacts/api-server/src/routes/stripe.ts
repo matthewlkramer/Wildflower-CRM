@@ -1135,10 +1135,20 @@ router.post(
           throw new Error(NOT_REVERTIBLE);
         }
 
+        // A failed charge (raw Stripe status 'failed') never settled — after
+        // unlinking it must land in the excluded bucket, not back in the
+        // pending queue where it would look like real money again.
+        const rawChargeStatus =
+          locked.rawCharge && typeof locked.rawCharge === "object"
+            ? ((locked.rawCharge as Record<string, unknown>)["status"] ?? null)
+            : null;
+        const revertToExcluded = rawChargeStatus === "failed";
+
         const [row] = await tx
           .update(stripeStagedCharges)
           .set({
-            status: "pending",
+            status: revertToExcluded ? "excluded" : "pending",
+            exclusionReason: revertToExcluded ? "failed_charge" : null,
             matchedGiftId: null,
             createdGiftId: null,
             autoApplied: false,

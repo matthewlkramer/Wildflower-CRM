@@ -274,7 +274,7 @@ export const AdminListQuickbooksRulesResponseItem = zod.object({
   "enabled": zod.boolean(),
   "priority": zod.number().describe('Ascending evaluation order; first matching enabled rule wins.'),
   "action": zod.enum(['exclude', 'auto_create_approve']),
-  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish().describe('Required when action=exclude.'),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish().describe('Required when action=exclude.'),
   "donationGuard": zod.boolean().describe('When true, the rule is suppressed on rows carrying a real donation line.'),
   "matchLogic": zod.enum(['any', 'all']),
   "conditions": zod.array(zod.object({
@@ -300,7 +300,7 @@ export const AdminCreateQuickbooksRuleBody = zod.object({
   "name": zod.string().min(1),
   "enabled": zod.boolean().optional().describe('Defaults to true.'),
   "action": zod.enum(['exclude', 'auto_create_approve']),
-  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish(),
   "donationGuard": zod.boolean().optional().describe('Defaults to false.'),
   "matchLogic": zod.enum(['any', 'all']).optional().describe('Defaults to any.'),
   "conditions": zod.array(zod.object({
@@ -326,7 +326,7 @@ export const AdminReorderQuickbooksRulesResponseItem = zod.object({
   "enabled": zod.boolean(),
   "priority": zod.number().describe('Ascending evaluation order; first matching enabled rule wins.'),
   "action": zod.enum(['exclude', 'auto_create_approve']),
-  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish().describe('Required when action=exclude.'),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish().describe('Required when action=exclude.'),
   "donationGuard": zod.boolean().describe('When true, the rule is suppressed on rows carrying a real donation line.'),
   "matchLogic": zod.enum(['any', 'all']),
   "conditions": zod.array(zod.object({
@@ -356,7 +356,7 @@ export const AdminUpdateQuickbooksRuleBody = zod.object({
   "name": zod.string().min(1).optional(),
   "enabled": zod.boolean().optional(),
   "action": zod.enum(['exclude', 'auto_create_approve']).optional(),
-  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish(),
   "donationGuard": zod.boolean().optional(),
   "matchLogic": zod.enum(['any', 'all']).optional(),
   "conditions": zod.array(zod.object({
@@ -375,7 +375,7 @@ export const AdminUpdateQuickbooksRuleResponse = zod.object({
   "enabled": zod.boolean(),
   "priority": zod.number().describe('Ascending evaluation order; first matching enabled rule wins.'),
   "action": zod.enum(['exclude', 'auto_create_approve']),
-  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment was filtered from the queue. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish().describe('Required when action=exclude.'),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullish().describe('Required when action=exclude.'),
   "donationGuard": zod.boolean().describe('When true, the rule is suppressed on rows carrying a real donation line.'),
   "matchLogic": zod.enum(['any', 'all']),
   "conditions": zod.array(zod.object({
