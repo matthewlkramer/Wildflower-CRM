@@ -201,17 +201,14 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(gift.name ?? "");
 
-  // Donor is rendered two ways: the header subtitle keeps a type prefix
-  // ("Funder:"/"Individual:"/"Household:") for at-a-glance context, while the
-  // Donor card shows just the link (the card is already titled "Donor") — see
-  // donorDisplayPlain below.
+  // Donor renders as a plain link everywhere (header subtitle + Donor card) —
+  // no "Funder:"/"Individual:"/"Household:" type prefix; the surrounding
+  // context already identifies it as the donor.
   const noDonor: ReactNode = (
     <span className="text-muted-foreground">No donor linked.</span>
   );
   let donorLink: ReactNode = null;
-  let donorPrefix: string | null = null;
   if (gift.organizationId) {
-    donorPrefix = "Funder";
     donorLink = (
       <Link
         href={`/organizations/${gift.organizationId}`}
@@ -221,7 +218,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       </Link>
     );
   } else if (gift.individualGiverPersonId) {
-    donorPrefix = "Individual";
     donorLink = (
       <Link
         href={`/individuals/${gift.individualGiverPersonId}`}
@@ -231,7 +227,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       </Link>
     );
   } else if (gift.householdId) {
-    donorPrefix = "Household";
     donorLink = (
       <Link
         href={`/households/${gift.householdId}`}
@@ -242,15 +237,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
     );
   }
 
-  const donorDisplay: ReactNode = donorLink ? (
-    <span>
-      <span className="text-muted-foreground mr-1">{donorPrefix}:</span>
-      {donorLink}
-    </span>
-  ) : (
-    noDonor
-  );
-  const donorDisplayPlain: ReactNode = donorLink ?? noDonor;
+  const donorDisplay: ReactNode = donorLink ?? noDonor;
 
   const advisorDisplay: ReactNode = gift.advisorPersonId ? (
     <Link
@@ -724,7 +711,7 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                     gift.individualGiverPersonId ?? null,
                   householdId: gift.householdId ?? null,
                 }}
-                display={donorDisplayPlain}
+                display={donorDisplay}
                 onSave={saveDonor}
               />
               <Row label="Payment intermediary">

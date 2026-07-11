@@ -311,16 +311,14 @@ function OppView({
     ? associatedPeople.filter((p) => p.current !== "past")
     : associatedPeople;
 
-  // Donor is rendered two ways: the header subtitle keeps a type prefix
-  // ("Funder:"/"Individual:"/"Household:") for at-a-glance context, while the
-  // Donor card shows just the link (the card is already titled "Donor").
+  // Donor renders as a plain link everywhere (header subtitle + Donor card) —
+  // no "Funder:"/"Individual:"/"Household:" type prefix; the surrounding
+  // context already identifies it as the donor.
   const noDonor: ReactNode = (
     <span className="text-muted-foreground">No donor linked.</span>
   );
   let donorLink: ReactNode = null;
-  let donorPrefix: string | null = null;
   if (opp.organizationId) {
-    donorPrefix = "Funder";
     donorLink = (
       <Link
         href={`/organizations/${opp.organizationId}`}
@@ -330,7 +328,6 @@ function OppView({
       </Link>
     );
   } else if (opp.individualGiverPersonId) {
-    donorPrefix = "Individual";
     donorLink = (
       <Link
         href={`/individuals/${opp.individualGiverPersonId}`}
@@ -340,7 +337,6 @@ function OppView({
       </Link>
     );
   } else if (opp.householdId) {
-    donorPrefix = "Household";
     donorLink = (
       <Link
         href={`/households/${opp.householdId}`}
@@ -350,15 +346,7 @@ function OppView({
       </Link>
     );
   }
-  const donorDisplay: ReactNode = donorLink ? (
-    <span>
-      <span className="text-muted-foreground mr-1">{donorPrefix}:</span>
-      {donorLink}
-    </span>
-  ) : (
-    noDonor
-  );
-  const donorDisplayPlain: ReactNode = donorLink ?? noDonor;
+  const donorDisplay: ReactNode = donorLink ?? noDonor;
   const advisorDisplay: ReactNode = opp.individualAdvisorPersonId ? (
     <Link
       href={`/individuals/${opp.individualAdvisorPersonId}`}
@@ -940,7 +928,7 @@ function OppView({
                       opp.individualGiverPersonId ?? null,
                     householdId: opp.householdId ?? null,
                   }}
-                  display={donorDisplayPlain}
+                  display={donorDisplay}
                   onSave={saveDonor}
                 />
               </div>
