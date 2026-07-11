@@ -345,17 +345,30 @@ export default function PotentialDuplicatesPage() {
   const visibleKeys = useMemo(() => pairs.map(pairKey), [pairs]);
   const visibleKeySet = useMemo(() => new Set(visibleKeys), [visibleKeys]);
 
+  // Effects below deliberately depend on the selection's STABLE pieces
+  // (the memoized callbacks + the selectedIds array) rather than the whole
+  // `selection` object. Depending on the whole object while also calling
+  // its setters re-fires the effect on every selection change; combined
+  // with a setter that always produced a new Set this looped forever
+  // ("Maximum update depth exceeded" → blank page). The hook's setters now
+  // also bail out on no-op updates, so either layer alone breaks the loop.
+  const {
+    selectedIds: selectionIds,
+    removeMany: selectionRemoveMany,
+    clear: selectionClear,
+  } = selection;
+
   useEffect(() => {
     if (batchBusy) return;
-    const stale = selection.selectedIds.filter((k) => !visibleKeySet.has(k));
-    if (stale.length) selection.removeMany(stale);
-  }, [visibleKeySet, batchBusy, selection]);
+    const stale = selectionIds.filter((k) => !visibleKeySet.has(k));
+    if (stale.length) selectionRemoveMany(stale);
+  }, [visibleKeySet, batchBusy, selectionIds, selectionRemoveMany]);
 
   // Clear the selection whenever the entity type changes — a selection over
   // a different result set is never what the user wants.
   useEffect(() => {
-    selection.clear();
-  }, [type, selection]);
+    selectionClear();
+  }, [type, selectionClear]);
 
   const safePairs = useMemo(
     () => pairs.filter((p) => p.safeMerge && p.mergeSuggestion),

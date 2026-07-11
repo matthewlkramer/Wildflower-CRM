@@ -1,9 +1,15 @@
 -- 0053 — full-text (trigram) search indexes for the unified GET /search endpoint
+--        AND the Potential Duplicates scan (GET /potential-duplicates)
 --
 -- The unified search matches each core entity HYBRID: substring `ILIKE '%q%'`
 -- OR pg_trgm fuzzy `col % q`, ranked by `similarity()`. Both the `%` operator
 -- and `similarity()` come from the `pg_trgm` extension; these GIN indexes
 -- (gin_trgm_ops) make both the ILIKE substring scan and the `%` match fast.
+--
+-- The Potential Duplicates page's name-similarity self-joins
+-- (organizations.name % / people.full_name %) rely on the same
+-- organizations_name_trgm / people_full_name_trgm indexes; without them each
+-- scan is a ~1s sequential scan instead of milliseconds.
 --
 -- This file is idempotent (CREATE EXTENSION / CREATE INDEX IF NOT EXISTS) and
 -- touches no row data. The org/person/household *_name_trgm indexes were first

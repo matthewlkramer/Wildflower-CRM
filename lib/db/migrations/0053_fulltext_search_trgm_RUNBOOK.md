@@ -1,4 +1,4 @@
-# 0053 — Trigram search indexes for the unified GET /search endpoint
+# 0053 — Trigram search indexes for GET /search and the Potential Duplicates scan
 
 ## What this does
 
@@ -8,6 +8,12 @@ core entity HYBRID — substring `ILIKE '%q%'` **OR** pg_trgm fuzzy `col % q`,
 ranked by `similarity()` — and both the `%` operator and `similarity()` come
 from the `pg_trgm` extension. The GIN indexes make both the substring scan and
 the fuzzy `%` match fast.
+
+The **Potential Duplicates** admin page (`routes/potentialDuplicates.ts`) runs
+name-similarity self-joins (`organizations.name % …`, `people.full_name % …`)
+that use the same `organizations_name_trgm` / `people_full_name_trgm` indexes.
+Without them each duplicate scan is a ~1 s sequential scan in prod instead of
+milliseconds.
 
 Indexes created (all `IF NOT EXISTS`):
 
@@ -61,12 +67,15 @@ sequential scan), but for **Publish to succeed** they must be present in prod.
 Idempotent and row-data-free; safe to run any number of times, in any
 environment.
 
-Run against the **production** database (use your prod connection string), from
-the `lib/db/migrations/` directory:
+Run against the **production** database, from the project root:
 
 ```bash
-psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f 0053_fulltext_search_trgm.sql
+psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0053_fulltext_search_trgm.sql
 ```
+
+(Applied to **dev** on 2026-07-11; all five indexes verified present and used
+by the duplicate-scan queries via `EXPLAIN` — Bitmap Index Scan on
+`organizations_name_trgm` / `people_full_name_trgm`.)
 
 ## Verify
 

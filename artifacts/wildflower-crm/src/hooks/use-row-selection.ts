@@ -6,8 +6,15 @@ import { useCallback, useMemo, useState } from "react";
  * clear it themselves whenever filters/search change (selection over
  * a different result set is rarely what the user wants).
  *
- * State is a plain Set behind useState. The setter always passes a
- * fresh Set so React picks up the change.
+ * State is a plain Set behind useState. Setters pass a fresh Set when
+ * (and ONLY when) the contents actually change; when a call is a no-op
+ * (clearing an already-empty selection, removing ids that aren't
+ * selected, …) they return the previous Set unchanged so React's
+ * Object.is bailout stops the update. This no-op guard is load-bearing:
+ * an effect that both depends on the returned selection object and
+ * calls a setter would otherwise loop forever (new Set → new object →
+ * effect re-fires), which React aborts with "Maximum update depth
+ * exceeded" and blanks the page.
  */
 export function useRowSelection() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -29,8 +36,11 @@ export function useRowSelection() {
    */
   const toggleVisible = useCallback((ids: ReadonlyArray<string>) => {
     setSelected((prev) => {
+      // No-op when there is nothing to toggle (empty page) so state —
+      // and the memoized selection object — keep their identity.
+      if (ids.length === 0) return prev;
+      const allOn = ids.every((id) => prev.has(id));
       const next = new Set(prev);
-      const allOn = ids.length > 0 && ids.every((id) => next.has(id));
       if (allOn) {
         for (const id of ids) next.delete(id);
       } else {
@@ -40,7 +50,10 @@ export function useRowSelection() {
     });
   }, []);
 
-  const clear = useCallback(() => setSelected(new Set()), []);
+  const clear = useCallback(
+    () => setSelected((prev) => (prev.size === 0 ? prev : new Set())),
+    [],
+  );
 
   /**
    * Remove a specific set of ids from the selection. Used after bulk
@@ -50,6 +63,9 @@ export function useRowSelection() {
   const removeMany = useCallback((ids: ReadonlyArray<string>) => {
     if (ids.length === 0) return;
     setSelected((prev) => {
+      // No-op when none of the ids are actually selected — keep the
+      // previous Set's identity so dependent effects reach a fixed point.
+      if (!ids.some((id) => prev.has(id))) return prev;
       const next = new Set(prev);
       for (const id of ids) next.delete(id);
       return next;

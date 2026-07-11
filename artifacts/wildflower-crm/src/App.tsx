@@ -45,6 +45,7 @@ import TopPriorities from "@/pages/top-priorities";
 import PaymentIntermediaries from "@/pages/payment-intermediaries";
 import PaymentIntermediaryDetail from "@/pages/payment-intermediary-detail";
 import Layout from "@/components/layout";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { EntityFilterProvider } from "@/lib/entity-filter-context";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -254,12 +255,17 @@ function ClerkProviderWithRoutes() {
 
 function App() {
   return (
-    <TooltipProvider>
-      <WouterRouter base={basePath}>
-        <ClerkProviderWithRoutes />
-      </WouterRouter>
-      <Toaster />
-    </TooltipProvider>
+    // The error boundary wraps the entire routed app so a render crash on
+    // any page shows a contained "Something went wrong" card instead of
+    // unmounting everything to a blank screen.
+    <ErrorBoundary>
+      <TooltipProvider>
+        <WouterRouter base={basePath}>
+          <ClerkProviderWithRoutes />
+        </WouterRouter>
+        <Toaster />
+      </TooltipProvider>
+    </ErrorBoundary>
   );
 }
 
