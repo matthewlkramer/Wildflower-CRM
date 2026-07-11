@@ -202,6 +202,8 @@ async function seedCharge(opts: {
   matchStatus?: "matched" | "unmatched";
   matchedGiftId?: string | null;
   createdGiftId?: string | null;
+  status?: "pending" | "reconciled" | "excluded" | "rejected";
+  exclusionReason?: "failed_charge";
 }): Promise<string> {
   const id = nextId("ch");
   await db.insert(schema.stripeStagedCharges).values({
@@ -213,7 +215,8 @@ async function seedCharge(opts: {
     netAmount: opts.net,
     dateReceived: "2026-03-15",
     payerName: opts.payerName,
-    status: "pending",
+    status: opts.status ?? "pending",
+    exclusionReason: opts.exclusionReason ?? null,
     matchStatus: opts.matchStatus ?? "unmatched",
     organizationId: opts.organizationId ?? null,
     matchedGiftId: opts.matchedGiftId ?? null,
@@ -668,6 +671,149 @@ describe.skipIf(!HAS_DB)(
       // Still visible as terminal work in the reconciled/done bucket.
       const done = await cardIds("reconciled");
       expect(done.has(depositId)).toBe(true);
+    }, 30_000);
+
+    it("drops a fully-resolved deposit whose only unlinked charge is EXCLUDED (failed payment attempt)", async () => {
+      // The reported bug (Dukes): a Stripe-source switch reconciled the real
+      // charge to the gift and auto-excluded the incumbent FAILED charge
+      // (excluded/failed_charge, no gift link — correctly, it's not money).
+      // The old filter kept any charge without a gift link, so the deposit
+      // stayed in the live queue forever, anchored on the excluded charge and
+      // proposing "create gift" for money that was already fully booked.
+      const gift = await seedGift("156.00", "2026-03-15");
+      const depositId = await seedStaged({
+        label: "approved-excluded-failed-charge",
+        status: "approved",
+        matchedGiftId: gift,
+        amount: "156.00",
+      });
+      const payoutId = await seedPayoutFor(depositId, "matched");
+      // The failed attempt: excluded, never linked to a gift.
+      await seedCharge({
+        payoutId,
+        gross: "156.00",
+        fee: "4.83",
+        net: "151.17",
+        payerName: "Failed Attempt Donor",
+        organizationId: ORG_ID,
+        status: "excluded",
+        exclusionReason: "failed_charge",
+      });
+      // The real charge: reconciled to the same gift.
+      await seedCharge({
+        payoutId,
+        gross: "156.00",
+        fee: "4.83",
+        net: "151.17",
+        payerName: "Real Charge Donor",
+        organizationId: ORG_ID,
+        status: "reconciled",
+        matchStatus: "matched",
+        matchedGiftId: gift,
+      });
+
+      // Fully resolved at both planes → gone from the live queue.
+      const live = await cardIds();
+      expect(live.has(depositId)).toBe(false);
+    }, 30_000);
+
+    it("does NOT re-admit a reconciled deposit whose only giftless charge is excluded", async () => {
+      // Same hole in the reconciled re-admit branch: an excluded charge has no
+      // gift link but is terminal — it must not count as "unbooked work".
+      const gift = await seedGift("90.00", "2026-03-15");
+      const depositId = await seedStaged({
+        label: "reconciled-excluded-only-open",
+        status: "reconciled",
+        amount: "90.00",
+      });
+      const payoutId = await seedPayoutFor(depositId, "matched");
+      await seedCharge({
+        payoutId,
+        gross: "90.00",
+        fee: "2.70",
+        net: "87.30",
+        payerName: "Reconciled Excluded Failed",
+        organizationId: ORG_ID,
+        status: "excluded",
+        exclusionReason: "failed_charge",
+      });
+      await seedCharge({
+        payoutId,
+        gross: "90.00",
+        fee: "2.70",
+        net: "87.30",
+        payerName: "Reconciled Excluded Booked",
+        organizationId: ORG_ID,
+        status: "reconciled",
+        matchStatus: "matched",
+        matchedGiftId: gift,
+      });
+
+      const live = await cardIds();
+      expect(live.has(depositId)).toBe(false);
+    }, 30_000);
+
+    it("drops a fully-resolved deposit whose only unlinked charge is REJECTED (human dismissal)", async () => {
+      // Same class of bug one enum value over: a human-rejected charge is
+      // terminal without a gift link and must not pin the deposit either.
+      const gift = await seedGift("120.00", "2026-03-15");
+      const depositId = await seedStaged({
+        label: "approved-rejected-charge",
+        status: "approved",
+        matchedGiftId: gift,
+        amount: "120.00",
+      });
+      const payoutId = await seedPayoutFor(depositId, "matched");
+      await seedCharge({
+        payoutId,
+        gross: "120.00",
+        fee: "3.60",
+        net: "116.40",
+        payerName: "Rejected Charge Donor",
+        organizationId: ORG_ID,
+        status: "rejected",
+      });
+      await seedCharge({
+        payoutId,
+        gross: "120.00",
+        fee: "3.60",
+        net: "116.40",
+        payerName: "Rejected Suite Booked Charge",
+        organizationId: ORG_ID,
+        status: "reconciled",
+        matchStatus: "matched",
+        matchedGiftId: gift,
+      });
+
+      const live = await cardIds();
+      expect(live.has(depositId)).toBe(false);
+    }, 30_000);
+
+    it("keeps a pending deposit visible as a plain deposit card when ALL its charges are excluded", async () => {
+      // The deposit itself is still unbooked pending money — with every backing
+      // charge excluded the lateral yields no rows, so the LEFT JOIN keeps the
+      // row once with NULL charge columns (a plain deposit card), not zero rows.
+      const depositId = await seedStaged({
+        label: "pending-all-charges-excluded",
+        status: "pending",
+        amount: "75.00",
+      });
+      const payoutId = await seedPayoutFor(depositId, "matched");
+      await seedCharge({
+        payoutId,
+        gross: "75.00",
+        fee: "2.25",
+        net: "72.75",
+        payerName: "All Excluded Charge",
+        organizationId: ORG_ID,
+        status: "excluded",
+        exclusionReason: "failed_charge",
+      });
+
+      const list = await cards();
+      const mine = list.filter((c) => c.stagedPaymentId === depositId);
+      expect(mine.length).toBe(1);
+      expect(mine[0]!.stripeChargeId ?? null).toBeNull();
     }, 30_000);
   },
 );

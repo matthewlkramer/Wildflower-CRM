@@ -341,6 +341,9 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
           JOIN stripe_staged_charges c ON c.stripe_payout_id = sl.payout_id
           WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
             AND COALESCE(c.matched_gift_id, c.created_gift_id) IS NULL
+            -- An excluded (failed payment attempt) or human-rejected charge is
+            -- terminal, not unbooked work — it must not re-admit the deposit.
+            AND c.status NOT IN ('excluded', 'rejected')
         )
       )
     )`;
@@ -570,9 +573,20 @@ router.get(
         eq(settlementLinks.payoutId, stripePayouts.id),
       )
       .where(
+        // Excluded charges (e.g. a FAILED payment attempt auto-excluded as
+        // failed_charge) and human-rejected charges are terminal non-work:
+        // they can never be tied to a gift, so they must not anchor a live
+        // card. Without this filter a deposit whose remaining unresolved
+        // charge is excluded/rejected would sit in the live queue forever
+        // ("settles when every charge is tied" — a terminal charge never
+        // ties). Matches the graph + bundle-anchor terminal set. A deposit
+        // whose charges are ALL terminal produces zero lateral rows and is
+        // kept once as a plain deposit card via the LEFT JOIN NULL-extension,
+        // so it stays visible as its own piece of work.
         sql`${shouldExpand ? sql`TRUE` : sql`FALSE`}
           AND NOT ${isQbGroupMemberSql()}
-          AND ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id}`,
+          AND ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id}
+          AND ${stripeStagedCharges.status} NOT IN ('excluded', 'rejected')`,
       )
       .as("charge_unit");
 
