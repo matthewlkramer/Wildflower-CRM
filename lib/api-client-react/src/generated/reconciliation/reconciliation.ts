@@ -833,10 +833,19 @@ export function useListReconciliationProposals<TData = Awaited<ReturnType<typeof
 /**
  * Free search over QuickBooks staged-payment rows by text / amount / date window,
 with NO card anchor — used by the stray-Stripe worklist to hunt down the QB
-deposit that a yet-unmatched Stripe payout should belong to. Returns qb
+deposit that a yet-unmatched Stripe payout should belong to, and by the
+stray-gift "Link gift/allocation to a payment" dialog. Returns qb
 candidates (same shape as the card search). Read-only.
 
- * @summary Criteria-based QuickBooks staged-payment search (not anchored to a card).
+With includeStripe=true (the stray-gift dialog), Stripe staged charges —
+which carry donor names QuickBooks deposit lumps often lack — are searched
+too and interleaved with the QB rows by amount/date proximity. Stripe
+candidates come back with nodeType=stripe; failed / refunded / disputed /
+excluded charges never appear, and a charge already tied to a gift carries
+alreadyLinkedGiftId so the client can gray it and offer an unlink (the
+per-charge revert path). Default false keeps every existing caller QB-only.
+
+ * @summary Criteria-based payment search (not anchored to a card) — QuickBooks staged payments, optionally interleaved with Stripe charges.
  */
 export const getSearchReconciliationQbStagedUrl = (params?: SearchReconciliationQbStagedParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -898,7 +907,7 @@ export type SearchReconciliationQbStagedQueryError = ErrorType<BadRequestRespons
 
 
 /**
- * @summary Criteria-based QuickBooks staged-payment search (not anchored to a card).
+ * @summary Criteria-based payment search (not anchored to a card) — QuickBooks staged payments, optionally interleaved with Stripe charges.
  */
 
 export function useSearchReconciliationQbStaged<TData = Awaited<ReturnType<typeof searchReconciliationQbStaged>>, TError = ErrorType<BadRequestResponse>>(

@@ -3700,7 +3700,7 @@ export interface GiftStripeChain {
 }
 
 /**
- * A node in a reconciliation card's match graph. qb is the required anchor; donor/gift/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.
+ * A node in a reconciliation card's match graph. qb is the required anchor; donor/gift/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and /reconciliation/search/{nodeType} rejects it.
  */
 export type ReconciliationMatchNodeType = typeof ReconciliationMatchNodeType[keyof typeof ReconciliationMatchNodeType];
 
@@ -3710,6 +3710,7 @@ export const ReconciliationMatchNodeType = {
   donor: 'donor',
   gift: 'gift',
   opportunity: 'opportunity',
+  stripe: 'stripe',
 } as const;
 
 /**
@@ -9273,7 +9274,7 @@ offset?: number;
 
 export type SearchReconciliationQbStagedParams = {
 /**
- * Free-text over payer name / reference / memo / doc number.
+ * Free-text over payer name / reference / memo / doc number (for Stripe: payer name / email / description / statement descriptor).
  */
 q?: string;
 /**
@@ -9295,6 +9296,10 @@ days?: number;
  * @maximum 100
  */
 limit?: number;
+/**
+ * Also search Stripe staged charges and interleave them with the QB rows by amount/date proximity (nodeType=stripe). Default false: QB-only, preserving existing callers.
+ */
+includeStripe?: boolean;
 };
 
 export type SearchReconciliationPayoutsParams = {

@@ -122,8 +122,21 @@ router.get(
     }
     const days = clampInt(req.query["days"], 30, 1, 365);
     const limit = clampInt(req.query["limit"], 25, 1, 100);
+    // Also search Stripe staged charges and interleave them (the stray-gift
+    // "Link gift/allocation to a payment" dialog). Default false keeps every
+    // existing caller QB-only. Accept the standard truthy spellings.
+    const includeStripe =
+      req.query["includeStripe"] === "true" ||
+      req.query["includeStripe"] === "1";
 
-    const data = await searchQbStaged({ q, amount, date, days, limit });
+    const data = await searchQbStaged({
+      q,
+      amount,
+      date,
+      days,
+      limit,
+      includeStripe,
+    });
     res.json({ data });
   }),
 );

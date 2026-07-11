@@ -4327,18 +4327,28 @@ paths:
     get:
       operationId: searchReconciliationQbStaged
       tags: [reconciliation]
-      summary: Criteria-based QuickBooks staged-payment search (not anchored to a card).
+      summary: Criteria-based payment search (not anchored to a card) — QuickBooks staged payments, optionally interleaved with Stripe charges.
       description: |
         Free search over QuickBooks staged-payment rows by text / amount / date window,
         with NO card anchor — used by the stray-Stripe worklist to hunt down the QB
-        deposit that a yet-unmatched Stripe payout should belong to. Returns qb
+        deposit that a yet-unmatched Stripe payout should belong to, and by the
+        stray-gift "Link gift/allocation to a payment" dialog. Returns qb
         candidates (same shape as the card search). Read-only.
+
+        With includeStripe=true (the stray-gift dialog), Stripe staged charges —
+        which carry donor names QuickBooks deposit lumps often lack — are searched
+        too and interleaved with the QB rows by amount/date proximity. Stripe
+        candidates come back with nodeType=stripe; failed / refunded / disputed /
+        excluded charges never appear, and a charge already tied to a gift carries
+        alreadyLinkedGiftId so the client can gray it and offer an unlink (the
+        per-charge revert path). Default false keeps every existing caller QB-only.
       parameters:
-        - { name: q, in: query, schema: { type: string }, description: "Free-text over payer name / reference / memo / doc number." }
+        - { name: q, in: query, schema: { type: string }, description: "Free-text over payer name / reference / memo / doc number (for Stripe: payer name / email / description / statement descriptor)." }
         - { name: amount, in: query, schema: { type: string }, description: "Target amount (major units); when set, results are scored/filtered around it." }
         - { name: date, in: query, schema: { type: string, format: date }, description: "Anchor date; pair with days for a ± window." }
         - { name: days, in: query, schema: { type: integer, default: 30, minimum: 1, maximum: 365 }, description: "± days around date for the amount/date window." }
         - { name: limit, in: query, schema: { type: integer, default: 25, minimum: 1, maximum: 100 } }
+        - { name: includeStripe, in: query, schema: { type: boolean, default: false }, description: "Also search Stripe staged charges and interleave them with the QB rows by amount/date proximity (nodeType=stripe). Default false: QB-only, preserving existing callers." }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationSearchList" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -7297,8 +7307,8 @@ components:
             status:       { type: string, nullable: true }
     ReconciliationMatchNodeType:
       type: string
-      enum: [qb, donor, gift, opportunity]
-      description: "A node in a reconciliation card's match graph. qb is the required anchor; donor/gift/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node."
+      enum: [qb, donor, gift, opportunity, stripe]
+      description: "A node in a reconciliation card's match graph. qb is the required anchor; donor/gift/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and /reconciliation/search/{nodeType} rejects it."
     ReconciliationEdgeState:
       type: string
       enum: [determined, ambiguous, filter_only, conflict, none, create]

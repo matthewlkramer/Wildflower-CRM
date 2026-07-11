@@ -54,7 +54,12 @@ import {
 } from "./quickbooksMatch";
 import { scoreStripeCharge } from "./stripeMatch";
 import { amountWithinFeeBand } from "./reconciliationGate";
-import { GIFT_MATCH_WINDOW_DAYS, giftMatchAmountBounds } from "./giftMatch";
+import {
+  GIFT_MATCH_WINDOW_DAYS,
+  giftMatchAmountBounds,
+  giftMatchAmountBoundsKnownNet,
+} from "./giftMatch";
+import { stripeChargeSearchWhere } from "./stripeChargeSearch";
 import { groupMemberIdsFor } from "./unitGroupMembership";
 import {
   giftCandidateJoins,
@@ -76,7 +81,11 @@ import {
 
 // ─── Contract-shaped local types (camelCase, mirror openapi schemas) ─────────
 
-export type RecNodeType = "qb" | "donor" | "gift" | "opportunity";
+// "stripe" is NOT a graph node — it appears only as the candidate label on the
+// un-anchored qb-search results when includeStripe is set (a Stripe staged
+// charge, linkable via the per-charge link-gift path). The anchored
+// /reconciliation/search/{nodeType} route rejects it.
+export type RecNodeType = "qb" | "donor" | "gift" | "opportunity" | "stripe";
 export type RecEdgeState =
   | "determined"
   | "ambiguous"
@@ -1495,17 +1504,21 @@ export interface RecQbSearchParams {
   date: string | null;
   days: number;
   limit: number;
+  /**
+   * Also search Stripe staged charges (which carry donor names QB deposit
+   * lumps often lack) and interleave them with the QB rows by amount/date
+   * proximity. Default false so every existing caller stays QB-only.
+   */
+  includeStripe?: boolean;
 }
 
-export async function searchQbStaged(
+async function searchQbStagedRows(
   p: RecQbSearchParams,
+  q: string,
+  hasText: boolean,
+  amt: number,
+  hasAmount: boolean,
 ): Promise<RecCandidate[]> {
-  const q = (p.q ?? "").trim();
-  const hasText = q.length >= 2;
-  const amt = p.amount != null && p.amount !== "" ? Number(p.amount) : NaN;
-  const hasAmount = Number.isFinite(amt) && amt > 0;
-  if (!hasText && !hasAmount) return [];
-
   const conds: SQL[] = [];
   if (hasText) {
     const w = stagedSearchWhere(q);
@@ -1572,4 +1585,159 @@ export async function searchQbStaged(
         r.matchedGiftId ?? r.createdGiftId ?? r.groupReconciledGiftId ?? null,
     }),
   );
+}
+
+// Stripe leg of the un-anchored payment search (includeStripe=true). Stripe
+// charges carry the donor's own name/email, which the coarse QB deposit lumps
+// often lack — so the stray-gift picker searches both sources. Rules:
+//   - Failed (excluded), rejected, refunded, and disputed charges never appear
+//     — they aren't linkable money.
+//   - A non-pending charge appears ONLY when it is already tied to a gift
+//     (matched or created), surfaced via alreadyLinkedGiftId so the picker can
+//     gray it and offer the per-charge revert as an unlink.
+//   - Amount uses the shared KNOWN-NET fee band (giftMatchAmountBoundsKnownNet,
+//     the same policy helper the one-click stray-gift proposal and the approve
+//     gate use): a target anywhere in [min(net,gross), max(net,gross)] is the
+//     same money a processor fee apart. Gross must be known for the band to
+//     mean anything (LEAST/GREATEST ignore a NULL net — safe collapse).
+async function searchStripeChargeRows(
+  p: RecQbSearchParams,
+  q: string,
+  hasText: boolean,
+  amt: number,
+  hasAmount: boolean,
+): Promise<RecCandidate[]> {
+  const conds: SQL[] = [
+    sql`${stripeStagedCharges.status} NOT IN ('excluded', 'rejected')`,
+    sql`(${stripeStagedCharges.status} = 'pending' OR ${stripeStagedCharges.matchedGiftId} IS NOT NULL OR ${stripeStagedCharges.createdGiftId} IS NOT NULL)`,
+    eq(stripeStagedCharges.refunded, false),
+    eq(stripeStagedCharges.disputed, false),
+  ];
+  if (hasText) conds.push(stripeChargeSearchWhere(q));
+  if (hasAmount) {
+    conds.push(sql`${stripeStagedCharges.grossAmount} IS NOT NULL`);
+    conds.push(
+      giftMatchAmountBoundsKnownNet(
+        sql`${amt}`,
+        sql`(${stripeStagedCharges.grossAmount})::numeric`,
+        sql`(${stripeStagedCharges.netAmount})::numeric`,
+      ),
+    );
+  }
+  if (p.date) {
+    conds.push(
+      sql`${stripeStagedCharges.dateReceived} IS NOT NULL AND ${stripeStagedCharges.dateReceived} BETWEEN (${p.date}::date - make_interval(days => ${p.days})) AND (${p.date}::date + make_interval(days => ${p.days}))`,
+    );
+  }
+
+  const orderBy: SQL[] = [];
+  if (hasAmount) {
+    orderBy.push(sql`ABS((${stripeStagedCharges.grossAmount})::numeric - ${amt})`);
+  }
+  if (p.date) {
+    orderBy.push(
+      sql`ABS((${stripeStagedCharges.dateReceived})::date - ${p.date}::date)`,
+    );
+  }
+  orderBy.push(desc(stripeStagedCharges.dateReceived));
+
+  const rows = await db
+    .select({
+      id: stripeStagedCharges.id,
+      payerName: stripeStagedCharges.payerName,
+      payerEmail: stripeStagedCharges.payerEmail,
+      description: stripeStagedCharges.description,
+      statementDescriptor: stripeStagedCharges.statementDescriptor,
+      grossAmount: stripeStagedCharges.grossAmount,
+      dateReceived: stripeStagedCharges.dateReceived,
+      matchedGiftId: stripeStagedCharges.matchedGiftId,
+      createdGiftId: stripeStagedCharges.createdGiftId,
+    })
+    .from(stripeStagedCharges)
+    .where(and(...conds))
+    .orderBy(...orderBy)
+    .limit(p.limit);
+
+  return rows.map((r) => {
+    const label =
+      r.payerName?.trim() || r.description?.trim() || "(no payer)";
+    const subParts = [
+      r.payerEmail?.trim() || null,
+      r.description?.trim() && r.description.trim() !== label
+        ? r.description.trim()
+        : null,
+      r.statementDescriptor?.trim() || null,
+    ].filter((s): s is string => !!s);
+    return candidate({
+      nodeType: "stripe",
+      id: r.id,
+      label,
+      sublabel: subParts.length > 0 ? subParts.join(" · ") : null,
+      amount: r.grossAmount,
+      date: r.dateReceived,
+      source: "stripe",
+      // A charge already tied to a gift (matched or created) can't be
+      // re-linked without double-counting — surface the owning gift so the
+      // picker grays the row and offers the per-charge revert as an unlink.
+      alreadyLinkedGiftId: r.matchedGiftId ?? r.createdGiftId ?? null,
+    });
+  });
+}
+
+export async function searchQbStaged(
+  p: RecQbSearchParams,
+): Promise<RecCandidate[]> {
+  const q = (p.q ?? "").trim();
+  const hasText = q.length >= 2;
+  const amt = p.amount != null && p.amount !== "" ? Number(p.amount) : NaN;
+  const hasAmount = Number.isFinite(amt) && amt > 0;
+  if (!hasText && !hasAmount) return [];
+
+  const [qbCands, stripeCands] = await Promise.all([
+    searchQbStagedRows(p, q, hasText, amt, hasAmount),
+    p.includeStripe
+      ? searchStripeChargeRows(p, q, hasText, amt, hasAmount)
+      : Promise.resolve([] as RecCandidate[]),
+  ]);
+  if (stripeCands.length === 0) return qbCands;
+
+  // Interleave the two sources by the SAME keys each SQL order used: closest
+  // amount to the target, then fewest days from the anchor date, then recency.
+  // Nulls sort last within each key so criterion-less rows never crowd out
+  // scored ones.
+  const dateMs = (d: string | null): number | null => {
+    if (!d) return null;
+    const t = Date.parse(`${d}T00:00:00Z`);
+    return Number.isNaN(t) ? null : t;
+  };
+  const anchorMs = p.date ? dateMs(p.date) : null;
+  const key = (c: RecCandidate) => {
+    const a = c.amount != null ? Number(c.amount) : NaN;
+    const cMs = dateMs(c.date);
+    return {
+      amountDelta:
+        hasAmount && Number.isFinite(a) ? Math.abs(a - amt) : null,
+      dateDelta:
+        anchorMs != null && cMs != null
+          ? Math.abs(cMs - anchorMs)
+          : null,
+      recency: cMs ?? Number.NEGATIVE_INFINITY,
+    };
+  };
+  const cmpNullable = (x: number | null, y: number | null): number => {
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    return x - y;
+  };
+  const merged = [...qbCands, ...stripeCands]
+    .map((c) => ({ c, k: key(c) }))
+    .sort(
+      (l, r) =>
+        cmpNullable(l.k.amountDelta, r.k.amountDelta) ||
+        cmpNullable(l.k.dateDelta, r.k.dateDelta) ||
+        r.k.recency - l.k.recency,
+    )
+    .map((e) => e.c);
+  return merged.slice(0, p.limit);
 }

@@ -21,6 +21,10 @@ import {
   stagedSearchWhere,
   stagedSearchWhereExpr,
 } from "../quickbooks/shared";
+import {
+  stripeChargeSearchWhere,
+  stripeChargeSearchWhereExpr,
+} from "../../lib/stripeChargeSearch";
 import { giftMatchAmountBoundsKnownNet } from "../../lib/giftMatch";
 import {
   qbLedgerExistsForGift,
@@ -157,22 +161,6 @@ async function proposeQbPaymentForGift(opts: {
     paymentMethod: row.paymentMethod,
     reference: row.reference,
   };
-}
-
-// Free-text donor filter for an unlinked Stripe charge — payer, payer email,
-// charge description, and the statement descriptor (mirrors stripe.ts's own
-// staged-charge search fields). Any substring hit counts.
-function stripeChargeSearchWhereExpr(pattern: SQL): SQL {
-  return or(
-    sql`${stripeStagedCharges.payerName} ILIKE ${pattern}`,
-    sql`${stripeStagedCharges.payerEmail} ILIKE ${pattern}`,
-    sql`${stripeStagedCharges.description} ILIKE ${pattern}`,
-    sql`${stripeStagedCharges.statementDescriptor} ILIKE ${pattern}`,
-  )!;
-}
-function stripeChargeSearchWhere(term: string): SQL {
-  const like = `%${escapeLike(term)}%`;
-  return stripeChargeSearchWhereExpr(sql`${like}`);
 }
 
 // Best-guess UNLINKED Stripe staged charge for a stray gift row — the Stripe

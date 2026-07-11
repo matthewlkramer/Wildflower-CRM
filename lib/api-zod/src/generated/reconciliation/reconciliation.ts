@@ -149,12 +149,12 @@ export const GetReconciliationGraphParams = zod.object({
 export const GetReconciliationGraphResponse = zod.object({
   "stagedPaymentId": zod.string(),
   "nodes": zod.array(zod.object({
-  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity', 'stripe']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and \/reconciliation\/search\/{nodeType} rejects it.'),
   "state": zod.enum(['determined', 'ambiguous', 'filter_only', 'conflict', 'none', 'create']).describe('Resolution state of a node within a card\'s graph.\ndetermined: exactly one confident candidate, auto-locked (DERIVE-AND-LOCK, e.g. gift→donor via XOR, gift→opportunity via opportunityId). The human may still override.\nambiguous: several plausible candidates; the human must choose.\nfilter_only: this node only narrows the others (FILTER edge, e.g. donor→which gift); not independently locked.\nconflict: a candidate disagrees with an already-locked node (e.g. gift donor ≠ opportunity donor).\nnone: no candidate found.\ncreate: the human intends to create a new record for this node (new donor \/ new gift).\n'),
   "selectedId": zod.string().nullish().describe('Auto-selected candidate id (a confident lock when state=determined; the top guess when state=ambiguous).'),
   "locked": zod.boolean().optional().describe('True when the selection is server-derived (DERIVE-AND-LOCK). The human may override.'),
   "candidates": zod.array(zod.object({
-  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity', 'stripe']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and \/reconciliation\/search\/{nodeType} rejects it.'),
   "id": zod.string(),
   "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
   "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
@@ -300,7 +300,7 @@ stagedPaymentId).
  * @summary Scoped, cross-filtering search for one node of a card.
  */
 export const SearchReconciliationNodeParams = zod.object({
-  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity'])
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity', 'stripe'])
 })
 
 export const searchReconciliationNodeQuerySplitDefault = false;
@@ -324,7 +324,7 @@ export const SearchReconciliationNodeQueryParams = zod.object({
 
 export const SearchReconciliationNodeResponse = zod.object({
   "data": zod.array(zod.object({
-  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity', 'stripe']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and \/reconciliation\/search\/{nodeType} rejects it.'),
   "id": zod.string(),
   "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
   "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
@@ -488,10 +488,19 @@ export const ListReconciliationProposalsResponse = zod.object({
 /**
  * Free search over QuickBooks staged-payment rows by text / amount / date window,
 with NO card anchor — used by the stray-Stripe worklist to hunt down the QB
-deposit that a yet-unmatched Stripe payout should belong to. Returns qb
+deposit that a yet-unmatched Stripe payout should belong to, and by the
+stray-gift "Link gift/allocation to a payment" dialog. Returns qb
 candidates (same shape as the card search). Read-only.
 
- * @summary Criteria-based QuickBooks staged-payment search (not anchored to a card).
+With includeStripe=true (the stray-gift dialog), Stripe staged charges —
+which carry donor names QuickBooks deposit lumps often lack — are searched
+too and interleaved with the QB rows by amount/date proximity. Stripe
+candidates come back with nodeType=stripe; failed / refunded / disputed /
+excluded charges never appear, and a charge already tied to a gift carries
+alreadyLinkedGiftId so the client can gray it and offer an unlink (the
+per-charge revert path). Default false keeps every existing caller QB-only.
+
+ * @summary Criteria-based payment search (not anchored to a card) — QuickBooks staged payments, optionally interleaved with Stripe charges.
  */
 export const searchReconciliationQbStagedQueryDaysDefault = 30;
 export const searchReconciliationQbStagedQueryDaysMax = 365;
@@ -499,19 +508,20 @@ export const searchReconciliationQbStagedQueryDaysMax = 365;
 export const searchReconciliationQbStagedQueryLimitDefault = 25;
 export const searchReconciliationQbStagedQueryLimitMax = 100;
 
-
+export const searchReconciliationQbStagedQueryIncludeStripeDefault = false;
 
 export const SearchReconciliationQbStagedQueryParams = zod.object({
-  "q": zod.coerce.string().optional().describe('Free-text over payer name \/ reference \/ memo \/ doc number.'),
+  "q": zod.coerce.string().optional().describe('Free-text over payer name \/ reference \/ memo \/ doc number (for Stripe: payer name \/ email \/ description \/ statement descriptor).'),
   "amount": zod.coerce.string().optional().describe('Target amount (major units); when set, results are scored\/filtered around it.'),
   "date": zod.coerce.string().date().optional().describe('Anchor date; pair with days for a ± window.'),
   "days": zod.coerce.number().min(1).max(searchReconciliationQbStagedQueryDaysMax).default(searchReconciliationQbStagedQueryDaysDefault).describe('± days around date for the amount\/date window.'),
-  "limit": zod.coerce.number().min(1).max(searchReconciliationQbStagedQueryLimitMax).default(searchReconciliationQbStagedQueryLimitDefault)
+  "limit": zod.coerce.number().min(1).max(searchReconciliationQbStagedQueryLimitMax).default(searchReconciliationQbStagedQueryLimitDefault),
+  "includeStripe": zod.coerce.boolean().default(searchReconciliationQbStagedQueryIncludeStripeDefault).describe('Also search Stripe staged charges and interleave them with the QB rows by amount\/date proximity (nodeType=stripe). Default false: QB-only, preserving existing callers.')
 })
 
 export const SearchReconciliationQbStagedResponse = zod.object({
   "data": zod.array(zod.object({
-  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity', 'stripe']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and \/reconciliation\/search\/{nodeType} rejects it.'),
   "id": zod.string(),
   "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
   "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
@@ -907,7 +917,7 @@ export const AssembleReconciliationBundleResponse = zod.object({
   "confidenceTier": zod.enum(['high', 'medium', 'low', 'none']).describe('Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).'),
   "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).describe('How a candidate was derived (audit + UI badge).').nullish(),
   "candidates": zod.array(zod.object({
-  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity', 'stripe']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and \/reconciliation\/search\/{nodeType} rejects it.'),
   "id": zod.string(),
   "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
   "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
@@ -939,7 +949,7 @@ export const AssembleReconciliationBundleResponse = zod.object({
   "confidenceTier": zod.enum(['high', 'medium', 'low', 'none']).describe('Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).'),
   "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).describe('How a candidate was derived (audit + UI badge).').nullish(),
   "candidates": zod.array(zod.object({
-  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity', 'stripe']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and \/reconciliation\/search\/{nodeType} rejects it.'),
   "id": zod.string(),
   "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
   "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
@@ -1036,7 +1046,7 @@ export const GetReconciliationBundleResponse = zod.object({
   "confidenceTier": zod.enum(['high', 'medium', 'low', 'none']).describe('Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).'),
   "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).describe('How a candidate was derived (audit + UI badge).').nullish(),
   "candidates": zod.array(zod.object({
-  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity', 'stripe']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and \/reconciliation\/search\/{nodeType} rejects it.'),
   "id": zod.string(),
   "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
   "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
@@ -1068,7 +1078,7 @@ export const GetReconciliationBundleResponse = zod.object({
   "confidenceTier": zod.enum(['high', 'medium', 'low', 'none']).describe('Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).'),
   "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).describe('How a candidate was derived (audit + UI badge).').nullish(),
   "candidates": zod.array(zod.object({
-  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity', 'stripe']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and \/reconciliation\/search\/{nodeType} rejects it.'),
   "id": zod.string(),
   "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
   "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
@@ -1194,7 +1204,7 @@ export const DeriveReconciliationBundleResponse = zod.object({
   "confidenceTier": zod.enum(['high', 'medium', 'low', 'none']).describe('Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).'),
   "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).describe('How a candidate was derived (audit + UI badge).').nullish(),
   "candidates": zod.array(zod.object({
-  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity', 'stripe']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and \/reconciliation\/search\/{nodeType} rejects it.'),
   "id": zod.string(),
   "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
   "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),
@@ -1226,7 +1236,7 @@ export const DeriveReconciliationBundleResponse = zod.object({
   "confidenceTier": zod.enum(['high', 'medium', 'low', 'none']).describe('Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).'),
   "source": zod.enum(['donor_xor', 'payment_on_pledge', 'name', 'email', 'amount_date', 'memo', 'intermediary', 'stripe', 'manual']).describe('How a candidate was derived (audit + UI badge).').nullish(),
   "candidates": zod.array(zod.object({
-  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). Stripe is evidence, not a node.'),
+  "nodeType": zod.enum(['qb', 'donor', 'gift', 'opportunity', 'stripe']).describe('A node in a reconciliation card\'s match graph. qb is the required anchor; donor\/gift\/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and \/reconciliation\/search\/{nodeType} rejects it.'),
   "id": zod.string(),
   "label": zod.string().describe('Display label (anonymous-masked when the viewer can\'t see the identity).'),
   "sublabel": zod.string().nullish().describe('Secondary context (donor name for a gift\/opp, email\/phone for a donor).'),

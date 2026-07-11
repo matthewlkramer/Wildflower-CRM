@@ -10,6 +10,7 @@ import {
   useReconcileStagedPayment,
   useRevertStagedPayment,
   useLinkStripeChargeToGift,
+  useRevertStripeStagedCharge,
   useUpdateGiftAllocation,
   useArchiveGiftOrPayment,
   useRevertGiftToOpportunity,
@@ -884,9 +885,15 @@ function StrayGiftCard({
 }
 
 /* ── Link to payment ──────────────────────────────────────────────────────
- * Search QuickBooks staged payments and reconcile the GIFT to the picked one.
- * Reconciliation is gift-level in the data model, so both the allocation- and
- * gift-scoped menu entries land here; the scope changes the copy only.
+ * Search QuickBooks staged payments AND Stripe charges (interleaved by
+ * amount/date proximity, labeled by source) and reconcile the GIFT to the
+ * picked one. Reconciliation is gift-level in the data model, so both the
+ * allocation- and gift-scoped menu entries land here; the scope changes the
+ * copy only. Picking a QB row goes through the staged-payment reconcile path
+ * (optionally stamping the allocation pointer); picking a Stripe charge goes
+ * through the per-charge link-gift path (gift-level evidence — no allocation
+ * pointer exists for Stripe). A grayed already-linked row unlinks via the
+ * matching revert path for its source.
  * ──────────────────────────────────────────────────────────────────────── */
 function PaymentLinkDialog({
   g,
@@ -906,7 +913,13 @@ function PaymentLinkDialog({
   const date = g.displayDate ?? undefined;
 
   const searchParams = useMemo<SearchReconciliationQbStagedParams>(() => {
-    const p: SearchReconciliationQbStagedParams = { limit: 25 };
+    // includeStripe: this dialog hunts BOTH sources — QuickBooks staged
+    // payments and Stripe charges — interleaved server-side by amount/date
+    // proximity. Other qb-search callers stay QB-only (the default).
+    const p: SearchReconciliationQbStagedParams = {
+      limit: 25,
+      includeStripe: true,
+    };
     if (debouncedQ) p.q = debouncedQ;
     if (amount != null) p.amount = amount;
     if (date != null) {
@@ -923,79 +936,92 @@ function PaymentLinkDialog({
 
   const reconcile = useReconcileStagedPayment();
   const revert = useRevertStagedPayment();
+  const linkStripe = useLinkStripeChargeToGift();
+  const revertStripe = useRevertStripeStagedCharge();
+  const linkPending = reconcile.isPending || linkStripe.isPending;
+  const unlinkPending = revert.isPending || revertStripe.isPending;
 
   // "Link allocation → payment" records the chosen allocation onto the ledger
   // row; "Link gift → payment" links the header only (no allocation pointer).
   const allocationLink = scope === "allocation" && g.allocationId != null;
 
-  // Free a QuickBooks payment that's already tied to ANOTHER gift by reverting
-  // that link, then refresh the search so the row becomes linkable. A minted
-  // (created) gift can't be reverted — the server 409s "not_revertible";
-  // surface that message rather than failing silently.
-  const unlink = (stagedPaymentId: string) => {
-    revert.mutate(
-      { id: stagedPaymentId },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({
-            queryKey: getSearchReconciliationQbStagedQueryKey(searchParams),
-          });
-          // Reverting the other link also frees that gift back into the
-          // gifts-missing-QB worklist, so refresh it too (mirrors `link`).
-          void queryClient.invalidateQueries({
-            queryKey: [MISSING_QB_KEY_PREFIX],
-          });
-          toast({
-            title: "Unlinked",
-            description: "Freed the payment from the other gift.",
-          });
-        },
-        onError: (err) =>
-          toast({
-            title: "Couldn't unlink",
-            description:
-              err instanceof Error ? err.message : "Something went wrong.",
-            variant: "destructive",
-          }),
-      },
-    );
+  // Free a payment that's already tied to ANOTHER gift by reverting that
+  // link (the source-matching revert path: staged-payment revert for QB,
+  // per-charge revert for Stripe), then refresh the search so the row becomes
+  // linkable. A minted (created) gift can't be reverted — the server 409s
+  // "not_revertible"; surface that message rather than failing silently.
+  const unlink = (c: { nodeType: string; id: string }) => {
+    const onSuccess = () => {
+      void queryClient.invalidateQueries({
+        queryKey: getSearchReconciliationQbStagedQueryKey(searchParams),
+      });
+      // Reverting the other link also frees that gift back into the
+      // gifts-missing-QB worklist, so refresh it too (mirrors `link`).
+      void queryClient.invalidateQueries({
+        queryKey: [MISSING_QB_KEY_PREFIX],
+      });
+      toast({
+        title: "Unlinked",
+        description: "Freed the payment from the other gift.",
+      });
+    };
+    const onError = (err: unknown) =>
+      toast({
+        title: "Couldn't unlink",
+        description:
+          err instanceof Error ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    if (c.nodeType === "stripe") {
+      revertStripe.mutate({ id: c.id }, { onSuccess, onError });
+    } else {
+      revert.mutate({ id: c.id }, { onSuccess, onError });
+    }
   };
 
-  const link = (stagedPaymentId: string) => {
-    reconcile.mutate(
-      {
-        id: stagedPaymentId,
-        data: {
-          giftId: g.id,
-          ...(allocationLink ? { allocationId: g.allocationId } : {}),
+  const link = (c: { nodeType: string; id: string }) => {
+    const isStripe = c.nodeType === "stripe";
+    const onSuccess = () => {
+      void queryClient.invalidateQueries({
+        queryKey: [MISSING_QB_KEY_PREFIX],
+      });
+      toast({
+        title: "Linked to payment",
+        description: isStripe
+          ? // Stripe evidence is gift-level only — there is no allocation
+            // pointer on the Stripe link path, even from the allocation row.
+            "The gift is now linked to the Stripe charge."
+          : allocationLink
+            ? "This allocation is now linked to the QuickBooks payment."
+            : "The gift is now reconciled to the QuickBooks payment.",
+      });
+      onClose();
+    };
+    const onError = (err: unknown) =>
+      toast({
+        title: "Couldn't link",
+        description:
+          err instanceof Error ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    if (isStripe) {
+      linkStripe.mutate({ id: c.id, data: { giftId: g.id } }, { onSuccess, onError });
+    } else {
+      reconcile.mutate(
+        {
+          id: c.id,
+          data: {
+            giftId: g.id,
+            ...(allocationLink ? { allocationId: g.allocationId } : {}),
+          },
         },
-      },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({
-            queryKey: [MISSING_QB_KEY_PREFIX],
-          });
-          toast({
-            title: "Linked to payment",
-            description: allocationLink
-              ? "This allocation is now linked to the QuickBooks payment."
-              : "The gift is now reconciled to the QuickBooks payment.",
-          });
-          onClose();
-        },
-        onError: (err) =>
-          toast({
-            title: "Couldn't link",
-            description:
-              err instanceof Error ? err.message : "Something went wrong.",
-            variant: "destructive",
-          }),
-      },
-    );
+        { onSuccess, onError },
+      );
+    }
   };
 
   return (
-    <Dialog open onOpenChange={(v) => (!v && !reconcile.isPending ? onClose() : undefined)}>
+    <Dialog open onOpenChange={(v) => (!v && !linkPending ? onClose() : undefined)}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>
@@ -1004,11 +1030,11 @@ function PaymentLinkDialog({
               : "Link gift to a payment"}
           </DialogTitle>
           <DialogDescription>
-            Find the QuickBooks payment for{" "}
+            Find the QuickBooks or Stripe payment for{" "}
             <span className="font-medium">{g.donorName ?? "this donor"}</span>{" "}
             and link it.{" "}
             {allocationLink
-              ? "The link is recorded against this allocation."
+              ? "A QuickBooks link is recorded against this allocation; a Stripe link is recorded against the whole gift."
               : "The link is recorded against the whole gift."}
           </DialogDescription>
         </DialogHeader>
@@ -1024,26 +1050,35 @@ function PaymentLinkDialog({
               <p className="p-4 text-sm text-muted-foreground">Searching…</p>
             ) : candidates.length === 0 ? (
               <p className="p-4 text-sm text-muted-foreground">
-                No matching QuickBooks payments.
+                No matching payments.
               </p>
             ) : (
               <ul className="divide-y">
                 {candidates.map((c) => {
-                  // This QuickBooks payment is already tied to another gift —
-                  // gray it and offer an unlink instead of a second (double-
-                  // counting) link.
+                  // This payment is already tied to another gift — gray it and
+                  // offer an unlink instead of a second (double-counting) link.
                   const blocked = c.alreadyLinkedGiftId != null;
+                  const isStripe = c.nodeType === "stripe";
                   return (
                     <li
-                      key={c.id}
+                      key={`${c.nodeType}-${c.id}`}
                       className={cn(
                         "flex items-center justify-between gap-3 p-3",
                         blocked && "opacity-60",
                       )}
                     >
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">
-                          {c.label}
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-medium">
+                            {c.label}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 text-[10px] font-normal"
+                            data-testid={`payment-link-source-${c.id}`}
+                          >
+                            {isStripe ? "Stripe" : "QuickBooks"}
+                          </Badge>
                         </div>
                         <div className="truncate text-xs text-muted-foreground">
                           {[
@@ -1064,11 +1099,11 @@ function PaymentLinkDialog({
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={revert.isPending}
-                          onClick={() => unlink(c.id)}
+                          disabled={unlinkPending}
+                          onClick={() => unlink(c)}
                           data-testid={`payment-link-unlink-${c.id}`}
                         >
-                          {revert.isPending ? (
+                          {unlinkPending ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
                             "Unlink"
@@ -1078,11 +1113,11 @@ function PaymentLinkDialog({
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={reconcile.isPending}
-                          onClick={() => link(c.id)}
+                          disabled={linkPending}
+                          onClick={() => link(c)}
                           data-testid={`payment-link-pick-${c.id}`}
                         >
-                          {reconcile.isPending ? (
+                          {linkPending ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
                             "Link"
@@ -1100,7 +1135,7 @@ function PaymentLinkDialog({
           <Button
             variant="outline"
             onClick={onClose}
-            disabled={reconcile.isPending}
+            disabled={linkPending}
           >
             Cancel
           </Button>
