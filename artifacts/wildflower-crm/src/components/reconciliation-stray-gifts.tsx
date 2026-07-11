@@ -75,10 +75,10 @@ import { cn } from "@/lib/utils";
 import {
   ArrowRight,
   Check,
+  ChevronDown,
   Combine,
   Flag,
   Loader2,
-  MoreHorizontal,
 } from "lucide-react";
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -756,13 +756,12 @@ function StrayGiftCard({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1"
                 data-testid={`stray-gift-actions-${g.rowKey}`}
               >
-                <MoreHorizontal className="h-4 w-4" />
-                <span className="sr-only">Resolve actions</span>
+                Resolve <ChevronDown className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
