@@ -299,8 +299,8 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "auditClose": zod.object({
   "frozen": zod.boolean().describe('True when the pledge\'s governing fiscal year has closed its audit.'),
   "frozenFiscalYearLabel": zod.string().nullish().describe('Label of the audit-closed governing fiscal year, when frozen.'),
-  "uncollectedRemainder": zod.string().describe('Committed (sum of allocation sub-amounts) minus paid, clamped at 0 (\'0.00\' when none). Derived server-side; the write-off amount is never supplied by the client.'),
-  "resolvedByWriteOffPledgeId": zod.string().nullable().describe('The active (non-archived) write-off pledge that resolves this under-paid audited pledge, if one already exists.')
+  "uncollectedRemainder": zod.string().describe('Committed (sum of allocation sub-amounts) minus paid, NET of active write-offs (their negative allocation totals are added back), clamped at 0 (\'0.00\' when none). Derived server-side; it is both the dialog prefill and the server-enforced cap on WriteOffPledgeBody.amount.'),
+  "resolvedByWriteOffPledgeId": zod.string().nullable().describe('The most recent active (non-archived) write-off pledge linked to this audited pledge, if any. A pledge may have several write-offs over time (at most one editable at once); this surfaces the latest.')
 }).describe('Derived (never persisted) audit-close state for a pledge, driving the\npost-close \"write off remainder\" action. A pledge is `frozen` when its\ngoverning fiscal year (the FY of its made\/won date) has closed its audit;\nonce frozen its audited numbers can\'t change, so an uncollected remainder\nis booked as a NEW offsetting write-off pledge in the current open FY.\n'),
   "flaggedForResearch": zod.boolean().optional().describe('Derived (never persisted): true when an OPEN Cleanup Queue item with reason_code=\'needs_research\' targets this record. Drives the passive \'Needs research\' detail-page badge; set only via the Cleanup Queue, never writable here.')
 }))
@@ -568,15 +568,28 @@ original pledge is NEVER touched. Instead a brand-new offsetting pledge is
 created in the CURRENT OPEN fiscal year with `is_write_off=true`,
 `written_pledge=true`, a negative awarded amount, and NEGATIVE
 pledge_allocations (pro-rata across the original's allocation buckets)
-summing EXACTLY to the uncollected remainder. The write-off points back at
-the original via `write_off_of_pledge_id`, which is what marks the original
-"resolved" in the underpaid-pledge checklist.
+summing EXACTLY to the written-off amount. The write-off points back at
+the original via `write_off_of_pledge_id`; the underpaid-pledge checklist
+reads the original as resolved once its remainder NET of active write-offs
+reaches zero.
 
-Returns 409 unless ALL hold: the original is a written pledge; its
-remainder (SUM(pledge_allocations.sub_amount) − paid) is > 0; the fiscal
-year GOVERNING the original is audit-closed (frozen); no active write-off
-already exists for it; and a current OPEN fiscal year exists to book the
-write-off into.
+The amount is the caller's choice (`WriteOffPledgeBody.amount`), capped at
+the pledge's remaining uncollected balance NET of prior active write-offs;
+omitted = write off that full net balance. Booking a received payment and
+reducing the pledge are INDEPENDENT decisions — this action is never
+derived from any deposit.
+
+A pledge may accumulate MULTIPLE write-offs over time, but at most one
+EDITABLE one: while an active write-off whose own governing FY is still
+open exists, this returns 409 (edit that write-off instead); once it is
+audit-closed, a further reduction books a second write-off.
+
+Returns 409 unless ALL hold: the original is a written pledge (not itself
+a write-off); its remainder net of active write-offs is > 0 and >= the
+requested amount; the fiscal year GOVERNING the original is audit-closed
+(frozen — pre-close mismatches are corrected in place by editing the
+pledge); no EDITABLE active write-off exists for it; and a current OPEN
+fiscal year exists to book the write-off into.
 
  * @summary Book an audit-close write-off for an under-paid, frozen written pledge.
  */
@@ -585,8 +598,9 @@ export const WriteOffPledgeParams = zod.object({
 })
 
 export const WriteOffPledgeBody = zod.object({
-  "reason": zod.string().nullish().describe('Optional free-text note explaining why the pledge is being written off (recorded on the write-off pledge\'s usage notes).')
-}).describe('Optional metadata for an audit-close pledge write-off. The remainder and negative allocations are derived server-side; the client never supplies amounts.')
+  "reason": zod.string().nullish().describe('Optional free-text note explaining why the pledge is being written off (recorded on the write-off pledge\'s usage notes).'),
+  "amount": zod.string().nullish().describe('Dollar amount (major units, 2dp) of pledge commitment to write off. Independent of any payment actually received. Must be > 0 and <= the pledge\'s uncollected remainder net of prior active write-offs; omitted\/null writes off that full net balance.')
+}).describe('Options for an audit-close pledge write-off. The negative allocations are derived server-side pro-rata from the chosen amount.')
 
 /**
  * Convert a worked opportunity or pledge into a CRM gift directly from its

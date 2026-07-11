@@ -321,18 +321,33 @@ router.get(
           .limit(25)
       : [];
 
-    // Underpaid written pledges MADE in this FY (committed > paid). A pledge is
+    // Underpaid written pledges MADE in this FY (capacity > 0). A pledge is
     // governed by the year it was made — its actual_completion_date's FY — NOT by
     // its allocation grant years (confirmed with finance). Pledges with no
     // completion date are null-governed (never freeze) and excluded. Raw SQL keeps
     // the GROUP BY / HAVING explicit and avoids the drizzle bare-column footgun.
     // `paid` is the persisted linked-gift rollup.
+    //
+    // "Resolved" is CAPACITY-based, mirroring computePledgeUncollectedRemainder:
+    // committed + active write-off children's (NEGATIVE) allocation totals must
+    // exceed paid to flag. A partially written-off pledge with real remaining
+    // uncollected money keeps flagging on a re-close; a fully written-off pledge
+    // excludes itself naturally. The write-off child rows themselves are skipped
+    // (is_write_off = false) — they are the resolution, not a new problem.
     const pledgeRows = hasRange
       ? ((
           await db.execute(sql`
             SELECT o.id AS id,
                    COALESCE(SUM(pa.sub_amount), 0)::text AS expected,
-                   COALESCE(o.paid, 0)::text AS paid
+                   COALESCE(o.paid, 0)::text AS paid,
+                   COALESCE((
+                     SELECT SUM(cpa.sub_amount)
+                     FROM ${pledgeAllocations} cpa
+                     JOIN ${opportunitiesAndPledges} c
+                       ON cpa.pledge_or_opportunity_id = c.id
+                     WHERE c.write_off_of_pledge_id = o.id
+                       AND c.archived_at IS NULL
+                   ), 0)::text AS written_off
             FROM ${opportunitiesAndPledges} o
             JOIN ${pledgeAllocations} pa ON pa.pledge_or_opportunity_id = o.id
             WHERE o.written_pledge = true
@@ -340,26 +355,45 @@ router.get(
               AND o.actual_completion_date IS NOT NULL
               AND o.actual_completion_date >= ${fy.startDate}
               AND o.actual_completion_date <= ${fy.endDate}
-              -- The negative write-off pledge itself is not an underpaid pledge,
-              -- and a pledge already written off (active write_off child) is
-              -- resolved — exclude both so a re-close never re-flags them.
               AND o.is_write_off = false
-              AND NOT EXISTS (
-                SELECT 1 FROM ${opportunitiesAndPledges} c
-                WHERE c.write_off_of_pledge_id = o.id
-                  AND c.archived_at IS NULL
-              )
             GROUP BY o.id, o.paid
-            HAVING COALESCE(SUM(pa.sub_amount), 0) > COALESCE(o.paid, 0)
-            ORDER BY (COALESCE(SUM(pa.sub_amount), 0) - COALESCE(o.paid, 0)) DESC
+            HAVING COALESCE(SUM(pa.sub_amount), 0)
+                 + COALESCE((
+                     SELECT SUM(cpa.sub_amount)
+                     FROM ${pledgeAllocations} cpa
+                     JOIN ${opportunitiesAndPledges} c
+                       ON cpa.pledge_or_opportunity_id = c.id
+                     WHERE c.write_off_of_pledge_id = o.id
+                       AND c.archived_at IS NULL
+                   ), 0)
+                 > COALESCE(o.paid, 0)
+            ORDER BY (COALESCE(SUM(pa.sub_amount), 0)
+                    + COALESCE((
+                        SELECT SUM(cpa.sub_amount)
+                        FROM ${pledgeAllocations} cpa
+                        JOIN ${opportunitiesAndPledges} c
+                          ON cpa.pledge_or_opportunity_id = c.id
+                        WHERE c.write_off_of_pledge_id = o.id
+                          AND c.archived_at IS NULL
+                      ), 0)
+                    - COALESCE(o.paid, 0)) DESC
           `)
-        ).rows as unknown as { id: string; expected: string; paid: string }[])
+        ).rows as unknown as {
+          id: string;
+          expected: string;
+          paid: string;
+          written_off: string;
+        }[])
       : [];
     const pledges = pledgeRows.map((r) => ({
       id: r.id,
       expectedAmount: r.expected,
       paidAmount: r.paid,
-      remainder: Math.max(0, Number(r.expected) - Number(r.paid)).toFixed(2),
+      // NET remainder — the same figure the write-off dialog prefills and caps at.
+      remainder: Math.max(
+        0,
+        Number(r.expected) + Number(r.written_off) - Number(r.paid),
+      ).toFixed(2),
     }));
 
     res.json({

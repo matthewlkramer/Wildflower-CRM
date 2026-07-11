@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -174,13 +175,18 @@ export function WriteOffPledgeDialog({
   const qc = useQueryClient();
   const mut = useWriteOffPledge();
   const [reason, setReason] = useState("");
+  const [amount, setAmount] = useState("");
+
+  const remainder = opp.auditClose.uncollectedRemainder;
 
   useEffect(() => {
     if (!open) return;
     setReason("");
-  }, [open]);
+    // Prefill with the full net remainder — the common case is writing off
+    // everything still uncollected; a partial write-off just edits it down.
+    setAmount(remainder ?? "");
+  }, [open, remainder]);
 
-  const remainder = opp.auditClose.uncollectedRemainder;
   const fyLabel = opp.auditClose.frozenFiscalYearLabel;
   const donorName =
     opp.organizationName ||
@@ -188,14 +194,28 @@ export function WriteOffPledgeDialog({
     opp.householdName ||
     "this donor";
 
+  // Client-side mirror of the server's format + cap rules so the button
+  // disables with a visible reason instead of a 400/409 round-trip.
+  const trimmedAmount = amount.trim();
+  const amountFormatOk = /^\d+(\.\d{1,2})?$/.test(trimmedAmount);
+  const amountNumber = amountFormatOk ? Number(trimmedAmount) : NaN;
+  const maxNumber = Number(remainder ?? 0);
+  const amountError = !trimmedAmount
+    ? "Enter an amount to write off."
+    : !amountFormatOk || !(amountNumber > 0)
+      ? "Enter a positive dollar amount (up to 2 decimal places)."
+      : amountNumber > maxNumber
+        ? `Cannot exceed the uncollected remainder (${formatCurrency(remainder)}).`
+        : null;
+
   const submitting = mut.isPending;
 
   const handleSubmit = async () => {
-    if (submitting) return;
+    if (submitting || amountError) return;
     try {
       const result = await mut.mutateAsync({
         id: opp.id,
-        data: { reason: reason.trim() || null },
+        data: { amount: trimmedAmount, reason: reason.trim() || null },
       });
       await Promise.all([
         qc.invalidateQueries({
@@ -207,8 +227,8 @@ export function WriteOffPledgeDialog({
         qc.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() }),
       ]);
       toast({
-        title: "Remainder written off",
-        description: `Recorded ${formatCurrency(remainder)} of uncollected pledge as a write-off.`,
+        title: "Balance written off",
+        description: `Recorded ${formatCurrency(trimmedAmount)} of uncollected pledge as a write-off.`,
       });
       onOpenChange(false);
       onDone?.(result.id);
@@ -244,7 +264,9 @@ export function WriteOffPledgeDialog({
         <div className="space-y-4">
           <div className="rounded-md border p-3 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Remainder to write off</span>
+              <span className="text-muted-foreground">
+                Uncollected remainder
+              </span>
               <span
                 className="font-medium tabular-nums"
                 data-testid="text-writeoff-amount"
@@ -252,6 +274,29 @@ export function WriteOffPledgeDialog({
                 {formatCurrency(remainder)}
               </span>
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="writeoff-amount">Amount to write off</Label>
+            <Input
+              id="writeoff-amount"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              data-testid="input-writeoff-amount"
+            />
+            {amountError ? (
+              <p
+                className="text-sm text-destructive"
+                data-testid="text-writeoff-amount-error"
+              >
+                {amountError}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Prefilled with the full remainder — lower it for a partial
+                write-off.
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="writeoff-reason">Note (optional)</Label>
@@ -275,10 +320,10 @@ export function WriteOffPledgeDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || !!amountError}
             data-testid="button-confirm-write-off"
           >
-            {submitting ? "Writing off…" : "Write off remainder"}
+            {submitting ? "Writing off…" : "Write off balance"}
           </Button>
         </DialogFooter>
       </DialogContent>

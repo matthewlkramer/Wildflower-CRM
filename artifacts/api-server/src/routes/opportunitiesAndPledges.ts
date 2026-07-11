@@ -104,6 +104,7 @@ import { resolvePledgeFreeze, resolvePledgeFreezeById, respondFrozen } from "../
 import { getCurrentOpenFiscalYear, todayInChicago } from "../lib/governingFiscalYear";
 import {
   computePledgeUncollectedRemainder,
+  findActiveEditableWriteOffChild,
   findActiveWriteOffChildPledgeId,
   proRataNegativeShares,
 } from "../lib/auditCloseResolution";
@@ -649,14 +650,21 @@ router.post(
   }),
 );
 
-// Write off the uncollected remainder of an audited (frozen), under-paid written
-// pledge. The audited original is NEVER mutated — a write-off is a NEW negative
-// offsetting pledge booked in the current open FY (see the audit-close model).
-// It reads as "resolved" in the underpaid checklist purely because this active
-// linked child exists. Guards: target must be a non-write-off written pledge,
-// its governing FY must actually be audit-closed (pre-close mismatches are just
-// corrected in place), it must not already have an active write-off, must have a
-// positive uncollected remainder, and an open FY must exist to book into.
+// Write off some or all of the uncollected remainder of an audited (frozen),
+// under-paid written pledge. The audited original is NEVER mutated — a
+// write-off is a NEW negative offsetting pledge booked in the current open FY
+// (see the audit-close model). The amount is the caller's choice, capped at
+// the remainder NET of prior active write-offs (omitted = the full net
+// balance); recording a received payment and reducing the pledge are
+// INDEPENDENT decisions. Multiple write-offs may accumulate over time, but at
+// most one EDITABLE (open-FY) one at a time — while one exists the correction
+// belongs on it, so a new write-off is refused.
+//
+// CONCURRENCY: the guards + capacity computation + insert all run inside ONE
+// transaction that first locks the original pledge row FOR UPDATE (precedent:
+// mergeEntities). That app-level serialization is the ONLY protection against
+// two concurrent write-offs over-shooting the remainder — the old partial
+// UNIQUE index (one active write-off per original) is gone by design.
 router.post(
   "/opportunities-and-pledges/:id/write-off",
   asyncHandler(async (req, res) => {
@@ -664,99 +672,139 @@ router.post(
     const body = parseOrBadRequest(WriteOffPledgeBody, req.body, res);
     if (!body) return;
 
-    const original = await db
-      .select()
-      .from(opportunitiesAndPledges)
-      .where(eq(opportunitiesAndPledges.id, id))
-      .then((r) => r[0]);
-    if (!original) return notFound(res, "opportunity");
-
-    if (original.isWriteOff) {
-      return res.status(409).json({
-        error: "invalid_write_off_target",
-        message: "This record is itself a write-off and cannot be written off.",
-      });
-    }
-    if (!original.writtenPledge) {
-      return res.status(409).json({
-        error: "invalid_write_off_target",
-        message: "Only a written pledge can be written off.",
-      });
-    }
-
-    // The governing FY must be audit-closed. If it is still open, the mismatch
-    // is corrected in place (edit the pledge/allocations) — the write-off is the
-    // post-close mechanism, not a shortcut around ordinary edits.
-    const freeze = await resolvePledgeFreeze(
-      undefined,
-      original.actualCompletionDate,
-    );
-    if (!freeze.frozen) {
-      return res.status(409).json({
-        error: "fiscal_year_not_closed",
-        message:
-          "This pledge's fiscal year is still open — correct it in place instead of writing it off.",
-      });
+    // Amount FORMAT is validated before any DB work (pure). Positivity/format
+    // failures are 400s; the state-dependent cap check happens under the lock.
+    let requestedCents: number | null = null;
+    if (body.amount != null) {
+      const raw = String(body.amount).trim();
+      if (!/^\d+(\.\d{1,2})?$/.test(raw)) {
+        return res.status(400).json({
+          error: "invalid_amount",
+          message:
+            "amount must be a positive dollar figure with at most 2 decimal places.",
+        });
+      }
+      requestedCents = Math.round(Number(raw) * 100);
+      if (!Number.isFinite(requestedCents) || requestedCents <= 0) {
+        return res.status(400).json({
+          error: "invalid_amount",
+          message: "amount must be greater than zero.",
+        });
+      }
     }
 
-    // At most one active write-off per audited pledge (also enforced by the
-    // partial-unique index on write_off_of_pledge_id).
-    const [{ n: existingWriteOffs }] = await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(opportunitiesAndPledges)
-      .where(
-        and(
-          eq(opportunitiesAndPledges.writeOffOfPledgeId, id),
-          isNull(opportunitiesAndPledges.archivedAt),
-        ),
-      );
-    if (existingWriteOffs > 0) {
-      return res.status(409).json({
-        error: "write_off_exists",
-        message: "This pledge already has an active write-off.",
-      });
-    }
-
-    // Remainder = committed (sum of allocation sub-amounts) minus paid (sum of
-    // non-archived linked gift amounts), computed fresh so it can't go stale.
-    // Derived by the shared helper so the detail's `uncollectedRemainder` and
-    // the amount booked here can never diverge. The allocation rows are still
-    // fetched separately because the pro-rata split needs each bucket.
-    const allocs = await db
-      .select()
-      .from(pledgeAllocations)
-      .where(eq(pledgeAllocations.pledgeOrOpportunityId, id));
-    const remainder = await computePledgeUncollectedRemainder(id);
-    if (remainder <= 0) {
-      return res.status(409).json({
-        error: "nothing_to_write_off",
-        message:
-          "This pledge has no uncollected remainder to write off.",
-      });
-    }
-
-    // The write-off is booked in the current open FY; if none is open there is
-    // nowhere valid to recognise the correction.
-    const openFy = await getCurrentOpenFiscalYear();
-    if (!openFy) {
-      return res.status(409).json({
-        error: "no_open_fiscal_year",
-        message:
-          "There is no open fiscal year to book the write-off into.",
-      });
-    }
-
-    // Split the remainder across the positive-weight source buckets (weight =
-    // the original allocation's sub_amount). remainder > 0 guarantees at least
-    // one such bucket, so proRataNegativeShares never throws here.
-    const buckets = allocs.filter((a) => Number(a.subAmount ?? 0) > 0);
-    const shares = proRataNegativeShares(
-      buckets.map((a) => Number(a.subAmount)),
-      remainder,
-    );
+    // A guard failure inside the transaction is captured here and answered
+    // after rollback-free exit (nothing is written before the final inserts).
+    let failure: { status: number; body: Record<string, unknown> } | null =
+      null;
+    const fail = (status: number, b: Record<string, unknown>) => {
+      failure = { status, body: b };
+    };
 
     const writeOffId = newId();
     await db.transaction(async (tx) => {
+      // Serialize concurrent write-offs of the same pledge: every competing
+      // request queues on this row lock and re-reads a fresh capacity.
+      const original = await tx
+        .select()
+        .from(opportunitiesAndPledges)
+        .where(eq(opportunitiesAndPledges.id, id))
+        .for("update")
+        .then((r) => r[0]);
+      if (!original) return fail(404, { error: "not_found" });
+
+      if (original.isWriteOff) {
+        return fail(409, {
+          error: "invalid_write_off_target",
+          message:
+            "This record is itself a write-off and cannot be written off.",
+        });
+      }
+      if (!original.writtenPledge) {
+        return fail(409, {
+          error: "invalid_write_off_target",
+          message: "Only a written pledge can be written off.",
+        });
+      }
+
+      // The governing FY must be audit-closed. If it is still open, the
+      // mismatch is corrected in place (edit the pledge/allocations) — the
+      // write-off is the post-close mechanism, not a shortcut around edits.
+      const freeze = await resolvePledgeFreeze(
+        undefined,
+        original.actualCompletionDate,
+      );
+      if (!freeze.frozen) {
+        return fail(409, {
+          error: "fiscal_year_not_closed",
+          message:
+            "This pledge's fiscal year is still open — correct it in place instead of writing it off.",
+        });
+      }
+
+      // At most one EDITABLE (open-FY) active write-off at a time. While one
+      // exists, a further reduction belongs on it (edit it in place); only
+      // once it is itself audit-closed may a NEW write-off be booked.
+      const editable = await findActiveEditableWriteOffChild(id, tx);
+      if (editable) {
+        return fail(409, {
+          error: "editable_write_off_exists",
+          message:
+            "This pledge already has a write-off in the current open fiscal year — edit that write-off instead of creating another.",
+          details: {
+            writeOffPledgeId: editable.id,
+            writeOffPledgeName: editable.name,
+          },
+        });
+      }
+
+      // Capacity = committed − paid, NET of prior active write-offs, computed
+      // fresh UNDER THE LOCK so concurrent requests can't both pass. Derived
+      // by the shared helper so the detail's `uncollectedRemainder` (the
+      // dialog prefill) and the cap enforced here can never diverge. The
+      // allocation rows are fetched separately for the pro-rata split.
+      const allocs = await tx
+        .select()
+        .from(pledgeAllocations)
+        .where(eq(pledgeAllocations.pledgeOrOpportunityId, id));
+      const capacity = await computePledgeUncollectedRemainder(id, tx);
+      if (capacity <= 0) {
+        return fail(409, {
+          error: "nothing_to_write_off",
+          message: "This pledge has no uncollected remainder to write off.",
+        });
+      }
+      const capacityCents = Math.round(capacity * 100);
+      const amountCents = requestedCents ?? capacityCents;
+      if (amountCents > capacityCents) {
+        return fail(409, {
+          error: "amount_exceeds_remainder",
+          message: `The write-off amount exceeds the pledge's remaining uncollected balance (${capacity.toFixed(2)}).`,
+          details: { maxAmount: capacity.toFixed(2) },
+        });
+      }
+      const amount = amountCents / 100;
+
+      // The write-off is booked in the current open FY; if none is open there
+      // is nowhere valid to recognise the correction.
+      const openFy = await getCurrentOpenFiscalYear();
+      if (!openFy) {
+        return fail(409, {
+          error: "no_open_fiscal_year",
+          message: "There is no open fiscal year to book the write-off into.",
+        });
+      }
+
+      // Split the chosen amount across the positive-weight source buckets
+      // (weight = the original allocation's sub_amount). capacity > 0
+      // guarantees at least one such bucket, so proRataNegativeShares never
+      // throws here.
+      const buckets = allocs.filter((a) => Number(a.subAmount ?? 0) > 0);
+      const shares = proRataNegativeShares(
+        buckets.map((a) => Number(a.subAmount)),
+        amount,
+      );
+
       await tx.insert(opportunitiesAndPledges).values({
         id: writeOffId,
         name: original.name ? `Write-off — ${original.name}` : "Write-off",
@@ -767,7 +815,7 @@ router.post(
         writtenPledge: true,
         isWriteOff: true,
         writeOffOfPledgeId: id,
-        awardedAmount: (-remainder).toFixed(2),
+        awardedAmount: (-amount).toFixed(2),
         // Recognised today, which falls inside the open FY window — keeps the
         // write-off itself governed by an open (mutable) FY.
         actualCompletionDate: todayInChicago(),
@@ -797,6 +845,11 @@ router.post(
         });
       }
     });
+    if (failure) {
+      const f = failure as { status: number; body: Record<string, unknown> };
+      if (f.status === 404) return notFound(res, "opportunity");
+      return res.status(f.status).json(f.body);
+    }
     // Derive status/stage/win_probability on the new write-off. writtenPledge is
     // sticky-true (never cleared) so it derives as status='pledge'; the negative
     // awarded amount keeps it out of cash_in (which needs awarded > 0).

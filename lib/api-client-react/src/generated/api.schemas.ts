@@ -2038,9 +2038,9 @@ export interface PledgeAuditCloseResolution {
   readonly frozen: boolean;
   /** Label of the audit-closed governing fiscal year, when frozen. */
   readonly frozenFiscalYearLabel?: string | null;
-  /** Committed (sum of allocation sub-amounts) minus paid, clamped at 0 ('0.00' when none). Derived server-side; the write-off amount is never supplied by the client. */
+  /** Committed (sum of allocation sub-amounts) minus paid, NET of active write-offs (their negative allocation totals are added back), clamped at 0 ('0.00' when none). Derived server-side; it is both the dialog prefill and the server-enforced cap on WriteOffPledgeBody.amount. */
   readonly uncollectedRemainder: string;
-  /** The active (non-archived) write-off pledge that resolves this under-paid audited pledge, if one already exists. */
+  /** The most recent active (non-archived) write-off pledge linked to this audited pledge, if any. A pledge may have several write-offs over time (at most one editable at once); this surfaces the latest. */
   readonly resolvedByWriteOffPledgeId: string | null;
 }
 
@@ -7270,11 +7270,13 @@ export interface SplitGiftIntoPledgeBody {
 }
 
 /**
- * Optional metadata for an audit-close pledge write-off. The remainder and negative allocations are derived server-side; the client never supplies amounts.
+ * Options for an audit-close pledge write-off. The negative allocations are derived server-side pro-rata from the chosen amount.
  */
 export interface WriteOffPledgeBody {
   /** Optional free-text note explaining why the pledge is being written off (recorded on the write-off pledge's usage notes). */
   reason?: string | null;
+  /** Dollar amount (major units, 2dp) of pledge commitment to write off. Independent of any payment actually received. Must be > 0 and <= the pledge's uncollected remainder net of prior active write-offs; omitted/null writes off that full net balance. */
+  amount?: string | null;
 }
 
 /**

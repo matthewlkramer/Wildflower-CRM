@@ -4,7 +4,6 @@ import {
   boolean,
   check,
   index,
-  uniqueIndex,
   pgTable,
   text,
   timestamp,
@@ -161,8 +160,11 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   //     PRESENCE (active, non-archived) is what makes the original read "resolved"
   //     in the underpaid-pledge checklist, without mutating the original's numbers.
   // RESTRICT: the audited original must not be deletable out from under its
-  // write-off. A partial UNIQUE index (write_off_of_pledge_id WHERE non-null AND
-  // archived_at IS NULL) enforces at most one active write-off per original.
+  // write-off. A pledge may accumulate MULTIPLE active write-offs over time (a
+  // partial write-off's own FY closes, then a further reduction books a second
+  // one); at most one EDITABLE (open-FY) write-off at a time, enforced
+  // app-level inside the write-off route's locked transaction (SELECT ... FOR
+  // UPDATE on the original), NOT by a unique index.
   isWriteOff: boolean("is_write_off").default(false).notNull(),
   writeOffOfPledgeId: text("write_off_of_pledge_id").references(
     (): AnyPgColumn => opportunitiesAndPledges.id,
@@ -224,8 +226,10 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   index("opportunities_and_pledges_household_id_idx").on(t.householdId),
   index("opportunities_and_pledges_individual_advisor_person_id_idx").on(t.individualAdvisorPersonId),
   index("opportunities_and_pledges_match_id_idx").on(t.matchId),
-  // At most one ACTIVE (non-archived) write-off pledge per audited original.
-  uniqueIndex("opportunities_and_pledges_active_write_off_uq")
+  // Lookup for a pledge's ACTIVE (non-archived) write-off children. Multiple
+  // actives are legal (see the write-off column comment); the one-EDITABLE-at-
+  // a-time rule is app-enforced in the write-off route's locked transaction.
+  index("opportunities_and_pledges_active_write_off_idx")
     .on(t.writeOffOfPledgeId)
     .where(sql`${t.writeOffOfPledgeId} IS NOT NULL AND ${t.archivedAt} IS NULL`),
   index("opportunities_and_pledges_owner_user_id_idx").on(t.ownerUserId),

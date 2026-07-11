@@ -588,15 +588,28 @@ original pledge is NEVER touched. Instead a brand-new offsetting pledge is
 created in the CURRENT OPEN fiscal year with `is_write_off=true`,
 `written_pledge=true`, a negative awarded amount, and NEGATIVE
 pledge_allocations (pro-rata across the original's allocation buckets)
-summing EXACTLY to the uncollected remainder. The write-off points back at
-the original via `write_off_of_pledge_id`, which is what marks the original
-"resolved" in the underpaid-pledge checklist.
+summing EXACTLY to the written-off amount. The write-off points back at
+the original via `write_off_of_pledge_id`; the underpaid-pledge checklist
+reads the original as resolved once its remainder NET of active write-offs
+reaches zero.
 
-Returns 409 unless ALL hold: the original is a written pledge; its
-remainder (SUM(pledge_allocations.sub_amount) − paid) is > 0; the fiscal
-year GOVERNING the original is audit-closed (frozen); no active write-off
-already exists for it; and a current OPEN fiscal year exists to book the
-write-off into.
+The amount is the caller's choice (`WriteOffPledgeBody.amount`), capped at
+the pledge's remaining uncollected balance NET of prior active write-offs;
+omitted = write off that full net balance. Booking a received payment and
+reducing the pledge are INDEPENDENT decisions — this action is never
+derived from any deposit.
+
+A pledge may accumulate MULTIPLE write-offs over time, but at most one
+EDITABLE one: while an active write-off whose own governing FY is still
+open exists, this returns 409 (edit that write-off instead); once it is
+audit-closed, a further reduction books a second write-off.
+
+Returns 409 unless ALL hold: the original is a written pledge (not itself
+a write-off); its remainder net of active write-offs is > 0 and >= the
+requested amount; the fiscal year GOVERNING the original is audit-closed
+(frozen — pre-close mismatches are corrected in place by editing the
+pledge); no EDITABLE active write-off exists for it; and a current OPEN
+fiscal year exists to book the write-off into.
 
  * @summary Book an audit-close write-off for an under-paid, frozen written pledge.
  */

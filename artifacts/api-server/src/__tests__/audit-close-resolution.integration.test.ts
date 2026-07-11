@@ -401,10 +401,117 @@ describe.skipIf(!HAS_DB)("POST /opportunities-and-pledges/:id/write-off", () => 
     expect(Number(orig.awardedAmount)).toBe(1000);
     expect(String(orig.actualCompletionDate)).toContain("1990-12-01");
 
-    // A second write-off is rejected (at most one active per pledge).
+    // A second write-off is rejected while the first is still editable
+    // (its own FY is open, so it can be corrected in place instead).
     const dup = await api(`/api/opportunities-and-pledges/${id}/write-off`);
     expect(dup.status).toBe(409);
-    expect(dup.json.error).toBe("write_off_exists");
+    expect(dup.json.error).toBe("editable_write_off_exists");
+    expect(dup.json.details?.writeOffPledgeId).toBe(writeOff.id);
+  });
+
+  it("400 invalid_amount for a malformed or non-positive amount", async () => {
+    const id = await seedPledge({
+      writtenPledge: true,
+      actualCompletionDate: CLOSED_DATE,
+    });
+    await seedPledgeAlloc(id, "500.00");
+
+    for (const amount of ["abc", "-5.00", "0.00", "1.234"]) {
+      const res = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
+        amount,
+      });
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe("invalid_amount");
+    }
+  });
+
+  it("books a PARTIAL write-off at the user-chosen amount", async () => {
+    const id = await seedPledge({
+      writtenPledge: true,
+      actualCompletionDate: CLOSED_DATE,
+    });
+    await seedPledgeAlloc(id, "1000.00");
+    await seedGift({ amount: "600.00", opportunityId: id }); // remainder 400
+
+    const res = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
+      amount: "150.00",
+      reason: "partial shortfall",
+    });
+    expect(res.status).toBe(201);
+    childOppIds.push(res.json.id);
+    expect(Number(res.json.awardedAmount)).toBe(-150);
+
+    const woAllocs = await db
+      .select()
+      .from(schema.pledgeAllocations)
+      .where(eqFn(schema.pledgeAllocations.pledgeOrOpportunityId, res.json.id));
+    const woSum = woAllocs.reduce(
+      (acc, a) => acc + Math.round(Number(a.subAmount ?? 0) * 100),
+      0,
+    );
+    expect(woSum).toBe(-15000);
+  });
+
+  it("409 amount_exceeds_remainder above the cap, with the cap in details.maxAmount", async () => {
+    const id = await seedPledge({
+      writtenPledge: true,
+      actualCompletionDate: CLOSED_DATE,
+    });
+    await seedPledgeAlloc(id, "1000.00");
+    await seedGift({ amount: "600.00", opportunityId: id }); // remainder 400
+
+    const res = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
+      amount: "400.01",
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("amount_exceeds_remainder");
+    expect(res.json.details?.maxAmount).toBe("400.00");
+  });
+
+  it("allows a SECOND write-off once the first is frozen, capped at the NET remainder", async () => {
+    const id = await seedPledge({
+      writtenPledge: true,
+      actualCompletionDate: CLOSED_DATE,
+    });
+    await seedPledgeAlloc(id, "1000.00");
+    await seedGift({ amount: "600.00", opportunityId: id }); // remainder 400
+
+    // First (partial) write-off: 100 of the 400.
+    const first = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
+      amount: "100.00",
+    });
+    expect(first.status).toBe(201);
+    childOppIds.push(first.json.id);
+
+    // Blocked while the first is still editable (open FY).
+    const blocked = await api(`/api/opportunities-and-pledges/${id}/write-off`);
+    expect(blocked.status).toBe(409);
+    expect(blocked.json.error).toBe("editable_write_off_exists");
+    expect(blocked.json.details?.writeOffPledgeId).toBe(first.json.id);
+
+    // Freeze the first write-off (date it into the audit-closed FY) — as if a
+    // later audit closed the FY it was booked into.
+    await db
+      .update(schema.opportunitiesAndPledges)
+      .set({ actualCompletionDate: CLOSED_DATE })
+      .where(eqFn(schema.opportunitiesAndPledges.id, first.json.id));
+
+    // The cap now NETS OUT the frozen prior write-off: 1000 - 600 - 100 = 300.
+    const overCap = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
+      amount: "300.01",
+    });
+    expect(overCap.status).toBe(409);
+    expect(overCap.json.error).toBe("amount_exceeds_remainder");
+    expect(overCap.json.details?.maxAmount).toBe("300.00");
+
+    // A second write-off for the remaining net balance books cleanly.
+    const second = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
+      amount: "300.00",
+    });
+    expect(second.status).toBe(201);
+    childOppIds.push(second.json.id);
+    expect(Number(second.json.awardedAmount)).toBe(-300);
+    expect(second.json.writeOffOfPledgeId).toBe(id);
   });
 });
 

@@ -1,5 +1,5 @@
 import { alias } from "drizzle-orm/pg-core";
-import { and, eq, isNull, notExists, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, notExists, type SQL, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   giftsAndPayments,
@@ -7,7 +7,13 @@ import {
   pledgeAllocations,
 } from "@workspace/db/schema";
 import { getGiftPaymentSummary } from "./giftPaymentSummary";
+import { resolvePledgeFreeze } from "./freezeGuard";
 import type { Tx } from "./reconciliationCommit";
+
+/** Either the root drizzle handle or an open transaction — lets the write-off
+ * route run every read inside its locked transaction (the app-level guards are
+ * the only concurrency protection now that multiple write-offs are legal). */
+type Dbc = Tx | typeof db;
 
 /**
  * AUDIT-CLOSE RESOLUTION HELPERS.
@@ -102,22 +108,26 @@ export function giftHasNoActiveOverpayChild(): SQL {
 /**
  * A pledge's uncollected remainder, DERIVED server-side: committed (sum of the
  * pledge's allocation sub-amounts) minus paid (sum of non-archived linked gift
- * amounts), rounded to whole cents. This is the exact figure a post-close
- * write-off books as a negative offsetting pledge. It is NOT clamped — the
- * write-off route treats `<= 0` as "nothing to write off"; the detail view
- * clamps at 0 for display. Single source of truth for both callers so the
- * "write off remainder" action and its confirmed amount can never diverge.
+ * amounts), NET of active write-offs (their children's allocation totals are
+ * negative, so adding them shrinks the remainder), rounded to whole cents.
+ * This is both the dialog prefill and the server-enforced CAP on a write-off's
+ * chosen amount. It is NOT clamped — the write-off route treats `<= 0` as
+ * "nothing to write off"; the detail view clamps at 0 for display. Single
+ * source of truth for all callers so the display, the prefill, and the cap can
+ * never diverge. Pass the open transaction from the write-off route so the cap
+ * is computed under its row lock.
  */
 export async function computePledgeUncollectedRemainder(
   pledgeId: string,
+  dbc: Dbc = db,
 ): Promise<number> {
-  const [{ committed } = { committed: "0" }] = await db
+  const [{ committed } = { committed: "0" }] = await dbc
     .select({
       committed: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
     })
     .from(pledgeAllocations)
     .where(eq(pledgeAllocations.pledgeOrOpportunityId, pledgeId));
-  const [{ paid } = { paid: "0" }] = await db
+  const [{ paid } = { paid: "0" }] = await dbc
     .select({
       paid: sql<string>`COALESCE(SUM(${giftsAndPayments.amount}), 0)::text`,
     })
@@ -128,7 +138,26 @@ export async function computePledgeUncollectedRemainder(
         isNull(giftsAndPayments.archivedAt),
       ),
     );
-  return Math.round((Number(committed) - Number(paid)) * 100) / 100;
+  const writeOffChild = alias(opportunitiesAndPledges, "write_off_child");
+  const [{ writtenOff } = { writtenOff: "0" }] = await dbc
+    .select({
+      writtenOff: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
+    })
+    .from(pledgeAllocations)
+    .innerJoin(
+      writeOffChild,
+      eq(pledgeAllocations.pledgeOrOpportunityId, writeOffChild.id),
+    )
+    .where(
+      and(
+        eq(writeOffChild.writeOffOfPledgeId, pledgeId),
+        isNull(writeOffChild.archivedAt),
+      ),
+    );
+  return (
+    Math.round((Number(committed) + Number(writtenOff) - Number(paid)) * 100) /
+    100
+  );
 }
 
 /**
@@ -153,9 +182,10 @@ export async function findActiveOverpayChildGiftId(
 }
 
 /**
- * The active (non-archived) write-off pledge that resolves an under-paid
- * audited pledge, or null. Its existence is what makes the original read as
- * "resolved" in the underpaid checklist (the original is never mutated).
+ * The MOST RECENT active (non-archived) write-off pledge linked to an audited
+ * pledge, or null. A pledge may carry several write-offs over time (at most
+ * one editable at once); the detail view surfaces the latest. The original is
+ * never mutated — it reads as resolved once its NET remainder reaches zero.
  */
 export async function findActiveWriteOffChildPledgeId(
   pledgeId: string,
@@ -169,6 +199,41 @@ export async function findActiveWriteOffChildPledgeId(
         isNull(opportunitiesAndPledges.archivedAt),
       ),
     )
+    .orderBy(desc(opportunitiesAndPledges.createdAt))
     .limit(1);
   return rows[0]?.id ?? null;
+}
+
+/**
+ * The active write-off child whose OWN governing FY is still open (mutable),
+ * or null. At most one such child may exist at a time: while it does, a new
+ * write-off is refused — the correction belongs on the still-editable child
+ * (same doctrine as "pre-close mismatches are corrected in place"). Only once
+ * every prior write-off is itself audit-closed may a further reduction book a
+ * NEW write-off row. Uses the exact same freeze resolution the PATCH guard
+ * applies to the child, so "editable here" always matches "editable there".
+ */
+export async function findActiveEditableWriteOffChild(
+  pledgeId: string,
+  dbc: Dbc = db,
+): Promise<{ id: string; name: string | null } | null> {
+  const children = await dbc
+    .select({
+      id: opportunitiesAndPledges.id,
+      name: opportunitiesAndPledges.name,
+      actualCompletionDate: opportunitiesAndPledges.actualCompletionDate,
+    })
+    .from(opportunitiesAndPledges)
+    .where(
+      and(
+        eq(opportunitiesAndPledges.writeOffOfPledgeId, pledgeId),
+        isNull(opportunitiesAndPledges.archivedAt),
+      ),
+    )
+    .orderBy(desc(opportunitiesAndPledges.createdAt));
+  for (const child of children) {
+    const freeze = await resolvePledgeFreeze(child.actualCompletionDate);
+    if (!freeze.frozen) return { id: child.id, name: child.name };
+  }
+  return null;
 }

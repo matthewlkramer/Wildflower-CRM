@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useSearch } from "wouter";
+import { Link, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListReconciliationCards,
@@ -29,6 +29,8 @@ import {
   useListGiftsAndPayments,
   useListGiftsMissingQb,
   useRematchStagedPayments,
+  useGetOpportunityOrPledge,
+  getGetOpportunityOrPledgeQueryKey,
   getListGiftsAndPaymentsQueryKey,
   getGetGiftOrPaymentQueryOptions,
   type ReconciliationCard,
@@ -137,6 +139,7 @@ import {
 } from "@/lib/reconciliation";
 import { ReconciliationNodeTypeahead } from "@/components/reconciliation-node-typeahead";
 import { OppCombobox } from "@/components/opp-combobox";
+import { WriteOffPledgeDialog } from "@/components/audit-close-dialogs";
 import { StrayGiftsWorklist } from "@/components/reconciliation-stray-gifts";
 import { IncompleteGiftsWorklist } from "@/components/reconciliation-incomplete-gifts";
 import {
@@ -486,6 +489,9 @@ export default function ReconciliationWorkbench() {
   // gift payment). Opens a searchable pledge picker → approve
   // create_gift_from_opportunity at the card's exact amount.
   const [pledgeCard, setPledgeCard] = useState<ReconciliationCard | null>(null);
+  const [writeOffCard, setWriteOffCard] = useState<ReconciliationCard | null>(
+    null,
+  );
   const [splitCard, setSplitCard] = useState<ReconciliationCard | null>(null);
   const [excludeCard, setExcludeCard] = useState<ReconciliationCard | null>(
     null,
@@ -1818,6 +1824,7 @@ export default function ReconciliationWorkbench() {
         onSearchGift={() => setSearchGiftCard(card)}
         onCreateGift={() => handleCreateGift(card)}
         onRecordOnPledge={() => setPledgeCard(card)}
+        onWriteOffPledge={() => setWriteOffCard(card)}
         onChangeDonor={() => setDonorCard(card)}
         onExclude={() => setExcludeCard(card)}
         onSplit={() => setSplitCard(card)}
@@ -2277,6 +2284,18 @@ export default function ReconciliationWorkbench() {
         />
       )}
 
+      {/* Write off a pledge balance (no payment involved) */}
+      {writeOffCard && (
+        <WriteOffPledgeFlow
+          card={writeOffCard}
+          onClose={() => setWriteOffCard(null)}
+          onDone={() => {
+            invalidateAll();
+            setWriteOffCard(null);
+          }}
+        />
+      )}
+
       {/* Split-across-gifts editor */}
       {splitCard && (
         <SplitEditorDialog
@@ -2386,6 +2405,7 @@ function ResolveMenu({
   onSearchGift,
   onCreateGift,
   onRecordOnPledge,
+  onWriteOffPledge,
   onChangeDonor,
   onExclude,
   onSplit,
@@ -2402,6 +2422,7 @@ function ResolveMenu({
   onSearchGift: () => void;
   onCreateGift: () => void;
   onRecordOnPledge: () => void;
+  onWriteOffPledge: () => void;
   onChangeDonor: () => void;
   onExclude: () => void;
   onSplit: () => void;
@@ -2446,6 +2467,11 @@ function ResolveMenu({
           onRecordOnPledge,
           "Record as a payment on a pledge…",
           "book this reimbursement against a pledge (award)",
+        )}
+        {MI(
+          onWriteOffPledge,
+          "Write off a pledge balance…",
+          "reduce an audited pledge's uncollected balance (no payment involved)",
         )}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -2518,6 +2544,7 @@ function ReconCard({
   onSearchGift,
   onCreateGift,
   onRecordOnPledge,
+  onWriteOffPledge,
   onChangeDonor,
   onExclude,
   onSplit,
@@ -2541,6 +2568,7 @@ function ReconCard({
   onSearchGift: () => void;
   onCreateGift: () => void;
   onRecordOnPledge: () => void;
+  onWriteOffPledge: () => void;
   onChangeDonor: () => void;
   onExclude: () => void;
   onSplit: () => void;
@@ -3013,6 +3041,7 @@ function ReconCard({
                 onSearchGift={onSearchGift}
                 onCreateGift={onCreateGift}
                 onRecordOnPledge={onRecordOnPledge}
+                onWriteOffPledge={onWriteOffPledge}
                 onChangeDonor={onChangeDonor}
                 onExclude={onExclude}
                 onSplit={onSplit}
@@ -3653,6 +3682,162 @@ function RecordOnPledgeDialog({
               <Loader2 className="mr-1 h-4 w-4 animate-spin" />
             ) : null}
             Record payment
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Write-off-pledge flow ────────────────────────────────────────────────────
+// Deliberately decoupled from the deposit: a write-off books NO payment — it
+// reduces an audited (frozen-FY) pledge's uncollected balance via a separate
+// negative pledge in the current open FY. Seeds from the card's linked pledge
+// when one is proposed; otherwise the reviewer picks one. Client gates mirror
+// the server: an open-FY pledge should be edited in place (friendly redirect,
+// not a write-off), and a fully-collected pledge has nothing left to write off.
+
+function WriteOffPledgeFlow({
+  card,
+  onClose,
+  onDone,
+}: {
+  card: ReconciliationCard;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [selected, setSelected] = useState<OpportunityOrPledge | null>(() =>
+    card.proposedOpportunityId
+      ? ({
+          id: card.proposedOpportunityId,
+          name: card.proposedOpportunityName ?? card.proposedOpportunityId,
+        } as OpportunityOrPledge)
+      : null,
+  );
+  const pledgeId = selected?.id ?? "";
+  const detailQuery = useGetOpportunityOrPledge(pledgeId, {
+    query: {
+      enabled: Boolean(pledgeId),
+      queryKey: getGetOpportunityOrPledgeQueryKey(pledgeId),
+    },
+  });
+  const detail = pledgeId ? detailQuery.data : undefined;
+
+  // Fully ready → hand off to the shared write-off dialog (same one the
+  // opportunity detail page uses), which owns amount/reason + submission.
+  if (
+    detail &&
+    detail.writtenPledge &&
+    !detail.isWriteOff &&
+    detail.auditClose.frozen &&
+    Number(detail.auditClose.uncollectedRemainder) > 0
+  ) {
+    return (
+      <WriteOffPledgeDialog
+        open
+        onOpenChange={(o) => {
+          if (!o) onClose();
+        }}
+        opp={detail}
+        onDone={() => onDone()}
+      />
+    );
+  }
+
+  let status: ReactNode = null;
+  if (pledgeId) {
+    if (detailQuery.isLoading) {
+      status = (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Checking the pledge&rsquo;s audit status…
+        </div>
+      );
+    } else if (detailQuery.isError) {
+      status = (
+        <p className="text-sm text-destructive" data-testid="text-writeoff-flow-error">
+          Couldn&rsquo;t load that pledge. Try again or pick a different one.
+        </p>
+      );
+    } else if (detail) {
+      if (detail.isWriteOff) {
+        status = (
+          <p className="text-sm text-muted-foreground" data-testid="text-writeoff-flow-blocked">
+            This record is itself a write-off — pick the original pledge
+            instead.
+          </p>
+        );
+      } else if (!detail.writtenPledge) {
+        status = (
+          <p className="text-sm text-muted-foreground" data-testid="text-writeoff-flow-blocked">
+            Only a written pledge can be written off — this record has no
+            written commitment.
+          </p>
+        );
+      } else if (!detail.auditClose.frozen) {
+        status = (
+          <div
+            className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+            data-testid="text-writeoff-flow-open-fy"
+          >
+            <p>
+              This pledge&rsquo;s fiscal year is still open, so there&rsquo;s
+              nothing to write off — correct the pledge directly instead
+              (adjust its allocations, or mark it dormant/lost).
+            </p>
+            <Link
+              href={`/opportunities/${detail.id}`}
+              className="mt-1.5 inline-block font-medium underline"
+              data-testid="link-writeoff-flow-open-pledge"
+            >
+              Open the pledge
+            </Link>
+          </div>
+        );
+      } else {
+        status = (
+          <p className="text-sm text-muted-foreground" data-testid="text-writeoff-flow-blocked">
+            Nothing left to write off — this pledge&rsquo;s balance is fully
+            collected or already written off.
+          </p>
+        );
+      }
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg" data-testid="dialog-writeoff-flow">
+        <DialogHeader>
+          <DialogTitle>Write off a pledge balance</DialogTitle>
+          <DialogDescription>
+            Reduce an audited pledge&rsquo;s uncollected balance without
+            touching the frozen original — the write-off books as a separate
+            negative pledge in the current open fiscal year. No payment is
+            recorded against this deposit.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium">Pledge (opportunity)</label>
+          <OppCombobox
+            scopeParams={{}}
+            selected={selected}
+            onSelect={setSelected}
+            onSkip={() => setSelected(null)}
+            showSkip={false}
+            placeholder="Search pledges by name…"
+            testIdPrefix="writeoff-pledge-pick"
+            disabled={false}
+          />
+        </div>
+        {status}
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            data-testid="button-writeoff-flow-cancel"
+          >
+            Cancel
           </Button>
         </DialogFooter>
       </DialogContent>
