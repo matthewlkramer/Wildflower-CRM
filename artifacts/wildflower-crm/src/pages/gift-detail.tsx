@@ -72,8 +72,6 @@ import {
   GiftSearchDialog,
   giftDonorName as giftRowDonorName,
 } from "@/components/gift-search-dialog";
-import { laneBadges } from "@/lib/reconciliation";
-import { type ReconciliationLanes } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -1006,13 +1004,15 @@ const QB_LINK_TYPE_LABELS: Record<
   split: "Split",
 };
 
-// One consolidated "Payments & reconciliation" card: the gift's QuickBooks tie
-// (Missing flagged), two-lane reconciliation status, over-payment / audit-close
-// links, and the QuickBooks record(s) it appears in — split into COUNTED
+// One consolidated "Payments & reconciliation" card: over-payment / audit-close
+// links and the QuickBooks record(s) the gift appears in — split into COUNTED
 // cash-application evidence (the money trail) and CORROBORATING audit-only rows
 // (e.g. a coarse QB deposit line that corroborates a Stripe-settled gift; never
-// summed). Off-books gifts legitimately carry no QuickBooks records — they get a
-// muted empty message, not an error.
+// summed). The sub-tables are the single source of truth for match state here:
+// records present = matched, empty = not matched (the derived tie/lane statuses
+// still power the workbench and list filters, just not this card). Off-books
+// gifts legitimately carry no QuickBooks records — they get a muted empty
+// message, not an error.
 function GiftPaymentsReconciliationCard({ gift }: { gift: GiftOrPaymentDetail }) {
   const { data, isLoading } = useGetGiftAuditReconciliation(gift.id, {
     query: {
@@ -1034,13 +1034,10 @@ function GiftPaymentsReconciliationCard({ gift }: { gift: GiftOrPaymentDetail })
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="space-y-1">
-            <Row label="QuickBooks tie">
-              <div className="flex flex-col items-end gap-1">
-                <GiftQbTieBadge
-                  status={data?.quickbooksTieStatus ?? gift.quickbooksTieStatus}
-                />
-                {gift.auditClose.resolvedByGiftId ? (
+          {gift.auditClose.resolvedByGiftId || gift.overpayOfGiftId ? (
+            <div className="space-y-1">
+              {gift.auditClose.resolvedByGiftId ? (
+                <Row label="Over-payment">
                   <Link
                     href={`/gifts/${gift.auditClose.resolvedByGiftId}`}
                     className="text-xs text-muted-foreground underline-offset-2 hover:underline"
@@ -1048,30 +1045,21 @@ function GiftPaymentsReconciliationCard({ gift }: { gift: GiftOrPaymentDetail })
                   >
                     Over-payment resolved via a linked gift →
                   </Link>
-                ) : null}
-              </div>
-            </Row>
-            {gift.overpayOfGiftId ? (
-              <Row label="Over-payment of">
-                <Link
-                  href={`/gifts/${gift.overpayOfGiftId}`}
-                  className="text-sm underline-offset-2 hover:underline"
-                  data-testid="link-original-gift"
-                >
-                  Original gift →
-                </Link>
-              </Row>
-            ) : null}
-            <Row label="Reconciliation">
-              <ReconciliationLaneBadges
-                lanes={data?.reconciliationLanes ?? gift.reconciliationLanes}
-              />
-            </Row>
-            <Row label="Off-books">{data?.offBooks ? "Yes" : "No"}</Row>
-            {data?.amount != null ? (
-              <Row label="Audit amount">{formatCurrency(data.amount)}</Row>
-            ) : null}
-          </div>
+                </Row>
+              ) : null}
+              {gift.overpayOfGiftId ? (
+                <Row label="Over-payment of">
+                  <Link
+                    href={`/gifts/${gift.overpayOfGiftId}`}
+                    className="text-sm underline-offset-2 hover:underline"
+                    data-testid="link-original-gift"
+                  >
+                    Original gift →
+                  </Link>
+                </Row>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <div className="text-xs font-medium text-muted-foreground">
@@ -1154,52 +1142,3 @@ function QbRecordRow({
   );
 }
 
-// Read-only display of the persisted, server-derived QuickBooks tie status.
-// `exempt`/`tied` are healthy; `amount_mismatch`/`missing` flag on-books gifts
-// that don't reconcile to QuickBooks and need a human's attention.
-function GiftQbTieBadge({
-  status,
-}: {
-  status: "exempt" | "tied" | "amount_mismatch" | "missing" | null | undefined;
-}) {
-  if (!status) return <span className="text-muted-foreground">—</span>;
-  const variant =
-    status === "tied"
-      ? "default"
-      : status === "exempt"
-        ? "secondary"
-        : "destructive";
-  const label =
-    status === "amount_mismatch" ? "Amount mismatch" : formatEnum(status);
-  return (
-    <Badge variant={variant} data-testid="gift-qb-tie-status">
-      {label}
-    </Badge>
-  );
-}
-
-// Two-lane reconciliation status (INV-4): the funding (accounting/evidence) lane
-// and the CRM-record (donor) lane, shown as separate badges instead of one
-// blended status. Both are server-derived and read-only.
-function ReconciliationLaneBadges({
-  lanes,
-}: {
-  lanes: ReconciliationLanes | null | undefined;
-}) {
-  const badges = laneBadges(lanes);
-  if (badges.length === 0)
-    return <span className="text-muted-foreground">—</span>;
-  return (
-    <div className="flex flex-wrap gap-1.5" data-testid="gift-reconciliation-lanes">
-      {badges.map((b) => (
-        <Badge
-          key={b.key}
-          variant={b.variant}
-          data-testid={`gift-reconciliation-lane-${b.key}`}
-        >
-          {b.label}
-        </Badge>
-      ))}
-    </div>
-  );
-}
