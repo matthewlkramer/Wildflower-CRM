@@ -41,6 +41,10 @@ testem.log
 .DS_Store
 Thumbs.db
 
+db_backup.sql
+db_backup/
+
+
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md
 
