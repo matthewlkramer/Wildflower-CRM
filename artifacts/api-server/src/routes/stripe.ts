@@ -24,6 +24,7 @@ import {
   ilike,
   isNotNull,
   isNull,
+  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -49,7 +50,10 @@ import {
   LinkStripeChargeToGiftBody,
 } from "@workspace/api-zod";
 import { linkChargeToGiftInTx } from "../lib/reconciliationBundleCommit";
-import { ReconcileAbort } from "../lib/reconciliationCommit";
+import {
+  ReconcileAbort,
+  orphanStripeSourceChargeInTx,
+} from "../lib/reconciliationCommit";
 import { donorOf, hasExactlyOneDonor, donorsMatch } from "../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { buildGiftValuesFromStripeCharge } from "../lib/stripeGift";
@@ -640,6 +644,63 @@ router.post(
             error: "not_pending",
             message:
               "This staged charge is no longer open for reconciliation. Refresh and try again.",
+          });
+        }
+
+        // ── Incumbent Stripe source (one gift ↔ one backing charge) ────────
+        // A DIFFERENT charge already backing this gift blocks the link unless
+        // the reviewer confirmed a source switch — the same
+        // gift_already_stripe_sourced gate the deposit-approve re-target path
+        // raises, so the workbench can offer one confirm-the-swap dialog for
+        // both. On a confirmed switch the incumbent is orphaned back to the
+        // unmatched-money queue FIRST (the partial-unique on matched_gift_id
+        // forbids two charges on one gift, and the unstamp is pointer-safe),
+        // then this charge is linked below. The gift is never deleted, even
+        // if the incumbent minted it — it is the switch target.
+        const incumbent =
+          (await tx
+            .select()
+            .from(stripeStagedCharges)
+            .where(
+              and(
+                ne(stripeStagedCharges.id, charge.id),
+                or(
+                  eq(stripeStagedCharges.matchedGiftId, giftId),
+                  eq(stripeStagedCharges.createdGiftId, giftId),
+                ),
+              ),
+            )
+            .for("update")
+            .then((r) => r[0])) ?? null;
+        if (incumbent && parsed.data.switchStripeSource !== true) {
+          const message =
+            "This gift's amount is already sourced from a different Stripe charge.";
+          throw new ReconcileAbort(409, {
+            error: "consistency_gate",
+            message,
+            details: {
+              issues: [
+                {
+                  code: "gift_already_stripe_sourced",
+                  message,
+                  details: {
+                    currentStripeCharge: {
+                      id: incumbent.id,
+                      amount: incumbent.grossAmount,
+                      payerName: incumbent.payerName,
+                      date: incumbent.dateReceived,
+                    },
+                    targetStripeChargeId: charge.id,
+                  },
+                },
+              ],
+            },
+          });
+        }
+        if (incumbent) {
+          await orphanStripeSourceChargeInTx(tx, {
+            oldCharge: incumbent,
+            giftId,
           });
         }
 

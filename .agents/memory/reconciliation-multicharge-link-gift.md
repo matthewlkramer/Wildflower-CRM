@@ -41,3 +41,11 @@ bundle path.
   single-charge cards reach a different terminal state than a single-card approve.
 - Lock order is gift FOR UPDATE then charge FOR UPDATE (matches the bundle
   convention — don't invert it or you can deadlock against bundle confirm).
+- When the chosen gift is ALREADY backed by a different Stripe charge, the route
+  mirrors the deposit-approve gate: 409 `consistency_gate` with a
+  `gift_already_stripe_sourced` issue (incumbent charge details +
+  targetStripeChargeId) — never a dead-end `link_conflict`. Retrying with
+  `switchStripeSource: true` orphans the incumbent back to pending via the shared
+  `orphanStripeSourceChargeInTx` (same helper as the deposit re-target commit —
+  keep both paths on it so switch semantics can't drift), then links this charge.
+  The raw 23505 `link_conflict` remains only as the true race backstop.

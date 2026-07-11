@@ -2512,7 +2512,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeStagedCharge" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "Charge is not pending, the gift is archived, the gift is already tied to another Stripe charge, or the payout conflicts with an approved QuickBooks lump" }
+        "409": { description: "Charge is not pending, the gift is archived, the gift is already tied to another Stripe charge (a gift_already_stripe_sourced gate issue with the incumbent charge's details — retry with switchStripeSource=true to confirm the swap), or the payout conflicts with an approved QuickBooks lump" }
   /stripe-staged-charges/{id}/create-gift:
     post:
       operationId: createGiftFromStripeStagedCharge
@@ -7074,6 +7074,7 @@ components:
         donor FK (Donor XOR).
       properties:
         giftId:                  { type: string, description: "The existing gift this Stripe charge is evidence for." }
+        switchStripeSource:      { type: boolean, description: "When true, confirm re-sourcing a gift already backed by a DIFFERENT Stripe charge: the incumbent charge is orphaned back to the unmatched-money queue and this charge becomes the gift's Stripe evidence. Without it, that case 409s with a gift_already_stripe_sourced gate issue describing the incumbent." }
         switchGiftDonor:         { type: boolean, description: "When true, re-point the gift's donor to the donor FK below instead of adopting the gift's current donor." }
         organizationId:          { type: string, nullable: true }
         individualGiverPersonId: { type: string, nullable: true }

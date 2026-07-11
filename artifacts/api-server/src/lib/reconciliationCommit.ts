@@ -796,58 +796,10 @@ export async function linkGiftInTx(
   // then return the charge to the unmatched-money queue. We never delete the
   // gift here even if the old charge minted it: the gift is the switch target.
   if (switchedStripeSource && oldStripeCharge) {
-    await removePaymentApplicationsForStripeCharge(tx, oldStripeCharge.id);
-    const unstamped = await unstampGiftFinalAmount(tx, giftId, {
-      source: "stripe",
-      stripeChargeId: oldStripeCharge.id,
+    await orphanStripeSourceChargeInTx(tx, {
+      oldCharge: oldStripeCharge,
+      giftId,
     });
-    if (unstamped.restored) {
-      await adjustSingleAllocationOrFlag(
-        tx,
-        giftId,
-        unstamped.oldAmount,
-        unstamped.newAmount,
-        "stripe",
-      );
-    }
-    const oldHasDonor =
-      !!oldStripeCharge.organizationId ||
-      !!oldStripeCharge.individualGiverPersonId ||
-      !!oldStripeCharge.householdId;
-    // A failed charge (raw Stripe status 'failed') never settled — after the
-    // swap it must land in the excluded bucket, not back in the pending queue
-    // where it would look like real money again. Mirrors the single-charge
-    // revert (stripe.ts).
-    const oldRawStatus =
-      oldStripeCharge.rawCharge && typeof oldStripeCharge.rawCharge === "object"
-        ? ((oldStripeCharge.rawCharge as Record<string, unknown>)["status"] ??
-          null)
-        : null;
-    const orphanToExcluded = oldRawStatus === "failed";
-    await tx
-      .update(stripeStagedCharges)
-      .set({
-        status: orphanToExcluded ? "excluded" : "pending",
-        exclusionReason: orphanToExcluded ? "failed_charge" : null,
-        matchedGiftId: null,
-        createdGiftId: null,
-        autoApplied: false,
-        matchStatus: oldHasDonor ? "suggested" : "unmatched",
-        matchConfirmedAt: null,
-        matchConfirmedByUserId: null,
-        approvedAt: null,
-        approvedByUserId: null,
-        ...(oldStripeCharge.refundPropagationStatus === "proposed"
-          ? {
-              refundPropagationStatus: "none" as const,
-              refundPropagationKind: null,
-              refundPropagationGiftId: null,
-              refundProposedAmount: null,
-            }
-          : {}),
-        updatedAt: new Date(),
-      })
-      .where(eq(stripeStagedCharges.id, oldStripeCharge.id));
   }
 
   // Stamp the gift's FINAL amount + rebalance its single allocation (or flag a
@@ -1039,4 +991,78 @@ export async function linkGiftInTx(
     // QB evidence (likely → `missing`). Null when no move happened.
     movedFromGiftId: movedOwnApplication && oldAppliedGift ? oldAppliedGift.id : null,
   };
+}
+
+/**
+ * Orphan the Stripe charge currently backing a gift so a DIFFERENT charge can
+ * become its Stripe source (a human-confirmed switch). Drops the old charge's
+ * payment-application ledger row, unstamps the gift (pointer-safe: a no-op
+ * unless the gift still points at the OLD charge), and returns the charge to
+ * the unmatched-money queue — or the excluded bucket when its raw Stripe
+ * status is 'failed': a failed charge never settled and must not look like
+ * real money again. The gift itself is NEVER deleted here, even if the old
+ * charge minted it — the gift is the switch target.
+ *
+ * Callers must hold FOR UPDATE locks on both the gift and the old charge, and
+ * must orphan BEFORE stamping/linking the new charge: the partial-unique on
+ * matched_gift_id forbids two charges pointing at one gift, and the unstamp
+ * only fires while the gift still points at the old charge. Shared by the
+ * deposit-approve re-target commit (above) and the per-charge link-gift route
+ * (stripe.ts) so the two switch paths can't drift.
+ */
+export async function orphanStripeSourceChargeInTx(
+  tx: Tx,
+  args: {
+    oldCharge: typeof stripeStagedCharges.$inferSelect;
+    giftId: string;
+  },
+): Promise<void> {
+  const { oldCharge, giftId } = args;
+  await removePaymentApplicationsForStripeCharge(tx, oldCharge.id);
+  const unstamped = await unstampGiftFinalAmount(tx, giftId, {
+    source: "stripe",
+    stripeChargeId: oldCharge.id,
+  });
+  if (unstamped.restored) {
+    await adjustSingleAllocationOrFlag(
+      tx,
+      giftId,
+      unstamped.oldAmount,
+      unstamped.newAmount,
+      "stripe",
+    );
+  }
+  const oldHasDonor =
+    !!oldCharge.organizationId ||
+    !!oldCharge.individualGiverPersonId ||
+    !!oldCharge.householdId;
+  const oldRawStatus =
+    oldCharge.rawCharge && typeof oldCharge.rawCharge === "object"
+      ? ((oldCharge.rawCharge as Record<string, unknown>)["status"] ?? null)
+      : null;
+  const orphanToExcluded = oldRawStatus === "failed";
+  await tx
+    .update(stripeStagedCharges)
+    .set({
+      status: orphanToExcluded ? "excluded" : "pending",
+      exclusionReason: orphanToExcluded ? "failed_charge" : null,
+      matchedGiftId: null,
+      createdGiftId: null,
+      autoApplied: false,
+      matchStatus: oldHasDonor ? "suggested" : "unmatched",
+      matchConfirmedAt: null,
+      matchConfirmedByUserId: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      ...(oldCharge.refundPropagationStatus === "proposed"
+        ? {
+            refundPropagationStatus: "none" as const,
+            refundPropagationKind: null,
+            refundPropagationGiftId: null,
+            refundProposedAmount: null,
+          }
+        : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(stripeStagedCharges.id, oldCharge.id));
 }

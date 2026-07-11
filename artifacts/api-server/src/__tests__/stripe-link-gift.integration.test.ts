@@ -315,7 +315,7 @@ describe.skipIf(!HAS_DB)(
       expect(charge.matchedGiftId).toBe(giftA);
     });
 
-    it("409s (link_conflict) when another charge already owns the target gift", async () => {
+    it("409s (consistency_gate / gift_already_stripe_sourced) when another charge already owns the target gift", async () => {
       const giftId = await seedGift("90.00");
       const chargeA = await seedCharge({ gross: "90.00" });
       const chargeB = await seedCharge({ gross: "90.00" });
@@ -331,11 +331,84 @@ describe.skipIf(!HAS_DB)(
         { giftId },
       );
       expect(second.status).toBe(409);
-      expect(second.json.error).toBe("link_conflict");
+      // Gate-shaped payload (same shape as the deposit-approve re-target gate)
+      // so the workbench can offer the confirm-the-swap dialog: the issue
+      // carries the incumbent charge's details + the target charge id.
+      expect(second.json.error).toBe("consistency_gate");
+      const issues = second.json.details?.issues as Array<{
+        code: string;
+        details?: {
+          currentStripeCharge?: { id: string; amount: string };
+          targetStripeChargeId?: string;
+        };
+      }>;
+      expect(issues).toHaveLength(1);
+      expect(issues[0].code).toBe("gift_already_stripe_sourced");
+      expect(issues[0].details?.currentStripeCharge?.id).toBe(chargeA);
+      expect(issues[0].details?.currentStripeCharge?.amount).toBe("90.00");
+      expect(issues[0].details?.targetStripeChargeId).toBe(chargeB);
 
       // Charge B stays open (untouched) for a different gift.
       const chargeBRow = await readCharge(chargeB);
       expect(chargeBRow.status).toBe("pending");
+      // The original link is intact.
+      const chargeARow = await readCharge(chargeA);
+      expect(chargeARow.status).toBe("reconciled");
+      expect(chargeARow.matchedGiftId).toBe(giftId);
+    });
+
+    it("switchStripeSource=true re-sources the gift: incumbent orphaned back to pending, new charge linked", async () => {
+      const giftId = await seedGift("120.00");
+      const chargeA = await seedCharge({ gross: "120.00" });
+      const chargeB = await seedCharge({ gross: "121.75" });
+
+      const first = await apiPost(
+        `/api/stripe-staged-charges/${chargeA}/link-gift`,
+        { giftId },
+      );
+      expect(first.status).toBe(200);
+
+      const res = await apiPost(
+        `/api/stripe-staged-charges/${chargeB}/link-gift`,
+        { giftId, switchStripeSource: true },
+      );
+      expect(res.status).toBe(200);
+
+      // The incumbent charge is orphaned back to the unmatched-money queue:
+      // pending, no gift links, no confirmations. It adopted the gift's donor
+      // when it was linked, so it comes back as a SUGGESTED match, ready to be
+      // tied to the right money later.
+      const chargeARow = await readCharge(chargeA);
+      expect(chargeARow.status).toBe("pending");
+      expect(chargeARow.matchedGiftId).toBeNull();
+      expect(chargeARow.createdGiftId).toBeNull();
+      expect(chargeARow.matchConfirmedAt).toBeNull();
+      expect(chargeARow.matchStatus).toBe("suggested");
+
+      // The new charge now backs the gift.
+      const chargeBRow = await readCharge(chargeB);
+      expect(chargeBRow.status).toBe("reconciled");
+      expect(chargeBRow.matchedGiftId).toBe(giftId);
+      expect(chargeBRow.matchStatus).toBe("matched");
+
+      // The gift's Stripe provenance pointer moved to the new charge.
+      const gift = await readGift(giftId);
+      expect(gift.finalAmountSource).toBe("stripe");
+      expect(gift.finalAmountStripeChargeId).toBe(chargeB);
+    });
+
+    it("switchStripeSource=true is a plain link when no incumbent exists", async () => {
+      const giftId = await seedGift("40.00");
+      const chargeId = await seedCharge({ gross: "40.00" });
+
+      const res = await apiPost(
+        `/api/stripe-staged-charges/${chargeId}/link-gift`,
+        { giftId, switchStripeSource: true },
+      );
+      expect(res.status).toBe(200);
+      const charge = await readCharge(chargeId);
+      expect(charge.status).toBe("reconciled");
+      expect(charge.matchedGiftId).toBe(giftId);
     });
 
     it("400s on an invalid body (missing giftId)", async () => {

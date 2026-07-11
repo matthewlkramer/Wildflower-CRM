@@ -264,6 +264,7 @@ export const LinkStripeChargeToGiftParams = zod.object({
 
 export const LinkStripeChargeToGiftBody = zod.object({
   "giftId": zod.string().describe('The existing gift this Stripe charge is evidence for.'),
+  "switchStripeSource": zod.boolean().optional().describe('When true, confirm re-sourcing a gift already backed by a DIFFERENT Stripe charge: the incumbent charge is orphaned back to the unmatched-money queue and this charge becomes the gift\'s Stripe evidence. Without it, that case 409s with a gift_already_stripe_sourced gate issue describing the incumbent.'),
   "switchGiftDonor": zod.boolean().optional().describe('When true, re-point the gift\'s donor to the donor FK below instead of adopting the gift\'s current donor.'),
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),

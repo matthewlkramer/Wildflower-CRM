@@ -517,6 +517,17 @@ export default function ReconciliationWorkbench() {
     qb: QbLinkConflict | null;
     own: OwnApplicationConflict | null;
   } | null>(null);
+  // A per-charge link-gift (multi-charge payout) that 409s because the chosen
+  // gift is already sourced from a DIFFERENT Stripe charge. Stash the charge +
+  // gift + incumbent details so a confirm dialog can describe the swap;
+  // confirming re-calls link-gift with switchStripeSource set — the incumbent
+  // charge returns to the unmatched-money queue and this charge becomes the
+  // gift's Stripe evidence.
+  const [chargeLinkConflict, setChargeLinkConflict] = useState<{
+    chargeId: string;
+    giftId: string;
+    stripe: StripeSourceConflict;
+  } | null>(null);
   // Creating a gift from a multi-payment group: hold the derived approve body
   // here and ask whether each grouped subcomponent should become its own
   // allocation row on the new gift (or a single header-only lump).
@@ -1587,12 +1598,53 @@ export default function ReconciliationWorkbench() {
           description: "Linked the Stripe charge to the gift.",
         });
       } catch (err) {
+        // The chosen gift is already sourced from a DIFFERENT Stripe charge —
+        // recoverable: open the confirm dialog describing the swap instead of
+        // a dead-end toast. Confirming re-calls with switchStripeSource set.
+        const stripeConflict = extractStripeSourceConflict(err);
+        if (stripeConflict) {
+          setChargeLinkConflict({
+            chargeId: card.stripeChargeId,
+            giftId,
+            stripe: stripeConflict,
+          });
+          return true;
+        }
         toast({ title: "Couldn't approve", description: errMessage(err) });
       }
       return true;
     },
     [queryClient, linkChargeGiftM, invalidateAll, toast, errMessage],
   );
+
+  // Confirmed Stripe-source switch for a per-charge link: re-call link-gift
+  // with switchStripeSource — the server orphans the incumbent charge back to
+  // the unmatched-money queue and links this charge as the gift's evidence.
+  const confirmChargeLinkSwitch = useCallback(async () => {
+    if (!chargeLinkConflict) return;
+    const { chargeId, giftId } = chargeLinkConflict;
+    try {
+      await linkChargeGiftM.mutateAsync({
+        id: chargeId,
+        data: { giftId, switchStripeSource: true },
+      });
+      setChargeLinkConflict(null);
+      invalidateAll();
+      setRetargetCard(null);
+      setSearchGiftCard(null);
+      toast({
+        title: "Stripe source switched",
+        description:
+          "Linked this charge to the gift; the previous charge is back in the unmatched-money queue.",
+      });
+    } catch (err) {
+      setChargeLinkConflict(null);
+      toast({
+        title: "Couldn't switch the Stripe source",
+        description: errMessage(err),
+      });
+    }
+  }, [chargeLinkConflict, linkChargeGiftM, invalidateAll, toast, errMessage]);
 
   const stageRetarget = useCallback(
     async (card: ReconciliationCard, gift: ReconciliationCandidate) => {
@@ -2304,6 +2356,72 @@ export default function ReconciliationWorkbench() {
                 }}
               >
                 Re-target gift
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+      {chargeLinkConflict && (
+        <AlertDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setChargeLinkConflict(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Switch this gift's Stripe source?
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-3 text-sm">
+                  <p>
+                    This gift's amount is already sourced from a different
+                    Stripe charge. Confirming will re-source it to the newly
+                    selected charge and return the current one to the
+                    unmatched-money queue.
+                  </p>
+                  {chargeLinkConflict.stripe.currentCharge && (
+                    <div className="rounded-md border bg-muted/40 p-3">
+                      <div className="mb-1 font-medium text-foreground">
+                        Current backing Stripe charge
+                      </div>
+                      <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5">
+                        <dt className="text-muted-foreground">Charge</dt>
+                        <dd className="font-mono text-xs">
+                          {chargeLinkConflict.stripe.currentCharge.id}
+                        </dd>
+                        <dt className="text-muted-foreground">Amount</dt>
+                        <dd>
+                          {money(chargeLinkConflict.stripe.currentCharge.amount)}
+                        </dd>
+                        <dt className="text-muted-foreground">Payer</dt>
+                        <dd>
+                          {chargeLinkConflict.stripe.currentCharge.payerName ??
+                            "—"}
+                        </dd>
+                        <dt className="text-muted-foreground">Date</dt>
+                        <dd>
+                          {chargeLinkConflict.stripe.currentCharge.date ?? "—"}
+                        </dd>
+                      </dl>
+                    </div>
+                  )}
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={linkChargeGiftM.isPending}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={linkChargeGiftM.isPending}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void confirmChargeLinkSwitch();
+                }}
+              >
+                Switch source
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
