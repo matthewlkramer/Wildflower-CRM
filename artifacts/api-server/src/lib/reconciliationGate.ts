@@ -38,6 +38,7 @@ export type GateIssueCode =
   | "stripe_charge_required"
   | "gift_already_stripe_sourced"
   | "gift_already_qb_linked"
+  | "payment_already_applied"
   | "amount_out_of_band";
 
 /** Human-readable snapshot of the Stripe charge that currently backs a gift,
@@ -61,6 +62,16 @@ export interface GateQbPaymentDetails {
   date: string | null;
 }
 
+/** Human-readable snapshot of the gift the ANCHOR payment is presently applied
+ *  to (its own existing match), surfaced in the `payment_already_applied` issue
+ *  so the UI can describe the move the reviewer is about to confirm. */
+export interface GateAppliedGiftDetails {
+  id: string;
+  name: string | null;
+  amount: string | null;
+  date: string | null;
+}
+
 export interface GateIssueDetails {
   /** The Stripe charge presently sourcing the gift (for gift_already_stripe_sourced). */
   currentStripeCharge?: GateStripeChargeDetails;
@@ -70,6 +81,10 @@ export interface GateIssueDetails {
   currentQbPayment?: GateQbPaymentDetails;
   /** The staged payment the reviewer is trying to link (displace onto). */
   targetStagedPaymentId?: string;
+  /** The gift the anchor payment is presently applied to (for payment_already_applied). */
+  currentAppliedGift?: GateAppliedGiftDetails;
+  /** The gift the reviewer is trying to move the payment onto. */
+  targetGiftId?: string;
 }
 
 export interface GateIssue {
@@ -157,6 +172,20 @@ export interface ConsistencyGateInput {
    *  lock by the route. Attached to the `gift_already_qb_linked` issue so the UI
    *  can describe the displacement it is about to perform. */
   currentQbPaymentDetails?: GateQbPaymentDetails | null;
+  /** The id of the gift the ANCHOR payment is already applied to (other than the
+   *  target gift), resolved by the route from the cash-application ledger. When
+   *  set, applying THIS payment to the target gift would count one payment's
+   *  money against two gifts (the book-once guard's dead-end 409) — blocked
+   *  unless the reviewer confirms `moveOwnApplication`. */
+  ownAppliedGiftId?: string | null;
+  /** When true (link_existing_gift + human-confirmed), allow moving the anchor
+   *  payment off the gift it is presently applied to: the commit unwinds its own
+   *  existing cash-application first, then applies it to the target gift. */
+  moveOwnApplication?: boolean;
+  /** The gift the anchor payment is presently applied to, loaded under lock by
+   *  the route. Attached to the `payment_already_applied` issue so the UI can
+   *  describe the move it is about to perform. */
+  currentAppliedGiftDetails?: GateAppliedGiftDetails | null;
 }
 
 /** Processor fees lower the QB/bank net below the human gross by up to ~10% + $1. */
@@ -243,6 +272,9 @@ export function runConsistencyGate(input: ConsistencyGateInput): GateIssue[] {
     qbLinkedPaymentId = null,
     displaceLinkedPayment = false,
     currentQbPaymentDetails = null,
+    ownAppliedGiftId = null,
+    moveOwnApplication = false,
+    currentAppliedGiftDetails = null,
   } = input;
 
   // ── QuickBooks anchor ──────────────────────────────────────────────────────
@@ -364,6 +396,30 @@ export function runConsistencyGate(input: ConsistencyGateInput): GateIssue[] {
           ? { currentQbPayment: currentQbPaymentDetails }
           : {}),
         ...(staged?.id ? { targetStagedPaymentId: staged.id } : {}),
+      },
+    });
+  }
+
+  // ── Own-application move (human-confirmed) ─────────────────────────────────
+  // The ANCHOR payment itself already holds a COUNTED cash-application to a
+  // DIFFERENT gift (e.g. the sync worker auto-matched it to the wrong one of two
+  // identical donations). Applying it to the target gift would count one
+  // payment's money against two gifts — the book-once guard hard-409s at commit
+  // (payment_already_applied) with no recovery. Block it UNLESS the reviewer
+  // explicitly confirmed the move — the commit then unwinds the payment's own
+  // existing application (ledger rows, old gift's amount stamp, pledge + QB-tie
+  // re-derivation) before applying it here. The route only ever supplies a gift
+  // id OTHER than the target (it excludes the target from the ledger lookup).
+  if (ownAppliedGiftId && !moveOwnApplication) {
+    issues.push({
+      code: "payment_already_applied",
+      message:
+        "This payment is already applied to a different gift (an existing match).",
+      details: {
+        ...(currentAppliedGiftDetails
+          ? { currentAppliedGift: currentAppliedGiftDetails }
+          : {}),
+        targetGiftId: gift.id,
       },
     });
   }

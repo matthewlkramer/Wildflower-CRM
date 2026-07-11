@@ -513,4 +513,41 @@ describe("runConsistencyGate", () => {
     expect(cleared).not.toContain("gift_already_stripe_sourced");
     expect(cleared).not.toContain("gift_already_qb_linked");
   });
+
+  it("anchor payment already applied to a DIFFERENT gift → payment_already_applied", () => {
+    expect(
+      codes(baseInput({ ownAppliedGiftId: "g-other" })),
+    ).toContain("payment_already_applied");
+  });
+
+  it("no own application → no payment_already_applied", () => {
+    expect(codes(baseInput())).not.toContain("payment_already_applied");
+  });
+
+  it("moveOwnApplication confirmed → own-application move allowed (no block)", () => {
+    expect(
+      codes(
+        baseInput({ ownAppliedGiftId: "g-other", moveOwnApplication: true }),
+      ),
+    ).not.toContain("payment_already_applied");
+  });
+
+  it("payment_already_applied issue carries the current applied gift + target details", () => {
+    const issues = runConsistencyGate(
+      baseInput({
+        ownAppliedGiftId: "g-other",
+        currentAppliedGiftDetails: {
+          id: "g-other",
+          name: "Rue Foundation gift",
+          amount: "156.48",
+          date: "2026-05-01",
+        },
+      }),
+    );
+    const issue = issues.find((i) => i.code === "payment_already_applied");
+    expect(issue?.details?.currentAppliedGift?.id).toBe("g-other");
+    expect(issue?.details?.currentAppliedGift?.name).toBe("Rue Foundation gift");
+    expect(issue?.details?.currentAppliedGift?.amount).toBe("156.48");
+    expect(issue?.details?.targetGiftId).toBe("g1");
+  });
 });

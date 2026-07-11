@@ -33,7 +33,10 @@ import {
   mintGiftInTx,
   linkGiftInTx,
 } from "../../lib/reconciliationCommit";
-import { qbLedgerPaymentIdForGiftExcludingPayment } from "../../lib/paymentApplications";
+import {
+  qbLedgerPaymentIdForGiftExcludingPayment,
+  qbLedgerGiftIdForPaymentExcludingGift,
+} from "../../lib/paymentApplications";
 
 const router: IRouter = Router();
 
@@ -718,6 +721,10 @@ router.post(
     // Pledges whose derived fields must be recomputed AFTER commit (a newly
     // linked payment, or a changed gift amount, shifts a pledge's paid total).
     const rederivePledgeIds: Array<string | null> = [];
+    // The gift the anchor payment was moved OFF of (own-application move) — it
+    // lost its only QB evidence in the commit, so its tie status needs
+    // recomputing alongside the newly linked gift's.
+    let movedFromGiftId: string | null = null;
 
     // ── Atomic apply ─────────────────────────────────────────────────────────
     // Lock order matches every other money path so they serialize without
@@ -813,6 +820,55 @@ router.post(
               .where(eq(stagedPayments.id, incumbentPaymentId))
               .for("update")
               .then((r) => r[0])) ?? null;
+        }
+
+        // ── Optional own-application move (human-confirmed) ────────────────────
+        // The inverse dead-end of the incumbent displacement above: the ANCHOR
+        // payment itself is already applied to a DIFFERENT gift (the sync worker
+        // auto-matched it to the wrong one of two identical donations). Left
+        // alone, the commit's book-once guard hard-409s (payment_already_applied)
+        // with no UI recovery. Detect it from the cash-application ledger
+        // (excluding the TARGET gift, so re-approving the same link stays
+        // idempotent). The move is offered ONLY for a plain worker auto-match:
+        // the ledger gift must AGREE with the row's own matchedGiftId, and the
+        // row must not have minted a gift (createdGiftId — guarded above), be
+        // group-reconciled, or be applied to several gifts (split). Any of those
+        // fall through with ownAppliedGiftId unset → the commit's hard 409 stands
+        // (revert the group/split first). When movable, load + lock the old gift
+        // so the commit can unwind its stamp under the same locks. Locking a
+        // SECOND gift after the target gift carries a rare deadlock risk under
+        // concurrent cross-moves — Postgres aborts one txn (retryable),
+        // acceptable for this manual admin action (mirrors the incumbent lock).
+        const ownAppliedGiftId = await tx
+          .execute<{ applied_gift_id: string | null }>(
+            sql`SELECT ${qbLedgerGiftIdForPaymentExcludingGift(
+              sql`${stagedPaymentId}`,
+              sql`${giftId}`,
+            )} AS applied_gift_id`,
+          )
+          .then((r) => r.rows[0]?.applied_gift_id ?? null);
+        const moveOwnApplication = body.moveOwnApplication === true;
+        let oldAppliedGift: typeof giftsAndPayments.$inferSelect | null = null;
+        let movableOwnApplication: string | null = null;
+        if (
+          ownAppliedGiftId &&
+          staged.matchedGiftId === ownAppliedGiftId &&
+          staged.createdGiftId == null &&
+          staged.groupReconciledGiftId == null
+        ) {
+          movableOwnApplication = ownAppliedGiftId;
+          oldAppliedGift =
+            (await tx
+              .select()
+              .from(giftsAndPayments)
+              .where(eq(giftsAndPayments.id, ownAppliedGiftId))
+              .for("update")
+              .then((r) => r[0])) ?? null;
+          if (!oldAppliedGift) {
+            // Ledger says applied, gift row is gone — genuine drift; let the
+            // commit's hard 409 surface it rather than half-unwinding.
+            movableOwnApplication = null;
+          }
         }
 
         let opp: typeof opportunitiesAndPledges.$inferSelect | null = null;
@@ -1005,6 +1061,16 @@ router.post(
                 date: incumbentStagedPayment.dateReceived,
               }
             : null,
+          ownAppliedGiftId: movableOwnApplication,
+          moveOwnApplication,
+          currentAppliedGiftDetails: oldAppliedGift
+            ? {
+                id: oldAppliedGift.id,
+                name: oldAppliedGift.name,
+                amount: oldAppliedGift.amount,
+                date: oldAppliedGift.dateReceived,
+              }
+            : null,
         });
         if (issues.length > 0) {
           throw new ApproveAbort(409, {
@@ -1028,10 +1094,13 @@ router.post(
           oldStripeCharge,
           displaceLinkedPayment,
           incumbentStagedPayment,
+          moveOwnApplication,
+          oldAppliedGift,
           userId: user.id,
           auditReq: req,
         });
         rederivePledgeIds.push(...linkResult.rederivePledgeIds);
+        movedFromGiftId = linkResult.movedFromGiftId;
       });
     } catch (e) {
       if (e instanceof ApproveAbort) {
@@ -1057,8 +1126,10 @@ router.post(
     // Re-derive affected pledges from the committed gift amounts (mirrors the
     // gift create/PATCH paths; runs outside the tx on its own connection).
     await applyDerivedOppFieldsMany(...rederivePledgeIds);
-    // The linked gift now carries QB linkage — persist its tie status.
-    await applyGiftQbTieMany(giftId);
+    // The linked gift now carries QB linkage — persist its tie status. When the
+    // payment was moved off another gift, that gift just LOST its QB evidence
+    // (likely → missing) — recompute it too.
+    await applyGiftQbTieMany(giftId, movedFromGiftId);
 
     res.json({
       ok: true as const,

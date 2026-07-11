@@ -128,6 +128,8 @@ import {
   extractGateIssues,
   extractStripeSourceConflict,
   extractQbLinkConflict,
+  extractOwnApplicationConflict,
+  type OwnApplicationConflict,
   isAlreadyResolvedError,
   changeReachedIntendedState,
   deriveApproveBodyFromProposal,
@@ -501,16 +503,19 @@ export default function ReconciliationWorkbench() {
   const [researchCard, setResearchCard] = useState<ReconciliationCard | null>(
     null,
   );
-  // A re-target that 409s on one or BOTH re-source conflicts: the target gift is
+  // A re-target that 409s on one or MORE re-source conflicts: the target gift is
   // already sourced from a DIFFERENT Stripe charge (#546) and/or already linked
-  // to a DIFFERENT QuickBooks staged payment (#550). Stash the staged change +
-  // whichever conflict details apply so ONE confirm dialog can describe the full
-  // swap. Confirming re-applies that one change with switchStripeSource and/or
-  // displaceLinkedPayment set — a single server call resolves both at once.
+  // to a DIFFERENT QuickBooks staged payment (#550), and/or the PAYMENT itself is
+  // already applied to a DIFFERENT gift (a wrong worker auto-match). Stash the
+  // staged change + whichever conflict details apply so ONE confirm dialog can
+  // describe the full swap. Confirming re-applies that one change with
+  // switchStripeSource / displaceLinkedPayment / moveOwnApplication set — a
+  // single server call resolves all of them at once.
   const [retargetConflict, setRetargetConflict] = useState<{
     change: StagedChange;
     stripe: StripeSourceConflict | null;
     qb: QbLinkConflict | null;
+    own: OwnApplicationConflict | null;
   } | null>(null);
   // Creating a gift from a multi-payment group: hold the derived approve body
   // here and ask whether each grouped subcomponent should become its own
@@ -969,16 +974,31 @@ export default function ReconciliationWorkbench() {
           change.kind === "retarget" && change.body
             ? extractQbLinkConflict(err)
             : null;
-        if (stripeConflict || qbConflict) {
-          setRetargetConflict({ change, stripe: stripeConflict, qb: qbConflict });
+        const ownConflict =
+          change.kind === "retarget" && change.body
+            ? extractOwnApplicationConflict(err)
+            : null;
+        if (stripeConflict || qbConflict || ownConflict) {
+          setRetargetConflict({
+            change,
+            stripe: stripeConflict,
+            qb: qbConflict,
+            own: ownConflict,
+          });
           const reasons: string[] = [];
           if (stripeConflict)
-            reasons.push("already sourced from a different Stripe charge");
+            reasons.push(
+              "the gift is already sourced from a different Stripe charge",
+            );
           if (qbConflict)
-            reasons.push("already linked to a different QuickBooks payment");
+            reasons.push(
+              "the gift is already linked to a different QuickBooks payment",
+            );
+          if (ownConflict)
+            reasons.push("this payment is already matched to a different gift");
           remaining.push({
             ...change,
-            failure: `This gift is ${reasons.join(" and ")} — confirm to re-target it.`,
+            failure: `Blocked: ${reasons.join(" and ")} — confirm to re-target it.`,
           });
           continue;
         }
@@ -1055,7 +1075,7 @@ export default function ReconciliationWorkbench() {
   // On success the row leaves the tray; on failure it stays with the new reason.
   const confirmResolveRetarget = useCallback(async () => {
     if (!retargetConflict) return;
-    const { change, stripe, qb } = retargetConflict;
+    const { change, stripe, qb, own } = retargetConflict;
     if (!change.body) {
       setRetargetConflict(null);
       return;
@@ -1066,6 +1086,7 @@ export default function ReconciliationWorkbench() {
         ...change.body,
         ...(stripe ? { switchStripeSource: true } : {}),
         ...(qb ? { displaceLinkedPayment: true } : {}),
+        ...(own ? { moveOwnApplication: true } : {}),
       });
       setStaged((prev) => prev.filter((s) => s.key !== change.key));
       invalidateAll();
@@ -2161,11 +2182,17 @@ export default function ReconciliationWorkbench() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                {retargetConflict.stripe && retargetConflict.qb
-                  ? "Re-target this gift's Stripe source and QuickBooks link?"
+                {[
+                  retargetConflict.stripe,
+                  retargetConflict.qb,
+                  retargetConflict.own,
+                ].filter(Boolean).length > 1
+                  ? "Re-target this payment and gift?"
                   : retargetConflict.stripe
                     ? "Switch this gift's Stripe source?"
-                    : "Move this gift's QuickBooks link?"}
+                    : retargetConflict.qb
+                      ? "Move this gift's QuickBooks link?"
+                      : "Move this payment to a different gift?"}
               </AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-3 text-sm">
@@ -2182,6 +2209,15 @@ export default function ReconciliationWorkbench() {
                       This gift is already linked to a different QuickBooks
                       payment. Confirming will disconnect that payment (returning
                       it to the pending queue) and link this one instead.
+                    </p>
+                  )}
+                  {retargetConflict.own && (
+                    <p>
+                      This QuickBooks payment is already matched to a different
+                      gift. Confirming will move it off that gift (restoring the
+                      gift's original amount and marking it as no longer
+                      QuickBooks-tied) and apply it to the newly selected gift
+                      instead.
                     </p>
                   )}
                   {retargetConflict.stripe?.currentCharge && (
@@ -2231,6 +2267,27 @@ export default function ReconciliationWorkbench() {
                         <dd>
                           {retargetConflict.qb.currentPayment.date ?? "—"}
                         </dd>
+                      </dl>
+                    </div>
+                  )}
+                  {retargetConflict.own?.currentGift && (
+                    <div className="rounded-md border bg-muted/40 p-3">
+                      <div className="mb-1 font-medium text-foreground">
+                        Gift this payment is currently matched to
+                      </div>
+                      <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5">
+                        <dt className="text-muted-foreground">Gift</dt>
+                        <dd>
+                          {retargetConflict.own.currentGift.name ?? (
+                            <span className="font-mono text-xs">
+                              {retargetConflict.own.currentGift.id}
+                            </span>
+                          )}
+                        </dd>
+                        <dt className="text-muted-foreground">Amount</dt>
+                        <dd>{money(retargetConflict.own.currentGift.amount)}</dd>
+                        <dt className="text-muted-foreground">Date</dt>
+                        <dd>{retargetConflict.own.currentGift.date ?? "—"}</dd>
                       </dl>
                     </div>
                   )}

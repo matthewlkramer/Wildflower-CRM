@@ -532,6 +532,75 @@ export function extractQbLinkConflict(err: unknown): QbLinkConflict | null {
   return null;
 }
 
+/** The 409 payload when the PAYMENT being re-targeted is itself already applied
+ *  to a different gift (a wrong worker auto-match); the currently applied gift's
+ *  details ride on `details.currentAppliedGift`. */
+export interface OwnApplicationConflict {
+  currentGift: {
+    id: string;
+    name: string | null;
+    amount: string | null;
+    date: string | null;
+  } | null;
+  targetGiftId: string | null;
+}
+
+/**
+ * When a re-target 409s because the QuickBooks payment itself is already
+ * applied to a DIFFERENT gift (the sync worker matched it to the wrong one),
+ * pull the currently applied gift's details out of the gate issue so the
+ * workbench can describe the move the reviewer is about to confirm. Returns
+ * null when the failure isn't a `payment_already_applied` conflict.
+ */
+export function extractOwnApplicationConflict(
+  err: unknown,
+): OwnApplicationConflict | null {
+  if (!err || typeof err !== "object") return null;
+  const data = (err as { data?: unknown }).data;
+  if (!data || typeof data !== "object") return null;
+  const details = (data as { details?: unknown }).details;
+  if (!details || typeof details !== "object") return null;
+  const issues = (details as { issues?: unknown }).issues;
+  if (!Array.isArray(issues)) return null;
+  for (const issue of issues) {
+    if (!issue || typeof issue !== "object") continue;
+    if ((issue as { code?: unknown }).code !== "payment_already_applied") {
+      continue;
+    }
+    const d = (issue as { details?: unknown }).details;
+    const cur =
+      d && typeof d === "object"
+        ? (d as { currentAppliedGift?: unknown }).currentAppliedGift
+        : null;
+    const target =
+      d && typeof d === "object"
+        ? (d as { targetGiftId?: unknown }).targetGiftId
+        : null;
+    return {
+      currentGift:
+        cur && typeof cur === "object"
+          ? {
+              id: String((cur as { id?: unknown }).id ?? ""),
+              name:
+                typeof (cur as { name?: unknown }).name === "string"
+                  ? (cur as { name: string }).name
+                  : null,
+              amount:
+                typeof (cur as { amount?: unknown }).amount === "string"
+                  ? (cur as { amount: string }).amount
+                  : null,
+              date:
+                typeof (cur as { date?: unknown }).date === "string"
+                  ? (cur as { date: string }).date
+                  : null,
+            }
+          : null,
+      targetGiftId: typeof target === "string" ? target : null,
+    };
+  }
+  return null;
+}
+
 export type OutcomeChoice =
   | "create_gift_from_opportunity"
   | "convert_to_pledge_and_first_payment";

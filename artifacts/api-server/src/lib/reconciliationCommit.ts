@@ -563,6 +563,14 @@ export interface LinkGiftInTxArgs {
    *  locked, when a displacement was confirmed — disconnected back to the
    *  pending queue before this payment is tied. Null unless displacing. */
   incumbentStagedPayment?: typeof stagedPayments.$inferSelect | null;
+  /** Whether the reviewer confirmed moving the ANCHOR payment off the gift it is
+   *  presently applied to (its own existing match) onto this one. */
+  moveOwnApplication?: boolean;
+  /** The gift the anchor payment is presently applied to, ALREADY locked, when a
+   *  move was confirmed — its ledger rows are removed and its amount stamp
+   *  reversed before this payment is applied to the target gift. Null unless
+   *  moving. */
+  oldAppliedGift?: typeof giftsAndPayments.$inferSelect | null;
   /** App user id stamped as the confirmer. */
   userId: string;
   /** Request used for audit attribution. */
@@ -579,7 +587,13 @@ export interface LinkGiftInTxArgs {
 export async function linkGiftInTx(
   tx: Tx,
   args: LinkGiftInTxArgs,
-): Promise<{ giftId: string; rederivePledgeIds: string[] }> {
+): Promise<{
+  giftId: string;
+  rederivePledgeIds: string[];
+  /** The gift the payment was moved OFF of (own-application move), or null —
+   *  the caller must recompute ITS QuickBooks tie status too. */
+  movedFromGiftId: string | null;
+}> {
   const {
     staged,
     stagedPaymentId,
@@ -595,6 +609,8 @@ export async function linkGiftInTx(
     oldStripeCharge = null,
     displaceLinkedPayment = false,
     incumbentStagedPayment = null,
+    moveOwnApplication = false,
+    oldAppliedGift = null,
   } = args;
 
   const rederivePledgeIds: string[] = [];
@@ -605,6 +621,57 @@ export async function linkGiftInTx(
     !!oldStripeCharge &&
     !!charge &&
     oldStripeCharge.id !== charge.id;
+
+  // Own-application move (human-confirmed). The ANCHOR payment itself already
+  // holds a COUNTED cash-application to a DIFFERENT gift (the sync worker
+  // auto-matched it to the wrong one — e.g. one of two identical donations).
+  // Left in place, `applyPaymentApplication` below would trip its book-once
+  // guard (one payment's money counted against two gifts) and dead-end 409.
+  // Unwind the payment's OWN old application FIRST — mirror of the incumbent
+  // displacement below, but inverted: there the gift keeps its money and the
+  // OTHER payment is disconnected; here the payment keeps its money and the
+  // OTHER gift releases it. The old gift loses its only QB evidence: remove the
+  // ledger rows, reverse the final-amount stamp (pointer-safe — no-ops unless
+  // the old gift is still stamped from THIS payment), rebalance its allocation,
+  // and re-derive its pledge. The anchor row itself needs no queue reset — the
+  // main UPDATE below rewrites it onto the target gift.
+  const movedOwnApplication =
+    moveOwnApplication && !!oldAppliedGift && oldAppliedGift.id !== giftId;
+  if (movedOwnApplication && oldAppliedGift) {
+    await removePaymentApplicationsForPayment(tx, stagedPaymentId);
+    const un = await unstampGiftFinalAmount(tx, oldAppliedGift.id, {
+      source: "quickbooks",
+      qbStagedPaymentId: stagedPaymentId,
+    });
+    if (un.restored) {
+      await adjustSingleAllocationOrFlag(
+        tx,
+        oldAppliedGift.id,
+        un.oldAmount,
+        un.newAmount,
+        "quickbooks",
+      );
+    }
+    // The old gift's pledge paid-total shifts when its amount was restored; the
+    // target-gift stamp below never touches the OLD gift, so re-derive it here.
+    if (un.restored && oldAppliedGift.opportunityId) {
+      rederivePledgeIds.push(oldAppliedGift.opportunityId);
+    }
+    // The old gift silently loses its QB evidence — record that on ITS trail
+    // (the main audit record below covers the target gift).
+    await recordAudit(tx, auditReq, {
+      action: "update",
+      entityType: "gift",
+      entityId: oldAppliedGift.id,
+      summary:
+        "Moved a reconciled QuickBooks payment off this gift (re-targeted to another gift)",
+      metadata: {
+        stagedPaymentId,
+        movedToGiftId: giftId,
+        outcome: "link_existing_gift",
+      },
+    });
+  }
 
   // Task #550 — QB-link displacement (human-confirmed). The gift is already
   // QB-linked to a DIFFERENT staged payment (the incumbent); the main UPDATE
@@ -747,10 +814,21 @@ export async function linkGiftInTx(
       !!oldStripeCharge.organizationId ||
       !!oldStripeCharge.individualGiverPersonId ||
       !!oldStripeCharge.householdId;
+    // A failed charge (raw Stripe status 'failed') never settled — after the
+    // swap it must land in the excluded bucket, not back in the pending queue
+    // where it would look like real money again. Mirrors the single-charge
+    // revert (stripe.ts).
+    const oldRawStatus =
+      oldStripeCharge.rawCharge && typeof oldStripeCharge.rawCharge === "object"
+        ? ((oldStripeCharge.rawCharge as Record<string, unknown>)["status"] ??
+          null)
+        : null;
+    const orphanToExcluded = oldRawStatus === "failed";
     await tx
       .update(stripeStagedCharges)
       .set({
-        status: "pending",
+        status: orphanToExcluded ? "excluded" : "pending",
+        exclusionReason: orphanToExcluded ? "failed_charge" : null,
         matchedGiftId: null,
         createdGiftId: null,
         autoApplied: false,
@@ -916,6 +994,8 @@ export async function linkGiftInTx(
   if (switchedStripeSource) summaryParts.push("switched its Stripe source");
   if (displacedLinkedPayment)
     summaryParts.push("displaced its previously linked payment");
+  if (movedOwnApplication)
+    summaryParts.push("moved the payment off its previously matched gift");
   await recordAudit(tx, auditReq, {
     action: "update",
     entityType: "gift",
@@ -942,8 +1022,21 @@ export async function linkGiftInTx(
             displacedStagedPaymentId: incumbentStagedPayment.id,
           }
         : {}),
+      ...(movedOwnApplication && oldAppliedGift
+        ? {
+            movedOwnApplication: true,
+            movedOwnApplicationFromGiftId: oldAppliedGift.id,
+          }
+        : {}),
     },
   });
 
-  return { giftId, rederivePledgeIds };
+  return {
+    giftId,
+    rederivePledgeIds,
+    // The gift this payment was moved OFF of (own-application move), so the
+    // caller can recompute ITS QuickBooks tie status too — it just lost its only
+    // QB evidence (likely → `missing`). Null when no move happened.
+    movedFromGiftId: movedOwnApplication && oldAppliedGift ? oldAppliedGift.id : null,
+  };
 }

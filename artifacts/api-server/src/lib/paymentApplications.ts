@@ -710,6 +710,27 @@ export function chargeIdOwningGiftExcludingCharge(
 // qualified expression. See `.agents/memory/drizzle-sql-template-bare-column.md`.
 export const DEFAULT_PAYMENT_ID_SQL: SQL = sql.raw('"staged_payments"."id"');
 
+/**
+ * One gift id (other than the excluded one) the staged payment is already
+ * applied to via the QuickBooks ledger, or null. The payment-side inverse of
+ * `qbLedgerPaymentIdForGiftExcludingPayment`: given the ANCHOR payment of a
+ * re-target, find the gift its money is presently counted against — the very
+ * row that would trip `applyPaymentApplication`'s book-once guard. Both args
+ * are bound params at every call site (no bare-column footgun).
+ */
+export function qbLedgerGiftIdForPaymentExcludingGift(
+  paymentIdSql: SQL,
+  excludeGiftIdSql: SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT pa.gift_id FROM payment_applications pa
+    WHERE pa.payment_id = ${paymentIdSql}
+      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+      AND pa.gift_id <> ${excludeGiftIdSql}
+    LIMIT 1
+  )`;
+}
+
 /** EXISTS a QuickBooks cash-application ledger row anchored to the staged payment. */
 export function qbLedgerExistsForPayment(
   paymentIdSql: SQL = DEFAULT_PAYMENT_ID_SQL,

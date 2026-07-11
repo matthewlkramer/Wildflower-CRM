@@ -687,6 +687,51 @@ describe.skipIf(!HAS_DB)(
       expect(oldCharge.matchedGiftId).toBeNull();
       expect(oldCharge.matchStatus).toBe("unmatched");
     }, 30_000);
+
+    it("a FAILED old charge lands in the excluded bucket after the swap, not back in pending", async () => {
+      // The Dukes dead-end: the gift's Stripe source is a charge whose raw
+      // Stripe status is 'failed' (the donor's card declined; a retry charge
+      // succeeded later). After the swap the failed charge must NOT return to
+      // the pending queue where it would look like real unmatched money — it
+      // lands excluded/failed_charge, mirroring the single-charge revert.
+      const giftId = await seedGift("100.00");
+      const oldPayoutId = await seedPayout(await seedStaged("100.00"));
+      const oldChargeId = await seedCharge({
+        payoutId: oldPayoutId,
+        grossAmount: "100.00",
+      });
+      await db
+        .update(schema.stripeStagedCharges)
+        .set({ rawCharge: { status: "failed" } })
+        .where(eqFn(schema.stripeStagedCharges.id, oldChargeId));
+      await sourceGiftFromCharge(giftId, oldChargeId);
+
+      const stagedId = await seedStaged("100.00");
+      const payoutId = await seedPayout(stagedId);
+      const newChargeId = await seedCharge({
+        payoutId,
+        grossAmount: "100.00",
+      });
+
+      const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+        outcome: "link_existing_gift",
+        giftId,
+        stripeChargeId: newChargeId,
+        switchStripeSource: true,
+      });
+      expect(res.status).toBe(200);
+      expect(res.json.ok).toBe(true);
+
+      // Gift re-sourced to the NEW charge …
+      expect((await readGift(giftId)).finalAmountStripeChargeId).toBe(
+        newChargeId,
+      );
+      // … and the failed old charge is excluded, never pending again.
+      const oldCharge = await readCharge(oldChargeId);
+      expect(oldCharge.status).toBe("excluded");
+      expect(oldCharge.exclusionReason).toBe("failed_charge");
+      expect(oldCharge.matchedGiftId).toBeNull();
+    }, 30_000);
   },
 );
 
@@ -762,15 +807,14 @@ describe.skipIf(!HAS_DB)(
       expect(staged.matchedGiftId).toBe(giftId);
     }, 30_000);
 
-    it("re-targeting a payment already applied to another gift returns a handled 409, not a raw 500", async () => {
-      // Reproduce the QB worker autoApply end-state (Task #553): the payment is
-      // left APPROVED (still approvable) while holding a COUNTED cash-application
-      // to gift A. Re-targeting it onto gift B would apply one payment's money to
-      // two gifts, so the book-once guard throws PaymentOverApplicationError deep
-      // in linkGiftInTx. That must surface as a handled 409 (mapped through the
-      // ReconcileAbort channel), never escape to the global 500 handler.
-      const giftA = await seedGift("100.00");
-      const paymentId = await seedStaged("100.00", { payerName: "Dionne Kirby" });
+    // Reproduce the QB worker autoApply end-state: the payment is left APPROVED
+    // (still approvable) while holding a COUNTED cash-application to gift A —
+    // the wrong one of two identical donations (the Kirby/Rue $156.48 pair).
+    async function seedWorkerAutoMatch(
+      giftA: string,
+      amount: string,
+    ): Promise<string> {
+      const paymentId = await seedStaged(amount, { payerName: "Dionne Kirby" });
       await db
         .update(schema.stagedPayments)
         .set({
@@ -784,12 +828,22 @@ describe.skipIf(!HAS_DB)(
         id: nextId("pa"),
         paymentId,
         giftId: giftA,
-        amountApplied: "100.00",
+        amountApplied: amount,
         evidenceSource: "quickbooks",
         matchMethod: "system",
         linkRole: "counted",
         lifecycle: "confirmed",
       });
+      return paymentId;
+    }
+
+    it("re-targeting a payment already applied to another gift blocks with a recoverable gate issue (not a raw 500)", async () => {
+      // A movable worker auto-match (ledger gift agrees with matchedGiftId, no
+      // minted/group link) must surface the RECOVERABLE gate issue carrying the
+      // current gift's details, so the workbench can offer the confirm dialog —
+      // never escape to the global 500 handler.
+      const giftA = await seedGift("100.00");
+      const paymentId = await seedWorkerAutoMatch(giftA, "100.00");
 
       const giftB = await seedGift("100.00");
       const res = await api(`/api/reconciliation/cards/${paymentId}/approve`, {
@@ -797,13 +851,75 @@ describe.skipIf(!HAS_DB)(
         giftId: giftB,
       });
       expect(res.status).toBe(409);
-      expect(res.status).not.toBe(500);
-      expect(res.json.error).toBe("payment_already_applied");
-      expect(typeof res.json.message).toBe("string");
+      expect(res.json.error).toBe("consistency_gate");
+      const issue = (res.json.details?.issues ?? []).find(
+        (i: any) => i.code === "payment_already_applied",
+      );
+      expect(issue).toBeTruthy();
+      expect(issue.details?.currentAppliedGift?.id).toBe(giftA);
+      expect(issue.details?.targetGiftId).toBe(giftB);
 
-      // The failed re-target rolled back cleanly: the payment still holds gift A.
+      // The blocked re-target mutated nothing: the payment still holds gift A.
       const after = await readStaged(paymentId);
       expect(after.matchedGiftId).toBe(giftA);
+      expect(after.status).toBe("approved");
+    }, 30_000);
+
+    it("a NON-movable own application (ledger disagrees with matchedGiftId) still hard-409s payment_already_applied", async () => {
+      // When the row's matchedGiftId does NOT agree with the ledger (drift, or a
+      // split/group unwind half-done), the move is not offered — the commit's
+      // book-once guard must still surface as a handled 409, never a 500.
+      const giftA = await seedGift("100.00");
+      const paymentId = await seedWorkerAutoMatch(giftA, "100.00");
+      // Break the agreement: the row itself no longer points at gift A.
+      await db
+        .update(schema.stagedPayments)
+        .set({ matchedGiftId: null })
+        .where(eqFn(schema.stagedPayments.id, paymentId));
+
+      const giftB = await seedGift("100.00");
+      const res = await api(`/api/reconciliation/cards/${paymentId}/approve`, {
+        outcome: "link_existing_gift",
+        giftId: giftB,
+        moveOwnApplication: true,
+      });
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("payment_already_applied");
+      expect(typeof res.json.message).toBe("string");
+    }, 30_000);
+
+    it("with moveOwnApplication moves the payment off the wrong gift and applies it to the right one", async () => {
+      const giftA = await seedGift("156.48");
+      const paymentId = await seedWorkerAutoMatch(giftA, "156.48");
+
+      const giftB = await seedGift("156.48");
+      const res = await api(`/api/reconciliation/cards/${paymentId}/approve`, {
+        outcome: "link_existing_gift",
+        giftId: giftB,
+        moveOwnApplication: true,
+      });
+      expect(res.status).toBe(200);
+      expect(res.json.ok).toBe(true);
+
+      // The payment now holds gift B as permanent reconciled evidence.
+      const after = await readStaged(paymentId);
+      expect(after.status).toBe("reconciled");
+      expect(after.matchedGiftId).toBe(giftB);
+
+      // The cash-application ledger moved with it: the old COUNTED row to gift A
+      // is gone; exactly one counted row ties this payment's money to gift B.
+      const paRows = await db
+        .select()
+        .from(schema.paymentApplications)
+        .where(eqFn(schema.paymentApplications.paymentId, paymentId));
+      const counted = paRows.filter((r) => r.linkRole === "counted");
+      expect(counted).toHaveLength(1);
+      expect(counted[0].giftId).toBe(giftB);
+
+      // QB tie status recomputed on BOTH sides: the target gift gained the QB
+      // evidence; the old gift lost its only QB evidence (no longer tied).
+      expect((await readGift(giftB)).quickbooksTieStatus).toBe("tied");
+      expect((await readGift(giftA)).quickbooksTieStatus).not.toBe("tied");
     }, 30_000);
 
     it("composes with the Stripe source switch: one confirmation resolves BOTH conflicts", async () => {
