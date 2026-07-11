@@ -49,7 +49,6 @@ import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import {
   InlineEditPersonPicker,
   InlineEditDonor,
-  InlineEditIntermediaryPicker,
   usePersonName,
   useOrganizationName,
   useHouseholdName,
@@ -237,7 +236,28 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
     );
   }
 
-  const donorDisplay: ReactNode = donorLink ?? noDonor;
+  // Header subtitle: "Donor Name via Intermediary Name" when a payment
+  // intermediary is involved, otherwise just the donor name.
+  const intermediaryLink: ReactNode = gift.paymentIntermediaryId ? (
+    <Link
+      href={`/payment-intermediaries/${gift.paymentIntermediaryId}`}
+      className="text-primary hover:underline"
+    >
+      {intermediaryName ?? gift.paymentIntermediaryId}
+    </Link>
+  ) : null;
+  const donorDisplay: ReactNode = donorLink ? (
+    intermediaryLink ? (
+      <span>
+        {donorLink} <span className="text-muted-foreground">via</span>{" "}
+        {intermediaryLink}
+      </span>
+    ) : (
+      donorLink
+    )
+  ) : (
+    noDonor
+  );
 
   const advisorDisplay: ReactNode = gift.advisorPersonId ? (
     <Link
@@ -259,10 +279,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   ) : (
     "—"
   );
-  const intermediaryDisplay: ReactNode = gift.paymentIntermediaryId
-    ? (intermediaryName ?? gift.paymentIntermediaryId)
-    : "—";
-
   const update = useUpdateGiftOrPayment({
     mutation: {
       onSuccess: async () => {
@@ -309,8 +325,19 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
   // Changing the donor also clears any linked pledge: the pledge picker is
   // donor-scoped, so a payment must stay on a pledge belonging to its donor —
   // keeping a stale link would point the gift at a different donor's pledge.
-  const saveDonor = (body: DonorSaveBody) =>
-    patch({ ...body, opportunityId: null });
+  // The subtitle editor also manages the payment intermediary, so the body
+  // may carry paymentIntermediaryId alongside the donor FKs. Only clear the
+  // pledge link when the DONOR actually changed — an intermediary-only edit
+  // must not unlink the gift from its pledge.
+  const saveDonor = (
+    body: DonorSaveBody & { paymentIntermediaryId?: string | null },
+  ) => {
+    const donorChanged =
+      body.organizationId !== (gift.organizationId ?? null) ||
+      body.individualGiverPersonId !== (gift.individualGiverPersonId ?? null) ||
+      body.householdId !== (gift.householdId ?? null);
+    return patch(donorChanged ? { ...body, opportunityId: null } : body);
+  };
 
   async function saveName() {
     const trimmed = nameValue.trim();
@@ -505,7 +532,20 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       title={title}
       typeBadge="Gift"
       headerBadges={<NeedsResearchBadge flagged={gift.flaggedForResearch} />}
-      subtitle={donorDisplay}
+      subtitle={
+        <InlineEditDonor
+          testIdBase="gift-donor"
+          align="left"
+          value={{
+            organizationId: gift.organizationId ?? null,
+            individualGiverPersonId: gift.individualGiverPersonId ?? null,
+            householdId: gift.householdId ?? null,
+          }}
+          intermediary={{ value: gift.paymentIntermediaryId ?? null }}
+          display={donorDisplay}
+          onSave={saveDonor}
+        />
+      }
       actions={actions}
       highlights={highlights}
       left={
@@ -701,30 +741,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       }
       right={
         <>
-          <RelatedCard title="Donor">
-            <div className="space-y-1 px-2 py-1">
-              <InlineEditDonor
-                testIdBase="gift-donor"
-                value={{
-                  organizationId: gift.organizationId ?? null,
-                  individualGiverPersonId:
-                    gift.individualGiverPersonId ?? null,
-                  householdId: gift.householdId ?? null,
-                }}
-                display={donorDisplay}
-                onSave={saveDonor}
-              />
-              <Row label="Payment intermediary">
-                <InlineEditIntermediaryPicker
-                  testIdBase="gift-intermediary"
-                  value={gift.paymentIntermediaryId ?? null}
-                  display={intermediaryDisplay}
-                  onSave={(next) => patch({ paymentIntermediaryId: next })}
-                />
-              </Row>
-            </div>
-          </RelatedCard>
-
           <RelatedCard
             title="People"
             count={associatedPeople.length || undefined}

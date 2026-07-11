@@ -776,12 +776,24 @@ export function InlineEditDonor({
   display,
   onSave,
   individualLabel = "Individual",
+  align = "right",
+  intermediary,
 }: {
   testIdBase?: string;
   value: DonorValue;
   display: ReactNode;
-  onSave: (body: DonorSaveBody) => SaveResult;
+  onSave: (
+    body: DonorSaveBody & { paymentIntermediaryId?: string | null },
+  ) => SaveResult;
   individualLabel?: string;
+  /** Read-mode alignment: "right" suits label/value rows, "left" suits header subtitles. */
+  align?: "left" | "right";
+  /**
+   * When set, the editor also manages the record's payment intermediary:
+   * the form shows a "via <intermediary>" picker (clearable — "— None —")
+   * and the save body carries `paymentIntermediaryId` alongside the donor FKs.
+   */
+  intermediary?: { value: string | null };
 }) {
   const [editing, setEditing] = useState(false);
   const { busy, run } = useSaveRunner();
@@ -789,20 +801,29 @@ export function InlineEditDonor({
   const initialId = donorIdForType(value, initialType);
   const [type, setType] = useState<DonorType>(initialType ?? "organization");
   const [pickedId, setPickedId] = useState<string | null>(initialId);
+  const [intermediaryId, setIntermediaryId] = useState<string | null>(
+    intermediary?.value ?? null,
+  );
+  const intermediaryValue = intermediary?.value ?? null;
 
   useEffect(() => {
     if (editing) {
       const t0 = currentDonorType(value) ?? "organization";
       setType(t0);
       setPickedId(donorIdForType(value, t0));
+      setIntermediaryId(intermediaryValue);
     }
-  }, [editing, value]);
+  }, [editing, value, intermediaryValue]);
 
   if (!editing) {
     return (
       <div className={cn(INLINE_EDIT_GROUP, "flex items-center gap-2 min-w-0")}>
         <div
-          className={cn("truncate text-right flex-1", EDIT_VALUE_CLICKABLE)}
+          className={cn(
+            "truncate",
+            align === "right" ? "text-right flex-1" : "text-left",
+            EDIT_VALUE_CLICKABLE,
+          )}
           onClick={makeEditValueClick(() => setEditing(true))}
           title="Edit donor"
         >
@@ -826,16 +847,48 @@ export function InlineEditDonor({
     );
   }
 
-  const body = buildDonorBody(type, pickedId);
+  const body: DonorSaveBody & { paymentIntermediaryId?: string | null } =
+    buildDonorBody(type, pickedId);
+  if (intermediary) body.paymentIntermediaryId = intermediaryId;
   const dirty =
     body.organizationId !== (value.organizationId ?? null) ||
     body.individualGiverPersonId !== (value.individualGiverPersonId ?? null) ||
-    body.householdId !== (value.householdId ?? null);
+    body.householdId !== (value.householdId ?? null) ||
+    (intermediary ? intermediaryId !== intermediaryValue : false);
   const canSave = dirty && pickedId !== null && !busy;
   const trySave = () => {
     if (!canSave) return;
     run(() => onSave(body), () => setEditing(false));
   };
+
+  const saveCancelButtons = (
+    <>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-7 w-7 text-primary"
+        disabled={!canSave}
+        onClick={trySave}
+        aria-label="Save donor"
+        data-testid={testIdBase ? `button-save-${testIdBase}` : undefined}
+      >
+        <Check className="h-4 w-4" />
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-7 w-7 text-muted-foreground"
+        disabled={busy}
+        onClick={() => setEditing(false)}
+        aria-label="Cancel donor"
+        data-testid={testIdBase ? `button-cancel-${testIdBase}` : undefined}
+      >
+        <X className="h-4 w-4" />
+      </Button>
+    </>
+  );
 
   return (
     <div className="flex flex-col gap-2 min-w-0">
@@ -897,31 +950,26 @@ export function InlineEditDonor({
             testId={testIdBase ? `select-${testIdBase}` : undefined}
           />
         )}
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7 text-primary"
-          disabled={!canSave}
-          onClick={trySave}
-          aria-label="Save donor"
-          data-testid={testIdBase ? `button-save-${testIdBase}` : undefined}
-        >
-          <Check className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7 text-muted-foreground"
-          disabled={busy}
-          onClick={() => setEditing(false)}
-          aria-label="Cancel donor"
-          data-testid={testIdBase ? `button-cancel-${testIdBase}` : undefined}
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        {intermediary ? null : saveCancelButtons}
       </div>
+      {intermediary ? (
+        <div className="flex items-center gap-1 min-w-0">
+          <span className="shrink-0 text-xs text-muted-foreground">via</span>
+          <EntityCombobox
+            useSearch={useIntermediarySearch}
+            useResolve={useIntermediaryName}
+            value={intermediaryId}
+            onChange={setIntermediaryId}
+            allowNull
+            placeholder="No intermediary"
+            disabled={busy}
+            testId={
+              testIdBase ? `select-${testIdBase}-intermediary` : undefined
+            }
+          />
+          {saveCancelButtons}
+        </div>
+      ) : null}
       <DafSponsorDonorWarning
         organizationId={type === "organization" ? pickedId : null}
       />

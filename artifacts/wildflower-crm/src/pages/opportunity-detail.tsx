@@ -666,7 +666,21 @@ function OppView({
     </>
   );
 
-  const subtitle = donorDisplay;
+  // The donor lives in the header subtitle (no separate Donor card): plain
+  // link + hover pencil that opens the donor editor in place.
+  const subtitle = (
+    <InlineEditDonor
+      testIdBase="opp-donor"
+      align="left"
+      value={{
+        organizationId: opp.organizationId ?? null,
+        individualGiverPersonId: opp.individualGiverPersonId ?? null,
+        householdId: opp.householdId ?? null,
+      }}
+      display={donorDisplay}
+      onSave={saveDonor}
+    />
+  );
 
   return (
     <>
@@ -918,22 +932,6 @@ function OppView({
         }
         right={
           <>
-            <RelatedCard title="Donor">
-              <div className="space-y-1 px-2 py-1">
-                <InlineEditDonor
-                  testIdBase="opp-donor"
-                  value={{
-                    organizationId: opp.organizationId ?? null,
-                    individualGiverPersonId:
-                      opp.individualGiverPersonId ?? null,
-                    householdId: opp.householdId ?? null,
-                  }}
-                  display={donorDisplay}
-                  onSave={saveDonor}
-                />
-              </div>
-            </RelatedCard>
-
             <RelatedCard
               title="People"
               count={associatedPeople.length || undefined}
