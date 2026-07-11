@@ -155,3 +155,4 @@
 - [Scoped validation checks](scoped-validation-checks.md) — fast per-package checks (libs/api/web/codegen/test-api/test-web/full); never run codegen alongside web checks (regenerates the imported generated dir → false missing-import).
 - [Own-application retarget move](reconciliation-move-own-application.md) — moveOwnApplication moves a payment off the wrong gift only when ledger==matchedGiftId & no mint/group; failed Stripe orphan lands excluded/failed_charge.
 - [Failed Stripe charges auto-excluded](stripe-failed-charge-exclusion.md) — mirror keeps them but ingest/upsert/revert all land failed charges in excluded/failed_charge; exclusion-reason enum lives in 4 places that must move together.
+- [Replit DB deletion nukes dev AND prod](replit-db-deletion-recovery.md) — deleting the built-in DB kills both branches; publish recreates empty prod schema; restore prod from dump human-run; verify with count(*) not n_live_tup.
