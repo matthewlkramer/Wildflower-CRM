@@ -23,28 +23,6 @@ export function donorTypeToRecordKind(
   return "organization";
 }
 
-export const CONFIDENCE_TIER_LABEL: Record<BundleConfidenceTier, string> = {
-  high: "High",
-  medium: "Medium",
-  low: "Low",
-  none: "No match",
-};
-
-/** Tailwind classes for a confidence-tier chip. */
-export function confidenceTierClass(tier: BundleConfidenceTier): string {
-  switch (tier) {
-    case "high":
-      return "bg-emerald-100 text-emerald-800 border-emerald-200";
-    case "medium":
-      return "bg-amber-100 text-amber-800 border-amber-200";
-    case "low":
-      return "bg-orange-100 text-orange-800 border-orange-200";
-    case "none":
-    default:
-      return "bg-muted text-muted-foreground border-border";
-  }
-}
-
 /** Tailwind classes for a warning chip, keyed by severity. */
 export function warningSeverityClass(severity: BundleWarningSeverity): string {
   switch (severity) {
