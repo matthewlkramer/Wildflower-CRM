@@ -5,10 +5,10 @@ description: Reconciler card payer labels come from the QB deposit memo, which c
 
 The reconciliation card's payer label / "Create new gift — <name>" suggestion is derived
 from the QuickBooks deposit memo (payer_name / line_description). That memo can be flat-out
-wrong: a real prod case had a deposit labeled "Donation from Dionne Kirby via Stripe" whose
-settling payout contained exactly one charge — Jamie Rue's, for the same amount, one day
-after Kirby's identical-amount donation (which was already fully booked with both QB and
-Stripe evidence on her gift).
+wrong: a real prod case had a deposit labeled "Donation from Donor A via Stripe" whose
+settling payout contained exactly one charge — Donor B's, for the same amount, one day
+after Donor A's identical-amount donation (which was already fully booked with both QB and
+Stripe evidence on Donor A's gift).
 
 **Why:** Stripe deposits arrive as lump transfers; QB users type the memo by hand and
 same-amount adjacent donations get mislabeled. Accepting the suggested "Create new gift"

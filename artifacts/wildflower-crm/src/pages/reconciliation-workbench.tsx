@@ -118,6 +118,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { formatDateShort } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { usePersistedState } from "@/hooks/use-persisted-state";
@@ -4022,6 +4023,43 @@ function WriteOffPledgeFlow({
 
 // ─── Re-target dialog ─────────────────────────────────────────────────────────
 
+// Compact summary of the money event being matched, pinned at the top of the
+// gift-search dialogs so the operator doesn't have to flip back to the card to
+// recall its amount / date / payer.
+function AnchorPaymentSummary({ card }: { card: ReconciliationCard }) {
+  const payer = card.stripeChargeDonorName ?? card.payerName;
+  return (
+    <div
+      className="rounded-md border bg-muted/40 px-3 py-2"
+      data-testid="anchor-payment-summary"
+    >
+      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Matching this payment
+      </div>
+      <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
+        <span className="font-medium">{payer ?? "Unknown payer"}</span>
+        <span className="font-semibold tabular-nums">{money(card.amount)}</span>
+        <span className="text-muted-foreground">
+          {card.dateReceived ? formatDateShort(card.dateReceived) : "No date"}
+        </span>
+        {card.qbPaymentMethod && (
+          <span className="text-xs text-muted-foreground">
+            {card.qbPaymentMethod}
+          </span>
+        )}
+      </div>
+      {card.rawReference && (
+        <div
+          className="mt-0.5 truncate text-xs text-muted-foreground"
+          title={card.rawReference}
+        >
+          {card.rawReference}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RetargetDialog({
   card,
   busy,
@@ -4088,14 +4126,10 @@ function RetargetDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            {description ?? (
-              <>
-                Link {card.payerName ?? "this payment"} ({money(card.amount)}) to
-                a different existing gift.
-              </>
-            )}
+            {description ?? "Link this payment to a different existing gift."}
           </DialogDescription>
         </DialogHeader>
+        <AnchorPaymentSummary card={card} />
         <div className="flex gap-2">
           <Input
             autoFocus
@@ -4143,9 +4177,14 @@ function RetargetDialog({
                   >
                     <span className="min-w-0">
                       <span className="font-medium">{g.label}</span>
-                      {g.sublabel && (
+                      {(g.sublabel || g.date) && (
                         <span className="block text-xs text-muted-foreground">
-                          {g.sublabel}
+                          {[
+                            g.sublabel,
+                            g.date ? formatDateShort(g.date) : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </span>
                       )}
                       {linked && (
@@ -4944,11 +4983,11 @@ function SplitEditorDialog({
         <DialogHeader>
           <DialogTitle>Split payment across gifts</DialogTitle>
           <DialogDescription>
-            {card.payerName ?? "This payment"} ({money(card.amount)}) — link two
-            or more existing gifts and/or a new remainder gift. Each existing
-            gift is applied at its own booked amount.
+            Link two or more existing gifts and/or a new remainder gift. Each
+            existing gift is applied at its own booked amount.
           </DialogDescription>
         </DialogHeader>
+        <AnchorPaymentSummary card={card} />
 
         {/* Application rows — existing gifts */}
         <div className="space-y-1.5">
@@ -4967,9 +5006,11 @@ function SplitEditorDialog({
               >
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{r.label}</div>
-                  {r.sublabel && (
+                  {(r.sublabel || r.date) && (
                     <div className="truncate text-xs text-muted-foreground">
-                      {r.sublabel}
+                      {[r.sublabel, r.date ? formatDateShort(r.date) : null]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </div>
                   )}
                 </div>
@@ -5024,9 +5065,11 @@ function SplitEditorDialog({
                     <span className="block truncate font-medium">
                       {g.label}
                     </span>
-                    {g.sublabel && (
+                    {(g.sublabel || g.date) && (
                       <span className="block truncate text-xs text-muted-foreground">
-                        {g.sublabel}
+                        {[g.sublabel, g.date ? formatDateShort(g.date) : null]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </span>
                     )}
                   </span>

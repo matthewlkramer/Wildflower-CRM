@@ -1038,6 +1038,28 @@ function PaymentLinkDialog({
               : "The link is recorded against the whole gift."}
           </DialogDescription>
         </DialogHeader>
+        <div
+          className="rounded-md border bg-muted/40 px-3 py-2"
+          data-testid="payment-link-anchor-summary"
+        >
+          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Matching this gift
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
+            <span className="font-medium">{g.donorName ?? "No donor"}</span>
+            <span className="font-semibold tabular-nums">
+              {amount != null ? formatCurrency(amount) : "No amount"}
+            </span>
+            <span className="text-muted-foreground">
+              {date != null ? formatDateShort(date) : "No date"}
+            </span>
+            {g.paymentMethod && (
+              <span className="text-xs text-muted-foreground">
+                {formatEnum(g.paymentMethod)}
+              </span>
+            )}
+          </div>
+        </div>
         <div className="space-y-3">
           <Input
             value={q}
