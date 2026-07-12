@@ -398,6 +398,47 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
     expect(pagination.total).toBeGreaterThanOrEqual(1);
   }, 30_000);
 
+  it("q-search carries linkedMatches: text-matching gifts excluded because already tied to money", async () => {
+    // Unique label so the 10-row linkedMatches cap can't be crowded out by
+    // other tests' linked gifts sharing the run MARKER.
+    const org = await seedOrg({ label: "ZZLinkedMatch Org" });
+    const giftUnlinked = await seedGift({ organizationId: org });
+    const giftQbLinked = await seedGift({ organizationId: org });
+    await seedStaged({ label: "zz-lm-matched", matchedGiftId: giftQbLinked });
+    const giftStripeSettled = await seedGift({ organizationId: org });
+    const charge = await seedCharge({ matchedGiftId: giftStripeSettled });
+    await seedStripeLedgerRow(giftStripeSettled, charge);
+
+    const res = await apiGet(
+      `/api/reconciliation/gifts-missing-qb?q=${encodeURIComponent("ZZLinkedMatch")}&limit=200`,
+    );
+    expect(res.status).toBe(200);
+
+    // The worklist itself: unlinked gift in, linked gifts out.
+    const ids = new Set((res.json.data as GiftRow[]).map((r) => r.id));
+    expect(ids.has(giftUnlinked)).toBe(true);
+    expect(ids.has(giftQbLinked)).toBe(false);
+    expect(ids.has(giftStripeSettled)).toBe(false);
+
+    // The companion list: ONLY the linked gifts, tagged with WHY they're linked.
+    const lm = res.json.linkedMatches as {
+      id: string;
+      donorName: string | null;
+      linkedVia: string;
+    }[];
+    expect(Array.isArray(lm)).toBe(true);
+    const byId = new Map(lm.map((m) => [m.id, m]));
+    expect(byId.get(giftQbLinked)?.linkedVia).toBe("quickbooks");
+    expect(byId.get(giftStripeSettled)?.linkedVia).toBe("processor");
+    expect(byId.has(giftUnlinked)).toBe(false);
+    expect(byId.get(giftQbLinked)?.donorName).toContain("ZZLinkedMatch");
+
+    // Without q the key is absent entirely.
+    const resNoQ = await apiGet(`/api/reconciliation/gifts-missing-qb?limit=1`);
+    expect(resNoQ.status).toBe(200);
+    expect(resNoQ.json.linkedMatches).toBeUndefined();
+  }, 30_000);
+
   it("excludes a gift QB-linked ONLY via the ledger (no legacy columns) — proves the read consults payment_applications", async () => {
     // Ledger-only divergence: a staged payment with NO legacy matched/created/
     // group pointer, whose only tie to the gift is a `payment_applications` row.

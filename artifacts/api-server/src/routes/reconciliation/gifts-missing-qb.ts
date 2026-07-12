@@ -545,11 +545,76 @@ router.get(
       )
     )`;
 
+    // Companion "already linked" matches (q-search only). The worklist by
+    // definition EXCLUDES gifts already tied to money, so a text search for one
+    // finds nothing and reads as "the gift doesn't exist". Surface up to 10
+    // text-matching gifts that are excluded BECAUSE they're linked (QB ledger row,
+    // or settled through Stripe/Donorbox) so the UI can gray them out with a note —
+    // mirroring the payment-side gift search. Gift-level (not per-allocation),
+    // text filter only: the other facets (entity/method/date) slice the WORKLIST,
+    // while this is a "did I miss it?" lookup.
+    const linkedMatchesPromise =
+      q.length >= 2
+        ? (() => {
+            const like = `%${escapeLike(q)}%`;
+            return db
+              .select({
+                id: giftsAndPayments.id,
+                giftName: giftsAndPayments.name,
+                amount: displayAmountSql,
+                dateReceived: giftsAndPayments.dateReceived,
+                hasQbLedger: sql<boolean>`${qbLedgerExistsForGift()}`,
+                organizationId: giftsAndPayments.organizationId,
+                individualGiverPersonId:
+                  giftsAndPayments.individualGiverPersonId,
+                householdId: giftsAndPayments.householdId,
+                organizationName: organizations.name,
+                organizationAnonymous: organizations.anonymous,
+                organizationOwnerUserId: organizations.ownerUserId,
+                personName: personNameSql,
+                personAnonymous: people.anonymous,
+                personOwnerUserId: people.ownerUserId,
+                householdName: households.name,
+              })
+              .from(giftsAndPayments)
+              .leftJoin(
+                organizations,
+                eq(organizations.id, giftsAndPayments.organizationId),
+              )
+              .leftJoin(
+                people,
+                eq(people.id, giftsAndPayments.individualGiverPersonId),
+              )
+              .leftJoin(
+                households,
+                eq(households.id, giftsAndPayments.householdId),
+              )
+              .where(
+                and(
+                  isNull(giftsAndPayments.archivedAt),
+                  or(
+                    ilike(organizations.name, like),
+                    ilike(people.fullName, like),
+                    sql`TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})) ILIKE ${like}`,
+                    ilike(households.name, like),
+                    ilike(giftsAndPayments.name, like),
+                  )!,
+                  sql`(${qbLedgerExistsForGift()} OR ${isProcessorSettledSql})`,
+                ),
+              )
+              .orderBy(
+                desc(giftsAndPayments.dateReceived),
+                desc(giftsAndPayments.id),
+              )
+              .limit(10);
+          })()
+        : Promise.resolve(null);
+
     // The driving table is gift_allocations (LEFT-joined onto gifts so a gift with
     // no allocation still surfaces one row). Entity / fundable-project / school are
     // the ALLOCATION's own scope. Keep the list and count queries in lockstep at
     // this allocation-row granularity.
-    const [rows, totalRow] = await Promise.all([
+    const [rows, totalRow, linkedRows] = await Promise.all([
       db
         .select({
           id: giftsAndPayments.id,
@@ -635,7 +700,44 @@ router.get(
         .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
         .where(where)
         .then((r) => r[0]),
+      linkedMatchesPromise,
     ]);
+
+    // Mask donor names on the linked matches exactly like the main rows.
+    const linkedMatches = linkedRows?.map((r) => {
+      let donorName: string | null = null;
+      let donorKind: "organization" | "person" | "household" | null = null;
+      if (r.organizationId) {
+        donorKind = "organization";
+        donorName = maskName(
+          r.organizationName,
+          {
+            anonymous: r.organizationAnonymous,
+            ownerUserId: r.organizationOwnerUserId,
+          },
+          viewer,
+        );
+      } else if (r.individualGiverPersonId) {
+        donorKind = "person";
+        donorName = maskName(
+          r.personName,
+          { anonymous: r.personAnonymous, ownerUserId: r.personOwnerUserId },
+          viewer,
+        );
+      } else if (r.householdId) {
+        donorKind = "household";
+        donorName = r.householdName;
+      }
+      return {
+        id: r.id,
+        giftName: r.giftName,
+        donorName,
+        donorKind,
+        amount: r.amount,
+        dateReceived: r.dateReceived,
+        linkedVia: r.hasQbLedger ? ("quickbooks" as const) : ("processor" as const),
+      };
+    });
 
     const base = rows.map((r) => {
       let donorName: string | null = null;
@@ -727,6 +829,7 @@ router.get(
 
     res.json({
       data,
+      ...(linkedMatches ? { linkedMatches } : {}),
       pagination: {
         page: Math.floor(offset / limit) + 1,
         limit,

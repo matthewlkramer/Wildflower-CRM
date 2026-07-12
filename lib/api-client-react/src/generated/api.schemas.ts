@@ -4353,8 +4353,58 @@ falling back to the gift's display amount.
   proposedPayment?: GiftMissingQbProposedPayment | null;
 }
 
+export type GiftMissingQbLinkedMatchDonorKind = typeof GiftMissingQbLinkedMatchDonorKind[keyof typeof GiftMissingQbLinkedMatchDonorKind] | null;
+
+
+export const GiftMissingQbLinkedMatchDonorKind = {
+  organization: 'organization',
+  person: 'person',
+  household: 'household',
+} as const;
+
+/**
+ * Why the gift is excluded from the worklist: quickbooks = it has a QuickBooks cash-application ledger row; processor = it is settled through Stripe/Donorbox (payout-level money, never gets a per-gift QB record).
+ */
+export type GiftMissingQbLinkedMatchLinkedVia = typeof GiftMissingQbLinkedMatchLinkedVia[keyof typeof GiftMissingQbLinkedMatchLinkedVia];
+
+
+export const GiftMissingQbLinkedMatchLinkedVia = {
+  quickbooks: 'quickbooks',
+  processor: 'processor',
+} as const;
+
+/**
+ * A gift matching the free-text search that is EXCLUDED from the
+missing-QB worklist because it is already tied to money (a QuickBooks
+cash-application ledger row, or settled through Stripe/Donorbox at the
+payout level). Surfaced grayed-out so a search never silently hides an
+already-matched gift — mirrors the "already linked" note the payment-side
+gift search shows. Read-only context; not actionable from this list.
+
+ */
+export interface GiftMissingQbLinkedMatch {
+  /** Gift (gifts_and_payments) id. */
+  id: string;
+  /** Gift header name. */
+  giftName?: string | null;
+  /** Donor display name (anonymous-masked for the viewer). */
+  donorName?: string | null;
+  donorKind?: GiftMissingQbLinkedMatchDonorKind;
+  /** Display amount: gift header amount, falling back to the sum of allocation sub-amounts. */
+  amount?: string | null;
+  /** Gift header date received. */
+  dateReceived?: string | null;
+  /** Why the gift is excluded from the worklist: quickbooks = it has a QuickBooks cash-application ledger row; processor = it is settled through Stripe/Donorbox (payout-level money, never gets a per-gift QB record). */
+  linkedVia: GiftMissingQbLinkedMatchLinkedVia;
+}
+
 export interface GiftMissingQbList {
   data: GiftMissingQb[];
+  /** Present only when `q` is set (>= 2 chars): up to 10 gifts matching the
+search text that are already tied to money and therefore NOT in `data`.
+Lets the UI show "already matched" context instead of an empty result.
+ */
+  linkedMatches?: GiftMissingQbLinkedMatch[];
   pagination: Pagination;
 }
 
@@ -9210,7 +9260,7 @@ limit?: number;
 
 export type ListGiftsMissingQbParams = {
 /**
- * Free-text over donor name (organization / person / household) or the CRM gift name.
+ * Free-text over donor name (organization / person / household) or the CRM gift name. When set, the response ALSO carries `linkedMatches`: gifts matching the text that are excluded from the list because they are already tied to money, so a search never silently hides an already-matched gift.
  */
 q?: string;
 /**

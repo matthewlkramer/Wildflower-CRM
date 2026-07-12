@@ -246,6 +246,8 @@ reference, and the design docs.
 - **`gmail.send` scope** — new OAuth scope; each user must reconnect Google once.
   Until then the extension falls back to the legacy single-pixel send.
 - **Anonymous masking gaps** — join-projection name references (role rows, household
-  members, colleague/affiliation lists) aren't masked yet.
+  members, colleague/affiliation lists) aren't masked yet. Gift NAMES (which often
+  embed donor names) are also returned unmasked everywhere, including the
+  gifts-missing-qb `linkedMatches` companion list.
 - **Media ingest** — no relevance filtering on person-name searches (common names →
   false positives); live GDELT calls are flaky from the dev sandbox but work in prod.

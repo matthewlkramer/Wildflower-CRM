@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { useDebounce } from "@/hooks/use-debounce";
 import { Link, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -4088,22 +4096,37 @@ function RetargetDialog({
   const [results, setResults] = useState<ReconciliationCandidate[]>([]);
   const [searching, setSearching] = useState(false);
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
+  const debouncedQ = useDebounce(q.trim());
+  // Monotonic sequence so a slow earlier response can never clobber the
+  // results of a newer (debounced) search.
+  const searchSeq = useRef(0);
 
-  const runSearch = useCallback(async () => {
-    setSearching(true);
-    try {
-      const res = await searchReconciliationNode("gift", {
-        stagedPaymentId: card.stagedPaymentId,
-        q: q.trim() || undefined,
-        limit: 20,
-      });
-      setResults(res.data ?? []);
-    } catch {
-      setResults([]);
-    } finally {
-      setSearching(false);
-    }
-  }, [card.stagedPaymentId, q]);
+  const runSearch = useCallback(
+    async (query: string) => {
+      const seq = ++searchSeq.current;
+      setSearching(true);
+      try {
+        const res = await searchReconciliationNode("gift", {
+          stagedPaymentId: card.stagedPaymentId,
+          q: query || undefined,
+          limit: 20,
+        });
+        if (seq === searchSeq.current) setResults(res.data ?? []);
+      } catch {
+        if (seq === searchSeq.current) setResults([]);
+      } finally {
+        if (seq === searchSeq.current) setSearching(false);
+      }
+    },
+    [card.stagedPaymentId],
+  );
+
+  // Auto-search: on open (empty query → amount/date-band candidates for this
+  // payment) and as the user types (debounced) — same feel as the worklist
+  // search in the right-hand column.
+  useEffect(() => {
+    void runSearch(debouncedQ);
+  }, [debouncedQ, runSearch]);
 
   const handleUnlink = useCallback(
     async (owningStagedPaymentId: string) => {
@@ -4112,12 +4135,12 @@ function RetargetDialog({
       try {
         await onUnlink(owningStagedPaymentId);
         // Re-run the search so the just-freed gift becomes pickable in place.
-        await runSearch();
+        await runSearch(debouncedQ);
       } finally {
         setUnlinkingId(null);
       }
     },
-    [onUnlink, runSearch],
+    [onUnlink, runSearch, debouncedQ],
   );
 
   return (
@@ -4130,27 +4153,27 @@ function RetargetDialog({
           </DialogDescription>
         </DialogHeader>
         <AnchorPaymentSummary card={card} />
-        <div className="flex gap-2">
+        <div className="relative">
           <Input
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && runSearch()}
-            placeholder="Search gifts by donor or amount…"
+            placeholder="Search donor or gift name…"
+            className="pr-9"
           />
-          <Button onClick={runSearch} disabled={searching}>
-            {searching ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              "Search"
-            )}
-          </Button>
+          {searching && (
+            <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+          )}
         </div>
         <Separator />
         <div className="max-h-72 space-y-1 overflow-y-auto">
           {results.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              {searching ? "Searching…" : "No gifts found yet — search above."}
+              {searching
+                ? "Searching…"
+                : q.trim()
+                  ? "No matching gifts."
+                  : "No gifts near this payment's amount — type to search all gifts."}
             </p>
           ) : (
             results.map((g) => {
@@ -4889,28 +4912,42 @@ function SplitEditorDialog({
   const [q, setQ] = useState("");
   const [results, setResults] = useState<ReconciliationCandidate[]>([]);
   const [searching, setSearching] = useState(false);
+  const debouncedQ = useDebounce(q.trim());
+  // Monotonic sequence so a slow earlier response can never clobber the
+  // results of a newer (debounced) search.
+  const searchSeq = useRef(0);
 
   const [remainderOn, setRemainderOn] = useState(false);
   const [remAmount, setRemAmount] = useState("");
   const [remDonorType, setRemDonorType] = useState<DonorType>("organization");
   const [remDonorId, setRemDonorId] = useState<string | null>(null);
 
-  const runSearch = useCallback(async () => {
-    setSearching(true);
-    try {
-      const res = await searchReconciliationNode("gift", {
-        stagedPaymentId: card.stagedPaymentId,
-        q: q.trim() || undefined,
-        split: true,
-        limit: 20,
-      });
-      setResults(res.data ?? []);
-    } catch {
-      setResults([]);
-    } finally {
-      setSearching(false);
-    }
-  }, [card.stagedPaymentId, q]);
+  const runSearch = useCallback(
+    async (query: string) => {
+      const seq = ++searchSeq.current;
+      setSearching(true);
+      try {
+        const res = await searchReconciliationNode("gift", {
+          stagedPaymentId: card.stagedPaymentId,
+          q: query || undefined,
+          split: true,
+          limit: 20,
+        });
+        if (seq === searchSeq.current) setResults(res.data ?? []);
+      } catch {
+        if (seq === searchSeq.current) setResults([]);
+      } finally {
+        if (seq === searchSeq.current) setSearching(false);
+      }
+    },
+    [card.stagedPaymentId],
+  );
+
+  // Auto-search: on open (empty query → split-fraction candidates for this
+  // payment) and as the user types (debounced).
+  useEffect(() => {
+    void runSearch(debouncedQ);
+  }, [debouncedQ, runSearch]);
 
   const addRow = useCallback((gift: ReconciliationCandidate) => {
     setRows((prev) =>
@@ -5028,20 +5065,16 @@ function SplitEditorDialog({
         </div>
 
         {/* Gift search */}
-        <div className="flex gap-2">
+        <div className="relative">
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && runSearch()}
-            placeholder="Search gifts by donor or amount…"
+            placeholder="Search donor or gift name…"
+            className="pr-9"
           />
-          <Button onClick={runSearch} disabled={searching} variant="outline">
-            {searching ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              "Search"
-            )}
-          </Button>
+          {searching && (
+            <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+          )}
         </div>
         {results.length > 0 && (
           <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-1">

@@ -662,7 +662,7 @@ export const listGiftsMissingQbQueryOffsetMin = 0;
 
 
 export const ListGiftsMissingQbQueryParams = zod.object({
-  "q": zod.coerce.string().optional().describe('Free-text over donor name (organization \/ person \/ household) or the CRM gift name.'),
+  "q": zod.coerce.string().optional().describe('Free-text over donor name (organization \/ person \/ household) or the CRM gift name. When set, the response ALSO carries `linkedMatches`: gifts matching the text that are excluded from the list because they are already tied to money, so a search never silently hides an already-matched gift.'),
   "entityId": zod.coerce.string().optional().describe('Filter to one Wildflower legal entity.'),
   "paymentMethod": zod.enum(['ach', 'check', 'wire', 'stock', 'donor_box', 'daf_ach', 'daf_check', 'daf_bill_com']).optional().describe('Filter to one recorded gift payment method.'),
   "fundingSource": zod.enum(['stripe', 'donorbox', 'qb_direct']).optional().describe('Filter by the source of this gift\'s best-guess UNLINKED payment proposal (the same match the row\'s one-click Link surfaces): stripe = only a Stripe charge is plausible; qb_direct = a QuickBooks staged payment is plausible (preferred over Stripe); donorbox = no proposals originate from Donorbox (settles via Stripe), so this always yields none — kept only so the column\'s filter set matches the other two Gift-report columns.'),
@@ -709,6 +709,15 @@ export const ListGiftsMissingQbResponse = zod.object({
   "reference": zod.string().nullish().describe('Raw memo \/ reference for context.')
 }).nullish().describe('Best-guess UNLINKED payment for this gift row (a QuickBooks staged payment\nOR a Stripe staged charge), or null when none is a plausible match.\nRead-only convenience so the card can offer a one-click \"Link\" — the same\nmatch the manual Link dialog would surface (donor name + amount fee-band +\ndate window), restricted to rows not already tied to a gift. A QuickBooks\nmatch is preferred; a Stripe charge is proposed when no plausible QuickBooks\npayment exists (Stripe-settled gifts land in QuickBooks at the payout level,\nnot per gift). The row-level amount used is the allocation sub-amount,\nfalling back to the gift\'s display amount.\n')
 }).describe('ONE ROW PER gift_allocation for the gifts-missing-QB worklist. A gift with\nseveral allocations surfaces several rows (the gift header fields repeat).\nA gift that has no allocations surfaces a single row with allocationId null.\nAllocations attributed to an entity that never settles through a payment\nprocessor (entities.expectsPayment = false: \"Direct to School\" \/\n\"Wildflower Foundation TSNE\") are excluded.\n')),
+  "linkedMatches": zod.array(zod.object({
+  "id": zod.string().describe('Gift (gifts_and_payments) id.'),
+  "giftName": zod.string().nullish().describe('Gift header name.'),
+  "donorName": zod.string().nullish().describe('Donor display name (anonymous-masked for the viewer).'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "amount": zod.string().nullish().describe('Display amount: gift header amount, falling back to the sum of allocation sub-amounts.'),
+  "dateReceived": zod.string().date().nullish().describe('Gift header date received.'),
+  "linkedVia": zod.enum(['quickbooks', 'processor']).describe('Why the gift is excluded from the worklist: quickbooks = it has a QuickBooks cash-application ledger row; processor = it is settled through Stripe\/Donorbox (payout-level money, never gets a per-gift QB record).')
+}).describe('A gift matching the free-text search that is EXCLUDED from the\nmissing-QB worklist because it is already tied to money (a QuickBooks\ncash-application ledger row, or settled through Stripe\/Donorbox at the\npayout level). Surfaced grayed-out so a search never silently hides an\nalready-matched gift — mirrors the \"already linked\" note the payment-side\ngift search shows. Read-only context; not actionable from this list.\n')).optional().describe('Present only when `q` is set (>= 2 chars): up to 10 gifts matching the\nsearch text that are already tied to money and therefore NOT in `data`.\nLets the UI show \"already matched\" context instead of an empty result.\n'),
   "pagination": zod.object({
   "page": zod.number(),
   "limit": zod.number(),

@@ -193,6 +193,10 @@ export function StrayGiftsWorklist() {
   const { data, isLoading, isError } = useListGiftsMissingQb(params);
 
   const rows = data?.data ?? [];
+  // Gifts matching the search text that are EXCLUDED from the worklist because
+  // they are already tied to money — surfaced grayed-out so a search never reads
+  // as "the gift doesn't exist" (mirrors the payment-side "Already linked" note).
+  const linkedMatches = data?.linkedMatches ?? [];
   const total = data?.pagination.total ?? 0;
   const showingFrom = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const showingTo = Math.min((page + 1) * PAGE_SIZE, total);
@@ -417,8 +421,15 @@ export function StrayGiftsWorklist() {
         <p className="text-sm text-destructive">Couldn't load allocations.</p>
       ) : rows.length === 0 ? (
         <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No gift allocations missing a QuickBooks record for these filters.
+          <CardContent
+            className="py-10 text-center text-sm text-muted-foreground"
+            data-testid="stray-gifts-empty"
+          >
+            {debouncedSearch
+              ? linkedMatches.length > 0
+                ? "No unmatched gifts for this search — the matching gifts below are already tied to money."
+                : "No gifts match this search in this column. If the money arrived but no gift record exists yet, create the gift from its payment card in the left column."
+              : "No gift allocations missing a QuickBooks record for these filters."}
           </CardContent>
         </Card>
       ) : (
@@ -492,6 +503,48 @@ export function StrayGiftsWorklist() {
             ))}
           </div>
         </>
+      )}
+
+      {!isLoading && !isError && linkedMatches.length > 0 && (
+        <div className="space-y-1" data-testid="stray-gifts-linked-matches">
+          <p className="text-xs font-medium text-muted-foreground">
+            Matching gifts already tied to money (not in this worklist)
+          </p>
+          {linkedMatches.map((m) => (
+            <div
+              key={m.id}
+              className="flex items-center justify-between gap-2 rounded-md border border-dashed bg-muted/30 px-3 py-2 text-sm opacity-70"
+              data-testid={`linked-match-${m.id}`}
+            >
+              <span className="min-w-0">
+                <Link
+                  href={`/gifts/${m.id}`}
+                  className="font-medium hover:underline"
+                >
+                  {m.giftName?.trim() ||
+                    m.donorName ||
+                    `Gift ${m.id.slice(0, 8)}`}
+                </Link>
+                <span className="block text-xs text-muted-foreground">
+                  {[
+                    m.donorName,
+                    m.dateReceived ? formatDateShort(m.dateReceived) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+                <span className="block text-[10px] text-amber-600">
+                  {m.linkedVia === "quickbooks"
+                    ? "Already matched to a QuickBooks payment."
+                    : "Settled through Stripe/Donorbox — money already booked."}
+                </span>
+              </span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {formatCurrency(m.amount)}
+              </span>
+            </div>
+          ))}
+        </div>
       )}
 
       <BulkFlagForResearchDialog

@@ -4422,7 +4422,7 @@ paths:
         filters to slice. Pagination is at allocation-row granularity. Donor names are
         anonymous-masked for the viewer. Read-only.
       parameters:
-        - { name: q, in: query, schema: { type: string }, description: "Free-text over donor name (organization / person / household) or the CRM gift name." }
+        - { name: q, in: query, schema: { type: string }, description: "Free-text over donor name (organization / person / household) or the CRM gift name. When set, the response ALSO carries `linkedMatches`: gifts matching the text that are excluded from the list because they are already tied to money, so a search never silently hides an already-matched gift." }
         - { name: entityId, in: query, schema: { type: string }, description: "Filter to one Wildflower legal entity." }
         - { name: paymentMethod, in: query, schema: { $ref: "#/components/schemas/GiftPaymentMethod" }, description: "Filter to one recorded gift payment method." }
         - { name: fundingSource, in: query, schema: { type: string, enum: [stripe, donorbox, qb_direct] }, description: "Filter by the source of this gift's best-guess UNLINKED payment proposal (the same match the row's one-click Link surfaces): stripe = only a Stripe charge is plausible; qb_direct = a QuickBooks staged payment is plausible (preferred over Stripe); donorbox = no proposals originate from Donorbox (settles via Stripe), so this always yields none — kept only so the column's filter set matches the other two Gift-report columns." }
@@ -7746,11 +7746,36 @@ components:
         dateReceived:    { type: string, format: date, nullable: true, description: "Payment date received." }
         paymentMethod:   { type: string, nullable: true, description: "QuickBooks payment method / instrument (qb_payment_method), or Stripe card brand." }
         reference:       { type: string, nullable: true, description: "Raw memo / reference for context." }
+    GiftMissingQbLinkedMatch:
+      type: object
+      required: [id, linkedVia]
+      description: |
+        A gift matching the free-text search that is EXCLUDED from the
+        missing-QB worklist because it is already tied to money (a QuickBooks
+        cash-application ledger row, or settled through Stripe/Donorbox at the
+        payout level). Surfaced grayed-out so a search never silently hides an
+        already-matched gift — mirrors the "already linked" note the payment-side
+        gift search shows. Read-only context; not actionable from this list.
+      properties:
+        id:           { type: string, description: "Gift (gifts_and_payments) id." }
+        giftName:     { type: string, nullable: true, description: "Gift header name." }
+        donorName:    { type: string, nullable: true, description: "Donor display name (anonymous-masked for the viewer)." }
+        donorKind:    { type: string, enum: [organization, person, household], nullable: true }
+        amount:       { type: string, nullable: true, description: "Display amount: gift header amount, falling back to the sum of allocation sub-amounts." }
+        dateReceived: { type: string, format: date, nullable: true, description: "Gift header date received." }
+        linkedVia:    { type: string, enum: [quickbooks, processor], description: "Why the gift is excluded from the worklist: quickbooks = it has a QuickBooks cash-application ledger row; processor = it is settled through Stripe/Donorbox (payout-level money, never gets a per-gift QB record)." }
     GiftMissingQbList:
       type: object
       required: [data, pagination]
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/GiftMissingQb" } }
+        linkedMatches:
+          type: array
+          items: { $ref: "#/components/schemas/GiftMissingQbLinkedMatch" }
+          description: |
+            Present only when `q` is set (>= 2 chars): up to 10 gifts matching the
+            search text that are already tied to money and therefore NOT in `data`.
+            Lets the UI show "already matched" context instead of an empty result.
         pagination: { $ref: "#/components/schemas/Pagination" }
     BookableReason:
       type: string
