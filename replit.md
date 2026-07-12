@@ -73,7 +73,7 @@ These recur across the whole app — keep them true whenever you change things:
 
 ```
 lib/
-  db/                        — Drizzle schema, importer script, DB connection
+  db/                        — Drizzle schema, DB connection
   api-spec/                  — OpenAPI spec (openapi.yaml) — contract source of truth
   api-client-react/          — Generated React Query hooks + response types
   api-zod/                   — Generated Zod validators + Donor-XOR invariant guards
@@ -241,8 +241,6 @@ reference, and the design docs.
   Schema/code ship via Publish; every prod data change is a reviewed idempotent SQL
   file (see `lib/db/migrations/` + runbooks), applied by a human with
   `psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/<file>.sql`.
-- **Stale importer** — `lib/db/src/import-airtable.mjs` still targets the OLD split
-  funders/organizations model and must be updated before any re-import.
 - **`gmail.send` scope** — new OAuth scope; each user must reconnect Google once.
   Until then the extension falls back to the legacy single-pixel send.
 - **Anonymous masking gaps** — join-projection name references (role rows, household

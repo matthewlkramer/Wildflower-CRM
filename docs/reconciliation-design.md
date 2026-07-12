@@ -287,9 +287,13 @@ replacing today's mix of ledger reads and legacy `qb_reconciliation_status` read
 (`deriveEvidenceLanes` / `derivePayoutLanes` collapse to one deriver each, sourced
 from the links).
 
-### 4.5 Two three-column reports (UI)
+### 4.5 Two three-column reports (UI) — **RETIRED / won't-build (2026-07)**
 
-Collapse the six queues into **two reports with the same shape —
+> **Status: retired.** This UI collapse (Phase 6) was never built and has been
+> formally closed as won't-do. The current **six-queue workbench is the accepted
+> end state**. The section is kept for the record of what was considered.
+
+The retired plan: collapse the six queues into **two reports with the same shape —
 Matched | Missing-left | Missing-right:**
 
 1. **Settlement report** — Stripe payouts ↔ QB deposits. Orphan columns are the two
@@ -404,14 +408,19 @@ ledger+legacy reads) into one deriver per lane. The per-record-per-plane status
 (§4.4) is the headline; the two lanes are an additional pure projection. No stored
 status columns.
 
-### Decision 4 — UI aggressiveness? → **Incremental collapse, to a locked 2-report IA.**
-Do **not** do a from-scratch rewrite of the 3,651-line workbench. Re-group the
-existing, working card/list components under the two-report information
-architecture (§4.5); turn "needs review" and "excluded" into filters; retire the
-bundles / six-queue *grouping* rather than the components. The end-state IA is
-locked here so a later full rebuild, if ever wanted, still lands in the same place.
-*Why:* prod-safe discipline and lower risk — the components work; the convolution
-is the six-way grouping over mixed data sources, which is what we remove.
+### Decision 4 — UI aggressiveness? → ~~Incremental collapse, to a locked 2-report IA~~ **SUPERSEDED (2026-07): no UI collapse — the six-queue workbench is the accepted end state.**
+The original decision (kept below for the record) was an incremental re-group of
+the existing components under the two-report IA of §4.5. That work (Phase 6) was
+never built, its planning task was archived, and it has been formally retired as
+won't-do: the current six-queue workbench is the accepted, final information
+architecture. No 2-report collapse is planned.
+
+*Original (retired) decision:* do **not** do a from-scratch rewrite of the
+3,651-line workbench. Re-group the existing, working card/list components under
+the two-report information architecture (§4.5); turn "needs review" and
+"excluded" into filters; retire the bundles / six-queue *grouping* rather than
+the components. *Why (at the time):* prod-safe discipline and lower risk — the
+components work; the convolution is the six-way grouping over mixed data sources.
 
 ### Decision 5 — Extend the ledger to Stripe (and Donorbox) unit links? → **Yes — ratify the reversal.**
 The prior firm decision kept `payment_applications` strictly "QB cash-application."
@@ -497,8 +506,9 @@ Phase 1 (this document); Phases 2–7 were sequenced as follow-on tasks.
 >   - *By-design remainder (not a holdout):* `giftPaymentSummary.ts` still reads
 >     processor **fees** from `stripe_staged_charges` / `donorbox_donations` because
 >     fees are not modelled in the ledger. This is intentional and permanent.
-> - **Phase 6 (two-report UI): NOT built.** The Workbench still exposes the six
->   queues this phase collapses.
+> - **Phase 6 (two-report UI): RETIRED — won't build (2026-07).** The two-report
+>   collapse was never built and is formally closed as won't-do; the six-queue
+>   workbench is the accepted end state (see §4.5 and Decision 4).
 > - **Phase 7 (deprecate → drop): partial.** Dropped so far: `gift_evidence_links`
 >   (0091), the `stripe_payouts` recon mirror (0093), `gift_allocations.counts_toward_goal`
 >   (0094). Next clean candidate: `staged_payments.source_group_id` (no live code
@@ -556,7 +566,8 @@ Phase 1 (this document); Phases 2–7 were sequenced as follow-on tasks.
    source-swap but Phase 4's `settlement_links` reclassification of the coarse QB
    row to `link_role='corroborating'`, which is what finally makes the single
    all-source `SUM(counted amount_applied)` of §4.4 correct. `cards.ts`'s per-charge
-   gift pointer is the anchor row's own link (Phase 6 replaces that UI). Phase 5 was
+   gift pointer is the anchor row's own link (the Phase-6 UI replacement was later
+   retired — the six-queue workbench stays). Phase 5 was
    allowed to proceed because corroborating links are money-total-neutral (excluded
    from every counted SUM), so the temporary asymmetry (corroborating Stripe/Donorbox
    links in the ledger while their counted siblings are still read via legacy) is
@@ -604,14 +615,14 @@ Phase 1 (this document); Phases 2–7 were sequenced as follow-on tasks.
    `link_role = 'corroborating'` ledger rows; re-point financial corrections;
    drop the table (deprecate-then-drop).
 
-6. **Collapse the UI to two three-column reports** (Decision 4 / §4.5). Re-group
-   the existing components under the Settlement report and the Gift report (with the
-   funding-source filter). Retire the cards / bundles / six-queue *derivations*;
-   "needs review" and "excluded" become filters. Surface the two §4.6 cleanup actions
-   in the **Gift report** (the unit/gift-grain surface): **combine** selected gifts
-   and **group** selected units — each a re-association over immutable evidence
-   (INV-G). (Plane-1 batch↔batch grouping is out of scope; the Settlement report
-   stays payout↔deposit.)
+6. ~~**Collapse the UI to two three-column reports** (Decision 4 / §4.5).~~
+   **RETIRED — won't build (2026-07).** The two-report collapse was never built and
+   is formally closed as won't-do; the six-queue workbench is the accepted end
+   state (see §4.5 and the superseded Decision 4). The original step — re-group
+   the existing components under a Settlement report and a Gift report, retire the
+   cards / bundles / six-queue derivations, turn "needs review" / "excluded" into
+   filters, and surface the §4.6 cleanup actions in the Gift report — is kept
+   above only as a record of the considered design.
 
 7. **Deprecate, then (much later, human-gated) drop legacy.** Mark the retired
    pointer columns, `staged_payment_splits`, `staged_payments.source_group_id`

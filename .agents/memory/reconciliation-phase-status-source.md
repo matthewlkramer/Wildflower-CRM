@@ -24,9 +24,10 @@ As of mid-2026: the unit↔gift ledger plane and the Plane-1 `settlement_links` 
 have shipped (read-flips + the legacy 7-value enum / pointer / `gift_evidence_links`
 drops). `giftPaymentSummary` still reads processor **fees** from the Stripe/Donorbox
 tables **by design** (fees are not modelled in the ledger) — not an unfinished
-holdout. What remained: the two-report UI collapse (design "Phase 6", never built —
-its planning task was archived minutes after creation) and the deprecate-then-drop
-tail (`staged_payments.source_group_id`, dead enum values).
+holdout. The two-report UI collapse (design "Phase 6") was formally RETIRED as
+won't-build in 2026-07 — the six-queue workbench is the accepted end state (the
+design doc's §4.5 / Decision 4 / §7 now say so). The only remaining tail is the
+deprecate-then-drop cleanup (`staged_payments.source_group_id`, dead enum values).
 
 **Drop-readiness caution (verify, don't trust the label):** a schema `@deprecated`
 comment is NOT proof a column is drop-ready. Several `gifts_and_payments` columns

@@ -1,9 +1,10 @@
 -- Post-import fixups
 --
--- Manual data corrections applied on top of the Airtable importer output that
--- are NOT recreated by re-running `import-airtable.mjs`. Run AFTER the importer
--- if rebuilding the DB from Airtable (note: Airtable base is being archived, so
--- the importer itself is also frozen and won't pick up changes made after that).
+-- Manual data corrections applied on top of the original one-time Airtable
+-- import. NOTE: the importer script (`import-airtable.mjs`) has been retired
+-- and removed — the CRM is the system of record and no re-import is planned
+-- (git history preserves the script). This file remains as the historical
+-- record of the data corrections layered on top of that import.
 --
 -- Every statement must be idempotent. Use `WHERE` guards or `ON CONFLICT` so
 -- re-running this file is safe. Schema-level changes (new columns, enum values,

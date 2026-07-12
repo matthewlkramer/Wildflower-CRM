@@ -1,6 +1,6 @@
 ---
 name: funders→organizations consolidation
-description: What changed when the funders and organizations tables were merged, and what still needs doing.
+description: What changed when the funders and organizations tables were merged, and the rollout/prod-cutover history.
 ---
 
 # Funders → Organizations Consolidation
@@ -36,5 +36,5 @@ The DB migration is **staged**, decoupled from the schema-source rename:
 
 ## Still needed
 
-- **Airtable importer** (`lib/db/src/import-airtable.mjs`) not yet updated — still targets old split schema (writes a `funders` table that no longer exists); a re-import will fail until updated. `lib/db/SCHEMA.md` is likewise stale (still documents the split funders/organizations model).
+- ~~Airtable importer~~ **RESOLVED (2026-07): the importer was retired and deleted** rather than updated — the CRM is the system of record and no re-import is planned (git history preserves `lib/db/src/import-airtable.mjs`). The live Airtable→schools sync is separate and unaffected.
 - **Production DB cutover** = the Publish UI **"overwrite data"** option (replaces prod data wholesale with dev's), NOT a scripted prod migration. **Why:** the agent can't write to prod (executeSql prod is read-only) and must not script prod schema/data changes; and dev is a *superset* of prod (more synced email/orgs/people; prod only leads marginally in calendar_events/media_mentions, both auto-regenerating), so promoting dev wholesale is the clean path. The per-script route (Phase 1 → 0001 → Phase 2) is only relevant if a future cutover must PRESERVE prod-only data instead of overwriting. As of 2026-06-04 prod still has the old split schema; user opted to overwrite-publish.

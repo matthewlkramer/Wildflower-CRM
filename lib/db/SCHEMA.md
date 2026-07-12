@@ -413,22 +413,18 @@ API responses. Keep `canSeeIdentity` (display) separate from `canManageIdentity`
 
 ## Manual fixups
 
-Data corrections not recreated by the importer live in idempotent
-[`lib/db/src/post-import-fixups.sql`](src/post-import-fixups.sql) — run after a fresh
-reimport.
+Data corrections layered on top of the original one-time Airtable import live in
+idempotent [`lib/db/src/post-import-fixups.sql`](src/post-import-fixups.sql) —
+kept as a historical record now that the importer is retired.
 
-## Re-importing from Airtable (⚠️ importer is stale)
+## Airtable import (retired)
 
-`lib/db/src/import-airtable.mjs` still targets the **old split funders/organizations
-model** and must be updated before any re-import (it will otherwise fail). The general
-flow once fixed:
-1. Fetch every record from base `app8KUcmaHZ0AtcJZ` to `/tmp/airtable-dump/<table>.json`.
-2. `node lib/db/src/import-airtable.mjs` — uses Airtable record IDs as PKs (except the
-   slug tables), computes region slugs + `display_path`, inserts in dependency order
-   (self-refs in a second pass), validates FKs against in-memory ID sets (dropping
-   orphans), `ON CONFLICT (id) DO NOTHING` for idempotency, and **synthesizes
-   allocation rows last** (fanning header-only parent scope into child allocations
-   with deterministic `synth-*` IDs).
+The one-time importer script (`lib/db/src/import-airtable.mjs`) has been **retired
+and removed**: it targeted the old split funders/organizations model, the CRM is
+now the system of record, and no re-import is planned. Git history preserves the
+script if it is ever needed again. Airtable record IDs remain the PKs on most
+tables (see above) as a legacy of that original import.
 
-Airtable is slated for archival once the CRM is in steady use; ongoing CRM-side drift
-is not written back to Airtable.
+Airtable is slated for archival; ongoing CRM-side drift is not written back to
+Airtable. (The live Airtable→schools sync is a separate, working feature and is
+unaffected.)
