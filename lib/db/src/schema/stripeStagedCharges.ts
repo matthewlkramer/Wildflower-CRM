@@ -207,6 +207,18 @@ export const stripeStagedCharges = pgTable(
       () => stagedPayments.id,
       { onDelete: "set null" },
     ),
+    // A SYSTEM-PROPOSED (not yet confirmed) charge↔QB tie awaiting a human
+    // approve on the Settlement report — the charge-grain analogue of a
+    // `proposed` settlement link, for payouts the bookkeeper booked as
+    // individual QB rows instead of one deposit lump. Written ONLY by the
+    // idempotent charge-grain proposal pass (never while a confirmed
+    // `linkedQbStagedPaymentId` exists); approve moves it into
+    // `linkedQbStagedPaymentId` + provenance and clears it. SET NULL if the QB
+    // staged row is removed.
+    proposedQbStagedPaymentId: text("proposed_qb_staged_payment_id").references(
+      () => stagedPayments.id,
+      { onDelete: "set null" },
+    ),
     crossProcessorLinkedByUserId: text(
       "cross_processor_linked_by_user_id",
     ).references(() => users.id, { onDelete: "set null" }),
@@ -232,6 +244,9 @@ export const stripeStagedCharges = pgTable(
     index("stripe_staged_charges_payout_id_idx").on(t.stripePayoutId),
     index("stripe_staged_charges_linked_qb_staged_payment_id_idx").on(
       t.linkedQbStagedPaymentId,
+    ),
+    index("stripe_staged_charges_proposed_qb_staged_payment_id_idx").on(
+      t.proposedQbStagedPaymentId,
     ),
     index("stripe_staged_charges_date_received_idx").on(t.dateReceived),
     index("stripe_staged_charges_gross_amount_idx").on(t.grossAmount),

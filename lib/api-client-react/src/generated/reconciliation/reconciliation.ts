@@ -27,6 +27,8 @@ import type {
   BundleConfirmInput,
   BundleOverridesInput,
   BundleTieResult,
+  ConfirmChargeTiesBody,
+  ConfirmChargeTiesResult,
   ConfirmSettlementLinkBody,
   ConfirmSettlementLinkResult,
   CreateReconciliationProposalBody,
@@ -1178,6 +1180,102 @@ export const useConfirmSettlementLink = <TError = ErrorType<BadRequestResponse |
         TContext
       > => {
       return useMutation(getConfirmSettlementLinkMutationOptions(options));
+    }
+    /**
+ * Atomically confirms per-charge QuickBooks ties for ONE Stripe payout —
+the settlement path for payouts the bookkeeper booked as individual QB
+rows (one per donation) instead of a single deposit lump, so no
+payout↔deposit settlement link will ever exist.
+
+Two modes, by body:
+  • NO qbStagedPaymentIds — approve the SYSTEM-PROPOSED ties: every
+    charge carrying a proposed QB tie is stamped with the confirmed
+    linkedQbStagedPaymentId (+ who/when provenance) and the proposal is
+    cleared. 409 if nothing is proposed or any proposed QB row was
+    claimed elsewhere in the meantime (nothing is written).
+  • qbStagedPaymentIds present — MANUAL "Tie selected": the server
+    assigns each given QB row to a distinct untied charge of this
+    payout by exact amount (payer-name similarity and date proximity
+    order the assignment when several same-amount charges compete) and
+    confirms all of them. 400/409 with per-row issues when any row
+    cannot be assigned (nothing is written).
+
+Plane 1 only: ties are permanent settlement EVIDENCE. No gift is ever
+minted, no QB row's status/donor changes, and per-charge → gift booking
+stays with the Gift report. All-or-nothing in one transaction. Once
+every charge of the payout is tied (or excluded/rejected), the payout
+shows as settled ("Matched") on the Settlement report, and each tied QB
+row leaves the "Needs payout tie" column.
+
+ * @summary Confirm charge-grain Stripe↔QuickBooks ties for one payout (individually-booked payouts).
+ */
+export const getConfirmPayoutChargeTiesUrl = (payoutId: string,) => {
+
+
+  
+
+  return `/api/reconciliation/payouts/${payoutId}/charge-ties/confirm`
+}
+
+export const confirmPayoutChargeTies = async (payoutId: string,
+    confirmChargeTiesBody?: ConfirmChargeTiesBody, options?: RequestInit): Promise<ConfirmChargeTiesResult> => {
+  
+  return customFetch<ConfirmChargeTiesResult>(getConfirmPayoutChargeTiesUrl(payoutId),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      confirmChargeTiesBody,)
+  }
+);}
+  
+
+
+
+export const getConfirmPayoutChargeTiesMutationOptions = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmPayoutChargeTies>>, TError,{payoutId: string;data: BodyType<ConfirmChargeTiesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof confirmPayoutChargeTies>>, TError,{payoutId: string;data: BodyType<ConfirmChargeTiesBody>}, TContext> => {
+
+const mutationKey = ['confirmPayoutChargeTies'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmPayoutChargeTies>>, {payoutId: string;data: BodyType<ConfirmChargeTiesBody>}> = (props) => {
+          const {payoutId,data} = props ?? {};
+
+          return  confirmPayoutChargeTies(payoutId,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConfirmPayoutChargeTiesMutationResult = NonNullable<Awaited<ReturnType<typeof confirmPayoutChargeTies>>>
+    export type ConfirmPayoutChargeTiesMutationBody = BodyType<ConfirmChargeTiesBody>
+    export type ConfirmPayoutChargeTiesMutationError = ErrorType<BadRequestResponse | void>
+
+    /**
+ * @summary Confirm charge-grain Stripe↔QuickBooks ties for one payout (individually-booked payouts).
+ */
+export const useConfirmPayoutChargeTies = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmPayoutChargeTies>>, TError,{payoutId: string;data: BodyType<ConfirmChargeTiesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof confirmPayoutChargeTies>>,
+        TError,
+        {payoutId: string;data: BodyType<ConfirmChargeTiesBody>},
+        TContext
+      > => {
+      return useMutation(getConfirmPayoutChargeTiesMutationOptions(options));
     }
     /**
  * Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.

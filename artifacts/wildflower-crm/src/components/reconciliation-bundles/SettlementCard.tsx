@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Check, Loader2, Search, X } from "lucide-react";
+import { Check, Link2, Loader2, Search, X } from "lucide-react";
 import {
+  useConfirmPayoutChargeTies,
   useConfirmSettlementLink,
   useRejectSettlementProposal,
   type BundleAnchor,
@@ -143,6 +144,34 @@ export function ChargeList({
                 {c.net != null ? `net ${formatCurrency(c.net)}` : ""}
               </div>
             )}
+            {/* Charge-grain QB settlement tie: confirmed link, or the proposed
+                QB row a human still needs to approve. */}
+            {c.linkedQbStagedPaymentId ? (
+              <div className="flex items-center gap-1 text-[10px] text-emerald-700">
+                <Link2 className="h-2.5 w-2.5 shrink-0" />
+                QB tied
+              </div>
+            ) : c.proposedQb ? (
+              <div
+                className="text-[10px] text-sky-700"
+                data-testid={`charge-proposed-qb-${c.id}`}
+              >
+                <span className="inline-flex items-center gap-1">
+                  <Link2 className="h-2.5 w-2.5 shrink-0" />
+                  Proposed QB:
+                </span>{" "}
+                {c.proposedQb.payerName?.trim() || "(no name)"}
+                {c.proposedQb.amount != null
+                  ? ` · ${formatCurrency(c.proposedQb.amount)}`
+                  : ""}
+                {c.proposedQb.date ? ` · ${formatDate(c.proposedQb.date)}` : ""}
+                {c.proposedQb.memo?.trim() ? (
+                  <span className="block truncate text-muted-foreground/70">
+                    {decodeHtmlEntities(c.proposedQb.memo).trim()}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </li>
         );
       })}
@@ -179,11 +208,19 @@ export function SettlementCard({
   const { toast } = useToast();
   const confirmM = useConfirmSettlementLink();
   const rejectM = useRejectSettlementProposal();
+  const chargeTiesM = useConfirmPayoutChargeTies();
 
   const [resolveOpen, setResolveOpen] = useState(false);
 
-  const busy = confirmM.isPending || rejectM.isPending;
+  const busy =
+    confirmM.isPending || rejectM.isPending || chargeTiesM.isPending;
   const proposal = a.proposedMatch;
+  // Charge-grain QB ties (individually-booked payouts): pending proposals a
+  // human can approve in one click, and already-confirmed ties for context.
+  const tiesProposed = a.chargeTiesProposed ?? 0;
+  const tiesConfirmed = a.chargeTiesConfirmed ?? 0;
+  const showApproveTies =
+    a.anchorType === "stripe_payout" && tiesProposed > 0;
 
   const handleApprove = async () => {
     // A proposal only ever appears on the Stripe-payout anchor, so anchorId IS
@@ -226,6 +263,33 @@ export function SettlementCard({
       onChanged();
     } catch (err) {
       toast({ title: "Couldn't reject", description: errMessage(err) });
+    }
+  };
+
+  const handleApproveTies = async () => {
+    // Confirms every still-valid proposed charge→QB tie on this payout in one
+    // transaction; empty body = "approve the proposals".
+    try {
+      const res = await chargeTiesM.mutateAsync({
+        payoutId: a.anchorId,
+        data: {},
+      });
+      toast({
+        title: res.payoutFullyTied
+          ? `Approved ${res.tied} QB tie${res.tied === 1 ? "" : "s"} — payout fully settled.`
+          : `Approved ${res.tied} QB tie${res.tied === 1 ? "" : "s"}.`,
+      });
+      onChanged();
+    } catch (err) {
+      if (is409(err)) {
+        toast({
+          title: "The proposed ties changed — refreshed.",
+          description: errMessage(err),
+        });
+        onChanged();
+      } else {
+        toast({ title: "Couldn't approve ties", description: errMessage(err) });
+      }
     }
   };
 
@@ -299,6 +363,18 @@ export function SettlementCard({
                 : ""}
             </div>
           )}
+          {a.anchorType === "stripe_payout" &&
+            (tiesProposed > 0 || tiesConfirmed > 0) && (
+              <div
+                className="mt-0.5 text-[11px] text-muted-foreground"
+                data-testid={`charge-ties-summary-${a.anchorId}`}
+              >
+                QB ties:{" "}
+                {tiesConfirmed > 0 ? `${tiesConfirmed} confirmed` : ""}
+                {tiesConfirmed > 0 && tiesProposed > 0 ? " · " : ""}
+                {tiesProposed > 0 ? `${tiesProposed} proposed` : ""}
+              </div>
+            )}
           <ChargeList charges={a.charges} />
           <QbDetails
             lineDescription={a.lineDescription}
@@ -346,6 +422,23 @@ export function SettlementCard({
           {/* Actions */}
           {selectable && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {showApproveTies && (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  disabled={busy}
+                  onClick={handleApproveTies}
+                  data-testid={`button-settlement-approve-ties-${a.anchorId}`}
+                >
+                  {busy ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Link2 className="h-3 w-3" />
+                  )}
+                  Approve {tiesProposed} QB tie{tiesProposed === 1 ? "" : "s"}
+                </Button>
+              )}
               {proposal ? (
                 <>
                   <Button

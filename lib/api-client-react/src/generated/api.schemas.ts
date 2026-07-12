@@ -3182,6 +3182,10 @@ export interface StripeHistoricalProposalSummary {
   chargesScanned: number;
   /** Charges that gained a donor hint this pass, surfacing them in the per-charge review queue. DONOR-ONLY — never mints or reconciles. */
   chargesRematched: number;
+  /** Charges (inside payouts with no settlement link) that ended the pass with a PROPOSED per-charge QuickBooks tie — the individually-booked-payout match a human approves on the Settlement report. Proposals only; never confirms. */
+  chargeTiesProposed?: number;
+  /** Stale per-charge QuickBooks tie proposals cleared this pass (candidate disappeared, or the payout gained a settlement link). */
+  chargeTiesCleared?: number;
 }
 
 /**
@@ -4163,6 +4167,21 @@ export interface ReconciliationSearchList {
 }
 
 /**
+ * A proposed charge-grain Stripe↔QuickBooks tie: the QB staged_payments row believed to record the SAME money as one Stripe charge (exact amount, close date, payer-name similarity when several same-amount candidates competed). Proposal only — a human approves it into the confirmed linkedQbStagedPaymentId.
+ */
+export interface ChargeProposedQbTie {
+  /** staged_payments.id of the proposed QB row. */
+  id: string;
+  payerName?: string | null;
+  /** QB row amount (major units). */
+  amount?: string | null;
+  /** QB date received. */
+  date?: string | null;
+  /** QB transaction memo / line description, whichever is set. */
+  memo?: string | null;
+}
+
+/**
  * One Stripe charge rolled into a payout, for at-a-glance display on the Settlement report (who the money is from without drilling in).
  */
 export interface PayoutChargeSummary {
@@ -4182,6 +4201,12 @@ export interface PayoutChargeSummary {
   statementDescriptor?: string | null;
   /** Calendar date the charge is credited to (date_received). */
   date?: string | null;
+  /** Staged-charge review status (pending/approved/rejected/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie. */
+  status?: string | null;
+  /** CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied. */
+  linkedQbStagedPaymentId?: string | null;
+  /** The system-PROPOSED (not yet confirmed) QuickBooks row for this charge, awaiting a human approve on the Settlement report. Null when nothing is proposed or the tie is already confirmed. */
+  proposedQb?: ChargeProposedQbTie | null;
 }
 
 /**
@@ -4219,6 +4244,28 @@ confirm an already-proposed tie.
 export interface ConfirmSettlementLinkBody {
   /** QB deposit staged-payment id to tie to this payout before confirming (resolve). Omit when a proposed link already exists. */
   depositStagedPaymentId?: string | null;
+}
+
+/**
+ * Optional manual-tie payload. Omit (or send no body) to approve the
+system-proposed per-charge ties. Provide qbStagedPaymentIds to manually
+tie the selected QB staged rows to this payout's untied charges
+(the Settlement report's "Tie selected" gesture).
+
+ */
+export interface ConfirmChargeTiesBody {
+  /** QB staged_payments ids to tie to this payout's charges. Each must match a distinct untied charge by exact amount and must not already be tied/settlement-linked elsewhere. */
+  qbStagedPaymentIds?: string[];
+}
+
+export interface ConfirmChargeTiesResult {
+  /** True when the ties were written. */
+  confirmed: boolean;
+  payoutId: string;
+  /** Charges that gained a confirmed QuickBooks tie in this call. */
+  tied: number;
+  /** True when, after this call, every charge of the payout is tied or excluded/rejected — the payout now shows as settled (Matched) on the Settlement report. */
+  payoutFullyTied: boolean;
 }
 
 /**
@@ -4950,6 +4997,10 @@ export interface BundleAnchor {
   /** Raw source status for the display badge: the Stripe payout's reconciliation status (derived from its settlement link), or the QB staged-payment status. */
   statusLabel: string;
   batchStatus: SettlementBatchStatus;
+  /** Stripe payout only: charges carrying a PROPOSED (unconfirmed) per-charge QuickBooks tie — >0 makes the Missing-deposit card approvable at charge grain. Null for QB anchors. */
+  chargeTiesProposed?: number | null;
+  /** Stripe payout only: charges with a CONFIRMED per-charge QuickBooks tie. Null for QB anchors. */
+  chargeTiesConfirmed?: number | null;
   /** The proposed counterpart for this anchor, populated ONLY when a
 `proposed` (not-yet-confirmed) settlement link exists — enough to
 render the proposed match inline and drive approve/reject without

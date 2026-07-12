@@ -41,13 +41,33 @@ type AnchorSource = "stripe_payout" | "qb_staged_payment";
 // no QB deposit to tie — so it must NOT linger in needs_review (the per-charge
 // gifts have already been confirmed). It still shows under `all`, and re-enters
 // needs_review as `proposed` if the admin propose-all tie pass runs.
+// FULLY CHARGE-TIED = the settlement path for "individually-booked" payouts:
+// no settlement link will ever exist (the bookkeeper recorded one QB row per
+// donation, not a deposit lump), but every charge is either confirmed-tied to
+// its own QB row (`linked_qb_staged_payment_id`) or terminal. Such a payout is
+// SETTLED — it shows as Matched, not Missing deposit.
+const fullyChargeTied = sql`(
+  NOT EXISTS (SELECT 1 FROM settlement_links sl WHERE sl.payout_id = sp.id)
+  AND EXISTS (
+    SELECT 1 FROM stripe_staged_charges c
+    WHERE c.stripe_payout_id = sp.id
+      AND c.linked_qb_staged_payment_id IS NOT NULL
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM stripe_staged_charges c
+    WHERE c.stripe_payout_id = sp.id
+      AND c.linked_qb_staged_payment_id IS NULL
+      AND c.status NOT IN ('excluded','rejected')
+  )
+)`;
+
 function stripeWhere(queue: AnchorQueue): SQL {
   switch (queue) {
     case "confirmed":
-      return sql`EXISTS (
+      return sql`(EXISTS (
         SELECT 1 FROM settlement_links sl
         WHERE sl.payout_id = sp.id AND sl.lifecycle = 'confirmed'
-      )`;
+      ) OR ${fullyChargeTied})`;
     case "needs_review":
       return sql`(
         EXISTS (
@@ -56,13 +76,24 @@ function stripeWhere(queue: AnchorQueue): SQL {
         )
         OR (
           NOT EXISTS (SELECT 1 FROM settlement_links sl WHERE sl.payout_id = sp.id)
-          AND EXISTS (
-            SELECT 1 FROM stripe_staged_charges c
-            WHERE c.stripe_payout_id = sp.id
-              AND c.status NOT IN ('reconciled','excluded','rejected')
+          AND (
+            EXISTS (
+              SELECT 1 FROM stripe_staged_charges c
+              WHERE c.stripe_payout_id = sp.id
+                AND c.status NOT IN ('reconciled','excluded','rejected')
+            )
+            -- A proposed charge-grain QB tie is actionable work here even when
+            -- every charge is already gift-booked (reconciled): the human still
+            -- needs to approve the settlement ties.
+            OR EXISTS (
+              SELECT 1 FROM stripe_staged_charges c
+              WHERE c.stripe_payout_id = sp.id
+                AND c.proposed_qb_staged_payment_id IS NOT NULL
+                AND c.linked_qb_staged_payment_id IS NULL
+            )
           )
         )
-      )`;
+      ) AND NOT ${fullyChargeTied}`;
     case "all":
       return sql`TRUE`;
   }
@@ -85,6 +116,12 @@ function qbWhere(queue: AnchorQueue): SQL {
     ) AND NOT EXISTS (
       SELECT 1 FROM settlement_links sl
       WHERE sl.deposit_staged_payment_id = s.id
+    ) AND NOT EXISTS (
+      -- A QB row confirmed-tied to a Stripe charge reconciles THROUGH that
+      -- charge's payout (charge-grain twin of the settlement-link omission
+      -- above) — it no longer "needs a payout tie".
+      SELECT 1 FROM stripe_staged_charges cc
+      WHERE cc.linked_qb_staged_payment_id = s.id
     )`;
   const plausiblyStripe = sql`(
       s.funding_source IS NULL
@@ -110,6 +147,15 @@ interface PayoutChargeRow {
   description: string | null;
   statementDescriptor: string | null;
   date: string | null;
+  status: string | null;
+  linkedQbStagedPaymentId: string | null;
+  proposedQb: {
+    id: string;
+    payerName: string | null;
+    amount: string | null;
+    date: string | null;
+    memo: string | null;
+  } | null;
 }
 
 interface AnchorRow {
@@ -131,6 +177,9 @@ interface AnchorRow {
   line_classes: string[] | null;
   status_label: string;
   batch_status: "settled" | "proposed" | "orphan";
+  // Charge-grain QB tie rollups (null for a QB anchor).
+  charge_ties_proposed: number | null;
+  charge_ties_confirmed: number | null;
   // Proposed counterpart facts (non-null only for a proposed Stripe payout).
   proposed_counterpart_type: AnchorSource | null;
   proposed_counterpart_id: string | null;
@@ -202,12 +251,28 @@ router.get(
               'net', c.net_amount::text,
               'description', c.description,
               'statementDescriptor', c.statement_descriptor,
-              'date', c.date_received::text
+              'date', c.date_received::text,
+              'status', c.status,
+              'linkedQbStagedPaymentId', c.linked_qb_staged_payment_id,
+              'proposedQb', CASE WHEN c.pq_id IS NOT NULL THEN json_build_object(
+                  'id', c.pq_id,
+                  'payerName', c.pq_payer_name,
+                  'amount', c.pq_amount,
+                  'date', c.pq_date,
+                  'memo', c.pq_memo
+                ) END
             ) ORDER BY c.gross_amount DESC NULLS LAST)
           FROM (
             SELECT cc.id, cc.payer_name, cc.description, cc.statement_descriptor,
-                   cc.gross_amount, cc.fee_amount, cc.net_amount, cc.date_received
+                   cc.gross_amount, cc.fee_amount, cc.net_amount, cc.date_received,
+                   cc.status, cc.linked_qb_staged_payment_id,
+                   pq.id AS pq_id, pq.payer_name AS pq_payer_name,
+                   pq.amount::text AS pq_amount, pq.date_received::text AS pq_date,
+                   COALESCE(pq.qb_transaction_memo, pq.line_description) AS pq_memo
             FROM stripe_staged_charges cc
+            LEFT JOIN staged_payments pq
+              ON pq.id = cc.proposed_qb_staged_payment_id
+             AND cc.linked_qb_staged_payment_id IS NULL
             WHERE cc.stripe_payout_id = sp.id
             ORDER BY cc.gross_amount DESC NULLS LAST
             LIMIT 50
@@ -227,8 +292,17 @@ router.get(
           WHEN EXISTS (SELECT 1 FROM settlement_links sl2
                        WHERE sl2.payout_id = sp.id AND sl2.lifecycle = 'proposed')
             THEN 'proposed'
+          WHEN ${fullyChargeTied}
+            THEN 'settled'
           ELSE 'orphan'
         END)::text AS batch_status,
+        (SELECT count(*)::int FROM stripe_staged_charges cc
+          WHERE cc.stripe_payout_id = sp.id
+            AND cc.proposed_qb_staged_payment_id IS NOT NULL
+            AND cc.linked_qb_staged_payment_id IS NULL) AS charge_ties_proposed,
+        (SELECT count(*)::int FROM stripe_staged_charges cc
+          WHERE cc.stripe_payout_id = sp.id
+            AND cc.linked_qb_staged_payment_id IS NOT NULL) AS charge_ties_confirmed,
         -- Proposed counterpart = the deposit of a PROPOSED (not confirmed) link.
         (CASE WHEN sl.lifecycle = 'proposed' THEN 'qb_staged_payment' END)::text AS proposed_counterpart_type,
         (CASE WHEN sl.lifecycle = 'proposed' THEN ad.id END)::text AS proposed_counterpart_id,
@@ -270,6 +344,8 @@ router.get(
         s.line_classes AS line_classes,
         s.status::text AS status_label,
         'orphan'::text AS batch_status,
+        NULL::int AS charge_ties_proposed,
+        NULL::int AS charge_ties_confirmed,
         NULL::text AS proposed_counterpart_type,
         NULL::text AS proposed_counterpart_id,
         NULL::text AS proposed_amount,
@@ -304,6 +380,7 @@ router.get(
           line_description, memo, reference,
           line_item_names, line_account_names, line_classes,
           status_label, batch_status,
+          charge_ties_proposed, charge_ties_confirmed,
           proposed_counterpart_type, proposed_counterpart_id, proposed_amount,
           proposed_date, proposed_payer_name, proposed_charge_count,
           proposed_line_description, proposed_memo, proposed_reference,
@@ -339,6 +416,8 @@ router.get(
         lineClasses: r.line_classes,
         statusLabel: r.status_label,
         batchStatus: r.batch_status,
+        chargeTiesProposed: r.charge_ties_proposed,
+        chargeTiesConfirmed: r.charge_ties_confirmed,
         proposedMatch: r.proposed_counterpart_id
           ? {
               counterpartType: r.proposed_counterpart_type!,

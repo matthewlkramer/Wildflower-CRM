@@ -88,7 +88,9 @@ export const ProposeHistoricalStripeReconciliationResponse = zod.object({
   "alreadyResolved": zod.number().describe('Payouts already in a confirmed\/reconciled state, left untouched.'),
   "unmatched": zod.number().describe('Payouts with no QB deposit candidate.'),
   "chargesScanned": zod.number().describe('Donor-less Stripe charges re-scored for a donor hint (charge-grain backfill for single-donation payouts with no deposit lump).'),
-  "chargesRematched": zod.number().describe('Charges that gained a donor hint this pass, surfacing them in the per-charge review queue. DONOR-ONLY — never mints or reconciles.')
+  "chargesRematched": zod.number().describe('Charges that gained a donor hint this pass, surfacing them in the per-charge review queue. DONOR-ONLY — never mints or reconciles.'),
+  "chargeTiesProposed": zod.number().optional().describe('Charges (inside payouts with no settlement link) that ended the pass with a PROPOSED per-charge QuickBooks tie — the individually-booked-payout match a human approves on the Settlement report. Proposals only; never confirms.'),
+  "chargeTiesCleared": zod.number().optional().describe('Stale per-charge QuickBooks tie proposals cleared this pass (candidate disappeared, or the payout gained a settlement link).')
 }).describe('Result of the admin historical Stripe→QuickBooks reconciliation proposal pass over ALL payouts (including prior-account rows). Every match is a PROPOSAL — a human confirms each; nothing is minted or archived.')
 
 /**

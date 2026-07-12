@@ -90,7 +90,7 @@ export default function StripeSyncSection() {
         toast({
           title: "Historical matches proposed",
           description: data.ran
-            ? `Scanned ${data.payoutsScanned} payouts: ${data.proposalsCreated} new proposals, ${data.conflictsFound} conflicts, ${data.unmatched} unmatched. Charge-grain: ${data.chargesRematched}/${data.chargesScanned} charges donor-hinted.`
+            ? `Scanned ${data.payoutsScanned} payouts: ${data.proposalsCreated} new proposals, ${data.conflictsFound} conflicts, ${data.unmatched} unmatched. Charge-grain: ${data.chargesRematched}/${data.chargesScanned} charges donor-hinted, ${data.chargeTiesProposed ?? 0} QB ties proposed${(data.chargeTiesCleared ?? 0) > 0 ? ` (${data.chargeTiesCleared} stale cleared)` : ""}.`
             : "Pass skipped (already running, or no Stripe connection).",
         });
         void qc.invalidateQueries({

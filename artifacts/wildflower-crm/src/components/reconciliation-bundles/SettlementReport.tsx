@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Check, Eye, EyeOff, Loader2, X } from "lucide-react";
+import { AlertCircle, Check, Eye, EyeOff, Link2, Loader2, X } from "lucide-react";
 import {
+  useConfirmPayoutChargeTies,
   useConfirmSettlementLink,
   useListReconciliationBundleAnchors,
   useRejectSettlementProposal,
@@ -65,6 +66,7 @@ export function SettlementReport() {
 
   const confirmM = useConfirmSettlementLink();
   const rejectM = useRejectSettlementProposal();
+  const chargeTiesM = useConfirmPayoutChargeTies();
 
   const { data, isLoading, isError } = useListReconciliationBundleAnchors({
     queue: "all",
@@ -133,10 +135,15 @@ export function SettlementReport() {
   }, [invalidateWorkbench]);
 
   const runBulkApprove = useCallback(async () => {
-    // A proposal only ever lives on the Stripe-payout anchor, and the confirm
-    // endpoint is keyed by the payout — so approve those anchors by anchorId.
+    // Proposals only ever live on the Stripe-payout anchor, and both confirm
+    // endpoints are keyed by the payout — so approve those anchors by anchorId.
+    // A deposit-lump proposal approves via the settlement confirm; a payout
+    // whose charges carry proposed QB ties (individually-booked money, no
+    // deposit lump) approves via the charge-ties confirm.
     const targets = selectedAnchors.filter(
-      (a) => a.proposedMatch && a.anchorType === "stripe_payout",
+      (a) =>
+        a.anchorType === "stripe_payout" &&
+        (a.proposedMatch || (a.chargeTiesProposed ?? 0) > 0),
     );
     if (targets.length === 0) {
       toast({ title: "No proposed matches in the selection to approve." });
@@ -149,7 +156,11 @@ export function SettlementReport() {
     const done: string[] = [];
     for (const a of targets) {
       try {
-        await confirmM.mutateAsync({ payoutId: a.anchorId, data: {} });
+        if (a.proposedMatch) {
+          await confirmM.mutateAsync({ payoutId: a.anchorId, data: {} });
+        } else {
+          await chargeTiesM.mutateAsync({ payoutId: a.anchorId, data: {} });
+        }
         approved += 1;
         done.push(anchorKey(a));
       } catch (err) {
@@ -168,7 +179,14 @@ export function SettlementReport() {
           : undefined,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAnchors, selection, invalidateWorkbench, confirmM, toast]);
+  }, [
+    selectedAnchors,
+    selection,
+    invalidateWorkbench,
+    confirmM,
+    chargeTiesM,
+    toast,
+  ]);
 
   const runBulkReject = useCallback(async () => {
     // Only Stripe-payout anchors carry a proposed link that can be rejected.
@@ -201,6 +219,50 @@ export function SettlementReport() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAnchors, selection, invalidateWorkbench, rejectM, toast]);
+
+  // Manual charge-grain tie: exactly ONE Stripe payout plus one-or-more QB
+  // staged rows selected → "Tie selected" assigns each QB row to its
+  // same-amount charge on that payout (confirmed immediately, human-driven).
+  const tieSelection = useMemo(() => {
+    const payouts = selectedAnchors.filter(
+      (a) => a.anchorType === "stripe_payout",
+    );
+    const qbRows = selectedAnchors.filter(
+      (a) => a.anchorType === "qb_staged_payment",
+    );
+    if (payouts.length !== 1 || qbRows.length === 0) return null;
+    return { payout: payouts[0], qbRows };
+  }, [selectedAnchors]);
+
+  const runTieSelected = useCallback(async () => {
+    if (!tieSelection) return;
+    setBulkBusy(true);
+    try {
+      const res = await chargeTiesM.mutateAsync({
+        payoutId: tieSelection.payout.anchorId,
+        data: {
+          qbStagedPaymentIds: tieSelection.qbRows.map((a) => a.anchorId),
+        },
+      });
+      selection.clear();
+      invalidateWorkbench();
+      toast({
+        title: res.payoutFullyTied
+          ? `Tied ${res.tied} QB row${res.tied === 1 ? "" : "s"} — payout fully settled.`
+          : `Tied ${res.tied} QB row${res.tied === 1 ? "" : "s"} to the payout.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't tie the selection",
+        description:
+          err instanceof Error ? err.message : "Something went wrong.",
+      });
+      invalidateWorkbench();
+    } finally {
+      setBulkBusy(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tieSelection, selection, invalidateWorkbench, chargeTiesM, toast]);
 
   const total = data?.pagination.total ?? rows.length;
   const truncated = !isLoading && !isError && total > rows.length;
@@ -259,6 +321,20 @@ export function SettlementReport() {
               )}
               Approve
             </Button>
+            {tieSelection && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1"
+                disabled={busy}
+                onClick={runTieSelected}
+                data-testid="button-settlement-bulk-tie"
+                title="Tie the selected QuickBooks rows to their same-amount charges on the selected Stripe payout."
+              >
+                <Link2 className="h-4 w-4" />
+                Tie selected
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"

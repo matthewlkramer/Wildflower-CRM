@@ -4403,6 +4403,48 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { description: "The payout (or the chosen deposit) no longer exists." }
         "409": { description: "The settlement link drifted (already confirmed differently, or the deposit/gift changed). Reload and retry." }
+  /reconciliation/payouts/{payoutId}/charge-ties/confirm:
+    post:
+      operationId: confirmPayoutChargeTies
+      tags: [reconciliation]
+      summary: Confirm charge-grain Stripe↔QuickBooks ties for one payout (individually-booked payouts).
+      description: |
+        Atomically confirms per-charge QuickBooks ties for ONE Stripe payout —
+        the settlement path for payouts the bookkeeper booked as individual QB
+        rows (one per donation) instead of a single deposit lump, so no
+        payout↔deposit settlement link will ever exist.
+
+        Two modes, by body:
+          • NO qbStagedPaymentIds — approve the SYSTEM-PROPOSED ties: every
+            charge carrying a proposed QB tie is stamped with the confirmed
+            linkedQbStagedPaymentId (+ who/when provenance) and the proposal is
+            cleared. 409 if nothing is proposed or any proposed QB row was
+            claimed elsewhere in the meantime (nothing is written).
+          • qbStagedPaymentIds present — MANUAL "Tie selected": the server
+            assigns each given QB row to a distinct untied charge of this
+            payout by exact amount (payer-name similarity and date proximity
+            order the assignment when several same-amount charges compete) and
+            confirms all of them. 400/409 with per-row issues when any row
+            cannot be assigned (nothing is written).
+
+        Plane 1 only: ties are permanent settlement EVIDENCE. No gift is ever
+        minted, no QB row's status/donor changes, and per-charge → gift booking
+        stays with the Gift report. All-or-nothing in one transaction. Once
+        every charge of the payout is tied (or excluded/rejected), the payout
+        shows as settled ("Matched") on the Settlement report, and each tied QB
+        row leaves the "Needs payout tie" column.
+      parameters:
+        - { name: payoutId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConfirmChargeTiesBody" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConfirmChargeTiesResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { description: "The payout no longer exists." }
+        "409": { description: "Nothing to confirm, or the state drifted (a QB row was claimed elsewhere / a charge tie changed). Reload and retry. The body's `details.issues` lists the specific rows." }
   /reconciliation/gifts-missing-qb:
     get:
       operationId: listGiftsMissingQb
@@ -6885,6 +6927,8 @@ components:
         unmatched:        { type: integer, description: "Payouts with no QB deposit candidate." }
         chargesScanned:   { type: integer, description: "Donor-less Stripe charges re-scored for a donor hint (charge-grain backfill for single-donation payouts with no deposit lump)." }
         chargesRematched: { type: integer, description: "Charges that gained a donor hint this pass, surfacing them in the per-charge review queue. DONOR-ONLY — never mints or reconciles." }
+        chargeTiesProposed: { type: integer, description: "Charges (inside payouts with no settlement link) that ended the pass with a PROPOSED per-charge QuickBooks tie — the individually-booked-payout match a human approves on the Settlement report. Proposals only; never confirms." }
+        chargeTiesCleared:  { type: integer, description: "Stale per-charge QuickBooks tie proposals cleared this pass (candidate disappeared, or the payout gained a settlement link)." }
     StripeUntiedPayoutDiagnostic:
       type: object
       required: [total, withExactQbRow, deposits, payments, orphans, rows]
@@ -7641,6 +7685,27 @@ components:
         description:         { type: string, nullable: true, description: "Charge description (charge.description) — often the real donor name / memo." }
         statementDescriptor: { type: string, nullable: true, description: "Card statement descriptor shown on the payer's statement." }
         date:      { type: string, format: date, nullable: true, description: "Calendar date the charge is credited to (date_received)." }
+        status:    { type: string, nullable: true, description: "Staged-charge review status (pending/approved/rejected/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie." }
+        linkedQbStagedPaymentId: { type: string, nullable: true, description: "CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied." }
+        proposedQb:
+          nullable: true
+          allOf: [ { $ref: "#/components/schemas/ChargeProposedQbTie" } ]
+          description: "The system-PROPOSED (not yet confirmed) QuickBooks row for this charge, awaiting a human approve on the Settlement report. Null when nothing is proposed or the tie is already confirmed."
+    ChargeProposedQbTie:
+      type: object
+      required: [id]
+      description: >-
+        A proposed charge-grain Stripe↔QuickBooks tie: the QB staged_payments
+        row believed to record the SAME money as one Stripe charge (exact
+        amount, close date, payer-name similarity when several same-amount
+        candidates competed). Proposal only — a human approves it into the
+        confirmed linkedQbStagedPaymentId.
+      properties:
+        id:        { type: string, description: "staged_payments.id of the proposed QB row." }
+        payerName: { type: string, nullable: true }
+        amount:    { type: string, nullable: true, description: "QB row amount (major units)." }
+        date:      { type: string, format: date, nullable: true, description: "QB date received." }
+        memo:      { type: string, nullable: true, description: "QB transaction memo / line description, whichever is set." }
     PayoutSearchCandidate:
       type: object
       required: [id]
@@ -7670,6 +7735,26 @@ components:
         confirm an already-proposed tie.
       properties:
         depositStagedPaymentId: { type: string, nullable: true, description: "QB deposit staged-payment id to tie to this payout before confirming (resolve). Omit when a proposed link already exists." }
+    ConfirmChargeTiesBody:
+      type: object
+      description: |
+        Optional manual-tie payload. Omit (or send no body) to approve the
+        system-proposed per-charge ties. Provide qbStagedPaymentIds to manually
+        tie the selected QB staged rows to this payout's untied charges
+        (the Settlement report's "Tie selected" gesture).
+      properties:
+        qbStagedPaymentIds:
+          type: array
+          items: { type: string }
+          description: "QB staged_payments ids to tie to this payout's charges. Each must match a distinct untied charge by exact amount and must not already be tied/settlement-linked elsewhere."
+    ConfirmChargeTiesResult:
+      type: object
+      required: [confirmed, payoutId, tied, payoutFullyTied]
+      properties:
+        confirmed: { type: boolean, description: "True when the ties were written." }
+        payoutId:  { type: string }
+        tied:      { type: integer, description: "Charges that gained a confirmed QuickBooks tie in this call." }
+        payoutFullyTied: { type: boolean, description: "True when, after this call, every charge of the payout is tied or excluded/rejected — the payout now shows as settled (Matched) on the Settlement report." }
     ConfirmSettlementLinkResult:
       type: object
       required: [confirmed, kind, payoutId]
@@ -8071,6 +8156,8 @@ components:
         lineClasses:      { type: array, items: { type: string }, nullable: true, description: "QB anchor only: line class names captured at pull time." }
         statusLabel: { type: string, description: "Raw source status for the display badge: the Stripe payout's reconciliation status (derived from its settlement link), or the QB staged-payment status." }
         batchStatus: { $ref: "#/components/schemas/SettlementBatchStatus" }
+        chargeTiesProposed:  { type: integer, nullable: true, description: "Stripe payout only: charges carrying a PROPOSED (unconfirmed) per-charge QuickBooks tie — >0 makes the Missing-deposit card approvable at charge grain. Null for QB anchors." }
+        chargeTiesConfirmed: { type: integer, nullable: true, description: "Stripe payout only: charges with a CONFIRMED per-charge QuickBooks tie. Null for QB anchors." }
         proposedMatch:
           nullable: true
           allOf: [ { $ref: "#/components/schemas/BundleAnchorProposedMatch" } ]

@@ -87,6 +87,7 @@ import {
   type ConfirmRevertResult,
 } from "../lib/stripeConfirm";
 import { proposePayoutMatches } from "../lib/stripeReconcile";
+import { proposeChargeQbTies } from "../lib/chargeQbTie";
 import {
   deriveEvidenceLanes,
   derivePayoutLanes,
@@ -1400,6 +1401,8 @@ router.post(
           unmatched: 0,
           chargesScanned: 0,
           chargesRematched: 0,
+          chargeTiesProposed: 0,
+          chargeTiesCleared: 0,
         });
         return;
       }
@@ -1410,6 +1413,11 @@ router.post(
       // a donor hint) in the per-charge review queue where a human ties them to a
       // gift. DONOR-ONLY — never mints or reconciles (proposal-only guarantee).
       const rematch = await rematchStripeCharges();
+      // Step 3 — charge-grain QB tie proposals for "individually-booked"
+      // payouts (the bookkeeper recorded one QB row per donation, so no
+      // deposit lump exists for the payout↔deposit pass to find). Proposals
+      // only — a human approves each tie on the Settlement report.
+      const chargeTies = await proposeChargeQbTies();
       const [counts] = await db
         .select({ total: sql<number>`count(*)::int` })
         .from(stripePayouts);
@@ -1427,6 +1435,9 @@ router.post(
         // Charge-grain donor backfill (step 2): charges examined and donor-hinted.
         chargesScanned: rematch.scanned,
         chargesRematched: rematch.matched,
+        // Charge-grain QB tie proposals (step 3).
+        chargeTiesProposed: chargeTies.ran ? chargeTies.proposed : 0,
+        chargeTiesCleared: chargeTies.ran ? chargeTies.cleared : 0,
       };
       req.log.info(summary, "Historical Stripe→QB reconciliation proposal pass");
       res.json(summary);

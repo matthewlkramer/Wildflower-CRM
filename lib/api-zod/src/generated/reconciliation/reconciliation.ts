@@ -577,7 +577,16 @@ export const SearchReconciliationPayoutsResponse = zod.object({
   "net": zod.string().nullish().describe('Charge net amount after the processor fee (major units).'),
   "description": zod.string().nullish().describe('Charge description (charge.description) — often the real donor name \/ memo.'),
   "statementDescriptor": zod.string().nullish().describe('Card statement descriptor shown on the payer\'s statement.'),
-  "date": zod.string().date().nullish().describe('Calendar date the charge is credited to (date_received).')
+  "date": zod.string().date().nullish().describe('Calendar date the charge is credited to (date_received).'),
+  "status": zod.string().nullish().describe('Staged-charge review status (pending\/approved\/rejected\/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie.'),
+  "linkedQbStagedPaymentId": zod.string().nullish().describe('CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied.'),
+  "proposedQb": zod.object({
+  "id": zod.string().describe('staged_payments.id of the proposed QB row.'),
+  "payerName": zod.string().nullish(),
+  "amount": zod.string().nullish().describe('QB row amount (major units).'),
+  "date": zod.string().date().nullish().describe('QB date received.'),
+  "memo": zod.string().nullish().describe('QB transaction memo \/ line description, whichever is set.')
+}).describe('A proposed charge-grain Stripe↔QuickBooks tie: the QB staged_payments row believed to record the SAME money as one Stripe charge (exact amount, close date, payer-name similarity when several same-amount candidates competed). Proposal only — a human approves it into the confirmed linkedQbStagedPaymentId.').nullish().describe('The system-PROPOSED (not yet confirmed) QuickBooks row for this charge, awaiting a human approve on the Settlement report. Null when nothing is proposed or the tie is already confirmed.')
 }).describe('One Stripe charge rolled into a payout, for at-a-glance display on the Settlement report (who the money is from without drilling in).')).optional().describe('Per-charge breakdown (payer name + amount) inside the payout, capped and ordered by amount desc. Empty when unknown.')
 }).describe('One orphan Stripe payout returned by the reverse payout search.'))
 })
@@ -635,6 +644,49 @@ export const ConfirmSettlementLinkResponse = zod.object({
   "kind": zod.enum(['confirmed_reconciled', 'conflict_kept', 'already_confirmed']).describe('Which path ran: a clean pending-deposit confirm, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link.'),
   "payoutId": zod.string(),
   "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit the confirmed link ties to (null only if the link\'s deposit pointer had degraded).')
+})
+
+/**
+ * Atomically confirms per-charge QuickBooks ties for ONE Stripe payout —
+the settlement path for payouts the bookkeeper booked as individual QB
+rows (one per donation) instead of a single deposit lump, so no
+payout↔deposit settlement link will ever exist.
+
+Two modes, by body:
+  • NO qbStagedPaymentIds — approve the SYSTEM-PROPOSED ties: every
+    charge carrying a proposed QB tie is stamped with the confirmed
+    linkedQbStagedPaymentId (+ who/when provenance) and the proposal is
+    cleared. 409 if nothing is proposed or any proposed QB row was
+    claimed elsewhere in the meantime (nothing is written).
+  • qbStagedPaymentIds present — MANUAL "Tie selected": the server
+    assigns each given QB row to a distinct untied charge of this
+    payout by exact amount (payer-name similarity and date proximity
+    order the assignment when several same-amount charges compete) and
+    confirms all of them. 400/409 with per-row issues when any row
+    cannot be assigned (nothing is written).
+
+Plane 1 only: ties are permanent settlement EVIDENCE. No gift is ever
+minted, no QB row's status/donor changes, and per-charge → gift booking
+stays with the Gift report. All-or-nothing in one transaction. Once
+every charge of the payout is tied (or excluded/rejected), the payout
+shows as settled ("Matched") on the Settlement report, and each tied QB
+row leaves the "Needs payout tie" column.
+
+ * @summary Confirm charge-grain Stripe↔QuickBooks ties for one payout (individually-booked payouts).
+ */
+export const ConfirmPayoutChargeTiesParams = zod.object({
+  "payoutId": zod.coerce.string()
+})
+
+export const ConfirmPayoutChargeTiesBody = zod.object({
+  "qbStagedPaymentIds": zod.array(zod.string()).optional().describe('QB staged_payments ids to tie to this payout\'s charges. Each must match a distinct untied charge by exact amount and must not already be tied\/settlement-linked elsewhere.')
+}).describe('Optional manual-tie payload. Omit (or send no body) to approve the\nsystem-proposed per-charge ties. Provide qbStagedPaymentIds to manually\ntie the selected QB staged rows to this payout\'s untied charges\n(the Settlement report\'s \"Tie selected\" gesture).\n')
+
+export const ConfirmPayoutChargeTiesResponse = zod.object({
+  "confirmed": zod.boolean().describe('True when the ties were written.'),
+  "payoutId": zod.string(),
+  "tied": zod.number().describe('Charges that gained a confirmed QuickBooks tie in this call.'),
+  "payoutFullyTied": zod.boolean().describe('True when, after this call, every charge of the payout is tied or excluded\/rejected — the payout now shows as settled (Matched) on the Settlement report.')
 })
 
 /**
@@ -822,7 +874,16 @@ export const ListReconciliationBundleAnchorsResponse = zod.object({
   "net": zod.string().nullish().describe('Charge net amount after the processor fee (major units).'),
   "description": zod.string().nullish().describe('Charge description (charge.description) — often the real donor name \/ memo.'),
   "statementDescriptor": zod.string().nullish().describe('Card statement descriptor shown on the payer\'s statement.'),
-  "date": zod.string().date().nullish().describe('Calendar date the charge is credited to (date_received).')
+  "date": zod.string().date().nullish().describe('Calendar date the charge is credited to (date_received).'),
+  "status": zod.string().nullish().describe('Staged-charge review status (pending\/approved\/rejected\/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie.'),
+  "linkedQbStagedPaymentId": zod.string().nullish().describe('CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied.'),
+  "proposedQb": zod.object({
+  "id": zod.string().describe('staged_payments.id of the proposed QB row.'),
+  "payerName": zod.string().nullish(),
+  "amount": zod.string().nullish().describe('QB row amount (major units).'),
+  "date": zod.string().date().nullish().describe('QB date received.'),
+  "memo": zod.string().nullish().describe('QB transaction memo \/ line description, whichever is set.')
+}).describe('A proposed charge-grain Stripe↔QuickBooks tie: the QB staged_payments row believed to record the SAME money as one Stripe charge (exact amount, close date, payer-name similarity when several same-amount candidates competed). Proposal only — a human approves it into the confirmed linkedQbStagedPaymentId.').nullish().describe('The system-PROPOSED (not yet confirmed) QuickBooks row for this charge, awaiting a human approve on the Settlement report. Null when nothing is proposed or the tie is already confirmed.')
 }).describe('One Stripe charge rolled into a payout, for at-a-glance display on the Settlement report (who the money is from without drilling in).')).optional().describe('Per-charge breakdown (payer name + amount) inside a Stripe payout, capped and ordered by amount desc. Empty for QB-only anchors.'),
   "lineDescription": zod.string().nullish().describe('QB anchor only: the deposit line \/ memo description. Null for a Stripe payout.'),
   "memo": zod.string().nullish().describe('QB anchor only: the transaction-level memo (PrivateNote). Null for a Stripe payout.'),
@@ -832,6 +893,8 @@ export const ListReconciliationBundleAnchorsResponse = zod.object({
   "lineClasses": zod.array(zod.string()).nullish().describe('QB anchor only: line class names captured at pull time.'),
   "statusLabel": zod.string().describe('Raw source status for the display badge: the Stripe payout\'s reconciliation status (derived from its settlement link), or the QB staged-payment status.'),
   "batchStatus": zod.enum(['settled', 'proposed', 'orphan']).describe('Derived Plane-1 settlement status for one anchor (design §4.4 batch), used by the\nSettlement report to group anchors into its three columns. settled: a confirmed\npayout↔deposit settlement link exists. proposed: only a proposed link exists\n(awaiting human confirm — the \"needs review\" filter). orphan: no settlement link\n(a Stripe payout that never booked to a deposit, or a standalone QB deposit with no\npayout). Combined with anchorType this fully places a row: Stripe orphan → the\n\"missing deposit\" column; QB orphan → the \"missing payout\" column.\n'),
+  "chargeTiesProposed": zod.number().nullish().describe('Stripe payout only: charges carrying a PROPOSED (unconfirmed) per-charge QuickBooks tie — >0 makes the Missing-deposit card approvable at charge grain. Null for QB anchors.'),
+  "chargeTiesConfirmed": zod.number().nullish().describe('Stripe payout only: charges with a CONFIRMED per-charge QuickBooks tie. Null for QB anchors.'),
   "proposedMatch": zod.object({
   "counterpartType": zod.enum(['qb_staged_payment', 'stripe_payout']).describe('The settlement anchor a bundle reconciles: a QuickBooks deposit (staged_payments) or a Stripe payout (stripe_payouts).'),
   "counterpartId": zod.string().describe('staged_payments.id or stripe_payouts.id of the proposed counterpart.'),
