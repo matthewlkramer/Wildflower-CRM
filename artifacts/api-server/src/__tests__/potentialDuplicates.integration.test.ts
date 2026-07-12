@@ -601,6 +601,14 @@ describe("namesTokenConflict", () => {
     );
   });
 
+  it("drops family foundations that differ only in the family name", () => {
+    // "Family Foundation" is filler both sides share; Mai vs Hall is the
+    // distinctive token and they are not similar.
+    expect(
+      namesTokenConflict("Mai Family Foundation", "Hall Family Foundation"),
+    ).toBe(true);
+  });
+
   it("drops names that differ in a person's distinctive token", () => {
     expect(namesTokenConflict("John Smith", "Jane Smith")).toBe(true);
     expect(namesTokenConflict("John Michael Smith", "John Robert Smith")).toBe(
