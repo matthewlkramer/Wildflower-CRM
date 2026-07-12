@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useDebounce } from "@/hooks/use-debounce";
-import { Link, useSearch } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListReconciliationCards,
@@ -169,33 +169,45 @@ import { BulkSelectBar } from "@/components/bulk-select-bar";
 
 // ─── Shell config (mockup structure, corrected to our money model) ──────────
 
-// Two three-column reports (design §4.5). The Settlement report (Plane 1) owns
-// what used to be the "Settlement bundles" queue; the Gift report (Plane 2) owns
-// the remaining unit↔gift queues below.
-type ReportId = "settlement" | "gift";
-
-// The Gift report's orthogonal "view" (design §4.5/§4.6): the three-column
-// reconciliation report, the excluded-non-gifts filter that doesn't fit a
-// match-state column, or the incomplete-gift-record worklist (on-books gifts
-// still missing critical coding). All three are slices of the ONE Gift report —
-// there are only two top-level reports (Settlement + Gift, design §4.5).
+// One flat row of 4 top-level tabs (formerly a two-level Settlement/Gift report
+// switcher + a Gift-only Reports/Excluded/Incomplete second row):
+//   • settlement — QB ↔ Stripe reconciliation (payout↔deposit bundle queue)
+//   • gift       — Gift ↔ payment reconciliation (the three-column report)
+//   • excluded   — Excluded payments (non-gift items table)
+//   • incomplete — Incomplete gifts (coding worklist)
 // (Research-flagging now lives in the Cleanup Queue.)
-type GiftView = "reports" | "excluded" | "incomplete";
+type WorkbenchTab = "settlement" | "gift" | "excluded" | "incomplete";
 
 // Funding-source filter for the Gift report (design §4.5). qb_direct = money not
 // routed through a known processor (checks, ACH, cash, and unclassified rows).
 type FundingSourceFilter = "all" | "stripe" | "qb_direct" | "donorbox";
 
-const REPORTS: { id: ReportId; name: string }[] = [
-  { id: "settlement", name: "Settlement" },
-  { id: "gift", name: "Gift" },
+const TABS: { id: WorkbenchTab; name: string }[] = [
+  { id: "settlement", name: "QB ↔ Stripe reconciliation" },
+  { id: "gift", name: "Gift ↔ payment reconciliation" },
+  { id: "excluded", name: "Excluded payments" },
+  { id: "incomplete", name: "Incomplete gifts" },
 ];
 
-const GIFT_VIEWS: { id: GiftView; name: string }[] = [
-  { id: "reports", name: "Reports" },
-  { id: "excluded", name: "Excluded" },
-  { id: "incomplete", name: "Incomplete gift record" },
-];
+// ?queue= deep-link mapping. Legacy values keep working: `bundle` (old Stripe /
+// Donorbox / settlement routes) opens QB ↔ Stripe, `excluded` opens Excluded
+// payments, `incomplete` opens Incomplete gifts, and every other match-state
+// value (review/qbo/crm/confirmed/done/split/research) or an absent param lands
+// on Gift ↔ payment reconciliation.
+function tabFromQueueParam(queue: string | null): WorkbenchTab {
+  if (queue === "bundle") return "settlement";
+  if (queue === "excluded") return "excluded";
+  if (queue === "incomplete") return "incomplete";
+  return "gift";
+}
+
+// Canonical shareable ?queue= value per tab (null = no param, the default tab).
+const TAB_QUEUE_PARAM: Record<WorkbenchTab, string | null> = {
+  settlement: "bundle",
+  gift: null,
+  excluded: "excluded",
+  incomplete: "incomplete",
+};
 
 const FUNDING_SOURCES: { id: FundingSourceFilter; name: string }[] = [
   { id: "all", name: "All sources" },
@@ -443,18 +455,26 @@ export default function ReconciliationWorkbench() {
   };
 
   // Old reconciliation routes redirect here with `?queue=<id>` so the matching
-  // queue is preselected. Read once on mount; the rail drives state thereafter.
+  // tab is preselected. Read once on mount; tab clicks drive state thereafter
+  // and write the canonical ?queue= value back so each tab stays shareable.
   const urlSearch = useSearch();
   const initialQueueParam = new URLSearchParams(urlSearch).get("queue");
-  const [report, setReport] = useState<ReportId>(() =>
-    initialQueueParam === "bundle" ? "settlement" : "gift",
+  const [tab, setTab] = useState<WorkbenchTab>(() =>
+    tabFromQueueParam(initialQueueParam),
   );
-  // Old per-queue deep links collapse into the new Gift-report views: the
-  // excluded flag queue keeps its own view; every match-state queue
-  // (review/qbo/crm/confirmed/done) lands on the three-column report. Legacy
-  // ?queue=research deep links now land on the report (research moved out).
-  const [giftView, setGiftView] = useState<GiftView>(() =>
-    initialQueueParam === "excluded" ? "excluded" : "reports",
+  const [, navigate] = useLocation();
+  const selectTab = useCallback(
+    (next: WorkbenchTab) => {
+      setTab(next);
+      const queue = TAB_QUEUE_PARAM[next];
+      navigate(
+        queue
+          ? `/reconciliation-workbench?queue=${queue}`
+          : "/reconciliation-workbench",
+        { replace: true },
+      );
+    },
+    [navigate],
   );
   // The "Matched" column (the `done` queue — money already tied to a confirmed
   // gift) is reference noise for day-to-day reconciliation, so it's hidden by
@@ -568,7 +588,7 @@ export default function ReconciliationWorkbench() {
   };
   const doneQuery = useListReconciliationCards(doneParams, {
     query: {
-      enabled: report === "gift" && giftView === "reports" && showMatched,
+      enabled: tab === "gift" && showMatched,
       queryKey: getListReconciliationCardsQueryKey(doneParams),
     },
   });
@@ -588,7 +608,7 @@ export default function ReconciliationWorkbench() {
   };
   const excludedQuery = useListReconciliationCards(excludedParams, {
     query: {
-      enabled: report === "gift" && giftView === "excluded",
+      enabled: tab === "excluded",
       queryKey: getListReconciliationCardsQueryKey(excludedParams),
     },
   });
@@ -1935,11 +1955,13 @@ export default function ReconciliationWorkbench() {
                 Reconciliation Workbench
               </h1>
               <p className="text-sm text-muted-foreground">
-                {report === "settlement"
-                  ? "Settlement — match Stripe payouts to their QuickBooks deposits."
-                  : giftView === "incomplete"
-                    ? "Incomplete gift record — on-books gifts still missing the critical coding info needed to book them. Open each and fill in what's flagged."
-                    : "Gift — reconcile pulled money to CRM gifts across three columns: matched, money unlinked to CRM record, and CRM gifts unlinked to money."}{" "}
+                {tab === "settlement"
+                  ? "Match Stripe payouts to their QuickBooks deposits."
+                  : tab === "incomplete"
+                    ? "On-books gifts still missing the critical coding info needed to book them. Open each and fill in what's flagged."
+                    : tab === "excluded"
+                      ? "Pulled money marked as not a gift (fees, transfers, refunds, and other non-gift items)."
+                      : "Reconcile pulled money to CRM gifts across three columns: matched, money unlinked to CRM record, and CRM gifts unlinked to money."}{" "}
                 Pull-only: nothing is written to QuickBooks, Stripe, or Donorbox.
               </p>
             </div>
@@ -1960,7 +1982,7 @@ export default function ReconciliationWorkbench() {
                   Re-match donors
                 </Button>
               )}
-              {report === "gift" && giftView === "reports" && (
+              {tab === "gift" && (
                 <Button
                   onClick={approveAllHighConfidence}
                   disabled={busy || readyCount === 0}
@@ -1976,56 +1998,31 @@ export default function ReconciliationWorkbench() {
             </div>
           </div>
 
-          {/* Report nav — two three-column reports (design §4.5). */}
-          <nav className="flex flex-wrap items-center gap-1">
-            {REPORTS.map((r) => {
-              const active = r.id === report;
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => setReport(r.id)}
-                  className={cn(
-                    "rounded-md px-3 py-1.5 text-sm transition-colors",
-                    active
-                      ? "bg-muted font-medium text-foreground"
-                      : "text-muted-foreground hover:bg-muted/60",
-                  )}
-                  data-testid={`button-report-${r.id}`}
-                >
-                  {r.name}
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* Gift-report view toggle — the three-column report vs the excluded
-              filter. Each report column now owns its own filter header; the old
-              report-wide search box + funding-source pill nav are gone. */}
-          {report === "gift" && (
-          <div className="flex flex-col gap-2 border-b pb-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Single flat tab row — every destination is one click away. The old
+              two-level nav (Settlement/Gift report switcher + Gift-only
+              Reports/Excluded/Incomplete second row) collapsed into these 4. */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
             <nav className="flex flex-wrap items-center gap-1">
-              {GIFT_VIEWS.map((v) => {
-                const active = v.id === giftView;
+              {TABS.map((t) => {
+                const active = t.id === tab;
                 const count =
-                  v.id === "excluded"
+                  t.id === "excluded"
                     ? excludedQuery.data?.pagination.total
                     : undefined;
                 return (
                   <button
-                    key={v.id}
+                    key={t.id}
                     type="button"
-                    onClick={() => setGiftView(v.id)}
+                    onClick={() => selectTab(t.id)}
                     className={cn(
                       "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
                       active
                         ? "bg-muted font-medium text-foreground"
                         : "text-muted-foreground hover:bg-muted/60",
                     )}
-                    data-testid={`button-giftview-${v.id}`}
+                    data-testid={`button-tab-${t.id}`}
                   >
-                    {v.name}
+                    {t.name}
                     {count !== undefined && count > 0 && (
                       <Badge variant="secondary">{count}</Badge>
                     )}
@@ -2033,7 +2030,7 @@ export default function ReconciliationWorkbench() {
                 );
               })}
             </nav>
-            {giftView === "reports" && (
+            {tab === "gift" && (
               <Button
                 variant="outline"
                 size="sm"
@@ -2053,17 +2050,15 @@ export default function ReconciliationWorkbench() {
                 {showMatched ? "Hide matched" : "Show matched"}
               </Button>
             )}
-            </div>
           </div>
-          )}
         </header>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-28 pr-1">
-          {report === "settlement" ? (
+          {tab === "settlement" ? (
             <SettlementReport />
-          ) : giftView === "incomplete" ? (
+          ) : tab === "incomplete" ? (
             <IncompleteGiftsWorklist />
-          ) : giftView === "excluded" ? (
+          ) : tab === "excluded" ? (
             <ExcludedTable
               cards={excludedCards}
               total={excludedTotal}
@@ -2512,8 +2507,7 @@ export default function ReconciliationWorkbench() {
       />
 
       {/* Group selected → one gift (Review / QBO-only buckets) */}
-      {report === "gift" &&
-        giftView === "reports" &&
+      {tab === "gift" &&
         selectedIds.size > 0 && (
           <div className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border bg-card px-4 py-2 shadow-xl">
             <span className="text-sm font-medium">
