@@ -1152,13 +1152,20 @@ function PaymentLinkDialog({
                   // offer an unlink instead of a second (double-counting) link.
                   const blocked = c.alreadyLinkedGiftId != null;
                   const isStripe = c.nodeType === "stripe";
+                  // The whole row links (not just the small button) — but only
+                  // for linkable rows; unlink stays behind its explicit button.
+                  const rowClickable = !blocked && !linkPending;
                   return (
                     <li
                       key={`${c.nodeType}-${c.id}`}
                       className={cn(
                         "flex items-center justify-between gap-3 p-3",
                         blocked && "opacity-60",
+                        rowClickable &&
+                          "cursor-pointer transition-colors hover:bg-muted/50",
                       )}
+                      onClick={rowClickable ? () => link(c) : undefined}
+                      data-testid={`payment-link-row-${c.id}`}
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -1193,7 +1200,10 @@ function PaymentLinkDialog({
                           size="sm"
                           variant="outline"
                           disabled={unlinkPending}
-                          onClick={() => unlink(c)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            unlink(c);
+                          }}
                           data-testid={`payment-link-unlink-${c.id}`}
                         >
                           {unlinkPending ? (
@@ -1207,7 +1217,10 @@ function PaymentLinkDialog({
                           size="sm"
                           variant="outline"
                           disabled={linkPending}
-                          onClick={() => link(c)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            link(c);
+                          }}
                           data-testid={`payment-link-pick-${c.id}`}
                         >
                           {linkPending ? (
