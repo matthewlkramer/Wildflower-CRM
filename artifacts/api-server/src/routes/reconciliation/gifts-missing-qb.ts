@@ -454,6 +454,9 @@ router.get(
           ilike(people.fullName, like),
           sql`TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})) ILIKE ${like}`,
           ilike(households.name, like),
+          // Also match the CRM gift's own name, so a gift can be found even
+          // when the searcher doesn't know (or isn't searching by) the donor.
+          ilike(giftsAndPayments.name, like),
         )!,
       );
     }

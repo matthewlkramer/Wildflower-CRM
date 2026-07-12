@@ -49,6 +49,14 @@ const ORG_S2 = `${RUN}_orgs2`;
 // conflict, so it must NOT be flagged safe.
 const ORG_U1 = `${RUN}_orgu1`;
 const ORG_U2 = `${RUN}_orgu2`;
+// Token-conflict pair: trigram-similar names ("MN/US Department of Education")
+// that differ in their distinctive token — must be filtered OUT of the queue.
+const ORG_T1 = `${RUN}_orgt1`;
+const ORG_T2 = `${RUN}_orgt2`;
+// Web-identity conflict pair: identical names but disjoint website domains and
+// no shared phone — different real-world orgs, must be filtered OUT.
+const ORG_W1 = `${RUN}_orgw1`;
+const ORG_W2 = `${RUN}_orgw2`;
 const PERSON_1 = `${RUN}_person1`;
 const PERSON_2 = `${RUN}_person2`;
 
@@ -70,6 +78,11 @@ const DUP_ORG_NAME = `Dup Org ${RUN}`;
 const DISMISS_ORG_NAME = `Dismiss Org ${RUN}`;
 const SAFE_ORG_NAME = `Safe Org ${RUN}`;
 const UNSAFE_ORG_NAME = `Unsafe Org ${RUN}`;
+// Trigram-similar (long shared tail) but token-conflicting (MN vs US).
+const TOKEN_ORG_NAME_A = `MN Department of Education ${RUN}`;
+const TOKEN_ORG_NAME_B = `US Department of Education ${RUN}`;
+// Identical name — only the web identities (website domains) differ.
+const WEB_ORG_NAME = `Department of Education ${RUN}`;
 const DUP_PERSON_NAME = `Dup Person ${RUN}`;
 
 const SAFE_WEBSITE = "https://safe-merge.example.org";
@@ -250,6 +263,14 @@ beforeAll(async () => {
     // Unsafe pair: two distinct websites is a real conflict.
     { id: ORG_U1, name: UNSAFE_ORG_NAME, website: "https://u1.example.org" },
     { id: ORG_U2, name: UNSAFE_ORG_NAME, website: "https://u2.example.org" },
+    // Token-conflict pair: high trigram similarity, but distinctive tokens
+    // differ (MN vs US) — must never surface as a name-signal duplicate.
+    { id: ORG_T1, name: TOKEN_ORG_NAME_A },
+    { id: ORG_T2, name: TOKEN_ORG_NAME_B },
+    // Web-identity conflict pair: identical names, disjoint website domains —
+    // different orgs, must never surface as a name-signal duplicate.
+    { id: ORG_W1, name: WEB_ORG_NAME, website: "https://education.mn.gov" },
+    { id: ORG_W2, name: WEB_ORG_NAME, website: "https://www.ed.gov" },
   ]);
 
   await db.insert(schema.people).values([
@@ -341,6 +362,10 @@ afterAll(async () => {
         ORG_S2,
         ORG_U1,
         ORG_U2,
+        ORG_T1,
+        ORG_T2,
+        ORG_W1,
+        ORG_W2,
       ]),
     );
   await db
@@ -488,4 +513,151 @@ describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
     expect(pair!.safeMerge).toBe(false);
     expect(pair!.mergeSuggestion).toBeNull();
   }, 30_000);
+
+  it("filters out trigram-similar names whose distinctive tokens conflict (MN vs US Dept of Education)", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    const { json } = await listDup("organization");
+    expect(findPair(json.pairs, ORG_T1, ORG_T2)).toBeUndefined();
+  }, 30_000);
+
+  it("filters out same-named orgs living on disjoint website domains", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    const { json } = await listDup("organization");
+    expect(findPair(json.pairs, ORG_W1, ORG_W2)).toBeUndefined();
+  }, 30_000);
+
+  it("still surfaces distinct-website pairs that share a phone (via the phone signal)", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    const { json } = await listDup("organization");
+    // ORG_U1/U2 have distinct websites (dropped from the name signal) but a
+    // shared phone — the stronger tie keeps them in the review queue.
+    expect(findPair(json.pairs, ORG_U1, ORG_U2)).toBeDefined();
+  }, 30_000);
+});
+
+// Pure token-conflict guard — no DB needed, always runs.
+describe("namesTokenConflict", () => {
+  let namesTokenConflict: (a: string, b: string) => boolean;
+  let tokensAreSpellingVariants: (a: string, b: string) => boolean;
+  let normalizeWebDomain: (v: string | null | undefined) => string | null;
+  let orgDomainSet: (parts: Array<string | null | undefined>) => Set<string>;
+  let domainSetsConflict: (a: Set<string>, b: Set<string>) => boolean;
+
+  beforeAll(async () => {
+    const mod = await import("../routes/potentialDuplicates");
+    namesTokenConflict = mod.namesTokenConflict;
+    tokensAreSpellingVariants = mod.tokensAreSpellingVariants;
+    normalizeWebDomain = mod.normalizeWebDomain;
+    orgDomainSet = mod.orgDomainSet;
+    domainSetsConflict = mod.domainSetsConflict;
+  });
+
+  it("drops state-prefix government lookalikes", () => {
+    expect(
+      namesTokenConflict(
+        "MN Department of Education",
+        "US Department of Education",
+      ),
+    ).toBe(true);
+    expect(
+      namesTokenConflict(
+        "RI Department of Education",
+        "MN Department of Education",
+      ),
+    ).toBe(true);
+    expect(
+      namesTokenConflict(
+        "State University of New York",
+        "City University of New York",
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps misspelled duplicates (differing tokens are spelling variants)", () => {
+    expect(
+      namesTokenConflict("Wildflower Fundation", "Wildflower Foundation"),
+    ).toBe(false);
+    expect(namesTokenConflict("Jon Smith", "John Smith")).toBe(false);
+    expect(namesTokenConflict("Katherine Reed", "Kathryn Reed")).toBe(false);
+  });
+
+  it("keeps one-sided prefix/suffix additions (subset names)", () => {
+    expect(
+      namesTokenConflict(
+        "MN Department of Education",
+        "Department of Education",
+      ),
+    ).toBe(false);
+    expect(namesTokenConflict("Acme Foundation", "The Acme Foundation")).toBe(
+      false,
+    );
+    expect(namesTokenConflict("John Smith", "John Smith Jr")).toBe(false);
+  });
+
+  it("keeps identical and connective-only-differing names", () => {
+    expect(namesTokenConflict("Acme Fund", "Acme Fund")).toBe(false);
+    expect(namesTokenConflict("University of Chicago", "University Chicago")).toBe(
+      false,
+    );
+  });
+
+  it("drops names that differ in a person's distinctive token", () => {
+    expect(namesTokenConflict("John Smith", "Jane Smith")).toBe(true);
+    expect(namesTokenConflict("John Michael Smith", "John Robert Smith")).toBe(
+      true,
+    );
+    // Single-letter middle initials are too weak to auto-drop: "a" doubles as
+    // an article (stoplisted), leaving a one-sided leftover — kept for review.
+    expect(namesTokenConflict("John A Smith", "John B Smith")).toBe(false);
+  });
+
+  it("treats abbreviations, plurals, and misspellings as the same word", () => {
+    expect(tokensAreSpellingVariants("univ", "university")).toBe(true);
+    expect(tokensAreSpellingVariants("school", "schools")).toBe(true);
+    expect(tokensAreSpellingVariants("katherine", "kathryn")).toBe(true);
+    expect(tokensAreSpellingVariants("mn", "us")).toBe(false);
+    expect(tokensAreSpellingVariants("state", "city")).toBe(false);
+  });
+
+  it("normalizes URLs, bare domains, and e-mail addresses to a host", () => {
+    expect(normalizeWebDomain("https://www.education.mn.gov/about?x=1")).toBe(
+      "education.mn.gov",
+    );
+    expect(normalizeWebDomain("ED.GOV")).toBe("ed.gov");
+    expect(normalizeWebDomain("grants@ed.gov")).toBe("ed.gov");
+    expect(normalizeWebDomain("http://mn.gov:8080/path")).toBe("mn.gov");
+    expect(normalizeWebDomain("  ")).toBeNull();
+    expect(normalizeWebDomain(null)).toBeNull();
+    expect(normalizeWebDomain("localhost")).toBeNull();
+    // Free-mail providers say nothing about org identity.
+    expect(normalizeWebDomain("someone@gmail.com")).toBeNull();
+    // Shared-platform pages say nothing about org identity either.
+    expect(normalizeWebDomain("https://www.facebook.com/some-org")).toBeNull();
+    expect(normalizeWebDomain("https://m.facebook.com/some-org")).toBeNull();
+    expect(normalizeWebDomain("https://linkedin.com/company/x")).toBeNull();
+    // A URL query containing an e-mail must not hijack the host.
+    expect(normalizeWebDomain("https://x.org/contact?email=a@b.com")).toBe(
+      "x.org",
+    );
+  });
+
+  it("flags disjoint domain sets, tolerates subdomains and blanks", () => {
+    const mn = orgDomainSet(["https://education.mn.gov"]);
+    const us = orgDomainSet(["https://www.ed.gov", "grants@ed.gov"]);
+    expect(domainSetsConflict(mn, us)).toBe(true);
+    // Subdomain of the same domain = same identity.
+    expect(
+      domainSetsConflict(orgDomainSet(["education.mn.gov"]), orgDomainSet(["mn.gov"])),
+    ).toBe(false);
+    // Any shared domain = evidence FOR a dupe.
+    expect(
+      domainSetsConflict(
+        orgDomainSet(["mn.gov", "old-site.org"]),
+        orgDomainSet(["mn.gov"]),
+      ),
+    ).toBe(false);
+    // Blank or freemail-only sides never conflict.
+    expect(domainSetsConflict(orgDomainSet([null]), us)).toBe(false);
+    expect(domainSetsConflict(orgDomainSet(["a@gmail.com"]), us)).toBe(false);
+  });
 });

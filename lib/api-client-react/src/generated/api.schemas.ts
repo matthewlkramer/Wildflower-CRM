@@ -9332,7 +9332,7 @@ limit?: number;
 
 export type ListGiftsMissingQbParams = {
 /**
- * Free-text over donor name (organization / person / household).
+ * Free-text over donor name (organization / person / household) or the CRM gift name.
  */
 q?: string;
 /**

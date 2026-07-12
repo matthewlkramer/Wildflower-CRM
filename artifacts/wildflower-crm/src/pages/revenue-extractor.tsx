@@ -146,7 +146,7 @@ export default function RevenueExtractor() {
   return (
     <div className="space-y-6 max-w-[120rem]">
       <ListPageHeader
-        title="Revenue Extractor"
+        title="Export for QB"
         subtitle={
           <>
             One coded row per gift allocation for a transaction date range, plus a

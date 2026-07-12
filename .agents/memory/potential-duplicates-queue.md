@@ -18,6 +18,25 @@ row per shared-phone, inflating the score.
 (`groupBy(col1, col2)` / `SELECT DISTINCT`) before merging into the score map. Keep an
 eye on this any time the detection query is touched.
 
+## Name-signal false-positive guards
+Two pure filters run on the trigram name-pair candidates ONLY (the shared-phone
+signal is untouched, so a filtered name pair still surfaces if it shares a phone):
+- **Token conflict** (`namesTokenConflict`): drop a pair only when BOTH names carry a
+  distinctive leftover token the other can't account for (verbatim or spelling
+  variant — levenshtein ≥0.6 or 3-char prefix). One-sided leftovers are KEPT
+  (conservative); connective words + articles are stoplisted, so single-letter
+  middle initials ("John A/B Smith") never conflict by design.
+- **Web-identity conflict** (`domainSetsConflict` over website/emailDomain/orgEmail):
+  drop only when BOTH orgs have ≥1 usable domain and none match (subdomain = match).
+  Freemail AND shared-platform hosts (facebook/linkedin/wixsite/…) normalize to null —
+  a platform page must never read as a conflicting identity. Blank-vs-filled and
+  shared-domain pairs are kept.
+  **Why:** both filters must only ever fire on positive evidence of difference; any
+  ambiguity keeps the pair for human review. `normalizeWebDomain` strips path/query
+  BEFORE the @-split so `…?email=a@b.com` can't hijack the host.
+- Known false-negative class: person nicknames (Bill/William) now token-conflict and
+  are suppressed from the name signal; a nickname-equivalence map is the fix if it bites.
+
 ## Other durable constraints
 - Dismiss persists to a `duplicate_dismissals` table keyed on canonicalized ids
   (`id_a < id_b`) so dismissed pairs never reappear; the endpoint is idempotent (204).

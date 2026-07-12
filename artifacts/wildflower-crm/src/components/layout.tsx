@@ -80,7 +80,7 @@ const navItems: NavEntry[] = [
   { section: "Finance" },
   { href: "/projections", label: "Projections", icon: LineChart },
   { href: "/reconciliation-workbench", label: "Reconciliation", icon: Scale },
-  { href: "/revenue-extractor", label: "Revenue Extractor", icon: FileBarChart },
+  { href: "/revenue-extractor", label: "Export for QB", icon: FileBarChart },
 
   { section: "Admin" },
   { href: "/admin", label: "Admin", icon: Settings },

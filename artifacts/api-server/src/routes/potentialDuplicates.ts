@@ -30,7 +30,10 @@ import { DismissPotentialDuplicateBody } from "@workspace/api-zod";
 //     (people). The `%` operator is index-accelerated by the *_name_trgm /
 //     full_name_trgm GIN indexes; an explicit `similarity() >= threshold` then
 //     tightens the cut. (We deliberately do NOT call the deprecated set_limit();
-//     the default 0.3 `%` threshold is a superset of our 0.4 floor.)
+//     the default 0.3 `%` threshold is a superset of our 0.4 floor.) Trigram
+//     candidates then pass through a token-level conflict guard (below) that
+//     drops pairs whose names differ in distinctive tokens ("MN" vs "US"
+//     Department of Education) while keeping mere misspellings.
 //   • phone — two distinct entities that share a normalized (digits-only) phone
 //     number of at least MIN_PHONE_DIGITS digits.
 //
@@ -56,6 +59,206 @@ const MIN_PHONE_DIGITS = 7;
 
 const keyOf = (a: string, b: string) => `${a}|${b}`;
 
+// ─── Token-level name-conflict guard (false-positive filter, name signal) ───
+//
+// pg_trgm similarity is character-based, so two names that share a long
+// generic tail but differ in the short token that actually distinguishes them
+// still score high: "MN Department of Education" vs "US Department of
+// Education", "State University of New York" vs "City University of New York".
+// Those are different real-world entities, not duplicates. After the trigram
+// candidate pass we therefore drop pairs whose names CONFLICT at the token
+// level:
+//   1. tokenize both names (lowercase alphanumeric words, minus a few pure
+//      connectives) and remove the tokens shared verbatim;
+//   2. greedy-match the leftovers across sides as spelling variants
+//      (normalized Levenshtein ≥ TOKEN_SIM_THRESHOLD, or a ≥3-char prefix like
+//      "univ" / "university") so misspelled duplicates survive;
+//   3. if BOTH sides still hold an unexplained distinctive token, the names
+//      disagree about who they are → not a duplicate candidate.
+// One-sided leftovers ("MN Department of Education" vs "Department of
+// Education") are kept — an added prefix/suffix on the same name is a classic
+// duplicate shape. Pairs dropped here can still surface via the shared-phone
+// signal (PHONE_ONLY_SCORE), which is a much stronger tie than the name.
+
+const TOKEN_SIM_THRESHOLD = 0.6;
+const CONNECTIVE_TOKENS = new Set([
+  "the",
+  "a",
+  "an",
+  "of",
+  "and",
+  "for",
+  "in",
+  "at",
+  "on",
+]);
+
+export function tokenizeName(name: string): string[] {
+  return name
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 0 && !CONNECTIVE_TOKENS.has(t));
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = new Array<number>(n + 1);
+  let curr = new Array<number>(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n]!;
+}
+
+// Two tokens count as the "same word" when one is a ≥3-char prefix of the
+// other (abbreviations, plurals: univ/university, school/schools) or their
+// normalized Levenshtein similarity clears the threshold (misspellings:
+// jon/john, katherine/kathryn). Short distinct tokens (mn/us, a/b initials)
+// land well below the threshold and stay distinct.
+export function tokensAreSpellingVariants(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  if (shorter.length >= 3 && longer.startsWith(shorter)) return true;
+  return 1 - levenshtein(a, b) / longer.length >= TOKEN_SIM_THRESHOLD;
+}
+
+// ─── Distinct web-identity guard (websites / email domains) ─────────────────
+//
+// Two records that live on different web domains are different organizations:
+// every state has its own Department of Education, each with its own website
+// and email domain. For each org we collect a small "domain set" — the
+// website host plus the email domains (email_domain, org_email) — normalized
+// (protocol / www / path / port stripped) and with free-mail providers
+// excluded (a gmail address says nothing about identity). If BOTH sides have
+// at least one real domain and the sets share nothing (subdomains of the same
+// domain count as shared), the pair is dropped from the name signal. Sharing
+// any domain keeps the pair — that is evidence FOR a duplicate. Blank-vs-
+// filled stays a candidate, and shared-phone pairs still surface via the
+// phone signal.
+
+const FREEMAIL_DOMAINS = new Set([
+  "gmail.com",
+  "googlemail.com",
+  "yahoo.com",
+  "ymail.com",
+  "hotmail.com",
+  "outlook.com",
+  "live.com",
+  "msn.com",
+  "aol.com",
+  "icloud.com",
+  "me.com",
+  "mac.com",
+  "protonmail.com",
+  "proton.me",
+  "comcast.net",
+]);
+
+// Shared-platform hosts (a Facebook/LinkedIn page URL) say nothing about which
+// org it is — two dupes may list facebook.com vs their real domain.
+const SHARED_PLATFORM_DOMAINS = new Set([
+  "facebook.com",
+  "fb.com",
+  "linkedin.com",
+  "instagram.com",
+  "twitter.com",
+  "x.com",
+  "youtube.com",
+  "tiktok.com",
+  "medium.com",
+  "linktr.ee",
+  "sites.google.com",
+  "wixsite.com",
+  "squarespace.com",
+  "wordpress.com",
+  "blogspot.com",
+]);
+
+function isNeutralDomain(host: string): boolean {
+  if (FREEMAIL_DOMAINS.has(host)) return true;
+  for (const p of SHARED_PLATFORM_DOMAINS) {
+    if (host === p || host.endsWith(`.${p}`)) return true;
+  }
+  return false;
+}
+
+/** URL, bare domain, or e-mail address → normalized host (null if unusable). */
+export function normalizeWebDomain(
+  value: string | null | undefined,
+): string | null {
+  if (!value) return null;
+  let v = value.trim().toLowerCase();
+  if (!v) return null;
+  v = v.replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
+  // Strip path/query/hash BEFORE the @-split so a URL query containing an
+  // e-mail (…?email=a@b.com) doesn't hijack the host.
+  v = v.split(/[/?#]/)[0]!;
+  const at = v.lastIndexOf("@");
+  if (at !== -1) v = v.slice(at + 1);
+  v = v.split(":")[0]!;
+  v = v.replace(/^www\./, "").replace(/\.$/, "");
+  if (!v.includes(".")) return null;
+  return isNeutralDomain(v) ? null : v;
+}
+
+export function orgDomainSet(
+  parts: Array<string | null | undefined>,
+): Set<string> {
+  const out = new Set<string>();
+  for (const p of parts) {
+    const d = normalizeWebDomain(p);
+    if (d) out.add(d);
+  }
+  return out;
+}
+
+// Same identity when equal or one is a subdomain of the other
+// (education.mn.gov ↔ mn.gov).
+function domainsMatch(a: string, b: string): boolean {
+  return a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+}
+
+/** Both sides have real domains and none of them match → different identities. */
+export function domainSetsConflict(a: Set<string>, b: Set<string>): boolean {
+  if (a.size === 0 || b.size === 0) return false;
+  for (const da of a) for (const db of b) if (domainsMatch(da, db)) return false;
+  return true;
+}
+
+/**
+ * True when the two names each carry at least one distinctive token the other
+ * side cannot account for (verbatim or as a spelling variant) — i.e. the
+ * names identify DIFFERENT things and the pair should not be flagged as a
+ * potential duplicate on the name signal alone. Pure / DB-free.
+ */
+export function namesTokenConflict(nameA: string, nameB: string): boolean {
+  const tokensA = tokenizeName(nameA);
+  const tokensB = tokenizeName(nameB);
+  if (tokensA.length === 0 || tokensB.length === 0) return false;
+  const setA = new Set(tokensA);
+  const setB = new Set(tokensB);
+  let leftA = [...setA].filter((t) => !setB.has(t));
+  let leftB = [...setB].filter((t) => !setA.has(t));
+  if (leftA.length === 0 || leftB.length === 0) return false;
+  for (const t of [...leftA]) {
+    const match = leftB.find((u) => tokensAreSpellingVariants(t, u));
+    if (match) {
+      leftA = leftA.filter((x) => x !== t);
+      leftB = leftB.filter((x) => x !== match);
+    }
+  }
+  return leftA.length > 0 && leftB.length > 0;
+}
+
 // Human-readable owner label: display name, then first+last, then email.
 const ownerNameExpr = sql<string | null>`COALESCE(
   NULLIF(${users.displayName}, ''),
@@ -80,7 +283,19 @@ async function detectNamePairs(
     const b = alias(organizations, "b");
     const score = sql<number>`similarity(${a.name}, ${b.name})`;
     const rows = await db
-      .select({ aId: a.id, bId: b.id, score })
+      .select({
+        aId: a.id,
+        bId: b.id,
+        aName: a.name,
+        bName: b.name,
+        aWebsite: a.website,
+        aEmailDomain: a.emailDomain,
+        aOrgEmail: a.orgEmail,
+        bWebsite: b.website,
+        bEmailDomain: b.emailDomain,
+        bOrgEmail: b.orgEmail,
+        score,
+      })
       .from(a)
       .innerJoin(
         b,
@@ -99,14 +314,29 @@ async function detectNamePairs(
       )
       .orderBy(desc(score))
       .limit(limit);
-    return rows.map((r) => ({ aId: r.aId, bId: r.bId, score: Number(r.score) }));
+    return rows
+      .filter((r) => !namesTokenConflict(r.aName ?? "", r.bName ?? ""))
+      .filter(
+        (r) =>
+          !domainSetsConflict(
+            orgDomainSet([r.aWebsite, r.aEmailDomain, r.aOrgEmail]),
+            orgDomainSet([r.bWebsite, r.bEmailDomain, r.bOrgEmail]),
+          ),
+      )
+      .map((r) => ({ aId: r.aId, bId: r.bId, score: Number(r.score) }));
   }
 
   const a = alias(people, "a");
   const b = alias(people, "b");
   const score = sql<number>`similarity(${a.fullName}, ${b.fullName})`;
   const rows = await db
-    .select({ aId: a.id, bId: b.id, score })
+    .select({
+      aId: a.id,
+      bId: b.id,
+      aName: a.fullName,
+      bName: b.fullName,
+      score,
+    })
     .from(a)
     .innerJoin(
       b,
@@ -125,7 +355,9 @@ async function detectNamePairs(
     )
     .orderBy(desc(score))
     .limit(limit);
-  return rows.map((r) => ({ aId: r.aId, bId: r.bId, score: Number(r.score) }));
+  return rows
+    .filter((r) => !namesTokenConflict(r.aName ?? "", r.bName ?? ""))
+    .map((r) => ({ aId: r.aId, bId: r.bId, score: Number(r.score) }));
 }
 
 // Pairs of distinct entities sharing a normalized phone number. Not filtered for

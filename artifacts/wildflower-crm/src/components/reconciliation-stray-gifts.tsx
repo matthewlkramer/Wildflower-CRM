@@ -311,6 +311,11 @@ export function StrayGiftsWorklist() {
   // reset effect can't empty the dialog mid-review, then load each gift's full
   // detail (the dialog blocks submit until every selected gift resolves).
   const distinctSelectedGiftCount = new Set(selectedRows.map((r) => r.id)).size;
+  // Rows are per-allocation, so selecting several rows of ONE gift is a common
+  // trap: the selection looks like "several gifts" but there is nothing to
+  // combine. Call it out explicitly instead of leaving the button silently gray.
+  const sameGiftSelection =
+    selectedRows.length >= 2 && distinctSelectedGiftCount < 2;
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
   const openCombine = () => {
@@ -346,7 +351,7 @@ export function StrayGiftsWorklist() {
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search donor name…"
+          placeholder="Search donor or gift name…"
           className="h-9"
           data-testid="stray-gifts-search"
         />
@@ -454,12 +459,25 @@ export function StrayGiftsWorklist() {
                 variant="outline"
                 disabled={distinctSelectedGiftCount < 2 || bulkBusy}
                 onClick={openCombine}
-                title="Combine the selected gifts into one gift with several allocation rows (for a single grant entered as several gifts)."
+                title={
+                  sameGiftSelection
+                    ? "The selected rows are all allocations of the same gift — it is already one combined gift."
+                    : "Combine the selected gifts into one gift with several allocation rows (for a single grant entered as several gifts)."
+                }
                 data-testid="button-bulk-combine-stray"
               >
                 <Combine className="mr-1 h-3.5 w-3.5" />
                 Combine gifts
               </Button>
+              {sameGiftSelection && (
+                <span
+                  className="text-xs text-muted-foreground"
+                  data-testid="text-same-gift-selection-hint"
+                >
+                  These rows are parts (allocations) of one gift — it's already
+                  combined.
+                </span>
+              )}
             </BulkSelectBar>
           </div>
           <div className="space-y-3">
