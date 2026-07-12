@@ -59,6 +59,5 @@ export * from './generated/internal-email-domains/internal-email-domains';
 export * from './generated/wildflower-updates/wildflower-updates';
 export * from './generated/audit-log/audit-log';
 export * from './generated/reconciliation/reconciliation';
-export * from './generated/reconciliation-crosscheck/reconciliation-crosscheck';
 export * from './generated/coding-form-rows/coding-form-rows';
 export * from './generated/revenue-extractor/revenue-extractor';

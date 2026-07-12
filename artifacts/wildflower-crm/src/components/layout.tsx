@@ -27,7 +27,6 @@ import {
   PanelLeftOpen,
   Lightbulb,
   FileBarChart,
-  FileSearch,
   ScrollText,
   CopyCheck,
   ListChecks,
@@ -86,7 +85,6 @@ const navItems: NavEntry[] = [
   { href: "/admin", label: "Admin", icon: Settings },
   { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
   { href: "/potential-duplicates", label: "Potential Duplicates", icon: CopyCheck, adminOnly: true },
-  { href: "/reconciliation-crosscheck", label: "Reconciliation Cross-Check", icon: FileSearch, adminOnly: true },
   { href: "/cleanup-queue", label: "Cleanup Queue", icon: ListChecks },
   { href: "/coding-form-import", label: "Coding Form Import", icon: FileSpreadsheet, adminOnly: true },
 ];

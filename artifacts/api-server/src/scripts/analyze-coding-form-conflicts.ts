@@ -46,7 +46,7 @@ import {
   type CodingFormRowSelect,
 } from "../lib/codingForms";
 
-// Two amounts tie if within a cent (mirrors reconciliationCrosscheck.ts).
+// Two amounts tie if within a cent.
 const AMOUNT_TOLERANCE = 0.01;
 // A matched gift's date should land near the sheet's date; wider than the
 // reconciliation window because coding forms are filed by hand well after the

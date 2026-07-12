@@ -3,7 +3,12 @@ name: Reconciliation cross-check prod verification
 description: What a read-only verification of the historical-transaction cross-check report against PROD money records found, and the classifier tuning it needs.
 ---
 
-The Reconciliation Cross-Check (`reconciliationCrosscheck.ts`) classifies the
+**The Reconciliation Cross-Check page/endpoint has since been REMOVED at the
+user's request** (UI page, API route, lib, baked data file, and spec entries all
+deleted). The findings below remain useful as data-trust knowledge about the
+historical sheets vs prod money records.
+
+The Reconciliation Cross-Check classified the
 baked historical-sheet rows (stripe_donorbox, stripe_815, qbo_fy25 lanes) against
 the CRM's synced money records. It is meaningless in dev (the dev DB is
 stale/partial → nearly everything "missing"); it can only be validated against
