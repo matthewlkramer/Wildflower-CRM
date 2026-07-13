@@ -99,6 +99,12 @@ export interface GateIssue {
 export interface GateStaged {
   id: string;
   status: string;
+  /** Set ONLY by the link_existing_gift route when the row is a confirmed
+   *  DIRECT match (matchedGiftId set, no created/group gift) being re-targeted
+   *  under the guarded move/displace flow. Suppresses the qb_not_pending issue
+   *  for that one path — every other caller leaves it unset, so a confirmed
+   *  row stays blocked everywhere else. */
+  openForRelink?: boolean;
 }
 
 export interface GateGift {
@@ -289,7 +295,7 @@ export function runConsistencyGate(input: ConsistencyGateInput): GateIssue[] {
       message:
         "A QuickBooks staged payment is required to anchor a complete match.",
     });
-  } else if (!isStagedApprovable(staged.status)) {
+  } else if (!isStagedApprovable(staged.status) && staged.openForRelink !== true) {
     issues.push({
       code: "qb_not_pending",
       message: "This staged payment is no longer open for reconciliation.",

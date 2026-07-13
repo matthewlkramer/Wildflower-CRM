@@ -177,10 +177,20 @@ async function mintGiftFromEvidence(
   if (preRows.length !== preIds.length) return notFound(res, "staged payment");
   for (const pre of preRows) {
     if (!isStagedApprovable(pre.status)) {
+      // A settlement-only confirmed deposit (Stripe settlement confirmed, no
+      // gift link at all) is a known dead-end here: its remaining money is
+      // booked from the per-charge Stripe card, never by minting off the whole
+      // QB lump — say so instead of the generic refresh message.
+      const settlementOnlyConfirmed =
+        pre.status === "match_confirmed" &&
+        pre.matchedGiftId == null &&
+        pre.createdGiftId == null &&
+        pre.groupReconciledGiftId == null;
       res.status(409).json({
         error: "not_approvable",
-        message:
-          "This staged payment is no longer open for reconciliation. Refresh and try again.",
+        message: settlementOnlyConfirmed
+          ? "This deposit's Stripe settlement is already confirmed. Book the remaining money from its Stripe charge card (link or create the gift there)."
+          : "This staged payment is no longer open for reconciliation. Refresh and try again.",
       });
       return;
     }
@@ -691,6 +701,7 @@ router.post(
       .select({
         status: stagedStatusSql,
         matchedGiftId: stagedPayments.matchedGiftId,
+        createdGiftId: stagedPayments.createdGiftId,
         groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
       })
       .from(stagedPayments)
@@ -699,7 +710,7 @@ router.post(
     if (!pre) return notFound(res, "staged payment");
     if (pre.status === "match_confirmed") {
       const tiedGiftId = pre.matchedGiftId ?? pre.groupReconciledGiftId ?? null;
-      if (tiedGiftId === giftId) {
+      if (tiedGiftId != null && tiedGiftId === giftId) {
         res.json({
           ok: true as const,
           outcome: "link_existing_gift" as const,
@@ -711,11 +722,42 @@ router.post(
         });
         return;
       }
-      res.status(409).json({
-        error: "not_approvable",
-        message: "This payment is already reconciled to a different gift.",
-      });
-      return;
+      if (pre.createdGiftId != null) {
+        // The row OWNS a minted gift — re-pointing would orphan the mint.
+        res.status(409).json({
+          error: "gift_already_linked",
+          message:
+            "This payment already owns a created gift. Revert that gift before linking it elsewhere.",
+        });
+        return;
+      }
+      if (pre.groupReconciledGiftId != null) {
+        // Group members can't be individually re-targeted without corrupting
+        // the group's combined booking.
+        res.status(409).json({
+          error: "not_approvable",
+          message:
+            "This payment is reconciled through a group. Revert the group first, then re-target.",
+        });
+        return;
+      }
+      if (pre.matchedGiftId == null) {
+        // Settlement-only confirm (or split): the deposit's Stripe settlement
+        // was confirmed with no gift on the deposit itself. The remaining money
+        // is booked from the per-charge card, never by linking the whole QB
+        // lump to one gift here.
+        res.status(409).json({
+          error: "not_approvable",
+          message:
+            "This deposit's Stripe settlement is already confirmed without a gift on the deposit. Book the remaining money from its Stripe charge card instead.",
+        });
+        return;
+      }
+      // Confirmed DIRECT match (matchedGiftId set, no created/group gift) being
+      // pointed at a DIFFERENT gift: fall through to the transaction. The gate
+      // composes payment_already_applied there, so the reviewer gets the normal
+      // guarded re-target confirmation (moveOwnApplication) instead of a
+      // dead-end.
     }
 
     // Payouts tied to this staged row — a selected charge must belong to one,
@@ -767,7 +809,17 @@ router.post(
             message: "staged payment not found",
           });
         }
-        if (!isStagedApprovable(staged.status)) {
+        // A confirmed DIRECT match (matchedGiftId set, no created/group gift) may
+        // be re-targeted onto a different gift through the guarded move/displace
+        // flow below — the gate still composes payment_already_applied unless the
+        // reviewer confirmed moveOwnApplication. Every other confirmed shape
+        // (settlement-only, group, split, minted) stays closed.
+        const openForRelink =
+          staged.status === "match_confirmed" &&
+          staged.matchedGiftId != null &&
+          staged.createdGiftId == null &&
+          staged.groupReconciledGiftId == null;
+        if (!isStagedApprovable(staged.status) && !openForRelink) {
           throw new ApproveAbort(409, {
             error: "not_approvable",
             message:
@@ -863,18 +915,29 @@ router.post(
         const moveOwnApplication = body.moveOwnApplication === true;
         let oldAppliedGift: typeof giftsAndPayments.$inferSelect | null = null;
         let movableOwnApplication: string | null = null;
+        // On the guarded relink path (confirmed DIRECT match being re-pointed)
+        // the row may carry only the legacy matchedGiftId pointer with no
+        // ledger row (rows confirmed before the ledger read-flip). Treat that
+        // pointer as the applied gift so the re-target still composes
+        // payment_already_applied and requires the reviewer's explicit
+        // moveOwnApplication confirmation — never a silent re-point.
+        const effectiveAppliedGiftId =
+          ownAppliedGiftId ??
+          (openForRelink && staged.matchedGiftId !== giftId
+            ? staged.matchedGiftId
+            : null);
         if (
-          ownAppliedGiftId &&
-          staged.matchedGiftId === ownAppliedGiftId &&
+          effectiveAppliedGiftId &&
+          staged.matchedGiftId === effectiveAppliedGiftId &&
           staged.createdGiftId == null &&
           staged.groupReconciledGiftId == null
         ) {
-          movableOwnApplication = ownAppliedGiftId;
+          movableOwnApplication = effectiveAppliedGiftId;
           oldAppliedGift =
             (await tx
               .select()
               .from(giftsAndPayments)
-              .where(eq(giftsAndPayments.id, ownAppliedGiftId))
+              .where(eq(giftsAndPayments.id, effectiveAppliedGiftId))
               .for("update")
               .then((r) => r[0])) ?? null;
           if (!oldAppliedGift) {
@@ -1030,7 +1093,7 @@ router.post(
 
         // ── Consistency gate (E6), on the freshly-locked rows ──────────────────
         const issues = runConsistencyGate({
-          staged: { id: staged.id, status: staged.status },
+          staged: { id: staged.id, status: staged.status, openForRelink },
           gift: {
             id: gift.id,
             amount: gift.amount,
@@ -1113,6 +1176,7 @@ router.post(
           incumbentStagedPayment,
           moveOwnApplication,
           oldAppliedGift,
+          allowRelink: openForRelink,
           userId: user.id,
           auditReq: req,
         });

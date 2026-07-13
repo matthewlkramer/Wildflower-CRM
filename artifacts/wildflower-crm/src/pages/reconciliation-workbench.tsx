@@ -1453,14 +1453,22 @@ export default function ReconciliationWorkbench() {
     [groupCreateGift, invalidateAll, toast, errMessage],
   );
 
-  // A per-charge card expanded from a MULTI-charge Stripe payout can't be
-  // approved through the QB deposit graph: that graph describes the whole deposit
-  // so its evidence.stripe.chargeId is null, and the deposit approve 409s
-  // (stripe_charge_required). Route those charges to the per-charge link-gift
-  // endpoint instead — the charge links to the chosen (or already
-  // proposed/matched) gift as permanent evidence, adopting that gift's donor and
-  // stamping the gift to the charge GROSS. Single-charge payouts (chargeId
-  // present) keep the deposit-approve path untouched. Returns true when it
+  // A per-charge card needs the per-charge link-gift endpoint (instead of the
+  // QB deposit approve) in two situations:
+  //  1. MULTI-charge Stripe payout: the deposit graph describes the whole
+  //     deposit so its evidence.stripe.chargeId is null, and the deposit
+  //     approve 409s (stripe_charge_required).
+  //  2. CONFIRMED deposit: the deposit is already reconciled (settlement-only,
+  //     or matched to a gift) but THIS charge is still pending. The remaining
+  //     charge links to the chosen gift — or to the deposit's own gift as
+  //     parallel Stripe evidence — without touching the deposit's booking.
+  //     EXCEPTION: picking a gift DIFFERENT from the deposit's own linked gift
+  //     is a re-target of the booked money, which must go through the deposit
+  //     approve path (its conflict dialog offers the guarded move) — return
+  //     false and let the caller fall through.
+  // Either way the charge links as permanent evidence, adopting the gift's
+  // donor and stamping the gift to the charge GROSS. Unconfirmed single-charge
+  // payouts keep the deposit-approve path untouched. Returns true when it
   // handled the card, so callers skip their own deposit/staging flow.
   const tryLinkMultiChargeCard = useCallback(
     async (
@@ -1480,15 +1488,39 @@ export default function ReconciliationWorkbench() {
       }
       const isMultiCharge =
         graph.evidence.stripe != null && graph.evidence.stripe.chargeId == null;
-      if (!isMultiCharge) return false;
+      // card.status is the DEPOSIT's derived status even on a per-charge card
+      // (the charge's own lifecycle is carried separately).
+      const depositConfirmed = card.status === "match_confirmed";
+      if (!isMultiCharge && !depositConfirmed) return false;
+
+      // The deposit's own linked gift: the graph locks its gift node to the
+      // matched/created/group gift when one exists (settlement-only confirmed
+      // deposits have none, so this stays null for them).
+      const giftNode = graph.nodes.find((n) => n.nodeType === "gift");
+      const depositGiftId =
+        depositConfirmed && giftNode?.locked === true
+          ? (giftNode.selectedId ?? null)
+          : null;
+      if (
+        depositGiftId != null &&
+        giftCandidate?.id != null &&
+        giftCandidate.id !== depositGiftId
+      ) {
+        // Moving the deposit's booked money to a different gift — deposit path.
+        return false;
+      }
 
       const giftId =
-        giftCandidate?.id ?? card.proposedGiftId ?? card.resolvedGiftId ?? null;
+        giftCandidate?.id ??
+        card.proposedGiftId ??
+        card.resolvedGiftId ??
+        depositGiftId ??
+        null;
       if (!giftId) {
         toast({
           title: "Pick a gift first",
           description:
-            "This Stripe charge is one of several in a payout — link it to an existing gift.",
+            "This Stripe charge has to be linked to an existing gift — pick the gift first.",
         });
         return true;
       }

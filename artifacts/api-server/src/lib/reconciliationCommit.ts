@@ -10,7 +10,7 @@ import {
   stripePayouts,
   settlementLinks,
 } from "@workspace/db/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { newId } from "./helpers";
 import { buildGiftValuesFromStaged } from "./quickbooksGift";
 import {
@@ -569,6 +569,12 @@ export interface LinkGiftInTxArgs {
    *  reversed before this payment is applied to the target gift. Null unless
    *  moving. */
   oldAppliedGift?: typeof giftsAndPayments.$inferSelect | null;
+  /** Set ONLY by the link route when the caller verified (under the row lock)
+   *  that the staged row is a confirmed DIRECT match (matchedGiftId set, no
+   *  created/group gift) being re-targeted through the guarded move/displace
+   *  flow. Widens the commit UPDATE's status guard to accept exactly that
+   *  shape; false everywhere else so confirmed rows stay immutable. */
+  allowRelink?: boolean;
   /** App user id stamped as the confirmer. */
   userId: string;
   /** Request used for audit attribution. */
@@ -609,6 +615,7 @@ export async function linkGiftInTx(
     incumbentStagedPayment = null,
     moveOwnApplication = false,
     oldAppliedGift = null,
+    allowRelink = false,
   } = args;
 
   const rederivePledgeIds: string[] = [];
@@ -655,6 +662,22 @@ export async function linkGiftInTx(
     if (un.restored && oldAppliedGift.opportunityId) {
       rederivePledgeIds.push(oldAppliedGift.opportunityId);
     }
+    // If a settlement link on this deposit pins the OLD gift as its conflict
+    // gift (the "keep the QB gift" conflict resolution), re-point it at the
+    // TARGET gift now — the deposit's booked money is moving there. Left
+    // stale, the conflict-keep invariant (kept gift must equal the deposit's
+    // gift link) breaks, and the settlement-confirm carry-forward below would
+    // re-write the stale pointer. The payout row lock (taken by the caller at
+    // tx start) serializes this with every other settlement-link writer.
+    await tx
+      .update(settlementLinks)
+      .set({ conflictGiftId: giftId, updatedAt: new Date() })
+      .where(
+        and(
+          eq(settlementLinks.depositStagedPaymentId, stagedPaymentId),
+          eq(settlementLinks.conflictGiftId, oldAppliedGift.id),
+        ),
+      );
     // The old gift silently loses its QB evidence — record that on ITS trail
     // (the main audit record below covers the target gift).
     await recordAudit(tx, auditReq, {
@@ -754,7 +777,23 @@ export async function linkGiftInTx(
     .where(
       and(
         eq(stagedPayments.id, stagedPaymentId),
-        stagedStatusIn(APPROVABLE_STAGED_STATUSES),
+        // Normally the row must still be approvable. On the guarded relink
+        // path (allowRelink — set only by the link route after verifying the
+        // shape under the row lock) also accept a confirmed DIRECT match:
+        // matchedGiftId set, no created/group gift. The shape is re-checked
+        // here in SQL so a concurrent writer changing the row between the
+        // caller's check and this UPDATE makes it match zero rows (409 below).
+        allowRelink
+          ? or(
+              stagedStatusIn(APPROVABLE_STAGED_STATUSES),
+              and(
+                stagedStatusIn(["match_confirmed"]),
+                isNotNull(stagedPayments.matchedGiftId),
+                isNull(stagedPayments.createdGiftId),
+                isNull(stagedPayments.groupReconciledGiftId),
+              ),
+            )
+          : stagedStatusIn(APPROVABLE_STAGED_STATUSES),
         // Gift must not already be QB-linked to another staged payment. The
         // ledger unifies direct + split + group-reconciled links.
         sql`NOT ${qbLedgerExistsForGiftExcludingPayment(sql`${giftId}`, sql`${stagedPaymentId}`)}`,

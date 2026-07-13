@@ -1224,13 +1224,63 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     expect(staged.createdGiftId).toBeNull();
   }, 30_000);
 
-  it("still blocks a terminal confirmed (`match_confirmed`) row (not_approvable)", async () => {
+  it("re-targeting a confirmed (`match_confirmed`) direct match is guarded: 409 payment_already_applied until moveOwnApplication, then re-points", async () => {
     const giftId = await seedGift("100.00");
     const otherGiftId = await seedGift("100.00");
     const stagedId = await seedStaged("100.00", {
       matchStatus: "matched",
       matchedGiftId: giftId,
     });
+
+    // Without the explicit confirmation the re-target must NOT silently
+    // re-point — even when the confirmed row carries only the legacy
+    // matchedGiftId pointer with no cash-application ledger row.
+    const blocked = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "link_existing_gift",
+      giftId: otherGiftId,
+    });
+    expect(blocked.status).toBe(409);
+    expect(blocked.json.error).toBe("consistency_gate");
+    const issues = (
+      blocked.json as {
+        details?: { issues?: Array<{ code: string }> };
+      }
+    ).details?.issues;
+    expect(issues?.some((i) => i.code === "payment_already_applied")).toBe(
+      true,
+    );
+
+    // Untouched.
+    let staged = await readStaged(stagedId);
+    expect(staged.status).toBe("match_confirmed");
+    expect(staged.matchedGiftId).toBe(giftId);
+
+    // The human-confirmed move re-points the confirmed row onto the new gift.
+    const moved = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "link_existing_gift",
+      giftId: otherGiftId,
+      moveOwnApplication: true,
+    });
+    expect(moved.status).toBe(200);
+    expect(moved.json.ok).toBe(true);
+
+    staged = await readStaged(stagedId);
+    expect(staged.status).toBe("match_confirmed");
+    expect(staged.matchedGiftId).toBe(otherGiftId);
+  }, 30_000);
+
+  it("still dead-ends a settlement-only confirmed row on the link path (not_approvable)", async () => {
+    const otherGiftId = await seedGift("100.00");
+    // Settlement-only confirm: the row is match_confirmed with NO gift link at
+    // all — its status derives solely from a CONFIRMED settlement link.
+    const stagedId = await seedStaged("100.00", {
+      matchStatus: "matched",
+    });
+    const payoutId = await seedPayout(stagedId);
+    await db
+      .update(schema.settlementLinks)
+      .set({ lifecycle: "confirmed" })
+      .where(eqFn(schema.settlementLinks.payoutId, payoutId));
 
     const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
       outcome: "link_existing_gift",
@@ -1239,10 +1289,10 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     expect(res.status).toBe(409);
     expect(res.json.error).toBe("not_approvable");
 
-    // Untouched.
+    // Untouched — no gift link appeared.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.matchedGiftId).toBe(giftId);
+    expect(staged.matchedGiftId).toBeNull();
   }, 30_000);
 });
 
