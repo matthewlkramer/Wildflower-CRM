@@ -12,7 +12,8 @@ import { chargeStatusIn, chargeStatusWhere } from "./derivedStatus";
 import { getUncachableStripeClient } from "./stripeClient";
 import { scoreStripeCharge } from "./stripeMatch";
 import { runProposalPass } from "./stripeReconcile";
-import { deriveRefundProposal } from "./stripeRefund";
+import { deriveRefundProposal, isFullyRefunded } from "./stripeRefund";
+import { sweepRefundedQbStagedPayments } from "./refundedChargeSweep";
 import { ensureBundleDraftsForAnchors } from "./reconciliationBundleSync";
 import {
   bookStripeChargeApplication,
@@ -293,6 +294,27 @@ async function propagateRefundsForPayout(
       })
       .where(eq(stripeStagedCharges.id, chargeId));
 
+    // A NEVER-BOOKED charge whose refund just landed fully is not workable
+    // money — auto-exclude it (refunded_charge) instead of leaving it in the
+    // live queue. Guarded to still-derived-pending + auto-classified rows so a
+    // human resolve / manual re-include pin is never clobbered. Booked charges
+    // (giftId set) take the propose-then-confirm propagation path above.
+    if (giftId == null && isFullyRefunded(facts)) {
+      await db
+        .update(stripeStagedCharges)
+        .set({
+          exclusionReason: "refunded_charge",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(stripeStagedCharges.id, chargeId),
+            chargeStatusWhere.pending,
+            eq(stripeStagedCharges.classificationSource, "auto"),
+          ),
+        );
+    }
+
     if (proposal) proposed += 1;
   }
   return proposed;
@@ -340,7 +362,21 @@ export function buildStagedChargeUpsert(
     // is what derives it to excluded). Rows a human has resolved (gift link /
     // exclusion facts in the derived-pending guard) or pinned via re-include
     // (manual) are never touched.
-    exclusionReason: sql`CASE WHEN ${chargeStatusWhere.pending} AND ${stripeStagedCharges.classificationSource} = 'auto' AND excluded.raw_charge->>'status' = 'failed' THEN 'failed_charge'::staged_payment_exclusion_reason ELSE ${stripeStagedCharges.exclusionReason} END`,
+    //
+    // Likewise a charge FULLY refunded after staging with no gift link is not
+    // workable money → refunded_charge (failed wins when both apply; a
+    // disputed charge is a chargeback, not this — mirrors isFullyRefunded).
+    // A charge WITH a gift link is never pending, so booked-then-refunded
+    // charges keep flowing through refund propagation untouched.
+    exclusionReason: sql`CASE
+      WHEN ${chargeStatusWhere.pending} AND ${stripeStagedCharges.classificationSource} = 'auto' AND excluded.raw_charge->>'status' = 'failed' THEN 'failed_charge'::staged_payment_exclusion_reason
+      WHEN ${chargeStatusWhere.pending} AND ${stripeStagedCharges.classificationSource} = 'auto'
+        AND excluded.refunded = true AND excluded.disputed IS NOT TRUE
+        AND excluded.gross_amount IS NOT NULL AND excluded.gross_amount > 0
+        AND coalesce(excluded.amount_refunded, excluded.gross_amount) >= excluded.gross_amount - 0.005
+        THEN 'refunded_charge'::staged_payment_exclusion_reason
+      ELSE ${stripeStagedCharges.exclusionReason}
+    END`,
     updatedAt: new Date(),
   };
   const base = db
@@ -515,6 +551,11 @@ async function stagePayoutAndCharges(
     // NEW charge) is staged so the mirror stays 1:1 with Stripe, but classified
     // excluded up front so it never surfaces as real money in the queues.
     const chargeFailed = charge.status === "failed";
+    // A charge fully refunded before we ever staged it is likewise not
+    // workable money — auto-exclude with refunded_charge (failed wins when
+    // both apply). Insert-time only affects brand-new rows; the upsert CASE
+    // above handles refunds that land after staging.
+    const chargeFullyRefunded = !chargeFailed && isFullyRefunded(facts);
     const scored = await scoreStripeCharge({
       payerName: facts.payerName,
       payerEmail: facts.payerEmail,
@@ -563,7 +604,11 @@ async function stagePayoutAndCharges(
         refunded: facts.refunded,
         disputed: facts.disputed,
         rawCharge: charge as unknown as Record<string, unknown>,
-        exclusionReason: chargeFailed ? "failed_charge" : null,
+        exclusionReason: chargeFailed
+          ? "failed_charge"
+          : chargeFullyRefunded
+            ? "refunded_charge"
+            : null,
         classificationSource: "auto",
         matchStatus,
         matchScore: scored.method ? scored.score : null,
@@ -585,9 +630,14 @@ async function stagePayoutAndCharges(
     if (scored.method && scored.tier !== "none") matched += 1;
 
     // Reconcile-only auto-apply (mirrors QuickBooks): link to the single
-    // existing gift when confident; never mint here. A failed charge is not
-    // money — never auto-link it to a gift.
-    if (!chargeFailed && scored.tier === "high" && scored.matchedGiftId) {
+    // existing gift when confident; never mint here. A failed or fully-
+    // refunded charge is not money — never auto-link it to a gift.
+    if (
+      !chargeFailed &&
+      !chargeFullyRefunded &&
+      scored.tier === "high" &&
+      scored.matchedGiftId
+    ) {
       const did = await stripeAutoApply(charge.id, scored.matchedGiftId);
       if (did) autoApplied += 1;
     }
@@ -818,6 +868,11 @@ export async function syncStripe(
         })),
       );
 
+      // Refund facts arrive from the Stripe side, often after the QB row and
+      // its ties/links already exist — sweep pending QB rows whose full Stripe
+      // trace is now refunded money (idempotent, one guarded UPDATE).
+      await sweepRefundedQbStagedPayments();
+
       return { payouts: payoutsSeen, staged, matched, autoApplied, refundProposals };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -928,6 +983,10 @@ export async function syncStripeBackfill(opts: {
     const prop = seenIds.length
       ? await runProposalPass(seenIds)
       : { evaluated: 0, proposed: 0, conflicts: 0, cleared: 0 };
+
+    // Newly-backfilled refund facts + newly-proposed links can complete a QB
+    // row's refunded Stripe trace — sweep after the proposal pass.
+    await sweepRefundedQbStagedPayments();
 
     logger.info(
       {

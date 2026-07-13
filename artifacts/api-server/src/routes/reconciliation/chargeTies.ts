@@ -16,6 +16,7 @@ import {
   type QbRowForTie,
 } from "../../lib/chargeQbTie";
 import { chargeStatusSql, stagedStatusSql } from "../../lib/derivedStatus";
+import { sweepRefundedQbStagedPayments } from "../../lib/refundedChargeSweep";
 
 /**
  * Charge-grain settlement confirm for "individually-booked" payouts — payouts
@@ -330,6 +331,11 @@ router.post(
         { payoutId, tied: result.tied, fullyTied: result.payoutFullyTied },
         "Confirmed charge-grain Stripe↔QB ties",
       );
+
+      // A just-confirmed tie can complete a pending QB row's Stripe trace as
+      // all-refunded money — sweep so it lands in Excluded immediately.
+      await sweepRefundedQbStagedPayments();
+
       res.json(result);
     } catch (e) {
       if (e instanceof ReconcileAbort) {

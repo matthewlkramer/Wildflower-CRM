@@ -10,6 +10,7 @@ import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { getUncachableStripeClient } from "./stripeClient";
 import { chargeStatusWhere, stagedStatusWhere } from "./derivedStatus";
+import { sweepRefundedQbStagedPayments } from "./refundedChargeSweep";
 
 /**
  * Charge-grain Stripe ↔ QuickBooks tie proposals ("individually-booked
@@ -454,6 +455,11 @@ export async function runChargeTiePass(
     });
     proposed += assignment.size;
   }
+
+  // Fresh tie proposals can complete a pending QB row's Stripe trace as
+  // all-refunded money — sweep so it auto-excludes without waiting for the
+  // next scheduled sync (idempotent, one guarded UPDATE).
+  await sweepRefundedQbStagedPayments();
 
   return { payoutsEvaluated: payouts.length, proposed, cleared };
 }

@@ -88,6 +88,7 @@ export type StagedPaymentExclusionReason =
   | "note_payable"
   | "miscoded_withdrawal"
   | "failed_charge"
+  | "refunded_charge"
   | "loan"
   | "government_reimbursement"
   | "fiscally_sponsored";

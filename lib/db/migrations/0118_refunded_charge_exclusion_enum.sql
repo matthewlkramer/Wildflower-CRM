@@ -1,0 +1,33 @@
+-- Migration 0118: Add 'refunded_charge' exclusion reason (enum value)
+--
+-- Additive only — extends the staged_payment_exclusion_reason enum with one
+-- new value used by the refund auto-exclusion (Task: auto-exclude refunded
+-- money from the reconciliation queue):
+--   refunded_charge — the money was fully refunded before it was ever booked
+--                     into a CRM gift (Stripe charge fully refunded with no
+--                     gift link, or a QB staged payment whose entire Stripe
+--                     trace is such charges).
+--
+-- ⚠️ RUN THIS *WITHOUT* -1 (no single-transaction wrapper):
+--
+--     psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0118_refunded_charge_exclusion_enum.sql
+--
+-- PostgreSQL forbids USING a newly added enum value in the SAME transaction
+-- that added it. In psql's default autocommit mode the ALTER TYPE commits on
+-- its own; the backfill that USES the value lives in a SEPARATE file (0119)
+-- which must run AFTER this one has committed. Do NOT pass -1 here, and do
+-- NOT merge this statement into the backfill transaction.
+--
+-- NOTE: Publish (the schema diff) also adds this enum value; this file exists
+-- so the ordering is explicit and the backfill never races the diff. Running
+-- it after Publish is a harmless no-op.
+--
+-- IDEMPOTENT: IF NOT EXISTS — re-running is a harmless no-op.
+
+ALTER TYPE staged_payment_exclusion_reason ADD VALUE IF NOT EXISTS 'refunded_charge';
+
+-- Verification:
+--   SELECT enumlabel FROM pg_enum e
+--     JOIN pg_type t ON t.oid = e.enumtypid
+--    WHERE t.typname = 'staged_payment_exclusion_reason'
+--    ORDER BY e.enumsortorder;

@@ -30,6 +30,7 @@ import {
   unstampGiftFinalAmount,
 } from "./giftFinalAmount";
 import { donorOf, type LinkDonor } from "./quickbooksLink";
+import { isFullyRefunded } from "./stripeRefund";
 import { upsertSettlementLink } from "./settlementLink";
 import { confirmSettlementLink } from "./settlementWriter";
 import {
@@ -1076,12 +1077,25 @@ export async function orphanStripeSourceChargeInTx(
     oldCharge.rawCharge && typeof oldCharge.rawCharge === "object"
       ? ((oldCharge.rawCharge as Record<string, unknown>)["status"] ?? null)
       : null;
-  const orphanToExcluded = oldRawStatus === "failed";
+  // Failed → failed_charge (never settled). Otherwise a FULLY-refunded charge,
+  // once orphaned, is never-booked refunded money → refunded_charge (a dispute
+  // is a chargeback, not this — mirrors isFullyRefunded).
+  const orphanExclusion =
+    oldRawStatus === "failed"
+      ? ("failed_charge" as const)
+      : isFullyRefunded({
+            refunded: oldCharge.refunded === true,
+            disputed: oldCharge.disputed === true,
+            amountRefunded: oldCharge.amountRefunded,
+            grossAmount: oldCharge.grossAmount,
+          })
+        ? ("refunded_charge" as const)
+        : null;
   await tx
     .update(stripeStagedCharges)
     .set({
       // Status is DERIVED: an exclusion reason ⇒ excluded, cleared links ⇒ pending.
-      exclusionReason: orphanToExcluded ? "failed_charge" : null,
+      exclusionReason: orphanExclusion,
       matchedGiftId: null,
       createdGiftId: null,
       autoApplied: false,

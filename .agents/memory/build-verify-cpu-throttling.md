@@ -54,6 +54,11 @@ Green-in-isolation confirms the suite failures were environmental, not a regress
 NOTE: `pnpm run test -- <filter>` forwards as `vitest run -- <filter>`; the stray
 `--` swallows the positional filter so the WHOLE suite runs — use `exec vitest run
 <file>` to actually target one file.
+NOTE: when polling a backgrounded run, `pgrep -f "vitest run"` matches the polling
+shell's OWN command line (it contains the string) → perpetual false "RUNNING" after
+the real process was reaped. Check `ps` for an actual vitest/node PID, or better,
+skip nohup entirely and use the workflow escape hatch above (the registered
+`test-api` validation workflow runs the full suite to completion reliably).
 
 **Running a real app function as a one-off (DB-touching verification):** do NOT
 `npx tsx` a script that imports the full app graph (DB pool + pino workers) — cold

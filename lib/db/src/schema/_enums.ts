@@ -747,6 +747,13 @@ export const stagedPaymentStatusEnum = pgEnum("staged_payment_status", [
 //                              e.g. a failed ACH debit later retried as a NEW charge). Ingested so the
 //                              staged tables mirror Stripe 1:1, but auto-excluded so it never surfaces
 //                              as real money. Auto-only (never offered in the manual exclude picker).
+//   refunded_charge          — the money was fully refunded before it was ever booked into a CRM
+//                              gift: set on a Stripe charge that is fully refunded with no gift link,
+//                              and swept onto a pending QB staged payment whose entire Stripe trace
+//                              (settlement link / charge ties) is such charges. A charge with ANY
+//                              gift link instead takes the refund-propagation propose-then-confirm
+//                              path (stripeRefund.ts) — never this. Auto-only (never offered in the
+//                              manual exclude picker); revertible like every exclusion.
 // — Earned & other income (real revenue, not a gift) —
 //   membership               — school membership contributions (matched by QB item / income account)
 //   earned_income            — fees-for-service / program revenue (4020 Services - Earned Income) + guaranty fees; never a gift
@@ -803,6 +810,10 @@ export const stagedPaymentExclusionReasonEnum = pgEnum(
     "miscoded_withdrawal",
     // Stripe-only, auto-set at ingest: charge never settled (raw status 'failed').
     "failed_charge",
+    // Auto-set: fully-refunded money that was never booked into a CRM gift
+    // (the Stripe charge itself, and QB rows whose whole Stripe trace is such
+    // charges).
+    "refunded_charge",
   ],
 );
 

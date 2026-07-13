@@ -79,6 +79,7 @@ import {
 import {
   confirmRefundPropagation,
   dismissRefundPropagation,
+  isFullyRefunded,
 } from "../lib/stripeRefund";
 import {
   confirmPendingQbDeposit,
@@ -1225,19 +1226,32 @@ router.post(
 
         // A failed charge (raw Stripe status 'failed') never settled — after
         // unlinking it must land in the excluded bucket, not back in the
-        // pending queue where it would look like real money again.
+        // pending queue where it would look like real money again. Likewise a
+        // FULLY-refunded charge: once unlinked it is never-booked refunded
+        // money → refunded_charge (failed wins when both apply; a dispute is
+        // a chargeback, not this — mirrors isFullyRefunded).
         const rawChargeStatus =
           locked.rawCharge && typeof locked.rawCharge === "object"
             ? ((locked.rawCharge as Record<string, unknown>)["status"] ?? null)
             : null;
-        const revertToExcluded = rawChargeStatus === "failed";
+        const revertExclusion =
+          rawChargeStatus === "failed"
+            ? ("failed_charge" as const)
+            : isFullyRefunded({
+                  refunded: locked.refunded === true,
+                  disputed: locked.disputed === true,
+                  amountRefunded: locked.amountRefunded,
+                  grossAmount: locked.grossAmount,
+                })
+              ? ("refunded_charge" as const)
+              : null;
 
         const [row] = await tx
           .update(stripeStagedCharges)
           .set({
             // Derived: exclusion_reason set → excluded; cleared (with the gift
             // links nulled below) → pending.
-            exclusionReason: revertToExcluded ? "failed_charge" : null,
+            exclusionReason: revertExclusion,
             matchedGiftId: null,
             createdGiftId: null,
             autoApplied: false,

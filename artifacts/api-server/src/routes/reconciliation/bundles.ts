@@ -10,6 +10,7 @@ import {
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { asyncHandler, notFound } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
+import { sweepRefundedQbStagedPayments } from "../../lib/refundedChargeSweep";
 
 // ─── POST /reconciliation/bundles/:stagedPaymentId/confirm-ties ────────────
 // Persist the human-confirmed cross-processor links for one settlement bundle
@@ -116,6 +117,10 @@ router.post(
           }
         }
       });
+
+      // Freshly-stamped ties can complete a pending QB row's Stripe trace as
+      // all-refunded money — sweep so it lands in Excluded immediately.
+      await sweepRefundedQbStagedPayments();
     }
 
     res.json({ ok: true, chargesLinked, donationsLinked });

@@ -77,6 +77,17 @@ export function classifyRefund(facts: RefundFacts): RefundProposal | null {
   return null;
 }
 
+/**
+ * True when the charge's live facts say the money is FULLY refunded (a plain
+ * refund — a dispute classifies as chargeback and is deliberately NOT this).
+ * Used by the never-booked auto-exclusion (`refunded_charge`): a fully-refunded
+ * charge with no gift link is not workable money. Charges WITH a gift link
+ * never use this — they take the propose-then-confirm propagation path above.
+ */
+export function isFullyRefunded(facts: RefundFacts): boolean {
+  return classifyRefund(facts)?.kind === "full_refund";
+}
+
 function signature(
   kind: StripeRefundKind | "" | null,
   reversedAmount: string | null,

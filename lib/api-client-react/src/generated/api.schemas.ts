@@ -2411,7 +2411,7 @@ export const StagedPaymentStatus = {
 } as const;
 
 /**
- * Why a staged QuickBooks payment / Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan / government_reimbursement / fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).
+ * Why a staged QuickBooks payment / Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). refunded_charge is auto-set on fully-refunded money never booked into a CRM gift (a Stripe charge with no gift link, or a QB staged payment whose whole Stripe trace is such charges); charges with a gift link take the refund-propagation path instead. loan / government_reimbursement / fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).
  */
 export type StagedPaymentExclusionReason = typeof StagedPaymentExclusionReason[keyof typeof StagedPaymentExclusionReason];
 
@@ -2435,6 +2435,7 @@ export const StagedPaymentExclusionReason = {
   note_payable: 'note_payable',
   miscoded_withdrawal: 'miscoded_withdrawal',
   failed_charge: 'failed_charge',
+  refunded_charge: 'refunded_charge',
   loan: 'loan',
   government_reimbursement: 'government_reimbursement',
   fiscally_sponsored: 'fiscally_sponsored',
@@ -4158,7 +4159,7 @@ export interface PayoutChargeSummary {
   date?: string | null;
   /** Staged-charge derived review status (pending/match_proposed/match_confirmed/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie. */
   status?: string | null;
-  /** Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, auto-excluded at ingest). Null unless the charge is excluded. */
+  /** Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, or refunded_charge for a fully-refunded charge that was never booked into a gift — both auto-excluded). Null unless the charge is excluded. */
   exclusionReason?: string | null;
   /** CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied. */
   linkedQbStagedPaymentId?: string | null;
