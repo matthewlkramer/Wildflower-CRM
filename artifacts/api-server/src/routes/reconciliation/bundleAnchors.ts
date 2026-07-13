@@ -57,7 +57,7 @@ const fullyChargeTied = sql`(
     SELECT 1 FROM stripe_staged_charges c
     WHERE c.stripe_payout_id = sp.id
       AND c.linked_qb_staged_payment_id IS NULL
-      AND c.status NOT IN ('excluded','rejected')
+      AND c.exclusion_reason IS NULL
   )
 )`;
 
@@ -80,7 +80,9 @@ function stripeWhere(queue: AnchorQueue): SQL {
             EXISTS (
               SELECT 1 FROM stripe_staged_charges c
               WHERE c.stripe_payout_id = sp.id
-                AND c.status NOT IN ('reconciled','excluded','rejected')
+                AND c.exclusion_reason IS NULL
+                AND c.matched_gift_id IS NULL
+                AND c.created_gift_id IS NULL
             )
             -- A proposed charge-grain QB tie is actionable work here even when
             -- every charge is already gift-booked (reconciled): the human still
@@ -129,12 +131,21 @@ function qbWhere(queue: AnchorQueue): SQL {
         'brokerage','daf','paypal','wire_ach','check','cash','employer_match','other'
       )
     )`;
+  const resolvedEvidence = `(
+      s.matched_gift_id IS NOT NULL
+      OR s.created_gift_id IS NOT NULL
+      OR s.group_reconciled_gift_id IS NOT NULL
+      OR EXISTS (
+        SELECT 1 FROM payment_applications pa
+        WHERE pa.payment_id = s.id AND pa.link_role = 'counted'
+      )
+    )`;
   const statusClause =
     queue === "confirmed"
-      ? sql`s.status IN ('approved','reconciled')`
+      ? sql`(s.exclusion_reason IS NULL AND ${sql.raw(resolvedEvidence)})`
       : queue === "needs_review"
-        ? sql`s.status = 'pending'`
-        : sql`s.status IN ('pending','approved','reconciled')`;
+        ? sql`(s.exclusion_reason IS NULL AND NOT ${sql.raw(resolvedEvidence)})`
+        : sql`s.exclusion_reason IS NULL`;
   return sql`${eligible} AND ${plausiblyStripe} AND ${statusClause}`;
 }
 
@@ -281,7 +292,16 @@ router.get(
           FROM (
             SELECT cc.id, cc.payer_name, cc.description, cc.statement_descriptor,
                    cc.gross_amount, cc.fee_amount, cc.net_amount, cc.date_received,
-                   cc.status, cc.exclusion_reason, cc.linked_qb_staged_payment_id,
+                   (CASE
+              WHEN cc.exclusion_reason IS NOT NULL THEN 'excluded'
+              WHEN cc.auto_applied = true AND cc.match_confirmed_at IS NULL
+                   AND (cc.matched_gift_id IS NOT NULL OR cc.created_gift_id IS NOT NULL)
+                THEN 'match_proposed'
+              WHEN cc.matched_gift_id IS NOT NULL OR cc.created_gift_id IS NOT NULL
+                THEN 'match_confirmed'
+              ELSE 'pending'
+            END) AS status,
+                   cc.exclusion_reason, cc.linked_qb_staged_payment_id,
                    pq.id AS pq_id, pq.payer_name AS pq_payer_name,
                    pq.amount::text AS pq_amount, pq.date_received::text AS pq_date,
                    COALESCE(pq.qb_transaction_memo, pq.line_description) AS pq_memo
@@ -381,7 +401,20 @@ router.get(
         s.line_item_names AS line_item_names,
         s.line_account_names AS line_account_names,
         s.line_classes AS line_classes,
-        s.status::text AS status_label,
+        (CASE
+          WHEN s.exclusion_reason IS NOT NULL THEN 'excluded'
+          WHEN s.auto_applied = true AND s.match_confirmed_at IS NULL
+               AND (s.matched_gift_id IS NOT NULL OR s.created_gift_id IS NOT NULL)
+            THEN 'match_proposed'
+          WHEN s.matched_gift_id IS NOT NULL OR s.created_gift_id IS NOT NULL
+               OR s.group_reconciled_gift_id IS NOT NULL
+               OR EXISTS (
+                 SELECT 1 FROM payment_applications pa
+                 WHERE pa.payment_id = s.id AND pa.link_role = 'counted'
+               )
+            THEN 'match_confirmed'
+          ELSE 'pending'
+        END)::text AS status_label,
         'orphan'::text AS batch_status,
         NULL::int AS charge_ties_proposed,
         NULL::int AS charge_ties_confirmed,

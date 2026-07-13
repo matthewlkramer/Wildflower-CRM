@@ -107,7 +107,6 @@ async function seedGift(
 
 async function seedStaged(opts: {
   label: string;
-  status: "pending" | "approved" | "reconciled";
   matchedGiftId?: string | null;
   createdGiftId?: string | null;
   groupReconciledGiftId?: string | null;
@@ -122,7 +121,6 @@ async function seedStaged(opts: {
     amount: opts.amount ?? "100.00",
     dateReceived: "2026-03-15",
     payerName: `${MARKER} ${opts.label}`,
-    status: opts.status,
     organizationId: ORG_ID,
     matchStatus: "matched",
     matchedGiftId: opts.matchedGiftId ?? null,
@@ -202,8 +200,7 @@ async function seedCharge(opts: {
   matchStatus?: "matched" | "unmatched";
   matchedGiftId?: string | null;
   createdGiftId?: string | null;
-  status?: "pending" | "reconciled" | "excluded" | "rejected";
-  exclusionReason?: "failed_charge";
+  exclusionReason?: "failed_charge" | "other";
 }): Promise<string> {
   const id = nextId("ch");
   await db.insert(schema.stripeStagedCharges).values({
@@ -215,7 +212,6 @@ async function seedCharge(opts: {
     netAmount: opts.net,
     dateReceived: "2026-03-15",
     payerName: opts.payerName,
-    status: opts.status ?? "pending",
     exclusionReason: opts.exclusionReason ?? null,
     matchStatus: opts.matchStatus ?? "unmatched",
     organizationId: opts.organizationId ?? null,
@@ -363,23 +359,20 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
     const giftC = await seedGift("100.00");
     const giftD = await seedGift("100.00");
 
-    const pendingId = await seedStaged({ label: "pending", status: "pending" });
+    const pendingId = await seedStaged({ label: "pending" });
     // The reported bug: approved, linked to a pre-existing gift, no Stripe.
     const approvedMatchedId = await seedStaged({
       label: "approved-matched-nostripe",
-      status: "approved",
       matchedGiftId: giftA,
     });
     // Legacy minted gift, no Stripe.
     const approvedCreatedId = await seedStaged({
       label: "approved-created-nostripe",
-      status: "approved",
       createdGiftId: giftB,
     });
     // Approved with a gift but Stripe still to tie in → real work.
     const approvedStripeId = await seedStaged({
       label: "approved-matched-stripe",
-      status: "approved",
       matchedGiftId: giftC,
     });
     await seedPayoutFor(approvedStripeId);
@@ -387,18 +380,17 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
     // proposed) → still real work; locks both legs of "matched OR proposed".
     const approvedStripeMatchedId = await seedStaged({
       label: "approved-matched-stripe-matched",
-      status: "approved",
       matchedGiftId: giftD,
     });
     await seedPayoutFor(approvedStripeMatchedId, "matched");
     // Approved with NO gift link → anomaly, still review.
     const approvedNoGiftId = await seedStaged({
       label: "approved-nogift",
-      status: "approved",
     });
+    // Terminal at both planes: the deposit minted its own gift.
     const reconciledId = await seedStaged({
       label: "reconciled",
-      status: "reconciled",
+      createdGiftId: await seedGift("100.00"),
     });
 
     const def = await cardIds();
@@ -411,11 +403,12 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
     expect(def.has(approvedCreatedId)).toBe(false);
     expect(def.has(reconciledId)).toBe(false);
 
-    // The reconciled bucket surfaces only the terminal row.
-    const done = await cardIds("reconciled");
+    // The done bucket = derived match_confirmed: every booked resolution shows
+    // there (a matched row included — provenance no longer splits the bucket).
+    const done = await cardIds("done");
     expect(done.has(reconciledId)).toBe(true);
     expect(done.has(pendingId)).toBe(false);
-    expect(done.has(approvedMatchedId)).toBe(false);
+    expect(done.has(approvedMatchedId)).toBe(true);
   }, 30_000);
 
   it("excludes an approved SPLIT payment and a group-reconciled row (resolution not in the id columns)", async () => {
@@ -429,7 +422,6 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
     const splitGiftB = await seedGift("40.00");
     const splitId = await seedStaged({
       label: "approved-split-nostripe",
-      status: "approved",
       amount: "100.00",
     });
     await seedSplit(splitId, splitGiftA, "60.00");
@@ -440,7 +432,6 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
     const splitGiftC = await seedGift("100.00");
     const splitStripeId = await seedStaged({
       label: "approved-split-stripe",
-      status: "approved",
       amount: "100.00",
     });
     await seedSplit(splitStripeId, splitGiftC, "100.00");
@@ -451,7 +442,6 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
     const groupGift = await seedGift("100.00");
     const groupReconciledId = await seedStaged({
       label: "approved-groupreconciled-nostripe",
-      status: "approved",
       groupReconciledGiftId: groupGift,
     });
 
@@ -471,7 +461,6 @@ describe.skipIf(!HAS_DB)("Reconciliation readiness — date proximity (integrati
     await seedGift("100.00", "2026-03-20");
     const inStaged = await seedStaged({
       label: "ready-date-in-window",
-      status: "pending",
       amount: "100.00",
     });
     // Out-of-window: same donor + fee band, but the only candidate gift is dated
@@ -479,7 +468,6 @@ describe.skipIf(!HAS_DB)("Reconciliation readiness — date proximity (integrati
     await seedGift("200.00", "2026-09-01");
     const outStaged = await seedStaged({
       label: "ready-date-out-window",
-      status: "pending",
       amount: "200.00",
     });
     // Unknown date: a gift with no date_received can't be proven in-window, so
@@ -487,7 +475,6 @@ describe.skipIf(!HAS_DB)("Reconciliation readiness — date proximity (integrati
     await seedGift("300.00", null);
     const nullStaged = await seedStaged({
       label: "ready-date-null",
-      status: "pending",
       amount: "300.00",
     });
 
@@ -504,7 +491,6 @@ describe.skipIf(!HAS_DB)(
       // A QB deposit settled by a Stripe payout carrying TWO distinct charges.
       const depositId = await seedStaged({
         label: "stripe-deposit-2charges",
-        status: "pending",
         amount: "500.00",
       });
       const payoutId = await seedPayoutFor(depositId, "matched");
@@ -557,7 +543,6 @@ describe.skipIf(!HAS_DB)(
     it("drops a charge once it resolves to a gift; settles the deposit when all do", async () => {
       const depositId = await seedStaged({
         label: "stripe-deposit-resolving",
-        status: "pending",
         amount: "400.00",
       });
       const payoutId = await seedPayoutFor(depositId, "matched");
@@ -597,7 +582,6 @@ describe.skipIf(!HAS_DB)(
       // card, or the money would be invisible and unbookable (silent under-credit).
       const depositId = await seedStaged({
         label: "reconciled-settlement-open-charge",
-        status: "reconciled",
         amount: "180.00",
       });
       const payoutId = await seedPayoutFor(depositId, "matched");
@@ -641,7 +625,6 @@ describe.skipIf(!HAS_DB)(
       const coarseGift = await seedGift("174.60", "2026-03-15");
       const depositId = await seedStaged({
         label: "reconciled-coarse-gift-open-charges",
-        status: "reconciled",
         createdGiftId: coarseGift,
         amount: "180.00",
       });
@@ -668,8 +651,8 @@ describe.skipIf(!HAS_DB)(
       const live = await cardIds();
       expect(live.has(depositId)).toBe(false);
 
-      // Still visible as terminal work in the reconciled/done bucket.
-      const done = await cardIds("reconciled");
+      // Still visible as terminal work in the done bucket.
+      const done = await cardIds("done");
       expect(done.has(depositId)).toBe(true);
     }, 30_000);
 
@@ -683,7 +666,6 @@ describe.skipIf(!HAS_DB)(
       const gift = await seedGift("156.00", "2026-03-15");
       const depositId = await seedStaged({
         label: "approved-excluded-failed-charge",
-        status: "approved",
         matchedGiftId: gift,
         amount: "156.00",
       });
@@ -696,7 +678,6 @@ describe.skipIf(!HAS_DB)(
         net: "151.17",
         payerName: "Failed Attempt Donor",
         organizationId: ORG_ID,
-        status: "excluded",
         exclusionReason: "failed_charge",
       });
       // The real charge: reconciled to the same gift.
@@ -707,7 +688,6 @@ describe.skipIf(!HAS_DB)(
         net: "151.17",
         payerName: "Real Charge Donor",
         organizationId: ORG_ID,
-        status: "reconciled",
         matchStatus: "matched",
         matchedGiftId: gift,
       });
@@ -723,7 +703,6 @@ describe.skipIf(!HAS_DB)(
       const gift = await seedGift("90.00", "2026-03-15");
       const depositId = await seedStaged({
         label: "reconciled-excluded-only-open",
-        status: "reconciled",
         amount: "90.00",
       });
       const payoutId = await seedPayoutFor(depositId, "matched");
@@ -734,7 +713,6 @@ describe.skipIf(!HAS_DB)(
         net: "87.30",
         payerName: "Reconciled Excluded Failed",
         organizationId: ORG_ID,
-        status: "excluded",
         exclusionReason: "failed_charge",
       });
       await seedCharge({
@@ -744,7 +722,6 @@ describe.skipIf(!HAS_DB)(
         net: "87.30",
         payerName: "Reconciled Excluded Booked",
         organizationId: ORG_ID,
-        status: "reconciled",
         matchStatus: "matched",
         matchedGiftId: gift,
       });
@@ -753,13 +730,13 @@ describe.skipIf(!HAS_DB)(
       expect(live.has(depositId)).toBe(false);
     }, 30_000);
 
-    it("drops a fully-resolved deposit whose only unlinked charge is REJECTED (human dismissal)", async () => {
-      // Same class of bug one enum value over: a human-rejected charge is
-      // terminal without a gift link and must not pin the deposit either.
+    it("drops a fully-resolved deposit whose only unlinked charge is a manual exclusion (human dismissal)", async () => {
+      // Same class of bug one reason over: a human-dismissed charge (manual
+      // exclusion) is terminal without a gift link and must not pin the
+      // deposit either.
       const gift = await seedGift("120.00", "2026-03-15");
       const depositId = await seedStaged({
         label: "approved-rejected-charge",
-        status: "approved",
         matchedGiftId: gift,
         amount: "120.00",
       });
@@ -771,7 +748,7 @@ describe.skipIf(!HAS_DB)(
         net: "116.40",
         payerName: "Rejected Charge Donor",
         organizationId: ORG_ID,
-        status: "rejected",
+        exclusionReason: "other",
       });
       await seedCharge({
         payoutId,
@@ -780,7 +757,6 @@ describe.skipIf(!HAS_DB)(
         net: "116.40",
         payerName: "Rejected Suite Booked Charge",
         organizationId: ORG_ID,
-        status: "reconciled",
         matchStatus: "matched",
         matchedGiftId: gift,
       });
@@ -795,10 +771,12 @@ describe.skipIf(!HAS_DB)(
       // row once with NULL charge columns (a plain deposit card), not zero rows.
       const depositId = await seedStaged({
         label: "pending-all-charges-excluded",
-        status: "pending",
         amount: "75.00",
       });
-      const payoutId = await seedPayoutFor(depositId, "matched");
+      // A PROPOSED (not confirmed) payout tie: a confirmed settlement link
+      // would itself derive the deposit match_confirmed — the pending-with-
+      // excluded-charges state only exists while the tie is still proposed.
+      const payoutId = await seedPayoutFor(depositId);
       await seedCharge({
         payoutId,
         gross: "75.00",
@@ -806,7 +784,6 @@ describe.skipIf(!HAS_DB)(
         net: "72.75",
         payerName: "All Excluded Charge",
         organizationId: ORG_ID,
-        status: "excluded",
         exclusionReason: "failed_charge",
       });
 

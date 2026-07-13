@@ -260,11 +260,9 @@ export function qbToGiftStatus(args: {
   giftState?: ReconciliationEdgeState | null;
 }): ConnectionStatus {
   switch (args.stagedStatus) {
-    case "reconciled":
-    case "approved":
+    case "match_confirmed":
+    case "match_proposed":
       return { label: "Linked", variant: "default" };
-    case "rejected":
-      return { label: "Rejected", variant: "outline" };
     case "excluded":
       return { label: "Excluded", variant: "outline" };
   }
@@ -336,7 +334,7 @@ export function extractGateIssues(err: unknown): string[] {
 }
 
 /**
- * The staged-payment resolve endpoints (split / reject / reconcile / group) are
+ * The staged-payment resolve endpoints (split / reconcile / group) are
  * NOT idempotent: once a row flips from `pending` to a terminal state they
  * return `409 { error: "not_pending" }` ("This staged payment has already been
  * resolved."). If a successful apply's response was lost (network/timeout) or the
@@ -357,25 +355,23 @@ export function isAlreadyResolvedError(err: unknown): boolean {
  * A staged change awaiting Apply, reduced to just what's needed to decide whether
  * an already-resolved staged payment reached the outcome the reviewer staged.
  * `targetGiftId` is the existing gift a confirm/re-target/group links to; it is
- * null for outcomes without a single pre-chosen gift (create-a-new-gift, a
- * split across several gifts, or a reject).
+ * null for outcomes without a single pre-chosen gift (create-a-new-gift, or a
+ * split across several gifts).
  */
 export interface ResolvedStateProbe {
-  kind: "confirm" | "retarget" | "reject" | "split";
+  kind: "confirm" | "retarget" | "split";
   stagedPaymentId: string;
   targetGiftId: string | null;
 }
 
 /**
- * Given the current server state (the resolved "done" cards + the terminal
- * rejected/excluded cards) for a staged payment that returned the
- * already-resolved 409, decide whether it reached the outcome the reviewer
- * staged. Used to self-heal Apply-to-CRM: a match means the change quietly
- * counts as applied; a mismatch (resolved into a DIFFERENT state by a sync or
- * another user) keeps the change with a calm "already resolved" note.
+ * Given the current server state (the resolved "done" cards) for a staged
+ * payment that returned the already-resolved 409, decide whether it reached
+ * the outcome the reviewer staged. Used to self-heal Apply-to-CRM: a match
+ * means the change quietly counts as applied; a mismatch (resolved into a
+ * DIFFERENT state by a sync or another user) keeps the change with a calm
+ * "already resolved" note.
  *
- *  - reject  → intended when the row now sits in a terminal (rejected/excluded)
- *              card, i.e. it is no longer a live gift row.
  *  - split / create-a-new-gift (no `targetGiftId`) → intended when the row now
  *              appears as a resolved "done" card at all (the money is booked).
  *  - confirm / re-target / group (a specific `targetGiftId`) → intended only
@@ -385,13 +381,9 @@ export function changeReachedIntendedState(
   probe: ResolvedStateProbe,
   cards: {
     done: { stagedPaymentId: string; resolvedGiftId?: string | null }[];
-    terminal: { stagedPaymentId: string }[];
   },
 ): boolean {
   const spId = probe.stagedPaymentId;
-  if (probe.kind === "reject") {
-    return cards.terminal.some((c) => c.stagedPaymentId === spId);
-  }
   const done = cards.done.filter((c) => c.stagedPaymentId === spId);
   if (done.length === 0) return false;
   if (!probe.targetGiftId) return true;

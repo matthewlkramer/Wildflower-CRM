@@ -7,6 +7,7 @@ import {
   stripeStagedCharges,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { stagedStatusWhere, chargeStatusWhere } from "./derivedStatus";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Donor-lifecycle worklists ("what hasn't been done yet").
@@ -106,8 +107,9 @@ export function giftWorklistCountWhere(worklist: GiftWorklist, entityIds: string
 
 /**
  * WHERE for the staged-money worklist count on a given staged table. "Not yet
- * processed" = status still 'pending'. `staged_payments` is entity-scoped via
- * its `entity_id` column; `stripe_staged_charges` has no entity column, so pass
+ * processed" = DERIVED status still 'pending' (lib/derivedStatus.ts — no stored
+ * status column exists). `staged_payments` is entity-scoped via its `entity_id`
+ * column; `stripe_staged_charges` has no entity column, so pass
  * `entityScoped: false` for it.
  */
 export function stagedPendingWhere(
@@ -115,7 +117,11 @@ export function stagedPendingWhere(
   entityIds: string[],
   entityScoped: boolean,
 ): SQL {
-  const parts: SQL[] = [eq(table.status, "pending")];
+  const parts: SQL[] = [
+    table === stagedPayments
+      ? stagedStatusWhere.pending
+      : chargeStatusWhere.pending,
+  ];
   if (entityScoped && entityIds.length > 0) {
     parts.push(inArray((table as typeof stagedPayments).entityId, entityIds));
   }

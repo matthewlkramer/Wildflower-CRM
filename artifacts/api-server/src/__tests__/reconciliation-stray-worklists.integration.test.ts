@@ -144,7 +144,6 @@ async function seedStaged(opts: {
   label: string;
   amount?: string;
   dateReceived?: string | null;
-  status?: "pending" | "approved" | "reconciled";
   matchedGiftId?: string | null;
   createdGiftId?: string | null;
   groupReconciledGiftId?: string | null;
@@ -158,7 +157,6 @@ async function seedStaged(opts: {
     amount: opts.amount ?? "100.00",
     dateReceived: opts.dateReceived ?? "2026-03-15",
     payerName: `${MARKER} ${opts.label}`,
-    status: opts.status ?? "pending",
     matchStatus: "unmatched",
     matchedGiftId: opts.matchedGiftId ?? null,
     createdGiftId: opts.createdGiftId ?? null,
@@ -190,7 +188,6 @@ async function seedCharge(opts: {
   grossAmount?: string;
   netAmount?: string | null;
   dateReceived?: string | null;
-  status?: "pending" | "approved" | "reconciled";
   matchedGiftId?: string | null;
   createdGiftId?: string | null;
   refunded?: boolean;
@@ -203,7 +200,6 @@ async function seedCharge(opts: {
     grossAmount: opts.grossAmount ?? "100.00",
     netAmount: opts.netAmount ?? null,
     dateReceived: opts.dateReceived ?? null,
-    status: opts.status ?? (opts.matchedGiftId ? "approved" : "pending"),
     payerName: opts.label ? `${MARKER} ${opts.label}` : null,
     matchedGiftId: opts.matchedGiftId ?? null,
     createdGiftId: opts.createdGiftId ?? null,
@@ -590,7 +586,6 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
       grossAmount: "500.00",
       netAmount: "485.50",
       dateReceived: "2026-06-02",
-      status: "pending",
     });
 
     const stripeRes = await listGifts(`q=${encodeURIComponent(MARKER)}&limit=200`);

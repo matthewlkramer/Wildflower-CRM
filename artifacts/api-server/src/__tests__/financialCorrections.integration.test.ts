@@ -20,15 +20,15 @@ import {
  *     `detectFinancialCorrections(limit)` takes the limit directly, so we call it
  *     with a huge limit to find our proposal by key even if real data produces
  *     many other corrections. The HTTP path is still exercised for 200 + admin
- *     gating + the apply/dismiss round-trips.
+ *     gating + the apply round-trips.
  *
  * Asserts:
- *   - non-admins get 403 on the list, dismiss, and apply endpoints
+ *   - non-admins get 403 on the list and apply endpoints
  *   - an admin GET returns 200 with a corrections array (exercises all detector
  *     SQL against the real dev dataset — catches runtime SQL errors typecheck
  *     can't)
  *   - the seeded same-donor/same-date pair surfaces as a merge_gifts proposal
- *     with a survivor suggestion, then disappears once dismissed (idempotent)
+ *     with a survivor suggestion
  *   - apply link_evidence corroborates many gifts with one evidence row, is
  *     idempotent, and NEVER edits the QuickBooks source (book-once preserved:
  *     the gifts' counted pointers and the staged row's gift pointers stay null)
@@ -88,7 +88,6 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
   paymentApplications: Db["paymentApplications"];
-  financialCorrectionDismissals: Db["financialCorrectionDismissals"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -157,7 +156,6 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
     paymentApplications: dbMod.paymentApplications,
-    financialCorrectionDismissals: dbMod.financialCorrectionDismissals,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -230,7 +228,6 @@ beforeAll(async () => {
     amount: "999.99",
     dateReceived: LINK_DATE,
     payerName: `Bulk Deposit ${RUN}`,
-    status: "pending",
   });
 
   const { default: app } = await import("../app");
@@ -259,11 +256,6 @@ afterAll(async () => {
       ]),
     );
   await db
-    .delete(schema.financialCorrectionDismissals)
-    .where(
-      eqFn(schema.financialCorrectionDismissals.proposalKey, MERGE_KEY),
-    );
-  await db
     .delete(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.id, STAGED_E));
   await db
@@ -285,16 +277,10 @@ afterAll(async () => {
 }, 60_000);
 
 describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
-  it("rejects a non-admin on the list, dismiss, and apply endpoints with 403", async () => {
+  it("rejects a non-admin on the list and apply endpoints with 403", async () => {
     auth.current = { id: OTHER_ID, role: "team_member" };
     const { status } = await getList();
     expect(status).toBe(403);
-    expect(
-      await postJson("/api/financial-corrections/dismiss", {
-        kind: "merge_gifts",
-        proposalKey: MERGE_KEY,
-      }),
-    ).toBe(403);
     expect(
       await postJson("/api/financial-corrections/apply", {
         evidenceKind: "qb_staged",
@@ -325,27 +311,6 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
     expect([GIFT_M1, GIFT_M2]).toContain(primaryId);
     expect(mergeIds).toHaveLength(1);
     expect(primaryId).not.toBe(mergeIds[0]);
-  }, 30_000);
-
-  it("removes a dismissed merge proposal and re-dismiss is idempotent", async () => {
-    auth.current = { id: ADMIN_ID, role: "admin" };
-    expect(
-      await postJson("/api/financial-corrections/dismiss", {
-        kind: "merge_gifts",
-        proposalKey: MERGE_KEY,
-      }),
-    ).toBe(204);
-
-    const after = await detect(1_000_000);
-    expect(after.find((c) => c.key === MERGE_KEY)).toBeUndefined();
-
-    // Re-dismissing the same proposal is a no-op success.
-    expect(
-      await postJson("/api/financial-corrections/dismiss", {
-        kind: "merge_gifts",
-        proposalKey: MERGE_KEY,
-      }),
-    ).toBe(204);
   }, 30_000);
 
   it("applies link_evidence: one deposit corroborates many gifts, idempotently, without touching the QB source", async () => {

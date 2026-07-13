@@ -38,6 +38,7 @@ import {
   assertGiftHasAllocations,
 } from "../lib/giftAllocationSeed";
 import { getAppUser } from "../lib/appRequest";
+import { donorboxEmittedStatus } from "../lib/derivedStatus";
 import { logger } from "../lib/logger";
 import { syncDonorbox } from "../lib/donorboxSync";
 import { isDonorboxConfigured } from "../lib/donorboxClient";
@@ -265,7 +266,14 @@ async function loadReviewRow(id: string, req: Request) {
   ).where(eq(donorboxDonations.id, id));
   const row = rows[0];
   if (!row) return null;
-  return { ...maskDonorDisplayFields(row, viewer), queue: queueForStatus(row.status) };
+  return {
+    ...maskDonorDisplayFields(row, viewer),
+    queue: queueForStatus(row.status),
+    // Donorbox keeps its STORED lifecycle column, but the API speaks the
+    // shared derived vocabulary at the edge (approved/reconciled →
+    // match_confirmed, rejected → excluded).
+    status: donorboxEmittedStatus(row.status),
+  };
 }
 
 function respondInvariant(res: Response, issues: InvariantIssue[]): void {
@@ -321,6 +329,8 @@ router.get(
       data: rows.map((row) => ({
         ...maskDonorDisplayFields(row, viewer),
         queue: queueForStatus(row.status),
+        // Stored lifecycle → shared derived vocabulary at the API edge.
+        status: donorboxEmittedStatus(row.status),
       })),
       pagination: { page, limit, total: totalRow?.value ?? 0 },
     });

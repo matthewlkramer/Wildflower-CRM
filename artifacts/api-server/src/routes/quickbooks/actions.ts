@@ -7,7 +7,7 @@ import {
   unitGroups,
   unitGroupMembers,
 } from "@workspace/db/schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
 import {
   asyncHandler,
   newId,
@@ -33,7 +33,16 @@ import {
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import { applyPaymentApplication } from "../../lib/paymentApplications";
-import { respondInvariantFailure, stagedReturnColumns } from "./shared";
+import {
+  respondInvariantFailure,
+  stagedReturnColumns,
+  stagedRowWithStatus,
+} from "./shared";
+import {
+  stagedStatusSql,
+  stagedStatusWhere,
+  stagedStatusIn,
+} from "../../lib/derivedStatus";
 import { giftHeaderColumns } from "../giftsAndPayments";
 import { isGroupMember } from "../../lib/unitGroupMembership";
 
@@ -63,7 +72,7 @@ router.post(
     const body = parsed.data;
 
     const existing = await db
-      .select({ status: stagedPayments.status })
+      .select({ status: stagedStatusSql.as("status") })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
@@ -95,9 +104,7 @@ router.post(
         matchConfirmedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(
-        and(eq(stagedPayments.id, id), eq(stagedPayments.status, "pending")),
-      )
+      .where(and(eq(stagedPayments.id, id), stagedStatusWhere.pending))
       .returning(stagedReturnColumns);
     if (!row) {
       res.status(409).json({
@@ -106,7 +113,7 @@ router.post(
       });
       return;
     }
-    res.json(row);
+    res.json(stagedRowWithStatus(row));
   }),
 );
 
@@ -115,7 +122,8 @@ router.post(
 // minted gift's amount IS this QB evidence, so it is stamped at insert
 // (final_amount_source='quickbooks', pointer → this staged row, no original
 // human amount to snapshot). The staged row becomes permanent EVIDENCE tied to
-// the gift: `reconciled`, not `approved` (never archived, never a second gift).
+// the gift via created_gift_id (derived status match_confirmed — never
+// archived, never a second gift).
 router.post(
   "/staged-payments/:id/create-gift",
   asyncHandler(async (req, res) => {
@@ -126,7 +134,10 @@ router.post(
     }
     const id = paramId(req);
     const existing = await db
-      .select()
+      .select({
+        ...getTableColumns(stagedPayments),
+        status: stagedStatusSql.as("status"),
+      })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
@@ -163,7 +174,10 @@ router.post(
     try {
       await db.transaction(async (tx) => {
         const locked = await tx
-          .select()
+          .select({
+            ...getTableColumns(stagedPayments),
+            status: stagedStatusSql.as("status"),
+          })
           .from(stagedPayments)
           .where(eq(stagedPayments.id, id))
           .for("update")
@@ -218,7 +232,6 @@ router.post(
         await tx
           .update(stagedPayments)
           .set({
-            status: "reconciled",
             createdGiftId: giftId,
             matchedGiftId: null,
             autoApplied: false,
@@ -271,52 +284,6 @@ router.post(
   }),
 );
 
-// ─── POST /staged-payments/:id/reject ──────────────────────────────────────
-router.post(
-  "/staged-payments/:id/reject",
-  asyncHandler(async (req, res) => {
-    const user = getAppUser(req);
-    if (!user) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    const id = paramId(req);
-    const existing = await db
-      .select({ status: stagedPayments.status })
-      .from(stagedPayments)
-      .where(eq(stagedPayments.id, id))
-      .then((r) => r[0]);
-    if (!existing) return notFound(res, "staged payment");
-    if (existing.status !== "pending") {
-      res.status(409).json({
-        error: "not_pending",
-        message: "This staged payment has already been resolved.",
-      });
-      return;
-    }
-    const [row] = await db
-      .update(stagedPayments)
-      .set({
-        status: "rejected",
-        rejectedByUserId: user.id,
-        rejectedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(eq(stagedPayments.id, id), eq(stagedPayments.status, "pending")),
-      )
-      .returning(stagedReturnColumns);
-    if (!row) {
-      res.status(409).json({
-        error: "not_pending",
-        message: "This staged payment has already been resolved.",
-      });
-      return;
-    }
-    res.json(row);
-  }),
-);
-
 // ─── POST /staged-payments/:id/re-include ──────────────────────────────────
 // Move an excluded row back to the pending queue (false positive). Pins
 // classificationSource='manual' so the re-runnable classifier never re-excludes
@@ -326,7 +293,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const id = paramId(req);
     const existing = await db
-      .select({ status: stagedPayments.status })
+      .select({ status: stagedStatusSql.as("status") })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
@@ -338,17 +305,15 @@ router.post(
       });
       return;
     }
+    // Clearing exclusion_reason IS the re-include (status derives from it).
     const [row] = await db
       .update(stagedPayments)
       .set({
-        status: "pending",
         exclusionReason: null,
         classificationSource: "manual",
         updatedAt: new Date(),
       })
-      .where(
-        and(eq(stagedPayments.id, id), eq(stagedPayments.status, "excluded")),
-      )
+      .where(and(eq(stagedPayments.id, id), stagedStatusWhere.excluded))
       .returning(stagedReturnColumns);
     if (!row) {
       res.status(409).json({
@@ -357,7 +322,7 @@ router.post(
       });
       return;
     }
-    res.json(row);
+    res.json(stagedRowWithStatus(row));
   }),
 );
 
@@ -381,7 +346,7 @@ router.post(
     const { exclusionReason } = parsed.data;
 
     const existing = await db
-      .select({ status: stagedPayments.status })
+      .select({ status: stagedStatusSql.as("status") })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
@@ -395,10 +360,10 @@ router.post(
       return;
     }
 
+    // Setting exclusion_reason IS the exclusion (status derives from it).
     const [row] = await db
       .update(stagedPayments)
       .set({
-        status: "excluded",
         exclusionReason,
         classificationSource: "manual",
         updatedAt: new Date(),
@@ -406,7 +371,7 @@ router.post(
       .where(
         and(
           eq(stagedPayments.id, id),
-          sql`${stagedPayments.status} IN ('pending', 'excluded')`,
+          stagedStatusIn(["pending", "excluded"]),
         ),
       )
       .returning(stagedReturnColumns);
@@ -418,7 +383,7 @@ router.post(
       });
       return;
     }
-    res.json(row);
+    res.json(stagedRowWithStatus(row));
   }),
 );
 
@@ -619,20 +584,22 @@ router.post(
     try {
       await db.transaction(async (tx) => {
         const locked = await tx
-          .select()
+          .select({
+            ...getTableColumns(stagedPayments),
+            status: stagedStatusSql.as("status"),
+          })
           .from(stagedPayments)
           .where(inArray(stagedPayments.id, ids))
           .for("update");
         if (locked.length !== ids.length) throw new Error(NOT_FOUND);
 
         // Only still-unreconciled rows can be grouped (a group is reconciled as
-        // a unit; grouping resolved money is meaningless).
+        // a unit; grouping resolved money is meaningless). The derived status
+        // covers gift links AND settlement/split evidence.
         for (const row of locked) {
           if (
-            row.status === "reconciled" ||
-            row.matchedGiftId != null ||
-            row.createdGiftId != null ||
-            row.groupReconciledGiftId != null
+            row.status === "match_confirmed" ||
+            row.status === "match_proposed"
           ) {
             throw new Error(NOT_GROUPABLE);
           }

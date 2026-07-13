@@ -135,7 +135,6 @@ beforeAll(async () => {
     amount: "260.00",
     dateReceived: "2099-11-15",
     payerName: PAYER,
-    status: "pending" as never,
   });
 
   // Free (linkable) charge: pending, no gift link, gross 250 / net 242.50 so a
@@ -147,7 +146,6 @@ beforeAll(async () => {
     netAmount: "242.50",
     dateReceived: "2099-11-15",
     payerName: PAYER,
-    status: "pending" as never,
   });
   // Already tied to a gift — must surface grayed via alreadyLinkedGiftId.
   await db.insert(schema.stripeStagedCharges).values({
@@ -157,7 +155,6 @@ beforeAll(async () => {
     netAmount: "242.50",
     dateReceived: "2099-11-15",
     payerName: PAYER,
-    status: "reconciled" as never,
     matchedGiftId: GIFT_ID,
   });
   // Refunded — not linkable money, must never appear.
@@ -168,7 +165,6 @@ beforeAll(async () => {
     netAmount: "242.50",
     dateReceived: "2099-11-15",
     payerName: PAYER,
-    status: "pending" as never,
     refunded: true,
   });
   // Failed charge (auto-excluded at ingest) — must never appear.
@@ -179,7 +175,7 @@ beforeAll(async () => {
     netAmount: "242.50",
     dateReceived: "2099-11-15",
     payerName: PAYER,
-    status: "excluded" as never,
+    exclusionReason: "failed_charge",
   });
 
   const { default: app } = await import("../app");

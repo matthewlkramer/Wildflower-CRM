@@ -10,21 +10,18 @@ import {
   people,
   households,
   entities,
-  financialCorrectionDismissals,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { asyncHandler, newId, parseOrBadRequest } from "../lib/helpers";
 import { requireAuth } from "../middlewares/requireAuth";
 import { requireAdmin } from "../lib/archive";
 import { getAppUser } from "../lib/appRequest";
-import {
-  DismissFinancialCorrectionBody,
-  ApplyFinancialCorrectionBody,
-} from "@workspace/api-zod";
+import { ApplyFinancialCorrectionBody } from "@workspace/api-zod";
 import {
   qbLedgerExistsForGift,
   qbLedgerExistsForPayment,
 } from "../lib/paymentApplications";
+import { stagedStatusWhere } from "../lib/derivedStatus";
 
 // ── Financial-corrections review queue (admin-only) ──────────────────────────
 //
@@ -76,7 +73,7 @@ const num = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-// Canonical, order-independent proposal keys (used for dismissal dedupe).
+// Canonical, order-independent proposal keys (stable client-side identifiers).
 const mergeKey = (giftIds: string[]) =>
   `merge_gifts:${[...giftIds].sort().join(",")}`;
 const linkKey = (kind: EvidenceKind, id: string, giftIds: string[]) =>
@@ -178,7 +175,9 @@ async function loadUnlinkedQbStaged(): Promise<EvidenceRow[]> {
     .leftJoin(entities, eq(entities.id, sp.entityId))
     .where(
       and(
-        sql`${sp.status} <> 'excluded'`,
+        // Derived-status excluded check (no stored status column): a row is
+        // excluded iff its exclusion_reason is set.
+        sql`NOT ${stagedStatusWhere.excluded}`,
         // QB cash-application reads come from the authoritative ledger: a staged
         // payment is "unlinked" iff it anchors NO payment_applications row
         // (subsumes the legacy matched/created/group-null + no-split check).
@@ -241,19 +240,10 @@ const evidenceView = (e: EvidenceRow) => ({
 export async function detectFinancialCorrections(
   limit: number,
 ): Promise<Correction[]> {
-  const [gifts, qbStaged, dismissed] = await Promise.all([
+  const [gifts, qbStaged] = await Promise.all([
     loadActiveGifts(),
     loadUnlinkedQbStaged(),
-    db
-      .select({
-        kind: financialCorrectionDismissals.kind,
-        proposalKey: financialCorrectionDismissals.proposalKey,
-      })
-      .from(financialCorrectionDismissals),
   ]);
-  const dismissedKeys = new Set(dismissed.map((d) => `${d.kind}:${d.proposalKey}`));
-  const isDismissed = (kind: CorrectionKind, key: string) =>
-    dismissedKeys.has(`${kind}:${key}`);
 
   // Index unlinked QB evidence by date for quick lookups.
   const qbByDate = new Map<string, EvidenceRow[]>();
@@ -282,7 +272,6 @@ export async function detectFinancialCorrections(
     if (pledges.size > 1) continue;
     const giftIds = group.map((g) => g.id);
     const key = mergeKey(giftIds);
-    if (isDismissed("merge_gifts", key)) continue;
 
     const sum = group.reduce((s, g) => s + (g.amount ?? 0), 0);
     // Optional tying evidence: a single unlinked QB row on the same date whose
@@ -375,7 +364,6 @@ export async function detectFinancialCorrections(
     if (toLink.length < 2) continue;
     const giftIds = toLink.map((g) => g.id);
     const key = linkKey(e.kind, e.id, giftIds);
-    if (isDismissed("link_evidence", key)) continue;
 
     out.push({
       kind: "link_evidence",
@@ -392,7 +380,7 @@ export async function detectFinancialCorrections(
   return out.slice(0, limit);
 }
 
-// GET /financial-corrections — run the detectors (excludes dismissed proposals).
+// GET /financial-corrections — run the detectors.
 router.get(
   "/",
   asyncHandler(async (req, res) => {
@@ -404,36 +392,6 @@ router.get(
         : DEFAULT_LIMIT;
     const corrections = await detectFinancialCorrections(limit);
     res.json({ corrections });
-  }),
-);
-
-// POST /financial-corrections/dismiss — mark a proposal as leave-as-is.
-router.post(
-  "/dismiss",
-  asyncHandler(async (req, res) => {
-    if (!requireAdmin(req, res)) return;
-    const body = parseOrBadRequest(
-      DismissFinancialCorrectionBody,
-      req.body ?? {},
-      res,
-    );
-    if (!body) return;
-    const appUser = await getAppUser(req);
-    await db
-      .insert(financialCorrectionDismissals)
-      .values({
-        id: newId(),
-        kind: body.kind,
-        proposalKey: body.proposalKey,
-        dismissedByUserId: appUser?.id ?? null,
-      })
-      .onConflictDoNothing({
-        target: [
-          financialCorrectionDismissals.kind,
-          financialCorrectionDismissals.proposalKey,
-        ],
-      });
-    res.status(204).end();
   }),
 );
 

@@ -413,7 +413,6 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
       qbEntityType: "payment",
       qbEntityId: nextId("qbe"),
       amount: "100.00",
-      status: "approved",
       organizationId: ORG_ID,
       matchedGiftId: b,
     });
@@ -462,7 +461,6 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
         qbEntityType: "payment",
         qbEntityId: nextId("qbe"),
         amount: "100.00",
-        status: "approved",
         organizationId: ORG_ID,
         matchedGiftId: a,
       },
@@ -472,7 +470,6 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
         qbEntityType: "payment",
         qbEntityId: nextId("qbe"),
         amount: "60.00",
-        status: "approved",
         organizationId: ORG_ID,
         matchedGiftId: b,
       },
@@ -846,7 +843,6 @@ describe.skipIf(!HAS_DB)(
         qbEntityType: "payment",
         qbEntityId: nextId("qbe"),
         amount: "100.00",
-        status: "approved",
         organizationId: ORG_ID,
         matchedGiftId: giftId,
       });
@@ -875,7 +871,6 @@ describe.skipIf(!HAS_DB)(
         qbEntityType: "payment",
         qbEntityId: nextId("qbe"),
         amount: "100.00",
-        status: "approved",
         organizationId: ORG_ID,
       });
       await db.insert(schema.paymentApplications).values({

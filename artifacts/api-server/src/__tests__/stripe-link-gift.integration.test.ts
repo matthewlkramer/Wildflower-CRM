@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearPaymentApplicationsForGiftIds } from "./paymentApplicationsTestUtil";
+import { chargeStatusSql } from "../lib/derivedStatus";
+import { getTableColumns } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -106,7 +108,6 @@ async function seedCharge(opts: {
   gross: string;
   fee?: string;
   net?: string;
-  status?: "pending" | "reconciled";
   matchedGiftId?: string | null;
 }): Promise<string> {
   const id = nextId("ch");
@@ -118,7 +119,6 @@ async function seedCharge(opts: {
     netAmount: opts.net ?? "100.84",
     dateReceived: "2026-03-15",
     payerName: `${RUN} payer`,
-    status: opts.status ?? "pending",
     matchStatus: "unmatched",
     matchedGiftId: opts.matchedGiftId ?? null,
   });
@@ -128,7 +128,10 @@ async function seedCharge(opts: {
 
 async function readCharge(id: string) {
   const [row] = await db
-    .select()
+    .select({
+      ...getTableColumns(schema.stripeStagedCharges),
+      status: chargeStatusSql,
+    })
     .from(schema.stripeStagedCharges)
     .where(eqFn(schema.stripeStagedCharges.id, id));
   return row;
@@ -223,7 +226,7 @@ describe.skipIf(!HAS_DB)(
       expect(res.status).toBe(200);
 
       const charge = await readCharge(chargeId);
-      expect(charge.status).toBe("reconciled");
+      expect(charge.status).toBe("match_confirmed");
       expect(charge.matchedGiftId).toBe(giftId);
       expect(charge.createdGiftId).toBeNull();
       expect(charge.matchStatus).toBe("matched");
@@ -256,7 +259,7 @@ describe.skipIf(!HAS_DB)(
       expect(second.status).toBe(200);
 
       const charge = await readCharge(chargeId);
-      expect(charge.status).toBe("reconciled");
+      expect(charge.status).toBe("match_confirmed");
       expect(charge.matchedGiftId).toBe(giftId);
     });
 
@@ -353,7 +356,7 @@ describe.skipIf(!HAS_DB)(
       expect(chargeBRow.status).toBe("pending");
       // The original link is intact.
       const chargeARow = await readCharge(chargeA);
-      expect(chargeARow.status).toBe("reconciled");
+      expect(chargeARow.status).toBe("match_confirmed");
       expect(chargeARow.matchedGiftId).toBe(giftId);
     });
 
@@ -387,7 +390,7 @@ describe.skipIf(!HAS_DB)(
 
       // The new charge now backs the gift.
       const chargeBRow = await readCharge(chargeB);
-      expect(chargeBRow.status).toBe("reconciled");
+      expect(chargeBRow.status).toBe("match_confirmed");
       expect(chargeBRow.matchedGiftId).toBe(giftId);
       expect(chargeBRow.matchStatus).toBe("matched");
 
@@ -407,7 +410,7 @@ describe.skipIf(!HAS_DB)(
       );
       expect(res.status).toBe(200);
       const charge = await readCharge(chargeId);
-      expect(charge.status).toBe("reconciled");
+      expect(charge.status).toBe("match_confirmed");
       expect(charge.matchedGiftId).toBe(giftId);
     });
 

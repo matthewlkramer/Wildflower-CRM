@@ -23,6 +23,10 @@ import {
   GIFT_MATCH_WINDOW_DAYS,
 } from "../../lib/giftMatch";
 import { deriveEvidenceLanes } from "../../lib/reconciliationLanes";
+import {
+  chargeStatusSql,
+  stagedStatusWhere,
+} from "../../lib/derivedStatus";
 import { isQbGroupMemberSql } from "../../lib/unitGroupMembership";
 import { payoutStatusLabelSql } from "../../lib/settlementLink";
 import {
@@ -115,7 +119,7 @@ const autoGiftPickExpr = sql<{
 // gate's amount-mismatch override at approve. (The full consistency gate still
 // runs server-side at approve; this is the cheap list hint.)
 const readyExpr = sql<boolean>`(
-  ${stagedPayments.status} = 'pending'
+  ${stagedStatusWhere.pending}
   AND ${stagedPayments.matchStatus} = 'matched'
   AND num_nonnulls(${stagedPayments.organizationId}, ${stagedPayments.individualGiverPersonId}, ${stagedPayments.householdId}) = 1
   AND (SELECT COUNT(*)::int FROM gifts_and_payments g WHERE ${unlinkedDonorGiftWhere("strict")}) = 1
@@ -275,67 +279,71 @@ const sourceGroupAggExpr = sql<{
 // never cluttering day-to-day reconciliation). The NULL entity_id (Foundation
 // default) must stay IN — `entity_id NOT IN (...)` is NULL-unsafe, so guard it
 // explicitly with an IS NULL branch.
-// `approved` rows came from the LEGACY /staged-payments flow and already minted
-// (createdGiftId) or linked (matchedGiftId) a gift. Such an already-approved
-// QB↔gift link is DONE and should "stay approved" — it only re-enters this queue
-// when there is still Stripe to tie in (a payout matched/proposed to it). So an
-// approved row is excluded iff it is RESOLVED to a gift AND has no Stripe to
-// link; otherwise (unresolved, or Stripe pending) it stays as real work.
-// "Resolved to a gift" covers ALL resolution forms: a 1:1 match (matchedGiftId),
-// a mint (createdGiftId), a group reconcile (groupReconciledGiftId), OR a split.
-// A split deliberately carries NONE of the three id columns — its resolution
+// A row already RESOLVED to a gift (derived match_confirmed) is DONE and stays
+// out of the live queue — it only re-enters while there is still Stripe to tie
+// in (a settlement link, proposed or confirmed, on the deposit). "Resolved"
+// covers ALL resolution forms: a 1:1 match (matchedGiftId), a mint
+// (createdGiftId), a group reconcile (groupReconciledGiftId), OR a split. A
+// split deliberately carries NONE of the three id columns — its resolution
 // lives entirely in counted payment_applications ledger rows anchored to the
 // payment — so it must be detected via the ledger, otherwise a fully-split
-// payment would wrongly re-enter the live "unlinked money" queue. (Direct/mint/
-// group rows also carry counted ledger rows, harmlessly subsumed by the OR.)
-// `reconciled` deposits are normally terminal, EXCEPT a Stripe-payout deposit
-// whose payout↔deposit settlement has been confirmed (Plane 1) but whose backing
-// charges are not yet all credited to gifts (Plane 2). The settlement report now
-// confirms ONLY the settlement link, marking the deposit `reconciled` while
-// leaving per-charge crediting to the gift report — so such a deposit must stay
-// in the live queue until every charge is tied, or the unbooked charges would be
-// invisible/unbookable (silent under-credit). The lateral charge expansion +
-// unresolved-charge filter below collapse it to just its unbooked charge cards
-// and drop it once the last charge books. Any other named bucket reuses the
-// legacy mapping (which includes the fiscally_sponsored parking queue itself).
+// payment would wrongly re-enter the live "unlinked money" queue. A coarse
+// mint (createdGiftId) never re-enters: the minted gift is the single counted
+// record for this money (design §4.3), so re-expanding it would invite a
+// double-counting gift.
+// A SETTLEMENT-only-confirmed deposit (confirmed payout↔deposit link — Plane 1
+// — but NO gift of its own) must stay in the live queue while its backing
+// charges are not yet all credited to gifts (Plane 2), or the unbooked charges
+// would be invisible/unbookable (silent under-credit). The lateral charge
+// expansion + unresolved-charge filter below collapse it to just its unbooked
+// charge cards and drop it once the last charge books. Any other named bucket
+// reuses the legacy mapping (which includes the fiscally_sponsored parking
+// queue itself).
 function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
   if (!queue || queue === "all")
     return sql`(
       (
-        ${stagedPayments.status} = 'pending'
+        ${stagedStatusWhere.pending}
         AND (${stagedPayments.entityId} IS NULL OR NOT (${isParkedFiscallyRow}))
       )
       OR (
-        ${stagedPayments.status} = 'approved'
-        AND NOT (
-          (
-            ${stagedPayments.matchedGiftId} IS NOT NULL
-            OR ${stagedPayments.createdGiftId} IS NOT NULL
-            OR ${stagedPayments.groupReconciledGiftId} IS NOT NULL
-            OR EXISTS (
-              SELECT 1 FROM payment_applications pa
-              WHERE pa.payment_id = ${stagedPayments.id}
-                AND pa.evidence_source = 'quickbooks'
-                AND pa.link_role = 'counted'
-            )
+        -- A row RESOLVED by the QB reconciler — 1:1 matched to a pre-existing
+        -- gift, group-reconciled, or fully split into counted ledger rows —
+        -- re-enters the live queue while ANY Stripe payout (proposed or
+        -- confirmed settlement link) is tied to it: the Stripe leg is still
+        -- real work. A coarse mint (createdGiftId) stays out — the minted
+        -- gift is already the single counted record for this money (design
+        -- §4.3), so re-expanding it would invite a double-counting gift.
+        ${stagedPayments.exclusionReason} IS NULL
+        AND ${stagedPayments.createdGiftId} IS NULL
+        AND (
+          ${stagedPayments.matchedGiftId} IS NOT NULL
+          OR ${stagedPayments.groupReconciledGiftId} IS NOT NULL
+          OR EXISTS (
+            SELECT 1 FROM payment_applications pa
+            WHERE pa.payment_id = ${stagedPayments.id}
+              AND pa.evidence_source = 'quickbooks'
+              AND pa.link_role = 'counted'
           )
-          AND NOT EXISTS (
-            SELECT 1 FROM settlement_links sl
-            WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
-          )
+        )
+        AND EXISTS (
+          SELECT 1 FROM settlement_links sl
+          WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
         )
       )
       OR (
-        ${stagedPayments.status} = 'reconciled'
         -- Re-admit for per-charge crediting ONLY a SETTLEMENT-only-confirmed
-        -- deposit — one whose payout↔deposit tie is settled (Plane 1) but which
-        -- carries NO coarse gift of its own. When the deposit already booked its
-        -- own coarse gift, that gift is the single counted record for this money
-        -- (design §4.3 "one count across the settlement boundary": with no
-        -- per-charge counted units the coarse deposit gift stays the counted
-        -- record). Expanding such a deposit into per-charge cards would surface it
-        -- as unbooked and invite a second, double-counting gift, so it stays out
-        -- of the live gift queue and shows only in the done/Matched queue.
+        -- deposit — one whose payout↔deposit tie is settled (Plane 1, so the
+        -- row derives match_confirmed via the confirmed settlement link) but
+        -- which carries NO coarse gift of its own. When the deposit already
+        -- booked its own coarse gift, that gift is the single counted record
+        -- for this money (design §4.3 "one count across the settlement
+        -- boundary": with no per-charge counted units the coarse deposit gift
+        -- stays the counted record). Expanding such a deposit into per-charge
+        -- cards would surface it as unbooked and invite a second,
+        -- double-counting gift, so it stays out of the live gift queue and
+        -- shows only in the done/Matched queue.
+        ${stagedStatusWhere.match_confirmed}
         AND ${stagedPayments.matchedGiftId} IS NULL
         AND ${stagedPayments.createdGiftId} IS NULL
         AND ${stagedPayments.groupReconciledGiftId} IS NULL
@@ -344,13 +352,12 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
           JOIN stripe_staged_charges c ON c.stripe_payout_id = sl.payout_id
           WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
             AND COALESCE(c.matched_gift_id, c.created_gift_id) IS NULL
-            -- An excluded (failed payment attempt) or human-rejected charge is
-            -- terminal, not unbooked work — it must not re-admit the deposit.
-            AND c.status NOT IN ('excluded', 'rejected')
+            -- An excluded charge (e.g. a failed payment attempt) is terminal,
+            -- not unbooked work — it must not re-admit the deposit.
+            AND c.exclusion_reason IS NULL
         )
       )
     )`;
-  if (queue === "reconciled") return eq(stagedPayments.status, "reconciled");
   return queueWhere(queue as Queue);
 }
 
@@ -400,7 +407,7 @@ router.get(
         : undefined;
 
     // Per-charge expansion only applies to the live work queues (default/all,
-    // needs_review). The terminal queues (reconciled, excluded, done, rejected,
+    // needs_review). The other queues (auto_matched, excluded, done,
     // fiscally_sponsored) keep one card per QB staged payment.
     const shouldExpand =
       queue === undefined || queue === "all" || queue === "needs_review";
@@ -469,7 +476,7 @@ router.get(
           sql<string | null>`${stripeStagedCharges.feeAmount}::text`.as(
             "charge_fee",
           ),
-        chargeStatus: stripeStagedCharges.status,
+        chargeStatus: chargeStatusSql.as("charge_status"),
         matchStatus: stripeStagedCharges.matchStatus,
         matchConfirmedAt: stripeStagedCharges.matchConfirmedAt,
         organizationId: stripeStagedCharges.organizationId,
@@ -577,19 +584,19 @@ router.get(
       )
       .where(
         // Excluded charges (e.g. a FAILED payment attempt auto-excluded as
-        // failed_charge) and human-rejected charges are terminal non-work:
-        // they can never be tied to a gift, so they must not anchor a live
-        // card. Without this filter a deposit whose remaining unresolved
-        // charge is excluded/rejected would sit in the live queue forever
-        // ("settles when every charge is tied" — a terminal charge never
-        // ties). Matches the graph + bundle-anchor terminal set. A deposit
-        // whose charges are ALL terminal produces zero lateral rows and is
-        // kept once as a plain deposit card via the LEFT JOIN NULL-extension,
-        // so it stays visible as its own piece of work.
+        // failed_charge) are terminal non-work: they can never be tied to a
+        // gift, so they must not anchor a live card. Without this filter a
+        // deposit whose remaining unresolved charge is excluded would sit in
+        // the live queue forever ("settles when every charge is tied" — a
+        // terminal charge never ties). Matches the graph + bundle-anchor
+        // terminal set. A deposit whose charges are ALL terminal produces
+        // zero lateral rows and is kept once as a plain deposit card via the
+        // LEFT JOIN NULL-extension, so it stays visible as its own piece of
+        // work.
         sql`${shouldExpand ? sql`TRUE` : sql`FALSE`}
           AND NOT ${isQbGroupMemberSql()}
           AND ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id}
-          AND ${stripeStagedCharges.status} NOT IN ('excluded', 'rejected')`,
+          AND ${stripeStagedCharges.exclusionReason} IS NULL`,
       )
       .as("charge_unit");
 

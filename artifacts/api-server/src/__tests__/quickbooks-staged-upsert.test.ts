@@ -39,9 +39,15 @@ describe("buildStagedLineUpsert — preserve-on-conflict coding", () => {
 
   const lower = compiled.toLowerCase();
 
-  it("only refreshes coding while a row is still pending/excluded", () => {
+  it("only refreshes coding while a row is still pending/excluded (derived)", () => {
     expect(lower).toContain("where");
-    expect(lower).toMatch(/in \('pending', 'excluded'\)/);
+    // The guard is the DERIVED pending/excluded predicate (no stored status
+    // column): pending = no gift link + no confirmed settlement link + no
+    // counted ledger row; excluded = exclusion_reason set.
+    expect(lower).toContain('"staged_payments"."matched_gift_id" is null');
+    expect(lower).toContain("settlement_links");
+    expect(lower).toContain("payment_applications");
+    expect(lower).toContain('"staged_payments"."exclusion_reason" is not null');
   });
 
   for (const col of ["line_item_names", "line_account_names", "line_classes"]) {
@@ -132,12 +138,17 @@ describe("buildStagedLineUpsert — enrichAllStatuses (full re-pull)", () => {
     const sql = buildStagedLineUpsert(base, { enrichAllStatuses: true })
       .toSQL()
       .sql.toLowerCase();
-    expect(sql).not.toMatch(/in \('pending', 'excluded'\)/);
+    // No derived-status guard at all: neither the pending arm's EXISTS probes…
+    expect(sql).not.toContain("settlement_links");
+    expect(sql).not.toContain("payment_applications");
+    // …nor the excluded arm.
+    expect(sql).not.toContain('"staged_payments"."exclusion_reason" is not null');
   });
 
   it("keeps the guard for a normal (incremental) sync", () => {
     const sql = buildStagedLineUpsert(base).toSQL().sql.toLowerCase();
-    expect(sql).toMatch(/in \('pending', 'excluded'\)/);
+    expect(sql).toContain("settlement_links");
+    expect(sql).toContain('"staged_payments"."exclusion_reason" is not null');
   });
 
   it("never writes review columns on conflict (only QB facts + updatedAt)", () => {

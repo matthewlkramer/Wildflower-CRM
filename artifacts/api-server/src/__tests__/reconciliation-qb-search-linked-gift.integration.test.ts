@@ -126,7 +126,6 @@ beforeAll(async () => {
     amount: "250.00",
     dateReceived: "2099-11-15",
     payerName: PAYER,
-    status: "reconciled" as never,
     matchedGiftId: GIFT_MATCHED_ID,
   });
   await db.insert(schema.stagedPayments).values({
@@ -138,7 +137,6 @@ beforeAll(async () => {
     amount: "250.00",
     dateReceived: "2099-11-15",
     payerName: PAYER,
-    status: "reconciled" as never,
     createdGiftId: GIFT_CREATED_ID,
   });
   await db.insert(schema.stagedPayments).values({
@@ -150,7 +148,6 @@ beforeAll(async () => {
     amount: "250.00",
     dateReceived: "2099-11-15",
     payerName: PAYER,
-    status: "pending" as never,
   });
 
   const { default: app } = await import("../app");

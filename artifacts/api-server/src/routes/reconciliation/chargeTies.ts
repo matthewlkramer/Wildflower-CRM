@@ -15,6 +15,7 @@ import {
   type ChargeForTie,
   type QbRowForTie,
 } from "../../lib/chargeQbTie";
+import { chargeStatusSql, stagedStatusSql } from "../../lib/derivedStatus";
 
 /**
  * Charge-grain settlement confirm for "individually-booked" payouts — payouts
@@ -35,8 +36,8 @@ import {
 const router: IRouter = Router();
 
 /** Charge review statuses that count as "already settled" for this report —
- * excluded/rejected charges never need (or get) a QB tie. */
-const TERMINAL_CHARGE_STATUSES = ["excluded", "rejected"] as const;
+ * excluded charges never need (or get) a QB tie. */
+const TERMINAL_CHARGE_STATUSES = ["excluded"] as const;
 
 interface TieIssue {
   qbStagedPaymentId?: string;
@@ -95,7 +96,8 @@ router.post(
             dateReceived: stripeStagedCharges.dateReceived,
             payerName: stripeStagedCharges.payerName,
             description: stripeStagedCharges.description,
-            status: stripeStagedCharges.status,
+            // DERIVED lifecycle status (no stored column) — lib/derivedStatus.ts.
+            status: chargeStatusSql.as("status"),
             linkedQbStagedPaymentId:
               stripeStagedCharges.linkedQbStagedPaymentId,
             proposedQbStagedPaymentId:
@@ -140,7 +142,8 @@ router.post(
               amount: stagedPayments.amount,
               dateReceived: stagedPayments.dateReceived,
               payerName: stagedPayments.payerName,
-              status: stagedPayments.status,
+              // DERIVED lifecycle status (no stored column).
+              status: stagedStatusSql.as("status"),
             })
             .from(stagedPayments)
             .where(inArray(stagedPayments.id, manualIds))
@@ -154,9 +157,7 @@ router.post(
                 qbStagedPaymentId: id,
                 reason: "QuickBooks row no longer exists.",
               });
-            } else if (
-              !["pending", "approved", "reconciled"].includes(row.status)
-            ) {
+            } else if (row.status === "excluded") {
               issues.push({
                 qbStagedPaymentId: id,
                 reason: `QuickBooks row is ${row.status} — only active rows can be tied.`,
@@ -213,7 +214,11 @@ router.post(
         // Mode A locks its QB rows here (mode B already locked them above).
         if (manualIds === undefined) {
           const proposalRows = await tx
-            .select({ id: stagedPayments.id, status: stagedPayments.status })
+            .select({
+              id: stagedPayments.id,
+              // DERIVED lifecycle status (no stored column).
+              status: stagedStatusSql.as("status"),
+            })
             .from(stagedPayments)
             .where(inArray(stagedPayments.id, qbIds))
             .for("update");
@@ -226,9 +231,7 @@ router.post(
                 qbStagedPaymentId: id,
                 reason: "Proposed QuickBooks row no longer exists.",
               });
-            } else if (
-              !["pending", "approved", "reconciled"].includes(row.status)
-            ) {
+            } else if (row.status === "excluded") {
               issues.push({
                 qbStagedPaymentId: id,
                 reason: `Proposed QuickBooks row is now ${row.status}.`,
@@ -340,10 +343,9 @@ router.post(
 
 /**
  * Per-row reject of ONE proposed charge↔QB tie (the "Missing deposit" card's
- * per-charge Reject). Clears the proposal AND records the dismissed pair on
- * the charge (`dismissed_qb_staged_payment_ids`) so the idempotent proposal
- * pass never re-proposes it — the QB row stays a candidate for OTHER charges,
- * and a manual "Tie selected" still overrides the dismissal. Plane 1 only:
+ * per-charge Reject). Clears the proposal only — the pair is NOT persistently
+ * dismissed, so a later proposal pass may re-propose it (the human can simply
+ * reject again, or manually "Tie selected" a different row). Plane 1 only:
  * no gift, QB row, or settlement link is touched.
  */
 router.post(
@@ -365,8 +367,6 @@ router.post(
               stripeStagedCharges.linkedQbStagedPaymentId,
             proposedQbStagedPaymentId:
               stripeStagedCharges.proposedQbStagedPaymentId,
-            dismissedQbStagedPaymentIds:
-              stripeStagedCharges.dismissedQbStagedPaymentIds,
           })
           .from(stripeStagedCharges)
           .where(eq(stripeStagedCharges.id, chargeId))
@@ -392,18 +392,13 @@ router.post(
           });
         }
 
-        // Dedup-append the dismissed pair, then clear the proposal — guarded
-        // on the exact proposal we read still being in place (the FOR UPDATE
-        // lock makes drift impossible; the guard keeps the write
-        // self-defending).
-        const dismissed = Array.from(
-          new Set([...(charge.dismissedQbStagedPaymentIds ?? []), qbId]),
-        );
+        // Clear the proposal — guarded on the exact proposal we read still
+        // being in place (the FOR UPDATE lock makes drift impossible; the
+        // guard keeps the write self-defending).
         const upd = await tx
           .update(stripeStagedCharges)
           .set({
             proposedQbStagedPaymentId: null,
-            dismissedQbStagedPaymentIds: dismissed,
             updatedAt: new Date(),
           })
           .where(

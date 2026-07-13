@@ -9,6 +9,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { getUncachableStripeClient } from "./stripeClient";
+import { chargeStatusWhere, stagedStatusWhere } from "./derivedStatus";
 
 /**
  * Charge-grain Stripe ↔ QuickBooks tie proposals ("individually-booked
@@ -79,11 +80,6 @@ export interface ChargeForTie {
   payerName: string | null;
   /** charge.description — often carries the real donor name. */
   description: string | null;
-  /** QB staged_payments ids a human explicitly DISMISSED for this charge —
-   * the automatic assigner never pairs the charge with any of them again
-   * (per charge↔QB pair; the QB row stays eligible for other charges).
-   * Manual "Tie selected" ignores this list (a human override wins). */
-  dismissedQbIds?: readonly string[] | null;
 }
 
 export interface QbRowForTie {
@@ -164,10 +160,7 @@ export function assignChargeQbTies(
     const eligibleChargeIds = new Set<string>();
     const eligibleQbIds = new Set<string>();
     for (const c of groupCharges) {
-      const dismissed = new Set(c.dismissedQbIds ?? []);
       for (const q of groupCands) {
-        // A human rejected this exact charge↔QB pair — never re-propose it.
-        if (dismissed.has(q.id)) continue;
         const dd = dayDiff(c.dateReceived!, q.dateReceived!);
         if (dd > CHARGE_TIE_WINDOW_DAYS) continue;
         pairs.push({
@@ -359,8 +352,8 @@ export async function runChargeTiePass(
 
   for (const p of payouts) {
     // The payout's open charges: no confirmed tie, not terminal. Terminal
-    // (excluded/rejected) charges never get a QB tie — they are already
-    // "settled" for this report's purposes.
+    // (excluded) charges never get a QB tie — they are already "settled" for
+    // this report's purposes. (Status is DERIVED — lib/derivedStatus.ts.)
     const charges = await db
       .select({
         id: stripeStagedCharges.id,
@@ -368,7 +361,6 @@ export async function runChargeTiePass(
         dateReceived: stripeStagedCharges.dateReceived,
         payerName: stripeStagedCharges.payerName,
         description: stripeStagedCharges.description,
-        dismissedQbIds: stripeStagedCharges.dismissedQbStagedPaymentIds,
         proposedQbStagedPaymentId:
           stripeStagedCharges.proposedQbStagedPaymentId,
       })
@@ -377,7 +369,7 @@ export async function runChargeTiePass(
         and(
           eq(stripeStagedCharges.stripePayoutId, p.id),
           isNull(stripeStagedCharges.linkedQbStagedPaymentId),
-          sql`${stripeStagedCharges.status} NOT IN ('excluded','rejected')`,
+          sql`NOT ${chargeStatusWhere.excluded}`,
         ),
       );
     if (charges.length === 0) continue;
@@ -417,11 +409,8 @@ export async function runChargeTiePass(
         .where(
           and(
             inArray(stagedPayments.amount, amounts),
-            inArray(stagedPayments.status, [
-              "pending",
-              "approved",
-              "reconciled",
-            ]),
+            // Active = anything not excluded (status is DERIVED).
+            sql`NOT ${stagedStatusWhere.excluded}`,
             sql`${stagedPayments.dateReceived} >= ${fromStr}`,
             sql`${stagedPayments.dateReceived} <= ${toStr}`,
             sql`NOT EXISTS (

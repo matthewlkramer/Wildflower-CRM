@@ -79,7 +79,6 @@ async function seedCharge(
     dateReceived: "2026-03-15",
     payerName: `Zztest Bundle Payer ${RUN}`,
     payerEmail: `${RUN}-payer@example.invalid`,
-    status: "pending",
   });
   chargeIds.push(id);
   return id;

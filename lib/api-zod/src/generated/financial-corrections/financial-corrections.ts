@@ -9,7 +9,7 @@ import * as zod from 'zod';
 
 
 /**
- * @summary Admin-only. Proposed corrections that make the CRM money records conform to the intended schema (INV-6 / §4.8) without ever editing a QuickBooks or Stripe record. Two kinds: `merge_gifts` (near-duplicate gifts that should be one gift with several allocations — apply via the existing gifts-and-payments/merge endpoint) and `link_evidence` (one bulk deposit that corroborates many gifts — apply via /financial-corrections/apply). Proposals an admin has dismissed are excluded.
+ * @summary Admin-only. Proposed corrections that make the CRM money records conform to the intended schema (INV-6 / §4.8) without ever editing a QuickBooks or Stripe record. Two kinds: `merge_gifts` (near-duplicate gifts that should be one gift with several allocations — apply via the existing gifts-and-payments/merge endpoint) and `link_evidence` (one bulk deposit that corroborates many gifts — apply via /financial-corrections/apply).
  */
 export const listFinancialCorrectionsQueryLimitDefault = 100;
 export const listFinancialCorrectionsQueryLimitMax = 200;
@@ -52,14 +52,6 @@ export const ListFinancialCorrectionsResponse = zod.object({
   "safeApply": zod.boolean().describe('True when the proposal can be applied without further human disambiguation (e.g. all gifts share one donor for a merge).')
 }))
 })
-
-/**
- * @summary Admin-only. Mark a proposed correction as "leave as is" so the detector never re-surfaces it. Idempotent.
- */
-export const DismissFinancialCorrectionBody = zod.object({
-  "kind": zod.enum(['merge_gifts', 'link_evidence']),
-  "proposalKey": zod.string()
-}).describe('Mark a proposed correction as leave-as-is so the detector never re-surfaces it.')
 
 /**
  * @summary Admin-only. Apply a `link_evidence` correction: record corroborating many-to-many links from one piece of funding evidence to several gifts. Never edits the QuickBooks/Stripe source — only adds CRM-side corroboration. Idempotent on the (gift, evidence) pair. (Merge proposals are applied through the existing gifts-and-payments/merge endpoint.)

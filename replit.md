@@ -4,15 +4,12 @@
 
 Purpose-built fundraising CRM for Wildflower Schools, replacing Copper. A pnpm
 workspace monorepo: TypeScript + React/Vite + Express 5 + PostgreSQL/Drizzle,
-auth via Clerk. The schema mirrors the Wildflower "crm files" Airtable base
-(`app8KUcmaHZ0AtcJZ`), seeded with ~14,200 imported records. The `funders` and
-`organizations` tables are **consolidated** into one `organizations` table (an
-`issuesGrants` flag distinguishes grant-makers).
+auth via Clerk.
 
 The product goal: give the fundraising team one trustworthy place to run the whole
 donor lifecycle — pipeline → commitments → cash in — with money, communications
 (Gmail/Calendar), and accounting (QuickBooks/Stripe) all reconciled against the same
-donor records, replacing a hand-stitched mix of Copper, spreadsheets, and inboxes.
+donor records, replacing a hand-stitched mix of Copper, spreadsheets, quickbooks, and inboxes.
 
 ## Change recipe map
 
@@ -51,8 +48,6 @@ These recur across the whole app — keep them true whenever you change things:
 
 ## User preferences
 
-- Prefers non-destructive, staged migrations and explicit confirmation before any
-  destructive or production-facing change.
 - Precise and hands-on; wants to understand tradeoffs and consequences before acting.
 - When giving prod data-migration `psql` commands to run by hand, always use the
   `$PROD_DATABASE_URL` variable (NOT `$DATABASE_URL`) and the full repo-root-relative
@@ -135,9 +130,7 @@ The first run of a check warms the incremental cache (slow); subsequent runs are
 
 ## Database
 
-Schema lives in `lib/db/src/schema/`. Every entity uses its Airtable record ID as
-the PK so re-imports stay idempotent (exceptions: `regions`, `entities`,
-`fundable_projects`, and `fiscal_years` use human-readable slug PKs). Full per-table
+Schema lives in `lib/db/src/schema/`. Full per-table
 reference is in [`lib/db/SCHEMA.md`](lib/db/SCHEMA.md).
 
 Key invariants:

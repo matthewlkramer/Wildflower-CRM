@@ -4,6 +4,7 @@ import {
   hasExactlyOneDonor,
   type LinkDonor,
 } from "./quickbooksLink";
+import type { DerivedStatus } from "./derivedStatus";
 
 /**
  * Shared consistency gate for the unified "complete-match" reconciler.
@@ -15,7 +16,8 @@ import {
  *
  * It enforces the cross-node invariants:
  *   - the QuickBooks staged row is the REQUIRED anchor and is still OPEN for
- *     reconciliation (pending, or a legacy `approved` row), not reconciled/excluded;
+ *     reconciliation (DERIVED status pending or match_proposed), not already
+ *     match_confirmed/excluded;
  *   - the gift carries exactly one donor (Donor XOR);
  *   - when an opportunity is in play, its donor matches the gift's donor;
  *   - neither the gift nor the opportunity is archived;
@@ -237,14 +239,17 @@ function donorCount(d: LinkDonor): number {
 }
 
 /**
- * A staged payment (QB anchor) is "open for reconciliation" while it is `pending`
- * (fresh work) or a legacy `approved` row — those came from the old
- * /staged-payments flow and were left in the work queue because they still need
- * Stripe tied in or a gift created/linked. The TERMINAL states (`reconciled`,
- * `excluded`) can never be (re-)approved through this reconciler. The approve
- * route and this gate share this set so they can never disagree.
+ * A staged payment (QB anchor) is "open for reconciliation" while its DERIVED
+ * status (lib/derivedStatus.ts) is `pending` (fresh work) or `match_proposed`
+ * (an auto-applied match a human has not yet confirmed — approving IS the
+ * confirmation). The resolved states (`match_confirmed`, `excluded`) can never
+ * be (re-)approved through this reconciler. The approve route and this gate
+ * share this set so they can never disagree.
  */
-export const APPROVABLE_STAGED_STATUSES = ["pending", "approved"] as const;
+export const APPROVABLE_STAGED_STATUSES = [
+  "pending",
+  "match_proposed",
+] as const satisfies readonly DerivedStatus[];
 
 export function isStagedApprovable(status: string): boolean {
   return (APPROVABLE_STAGED_STATUSES as readonly string[]).includes(status);

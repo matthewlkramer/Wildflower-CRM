@@ -33,7 +33,6 @@ const REALM_ID = `${RUN}_realm`;
 const AMT_A = "1234.57";
 const AMT_B = "2345.68";
 const AMT_C = "3456.79";
-const AMT_D = "4567.83";
 
 type Db = typeof import("@workspace/db");
 let db: Db["db"];
@@ -71,10 +70,10 @@ async function seedCharge(over: {
   grossAmount: string;
   dateReceived: string;
   payerName?: string | null;
-  status?: "pending" | "excluded";
+  /** Set to derive `excluded` (exclusion_reason IS NOT NULL). */
+  exclusionReason?: "other_revenue" | null;
   linkedQbStagedPaymentId?: string | null;
   proposedQbStagedPaymentId?: string | null;
-  dismissedQbStagedPaymentIds?: string[] | null;
 }) {
   const id = nextId("ch");
   await db.insert(schema.stripeStagedCharges).values({
@@ -84,10 +83,9 @@ async function seedCharge(over: {
     grossAmount: over.grossAmount,
     dateReceived: over.dateReceived,
     payerName: over.payerName ?? null,
-    status: over.status ?? "pending",
+    exclusionReason: over.exclusionReason ?? null,
     linkedQbStagedPaymentId: over.linkedQbStagedPaymentId ?? null,
     proposedQbStagedPaymentId: over.proposedQbStagedPaymentId ?? null,
-    dismissedQbStagedPaymentIds: over.dismissedQbStagedPaymentIds ?? null,
   });
   chargeIds.push(id);
   return id;
@@ -97,7 +95,6 @@ async function seedQbRow(over: {
   amount: string;
   dateReceived: string;
   payerName?: string | null;
-  status?: "pending" | "approved" | "excluded";
 }) {
   const id = nextId("sp");
   await db.insert(schema.stagedPayments).values({
@@ -108,7 +105,6 @@ async function seedQbRow(over: {
     amount: over.amount,
     dateReceived: over.dateReceived,
     payerName: over.payerName === undefined ? null : over.payerName,
-    status: over.status ?? "pending",
   });
   stagedIds.push(id);
   return id;
@@ -222,7 +218,7 @@ describe.skipIf(!HAS_DB)("runChargeTiePass (DB)", () => {
         payoutId: po3,
         grossAmount: AMT_C,
         dateReceived: "2026-02-10",
-        status: "excluded",
+        exclusionReason: "other_revenue",
       });
       const po4 = await seedPayout({ amount: AMT_C, arrivalDate: "2026-02-10" });
       const ch4 = await seedCharge({
@@ -231,34 +227,10 @@ describe.skipIf(!HAS_DB)("runChargeTiePass (DB)", () => {
         dateReceived: "2026-02-12",
       });
 
-      // ── Fixture 4: a DISMISSED pair must never be re-proposed, even when
-      // the dismissed QB row is the only exact-amount candidate — but the
-      // same QB row still proposes onto a different (non-dismissing) charge.
-      const qb5 = await seedQbRow({
-        amount: AMT_D,
-        dateReceived: "2026-02-11",
-        payerName: "Casey Donor",
-      });
-      const po5 = await seedPayout({ amount: AMT_D, arrivalDate: "2026-02-10" });
-      const ch5 = await seedCharge({
-        payoutId: po5,
-        grossAmount: AMT_D,
-        dateReceived: "2026-02-10",
-        payerName: "Casey Donor",
-        dismissedQbStagedPaymentIds: [qb5],
-      });
-      const po6 = await seedPayout({ amount: AMT_D, arrivalDate: "2026-02-10" });
-      const ch6 = await seedCharge({
-        payoutId: po6,
-        grossAmount: AMT_D,
-        dateReceived: "2026-02-12",
-        payerName: "Casey Donor",
-      });
-
-      const scope = [po1, po2, po3, po4, po5, po6];
+      const scope = [po1, po2, po3, po4];
       const first = await runChargeTiePass(scope);
       // po2 has a settlement link → out of the evaluated pool.
-      expect(first.payoutsEvaluated).toBe(5);
+      expect(first.payoutsEvaluated).toBe(3);
 
       // 1) exact-amount close-date proposal landed (window decoy ignored).
       expect((await readCharge(ch1)).proposed).toBe(qb1);
@@ -272,17 +244,10 @@ describe.skipIf(!HAS_DB)("runChargeTiePass (DB)", () => {
       expect(c3.proposed).toBeNull();
       expect((await readCharge(ch4)).proposed).toBeNull();
       expect((await readCharge(chExcluded)).proposed).toBeNull();
-      // 4) dismissal persistence: the dismissed pair is skipped (ch5 stays
-      //    unproposed) while the SAME QB row proposes onto ch6.
-      expect((await readCharge(ch5)).proposed).toBeNull();
-      expect((await readCharge(ch6)).proposed).toBe(qb5);
 
-      // 5) idempotent re-run: same proposals, nothing newly cleared, the
-      //    dismissed pair STAYS dismissed.
+      // 4) idempotent re-run: same proposals, nothing newly cleared.
       const second = await runChargeTiePass(scope);
       expect((await readCharge(ch1)).proposed).toBe(qb1);
-      expect((await readCharge(ch5)).proposed).toBeNull();
-      expect((await readCharge(ch6)).proposed).toBe(qb5);
       expect(second.cleared).toBe(0);
       expect(second.proposed).toBeGreaterThanOrEqual(1);
     },

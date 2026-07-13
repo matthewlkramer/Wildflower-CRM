@@ -13,6 +13,7 @@ import {
 import { eq, inArray, or, sql } from "drizzle-orm";
 import { asyncHandler, notFound } from "../../lib/helpers";
 import { payoutStatusFromLink } from "../../lib/settlementLink";
+import { chargeStatusSql } from "../../lib/derivedStatus";
 
 type LinkSource = "pulled" | "qb_confirmed" | "stripe_pulled" | "stripe_confirmed";
 
@@ -102,7 +103,8 @@ router.get(
         refunded: stripeStagedCharges.refunded,
         disputed: stripeStagedCharges.disputed,
         stripePayoutId: stripeStagedCharges.stripePayoutId,
-        status: stripeStagedCharges.status,
+        // DERIVED lifecycle status (no stored column) — lib/derivedStatus.ts.
+        status: chargeStatusSql.as("status"),
         organizationId: stripeStagedCharges.organizationId,
         individualGiverPersonId: stripeStagedCharges.individualGiverPersonId,
         householdId: stripeStagedCharges.householdId,

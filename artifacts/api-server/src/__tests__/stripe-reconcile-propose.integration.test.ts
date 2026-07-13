@@ -108,7 +108,8 @@ async function seedDeposit(over: {
   // QB booking type. Defaults to 'deposit' (the classic Stripe lump); pass
   // 'payment' to model the dominant real-world shape (a donor-name payment row).
   qbEntityType?: "deposit" | "payment" | "sales_receipt";
-  status?: "pending" | "approved" | "excluded" | "rejected";
+  /** Set to derive `excluded` (exclusion_reason IS NOT NULL wins the CASE). */
+  exclusionReason?: "other_revenue" | null;
   createdGiftId?: string | null;
 }): Promise<string> {
   const id = nextId("sp");
@@ -120,7 +121,7 @@ async function seedDeposit(over: {
     amount: over.amount,
     dateReceived: over.dateReceived,
     payerName: over.payerName === undefined ? "Stripe" : over.payerName,
-    status: over.status ?? "pending",
+    exclusionReason: over.exclusionReason ?? null,
     createdGiftId: over.createdGiftId ?? null,
   });
   stagedIds.push(id);
@@ -296,7 +297,6 @@ describe.skipIf(!HAS_DB)("runProposalPass (DB)", () => {
     const dep = await seedDeposit({
       amount: "8888.88",
       dateReceived: "2026-04-10",
-      status: "approved",
       createdGiftId: gift,
     });
 
@@ -342,7 +342,7 @@ describe.skipIf(!HAS_DB)("runProposalPass (DB)", () => {
     const dep = await seedDeposit({
       amount: "6543.21",
       dateReceived: "2026-06-01",
-      status: "excluded",
+      exclusionReason: "other_revenue",
     });
     const po = await seedPayout({
       amount: "6543.21",
@@ -366,9 +366,9 @@ describe.skipIf(!HAS_DB)("runProposalPass (DB)", () => {
     const dep = await seedDeposit({
       amount: "3131.31",
       dateReceived: "2026-09-01",
-      // `excluded` is outside the pending/approved/reconciled candidate set, so
-      // the pass finds no `best` and takes the clear branch.
-      status: "excluded",
+      // An exclusion reason derives `excluded` (it wins over the gift link),
+      // which is outside the candidate set, so the pass takes the clear branch.
+      exclusionReason: "other_revenue",
       createdGiftId: gift,
     });
     const po = await seedPayout({

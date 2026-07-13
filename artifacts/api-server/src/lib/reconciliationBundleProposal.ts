@@ -20,6 +20,7 @@ import {
   type MatchMethod,
 } from "./quickbooksMatch";
 import { candidateGiftId } from "./stripeReconcile";
+import { chargeStatusSql, stagedStatusSql } from "./derivedStatus";
 import { amountWithinFeeBand } from "./reconciliationGate";
 import { maskName, type Viewer } from "./identityVisibility";
 
@@ -1259,10 +1260,8 @@ async function scoreCharge(c: {
   matchedGiftId: string | null;
   createdGiftId: string | null;
 }): Promise<ScoredSourceRow> {
-  const committedGiftId =
-    c.status === "reconciled" || c.createdGiftId || c.matchedGiftId
-      ? (c.createdGiftId ?? c.matchedGiftId)
-      : null;
+  // The gift-link columns ARE the booking facts (status is derived from them).
+  const committedGiftId = c.createdGiftId ?? c.matchedGiftId ?? null;
   const match = committedGiftId
     ? {
         donor: { organizationId: null, individualGiverPersonId: null, householdId: null },
@@ -1400,7 +1399,7 @@ export async function loadBundleBase(opts: {
         payerEmail: stripeStagedCharges.payerEmail,
         description: stripeStagedCharges.description,
         statementDescriptor: stripeStagedCharges.statementDescriptor,
-        status: stripeStagedCharges.status,
+        status: chargeStatusSql,
         exclusionReason: stripeStagedCharges.exclusionReason,
         matchedGiftId: stripeStagedCharges.matchedGiftId,
         createdGiftId: stripeStagedCharges.createdGiftId,
@@ -1445,7 +1444,7 @@ export async function loadBundleBase(opts: {
         payerEmail: stagedPayments.payerEmail,
         rawReference: stagedPayments.rawReference,
         lineDescription: stagedPayments.lineDescription,
-        status: stagedPayments.status,
+        status: stagedStatusSql,
         exclusionReason: stagedPayments.exclusionReason,
         matchedGiftId: stagedPayments.matchedGiftId,
         createdGiftId: stagedPayments.createdGiftId,
@@ -1455,8 +1454,7 @@ export async function loadBundleBase(opts: {
       .where(eq(stagedPayments.id, opts.anchorId));
     if (!s) return null;
 
-    const committedGiftId =
-      s.status === "reconciled" || s.status === "approved" ? candidateGiftId(s) : candidateGiftId(s);
+    const committedGiftId = candidateGiftId(s);
     const match = committedGiftId
       ? {
           donor: { organizationId: null, individualGiverPersonId: null, householdId: null },

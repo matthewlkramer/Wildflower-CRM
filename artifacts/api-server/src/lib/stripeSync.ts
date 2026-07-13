@@ -8,6 +8,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import type Stripe from "stripe";
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
+import { chargeStatusIn, chargeStatusWhere } from "./derivedStatus";
 import { getUncachableStripeClient } from "./stripeClient";
 import { scoreStripeCharge } from "./stripeMatch";
 import { runProposalPass } from "./stripeReconcile";
@@ -334,12 +335,12 @@ export function buildStagedChargeUpsert(
     disputed: sql`excluded.disputed`,
     rawCharge: sql`coalesce(excluded.raw_charge, ${stripeStagedCharges.rawCharge})`,
     // A charge that transitioned to failed AFTER staging (an ACH debit can
-    // bounce days later) must stop looking like real money: flip a still-
-    // pending, auto-classified row to excluded/failed_charge. Rows a human has
-    // resolved (status guard) or pinned via re-include (manual) are never
-    // touched.
-    status: sql`CASE WHEN ${stripeStagedCharges.status} = 'pending' AND ${stripeStagedCharges.classificationSource} = 'auto' AND excluded.raw_charge->>'status' = 'failed' THEN 'excluded'::staged_payment_status ELSE ${stripeStagedCharges.status} END`,
-    exclusionReason: sql`CASE WHEN ${stripeStagedCharges.status} = 'pending' AND ${stripeStagedCharges.classificationSource} = 'auto' AND excluded.raw_charge->>'status' = 'failed' THEN 'failed_charge'::staged_payment_exclusion_reason ELSE ${stripeStagedCharges.exclusionReason} END`,
+    // bounce days later) must stop looking like real money: set
+    // exclusion_reason on a still-derived-pending, auto-classified row (which
+    // is what derives it to excluded). Rows a human has resolved (gift link /
+    // exclusion facts in the derived-pending guard) or pinned via re-include
+    // (manual) are never touched.
+    exclusionReason: sql`CASE WHEN ${chargeStatusWhere.pending} AND ${stripeStagedCharges.classificationSource} = 'auto' AND excluded.raw_charge->>'status' = 'failed' THEN 'failed_charge'::staged_payment_exclusion_reason ELSE ${stripeStagedCharges.exclusionReason} END`,
     updatedAt: new Date(),
   };
   const base = db
@@ -351,7 +352,7 @@ export function buildStagedChargeUpsert(
       ...(opts.enrichAllStatuses
         ? {}
         : {
-            setWhere: sql`${stripeStagedCharges.status} in ('pending','excluded')`,
+            setWhere: chargeStatusIn(["pending", "excluded"]),
           }),
     });
   return base;
@@ -380,7 +381,8 @@ async function stripeAutoApply(
       const upd = await tx
         .update(stripeStagedCharges)
         .set({
-          status: "approved",
+          // matchedGiftId + autoApplied (with matchConfirmedAt still NULL) is
+          // exactly what derives the row to `match_proposed` — no status write.
           matchStatus: "matched",
           matchedGiftId: giftId,
           autoApplied: true,
@@ -389,7 +391,7 @@ async function stripeAutoApply(
         .where(
           and(
             eq(stripeStagedCharges.id, chargeId),
-            eq(stripeStagedCharges.status, "pending"),
+            chargeStatusWhere.pending,
             sql`NOT EXISTS (
             SELECT 1 FROM staged_payments sp
             WHERE sp.matched_gift_id = ${giftId} OR sp.created_gift_id = ${giftId}
@@ -561,7 +563,6 @@ async function stagePayoutAndCharges(
         refunded: facts.refunded,
         disputed: facts.disputed,
         rawCharge: charge as unknown as Record<string, unknown>,
-        status: chargeFailed ? "excluded" : "pending",
         exclusionReason: chargeFailed ? "failed_charge" : null,
         classificationSource: "auto",
         matchStatus,
@@ -997,7 +998,7 @@ export async function rematchStripeCharges(): Promise<StripeRematchSummary> {
       .from(stripeStagedCharges)
       .where(
         and(
-          eq(stripeStagedCharges.status, "pending"),
+          chargeStatusWhere.pending,
           eq(stripeStagedCharges.matchStatus, "unmatched"),
           isNull(stripeStagedCharges.organizationId),
           isNull(stripeStagedCharges.individualGiverPersonId),
@@ -1036,7 +1037,7 @@ export async function rematchStripeCharges(): Promise<StripeRematchSummary> {
             .where(
               and(
                 eq(stripeStagedCharges.id, row.id),
-                eq(stripeStagedCharges.status, "pending"),
+                chargeStatusWhere.pending,
                 eq(stripeStagedCharges.matchStatus, "unmatched"),
                 isNull(stripeStagedCharges.organizationId),
                 isNull(stripeStagedCharges.individualGiverPersonId),

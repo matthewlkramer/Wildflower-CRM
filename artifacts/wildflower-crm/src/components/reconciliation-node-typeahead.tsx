@@ -143,6 +143,12 @@ export function ReconciliationNodeTypeahead({
               <CommandGroup>
                 {candidates.map((c) => {
                   const alreadyLinked = Boolean(c.alreadyLinkedStagedPaymentId);
+                  // The server may return candidates of a DIFFERENT node type
+                  // (e.g. pledges/opportunities in a unified gift search).
+                  // They stay selectable — a manual pick always wins — and
+                  // carry a type badge so the reviewer knows what they're
+                  // choosing.
+                  const wrongType = c.nodeType !== nodeType;
                   return (
                     <CommandItem
                       key={c.id}
@@ -178,6 +184,13 @@ export function ReconciliationNodeTypeahead({
                           {c.source ? (
                             <Badge variant="outline" className="px-1 py-0 text-[10px]">
                               {CANDIDATE_SOURCE_LABEL[c.source]}
+                            </Badge>
+                          ) : null}
+                          {wrongType ? (
+                            <Badge variant="outline" className="px-1 py-0 text-[10px]">
+                              {c.nodeType === "opportunity"
+                                ? "Pledge / opportunity"
+                                : c.nodeType}
                             </Badge>
                           ) : null}
                         </div>

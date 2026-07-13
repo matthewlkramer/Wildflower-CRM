@@ -13,8 +13,8 @@ import * as zod from 'zod';
 staged_payments row (a QB record is required for every complete match) and
 carries the QB facts plus a compact auto-proposed best guess for the donor /
 gift / opportunity nodes and whether Stripe per-charge evidence backs the
-same money. `reconciled` cards are excluded by default (filter with
-queue=reconciled). Use the graph endpoint for the full candidate detail.
+same money. `match_confirmed` cards are excluded by default (filter with
+queue=done). Use the graph endpoint for the full candidate detail.
 
  * @summary List reconciliation cards — one per QuickBooks staged-payment anchor.
  */
@@ -27,7 +27,7 @@ export const listReconciliationCardsQueryOffsetMin = 0;
 
 
 export const ListReconciliationCardsQueryParams = zod.object({
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('Queue bucket to list. Omit for the active work queue (excludes reconciled\/excluded\/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('Queue bucket to list. Omit for the active work queue (excludes match_confirmed\/excluded rows AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable).'),
   "q": zod.coerce.string().optional().describe('Free-text over payer name \/ reference \/ memo.'),
   "entityId": zod.coerce.string().optional().describe('Filter to one Wildflower legal entity attribution.'),
   "ready": zod.coerce.boolean().optional().describe('Filter to cards whose auto-proposal passes (true) \/ fails (false) the consistency gate.'),
@@ -40,8 +40,8 @@ export const ListReconciliationCardsQueryParams = zod.object({
 export const ListReconciliationCardsResponse = zod.object({
   "data": zod.array(zod.object({
   "stagedPaymentId": zod.string(),
-  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).describe('QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).'),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
   "amount": zod.string().nullish(),
   "dateReceived": zod.string().date().nullish(),
   "payerName": zod.string().nullish(),
@@ -245,7 +245,7 @@ export const GetReconciliationLineageResponse = zod.object({
   "refunded": zod.boolean().optional(),
   "disputed": zod.boolean().optional(),
   "linkSource": zod.enum(['pulled', 'qb_confirmed', 'stripe_pulled', 'stripe_confirmed']).describe('HOW a lineage leg was tied to the anchor.\npulled: from a Stripe-pulled join key (payout↔QB tie, or charge.stripePayoutId).\nqb_confirmed: a reviewer-confirmed link directly to the QB staged row (charge.linkedQbStagedPaymentId \/ donation.linkedQbStagedPaymentId).\nstripe_pulled: a Donorbox donation tied to a Stripe charge via the pulled donation.stripeChargeId key.\nstripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).\n'),
-  "status": zod.string().nullish().describe('The staged charge\'s reconciliation status (pending | reconciled | excluded).'),
+  "status": zod.string().nullish().describe('The staged charge\'s derived reconciliation status (pending | match_proposed | match_confirmed | excluded).'),
   "donorResolved": zod.boolean().describe('True when a donor (org\/person\/household) is already resolved on this charge, so it can be exploded into a gift.'),
   "hasGift": zod.boolean().describe('True when this charge already has a created or matched gift (already exploded).'),
   "resolvedDonorName": zod.string().nullish().describe('The resolved donor\'s display name, when known.')
@@ -396,96 +396,6 @@ export const ApproveReconciliationCardResponse = zod.object({
 })
 
 /**
- * Reviewer feedback for ONE card, newest first. These are the human
-"propose alternative" notes captured beside Approve in the Needs-review
-queue — context for later improving that row's match (and the matcher as
-a whole). Read-only. Open to any authenticated fundraiser.
-
- * @summary List the free-text "propose alternative" comments left on one reconciliation card.
- */
-export const ListReconciliationCardProposalsParams = zod.object({
-  "stagedPaymentId": zod.coerce.string()
-})
-
-export const ListReconciliationCardProposalsResponse = zod.object({
-  "data": zod.array(zod.object({
-  "id": zod.string(),
-  "stagedPaymentId": zod.string().describe('The staged_payments row this comment is attached to (the representative row for a source group).'),
-  "comment": zod.string().describe('The reviewer\'s free-text note \'to the system\'.'),
-  "createdByUserId": zod.string().nullable().describe('Author user id; null if the user row was since removed.'),
-  "createdByUserName": zod.string().nullable().describe('Author display name, joined for convenience.'),
-  "createdAt": zod.string().datetime({})
-}).describe('One reviewer \'propose alternative\' comment left on a reconciliation card, with its author and timestamp.'))
-})
-
-/**
- * Capture a reviewer's free-text comment "to the system" for a staged-payment
-card instead of approving it. Append-only: each call stores a new note with
-the author and timestamp, keyed to the card's staged_payments row (the
-representative row for a source group). Used to flag how a specific row —
-or the matcher overall — should change. Does NOT mutate any match/donor/gift
-state. Open to any authenticated fundraiser.
-
- * @summary Leave a free-text "propose alternative" comment on one reconciliation card.
- */
-export const CreateReconciliationProposalParams = zod.object({
-  "stagedPaymentId": zod.coerce.string()
-})
-
-export const createReconciliationProposalBodyCommentMax = 10000;
-
-
-
-export const CreateReconciliationProposalBody = zod.object({
-  "comment": zod.string().min(1).max(createReconciliationProposalBodyCommentMax).describe('The reviewer\'s note. Trimmed server-side; whitespace-only is rejected.')
-}).describe('Body for leaving a free-text \'propose alternative\' comment on a reconciliation card.')
-
-/**
- * Cross-card feed of every reviewer "propose alternative" comment, newest
-first, each joined with its staged-payment context (payer / amount / date /
-status / resolved gift) so the notes can be triaged later WITHOUT re-querying
-per card. This is the endpoint the agent reads when the user comes back to
-act on the accumulated comments. Read-only.
-
- * @summary List all "propose alternative" comments across cards, joined with staged-payment context.
- */
-export const listReconciliationProposalsQueryLimitDefault = 50;
-export const listReconciliationProposalsQueryLimitMax = 200;
-
-export const listReconciliationProposalsQueryOffsetDefault = 0;
-export const listReconciliationProposalsQueryOffsetMin = 0;
-
-
-
-export const ListReconciliationProposalsQueryParams = zod.object({
-  "stagedPaymentId": zod.coerce.string().optional().describe('Filter to the comments on one card.'),
-  "limit": zod.coerce.number().min(1).max(listReconciliationProposalsQueryLimitMax).default(listReconciliationProposalsQueryLimitDefault),
-  "offset": zod.coerce.number().min(listReconciliationProposalsQueryOffsetMin).default(listReconciliationProposalsQueryOffsetDefault)
-})
-
-export const ListReconciliationProposalsResponse = zod.object({
-  "data": zod.array(zod.object({
-  "id": zod.string(),
-  "stagedPaymentId": zod.string().describe('The staged_payments row this comment is attached to (the representative row for a source group).'),
-  "comment": zod.string().describe('The reviewer\'s free-text note \'to the system\'.'),
-  "createdByUserId": zod.string().nullable().describe('Author user id; null if the user row was since removed.'),
-  "createdByUserName": zod.string().nullable().describe('Author display name, joined for convenience.'),
-  "createdAt": zod.string().datetime({})
-}).describe('One reviewer \'propose alternative\' comment left on a reconciliation card, with its author and timestamp.').and(zod.object({
-  "payerName": zod.string().nullable(),
-  "amount": zod.string().nullable().describe('The staged payment\'s amount (major units).'),
-  "dateReceived": zod.string().date().nullable(),
-  "stagedStatus": zod.string().nullable().describe('The staged payment\'s status at read time (e.g. pending \/ approved \/ excluded).'),
-  "resolvedGiftId": zod.string().nullable().describe('The gift this row is matched\/created\/group-reconciled into, if any.')
-})).describe('A reviewer comment joined with its staged-payment context, for cross-card triage.')),
-  "pagination": zod.object({
-  "page": zod.number(),
-  "limit": zod.number(),
-  "total": zod.number()
-})
-})
-
-/**
  * Free search over QuickBooks staged-payment rows by text / amount / date window,
 with NO card anchor — used by the stray-Stripe worklist to hunt down the QB
 deposit that a yet-unmatched Stripe payout should belong to, and by the
@@ -578,7 +488,7 @@ export const SearchReconciliationPayoutsResponse = zod.object({
   "description": zod.string().nullish().describe('Charge description (charge.description) — often the real donor name \/ memo.'),
   "statementDescriptor": zod.string().nullish().describe('Card statement descriptor shown on the payer\'s statement.'),
   "date": zod.string().date().nullish().describe('Calendar date the charge is credited to (date_received).'),
-  "status": zod.string().nullish().describe('Staged-charge review status (pending\/approved\/rejected\/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie.'),
+  "status": zod.string().nullish().describe('Staged-charge derived review status (pending\/match_proposed\/match_confirmed\/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie.'),
   "exclusionReason": zod.string().nullish().describe('Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, auto-excluded at ingest). Null unless the charge is excluded.'),
   "linkedQbStagedPaymentId": zod.string().nullish().describe('CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied.'),
   "proposedQb": zod.object({
@@ -909,7 +819,7 @@ export const ListReconciliationBundleAnchorsResponse = zod.object({
   "description": zod.string().nullish().describe('Charge description (charge.description) — often the real donor name \/ memo.'),
   "statementDescriptor": zod.string().nullish().describe('Card statement descriptor shown on the payer\'s statement.'),
   "date": zod.string().date().nullish().describe('Calendar date the charge is credited to (date_received).'),
-  "status": zod.string().nullish().describe('Staged-charge review status (pending\/approved\/rejected\/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie.'),
+  "status": zod.string().nullish().describe('Staged-charge derived review status (pending\/match_proposed\/match_confirmed\/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie.'),
   "exclusionReason": zod.string().nullish().describe('Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, auto-excluded at ingest). Null unless the charge is excluded.'),
   "linkedQbStagedPaymentId": zod.string().nullish().describe('CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied.'),
   "proposedQb": zod.object({

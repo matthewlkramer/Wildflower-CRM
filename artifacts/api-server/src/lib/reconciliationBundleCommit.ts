@@ -14,6 +14,7 @@ import { newId } from "./helpers";
 import { buildGiftValuesFromStripeCharge } from "./stripeGift";
 import { recordAudit } from "./audit";
 import { APPROVABLE_STAGED_STATUSES } from "./reconciliationGate";
+import { chargeStatusWhere, stagedStatusIn } from "./derivedStatus";
 import {
   stampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
@@ -141,7 +142,6 @@ export async function createGiftFromChargeInTx(
     .update(stripeStagedCharges)
     .set({
       ...donor,
-      status: "reconciled",
       createdGiftId: newGiftId,
       matchedGiftId: null,
       autoApplied: false,
@@ -153,10 +153,7 @@ export async function createGiftFromChargeInTx(
       updatedAt: new Date(),
     })
     .where(
-      and(
-        eq(stripeStagedCharges.id, charge.id),
-        eq(stripeStagedCharges.status, "pending"),
-      ),
+      and(eq(stripeStagedCharges.id, charge.id), chargeStatusWhere.pending),
     )
     .returning({ id: stripeStagedCharges.id });
   if (updated.length === 0) {
@@ -262,7 +259,6 @@ export async function linkChargeToGiftInTx(
     .update(stripeStagedCharges)
     .set({
       ...effectiveGiftDonor,
-      status: "reconciled",
       matchedGiftId: giftId,
       createdGiftId: null,
       autoApplied: false,
@@ -274,10 +270,7 @@ export async function linkChargeToGiftInTx(
       updatedAt: new Date(),
     })
     .where(
-      and(
-        eq(stripeStagedCharges.id, charge.id),
-        eq(stripeStagedCharges.status, "pending"),
-      ),
+      and(eq(stripeStagedCharges.id, charge.id), chargeStatusWhere.pending),
     )
     .returning({ id: stripeStagedCharges.id });
   if (updated.length === 0) {
@@ -435,16 +428,13 @@ export async function excludeChargeInTx(
   const updated = await tx
     .update(stripeStagedCharges)
     .set({
-      status: "excluded",
+      // Status is DERIVED: setting an exclusion reason ⇒ excluded.
       exclusionReason: args.exclusionReason,
       classificationSource: "manual",
       updatedAt: new Date(),
     })
     .where(
-      and(
-        eq(stripeStagedCharges.id, args.chargeId),
-        eq(stripeStagedCharges.status, "pending"),
-      ),
+      and(eq(stripeStagedCharges.id, args.chargeId), chargeStatusWhere.pending),
     )
     .returning({ id: stripeStagedCharges.id });
   if (updated.length === 0) {
@@ -471,7 +461,7 @@ export async function excludeStagedInTx(
   const updated = await tx
     .update(stagedPayments)
     .set({
-      status: "excluded",
+      // Status is DERIVED: setting an exclusion reason ⇒ excluded.
       exclusionReason: args.exclusionReason,
       classificationSource: "manual",
       updatedAt: new Date(),
@@ -479,7 +469,7 @@ export async function excludeStagedInTx(
     .where(
       and(
         eq(stagedPayments.id, args.stagedPaymentId),
-        inArray(stagedPayments.status, [...APPROVABLE_STAGED_STATUSES]),
+        stagedStatusIn(APPROVABLE_STAGED_STATUSES),
       ),
     )
     .returning({ id: stagedPayments.id });

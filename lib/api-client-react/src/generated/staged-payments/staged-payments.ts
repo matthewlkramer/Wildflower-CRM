@@ -512,75 +512,6 @@ export const useCreateGiftFromStagedPayment = <TError = ErrorType<BadRequestResp
       return useMutation(getCreateGiftFromStagedPaymentMutationOptions(options));
     }
     /**
- * @summary Reject a staged payment (retained so re-sync won't re-stage it).
- */
-export const getRejectStagedPaymentUrl = (id: string,) => {
-
-
-  
-
-  return `/api/staged-payments/${id}/reject`
-}
-
-export const rejectStagedPayment = async (id: string, options?: RequestInit): Promise<StagedPayment> => {
-  
-  return customFetch<StagedPayment>(getRejectStagedPaymentUrl(id),
-  {      
-    ...options,
-    method: 'POST'
-    
-    
-  }
-);}
-  
-
-
-
-export const getRejectStagedPaymentMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectStagedPayment>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof rejectStagedPayment>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['rejectStagedPayment'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-      
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectStagedPayment>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  rejectStagedPayment(id,requestOptions)
-        }
-
-
-
-        
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type RejectStagedPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof rejectStagedPayment>>>
-    
-    export type RejectStagedPaymentMutationError = ErrorType<NotFoundResponse | void>
-
-    /**
- * @summary Reject a staged payment (retained so re-sync won't re-stage it).
- */
-export const useRejectStagedPayment = <TError = ErrorType<NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectStagedPayment>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof rejectStagedPayment>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getRejectStagedPaymentMutationOptions(options));
-    }
-    /**
  * @summary Move an excluded staged payment back to pending (pins classification to manual).
  */
 export const getReIncludeStagedPaymentUrl = (id: string,) => {
@@ -1641,8 +1572,8 @@ export const useConfirmStagedPaymentMatches = <TError = ErrorType<BadRequestResp
  * Reverts many staged-payment matches at once — the bulk equivalent of
 POST /staged-payments/{id}/revert, used to clear auto-applied matches off
 the Auto-matched queue in a single action. Each id is reverted only if it
-is in a revertible state (an approved row that was reconciled to an
-existing gift, auto-minted, group-reconciled, or split); the auto-minted
+is in a revertible state (a match_proposed/match_confirmed row that was
+tied to an existing gift, auto-minted, group-reconciled, or split); the auto-minted
 gift is deleted, pre-existing gifts are untouched. Ids that are missing or
 not revertible (e.g. a manually-created gift) are silently skipped rather
 than failing the whole batch. The response reports which ids were reverted
@@ -1719,11 +1650,11 @@ export const useRevertStagedPaymentMatches = <TError = ErrorType<BadRequestRespo
     }
     /**
  * Stamps the donor match as human-confirmed (match_confirmed_at /
-match_confirmed_by_user_id). Works on a pending row with a donor OR an
-auto-applied approved row (graduating it from "Auto-matched" to "Done").
+match_confirmed_by_user_id). Works on a pending row with a donor OR a
+match_proposed row (graduating it from "Auto-matched" to "Done").
 Does not change the donor or mint a gift.
 
- * @summary Confirm a system-suggested or auto-applied donor match (→ human approved / done).
+ * @summary Confirm a system-suggested or auto-applied donor match (→ human-confirmed / done).
  */
 export const getConfirmStagedPaymentMatchUrl = (id: string,) => {
 
@@ -1779,7 +1710,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type ConfirmStagedPaymentMatchMutationError = ErrorType<NotFoundResponse | void>
 
     /**
- * @summary Confirm a system-suggested or auto-applied donor match (→ human approved / done).
+ * @summary Confirm a system-suggested or auto-applied donor match (→ human-confirmed / done).
  */
 export const useConfirmStagedPaymentMatch = <TError = ErrorType<NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmStagedPaymentMatch>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -1861,14 +1792,14 @@ export const useUnmatchStagedPayment = <TError = ErrorType<NotFoundResponse | vo
       return useMutation(getUnmatchStagedPaymentMutationOptions(options));
     }
     /**
- * Returns an approved staged payment to the pending queue. If it was
+ * Returns a gift-linked staged payment to the pending queue. If it was
 reconciled to an existing gift (matchedGiftId), the link is cleared and
 the pre-existing gift is untouched. If it was an auto-minted gift
 (createdGiftId + autoApplied), the auto-created gift is deleted. A
 manually created gift cannot be reverted (it would orphan a
 fundraiser-created ledger row). The donor match is left intact.
 
- * @summary Undo an approved reconciliation/creation (approved → pending).
+ * @summary Undo a booked reconciliation/creation (match_proposed/match_confirmed → pending).
  */
 export const getRevertStagedPaymentUrl = (id: string,) => {
 
@@ -1924,7 +1855,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type RevertStagedPaymentMutationError = ErrorType<NotFoundResponse | void>
 
     /**
- * @summary Undo an approved reconciliation/creation (approved → pending).
+ * @summary Undo a booked reconciliation/creation (match_proposed/match_confirmed → pending).
  */
 export const useRevertStagedPayment = <TError = ErrorType<NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertStagedPayment>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}

@@ -22,6 +22,7 @@ import { getUncachableStripeClient } from "./stripeClient";
 import { upsertSettlementLink, deleteSettlementLink } from "./settlementLink";
 import { proposeSettlementLink } from "./settlementWriter";
 import { settlementLumpWhere } from "./settlementLump";
+import { stagedStatusSql, stagedStatusWhere } from "./derivedStatus";
 
 /**
  * Stripe payout ↔ QuickBooks deposit-lump reconciliation (the audit join).
@@ -288,7 +289,7 @@ export async function runProposalPass(
           qbTransactionMemo: stagedPayments.qbTransactionMemo,
           rawReference: stagedPayments.rawReference,
           qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
-          status: stagedPayments.status,
+          status: stagedStatusSql,
           matchedGiftId: stagedPayments.matchedGiftId,
           createdGiftId: stagedPayments.createdGiftId,
           groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
@@ -297,10 +298,11 @@ export async function runProposalPass(
         .where(
           and(
             looksLikeLump,
-            // `reconciled` is the new model's terminal tie (a deposit already
-            // bound to a gift as evidence); it remains a valid Stripe-payout
-            // candidate so the payout can be reconciled against that same gift.
-            inArray(stagedPayments.status, ["pending", "approved", "reconciled"]),
+            // A booked deposit (derived match_confirmed — already bound to a
+            // gift as evidence) remains a valid Stripe-payout candidate so the
+            // payout can be reconciled against that same gift (as a conflict);
+            // only excluded noise is out.
+            sql`NOT ${stagedStatusWhere.excluded}`,
             gte(stagedPayments.dateReceived, fromStr),
             lte(stagedPayments.dateReceived, toStr),
             sql`abs(${stagedPayments.amount} - ${target}::numeric) <= 5.00`,
@@ -376,12 +378,10 @@ export async function runProposalPass(
 
     assigned.add(best.c.id);
     const giftId = candidateGiftId(best.c);
-    // A deposit already resolved to a gift (legacy `approved` or new-model
-    // `reconciled`) is a conflict: the payout's per-charge Stripe gifts are the
-    // precise record, so the human must confirm reconciling the coarse deposit.
-    const isConflict =
-      (best.c.status === "approved" || best.c.status === "reconciled") &&
-      giftId != null;
+    // A deposit already resolved to a gift (any gift-link column set) is a
+    // conflict: the payout's per-charge Stripe gifts are the precise record,
+    // so the human must confirm reconciling the coarse deposit.
+    const isConflict = giftId != null;
 
     // Money-safety guard: this pass scored `best.c` from a read taken BEFORE the
     // write, and a concurrent standalone-QB confirm (bundle workbench or staged

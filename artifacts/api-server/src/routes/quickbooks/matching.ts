@@ -6,7 +6,16 @@ import {
   giftAllocations,
   paymentApplications,
 } from "@workspace/db/schema";
-import { and, eq, inArray, notInArray, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  getTableColumns,
+  inArray,
+  isNull,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { asyncHandler, newId, notFound, paramId } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import {
@@ -33,9 +42,14 @@ import {
   confirmPaymentApplicationsForPayment,
   qbLedgerExistsForGiftExcludingPayment,
 } from "../../lib/paymentApplications";
-import { stagedReturnColumns } from "./shared";
+import { stagedReturnColumns, stagedRowWithStatus } from "./shared";
+import {
+  stagedStatusSql,
+  stagedStatusWhere,
+  stagedStatusIn,
+} from "../../lib/derivedStatus";
 import { giftHeaderColumns } from "../giftsAndPayments";
-import { isStagedApprovable, amountWithinFeeBand } from "../../lib/reconciliationGate";
+import { amountWithinFeeBand } from "../../lib/reconciliationGate";
 import {
   isGroupMember,
   groupMemberIdsFor,
@@ -45,7 +59,7 @@ const router: IRouter = Router();
 
 // ─── POST /staged-payments/:id/reconcile ───────────────────────────────────
 // Tie a staged payment to an EXISTING gift (no new gift minted). Sets
-// matchedGiftId → the chosen gift, status approved, autoApplied=false. An
+// matchedGiftId → the chosen gift, autoApplied=false (derives match_confirmed). An
 // explicit human Match treats the selected gift as authoritative: the staged
 // row ADOPTS the gift's donor, overriding any auto-guessed donor. Guards: row
 // pending, gift exists with a single valid donor, gift not already linked.
@@ -70,7 +84,10 @@ router.post(
     const { giftId, allocationId } = parsed.data;
 
     const existing = await db
-      .select()
+      .select({
+        ...getTableColumns(stagedPayments),
+        status: stagedStatusSql.as("status"),
+      })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
@@ -180,9 +197,8 @@ router.post(
           .set({
             ...finalDonor,
             // The new model: this staged row is permanent EVIDENCE tied to the
-            // gift, never archived and never a second gift. `reconciled` (not
-            // `approved`) marks that terminal tie.
-            status: "reconciled",
+            // gift, never archived and never a second gift. matched_gift_id +
+            // autoApplied=false derive the terminal match_confirmed status.
             matchedGiftId: giftId,
             createdGiftId: null,
             autoApplied: false,
@@ -196,7 +212,7 @@ router.post(
           .where(
             and(
               eq(stagedPayments.id, id),
-              eq(stagedPayments.status, "pending"),
+              stagedStatusWhere.pending,
               // Gift must not already be QB-linked to another staged payment.
               // The ledger unifies direct + split + group-reconciled links, so
               // one existence check replaces the legacy direct + split guards.
@@ -363,7 +379,10 @@ router.post(
     try {
       await db.transaction(async (tx) => {
         const locked = await tx
-          .select()
+          .select({
+            ...getTableColumns(stagedPayments),
+            status: stagedStatusSql.as("status"),
+          })
           .from(stagedPayments)
           .where(inArray(stagedPayments.id, ids))
           .for("update");
@@ -381,21 +400,13 @@ router.post(
           .for("update");
 
         for (const row of locked) {
-          // "Open for reconciliation" mirrors the unified reconciler's
-          // isStagedApprovable: a row is groupable while it is `pending` OR a
-          // legacy `approved` row that carries NO gift link. An approved row
-          // whose gift was later deleted is stranded here (the gift-link FKs are
-          // ON DELETE SET NULL, so the link clears but the status stays
-          // `approved`); it is still real work and must group, exactly as the
-          // single-row reconciler already allows. Terminal rows
-          // (`reconciled`/`excluded`) or any row that still points at a gift
-          // (matched/created/group-reconciled) are genuinely resolved → reject.
-          if (
-            !isStagedApprovable(row.status) ||
-            row.matchedGiftId != null ||
-            row.createdGiftId != null ||
-            row.groupReconciledGiftId != null
-          ) {
+          // "Open for reconciliation" = derived status `pending`. The derived
+          // model already folds the legacy edge cases in: a row whose gift was
+          // later deleted (gift-link FKs are ON DELETE SET NULL) loses its
+          // evidence and derives back to `pending`, so it is still real work
+          // and groups; rows with any gift link, settlement/split evidence
+          // (match_proposed / match_confirmed) or an exclusion are not open.
+          if (row.status !== "pending") {
             throw new Error(NOT_PENDING);
           }
         }
@@ -492,8 +503,7 @@ router.post(
         const stamp = {
           ...giftDonor,
           // Permanent EVIDENCE tied to the gift (never archived, never a second
-          // gift): `reconciled`, not `approved`.
-          status: "reconciled" as const,
+          // gift): the gift links below derive the terminal match_confirmed.
           createdGiftId: null,
           autoApplied: false,
           matchStatus: "matched" as const,
@@ -631,9 +641,9 @@ router.post(
 // single incoming-money record — e.g. a Stripe payout that nets fees into a
 // lump sum — covers several different donors' gifts). Each portion links to an
 // existing gift for that gift's own gross amount; no new gift is minted and
-// QuickBooks is never written back. The staged row is marked approved (human
-// confirmed) and its own donor / single-gift link columns are cleared — its
-// resolution lives entirely in counted payment_applications rows. Guards: row pending; at
+// QuickBooks is never written back. The staged row's own donor / single-gift
+// link columns are cleared — its resolution lives entirely in counted
+// payment_applications rows (which derive match_confirmed). Guards: row pending; at
 // least two distinct gifts; each gift exists, carries a single valid donor, and
 // is not already linked anywhere (matched / created / group / split); combined
 // gross within the fee-band around the staged net amount. Reversible as a whole
@@ -724,7 +734,10 @@ router.post(
     try {
       await db.transaction(async (tx) => {
         const locked = await tx
-          .select()
+          .select({
+            ...getTableColumns(stagedPayments),
+            status: stagedStatusSql.as("status"),
+          })
           .from(stagedPayments)
           .where(eq(stagedPayments.id, id))
           .for("update")
@@ -884,7 +897,6 @@ router.post(
             matchedGiftId: null,
             createdGiftId: null,
             groupReconciledGiftId: null,
-            status: "approved",
             autoApplied: false,
             matchStatus: "matched",
             matchMethod: "manual",
@@ -894,9 +906,11 @@ router.post(
             approvedAt: new Date(),
             updatedAt: new Date(),
           })
-          .where(
-            and(eq(stagedPayments.id, id), eq(stagedPayments.status, "pending")),
-          );
+          // No derived-pending re-check here: the row was verified pending
+          // under its FOR UPDATE lock at the top of this tx, and the counted
+          // ledger rows just inserted above ARE the resolution — the row
+          // already derives match_confirmed by design at this point.
+          .where(eq(stagedPayments.id, id));
       });
     } catch (e) {
       if (e instanceof Error && e.message === NOT_FOUND) {
@@ -999,8 +1013,11 @@ router.post(
           and(
             inArray(stagedPayments.id, ids),
             sql`num_nonnulls(${stagedPayments.organizationId}, ${stagedPayments.individualGiverPersonId}, ${stagedPayments.householdId}) >= 1`,
-            sql`(${stagedPayments.status} = 'pending'
-                 OR (${stagedPayments.status} = 'approved' AND ${stagedPayments.autoApplied} = true))`,
+            stagedStatusIn(["pending", "match_proposed"]),
+            // Only the still-unconfirmed set: a row whose donor match was
+            // already human-stamped is done from this queue's point of view,
+            // even if it derives `pending` money-wise (no gift yet).
+            isNull(stagedPayments.matchConfirmedAt),
           ),
         )
         .returning({ id: stagedPayments.id });
@@ -1044,8 +1061,9 @@ router.post(
           and(
             eq(stagedPayments.id, id),
             sql`num_nonnulls(${stagedPayments.organizationId}, ${stagedPayments.individualGiverPersonId}, ${stagedPayments.householdId}) >= 1`,
-            sql`(${stagedPayments.status} = 'pending'
-                 OR (${stagedPayments.status} = 'approved' AND ${stagedPayments.autoApplied} = true))`,
+            stagedStatusIn(["pending", "match_proposed"]),
+            // Mirror confirm-matches: only still-unconfirmed rows.
+            isNull(stagedPayments.matchConfirmedAt),
           ),
         )
         .returning(stagedReturnColumns);
@@ -1054,7 +1072,7 @@ router.post(
       if (updated) {
         await confirmPaymentApplicationsForPayment(tx, id, user.id, now);
       }
-      return updated;
+      return updated ? stagedRowWithStatus(updated) : updated;
     });
     if (!row) {
       const exists = await db
@@ -1081,7 +1099,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const id = paramId(req);
     const existing = await db
-      .select({ status: stagedPayments.status })
+      .select({ status: stagedStatusSql.as("status") })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
@@ -1107,9 +1125,7 @@ router.post(
         matchConfirmedAt: null,
         updatedAt: new Date(),
       })
-      .where(
-        and(eq(stagedPayments.id, id), eq(stagedPayments.status, "pending")),
-      )
+      .where(and(eq(stagedPayments.id, id), stagedStatusWhere.pending))
       .returning(stagedReturnColumns);
     if (!row) {
       res.status(409).json({
@@ -1118,7 +1134,7 @@ router.post(
       });
       return;
     }
-    res.json(row);
+    res.json(stagedRowWithStatus(row));
   }),
 );
 

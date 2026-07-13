@@ -42,6 +42,11 @@ import {
   DEFAULT_GIFT_ID_SQL,
 } from "../../lib/paymentApplications";
 import { giftMatchAmountBounds } from "../../lib/giftMatch";
+import {
+  stagedStatusSql,
+  stagedStatusWhere,
+  deriveStagedPaymentStatus,
+} from "../../lib/derivedStatus";
 
 export function requireAdmin(req: Request, res: Response): boolean {
   const me = getAppUser(req);
@@ -108,16 +113,15 @@ export const hasNoGiftLink = sql`(
 export const isParkedFiscallyRow = sql`(${isFiscallySponsoredRow} AND ${hasNoGiftLink})`;
 
 // Derived queue bucket for a staged row (kept in sync with the where-clauses
-// in queueWhere below).
+// in queueWhere below). Buckets are a pure re-labeling of the derived status
+// (lib/derivedStatus.ts): excluded → excluded, match_proposed → auto_matched,
+// pending → needs_review / fiscally_sponsored (parked), match_confirmed → done.
 export const queueExpr = sql<string>`
   CASE
-    WHEN ${stagedPayments.status} = 'excluded' THEN 'excluded'
-    WHEN ${stagedPayments.status} = 'rejected' THEN 'rejected'
-    WHEN ${stagedPayments.status} = 'pending' AND ${isParkedFiscallyRow} THEN 'fiscally_sponsored'
-    WHEN ${stagedPayments.status} = 'pending'  THEN 'needs_review'
-    WHEN ${stagedPayments.status} = 'approved'
-         AND ${stagedPayments.autoApplied} = true
-         AND ${stagedPayments.matchConfirmedAt} IS NULL THEN 'auto_matched'
+    WHEN ${stagedStatusWhere.excluded} THEN 'excluded'
+    WHEN ${stagedStatusWhere.match_proposed} THEN 'auto_matched'
+    WHEN ${stagedStatusWhere.pending} AND ${isParkedFiscallyRow} THEN 'fiscally_sponsored'
+    WHEN ${stagedStatusWhere.pending} THEN 'needs_review'
     ELSE 'done'
   END
 `.as("queue");
@@ -141,8 +145,22 @@ const {
 const stagedReturnColumns = getTableColumns(stagedPayments);
 export { stagedReturnColumns };
 export type StagedReturnRow = typeof stagedPayments.$inferSelect;
+
+// Attach the derived status to a raw staged row echoed by a mutation endpoint.
+// The TS derivation covers the row-local facts; the two EXISTS arms (confirmed
+// settlement link / counted ledger row) default to false, which is correct for
+// every mutation echo: revert deletes the ledger rows before echoing, and the
+// settlement-only deposit shape is never echoed by these endpoints.
+export function stagedRowWithStatus(
+  row: StagedReturnRow,
+): StagedReturnRow & { status: ReturnType<typeof deriveStagedPaymentStatus> } {
+  return { ...row, status: deriveStagedPaymentStatus(row) };
+}
 export const stagedSelect = {
   ...stagedColumns,
+  // The DERIVED reconciliation status (no stored column exists) — see
+  // lib/derivedStatus.ts for the precedence rules.
+  status: stagedStatusSql.as("status"),
   queue: queueExpr,
   organizationName: organizations.name,
   householdName: households.name,
@@ -362,8 +380,7 @@ export type Queue =
   | "fiscally_sponsored"
   | "auto_matched"
   | "excluded"
-  | "done"
-  | "rejected";
+  | "done";
 
 export const STAGED_SORTS = [
   "date_desc",
@@ -430,33 +447,20 @@ export function stagedSearchWhere(term: string) {
 export function queueWhere(queue: Queue) {
   switch (queue) {
     case "auto_matched":
-      return and(
-        eq(stagedPayments.status, "approved"),
-        eq(stagedPayments.autoApplied, true),
-        sql`${stagedPayments.matchConfirmedAt} IS NULL`,
-      );
+      // System-applied matches awaiting human review.
+      return stagedStatusWhere.match_proposed;
     case "done":
-      // Human-resolved rows: a confirmed/manual `approved` reconcile-or-mint, OR
-      // any `reconciled` row (a row whose gift is now an INDEPENDENT source of
-      // truth tied to this evidence — the new reconciliation model). Both are
-      // terminal "done" work.
-      return or(
-        and(
-          eq(stagedPayments.status, "approved"),
-          sql`(${stagedPayments.matchConfirmedAt} IS NOT NULL OR ${stagedPayments.autoApplied} = false)`,
-        ),
-        eq(stagedPayments.status, "reconciled"),
-      );
+      // Booked money — a gift link, a confirmed settlement (deposit lump
+      // settled against a Stripe payout), or a counted ledger row (splits).
+      return stagedStatusWhere.match_confirmed;
     case "excluded":
-      return eq(stagedPayments.status, "excluded");
-    case "rejected":
-      return eq(stagedPayments.status, "rejected");
+      return stagedStatusWhere.excluded;
     case "fiscally_sponsored":
       // The "Fiscally-sponsored without corresponding gift" worklist: pending
       // money attributed to a fiscally sponsored entity that has NO gift yet —
       // parked here so a fundraiser can create the gift by hand. Sponsored money
       // that already matches a gift is NOT parked (it reconciles in the main flow).
-      return and(eq(stagedPayments.status, "pending"), isParkedFiscallyRow);
+      return and(stagedStatusWhere.pending, isParkedFiscallyRow);
     case "needs_review":
     default:
       // Pending money that is NOT parked-fiscally-sponsored. NULL entity_id
@@ -464,7 +468,7 @@ export function queueWhere(queue: Queue) {
       // so guard it explicitly with an IS NULL branch. Sponsored money that already
       // has a gift flows here normally (it is not parked).
       return and(
-        eq(stagedPayments.status, "pending"),
+        stagedStatusWhere.pending,
         or(isNull(stagedPayments.entityId), not(isParkedFiscallyRow)),
       );
   }
@@ -531,12 +535,14 @@ export async function revertOneStagedPayment(
         .for("update")
         .then((r) => r[0]);
       if (!locked) throw new Error(REVERT_NOT_FOUND);
-      // Revertible terminal states: `approved` (legacy reconcile/mint) and
-      // `reconciled` (the new model's evidence-tied-to-an-independent-gift). A
-      // `reconciled` deposit lump tied to a Stripe PAYOUT (no matched/created/
-      // group gift of its own) falls through every branch below to
-      // not-revertible — it is undone via the payout revert, not here.
-      if (locked.status !== "approved" && locked.status !== "reconciled") {
+      // Facts-based revertibility (status is derived, never stored): an
+      // excluded row is un-excluded via the exclusion actions, not reverted
+      // here. A row with no resolution facts at all (pending) falls through
+      // the branches below to not-revertible, as does a deposit lump whose
+      // only resolution is a confirmed settlement link to a Stripe PAYOUT
+      // (no matched/created/group gift, no counted ledger rows) — that shape
+      // is undone via the payout revert, not here.
+      if (locked.exclusionReason != null) {
         throw new Error(REVERT_NOT_REVERTIBLE);
       }
 
@@ -575,7 +581,6 @@ export async function revertOneStagedPayment(
         const [row] = await tx
           .update(stagedPayments)
           .set({
-            status: "pending",
             matchedGiftId: null,
             createdGiftId: null,
             groupReconciledGiftId: null,
@@ -636,7 +641,6 @@ export async function revertOneStagedPayment(
         await tx
           .update(stagedPayments)
           .set({
-            status: "pending",
             matchedGiftId: null,
             createdGiftId: null,
             groupReconciledGiftId: null,
@@ -698,7 +702,6 @@ export async function revertOneStagedPayment(
       const [row] = await tx
         .update(stagedPayments)
         .set({
-          status: "pending",
           matchedGiftId: null,
           createdGiftId: null,
           autoApplied: false,

@@ -16,7 +16,7 @@ export const listStagedPaymentsQueryPageDefault = 1;
 
 
 export const ListStagedPaymentsQueryParams = zod.object({
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('Which queue to list (default needs_review).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('Which queue to list (default needs_review).'),
   "sort": zod.enum(['date_desc', 'date_asc', 'amount_desc', 'amount_asc', 'payer_asc', 'payer_desc']).optional().describe('Sort order (default date_desc).'),
   "search": zod.coerce.string().optional().describe('Free-text filter across payer, memo, and line item \/ account \/ class detail.'),
   "entity": zod.coerce.string().optional().describe('Restrict to one Wildflower entity (entities.id). Empty or \'all\' = no restriction; the Foundation id also includes unattributed (null-entity) rows.'),
@@ -38,7 +38,7 @@ export const ListStagedPaymentsResponse = zod.object({
   "payerEmail": zod.string().nullish(),
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
-  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
   "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
@@ -80,7 +80,7 @@ export const ListStagedPaymentsResponse = zod.object({
   "approvedAt": zod.string().datetime({}).nullish(),
   "rejectedByUserId": zod.string().nullish(),
   "rejectedAt": zod.string().datetime({}).nullish(),
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
   "organizationName": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
@@ -215,7 +215,7 @@ export const ResolveStagedPaymentResponse = zod.object({
   "payerEmail": zod.string().nullish(),
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
-  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
   "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
@@ -257,7 +257,7 @@ export const ResolveStagedPaymentResponse = zod.object({
   "approvedAt": zod.string().datetime({}).nullish(),
   "rejectedByUserId": zod.string().nullish(),
   "rejectedAt": zod.string().datetime({}).nullish(),
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
   "organizationName": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
@@ -302,105 +302,6 @@ export const CreateGiftFromStagedPaymentParams = zod.object({
 })
 
 /**
- * @summary Reject a staged payment (retained so re-sync won't re-stage it).
- */
-export const RejectStagedPaymentParams = zod.object({
-  "id": zod.coerce.string()
-})
-
-export const RejectStagedPaymentResponse = zod.object({
-  "id": zod.string(),
-  "realmId": zod.string(),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
-  "qbEntityId": zod.string(),
-  "qbLineId": zod.string().nullish(),
-  "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),
-  "amount": zod.string().nullish(),
-  "dateReceived": zod.string().date().nullish(),
-  "payerName": zod.string().nullish(),
-  "payerEmail": zod.string().nullish(),
-  "rawReference": zod.string().nullish(),
-  "lineDescription": zod.string().nullish(),
-  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
-  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
-  "classificationSource": zod.enum(['auto', 'manual']),
-  "lineItemNames": zod.array(zod.string()).nullish(),
-  "lineAccountNames": zod.array(zod.string()).nullish(),
-  "lineClasses": zod.array(zod.string()).nullish(),
-  "qbPayerType": zod.enum(['vendor', 'customer', 'employee']).nullish().describe('The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line\'s Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).'),
-  "qbPayerId": zod.string().nullish(),
-  "qbPaymentMethod": zod.string().nullish(),
-  "qbCheckNumber": zod.string().nullish(),
-  "qbDepositToAccountName": zod.string().nullish(),
-  "qbDocNumber": zod.string().nullish(),
-  "qbBillingAddress": zod.string().nullish(),
-  "qbTransactionMemo": zod.string().nullish(),
-  "qbCurrency": zod.string().nullish(),
-  "qbExchangeRate": zod.string().nullish(),
-  "qbCreateTime": zod.string().datetime({}).nullish(),
-  "qbLinkedTxn": zod.array(zod.object({
-  "txnId": zod.string(),
-  "txnType": zod.string()
-})).nullish(),
-  "qbDepositLinks": zod.array(zod.object({
-  "txnId": zod.string(),
-  "txnType": zod.string()
-})).nullish().describe('Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)'),
-  "matchStatus": zod.enum(['matched', 'suggested', 'unmatched']),
-  "matchScore": zod.number().nullish(),
-  "matchMethod": zod.enum(['email', 'name', 'name_amount_date', 'amount_date', 'memo', 'intermediary', 'manual']).nullish(),
-  "matchConfirmedByUserId": zod.string().nullish(),
-  "matchConfirmedAt": zod.string().datetime({}).nullish(),
-  "organizationId": zod.string().nullish(),
-  "individualGiverPersonId": zod.string().nullish(),
-  "householdId": zod.string().nullish(),
-  "matchedPaymentIntermediaryId": zod.string().nullish(),
-  "matchedGiftId": zod.string().nullish(),
-  "createdGiftId": zod.string().nullish(),
-  "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
-  "autoApplied": zod.boolean(),
-  "approvedByUserId": zod.string().nullish(),
-  "approvedAt": zod.string().datetime({}).nullish(),
-  "rejectedByUserId": zod.string().nullish(),
-  "rejectedAt": zod.string().datetime({}).nullish(),
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).'),
-  "organizationName": zod.string().nullish(),
-  "householdName": zod.string().nullish(),
-  "individualGiverPersonName": zod.string().nullish(),
-  "intermediaryName": zod.string().nullish(),
-  "entityId": zod.string().nullish().describe('Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).'),
-  "entityName": zod.string().nullish().describe('Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.'),
-  "entitySource": zod.enum(['auto', 'manual']).describe('Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.'),
-  "fundingSource": zod.enum(['stripe', 'brokerage', 'daf', 'donorbox', 'paypal', 'wire_ach', 'check', 'cash', 'employer_match', 'other']).nullish().describe('WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.'),
-  "fundingSourceProvenance": zod.enum(['auto', 'manual']).describe('Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.'),
-  "objectCode": zod.string().nullish(),
-  "objectCodeOverride": zod.string().nullish(),
-  "revenueLocation": zod.string().nullish(),
-  "revenueLocationOverride": zod.string().nullish(),
-  "revenueClass": zod.string().nullish(),
-  "revenueClassOverride": zod.string().nullish(),
-  "codingFlags": zod.array(zod.string()).nullish().describe('Coding flags surfaced for human review (e.g. location_default, payer_type_assumed).'),
-  "deferredRevenue": zod.enum(['yes', 'no', 'na']).nullish(),
-  "deferredRevenueReason": zod.string().nullish(),
-  "resolvedGiftId": zod.string().nullish(),
-  "resolvedGiftName": zod.string().nullish(),
-  "resolvedGiftAmount": zod.string().nullish(),
-  "resolvedGiftDate": zod.string().date().nullish(),
-  "splitCount": zod.number().optional().describe('How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.'),
-  "splitTotal": zod.string().nullish().describe('Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.'),
-  "splitGiftNames": zod.array(zod.string()).nullish().describe('Names of the gifts this staged payment is split across, for display. Null when not split.'),
-  "giftAlreadyLinkedElsewhere": zod.boolean().optional().describe('True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn\'t been created yet (create a new gift for it, or exclude if it\'s a duplicate).'),
-  "matchedRuleId": zod.string().nullish().describe('Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.'),
-  "matchedRuleName": zod.string().nullish().describe('Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.'),
-  "reconciliationLanes": zod.object({
-  "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
-  "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
-}).describe('The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).').optional().describe('Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).'),
-  "createdAt": zod.string().datetime({}),
-  "updatedAt": zod.string().datetime({})
-})
-
-/**
  * @summary Move an excluded staged payment back to pending (pins classification to manual).
  */
 export const ReIncludeStagedPaymentParams = zod.object({
@@ -420,7 +321,7 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   "payerEmail": zod.string().nullish(),
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
-  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
   "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
@@ -462,7 +363,7 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   "approvedAt": zod.string().datetime({}).nullish(),
   "rejectedByUserId": zod.string().nullish(),
   "rejectedAt": zod.string().datetime({}).nullish(),
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
   "organizationName": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
@@ -530,7 +431,7 @@ export const SetStagedPaymentEntityResponse = zod.object({
   "payerEmail": zod.string().nullish(),
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
-  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
   "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
@@ -572,7 +473,7 @@ export const SetStagedPaymentEntityResponse = zod.object({
   "approvedAt": zod.string().datetime({}).nullish(),
   "rejectedByUserId": zod.string().nullish(),
   "rejectedAt": zod.string().datetime({}).nullish(),
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
   "organizationName": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
@@ -640,7 +541,7 @@ export const SetStagedPaymentFundingSourceResponse = zod.object({
   "payerEmail": zod.string().nullish(),
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
-  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
   "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
@@ -682,7 +583,7 @@ export const SetStagedPaymentFundingSourceResponse = zod.object({
   "approvedAt": zod.string().datetime({}).nullish(),
   "rejectedByUserId": zod.string().nullish(),
   "rejectedAt": zod.string().datetime({}).nullish(),
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
   "organizationName": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
@@ -760,7 +661,7 @@ export const SetStagedPaymentCodingResponse = zod.object({
   "payerEmail": zod.string().nullish(),
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
-  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
   "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
@@ -802,7 +703,7 @@ export const SetStagedPaymentCodingResponse = zod.object({
   "approvedAt": zod.string().datetime({}).nullish(),
   "rejectedByUserId": zod.string().nullish(),
   "rejectedAt": zod.string().datetime({}).nullish(),
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
   "organizationName": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
@@ -870,7 +771,7 @@ export const ExcludeStagedPaymentResponse = zod.object({
   "payerEmail": zod.string().nullish(),
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
-  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
   "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
@@ -912,7 +813,7 @@ export const ExcludeStagedPaymentResponse = zod.object({
   "approvedAt": zod.string().datetime({}).nullish(),
   "rejectedByUserId": zod.string().nullish(),
   "rejectedAt": zod.string().datetime({}).nullish(),
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
   "organizationName": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
@@ -1534,8 +1435,8 @@ export const ConfirmStagedPaymentMatchesResponse = zod.object({
  * Reverts many staged-payment matches at once — the bulk equivalent of
 POST /staged-payments/{id}/revert, used to clear auto-applied matches off
 the Auto-matched queue in a single action. Each id is reverted only if it
-is in a revertible state (an approved row that was reconciled to an
-existing gift, auto-minted, group-reconciled, or split); the auto-minted
+is in a revertible state (a match_proposed/match_confirmed row that was
+tied to an existing gift, auto-minted, group-reconciled, or split); the auto-minted
 gift is deleted, pre-existing gifts are untouched. Ids that are missing or
 not revertible (e.g. a manually-created gift) are silently skipped rather
 than failing the whole batch. The response reports which ids were reverted
@@ -1557,11 +1458,11 @@ export const RevertStagedPaymentMatchesResponse = zod.object({
 
 /**
  * Stamps the donor match as human-confirmed (match_confirmed_at /
-match_confirmed_by_user_id). Works on a pending row with a donor OR an
-auto-applied approved row (graduating it from "Auto-matched" to "Done").
+match_confirmed_by_user_id). Works on a pending row with a donor OR a
+match_proposed row (graduating it from "Auto-matched" to "Done").
 Does not change the donor or mint a gift.
 
- * @summary Confirm a system-suggested or auto-applied donor match (→ human approved / done).
+ * @summary Confirm a system-suggested or auto-applied donor match (→ human-confirmed / done).
  */
 export const ConfirmStagedPaymentMatchParams = zod.object({
   "id": zod.coerce.string()
@@ -1580,7 +1481,7 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   "payerEmail": zod.string().nullish(),
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
-  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
   "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
@@ -1622,7 +1523,7 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   "approvedAt": zod.string().datetime({}).nullish(),
   "rejectedByUserId": zod.string().nullish(),
   "rejectedAt": zod.string().datetime({}).nullish(),
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
   "organizationName": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
@@ -1679,7 +1580,7 @@ export const UnmatchStagedPaymentResponse = zod.object({
   "payerEmail": zod.string().nullish(),
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
-  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
   "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
@@ -1721,7 +1622,7 @@ export const UnmatchStagedPaymentResponse = zod.object({
   "approvedAt": zod.string().datetime({}).nullish(),
   "rejectedByUserId": zod.string().nullish(),
   "rejectedAt": zod.string().datetime({}).nullish(),
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
   "organizationName": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
@@ -1759,14 +1660,14 @@ export const UnmatchStagedPaymentResponse = zod.object({
 })
 
 /**
- * Returns an approved staged payment to the pending queue. If it was
+ * Returns a gift-linked staged payment to the pending queue. If it was
 reconciled to an existing gift (matchedGiftId), the link is cleared and
 the pre-existing gift is untouched. If it was an auto-minted gift
 (createdGiftId + autoApplied), the auto-created gift is deleted. A
 manually created gift cannot be reverted (it would orphan a
 fundraiser-created ledger row). The donor match is left intact.
 
- * @summary Undo an approved reconciliation/creation (approved → pending).
+ * @summary Undo a booked reconciliation/creation (match_proposed/match_confirmed → pending).
  */
 export const RevertStagedPaymentParams = zod.object({
   "id": zod.coerce.string()
@@ -1785,7 +1686,7 @@ export const RevertStagedPaymentResponse = zod.object({
   "payerEmail": zod.string().nullish(),
   "rawReference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
-  "status": zod.enum(['pending', 'approved', 'rejected', 'excluded', 'reconciled']).describe('Lifecycle of a staged payment \/ Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
   "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
   "classificationSource": zod.enum(['auto', 'manual']),
   "lineItemNames": zod.array(zod.string()).nullish(),
@@ -1827,7 +1728,7 @@ export const RevertStagedPaymentResponse = zod.object({
   "approvedAt": zod.string().datetime({}).nullish(),
   "rejectedByUserId": zod.string().nullish(),
   "rejectedAt": zod.string().datetime({}).nullish(),
-  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done', 'rejected', 'reconciled']).optional().describe('QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).'),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
   "organizationName": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),

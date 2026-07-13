@@ -7,6 +7,8 @@ import {
   it,
   vi,
 } from "vitest";
+import { stagedStatusSql } from "../lib/derivedStatus";
+import { getTableColumns } from "drizzle-orm";
 import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -17,7 +19,7 @@ import type { Server } from "node:http";
  * used to clear the Auto-matched queue in one call.
  *
  * Asserts:
- *   - several auto-applied rows confirm in one call (status stays approved,
+ *   - several auto-applied rows confirm in one call (donor match stamped,
  *     matchConfirmedAt + matchConfirmedByUserId stamped, matchStatus=matched)
  *   - ids that are not in a confirmable state (no donor; already done; missing)
  *     are silently SKIPPED, not errors, and the rest still confirm
@@ -91,10 +93,10 @@ async function api(
 async function seedStaged(
   label: string,
   opts: {
-    status?: "pending" | "approved" | "rejected";
     autoApplied?: boolean;
     withDonor?: boolean;
     matchConfirmedAt?: Date | null;
+    matchedGiftId?: string | null;
   } = {},
 ): Promise<string> {
   const id = `${RUN}_sp_${label}`;
@@ -105,9 +107,9 @@ async function seedStaged(
     qbEntityId: id,
     qbLineId: label,
     amount: "100.00",
-    status: opts.status ?? "approved",
     autoApplied: opts.autoApplied ?? true,
     matchConfirmedAt: opts.matchConfirmedAt ?? null,
+    matchedGiftId: opts.matchedGiftId ?? null,
     organizationId: (opts.withDonor ?? true) ? ORG_ID : null,
   });
   return id;
@@ -115,7 +117,10 @@ async function seedStaged(
 
 async function readStaged(id: string) {
   const [row] = await db
-    .select()
+    .select({
+      ...getTableColumns(schema.stagedPayments),
+      status: stagedStatusSql,
+    })
     .from(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.id, id));
   return row;
@@ -229,7 +234,9 @@ describe.skipIf(!HAS_DB)("QuickBooks bulk confirm-matches (integration)", () => 
 
     for (const id of [aId, bId]) {
       const row = await readStaged(id);
-      expect(row.status).toBe("approved");
+      // No gift link ⇒ money-wise the row still derives `pending`; the confirm
+      // stamps the donor match (matchStatus/matchConfirmedAt), not a booking.
+      expect(row.status).toBe("pending");
       expect(row.matchStatus).toBe("matched");
       expect(row.matchConfirmedAt).not.toBeNull();
       expect(row.matchConfirmedByUserId).toBe(TEST_USER_ID);
@@ -275,8 +282,9 @@ describe.skipIf(!HAS_DB)("QuickBooks bulk confirm-matches (integration)", () => 
   it("promotes auto-applied (system) ledger rows to system_confirmed; leaves human rows untouched", async () => {
     if (!HAS_DB) return;
     const giftId = await seedGift(`${RUN}_g_promote`, "100.00");
-    // An auto-matched card: worker wrote a 'system' ledger row.
-    const sysStaged = await seedStaged("promote_sys");
+    // An auto-matched card: the worker's real end state is matched_gift_id +
+    // autoApplied=true + a 'system' ledger row (⇒ derives match_proposed).
+    const sysStaged = await seedStaged("promote_sys", { matchedGiftId: giftId });
     const sysPa = await seedLedgerRow({
       id: `${RUN}_pa_sys`,
       paymentId: sysStaged,

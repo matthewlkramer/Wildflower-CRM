@@ -23,6 +23,7 @@ import {
 } from "./paymentApplications";
 import { recordAudit } from "./audit";
 import { APPROVABLE_STAGED_STATUSES } from "./reconciliationGate";
+import { stagedStatusIn } from "./derivedStatus";
 import {
   stampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
@@ -340,7 +341,6 @@ export async function mintGiftInTx(
     .update(stagedPayments)
     .set({
       ...donor,
-      status: "reconciled",
       createdGiftId: newGiftId,
       matchedGiftId: null,
       autoApplied: false,
@@ -354,7 +354,7 @@ export async function mintGiftInTx(
     .where(
       and(
         eq(stagedPayments.id, stagedPaymentId),
-        inArray(stagedPayments.status, [...APPROVABLE_STAGED_STATUSES]),
+        stagedStatusIn(APPROVABLE_STAGED_STATUSES),
       ),
     )
     .returning({ id: stagedPayments.id });
@@ -377,7 +377,6 @@ export async function mintGiftInTx(
         .update(stagedPayments)
         .set({
           ...donor,
-          status: "reconciled",
           groupReconciledGiftId: newGiftId,
           createdGiftId: null,
           matchedGiftId: null,
@@ -392,7 +391,7 @@ export async function mintGiftInTx(
         .where(
           and(
             inArray(stagedPayments.id, otherIds),
-            inArray(stagedPayments.status, [...APPROVABLE_STAGED_STATUSES]),
+            stagedStatusIn(APPROVABLE_STAGED_STATUSES),
           ),
         )
         .returning({ id: stagedPayments.id });
@@ -418,7 +417,6 @@ export async function mintGiftInTx(
       .update(stripeStagedCharges)
       .set({
         ...donor,
-        status: "reconciled",
         matchedGiftId: newGiftId,
         createdGiftId: null,
         autoApplied: false,
@@ -718,7 +716,8 @@ export async function linkGiftInTx(
     await tx
       .update(stagedPayments)
       .set({
-        status: "pending",
+        // Clearing the gift links + confirmation facts derives the row back to
+        // `pending` (status is DERIVED — lib/derivedStatus.ts).
         matchedGiftId: null,
         createdGiftId: null,
         groupReconciledGiftId: null,
@@ -740,9 +739,8 @@ export async function linkGiftInTx(
     .update(stagedPayments)
     .set({
       ...finalDonor,
-      // Permanent EVIDENCE tied to the gift — `reconciled` (not `approved`) marks
-      // that terminal tie; never archived, never a second gift.
-      status: "reconciled",
+      // Permanent EVIDENCE tied to the gift — the gift link derives the row to
+      // `match_confirmed`, the terminal tie; never archived, never a second gift.
       matchedGiftId: giftId,
       createdGiftId: null,
       autoApplied: false,
@@ -756,7 +754,7 @@ export async function linkGiftInTx(
     .where(
       and(
         eq(stagedPayments.id, stagedPaymentId),
-        inArray(stagedPayments.status, [...APPROVABLE_STAGED_STATUSES]),
+        stagedStatusIn(APPROVABLE_STAGED_STATUSES),
         // Gift must not already be QB-linked to another staged payment. The
         // ledger unifies direct + split + group-reconciled links.
         sql`NOT ${qbLedgerExistsForGiftExcludingPayment(sql`${giftId}`, sql`${stagedPaymentId}`)}`,
@@ -871,7 +869,6 @@ export async function linkGiftInTx(
       .update(stripeStagedCharges)
       .set({
         ...finalDonor,
-        status: "reconciled",
         matchedGiftId: giftId,
         createdGiftId: null,
         autoApplied: false,
@@ -1044,7 +1041,7 @@ export async function orphanStripeSourceChargeInTx(
   await tx
     .update(stripeStagedCharges)
     .set({
-      status: orphanToExcluded ? "excluded" : "pending",
+      // Status is DERIVED: an exclusion reason ⇒ excluded, cleared links ⇒ pending.
       exclusionReason: orphanToExcluded ? "failed_charge" : null,
       matchedGiftId: null,
       createdGiftId: null,

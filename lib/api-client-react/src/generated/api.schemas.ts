@@ -2398,17 +2398,16 @@ export const QuickbooksPayerType = {
 } as const;
 
 /**
- * Lifecycle of a staged payment / Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges.
+ * DERIVED lifecycle of a staged payment / Stripe charge — computed from the row's facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.
  */
 export type StagedPaymentStatus = typeof StagedPaymentStatus[keyof typeof StagedPaymentStatus];
 
 
 export const StagedPaymentStatus = {
   pending: 'pending',
-  approved: 'approved',
-  rejected: 'rejected',
+  match_proposed: 'match_proposed',
+  match_confirmed: 'match_confirmed',
   excluded: 'excluded',
-  reconciled: 'reconciled',
 } as const;
 
 /**
@@ -2513,7 +2512,7 @@ export const StagedPaymentFundingSourceProvenance = {
 } as const;
 
 /**
- * Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand. refund_review: a Stripe-only cross-cutting filter (independent of status) for charges with an open refund/chargeback proposal awaiting confirm/dismiss — never emitted as a row's derived bucket.
+ * Derived queue bucket. needs_review: pending rows. auto_matched: match_proposed (a system-applied gift link awaiting review). done: match_confirmed evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand. refund_review: a Stripe-only cross-cutting filter (independent of status) for charges with an open refund/chargeback proposal awaiting confirm/dismiss — never emitted as a row's derived bucket.
  */
 export type StagedPaymentQueue = typeof StagedPaymentQueue[keyof typeof StagedPaymentQueue];
 
@@ -2523,8 +2522,6 @@ export const StagedPaymentQueue = {
   auto_matched: 'auto_matched',
   excluded: 'excluded',
   done: 'done',
-  rejected: 'rejected',
-  reconciled: 'reconciled',
   refund_review: 'refund_review',
 } as const;
 
@@ -2554,7 +2551,7 @@ export const StripeRefundKind = {
 } as const;
 
 /**
- * QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review).
+ * QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).
  */
 export type QuickbooksStagedPaymentQueue = typeof QuickbooksStagedPaymentQueue[keyof typeof QuickbooksStagedPaymentQueue];
 
@@ -2565,8 +2562,6 @@ export const QuickbooksStagedPaymentQueue = {
   auto_matched: 'auto_matched',
   excluded: 'excluded',
   done: 'done',
-  rejected: 'rejected',
-  reconciled: 'reconciled',
 } as const;
 
 /**
@@ -2581,8 +2576,6 @@ export const ReconciliationCardQueue = {
   auto_matched: 'auto_matched',
   excluded: 'excluded',
   done: 'done',
-  rejected: 'rejected',
-  reconciled: 'reconciled',
 } as const;
 
 export type StagedPaymentSort = typeof StagedPaymentSort[keyof typeof StagedPaymentSort];
@@ -3309,6 +3302,18 @@ export const DonorboxReviewQueue = {
 } as const;
 
 /**
+ * Review status in the shared derived vocabulary: pending | match_confirmed (linked or minted) | excluded. Donorbox stores its own lifecycle column; it is mapped to this vocabulary at the API edge (match_proposed never occurs here).
+ */
+export type DonorboxReviewRowStatus = typeof DonorboxReviewRowStatus[keyof typeof DonorboxReviewRowStatus];
+
+
+export const DonorboxReviewRowStatus = {
+  pending: 'pending',
+  match_confirmed: 'match_confirmed',
+  excluded: 'excluded',
+} as const;
+
+/**
  * A non-Stripe (PayPal/ACH) Donorbox donation surfaced as a human-reviewed
 new-money candidate. Stripe-type donations never appear here (they enrich
 existing Stripe records instead — see DonorboxEnrichment). A reviewer
@@ -3339,8 +3344,8 @@ export interface DonorboxReviewRow {
   donorName?: string | null;
   donorEmail?: string | null;
   donorEmployer?: string | null;
-  /** Review status: pending | approved (minted) | reconciled (linked) | excluded. */
-  status: string;
+  /** Review status in the shared derived vocabulary: pending | match_confirmed (linked or minted) | excluded. Donorbox stores its own lifecycle column; it is mapped to this vocabulary at the API edge (match_proposed never occurs here). */
+  status: DonorboxReviewRowStatus;
   exclusionReason?: DonorboxExclusionReason | null;
   /** Suggested-donor match tier: unmatched | suggested | matched (a hint; never auto-applied). */
   matchStatus: string;
@@ -3878,7 +3883,7 @@ export interface SettlementLineageCharge {
   refunded?: boolean;
   disputed?: boolean;
   linkSource: SettlementLineageLinkSource;
-  /** The staged charge's reconciliation status (pending | reconciled | excluded). */
+  /** The staged charge's derived reconciliation status (pending | match_proposed | match_confirmed | excluded). */
   status?: string | null;
   /** True when a donor (org/person/household) is already resolved on this charge, so it can be exploded into a gift. */
   donorResolved: boolean;
@@ -4112,57 +4117,6 @@ export interface ReconciliationCardList {
   pagination: Pagination;
 }
 
-/**
- * One reviewer 'propose alternative' comment left on a reconciliation card, with its author and timestamp.
- */
-export interface ReconciliationProposal {
-  id: string;
-  /** The staged_payments row this comment is attached to (the representative row for a source group). */
-  stagedPaymentId: string;
-  /** The reviewer's free-text note 'to the system'. */
-  comment: string;
-  /** Author user id; null if the user row was since removed. */
-  createdByUserId: string | null;
-  /** Author display name, joined for convenience. */
-  createdByUserName: string | null;
-  createdAt: string;
-}
-
-export interface ReconciliationProposalList {
-  data: ReconciliationProposal[];
-}
-
-/**
- * A reviewer comment joined with its staged-payment context, for cross-card triage.
- */
-export type ReconciliationProposalWithContext = ReconciliationProposal & ({
-  payerName: string | null;
-  /** The staged payment's amount (major units). */
-  amount: string | null;
-  dateReceived: string | null;
-  /** The staged payment's status at read time (e.g. pending / approved / excluded). */
-  stagedStatus: string | null;
-  /** The gift this row is matched/created/group-reconciled into, if any. */
-  resolvedGiftId: string | null;
-});
-
-export interface ReconciliationProposalWithContextList {
-  data: ReconciliationProposalWithContext[];
-  pagination: Pagination;
-}
-
-/**
- * Body for leaving a free-text 'propose alternative' comment on a reconciliation card.
- */
-export interface CreateReconciliationProposalBody {
-  /**
-   * The reviewer's note. Trimmed server-side; whitespace-only is rejected.
-   * @minLength 1
-   * @maxLength 10000
-   */
-  comment: string;
-}
-
 export interface ReconciliationSearchList {
   data: ReconciliationCandidate[];
 }
@@ -4202,7 +4156,7 @@ export interface PayoutChargeSummary {
   statementDescriptor?: string | null;
   /** Calendar date the charge is credited to (date_received). */
   date?: string | null;
-  /** Staged-charge review status (pending/approved/rejected/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie. */
+  /** Staged-charge derived review status (pending/match_proposed/match_confirmed/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie. */
   status?: string | null;
   /** Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, auto-excluded at ingest). Null unless the charge is excluded. */
   exclusionReason?: string | null;
@@ -5437,22 +5391,6 @@ export interface FinancialCorrection {
 
 export interface FinancialCorrectionList {
   corrections: FinancialCorrection[];
-}
-
-export type DismissFinancialCorrectionBodyKind = typeof DismissFinancialCorrectionBodyKind[keyof typeof DismissFinancialCorrectionBodyKind];
-
-
-export const DismissFinancialCorrectionBodyKind = {
-  merge_gifts: 'merge_gifts',
-  link_evidence: 'link_evidence',
-} as const;
-
-/**
- * Mark a proposed correction as leave-as-is so the detector never re-surfaces it.
- */
-export interface DismissFinancialCorrectionBody {
-  kind: DismissFinancialCorrectionBodyKind;
-  proposalKey: string;
 }
 
 export type ApplyFinancialCorrectionBodyEvidenceKind = typeof ApplyFinancialCorrectionBodyEvidenceKind[keyof typeof ApplyFinancialCorrectionBodyEvidenceKind];
@@ -9197,7 +9135,7 @@ userId: string;
 
 export type ListReconciliationCardsParams = {
 /**
- * Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable).
+ * Queue bucket to list. Omit for the active work queue (excludes match_confirmed/excluded rows AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable).
  */
 queue?: ReconciliationCardQueue;
 /**
@@ -9272,22 +9210,6 @@ days?: number;
  * @maximum 100
  */
 limit?: number;
-};
-
-export type ListReconciliationProposalsParams = {
-/**
- * Filter to the comments on one card.
- */
-stagedPaymentId?: string;
-/**
- * @minimum 1
- * @maximum 200
- */
-limit?: number;
-/**
- * @minimum 0
- */
-offset?: number;
 };
 
 export type SearchReconciliationQbStagedParams = {

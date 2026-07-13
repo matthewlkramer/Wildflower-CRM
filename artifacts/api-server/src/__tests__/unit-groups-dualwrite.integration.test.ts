@@ -99,7 +99,6 @@ async function seedStaged(
     qbEntityId: id,
     qbLineId: String(gen),
     amount,
-    status: "pending",
     payerName: opts.payerName ?? "Group Test Donor",
     dateReceived: opts.dateReceived ?? "2025-01-01",
     organizationId: ORG_ID,

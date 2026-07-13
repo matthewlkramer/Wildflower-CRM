@@ -5,6 +5,8 @@ import {
   type SettlementLinkFields,
 } from "../lib/settlementLink";
 import { proposeSettlementLink } from "../lib/settlementWriter";
+import { stagedStatusSql } from "../lib/derivedStatus";
+import { getTableColumns } from "drizzle-orm";
 
 /**
  * DB-backed coverage for the D4 human-confirm/revert payout ↔ QuickBooks-deposit
@@ -94,8 +96,10 @@ async function seedPayout(over: {
 }
 
 async function seedDeposit(over: {
-  status?: "pending" | "approved" | "excluded" | "rejected";
   createdGiftId?: string | null;
+  matchedGiftId?: string | null;
+  autoApplied?: boolean;
+  exclusionReason?: "other" | null;
   // QB booking type. Defaults to 'deposit' (the classic Stripe lump); pass
   // 'payment' to model a bookkeeper mis-typed net lump or a donor payment row.
   qbEntityType?: "deposit" | "payment" | "sales_receipt";
@@ -110,8 +114,10 @@ async function seedDeposit(over: {
     amount: "1000.00",
     dateReceived: "2026-03-15",
     payerName: over.payerName === undefined ? "Stripe" : over.payerName,
-    status: over.status ?? "pending",
     createdGiftId: over.createdGiftId ?? null,
+    matchedGiftId: over.matchedGiftId ?? null,
+    autoApplied: over.autoApplied ?? false,
+    exclusionReason: over.exclusionReason ?? null,
   });
   stagedIds.push(id);
   return id;
@@ -136,7 +142,10 @@ async function seedGift(): Promise<string> {
 
 async function readDeposit(id: string) {
   const [row] = await db
-    .select()
+    .select({
+      ...getTableColumns(schema.stagedPayments),
+      status: stagedStatusSql,
+    })
     .from(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.id, id));
   return row;
@@ -170,12 +179,12 @@ async function seedCountedPa(dep: string, gift: string): Promise<void> {
   });
 }
 
-/** Seed a fully-wired conflict_approved payout: approved deposit booked into a
- * gift, its settlement link proposed with the conflict gift. Mirrors the
- * proposal pass's conflict output. */
+/** Seed a fully-wired conflict_approved payout: a deposit already booked into
+ * a gift (derives match_confirmed), its settlement link proposed with the
+ * conflict gift. Mirrors the proposal pass's conflict output. */
 async function seedConflict(): Promise<{ po: string; dep: string; gift: string }> {
   const gift = await seedGift();
-  const dep = await seedDeposit({ status: "approved", createdGiftId: gift });
+  const dep = await seedDeposit({ createdGiftId: gift });
   const po = await seedPayout({ link: proposeSettlementLink(dep, gift) });
   return { po, dep, gift };
 }
@@ -242,7 +251,7 @@ afterAll(async () => {
 
 describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
   it("CONFIRM (pending deposit): proposed → confirmed_reconciled, deposit reconciled (not excluded)", async () => {
-    const dep = await seedDeposit({ status: "pending" });
+    const dep = await seedDeposit({});
     const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
 
     const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
@@ -258,10 +267,11 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     expect(link?.confirmedByUserId).toBe(USER_ID);
     expect(link?.confirmedAt).not.toBeNull();
 
-    // D4: the deposit becomes permanent EVIDENCE — `reconciled`, NOT excluded
-    // with a processor_payout reason.
+    // D4: the deposit becomes permanent EVIDENCE — the confirmed settlement
+    // link derives `match_confirmed`, NOT excluded with a processor_payout
+    // reason.
     const deposit = await readDeposit(dep);
-    expect(deposit.status).toBe("reconciled");
+    expect(deposit.status).toBe("match_confirmed");
     expect(deposit.exclusionReason).toBeNull();
   });
 
@@ -271,7 +281,6 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     // (settlementLump.ts) makes it confirmable exactly like a deposit-typed
     // lump, and revert round-trips it back to pending.
     const dep = await seedDeposit({
-      status: "pending",
       qbEntityType: "payment",
       payerName: "Misc Customer",
     });
@@ -284,7 +293,7 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     expect(payoutStatusFromLink((await readLink(po)) ?? null)).toBe(
       "confirmed_reconciled",
     );
-    expect((await readDeposit(dep)).status).toBe("reconciled");
+    expect((await readDeposit(dep)).status).toBe("match_confirmed");
 
     const r = await confirm.revertPayoutQbConfirmation({ payoutId: po, userId: USER_ID });
     expect(r.ok).toBe(true);
@@ -294,7 +303,6 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
 
   it("CONFIRM (donor-name 'payment' row, NOT a lump): permanent deposit_unconfirmable, nothing mutated", async () => {
     const dep = await seedDeposit({
-      status: "pending",
       qbEntityType: "payment",
       payerName: "Jane Donor",
     });
@@ -311,7 +319,7 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
   });
 
   it("CONFIRM (deposit resolved elsewhere — excluded): permanent deposit_unconfirmable, nothing mutated", async () => {
-    const dep = await seedDeposit({ status: "excluded" });
+    const dep = await seedDeposit({ exclusionReason: "other" });
     const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
 
     const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
@@ -323,11 +331,12 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     expect((await readDeposit(dep)).status).toBe("excluded");
   });
 
-  it("CONFIRM (approved SPLIT deposit, counted ledger rows): linkage-only confirm, deposit untouched", async () => {
-    // The endless-loop shape: a legacy split left the deposit `approved` with
-    // all 3 gift-link columns null but counted payment_applications rows.
+  it("CONFIRM (SPLIT deposit, counted ledger rows): linkage-only confirm, deposit untouched", async () => {
+    // The endless-loop shape: a legacy split left the deposit with all 3
+    // gift-link columns null but counted payment_applications rows (which
+    // derive match_confirmed).
     const gift = await seedGift();
-    const dep = await seedDeposit({ status: "approved" });
+    const dep = await seedDeposit({});
     await seedCountedPa(dep, gift);
     const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
 
@@ -342,13 +351,13 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     expect(link?.depositStagedPaymentId).toBe(dep);
     expect(link?.confirmedByUserId).toBe(USER_ID);
 
-    // The already-booked deposit is NEVER touched — stays approved.
-    expect((await readDeposit(dep)).status).toBe("approved");
+    // The already-booked deposit is NEVER touched — stays match_confirmed.
+    expect((await readDeposit(dep)).status).toBe("match_confirmed");
   });
 
-  it("CONFIRM (approved deposit, gift-link column): linkage-only confirm, deposit untouched", async () => {
+  it("CONFIRM (booked deposit, gift-link column): linkage-only confirm, deposit untouched", async () => {
     const gift = await seedGift();
-    const dep = await seedDeposit({ status: "approved", createdGiftId: gift });
+    const dep = await seedDeposit({ createdGiftId: gift });
     const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
 
     const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
@@ -358,26 +367,29 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     expect(payoutStatusFromLink((await readLink(po)) ?? null)).toBe(
       "confirmed_reconciled",
     );
-    expect((await readDeposit(dep)).status).toBe("approved");
+    expect((await readDeposit(dep)).status).toBe("match_confirmed");
   });
 
-  it("CONFIRM (approved deposit, NO provable booking): permanent deposit_not_booked, nothing mutated", async () => {
-    const dep = await seedDeposit({ status: "approved" });
+  it("CONFIRM (unreviewed auto-match — match_proposed): permanent deposit_unconfirmable, nothing mutated", async () => {
+    // An auto-applied match a human never reviewed derives match_proposed —
+    // it was claimed by the worker, so this settlement can't swallow it.
+    const gift = await seedGift();
+    const dep = await seedDeposit({ autoApplied: true, matchedGiftId: gift });
     const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
 
     const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.code).toBe("deposit_not_booked");
+    expect(r.code).toBe("deposit_unconfirmable");
 
-    // Nothing changed: link still proposed, deposit still approved.
+    // Nothing changed: link still proposed, deposit still match_proposed.
     expect(payoutStatusFromLink((await readLink(po)) ?? null)).toBe("proposed");
-    expect((await readDeposit(dep)).status).toBe("approved");
+    expect((await readDeposit(dep)).status).toBe("match_proposed");
   });
 
-  it("REVERT of a linkage-only confirm → proposed, deposit stays approved (never flipped to pending)", async () => {
+  it("REVERT of a linkage-only confirm → proposed, deposit stays booked (never flipped to pending)", async () => {
     const gift = await seedGift();
-    const dep = await seedDeposit({ status: "approved" });
+    const dep = await seedDeposit({});
     await seedCountedPa(dep, gift);
     const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
     const c = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
@@ -390,8 +402,9 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     expect(payoutStatusFromLink(link ?? null)).toBe("proposed");
     expect(link?.depositStagedPaymentId).toBe(dep);
     expect(link?.confirmedByUserId).toBeNull();
-    // The revert must NOT flip the untouched approved deposit to pending.
-    expect((await readDeposit(dep)).status).toBe("approved");
+    // The revert must NOT flip the still-booked deposit to pending — its
+    // counted ledger rows keep deriving match_confirmed.
+    expect((await readDeposit(dep)).status).toBe("match_confirmed");
   });
 
   it("CONFIRM (pending deposit): rejects a payout that is not proposed", async () => {
@@ -426,8 +439,8 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     // The conflict gift pointer is retained as the revert discriminator.
     expect(link?.conflictGiftId).toBe(gift);
 
-    // Touches nothing else: deposit stays approved, gift stays active.
-    expect((await readDeposit(dep)).status).toBe("approved");
+    // Touches nothing else: deposit stays booked, gift stays active.
+    expect((await readDeposit(dep)).status).toBe("match_confirmed");
     expect((await readGift(gift)).archivedAt).toBeNull();
   });
 
@@ -443,13 +456,13 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     const link = await readLink(po);
     expect(payoutStatusFromLink(link ?? null)).toBe("conflict_approved");
     const deposit = await readDeposit(dep);
-    expect(deposit.status).toBe("approved");
+    expect(deposit.status).toBe("match_confirmed");
     expect(deposit.exclusionReason).toBeNull();
     expect((await readGift(gift)).archivedAt).toBeNull();
   });
 
   it("REVERT confirmed_reconciled (pending-deposit confirm) → proposed, deposit pending again", async () => {
-    const dep = await seedDeposit({ status: "pending" });
+    const dep = await seedDeposit({});
     const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
     await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
 
@@ -461,7 +474,8 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     expect(link?.depositStagedPaymentId).toBe(dep);
     expect(link?.conflictGiftId).toBeNull();
     expect(link?.confirmedByUserId).toBeNull();
-    // The deposit reverts from `reconciled` evidence back to `pending`.
+    // The deposit reverts from confirmed evidence back to derived `pending`
+    // (the confirmed settlement link — its only booking fact — is gone).
     expect((await readDeposit(dep)).status).toBe("pending");
   });
 
@@ -477,7 +491,7 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     expect(link?.depositStagedPaymentId).toBe(dep);
     // The conflictGiftId discriminator routed the revert; deposit + gift intact.
     expect(link?.conflictGiftId).toBe(gift);
-    expect((await readDeposit(dep)).status).toBe("approved");
+    expect((await readDeposit(dep)).status).toBe("match_confirmed");
     expect((await readGift(gift)).archivedAt).toBeNull();
   });
 

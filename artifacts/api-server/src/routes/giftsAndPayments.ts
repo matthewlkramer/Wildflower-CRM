@@ -155,6 +155,7 @@ import {
   giftIsOffBooksExpr,
 } from "../lib/giftPaymentSummary";
 import { deriveGiftLanes } from "../lib/reconciliationLanes";
+import { stagedStatusSql } from "../lib/derivedStatus";
 import { inArray } from "drizzle-orm";
 
 const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "quickbooksTie"] as const;
@@ -2156,7 +2157,14 @@ router.get(
         depositAmount: stagedPayments.amount,
         depositDate: stagedPayments.dateReceived,
         depositPayer: stagedPayments.payerName,
-        depositStatus: stagedPayments.status,
+        // DERIVED deposit status (no stored column) — NULL when the LEFT JOIN
+        // found no deposit row (the CASE would otherwise read all-NULL facts
+        // as a real status).
+        depositStatus: sql<
+          string | null
+        >`CASE WHEN ${stagedPayments.id} IS NULL THEN NULL ELSE ${stagedStatusSql} END`.as(
+          "deposit_status",
+        ),
       })
       .from(stripeStagedCharges)
       .leftJoin(

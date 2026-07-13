@@ -9,6 +9,10 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { asyncHandler, notFound, paramId } from "../../lib/helpers";
 import { donorOf } from "../../lib/quickbooksLink";
 import { giftMatchAmountBounds } from "../../lib/giftMatch";
+import {
+  stagedStatusWhere,
+  chargeStatusWhere,
+} from "../../lib/derivedStatus";
 import { giftCandidateJoins, giftCandidateSelect } from "./shared";
 
 const router: IRouter = Router();
@@ -209,7 +213,7 @@ router.get(
           payerName: stagedPayments.payerName,
         })
         .from(stagedPayments)
-        .where(and(eq(stagedPayments.status, "pending"), stagedDonor))
+        .where(and(stagedStatusWhere.pending, stagedDonor))
         .orderBy(desc(stagedPayments.dateReceived))
         .limit(25),
       db
@@ -219,7 +223,7 @@ router.get(
           payerName: stripeStagedCharges.payerName,
         })
         .from(stripeStagedCharges)
-        .where(and(eq(stripeStagedCharges.status, "pending"), chargeDonor))
+        .where(and(chargeStatusWhere.pending, chargeDonor))
         .orderBy(desc(stripeStagedCharges.chargeCreated))
         .limit(25),
     ]);

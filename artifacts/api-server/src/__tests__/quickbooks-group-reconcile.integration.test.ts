@@ -8,6 +8,8 @@ import {
   vi,
 } from "vitest";
 import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
+import { stagedStatusSql } from "../lib/derivedStatus";
+import { getTableColumns } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -176,7 +178,6 @@ async function seedStaged(
     qbLineId: label,
     amount,
     qbDepositId: DEPOSIT_ID,
-    status: "pending",
     organizationId: ORG_ID,
   });
   return id;
@@ -184,7 +185,10 @@ async function seedStaged(
 
 async function readStaged(id: string) {
   const [row] = await db
-    .select()
+    .select({
+      ...getTableColumns(schema.stagedPayments),
+      status: stagedStatusSql,
+    })
     .from(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.id, id));
   return row;
@@ -343,14 +347,14 @@ describe.skipIf(!HAS_DB)(
       // Representative carries matchedGiftId (gift shows linked) AND the group id.
       expect(rep.matchedGiftId).toBe(giftId);
       expect(rep.groupReconciledGiftId).toBe(giftId);
-      expect(rep.status).toBe("reconciled");
+      expect(rep.status).toBe("match_confirmed");
       // The donor was adopted from the gift.
       expect(rep.organizationId).toBe(ORG_ID);
 
       // Every member carries the group id but NOT matchedGiftId.
       expect(member.groupReconciledGiftId).toBe(giftId);
       expect(member.matchedGiftId).toBeNull();
-      expect(member.status).toBe("reconciled");
+      expect(member.status).toBe("match_confirmed");
     }, 30_000);
 
     it("adopts an individual-giver donor and nulls the other donor FKs", async () => {
@@ -379,7 +383,7 @@ describe.skipIf(!HAS_DB)(
         expect(row.individualGiverPersonId).toBe(PERSON_ID);
         expect(row.organizationId).toBeNull();
         expect(row.householdId).toBeNull();
-        expect(row.status).toBe("reconciled");
+        expect(row.status).toBe("match_confirmed");
         expect(row.groupReconciledGiftId).toBe(giftId);
       }
       expect(rep.matchedGiftId).toBe(giftId);
@@ -410,7 +414,7 @@ describe.skipIf(!HAS_DB)(
         expect(row.householdId).toBe(HOUSEHOLD_ID);
         expect(row.organizationId).toBeNull();
         expect(row.individualGiverPersonId).toBeNull();
-        expect(row.status).toBe("reconciled");
+        expect(row.status).toBe("match_confirmed");
         expect(row.groupReconciledGiftId).toBe(giftId);
       }
       expect(rep.matchedGiftId).toBe(giftId);
@@ -454,8 +458,8 @@ describe.skipIf(!HAS_DB)(
       // The QB evidence is reconciled (linkage recorded) ...
       const rep = await readStaged(repId);
       const member = await readStaged(memberId);
-      expect(rep.status).toBe("reconciled");
-      expect(member.status).toBe("reconciled");
+      expect(rep.status).toBe("match_confirmed");
+      expect(member.status).toBe("match_confirmed");
       expect(rep.groupReconciledGiftId).toBe(giftId);
       expect(member.groupReconciledGiftId).toBe(giftId);
 
@@ -567,7 +571,7 @@ describe.skipIf(!HAS_DB)(
       const a = await readStaged(aId);
       const b = await readStaged(bId);
       for (const row of [a, b]) {
-        expect(row.status).toBe("reconciled");
+        expect(row.status).toBe("match_confirmed");
         expect(row.groupReconciledGiftId).toBe(giftId);
       }
     }, 30_000);

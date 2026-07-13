@@ -26,6 +26,7 @@ import {
   stripeChargeSearchWhereExpr,
 } from "../../lib/stripeChargeSearch";
 import { giftMatchAmountBoundsKnownNet } from "../../lib/giftMatch";
+import { stagedStatusWhere, chargeStatusWhere } from "../../lib/derivedStatus";
 import {
   qbLedgerExistsForGift,
   stripeLedgerExistsForGift,
@@ -106,6 +107,14 @@ async function proposeQbPaymentForGift(opts: {
     sql`${stagedPayments.matchedGiftId} IS NULL`,
     sql`${stagedPayments.createdGiftId} IS NULL`,
     sql`${stagedPayments.groupReconciledGiftId} IS NULL`,
+    // A row can be resolved WITHOUT a gift link: a settlement-only confirm
+    // settles the deposit (payout↔deposit tie, no gift), and excluded rows
+    // aren't donation money. Proposing any of those is a dead end (the
+    // one-click Link 409s on a non-pending row) — and worse, a settled deposit
+    // here shadows the gift's real match, the Stripe charge behind that
+    // settlement (the fallback below never runs). The DERIVED pending
+    // predicate keeps the proposal pool actionable (open work only).
+    stagedStatusWhere.pending,
   ];
   if (hasText) {
     const w = stagedSearchWhere(name);
@@ -185,7 +194,8 @@ async function proposeStripeChargeForGift(opts: {
   if (!hasText && !hasAmount) return null;
 
   const conds: SQL[] = [
-    eq(stripeStagedCharges.status, "pending"),
+    // DERIVED pending: no exclusion, no gift link (lib/derivedStatus.ts).
+    chargeStatusWhere.pending,
     sql`${stripeStagedCharges.matchedGiftId} IS NULL`,
     sql`${stripeStagedCharges.createdGiftId} IS NULL`,
     eq(stripeStagedCharges.refunded, false),
@@ -205,12 +215,20 @@ async function proposeStripeChargeForGift(opts: {
     );
   }
   if (opts.date) {
+    // A charge already tied to a QuickBooks deposit by a confirmed settlement
+    // link (linkedQbStagedPaymentId) is authoritative context — the human
+    // confirmed this money settled through QB. Never let the ±30d window hide
+    // it: a gift is routinely booked well after (or before) the charge date.
     conds.push(
-      sql`${stripeStagedCharges.dateReceived} IS NOT NULL AND ${stripeStagedCharges.dateReceived} BETWEEN (${opts.date}::date - 30) AND (${opts.date}::date + 30)`,
+      sql`(${stripeStagedCharges.linkedQbStagedPaymentId} IS NOT NULL OR (${stripeStagedCharges.dateReceived} IS NOT NULL AND ${stripeStagedCharges.dateReceived} BETWEEN (${opts.date}::date - 30) AND (${opts.date}::date + 30)))`,
     );
   }
 
-  const orderBy: SQL[] = [];
+  const orderBy: SQL[] = [
+    // Settlement-tied charges first — the confirmed payout↔deposit link is
+    // stronger evidence than raw amount/date proximity.
+    desc(sql`(${stripeStagedCharges.linkedQbStagedPaymentId} IS NOT NULL)`),
+  ];
   if (hasAmount) {
     orderBy.push(
       asc(sql`ABS((${stripeStagedCharges.grossAmount})::numeric - ${amt})`),
@@ -295,6 +313,7 @@ function qbProposalExistsSql(name: SQL, amount: SQL, date: SQL): SQL {
       WHERE ${stagedPayments.matchedGiftId} IS NULL
         AND ${stagedPayments.createdGiftId} IS NULL
         AND ${stagedPayments.groupReconciledGiftId} IS NULL
+        AND ${stagedStatusWhere.pending}
         AND (NOT ${hasText} OR (${stagedSearchWhereExpr(namePattern)}))
         AND (NOT ${hasAmount} OR (
           ${stagedPayments.amount} IS NOT NULL
@@ -322,7 +341,7 @@ function stripeProposalExistsSql(name: SQL, amount: SQL, date: SQL): SQL {
     (${hasText} OR ${hasAmount})
     AND EXISTS (
       SELECT 1 FROM ${stripeStagedCharges}
-      WHERE ${stripeStagedCharges.status} = 'pending'
+      WHERE ${chargeStatusWhere.pending}
         AND ${stripeStagedCharges.matchedGiftId} IS NULL
         AND ${stripeStagedCharges.createdGiftId} IS NULL
         AND ${stripeStagedCharges.refunded} = false
@@ -336,7 +355,9 @@ function stripeProposalExistsSql(name: SQL, amount: SQL, date: SQL): SQL {
             sql`(${stripeStagedCharges.netAmount})::numeric`,
           )}
         ))
-        AND (${date} IS NULL OR (
+        AND (${date} IS NULL
+          OR ${stripeStagedCharges.linkedQbStagedPaymentId} IS NOT NULL
+          OR (
           ${stripeStagedCharges.dateReceived} IS NOT NULL
           AND ${stripeStagedCharges.dateReceived}
               BETWEEN ((${date})::date - 30) AND ((${date})::date + 30)

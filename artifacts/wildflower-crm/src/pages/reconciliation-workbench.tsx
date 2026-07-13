@@ -22,7 +22,6 @@ import {
   useGroupStagedPayments,
   useResolveStripeStagedCharge,
   useCreateGiftFromStripeStagedCharge,
-  useRejectStripeStagedCharge,
   useLinkStripeChargeToGift,
   useListGiftAllocations,
   getListGiftAllocationsQueryKey,
@@ -31,7 +30,6 @@ import {
   approveReconciliationCard,
   groupReconcileStagedPayments,
   listReconciliationCards,
-  rejectStagedPayment,
   searchReconciliationNode,
   splitStagedPayment,
   useListGiftsAndPayments,
@@ -368,7 +366,7 @@ function evidenceBullets(card: ReconciliationCard): string[] {
 
 // ─── Pending tray model ─────────────────────────────────────────────────────
 
-type StagedKind = "confirm" | "retarget" | "reject" | "split";
+type StagedKind = "confirm" | "retarget" | "split";
 
 interface StagedChange {
   key: string;
@@ -376,7 +374,7 @@ interface StagedChange {
   stagedPaymentId: string;
   label: string;
   detail: string;
-  /** Approve body for confirm / retarget; null for reject / split. */
+  /** Approve body for confirm / retarget; null for split. */
   body: ApproveCompleteMatchBody | null;
   /** Split body for kind === "split"; null otherwise. */
   splitBody?: SplitStagedPaymentBody | null;
@@ -824,20 +822,6 @@ export default function ReconciliationWorkbench() {
     [deriveConfirmBody, stage, stageGroupedLink, toast],
   );
 
-  const stageReject = useCallback(
-    (card: ReconciliationCard) => {
-      stage({
-        key: card.stagedPaymentId,
-        kind: "reject",
-        stagedPaymentId: card.stagedPaymentId,
-        label: card.payerName ?? "QuickBooks payment",
-        detail: "Reject — remove from review queue",
-        body: null,
-      });
-    },
-    [stage],
-  );
-
   /**
    * Stage a confirm (or grouped link-to-existing-gift) for each given card,
    * skipping any whose match graph no longer derives a valid body. Shared by the
@@ -918,9 +902,7 @@ export default function ReconciliationWorkbench() {
     let applied = 0;
     for (const change of staged) {
       try {
-        if (change.kind === "reject") {
-          await rejectStagedPayment(change.stagedPaymentId);
-        } else if (change.kind === "split") {
+        if (change.kind === "split") {
           if (!change.splitBody) {
             remaining.push({ ...change, failure: "Missing split body." });
             continue;
@@ -957,34 +939,14 @@ export default function ReconciliationWorkbench() {
               stagedPaymentId: change.stagedPaymentId,
               targetGiftId,
             };
-            if (change.kind === "reject") {
-              const [rejected, excluded] = await Promise.all([
-                listReconciliationCards({
-                  queue: "rejected",
-                  limit: 500,
-                  offset: 0,
-                }),
-                listReconciliationCards({
-                  queue: "excluded",
-                  limit: 500,
-                  offset: 0,
-                }),
-              ]);
-              reached = changeReachedIntendedState(probe, {
-                done: [],
-                terminal: [...rejected.data, ...excluded.data],
-              });
-            } else {
-              const done = await listReconciliationCards({
-                queue: "done",
-                limit: 500,
-                offset: 0,
-              });
-              reached = changeReachedIntendedState(probe, {
-                done: done.data,
-                terminal: [],
-              });
-            }
+            const done = await listReconciliationCards({
+              queue: "done",
+              limit: 500,
+              offset: 0,
+            });
+            reached = changeReachedIntendedState(probe, {
+              done: done.data,
+            });
           } catch {
             // Couldn't re-fetch to confirm — fall through to the calm note below
             // rather than the raw error; the refresh still runs.
@@ -1082,7 +1044,7 @@ export default function ReconciliationWorkbench() {
 
   // ─── QBO-only / Research / Sync-gap / Excluded direct actions ─────────────
   // These buckets apply immediately through their existing guarded endpoints
-  // (not the confirm/reject pending tray, which is review-bucket specific).
+  // (not the confirm pending tray, which is review-bucket specific).
 
   const invalidateAll = useCallback(() => {
     void queryClient.invalidateQueries({
@@ -1150,11 +1112,10 @@ export default function ReconciliationWorkbench() {
   const reIncludeM = useReIncludeStagedPayment();
   const groupM = useGroupStagedPayments();
   // Per-charge actions: a Stripe-payout-backed deposit is expanded into one card
-  // per backing charge; each charge resolves/mints/rejects on its OWN Stripe
+  // per backing charge; each charge resolves/mints on its OWN Stripe
   // charge id (not the QB deposit-level staged-payment endpoints).
   const resolveChargeM = useResolveStripeStagedCharge();
   const createChargeGiftM = useCreateGiftFromStripeStagedCharge();
-  const rejectChargeM = useRejectStripeStagedCharge();
   // Link a single Stripe charge (from a multi-charge payout) to an EXISTING gift.
   const linkChargeGiftM = useLinkStripeChargeToGift();
 
@@ -1166,7 +1127,6 @@ export default function ReconciliationWorkbench() {
     groupM.isPending ||
     resolveChargeM.isPending ||
     createChargeGiftM.isPending ||
-    rejectChargeM.isPending ||
     linkChargeGiftM.isPending;
 
   const toggleSelect = useCallback((id: string) => {
@@ -1180,9 +1140,8 @@ export default function ReconciliationWorkbench() {
 
   // ── Column-2 bulk multi-select ("Money unlinked to a CRM record") ──────────
   // Every review/QBO card in the column is selectable, INCLUDING per-charge cards
-  // expanded from a multi-charge Stripe payout. Bulk Reject / Flag-for-research
-  // route each card to the right endpoint (charges resolve immediately on their
-  // Stripe charge id; deposits stage in the tray). Bulk Approve and the floating
+  // expanded from a multi-charge Stripe payout. Bulk Flag-for-research
+  // routes each card to the right endpoint. Bulk Approve and the floating
   // "Group into one gift" bar are deposit-level only — they disable themselves
   // whenever a charge is in the selection. Selection reuses `selectedIds` (shared
   // with the group bar), keyed by cardKey (a charge's key is a composite, never a
@@ -1202,7 +1161,7 @@ export default function ReconciliationWorkbench() {
   const selectedReviewCount = selectedReviewCards.length;
   // Grouping merges QB deposits into one gift, so it can't act on an individual
   // Stripe charge and disables itself when one is selected; `groupableReviewCards`
-  // is the non-charge subset it acts on. Bulk Approve/Reject/Flag handle charges.
+  // is the non-charge subset it acts on. Bulk Approve/Flag handle charges.
   const chargeSelected = useMemo(
     () => selectedReviewCards.some((c) => !!c.stripeChargeId),
     [selectedReviewCards],
@@ -1333,74 +1292,6 @@ export default function ReconciliationWorkbench() {
   ]);
 
   /**
-   * Bulk "Reject" → charge cards reject immediately on their Stripe charge id
-   * (they never enter the deposit-keyed staging tray); deposit cards stage a
-   * reject in the tray for review.
-   */
-  const bulkRejectSelected = useCallback(async () => {
-    const chargeCards = selectedReviewCards.filter((c) => !!c.stripeChargeId);
-    const depositCards = selectedReviewCards.filter(
-      (c) => !c.stripeChargeId && !stagedIds.has(c.stagedPaymentId),
-    );
-    if (chargeCards.length === 0 && depositCards.length === 0) {
-      toast({
-        title: "Nothing to reject",
-        description: "The selected cards are already staged.",
-      });
-      return;
-    }
-    for (const c of depositCards) stageReject(c);
-    let chargeOk = 0;
-    for (const c of chargeCards) {
-      try {
-        await rejectChargeM.mutateAsync({ id: c.stripeChargeId! });
-        chargeOk += 1;
-      } catch {
-        // Skip charges that changed state mid-run; the summary reflects reality.
-      }
-    }
-    if (chargeOk > 0) invalidateAll();
-    clearSelectedReview();
-    const chargeFailed = chargeCards.length - chargeOk;
-    const parts: string[] = [];
-    if (depositCards.length > 0)
-      parts.push(
-        `staged ${depositCards.length} ${depositCards.length === 1 ? "rejection" : "rejections"}`,
-      );
-    if (chargeOk > 0)
-      parts.push(
-        `rejected ${chargeOk} Stripe ${chargeOk === 1 ? "charge" : "charges"}`,
-      );
-    if (parts.length === 0) {
-      toast({
-        title: "Bulk reject failed",
-        description:
-          "Those Stripe charges couldn't be rejected — they may have changed state. Refresh and try again.",
-      });
-      return;
-    }
-    const followUps: string[] = [];
-    if (depositCards.length > 0)
-      followUps.push("Review the tray, then Apply to CRM.");
-    if (chargeFailed > 0)
-      followUps.push(
-        `${chargeFailed} charge ${chargeFailed === 1 ? "rejection" : "rejections"} failed — refresh and retry.`,
-      );
-    toast({
-      title: `Bulk reject — ${parts.join(", ")}`,
-      description: followUps.length > 0 ? followUps.join(" ") : "Done.",
-    });
-  }, [
-    selectedReviewCards,
-    stagedIds,
-    stageReject,
-    rejectChargeM,
-    invalidateAll,
-    clearSelectedReview,
-    toast,
-  ]);
-
-  /**
    * Bulk "Flag for research" → snapshot targets and open the shared dialog.
    * A charge card has no cleanup-queue identity of its own, so it flags its
    * deposit's staged payment (matching the single-card flow); several charges
@@ -1496,7 +1387,10 @@ export default function ReconciliationWorkbench() {
   // derives to cash_in once fully paid. Stripe precedence is preserved by
   // forwarding the card's own charge id (GROSS).
   const handleRecordOnPledge = useCallback(
-    async (card: ReconciliationCard, opp: OpportunityOrPledge) => {
+    async (
+      card: ReconciliationCard,
+      opp: Pick<OpportunityOrPledge, "id" | "name">,
+    ) => {
       // A grouped card can't approve through the per-row endpoint (it 409s on
       // group members); ungroup first, then record each payment on its pledge.
       if (card.isSourceGroup) {
@@ -1557,22 +1451,6 @@ export default function ReconciliationWorkbench() {
       }
     },
     [groupCreateGift, invalidateAll, toast, errMessage],
-  );
-
-  // Per-charge reject: applies immediately on the Stripe charge id (charge cards
-  // don't use the staging tray, which is keyed by the QB deposit's payment id).
-  const handleChargeReject = useCallback(
-    async (card: ReconciliationCard) => {
-      if (!card.stripeChargeId) return;
-      try {
-        await rejectChargeM.mutateAsync({ id: card.stripeChargeId });
-        invalidateAll();
-        toast({ title: "Stripe charge rejected." });
-      } catch (err) {
-        toast({ title: "Couldn't reject charge", description: errMessage(err) });
-      }
-    },
-    [rejectChargeM, invalidateAll, toast, errMessage],
   );
 
   // A per-charge card expanded from a MULTI-charge Stripe payout can't be
@@ -1907,7 +1785,7 @@ export default function ReconciliationWorkbench() {
         readOnly={opts?.readOnly}
         hideStateBadges={opts?.hideStateBadges}
         // Charge cards never enter the staging tray (it is keyed by the QB
-        // deposit's payment id) — they resolve/mint/reject immediately.
+        // deposit's payment id) — they resolve/mint immediately.
         staged={
           isCharge
             ? undefined
@@ -1921,7 +1799,6 @@ export default function ReconciliationWorkbench() {
         onToggleSelect={() => toggleSelect(key)}
         onToggle={() => setExpanded((e) => (e === key ? null : key))}
         onConfirm={() => confirmAndApply(card)}
-        onReject={() => (isCharge ? handleChargeReject(card) : stageReject(card))}
         onRetarget={() => setRetargetCard(card)}
         onSearchGift={() => setSearchGiftCard(card)}
         onCreateGift={() => handleCreateGift(card)}
@@ -2157,18 +2034,6 @@ export default function ReconciliationWorkbench() {
                         disabled={
                           selectedReviewCount === 0 || busy || actionBusy
                         }
-                        onClick={bulkRejectSelected}
-                        data-testid="button-bulk-reject-review"
-                      >
-                        <X className="mr-1 h-3.5 w-3.5" />
-                        Reject
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={
-                          selectedReviewCount === 0 || busy || actionBusy
-                        }
                         onClick={openBulkFlagResearch}
                         data-testid="button-bulk-flag-review"
                       >
@@ -2224,7 +2089,17 @@ export default function ReconciliationWorkbench() {
           card={retargetCard}
           busy={busy}
           onClose={() => setRetargetCard(null)}
-          onPick={(gift) => stageRetarget(retargetCard, gift)}
+          onPick={(c) => {
+            // A pledge/opportunity pick books this payment as a payment ON
+            // that pledge (create_gift_from_opportunity) instead of a re-target.
+            if (c.nodeType === "opportunity") {
+              const card = retargetCard;
+              setRetargetCard(null);
+              void handleRecordOnPledge(card, { id: c.id, name: c.label });
+            } else {
+              stageRetarget(retargetCard, c);
+            }
+          }}
           onUnlink={unlinkOwningStagedPayment}
         />
       )}
@@ -2435,11 +2310,19 @@ export default function ReconciliationWorkbench() {
         <RetargetDialog
           card={searchGiftCard}
           busy={busy}
-          title="Match payment to an existing gift"
-          description="Search all gifts and link this QuickBooks payment to the one recording the same money."
-          footnote="Matching will link this payment to the chosen gift (same money) and adopt that gift's donor. A gift already matched to another QuickBooks payment is grayed out — unlink it there first."
+          title="Match payment to a gift or pledge"
+          description="Search all gifts and pledges, then link this QuickBooks payment to the record for the same money."
+          footnote="Matching a gift links this payment to it (same money) and adopts that gift's donor. Picking a pledge/opportunity records the payment as a payment on that pledge. A gift already matched to another QuickBooks payment is grayed out — unlink it there first."
           onClose={() => setSearchGiftCard(null)}
-          onPick={(gift) => stageRetarget(searchGiftCard, gift)}
+          onPick={(c) => {
+            if (c.nodeType === "opportunity") {
+              const card = searchGiftCard;
+              setSearchGiftCard(null);
+              void handleRecordOnPledge(card, { id: c.id, name: c.label });
+            } else {
+              stageRetarget(searchGiftCard, c);
+            }
+          }}
           onUnlink={unlinkOwningStagedPayment}
         />
       )}
@@ -2578,7 +2461,6 @@ function ResolveMenu({
   busy,
   isCharge = false,
   onConfirm,
-  onReject,
   onRetarget,
   onSearchGift,
   onCreateGift,
@@ -2595,7 +2477,6 @@ function ResolveMenu({
   /** Per-charge card: deposit-level actions (split / group / exclude) are off. */
   isCharge?: boolean;
   onConfirm: () => void;
-  onReject: () => void;
   onRetarget: () => void;
   onSearchGift: () => void;
   onCreateGift: () => void;
@@ -2631,7 +2512,6 @@ function ResolveMenu({
           Matching
         </DropdownMenuLabel>
         {hasGift && MI(onConfirm, "Confirm match", "approve this link")}
-        {hasGift && MI(onReject, "Reject match", "these are not the same")}
         {hasGift &&
           MI(onRetarget, "Re-target match", "link to a different gift")}
         {!hasGift &&
@@ -2661,7 +2541,7 @@ function ResolveMenu({
           "payer-vehicle → donor; DAF / employer",
         )}
         {/* Exclude is a deposit-level classification; a per-charge card mints
-            its own gift instead (reject the charge if it isn't a gift). */}
+            its own gift instead. */}
         {!isCharge &&
           MI(
             onExclude,
@@ -2706,7 +2586,7 @@ function ResolveMenu({
  * The single card surface used by Needs review, QBO-only, Research and Sync
  * gaps. It distinguishes "link an existing gift" from "create a new gift",
  * shows the QB payment method in the header, a legible balance meter, and the
- * full contextual action set (inline primary + Reject + Resolve menu).
+ * full contextual action set (inline primary + Resolve menu).
  */
 function ReconCard({
   card,
@@ -2717,7 +2597,6 @@ function ReconCard({
   onToggleSelect,
   onToggle,
   onConfirm,
-  onReject,
   onRetarget,
   onSearchGift,
   onCreateGift,
@@ -2741,7 +2620,6 @@ function ReconCard({
   onToggleSelect: () => void;
   onToggle: () => void;
   onConfirm: () => void;
-  onReject: () => void;
   onRetarget: () => void;
   onSearchGift: () => void;
   onCreateGift: () => void;
@@ -2755,7 +2633,7 @@ function ReconCard({
   onUnstage: () => void;
   onCodingSaved: () => void;
   /** Settled-money report row (Matched column): render view-only — no select
-      checkbox and no confirm/create/group/reject actions. These payments are
+      checkbox and no confirm/create/group actions. These payments are
       already tied to a gift, so re-confirming them 409s ("already resolved");
       a report of settled money is informational, never re-actionable here. */
   readOnly?: boolean;
@@ -3153,7 +3031,7 @@ function ReconCard({
 
       {expanded && <CodingPanel card={card} onSaved={onCodingSaved} />}
 
-      {/* Actions: inline primary + Reject + full Resolve menu */}
+      {/* Actions: inline primary + full Resolve menu */}
       <div className="flex items-center gap-2 border-t px-3 py-2">
         {staged ? (
           <>
@@ -3199,22 +3077,12 @@ function ReconCard({
                 <Check className="mr-1 h-3.5 w-3.5" /> Create gift
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1 border-red-200 text-red-700 hover:bg-red-50"
-              onClick={onReject}
-              disabled={busy}
-            >
-              <X className="h-3.5 w-3.5" /> Reject
-            </Button>
             <div className="ml-auto">
               <ResolveMenu
                 card={card}
                 busy={busy}
                 isCharge={isCharge}
                 onConfirm={onConfirm}
-                onReject={onReject}
                 onRetarget={onRetarget}
                 onSearchGift={onSearchGift}
                 onCreateGift={onCreateGift}
@@ -4152,7 +4020,7 @@ function RetargetDialog({
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search donor or gift name…"
+            placeholder="Search donor, gift, or pledge name…"
             className="pr-9"
           />
           {searching && (
@@ -4166,14 +4034,36 @@ function RetargetDialog({
               {searching
                 ? "Searching…"
                 : q.trim()
-                  ? "No matching gifts."
-                  : "No gifts near this payment's amount — type to search all gifts."}
+                  ? "No matching gifts or pledges."
+                  : "No gifts near this payment's amount — type to search all gifts and pledges."}
             </p>
           ) : (
             results.map((g) => {
+              const isOpp = g.nodeType === "opportunity";
               const owningId = g.alreadyLinkedStagedPaymentId ?? null;
               const linked = owningId != null;
               const canUnlink = linked && Boolean(onUnlink);
+              // Amount/date bands never hide or block a candidate — they only
+              // FLAG a mismatch so the reviewer stays in charge of the match.
+              const cardAmt = card.amount != null ? Number(card.amount) : null;
+              const candAmt = g.amount != null ? Number(g.amount) : null;
+              const amountDiffers =
+                cardAmt != null &&
+                candAmt != null &&
+                Number.isFinite(cardAmt) &&
+                Number.isFinite(candAmt) &&
+                Math.abs(candAmt - cardAmt) >
+                  Math.max(Math.abs(cardAmt) * 0.02, 2);
+              const daysApart =
+                card.dateReceived && g.date
+                  ? Math.round(
+                      Math.abs(
+                        new Date(g.date).getTime() -
+                          new Date(card.dateReceived).getTime(),
+                      ) / 86_400_000,
+                    )
+                  : null;
+              const dateDiffers = daysApart != null && daysApart > 60;
               return (
                 <div
                   key={g.id}
@@ -4194,11 +4084,37 @@ function RetargetDialog({
                   >
                     <span className="min-w-0">
                       <span className="font-medium">{g.label}</span>
+                      {isOpp && (
+                        <Badge
+                          variant="outline"
+                          className="ml-1.5 px-1 py-0 align-middle text-[10px]"
+                        >
+                          Pledge / opportunity
+                        </Badge>
+                      )}
                       {(g.sublabel || g.date) && (
                         <span className="block text-xs text-muted-foreground">
                           {[
                             g.sublabel,
                             g.date ? formatDateShort(g.date) : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      )}
+                      {isOpp && !linked && (
+                        <span className="block text-[10px] text-muted-foreground">
+                          Picking this records the payment as a payment on the
+                          pledge.
+                        </span>
+                      )}
+                      {(amountDiffers || dateDiffers) && !linked && (
+                        <span className="block text-[10px] text-amber-600">
+                          {[
+                            amountDiffers
+                              ? "Amount differs from this payment"
+                              : null,
+                            dateDiffers ? `Dates ${daysApart} days apart` : null,
                           ]
                             .filter(Boolean)
                             .join(" · ")}
@@ -4285,10 +4201,7 @@ function PendingTray({
           >
             <div className="min-w-0">
               <div className="flex items-center gap-1 font-medium">
-                <Badge
-                  variant={s.kind === "reject" ? "destructive" : "secondary"}
-                  className="text-[10px]"
-                >
+                <Badge variant="secondary" className="text-[10px]">
                   {s.kind}
                 </Badge>
                 <span className="truncate">{s.label}</span>

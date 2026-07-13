@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearPaymentApplicationsForGiftIds } from "./paymentApplicationsTestUtil";
+import { chargeStatusSql } from "../lib/derivedStatus";
+import { getTableColumns } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -113,7 +115,6 @@ async function seedReconciledCharge(opts: {
     netAmount: opts.gross,
     dateReceived: "2026-03-15",
     payerName: `${RUN} payer`,
-    status: "reconciled",
     matchStatus: "matched",
     matchedGiftId: opts.matchedGiftId,
     organizationId: ORG_ID,
@@ -131,7 +132,10 @@ async function seedReconciledCharge(opts: {
 
 async function readCharge(id: string) {
   const [row] = await db
-    .select()
+    .select({
+      ...getTableColumns(schema.stripeStagedCharges),
+      status: chargeStatusSql,
+    })
     .from(schema.stripeStagedCharges)
     .where(eqFn(schema.stripeStagedCharges.id, id));
   return row;
@@ -275,7 +279,6 @@ describe.skipIf(!HAS_DB)(
         dateReceived: "2026-03-15",
         payerName: `${RUN} upsert payer`,
         rawCharge: { id, object: "charge", status: rawStatus },
-        status: rawStatus === "failed" ? "excluded" : "pending",
         exclusionReason: rawStatus === "failed" ? "failed_charge" : null,
         classificationSource: "auto",
         matchStatus: "unmatched",
@@ -306,9 +309,7 @@ describe.skipIf(!HAS_DB)(
       expect((await readCharge(id)).status).toBe("pending");
 
       // …then the next sync sees the charge as failed.
-      await runUpsert(
-        upsertValues(id, "failed", { status: "pending", exclusionReason: null }),
-      );
+      await runUpsert(upsertValues(id, "failed", { exclusionReason: null }));
       const row = await readCharge(id);
       expect(row.status).toBe("excluded");
       expect(row.exclusionReason).toBe("failed_charge");
@@ -318,10 +319,7 @@ describe.skipIf(!HAS_DB)(
       const id = nextId("ch");
       chargeIds.push(id);
       await db.insert(schema.stripeStagedCharges).values({
-        ...upsertValues(id, "failed", {
-          status: "pending",
-          exclusionReason: null,
-        }),
+        ...upsertValues(id, "failed", { exclusionReason: null }),
         classificationSource: "manual",
       } as UpsertValues);
 
@@ -331,22 +329,20 @@ describe.skipIf(!HAS_DB)(
       expect(row.exclusionReason).toBeNull();
     });
 
-    it("UPDATE: a human-resolved (reconciled) row is untouched by a failed refresh", async () => {
+    it("UPDATE: a human-resolved (match_confirmed) row is untouched by a failed refresh", async () => {
       const giftId = await seedGift("50.00");
       const id = nextId("ch");
       chargeIds.push(id);
+      // A human-confirmed gift link (autoApplied false) derives match_confirmed.
       await db.insert(schema.stripeStagedCharges).values({
-        ...upsertValues(id, "failed", {
-          status: "reconciled",
-          exclusionReason: null,
-        }),
+        ...upsertValues(id, "failed", { exclusionReason: null }),
         matchStatus: "matched",
         matchedGiftId: giftId,
       } as UpsertValues);
 
       await runUpsert(upsertValues(id, "failed"));
       const row = await readCharge(id);
-      expect(row.status).toBe("reconciled");
+      expect(row.status).toBe("match_confirmed");
       expect(row.exclusionReason).toBeNull();
       expect(row.matchedGiftId).toBe(giftId);
     });

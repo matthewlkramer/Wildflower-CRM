@@ -61,7 +61,6 @@ describe("changeReachedIntendedState", () => {
     expect(
       changeReachedIntendedState(probe, {
         done: [{ stagedPaymentId: sp, resolvedGiftId: "gift_a" }],
-        terminal: [],
       }),
     ).toBe(true);
   });
@@ -75,7 +74,6 @@ describe("changeReachedIntendedState", () => {
     expect(
       changeReachedIntendedState(probe, {
         done: [{ stagedPaymentId: "sp_other", resolvedGiftId: "gift_a" }],
-        terminal: [],
       }),
     ).toBe(false);
   });
@@ -89,7 +87,6 @@ describe("changeReachedIntendedState", () => {
     expect(
       changeReachedIntendedState(probe, {
         done: [{ stagedPaymentId: sp, resolvedGiftId: "gift_target" }],
-        terminal: [],
       }),
     ).toBe(true);
   });
@@ -103,25 +100,7 @@ describe("changeReachedIntendedState", () => {
     expect(
       changeReachedIntendedState(probe, {
         done: [{ stagedPaymentId: sp, resolvedGiftId: "gift_other" }],
-        terminal: [],
       }),
-    ).toBe(false);
-  });
-
-  it("treats a reject as applied once the payment sits in a terminal card", () => {
-    const probe: ResolvedStateProbe = {
-      kind: "reject",
-      stagedPaymentId: sp,
-      targetGiftId: null,
-    };
-    expect(
-      changeReachedIntendedState(probe, {
-        done: [],
-        terminal: [{ stagedPaymentId: sp }],
-      }),
-    ).toBe(true);
-    expect(
-      changeReachedIntendedState(probe, { done: [], terminal: [] }),
     ).toBe(false);
   });
 });

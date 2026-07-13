@@ -66,7 +66,6 @@ async function seed(
     qbLineId: "",
     amount: "250.00",
     payerName: opts.markerText,
-    status: "pending",
     classificationSource: "auto",
     entitySource: opts.entitySource,
     entityId: opts.entityId,

@@ -48,8 +48,8 @@ export function deriveGiftLanes(
 }
 
 export interface EvidenceLaneInput {
-  // Staged-payment / Stripe-charge lifecycle status.
-  status: string; // pending | approved | reconciled | excluded | rejected
+  // Staged-payment / Stripe-charge DERIVED lifecycle status (lib/derivedStatus.ts).
+  status: string; // pending | match_proposed | match_confirmed | excluded
   // A donor candidate FK is set on the evidence row (auto-guessed or chosen).
   donorPresent: boolean;
   // A human has stamped the donor match (matchConfirmedAt is set).
@@ -66,9 +66,9 @@ export interface EvidenceLaneInput {
 // still open (human picked the donor, no gift link yet).
 export function deriveEvidenceLanes(i: EvidenceLaneInput): ReconciliationLanes {
   const funding: ReconciliationLaneStatus =
-    i.status === "excluded" || i.status === "rejected"
+    i.status === "excluded"
       ? "exempt"
-      : i.giftLinked || i.status === "reconciled" || i.status === "approved"
+      : i.giftLinked || i.status === "match_confirmed"
         ? "confirmed"
         : i.giftProposed
           ? "proposed"

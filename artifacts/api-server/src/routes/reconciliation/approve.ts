@@ -8,7 +8,7 @@ import {
   stripePayouts,
   settlementLinks,
 } from "@workspace/db/schema";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import { asyncHandler, newId, notFound } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import {
@@ -37,6 +37,11 @@ import {
   qbLedgerPaymentIdForGiftExcludingPayment,
   qbLedgerGiftIdForPaymentExcludingGift,
 } from "../../lib/paymentApplications";
+import {
+  chargeStatusIn,
+  deriveStripeChargeStatus,
+  stagedStatusSql,
+} from "../../lib/derivedStatus";
 
 const router: IRouter = Router();
 
@@ -155,14 +160,14 @@ async function mintGiftFromEvidence(
 
   const stripeChargeId = body.stripeChargeId ?? null;
 
-  // Fast non-locking guard: every row to be minted must be an OPEN (pending, or a
-  // legacy approved) staged row with NO existing gift. For a source group this
+  // Fast non-locking guard: every row to be minted must be OPEN (derived
+  // pending/match_proposed) with NO existing gift. For a source group this
   // covers ALL members. (Minting is intentionally NOT idempotent — re-approving an
-  // already-reconciled row must not mint a second gift.)
+  // already-booked row must not mint a second gift.)
   const preIds = group ? group.memberIds : [stagedPaymentId];
   const preRows = await db
     .select({
-      status: stagedPayments.status,
+      status: stagedStatusSql,
       matchedGiftId: stagedPayments.matchedGiftId,
       createdGiftId: stagedPayments.createdGiftId,
       groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
@@ -225,8 +230,11 @@ async function mintGiftFromEvidence(
       // under the lock. `staged` is the representative — the evidence the gift
       // HEADER is built from.
       const lockIds = group ? group.memberIds : [stagedPaymentId];
+      // Full row + the DERIVED status (the EXISTS arms — settlement link,
+      // counted ledger row — can't be derived from the row alone, and a
+      // split-resolved row carries none of the three gift-link columns).
       const lockedRows = await tx
-        .select()
+        .select({ ...getTableColumns(stagedPayments), status: stagedStatusSql })
         .from(stagedPayments)
         .where(inArray(stagedPayments.id, lockIds))
         .orderBy(stagedPayments.id)
@@ -324,8 +332,8 @@ async function mintGiftFromEvidence(
             message: "stripe charge not found",
           });
         }
-        // A fresh mint can only claim a still-free (pending) charge.
-        if (charge.status !== "pending") {
+        // A fresh mint can only claim a still-free (derived-pending) charge.
+        if (deriveStripeChargeStatus(charge) !== "pending") {
           throw new ApproveAbort(409, {
             error: "stripe_charge_not_available",
             message:
@@ -358,7 +366,9 @@ async function mintGiftFromEvidence(
           .where(
             and(
               inArray(stripeStagedCharges.stripePayoutId, stagedPayoutIds),
-              ne(stripeStagedCharges.status, "reconciled"),
+              // Claimable = still open (an excluded charge is terminal noise
+              // and must not block a QB-only mint; a booked charge is taken).
+              chargeStatusIn(["pending", "match_proposed"]),
             ),
           );
         stripeChargesAvailable = n;
@@ -679,7 +689,7 @@ router.post(
     // again inside the transaction below.
     const pre = await db
       .select({
-        status: stagedPayments.status,
+        status: stagedStatusSql,
         matchedGiftId: stagedPayments.matchedGiftId,
         groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
       })
@@ -687,7 +697,7 @@ router.post(
       .where(eq(stagedPayments.id, stagedPaymentId))
       .then((r) => r[0]);
     if (!pre) return notFound(res, "staged payment");
-    if (pre.status === "reconciled") {
+    if (pre.status === "match_confirmed") {
       const tiedGiftId = pre.matchedGiftId ?? pre.groupReconciledGiftId ?? null;
       if (tiedGiftId === giftId) {
         res.json({
@@ -743,7 +753,10 @@ router.post(
         }
 
         const staged = await tx
-          .select()
+          .select({
+            ...getTableColumns(stagedPayments),
+            status: stagedStatusSql,
+          })
           .from(stagedPayments)
           .where(eq(stagedPayments.id, stagedPaymentId))
           .for("update")
@@ -952,12 +965,14 @@ router.post(
               message: "stripe charge not found",
             });
           }
-          // The charge must be free to claim: pending, or already reconciled to
+          // The charge must be free to claim: pending, or already confirmed to
           // THIS same gift (idempotent). Anything else (resolved elsewhere) is a
           // conflict — the charge can back only one gift.
-          const chargePending = charge.status === "pending";
+          const chargeDerived = deriveStripeChargeStatus(charge);
+          const chargePending = chargeDerived === "pending";
           const chargeIdempotent =
-            charge.status === "reconciled" && charge.matchedGiftId === giftId;
+            chargeDerived === "match_confirmed" &&
+            charge.matchedGiftId === giftId;
           if (!chargePending && !chargeIdempotent) {
             throw new ApproveAbort(409, {
               error: "stripe_charge_not_available",
@@ -1005,7 +1020,9 @@ router.post(
             .where(
               and(
                 inArray(stripeStagedCharges.stripePayoutId, stagedPayoutIds),
-                ne(stripeStagedCharges.status, "reconciled"),
+                // Claimable = still open (excluded charges are terminal noise,
+                // booked charges are taken).
+                chargeStatusIn(["pending", "match_proposed"]),
               ),
             );
           stripeChargesAvailable = n;

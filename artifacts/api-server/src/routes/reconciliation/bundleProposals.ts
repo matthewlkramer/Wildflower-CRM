@@ -53,6 +53,7 @@ import {
   TransitionError,
 } from "../../lib/stripeConfirm";
 import { isSettlementLump } from "../../lib/settlementLump";
+import { stagedStatusSql } from "../../lib/derivedStatus";
 import { donorOf, donorsMatch, type LinkDonor } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
@@ -1024,7 +1025,8 @@ router.post(
           .select({
             id: stagedPayments.id,
             qbEntityType: stagedPayments.qbEntityType,
-            status: stagedPayments.status,
+            // DERIVED lifecycle status (no stored column) — lib/derivedStatus.ts.
+            status: stagedStatusSql.as("status"),
             payerName: stagedPayments.payerName,
             lineDescription: stagedPayments.lineDescription,
             qbTransactionMemo: stagedPayments.qbTransactionMemo,

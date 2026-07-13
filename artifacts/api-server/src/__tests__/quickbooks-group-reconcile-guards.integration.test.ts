@@ -8,6 +8,8 @@ import {
   vi,
 } from "vitest";
 import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
+import { stagedStatusSql } from "../lib/derivedStatus";
+import { getTableColumns } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -116,8 +118,9 @@ async function seedGift(amount: string): Promise<string> {
 
 /**
  * Seed a staged row. `depositId` is required so each test can opt into the
- * same/different/null deposit it needs; `status`, `matchedGiftId` and
- * `groupReconciledGiftId` default to a clean pending row.
+ * same/different/null deposit it needs; `matchedGiftId`, `autoApplied` and
+ * `groupReconciledGiftId` default to a clean pending row (status is DERIVED
+ * from these facts — there is no stored column).
  */
 async function seedStaged(
   giftId: string,
@@ -125,7 +128,7 @@ async function seedStaged(
   amount: string,
   opts: {
     depositId: string | null;
-    status?: "pending" | "approved" | "rejected" | "reconciled";
+    autoApplied?: boolean;
     matchedGiftId?: string | null;
     groupReconciledGiftId?: string | null;
     payerName?: string | null;
@@ -141,7 +144,7 @@ async function seedStaged(
     qbLineId: label,
     amount,
     qbDepositId: opts.depositId,
-    status: opts.status ?? "pending",
+    autoApplied: opts.autoApplied ?? false,
     matchedGiftId: opts.matchedGiftId ?? null,
     groupReconciledGiftId: opts.groupReconciledGiftId ?? null,
     payerName: opts.payerName ?? null,
@@ -173,7 +176,10 @@ async function seedStaged(
 
 async function readStaged(id: string) {
   const [row] = await db
-    .select()
+    .select({
+      ...getTableColumns(schema.stagedPayments),
+      status: stagedStatusSql,
+    })
     .from(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.id, id));
   return row;
@@ -334,8 +340,8 @@ describe.skipIf(!HAS_DB)(
       // groupReconciledGiftId and flip to reconciled.
       const a = await readStaged(aId);
       const b = await readStaged(bId);
-      expect(a.status).toBe("reconciled");
-      expect(b.status).toBe("reconciled");
+      expect(a.status).toBe("match_confirmed");
+      expect(b.status).toBe("match_confirmed");
       expect(a.groupReconciledGiftId).toBe(giftId);
       expect(b.groupReconciledGiftId).toBe(giftId);
       expect(a.matchedGiftId).toBe(giftId);
@@ -378,8 +384,8 @@ describe.skipIf(!HAS_DB)(
       expect(ok.status).toBe(200);
       const a = await readStaged(aId);
       const b = await readStaged(bId);
-      expect(a.status).toBe("reconciled");
-      expect(b.status).toBe("reconciled");
+      expect(a.status).toBe("match_confirmed");
+      expect(b.status).toBe("match_confirmed");
       expect(a.groupReconciledGiftId).toBe(giftId);
       expect(b.groupReconciledGiftId).toBe(giftId);
       expect(a.matchedGiftId).toBe(giftId);
@@ -419,8 +425,8 @@ describe.skipIf(!HAS_DB)(
       expect(ok.status).toBe(200);
       const a = await readStaged(aId);
       const b = await readStaged(bId);
-      expect(a.status).toBe("reconciled");
-      expect(b.status).toBe("reconciled");
+      expect(a.status).toBe("match_confirmed");
+      expect(b.status).toBe("match_confirmed");
       expect(a.groupReconciledGiftId).toBe(giftId);
       expect(b.groupReconciledGiftId).toBe(giftId);
     }, 30_000);
@@ -479,8 +485,8 @@ describe.skipIf(!HAS_DB)(
       expect(corrected.status).toBe(200);
       const a = await readStaged(aId);
       const b = await readStaged(bId);
-      expect(a.status).toBe("reconciled");
-      expect(b.status).toBe("reconciled");
+      expect(a.status).toBe("match_confirmed");
+      expect(b.status).toBe("match_confirmed");
       expect(a.groupReconciledGiftId).toBe(giftId);
       expect(b.groupReconciledGiftId).toBe(giftId);
     }, 30_000);
@@ -536,8 +542,8 @@ describe.skipIf(!HAS_DB)(
 
       const a = await readStaged(aId);
       const b = await readStaged(bId);
-      expect(a.status).toBe("reconciled");
-      expect(b.status).toBe("reconciled");
+      expect(a.status).toBe("match_confirmed");
+      expect(b.status).toBe("match_confirmed");
       expect(a.groupReconciledGiftId).toBe(giftId);
       expect(b.groupReconciledGiftId).toBe(giftId);
       expect(a.matchedGiftId).toBe(giftId);
@@ -575,7 +581,7 @@ describe.skipIf(!HAS_DB)(
       });
       expect(ok.status).toBe(200);
       const a = await readStaged(aId);
-      expect(a.status).toBe("reconciled");
+      expect(a.status).toBe("match_confirmed");
       expect(a.groupReconciledGiftId).toBe(giftId);
     }, 30_000);
 
@@ -616,13 +622,12 @@ describe.skipIf(!HAS_DB)(
       const otherGiftId = await seedGift("50.00");
       const depositId = `${RUN}_dep_np`;
       const pendingId = await seedStaged(giftId, "a", "50.00", { depositId });
-      // An approvable status (approved) is no longer enough to reject on its own
-      // — a row is rejected because it already carries a gift link. The
-      // not_pending guard runs before the deposit/tolerance guards, so a shared
-      // deposit + matching total prove the rejection is specifically the link.
+      // A row is rejected because it already carries a gift link (which derives
+      // match_confirmed). The not_pending guard runs before the deposit/
+      // tolerance guards, so a shared deposit + matching total prove the
+      // rejection is specifically the link.
       const resolvedId = await seedStaged(giftId, "b", "50.00", {
         depositId,
-        status: "approved",
         groupReconciledGiftId: otherGiftId,
       });
 
@@ -638,23 +643,23 @@ describe.skipIf(!HAS_DB)(
       await expectUntouchedPending(pendingId);
       // The already-linked row is left exactly as seeded.
       const resolved = await readStaged(resolvedId);
-      expect(resolved.status).toBe("approved");
+      expect(resolved.status).toBe("match_confirmed");
       expect(resolved.groupReconciledGiftId).toBe(otherGiftId);
     }, 30_000);
 
-    it("accepts a legacy approved row with no gift link (FK-stranded) and reconciles the whole group", async () => {
-      // Repro of the prod bug: a member was auto-matched to a gift (→ approved),
-      // then that gift was deleted, and the gift-link FK's ON DELETE SET NULL
-      // cleared the link — stranding the row at status='approved' with all three
-      // gift links null. Such a row is still real work (mirrors the reconciler's
-      // isStagedApprovable = pending OR approved) and must be groupable, not
+    it("accepts an FK-stranded auto-applied row with no gift link and reconciles the whole group", async () => {
+      // Repro of the prod bug: a member was auto-matched to a gift, then that
+      // gift was deleted, and the gift-link FK's ON DELETE SET NULL cleared the
+      // link — stranding the row with auto_applied=true but all three gift
+      // links null. With derived status such a row correctly reads `pending`
+      // (a proposal requires a live gift link) and must be groupable, not
       // rejected with 409 not_pending.
       const giftId = await seedGift("100.00");
       const depositId = `${RUN}_dep_legacy_ok`;
       const pendingId = await seedStaged(giftId, "a", "50.00", { depositId });
       const strandedId = await seedStaged(giftId, "b", "50.00", {
         depositId,
-        status: "approved",
+        autoApplied: true,
       });
 
       const res = await api("/api/staged-payments/group-reconcile", {
@@ -668,8 +673,8 @@ describe.skipIf(!HAS_DB)(
       // representative (smallest id — "a") additionally carries matchedGiftId.
       const a = await readStaged(pendingId);
       const b = await readStaged(strandedId);
-      expect(a.status).toBe("reconciled");
-      expect(b.status).toBe("reconciled");
+      expect(a.status).toBe("match_confirmed");
+      expect(b.status).toBe("match_confirmed");
       expect(a.groupReconciledGiftId).toBe(giftId);
       expect(b.groupReconciledGiftId).toBe(giftId);
       expect(a.matchedGiftId).toBe(giftId);
@@ -686,7 +691,7 @@ describe.skipIf(!HAS_DB)(
       // own deposit doesn't matter; the conflict query keys on the gift link.
       const outsiderId = await seedStaged(giftId, "out", "100.00", {
         depositId: `${RUN}_dep_other`,
-        status: "approved",
+        autoApplied: true,
         matchedGiftId: giftId,
       });
 
@@ -701,10 +706,11 @@ describe.skipIf(!HAS_DB)(
       // The two group members are untouched.
       await expectUntouchedPending(aId);
       await expectUntouchedPending(bId);
-      // The outsider keeps its existing link, unchanged.
+      // The outsider keeps its existing link, unchanged (an unconfirmed
+      // auto-match derives match_proposed).
       const outsider = await readStaged(outsiderId);
       expect(outsider.matchedGiftId).toBe(giftId);
-      expect(outsider.status).toBe("approved");
+      expect(outsider.status).toBe("match_proposed");
     }, 30_000);
 
     it("rejects a single-row array at the schema layer with 400 validation_error and changes nothing", async () => {

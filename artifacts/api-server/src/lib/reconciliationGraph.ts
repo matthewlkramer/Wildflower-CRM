@@ -38,6 +38,7 @@ import {
   asc,
   desc,
   eq,
+  getTableColumns,
   ilike,
   inArray,
   isNull,
@@ -60,6 +61,7 @@ import {
   giftMatchAmountBoundsKnownNet,
 } from "./giftMatch";
 import { stripeChargeSearchWhere } from "./stripeChargeSearch";
+import { chargeStatusWhere, stagedStatusSql } from "./derivedStatus";
 import { groupMemberIdsFor } from "./unitGroupMembership";
 import {
   giftCandidateJoins,
@@ -783,8 +785,10 @@ export async function buildReconciliationGraph(
   stagedPaymentId: string,
   viewer: Viewer,
 ): Promise<RecGraph | null> {
+  // Full row + the DERIVED status (the EXISTS arms — settlement link, counted
+  // ledger row — can't be derived from the row's own columns).
   const staged = await db
-    .select()
+    .select({ ...getTableColumns(stagedPayments), status: stagedStatusSql })
     .from(stagedPayments)
     .where(eq(stagedPayments.id, stagedPaymentId))
     .then((r) => r[0]);
@@ -1085,17 +1089,21 @@ export async function buildReconciliationGraph(
       stripeEvidence != null &&
       (stripeEvidence.reconciliationStatus === "proposed" ||
         stripeEvidence.reconciliationStatus === "conflict_approved");
-    if (staged.status === "reconciled") {
-      blockers.push("Already reconciled.");
-    } else if (staged.status === "approved" && stripeAwaiting) {
+    if (staged.status === "match_confirmed" && stripeAwaiting) {
       // The QB→gift side is done; only the Stripe payout still needs a human to
       // confirm tying it in. Say so explicitly instead of a flat "Already
-      // approved." so the reviewer knows which track is outstanding.
+      // matched." so the reviewer knows which track is outstanding.
       blockers.push(
-        "QuickBooks is already approved into a gift — only the Stripe payout is still awaiting confirmation.",
+        "QuickBooks is already matched into a gift — only the Stripe payout is still awaiting confirmation.",
       );
+    } else if (staged.status === "match_confirmed") {
+      blockers.push("Already matched.");
+    } else if (staged.status === "excluded") {
+      blockers.push("Already excluded.");
     } else {
-      blockers.push(`Already ${staged.status}.`);
+      // match_proposed: an auto-applied match awaiting human review — the
+      // reviewer confirms (or re-targets) it; it is not one-click ready.
+      blockers.push("An auto-proposed match is awaiting confirmation.");
     }
   }
   if (donorState === "none")
@@ -1298,26 +1306,97 @@ async function searchGifts(
   anchor: GiftSearchAnchor,
   p: RecSearchParams,
 ): Promise<RecCandidate[]> {
-  if (anchor.amount == null) return [];
-  const donorFilter = p.donorId
-    ? sql`(${giftsAndPayments.organizationId} = ${p.donorId} OR ${giftsAndPayments.individualGiverPersonId} = ${p.donorId} OR ${giftsAndPayments.householdId} = ${p.donorId})`
-    : undefined;
-  const rows = (await fetchGiftCandidates({
-    link: anchor.link,
-    donorFilter,
-    amount: anchor.amount,
-    date: anchor.date,
-    days: p.days,
-    limit: p.limit,
-    q: p.q,
-    split: p.split,
-  })) as NonNullable<RecGiftRow>[];
+  const rows =
+    anchor.amount == null
+      ? []
+      : ((await fetchGiftCandidates({
+          link: anchor.link,
+          donorFilter: p.donorId
+            ? sql`(${giftsAndPayments.organizationId} = ${p.donorId} OR ${giftsAndPayments.individualGiverPersonId} = ${p.donorId} OR ${giftsAndPayments.householdId} = ${p.donorId})`
+            : undefined,
+          amount: anchor.amount,
+          date: anchor.date,
+          days: p.days,
+          limit: p.limit,
+          q: p.q,
+          split: p.split,
+        })) as NonNullable<RecGiftRow>[]);
   // In split mode each candidate is a fraction of the payment, so an
   // amount-confidence score against the FULL payment would be misleadingly low —
   // suppress it (the amount is still shown; the score is not meaningful here).
-  return rows.map((g) =>
+  const giftCandidates = rows.map((g) =>
     giftRowToCandidate(g, p.split ? null : anchor.amount, p.viewer, p.split),
   );
+  // Unified search: the record a fundraiser is hunting for often lives as an
+  // OPPORTUNITY/pledge, not a gift (money promised but not yet booked). A
+  // free-text query therefore ALWAYS includes matching opportunities as
+  // labelled, SELECTABLE candidates after the gifts — the UI books a pick as a
+  // payment on that pledge. A manual match always wins; nothing is hidden or
+  // disabled just because it isn't a gift yet.
+  const q = (p.q ?? "").trim();
+  if (q.length >= 2) {
+    const opps = await searchOppsForGiftSearch(
+      p,
+      giftCandidates.length === 0 ? p.limit : OPP_APPEND_LIMIT,
+    );
+    return [...giftCandidates, ...opps];
+  }
+  return giftCandidates;
+}
+
+// How many opportunity candidates ride along when the gift search itself has
+// hits (when it has none, opportunities get the full limit).
+const OPP_APPEND_LIMIT = 5;
+
+// Opportunity arm of the unified free-text GIFT search. Matches the same text
+// surfaces the gift search does (record name + donor names) so a donor-name
+// query like "Melva Legrand" finds the donor's opportunity even when its
+// record name doesn't contain the donor. Donor-scoped when the caller pinned a
+// donor. Labels are anonymous-masked like every other candidate.
+async function searchOppsForGiftSearch(
+  p: RecSearchParams,
+  limit: number,
+): Promise<RecCandidate[]> {
+  const q = (p.q ?? "").trim();
+  const like = `%${escapeLike(q)}%`;
+  const conds: SQL[] = [isNull(opportunitiesAndPledges.archivedAt)];
+  if (p.donorId)
+    conds.push(
+      sql`(${opportunitiesAndPledges.organizationId} = ${p.donorId} OR ${opportunitiesAndPledges.individualGiverPersonId} = ${p.donorId} OR ${opportunitiesAndPledges.householdId} = ${p.donorId})`,
+    );
+  const textMatch = or(
+    ilike(opportunitiesAndPledges.name, like),
+    ilike(organizations.name, like),
+    ilike(households.name, like),
+    ilike(personNameSql, like),
+  );
+  if (textMatch) conds.push(textMatch);
+
+  const rows = (await db
+    .select(oppCols)
+    .from(opportunitiesAndPledges)
+    .leftJoin(
+      organizations,
+      eq(organizations.id, opportunitiesAndPledges.organizationId),
+    )
+    .leftJoin(
+      households,
+      eq(households.id, opportunitiesAndPledges.householdId),
+    )
+    .leftJoin(
+      people,
+      eq(people.id, opportunitiesAndPledges.individualGiverPersonId),
+    )
+    .where(and(...conds))
+    .orderBy(asc(opportunitiesAndPledges.name))
+    .limit(limit)) as OppRow[];
+
+  const displays = await loadDonorDisplays(
+    rows
+      .map(oppDonorPair)
+      .filter((x): x is { kind: RecDonorKind; id: string } => x != null),
+  );
+  return rows.map((o) => oppToCandidate(o, displays, p.viewer, "manual"));
 }
 
 async function searchOpps(p: RecSearchParams): Promise<RecCandidate[]> {
@@ -1475,7 +1554,16 @@ export async function searchPayouts(
           ) ORDER BY c.gross_amount DESC NULLS LAST)
         FROM (
           SELECT cc.id, cc.payer_name, cc.description, cc.gross_amount, cc.date_received,
-                 cc.status, cc.exclusion_reason
+                 (CASE
+              WHEN cc.exclusion_reason IS NOT NULL THEN 'excluded'
+              WHEN cc.auto_applied = true AND cc.match_confirmed_at IS NULL
+                   AND (cc.matched_gift_id IS NOT NULL OR cc.created_gift_id IS NOT NULL)
+                THEN 'match_proposed'
+              WHEN cc.matched_gift_id IS NOT NULL OR cc.created_gift_id IS NOT NULL
+                THEN 'match_confirmed'
+              ELSE 'pending'
+            END) AS status,
+                 cc.exclusion_reason
           FROM stripe_staged_charges cc
           WHERE cc.stripe_payout_id = ${stripePayouts.id}
           ORDER BY cc.gross_amount DESC NULLS LAST
@@ -1595,11 +1683,12 @@ async function searchQbStagedRows(
 // Stripe leg of the un-anchored payment search (includeStripe=true). Stripe
 // charges carry the donor's own name/email, which the coarse QB deposit lumps
 // often lack — so the stray-gift picker searches both sources. Rules:
-//   - Failed (excluded), rejected, refunded, and disputed charges never appear
-//     — they aren't linkable money.
-//   - A non-pending charge appears ONLY when it is already tied to a gift
-//     (matched or created), surfaced via alreadyLinkedGiftId so the picker can
-//     gray it and offer the per-charge revert as an unlink.
+//   - Excluded (e.g. failed), refunded, and disputed charges never appear —
+//     they aren't linkable money. Every remaining charge is either derived
+//     `pending` (open) or gift-tied (match_proposed / match_confirmed), so a
+//     single NOT-excluded predicate covers both arms; a tied charge is
+//     surfaced via alreadyLinkedGiftId so the picker can gray it and offer
+//     the per-charge revert as an unlink.
 //   - Amount uses the shared KNOWN-NET fee band (giftMatchAmountBoundsKnownNet,
 //     the same policy helper the one-click stray-gift proposal and the approve
 //     gate use): a target anywhere in [min(net,gross), max(net,gross)] is the
@@ -1613,8 +1702,7 @@ async function searchStripeChargeRows(
   hasAmount: boolean,
 ): Promise<RecCandidate[]> {
   const conds: SQL[] = [
-    sql`${stripeStagedCharges.status} NOT IN ('excluded', 'rejected')`,
-    sql`(${stripeStagedCharges.status} = 'pending' OR ${stripeStagedCharges.matchedGiftId} IS NOT NULL OR ${stripeStagedCharges.createdGiftId} IS NOT NULL)`,
+    sql`NOT ${chargeStatusWhere.excluded}`,
     eq(stripeStagedCharges.refunded, false),
     eq(stripeStagedCharges.disputed, false),
   ];

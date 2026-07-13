@@ -60,6 +60,7 @@ import { buildGiftValuesFromStripeCharge } from "../lib/stripeGift";
 import {
   bookStripeChargeApplication,
   removePaymentApplicationsForGift,
+  removePaymentApplicationsForPayment,
   removePaymentApplicationsForStripeCharge,
 } from "../lib/paymentApplications";
 import {
@@ -89,6 +90,12 @@ import {
 import { proposePayoutMatches } from "../lib/stripeReconcile";
 import { proposeChargeQbTies } from "../lib/chargeQbTie";
 import {
+  chargeStatusIn,
+  chargeStatusSql,
+  chargeStatusWhere,
+  deriveStripeChargeStatus,
+} from "../lib/derivedStatus";
+import {
   deriveEvidenceLanes,
   derivePayoutLanes,
 } from "../lib/reconciliationLanes";
@@ -102,14 +109,13 @@ import {
  * triggers. Mirrors the QuickBooks reconciler (routes/quickbooks.ts) but keyed
  * on Stripe ids and grouped under the payout each charge settled in.
  *
- * Queue buckets (derived from the shared status / autoApplied / matchConfirmedAt
- * columns, identical semantics to staged_payments):
- *   Needs review : status='pending'.
- *   Auto-matched : status='approved' AND autoApplied=true AND matchConfirmedAt
- *                  IS NULL — high-confidence reconciles the system applied.
- *   Done         : status='approved' a human confirmed or created.
- *   Excluded     : status='excluded' — non-gift noise.
- *   Rejected     : status='rejected'.
+ * Queue buckets (status is DERIVED from facts — see lib/derivedStatus.ts —
+ * identical semantics to staged_payments):
+ *   pending         : no exclusion, no gift link — still needs review.
+ *   match_proposed  : autoApplied=true, matchConfirmedAt IS NULL, gift link
+ *                     present — high-confidence reconciles the system applied.
+ *   match_confirmed : linked to / minted into a gift (human or confirmed auto).
+ *   excluded        : exclusion_reason set — non-gift noise or a dismissal.
  *
  * Money: donors are credited the GROSS charge amount. The payout net is
  * gross − fees − refunds; the gap is processor fees (never a donor amount).
@@ -146,14 +152,13 @@ function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void 
 const resolvedGift = alias(giftsAndPayments, "resolved_gift");
 
 // Derived queue bucket for a staged charge (kept in sync with queueWhere below).
+// Status is fully derived from facts (lib/derivedStatus.ts) — there is no
+// stored status column.
 const queueExpr = sql<string>`
   CASE
-    WHEN ${stripeStagedCharges.status} = 'excluded' THEN 'excluded'
-    WHEN ${stripeStagedCharges.status} = 'rejected' THEN 'rejected'
-    WHEN ${stripeStagedCharges.status} = 'pending'  THEN 'needs_review'
-    WHEN ${stripeStagedCharges.status} = 'approved'
-         AND ${stripeStagedCharges.autoApplied} = true
-         AND ${stripeStagedCharges.matchConfirmedAt} IS NULL THEN 'auto_matched'
+    WHEN ${chargeStatusWhere.excluded} THEN 'excluded'
+    WHEN ${chargeStatusWhere.pending} THEN 'needs_review'
+    WHEN ${chargeStatusWhere.match_proposed} THEN 'auto_matched'
     ELSE 'done'
   END
 `.as("queue");
@@ -165,6 +170,9 @@ const { rawCharge: _rawCharge, ...stagedColumns } =
 
 const stagedSelect = {
   ...stagedColumns,
+  // Derived lifecycle status — pending | match_proposed | match_confirmed |
+  // excluded (lib/derivedStatus.ts).
+  status: chargeStatusSql,
   queue: queueExpr,
   organizationName: organizations.name,
   householdName: households.name,
@@ -188,9 +196,8 @@ const stagedSelect = {
   payoutNetTotal: stripePayouts.netTotal,
   payoutArrivalDate: stripePayouts.arrivalDate,
   payoutStatus: stripePayouts.status,
-  // Non-destructive QuickBooks supersede audit (display-only; populated by the
-  // gated supersede pass). 'conflict_approved' blocks minting a duplicate gift.
-  payoutQbSupersedeStatus: stripePayouts.qbSupersedeStatus,
+  // A conflict gift on the payout's settlement link blocks minting a
+  // duplicate per-charge gift (the KEEP/REPLACE decision is still open).
   payoutQbConflictGiftId: settlementLinks.conflictGiftId,
 };
 
@@ -231,7 +238,6 @@ type Queue =
   | "auto_matched"
   | "excluded"
   | "done"
-  | "rejected"
   | "refund_review";
 
 const STAGED_SORTS = [
@@ -298,33 +304,21 @@ function stagedSearchWhere(term: string) {
 function queueWhere(queue: Queue) {
   switch (queue) {
     case "auto_matched":
-      return and(
-        eq(stripeStagedCharges.status, "approved"),
-        eq(stripeStagedCharges.autoApplied, true),
-        sql`${stripeStagedCharges.matchConfirmedAt} IS NULL`,
-      );
+      // A system-applied gift link a human has not yet reviewed.
+      return chargeStatusWhere.match_proposed;
     case "done":
-      // A charge is "done" when it is settled work: an approved booking the
-      // human has confirmed (or that was never auto-matched), OR a `reconciled`
-      // evidence row (D4 — minted/reconciled a gift and is now permanent).
-      return or(
-        and(
-          eq(stripeStagedCharges.status, "approved"),
-          sql`(${stripeStagedCharges.matchConfirmedAt} IS NOT NULL OR ${stripeStagedCharges.autoApplied} = false)`,
-        ),
-        eq(stripeStagedCharges.status, "reconciled"),
-      );
+      // Settled work: the charge's money is booked to a gift (linked or
+      // minted) and human-owned (confirmed or never auto-applied).
+      return chargeStatusWhere.match_confirmed;
     case "excluded":
-      return eq(stripeStagedCharges.status, "excluded");
-    case "rejected":
-      return eq(stripeStagedCharges.status, "rejected");
+      return chargeStatusWhere.excluded;
     case "refund_review":
       // Cross-cutting filter (independent of status): charges with a refund /
       // chargeback proposal awaiting a human confirm/dismiss (INV-13).
       return eq(stripeStagedCharges.refundPropagationStatus, "proposed");
     case "needs_review":
     default:
-      return eq(stripeStagedCharges.status, "pending");
+      return chargeStatusWhere.pending;
   }
 }
 
@@ -339,7 +333,6 @@ router.get(
         "auto_matched",
         "excluded",
         "done",
-        "rejected",
         "refund_review",
       ] as const
     ).includes(raw as Queue)
@@ -405,37 +398,30 @@ router.get(
 router.get(
   "/stripe-staged-charges-summary",
   asyncHandler(async (_req, res) => {
-    const [statusRows, reasonRows, autoMatchedRow, refundReviewRow] =
-      await Promise.all([
-        db
-          .select({ status: stripeStagedCharges.status, value: count() })
-          .from(stripeStagedCharges)
-          .groupBy(stripeStagedCharges.status),
-        db
-          .select({
-            reason: stripeStagedCharges.exclusionReason,
-            value: count(),
-          })
-          .from(stripeStagedCharges)
-          .where(eq(stripeStagedCharges.status, "excluded"))
-          .groupBy(stripeStagedCharges.exclusionReason),
-        db
-          .select({ value: count() })
-          .from(stripeStagedCharges)
-          .where(queueWhere("auto_matched"))
-          .then((r) => r[0]),
-        db
-          .select({ value: count() })
-          .from(stripeStagedCharges)
-          .where(queueWhere("refund_review"))
-          .then((r) => r[0]),
-      ]);
+    const [statusRows, reasonRows, refundReviewRow] = await Promise.all([
+      db
+        .select({ status: chargeStatusSql, value: count() })
+        .from(stripeStagedCharges)
+        .groupBy(chargeStatusSql),
+      db
+        .select({
+          reason: stripeStagedCharges.exclusionReason,
+          value: count(),
+        })
+        .from(stripeStagedCharges)
+        .where(chargeStatusWhere.excluded)
+        .groupBy(stripeStagedCharges.exclusionReason),
+      db
+        .select({ value: count() })
+        .from(stripeStagedCharges)
+        .where(queueWhere("refund_review"))
+        .then((r) => r[0]),
+    ]);
 
     const byStatus = {
       pending: 0,
-      approved: 0,
-      reconciled: 0,
-      rejected: 0,
+      match_proposed: 0,
+      match_confirmed: 0,
       excluded: 0,
     };
     for (const r of statusRows) {
@@ -477,14 +463,12 @@ router.get(
       }
     }
 
-    const autoMatched = autoMatchedRow?.value ?? 0;
     res.json({
       needsReview: byStatus.pending,
-      autoMatched,
-      // "done" = confirmed approved bookings (approved minus the auto-matched
-      // still awaiting confirmation) PLUS reconciled D4 evidence rows.
-      done: byStatus.approved - autoMatched + byStatus.reconciled,
-      rejected: byStatus.rejected,
+      // Derived buckets map 1:1 onto the queues: match_proposed = auto-matched
+      // awaiting review, match_confirmed = done (booked + human-owned).
+      autoMatched: byStatus.match_proposed,
+      done: byStatus.match_confirmed,
       excluded: byStatus.excluded,
       // Open refund/chargeback proposals awaiting a human confirm/dismiss.
       refundReview: refundReviewRow?.value ?? 0,
@@ -517,7 +501,7 @@ router.post(
     const body = parsed.data;
 
     const existing = await db
-      .select({ status: stripeStagedCharges.status })
+      .select({ status: chargeStatusSql })
       .from(stripeStagedCharges)
       .where(eq(stripeStagedCharges.id, id))
       .then((r) => r[0]);
@@ -550,10 +534,7 @@ router.post(
         updatedAt: new Date(),
       })
       .where(
-        and(
-          eq(stripeStagedCharges.id, id),
-          eq(stripeStagedCharges.status, "pending"),
-        ),
+        and(eq(stripeStagedCharges.id, id), chargeStatusWhere.pending),
       )
       .returning();
     if (!row) {
@@ -636,11 +617,15 @@ router.post(
           });
         }
         // Idempotent: already reconciled to THIS gift → no-op success.
-        if (charge.status === "reconciled" && charge.matchedGiftId === giftId) {
+        const chargeStatus = deriveStripeChargeStatus(charge);
+        if (
+          chargeStatus === "match_confirmed" &&
+          charge.matchedGiftId === giftId
+        ) {
           alreadyLinked = true;
           return;
         }
-        if (charge.status !== "pending") {
+        if (chargeStatus !== "pending") {
           throw new ReconcileAbort(409, {
             error: "not_pending",
             message:
@@ -800,7 +785,7 @@ router.post(
       .where(eq(stripeStagedCharges.id, id))
       .then((r) => r[0]);
     if (!existing) return notFound(res, "stripe staged charge");
-    if (existing.status !== "pending") {
+    if (deriveStripeChargeStatus(existing) !== "pending") {
       res.status(409).json({
         error: "not_pending",
         message: "This staged charge has already been resolved.",
@@ -830,7 +815,9 @@ router.post(
           .where(eq(stripeStagedCharges.id, id))
           .for("update")
           .then((r) => r[0]);
-        if (!locked || locked.status !== "pending") throw new Error(NOT_PENDING);
+        if (!locked || deriveStripeChargeStatus(locked) !== "pending") {
+          throw new Error(NOT_PENDING);
+        }
 
         // Non-destructive QuickBooks reconciliation guard: if this charge's
         // payout was matched to an ALREADY-APPROVED QB net lump (a conflict
@@ -896,9 +883,8 @@ router.post(
           .update(stripeStagedCharges)
           .set({
             // D4: this charge is now permanent EVIDENCE tied to the gift it
-            // minted — `reconciled`, never `approved` (which the queues treat as
-            // a still-actionable booking).
-            status: "reconciled",
+            // minted — createdGiftId + the confirmation stamps derive it to
+            // `match_confirmed`.
             createdGiftId: giftId,
             matchedGiftId: null,
             autoApplied: false,
@@ -959,55 +945,6 @@ router.post(
   }),
 );
 
-// ─── POST /stripe-staged-charges/:id/reject ────────────────────────────────
-router.post(
-  "/stripe-staged-charges/:id/reject",
-  asyncHandler(async (req, res) => {
-    const user = getAppUser(req);
-    if (!user) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    const id = paramId(req);
-    const existing = await db
-      .select({ status: stripeStagedCharges.status })
-      .from(stripeStagedCharges)
-      .where(eq(stripeStagedCharges.id, id))
-      .then((r) => r[0]);
-    if (!existing) return notFound(res, "stripe staged charge");
-    if (existing.status !== "pending") {
-      res.status(409).json({
-        error: "not_pending",
-        message: "This staged charge has already been resolved.",
-      });
-      return;
-    }
-    const [row] = await db
-      .update(stripeStagedCharges)
-      .set({
-        status: "rejected",
-        rejectedByUserId: user.id,
-        rejectedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(stripeStagedCharges.id, id),
-          eq(stripeStagedCharges.status, "pending"),
-        ),
-      )
-      .returning();
-    if (!row) {
-      res.status(409).json({
-        error: "not_pending",
-        message: "This staged charge has already been resolved.",
-      });
-      return;
-    }
-    res.json(row);
-  }),
-);
-
 // ─── POST /stripe-staged-charges/:id/exclude ───────────────────────────────
 // Human-driven exclude: file a staged charge under a non-gift category. Pins
 // classificationSource='manual'. Allowed from pending or excluded (reclassify).
@@ -1027,7 +964,7 @@ router.post(
     const { exclusionReason } = parsed.data;
 
     const existing = await db
-      .select({ status: stripeStagedCharges.status })
+      .select({ status: chargeStatusSql })
       .from(stripeStagedCharges)
       .where(eq(stripeStagedCharges.id, id))
       .then((r) => r[0]);
@@ -1044,7 +981,7 @@ router.post(
     const [row] = await db
       .update(stripeStagedCharges)
       .set({
-        status: "excluded",
+        // Setting exclusion_reason IS the exclusion (derived status).
         exclusionReason,
         classificationSource: "manual",
         updatedAt: new Date(),
@@ -1052,10 +989,7 @@ router.post(
       .where(
         and(
           eq(stripeStagedCharges.id, id),
-          or(
-            eq(stripeStagedCharges.status, "pending"),
-            eq(stripeStagedCharges.status, "excluded"),
-          ),
+          chargeStatusIn(["pending", "excluded"]),
         ),
       )
       .returning();
@@ -1078,7 +1012,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const id = paramId(req);
     const existing = await db
-      .select({ status: stripeStagedCharges.status })
+      .select({ status: chargeStatusSql })
       .from(stripeStagedCharges)
       .where(eq(stripeStagedCharges.id, id))
       .then((r) => r[0]);
@@ -1093,7 +1027,7 @@ router.post(
     const [row] = await db
       .update(stripeStagedCharges)
       .set({
-        status: "pending",
+        // Clearing exclusion_reason returns the row to derived `pending`.
         exclusionReason: null,
         classificationSource: "manual",
         updatedAt: new Date(),
@@ -1101,7 +1035,7 @@ router.post(
       .where(
         and(
           eq(stripeStagedCharges.id, id),
-          eq(stripeStagedCharges.status, "excluded"),
+          chargeStatusWhere.excluded,
         ),
       )
       .returning();
@@ -1116,10 +1050,77 @@ router.post(
   }),
 );
 
+// A Stripe-charge revert must also free any QuickBooks staged rows still
+// reconciled to the same gift: the QB row would otherwise stay
+// `reconciled`/`approved` pointing at a gift that just lost (or was deleted
+// with) its Stripe evidence, stranding real money behind a 409 with no
+// recovery path — a manual revert should fully undo the match. Rows are reset
+// to pending (mirroring the QB revert in quickbooks/shared.ts) so the reviewer
+// can immediately re-link them. Mint-owned (createdGiftId) and group-reconciled
+// rows are excluded — those must be reverted through their own explicit paths.
+async function cascadeResetLinkedQbStagedRows(
+  tx: Parameters<typeof unstampGiftFinalAmount>[0],
+  giftId: string,
+  opts: {
+    /** False when the gift is being deleted — there's no stamp left to unwind. */
+    unstampGift: boolean;
+  },
+): Promise<string[]> {
+  const rows = await tx
+    .select({ id: stagedPayments.id })
+    .from(stagedPayments)
+    .where(
+      and(
+        // matched_gift_id set (with no mint/group link) IS the linked state —
+        // status is derived from it, so no extra status filter is needed.
+        eq(stagedPayments.matchedGiftId, giftId),
+        isNull(stagedPayments.createdGiftId),
+        isNull(stagedPayments.groupReconciledGiftId),
+      ),
+    )
+    .for("update");
+  const ids: string[] = [];
+  for (const qb of rows) {
+    await removePaymentApplicationsForPayment(tx, qb.id);
+    if (opts.unstampGift) {
+      const un = await unstampGiftFinalAmount(tx, giftId, {
+        source: "quickbooks",
+        qbStagedPaymentId: qb.id,
+      });
+      if (un.restored) {
+        await adjustSingleAllocationOrFlag(
+          tx,
+          giftId,
+          un.oldAmount,
+          un.newAmount,
+          "quickbooks",
+        );
+      }
+    }
+    await tx
+      .update(stagedPayments)
+      .set({
+        // Clearing the gift link (+ confirmation stamps) derives back to pending.
+        matchedGiftId: null,
+        autoApplied: false,
+        matchConfirmedByUserId: null,
+        matchConfirmedAt: null,
+        approvedByUserId: null,
+        approvedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(stagedPayments.id, qb.id));
+    ids.push(qb.id);
+  }
+  return ids;
+}
+
 // ─── POST /stripe-staged-charges/:id/revert ────────────────────────────────
 // Undo an approved row: unlink a reconciled gift (leave the gift intact) or
 // delete a gift this row minted (clearing its allocations first — the gift
 // belongs solely to this charge), returning the row to the pending queue.
+// Any QuickBooks staged rows reconciled to the same gift are cascade-reset to
+// pending alongside (see cascadeResetLinkedQbStagedRows above).
 router.post(
   "/stripe-staged-charges/:id/revert",
   asyncHandler(async (req, res) => {
@@ -1134,6 +1135,10 @@ router.post(
     const NOT_REVERTIBLE = "__not_revertible__";
     let reverted: typeof stripeStagedCharges.$inferSelect | null = null;
     let survivingGiftId: string | null = null;
+    // QB staged rows cascade-reset to pending alongside this charge (logged
+    // after commit as an audit trail — the reviewer sees the QB row reappear
+    // in the pending queue).
+    const cascadedQbStagedIds: string[] = [];
     try {
       await db.transaction(async (tx) => {
         const locked = await tx
@@ -1143,9 +1148,13 @@ router.post(
           .for("update")
           .then((r) => r[0]);
         if (!locked) throw new Error(NOT_FOUND);
-        // D4: a row that minted/reconciled a gift is now `reconciled` evidence;
-        // legacy approved rows are still revertible too.
-        if (locked.status !== "approved" && locked.status !== "reconciled") {
+        // Revertible = the row carries a gift link of its own (auto-proposed
+        // or confirmed/minted). Pending and excluded rows have nothing to undo.
+        const lockedStatus = deriveStripeChargeStatus(locked);
+        if (
+          lockedStatus !== "match_proposed" &&
+          lockedStatus !== "match_confirmed"
+        ) {
           throw new Error(NOT_REVERTIBLE);
         }
 
@@ -1156,6 +1165,14 @@ router.post(
         const newMatchStatus = hasDonor ? "suggested" : "unmatched";
 
         if (locked.createdGiftId) {
+          // Free any QB staged rows still reconciled to this gift BEFORE
+          // deleting it — the FK would SET NULL silently, stranding them as
+          // reconciled-to-nothing with no revert path.
+          cascadedQbStagedIds.push(
+            ...(await cascadeResetLinkedQbStagedRows(tx, locked.createdGiftId, {
+              unstampGift: false,
+            })),
+          );
           // This row minted the gift — remove it. Clear allocations first
           // (gift_allocations FK is RESTRICT; every gift has >= 1 only after a
           // human allocates). The gift is gone, so there's no stamp to unwind.
@@ -1192,6 +1209,15 @@ router.post(
               "stripe",
             );
           }
+          // The Nneka case: a QB staged row reconciled to the same gift stays
+          // locked to it after this Stripe revert, blocking any re-link with a
+          // hard 409. A manual revert should fully undo the match — reset the
+          // QB side to pending too.
+          cascadedQbStagedIds.push(
+            ...(await cascadeResetLinkedQbStagedRows(tx, giftId, {
+              unstampGift: true,
+            })),
+          );
         } else {
           // Approved/reconciled with no gift linkage of its own — nothing to revert.
           throw new Error(NOT_REVERTIBLE);
@@ -1209,7 +1235,8 @@ router.post(
         const [row] = await tx
           .update(stripeStagedCharges)
           .set({
-            status: revertToExcluded ? "excluded" : "pending",
+            // Derived: exclusion_reason set → excluded; cleared (with the gift
+            // links nulled below) → pending.
             exclusionReason: revertToExcluded ? "failed_charge" : null,
             matchedGiftId: null,
             createdGiftId: null,
@@ -1254,6 +1281,12 @@ router.post(
     // A surviving (reconciled-to) gift lost its Stripe evidence — recompute tie.
     if (survivingGiftId) {
       await applyGiftQbTieMany(survivingGiftId);
+    }
+    if (cascadedQbStagedIds.length > 0) {
+      req.log.warn(
+        { stripeChargeId: id, cascadedQbStagedIds },
+        "Stripe revert cascade-reset QuickBooks staged payment(s) to pending",
+      );
     }
     void user;
     res.json(reverted);
@@ -1494,7 +1527,7 @@ router.get(
           sp.date_received,
           abs(sp.date_received - p.arrival_date)::int AS date_gap_days
         FROM staged_payments sp
-        WHERE sp.status IN ('pending', 'approved', 'reconciled')
+        WHERE sp.exclusion_reason IS NULL
           AND abs(sp.amount - COALESCE(p.amount, p.net_total)) <= 0.01
         ORDER BY
           abs(sp.date_received - p.arrival_date) ASC NULLS LAST,
@@ -1642,12 +1675,9 @@ const conflictOrg = alias(organizations, "conflict_org");
 const conflictHousehold = alias(households, "conflict_household");
 const conflictPerson = alias(people, "conflict_person");
 
-// Scrub the DEPRECATED qbSupersedeStatus column (a separate, older deprecation
-// lineage that is still physically present) from every payout response. The
-// authoritative settlement state lives in settlement_links and is exposed via
-// settlementLifecycle + the derived reconciliationLanes.
-const { qbSupersedeStatus: _qbSupersedeStatus, ...payoutResponseColumns } =
-  getTableColumns(stripePayouts);
+// The authoritative settlement state lives in settlement_links and is exposed
+// via settlementLifecycle + the derived reconciliationLanes.
+const payoutResponseColumns = getTableColumns(stripePayouts);
 
 const reconSelect = {
   ...payoutResponseColumns,
@@ -1656,7 +1686,29 @@ const reconSelect = {
   depositAmount: activeDeposit.amount,
   depositDateReceived: activeDeposit.dateReceived,
   depositPayerName: activeDeposit.payerName,
-  depositStatus: activeDeposit.status,
+  // Derived status for the ALIASED deposit row. The shared stagedStatusSql
+  // fragment references the base table (drizzle renders alias columns
+  // unqualified inside sql``), so this alias-local CASE qualifies
+  // "active_deposit" explicitly — keep in lockstep with lib/derivedStatus.ts.
+  depositStatus: sql<string>`CASE
+    WHEN "active_deposit"."exclusion_reason" IS NOT NULL THEN 'excluded'
+    WHEN "active_deposit"."auto_applied" = true
+         AND "active_deposit"."match_confirmed_at" IS NULL
+         AND ("active_deposit"."matched_gift_id" IS NOT NULL
+              OR "active_deposit"."created_gift_id" IS NOT NULL)
+      THEN 'match_proposed'
+    WHEN "active_deposit"."matched_gift_id" IS NOT NULL
+         OR "active_deposit"."created_gift_id" IS NOT NULL
+         OR "active_deposit"."group_reconciled_gift_id" IS NOT NULL
+         OR EXISTS (SELECT 1 FROM settlement_links sl
+                    WHERE sl.deposit_staged_payment_id = "active_deposit"."id"
+                      AND sl.lifecycle = 'confirmed')
+         OR EXISTS (SELECT 1 FROM payment_applications pa
+                    WHERE pa.payment_id = "active_deposit"."id"
+                      AND pa.link_role = 'counted')
+      THEN 'match_confirmed'
+    ELSE 'pending'
+  END`.as("deposit_status"),
   conflictGiftAmount: conflictGift.amount,
   conflictGiftDate: conflictGift.dateReceived,
   conflictGiftArchivedAt: conflictGift.archivedAt,

@@ -8,7 +8,7 @@ import {
   organizations,
   fundableProjects,
 } from "@workspace/db/schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
 import { newId } from "./helpers";
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
@@ -36,6 +36,11 @@ import {
   qbLedgerExistsForGiftExcludingPayment,
 } from "./paymentApplications";
 import { validateGiftInvariants } from "@workspace/api-zod";
+import {
+  stagedStatusSql,
+  stagedStatusWhere,
+  stagedStatusIn,
+} from "./derivedStatus";
 
 /** Postgres unique_violation — a concurrent staged row grabbed this gift first. */
 function isUniqueViolation(e: unknown): boolean {
@@ -129,14 +134,14 @@ export function buildStagedLineUpsert(
         stagedPayments.qbLineId,
       ],
       set,
-      // Normal sync only refreshes pending/excluded rows so a manual override
-      // is never clobbered. The full re-pull (enrichAllStatuses) drops that
-      // guard so approved/rejected rows also get the new capture fields — the
-      // `set` above only touches read-only QB facts, never review columns, so
-      // no approval / match / exclusion / grouping is affected.
+      // Normal sync only refreshes still-open rows (derived status pending /
+      // excluded) so a manual resolution is never clobbered. The full re-pull
+      // (enrichAllStatuses) drops that guard so resolved rows also get the new
+      // capture fields — the `set` above only touches read-only QB facts,
+      // never review columns, so no match / exclusion / grouping is affected.
       ...(opts.enrichAllStatuses
         ? {}
-        : { setWhere: sql`${stagedPayments.status} in ('pending', 'excluded')` }),
+        : { setWhere: stagedStatusIn(["pending", "excluded"]) }),
     });
 }
 
@@ -331,8 +336,13 @@ async function applyAutoCreateRule(
   const giftId = newId();
   let applied = false;
   await db.transaction(async (tx) => {
+    // Lock the row and compute its DERIVED status in the same statement (the
+    // lock makes the computed status stable for the rest of the transaction).
     const locked = await tx
-      .select()
+      .select({
+        ...getTableColumns(stagedPayments),
+        status: stagedStatusSql.as("status"),
+      })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, stagedId))
       .for("update")
@@ -380,7 +390,6 @@ async function applyAutoCreateRule(
     await tx
       .update(stagedPayments)
       .set({
-        status: "approved",
         matchStatus: "matched",
         createdGiftId: giftId,
         autoApplied: true,
@@ -420,8 +429,8 @@ export interface ApplyRuleToPendingResult {
 
 /**
  * Apply (or dry-run preview) a single admin-editable handling rule against all
- * currently-pending staged payments. Only `status='pending'` rows are touched;
- * approved / rejected / excluded rows are never altered.
+ * currently-pending staged payments. Only rows whose DERIVED status is
+ * `pending` are touched; resolved / excluded rows are never altered.
  *
  * - `exclude` rules mark matching pending rows as excluded (same reason as the
  *   ingest path, classificationSource='manual' to distinguish from auto).
@@ -439,7 +448,7 @@ export async function applyRuleToPendingPayments(
   const rows = await db
     .select()
     .from(stagedPayments)
-    .where(eq(stagedPayments.status, "pending"));
+    .where(stagedStatusWhere.pending);
 
   let matched = 0;
   let excluded = 0;
@@ -464,20 +473,17 @@ export async function applyRuleToPendingPayments(
     if (dryRun) continue;
 
     if (result.action === "exclude") {
+      // Setting exclusion_reason IS the exclusion (status derives from it).
       const updated = await db
         .update(stagedPayments)
         .set({
-          status: "excluded",
           exclusionReason: result.reason,
           classificationSource: "manual",
           matchedRuleId: result.ruleId,
           updatedAt: new Date(),
         })
         .where(
-          and(
-            eq(stagedPayments.id, row.id),
-            eq(stagedPayments.status, "pending"),
-          ),
+          and(eq(stagedPayments.id, row.id), stagedStatusWhere.pending),
         );
       if ((updated.rowCount ?? 0) > 0) excluded += 1;
     } else if (result.action === "auto_create_approve") {
@@ -533,8 +539,13 @@ async function applyAutoCreateRuleToRow(
   const giftId = newId();
   let applied = false;
   await db.transaction(async (tx) => {
+    // Lock the row and compute its DERIVED status in the same statement (the
+    // lock makes the computed status stable for the rest of the transaction).
     const locked = await tx
-      .select()
+      .select({
+        ...getTableColumns(stagedPayments),
+        status: stagedStatusSql.as("status"),
+      })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, stagedId))
       .for("update")
@@ -581,7 +592,6 @@ async function applyAutoCreateRuleToRow(
     await tx
       .update(stagedPayments)
       .set({
-        status: "approved",
         matchStatus: "matched",
         createdGiftId: giftId,
         autoApplied: true,
@@ -743,7 +753,6 @@ export async function syncQuickbooks(
         payerEmail: p.payerEmail,
         rawReference: p.rawReference,
         lineDescription: p.lineDescription,
-        status: excluded ? "excluded" : "pending",
         exclusionReason,
         classificationSource: "auto",
         matchedRuleId: ruleHit?.ruleId ?? null,
@@ -848,7 +857,7 @@ async function autoApply(
 ): Promise<boolean> {
   const stillPending = and(
     eq(stagedPayments.id, stagedId),
-    eq(stagedPayments.status, "pending"),
+    stagedStatusWhere.pending,
   );
 
   // RECONCILE to the single matching existing gift. Guard that no other staged
@@ -862,7 +871,6 @@ async function autoApply(
         const rows = await tx
           .update(stagedPayments)
           .set({
-            status: "approved",
             matchStatus: "matched",
             matchedGiftId: giftId,
             autoApplied: true,
@@ -948,7 +956,7 @@ export async function rematchStagedPayments(): Promise<QuickbooksRematchSummary>
       .from(stagedPayments)
       .where(
         and(
-          eq(stagedPayments.status, "pending"),
+          stagedStatusWhere.pending,
           inArray(stagedPayments.matchStatus, ["unmatched", "suggested"]),
           isNull(stagedPayments.organizationId),
           isNull(stagedPayments.individualGiverPersonId),
@@ -987,7 +995,7 @@ export async function rematchStagedPayments(): Promise<QuickbooksRematchSummary>
             .where(
               and(
                 eq(stagedPayments.id, row.id),
-                eq(stagedPayments.status, "pending"),
+                stagedStatusWhere.pending,
                 inArray(stagedPayments.matchStatus, ["unmatched", "suggested"]),
                 isNull(stagedPayments.organizationId),
                 isNull(stagedPayments.individualGiverPersonId),
@@ -1017,18 +1025,19 @@ export interface QuickbooksReclassifySummary {
 
 /**
  * Re-runnable classifier pass. Re-applies the noise rules to rows whose
- * classification is still `auto` AND status IN (pending, excluded), so refining
- * the rules retroactively cleans up (or restores) already-staged rows. NEVER
- * touches a `manual` row (a human include/exclude is permanent) or an
- * approved/rejected row. Each write is guarded so it can't clobber a concurrent
- * manual override. Advisory-locked under the shared QuickBooks key.
+ * classification is still `auto` AND derived status IN (pending, excluded), so
+ * refining the rules retroactively cleans up (or restores) already-staged rows.
+ * NEVER touches a `manual` row (a human include/exclude is permanent) or a
+ * resolved row. Each write is guarded so it can't clobber a concurrent manual
+ * override. Advisory-locked under the shared QuickBooks key.
  */
 export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySummary> {
   const outcome = await withSyncLock(QB_LOCK_KEY, "quickbooks", async () => {
     const candidates = await db
       .select({
         id: stagedPayments.id,
-        status: stagedPayments.status,
+        // Excluded-ness IS the exclusion_reason fact (status is derived).
+        exclusionReason: stagedPayments.exclusionReason,
         entitySource: stagedPayments.entitySource,
         fundingSourceProvenance: stagedPayments.fundingSourceProvenance,
         amount: stagedPayments.amount,
@@ -1046,7 +1055,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
       .where(
         and(
           eq(stagedPayments.classificationSource, "auto"),
-          inArray(stagedPayments.status, ["pending", "excluded"]),
+          stagedStatusIn(["pending", "excluded"]),
         ),
       );
 
@@ -1054,7 +1063,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
       and(
         eq(stagedPayments.id, id),
         eq(stagedPayments.classificationSource, "auto"),
-        inArray(stagedPayments.status, ["pending", "excluded"]),
+        stagedStatusIn(["pending", "excluded"]),
       );
 
     let excluded = 0;
@@ -1091,11 +1100,10 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
                 qbDepositToAccountName: row.qbDepositToAccountName,
               }),
             };
-      if (cls.excluded && row.status !== "excluded") {
+      if (cls.excluded && row.exclusionReason == null) {
         const upd = await db
           .update(stagedPayments)
           .set({
-            status: "excluded",
             exclusionReason: cls.reason,
             ...entitySet,
             ...fundingSet,
@@ -1104,7 +1112,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
           .where(guard(row.id))
           .returning({ id: stagedPayments.id });
         if (upd.length) excluded += 1;
-      } else if (cls.excluded && row.status === "excluded") {
+      } else if (cls.excluded && row.exclusionReason != null) {
         // Already excluded — keep status, just refresh the reason if it drifted.
         await db
           .update(stagedPayments)
@@ -1115,11 +1123,10 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
             updatedAt: new Date(),
           })
           .where(guard(row.id));
-      } else if (!cls.excluded && row.status === "excluded") {
+      } else if (!cls.excluded && row.exclusionReason != null) {
         const upd = await db
           .update(stagedPayments)
           .set({
-            status: "pending",
             exclusionReason: null,
             ...entitySet,
             ...fundingSet,

@@ -12,7 +12,6 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
-  stagedPaymentStatusEnum,
   stagedPaymentExclusionReasonEnum,
   stagedPaymentMatchStatusEnum,
   stagedPaymentMatchMethodEnum,
@@ -45,8 +44,14 @@ import { fundableProjects } from "./fundableProjects";
  *
  * Idempotency: PK `id` IS the Stripe charge id, so re-pulls upsert in place
  * (onConflictDoUpdate by id) and never duplicate a charge. The upsert must
- * preserve review state (status / donor match / gift linkage) and only refresh
- * read-only Stripe facts.
+ * preserve review state (exclusion / donor match / gift linkage) and only
+ * refresh read-only Stripe facts.
+ *
+ * Status is fully DERIVED from facts (no stored status column), in precedence
+ * order (see api-server lib/derivedStatus.ts): excluded ⇐ exclusionReason
+ * NOT NULL; match_proposed ⇐ autoApplied AND matchConfirmedAt IS NULL AND a
+ * matched/created gift link; match_confirmed ⇐ a matched/created gift link;
+ * else pending.
  *
  * Reconciliation (mutually exclusive, same rule as staged_payments):
  *   matchedGiftId — linked to a PRE-EXISTING gift (no new ledger row).
@@ -116,7 +121,6 @@ export const stripeStagedCharges = pgTable(
     rawCharge: jsonb("raw_charge"),
 
     // ── Review state (mirrors staged_payments) ──────────────────────────
-    status: stagedPaymentStatusEnum("status").notNull().default("pending"),
     exclusionReason: stagedPaymentExclusionReasonEnum("exclusion_reason"),
     classificationSource: stagedPaymentClassificationSourceEnum(
       "classification_source",
@@ -219,14 +223,6 @@ export const stripeStagedCharges = pgTable(
       () => stagedPayments.id,
       { onDelete: "set null" },
     ),
-    // Human-DISMISSED charge↔QB tie proposals: staged_payments ids a reviewer
-    // explicitly rejected for THIS charge, so the idempotent proposal pass
-    // never re-proposes the same pair (dismissal is per charge↔QB pair — the
-    // QB row stays a candidate for other charges). Append-only from the
-    // per-row Reject action; an explicit human "Tie selected" overrides a
-    // dismissal (manual assignment ignores this list). Null/empty = nothing
-    // dismissed.
-    dismissedQbStagedPaymentIds: text("dismissed_qb_staged_payment_ids").array(),
     crossProcessorLinkedByUserId: text(
       "cross_processor_linked_by_user_id",
     ).references(() => users.id, { onDelete: "set null" }),
@@ -238,16 +234,11 @@ export const stripeStagedCharges = pgTable(
       onDelete: "set null",
     }),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
-    rejectedByUserId: text("rejected_by_user_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
 
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
-    index("stripe_staged_charges_status_idx").on(t.status),
     index("stripe_staged_charges_match_status_idx").on(t.matchStatus),
     index("stripe_staged_charges_payout_id_idx").on(t.stripePayoutId),
     index("stripe_staged_charges_linked_qb_staged_payment_id_idx").on(

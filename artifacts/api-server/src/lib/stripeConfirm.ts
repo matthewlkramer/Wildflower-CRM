@@ -7,6 +7,10 @@ import {
 } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
 import { candidateGiftId } from "./stripeReconcile";
+import {
+  deriveStagedPaymentStatus,
+  stagedStatusWhere,
+} from "./derivedStatus";
 import { isSettlementLump } from "./settlementLump";
 import {
   payoutStatusFromLink,
@@ -53,9 +57,10 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * and QB staged rows are permanent reconciliation EVIDENCE, never a second gift
  * and never archived. Confirming a payout collapses to ONE terminal state,
  * `confirmed_reconciled`:
- *   - pending QB deposit  → deposit marked `reconciled` (NOT excluded; we no
- *     longer set exclusion_reason `processor_payout`). No gift exists to stamp.
- *   - approved/reconciled QB gift (conflict) → the existing gift is KEPT and the
+ *   - pending QB deposit  → tied via a CONFIRMED settlement link, which is what
+ *     derives the deposit to `match_confirmed` (status is DERIVED — there is no
+ *     stored column; NOT excluded, no exclusion_reason). No gift exists to stamp.
+ *   - already-booked QB gift (conflict) → the existing gift is KEPT and the
  *     deposit is left untouched (already gift-linked terminal evidence); only the
  *     payout linkage is recorded, with qbConflictGiftId retained as the revert
  *     discriminator.
@@ -65,8 +70,9 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *
  * Revert symmetry: a `confirmed_reconciled` payout reverts by its settlement
  * link's conflict-gift discriminator — NULL ⇒ it was a pending-deposit confirm
- * (payout → `proposed`, deposit `reconciled` → `pending`); SET ⇒ it was a keep
- * confirm (payout → `conflict_approved`, deposit left alone).
+ * (payout → `proposed`; dropping the confirmed link re-derives the deposit to
+ * `pending`); SET ⇒ it was a keep confirm (payout → `conflict_approved`,
+ * deposit left alone).
  *
  * Write-flip complete: every gate/branch AND the optimistic-lock guard below
  * derive state from `settlement_links` (via `payoutStatusFromLink` +
@@ -79,8 +85,8 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export type ConfirmRevertKind =
   | "confirmed_reconciled"
-  // Linkage-only confirm: the QB deposit was ALREADY booked (legacy `approved`,
-  // e.g. a split whose money lives in counted payment_applications rows), so the
+  // Linkage-only confirm: the QB deposit was ALREADY booked (its own gift link,
+  // or a split whose money lives in counted payment_applications rows), so the
   // confirm stamped the settlement link only and left the deposit untouched.
   | "confirmed_linkage_only"
   | "reverted";
@@ -97,9 +103,10 @@ export type ConfirmRevertErrorCode =
   | "invalid_transition"
   | "charges_already_booked"
   | "manual_review_required"
-  // Permanent (not drift): the proposed deposit is `approved` but carries NO
-  // provable booking (no counted ledger rows, no gift on any of its 3 gift-link
-  // columns) — a linkage-only confirm can't prove the money is accounted for.
+  // Permanent (not drift): a linkage-only confirm was attempted but the deposit
+  // carries NO provable booking (no counted ledger rows, no gift on any of its 3
+  // gift-link columns). Defensive-only under derived status (that combination
+  // can no longer derive to a booked state).
   | "deposit_not_booked"
   // Permanent (not drift): the proposed QB row can never back this settlement —
   // either it is not a settlement lump at all (a donor-name payment row belongs
@@ -164,10 +171,11 @@ async function runTransition(
 
 // ─── CONFIRM (pending QB deposit) ──────────────────────────────────────────
 // payout `proposed` → `confirmed_reconciled`; the pending QB deposit lump is
-// marked `reconciled` (permanent payout-level evidence — NOT excluded, no
-// processor_payout, no gift) and tied to the payout via a confirmed settlement
-// link (its deposit_staged_payment_id). The money is accounted for by the
-// payout's separate per-charge Stripe gifts.
+// tied to the payout via a confirmed settlement link (its
+// deposit_staged_payment_id), which derives the deposit to `match_confirmed`
+// (permanent payout-level evidence — NOT excluded, no processor_payout, no
+// gift). The money is accounted for by the payout's separate per-charge Stripe
+// gifts.
 export function confirmPendingQbDeposit(
   args: ConfirmRevertArgs,
 ): Promise<ConfirmRevertResult> {
@@ -233,43 +241,60 @@ export async function confirmPendingQbDepositInTx(
     );
   }
 
-  // ── Linkage-only confirm: the deposit is ALREADY booked (legacy `approved`).
-  // Proposing a tie against an approved deposit is legitimate — the human still
-  // wants the payout↔deposit evidence recorded — but the deposit is terminal and
-  // must NOT be touched. Money-safety gate: only allow this when the deposit's
-  // money is provably accounted for — a gift on one of its 3 gift-link columns,
-  // or counted `payment_applications` ledger rows (the legacy-SPLIT shape, which
-  // carries none of the 3 columns; mirrors the "resolved has 4 forms" predicate).
-  // Otherwise there is no proof the lump was ever credited anywhere, so refuse
-  // with a DISTINCT permanent error (not the generic drift message).
-  if (deposit.status === "approved") {
-    const linkedGiftId =
-      deposit.matchedGiftId ??
-      deposit.createdGiftId ??
-      deposit.groupReconciledGiftId ??
-      null;
-    const hasCountedLedgerRows = linkedGiftId
-      ? true
-      : await tx
-          .select({ id: paymentApplications.id })
-          .from(paymentApplications)
-          .where(
-            and(
-              eq(paymentApplications.paymentId, depositId),
-              eq(paymentApplications.linkRole, "counted"),
-            ),
-          )
-          .limit(1)
-          .then((r) => r.length > 0);
+  // Derive the deposit's status from facts: its gift links, counted
+  // `payment_applications` ledger rows (the legacy-SPLIT shape, which carries
+  // none of the 3 gift-link columns), and any CONFIRMED settlement link naming
+  // it as a deposit lump (this payout's own link is still only `proposed`, so a
+  // confirmed link means it settled against ANOTHER payout).
+  const linkedGiftId =
+    deposit.matchedGiftId ??
+    deposit.createdGiftId ??
+    deposit.groupReconciledGiftId ??
+    null;
+  const hasCountedLedgerRows = await tx
+    .select({ id: paymentApplications.id })
+    .from(paymentApplications)
+    .where(
+      and(
+        eq(paymentApplications.paymentId, depositId),
+        eq(paymentApplications.linkRole, "counted"),
+      ),
+    )
+    .limit(1)
+    .then((r) => r.length > 0);
+  const settledElsewhere = await tx
+    .select({ payoutId: settlementLinks.payoutId })
+    .from(settlementLinks)
+    .where(
+      and(
+        eq(settlementLinks.depositStagedPaymentId, depositId),
+        eq(settlementLinks.lifecycle, "confirmed"),
+      ),
+    )
+    .limit(1)
+    .then((r) => r.length > 0);
+  const depositStatus = deriveStagedPaymentStatus({
+    ...deposit,
+    hasConfirmedSettlementLink: settledElsewhere,
+    hasCountedApplication: hasCountedLedgerRows,
+  });
+
+  // ── Linkage-only confirm: the deposit is ALREADY booked (match_confirmed via
+  // its own gift link or counted ledger rows — NOT via another payout's link).
+  // Proposing a tie against a booked deposit is legitimate — the human still
+  // wants the payout↔deposit evidence recorded — but the deposit's money is
+  // already accounted for exactly once, so we touch nothing but the link.
+  if (depositStatus === "match_confirmed" && !settledElsewhere) {
     if (!linkedGiftId && !hasCountedLedgerRows) {
+      // Defensive: unreachable under the derivation above (match_confirmed
+      // without another payout's link requires one of these facts), kept so a
+      // future derivation change can't silently confirm an unbooked lump.
       throw new TransitionError(
         "deposit_not_booked",
-        "This QuickBooks deposit is marked approved but has no record of where its money was booked, so the settlement can't be confirmed safely. Resolve the deposit in QuickBooks review first.",
+        "This QuickBooks deposit has no record of where its money was booked, so the settlement can't be confirmed safely. Resolve the deposit in QuickBooks review first.",
       );
     }
 
-    // Touch nothing but the link — the deposit stays `approved` terminal
-    // evidence; its gifts already carry the money exactly once.
     const link = confirmSettlementLink({
       depositStagedPaymentId: depositId,
       conflictGiftId: priorLink?.conflictGiftId ?? null,
@@ -296,30 +321,26 @@ export async function confirmPendingQbDepositInTx(
     };
   }
 
-  if (deposit.status !== "pending") {
-    // Reaches here only for excluded / rejected / reconciled (approved was
-    // handled above): the row was PERMANENTLY resolved elsewhere — excluded or
-    // rejected in QuickBooks review, split, or reconciled against another
-    // payout. Refreshing can never make this confirmable.
+  if (depositStatus !== "pending") {
+    // excluded, an unreviewed auto-match (match_proposed), or already settled
+    // against another payout: the row was PERMANENTLY resolved (or claimed)
+    // elsewhere. Refreshing can never make this confirmable.
     throw new TransitionError(
       "deposit_unconfirmable",
-      "The proposed QuickBooks deposit was already resolved elsewhere (excluded, rejected, or reconciled), so this settlement can't be approved. Reject the proposal or pick a different deposit.",
+      "The proposed QuickBooks deposit was already resolved elsewhere (excluded, matched, split, or reconciled), so this settlement can't be approved. Reject the proposal or pick a different deposit.",
     );
   }
 
+  // Stamp reviewer provenance on the still-pending lump. Its derived status
+  // flips to match_confirmed via the CONFIRMED settlement link written below —
+  // that link IS the reconciliation fact; there is no stored status to set.
   const reconciled = await tx
     .update(stagedPayments)
     .set({
-      status: "reconciled",
       classificationSource: "manual",
       updatedAt: now,
     })
-    .where(
-      and(
-        eq(stagedPayments.id, depositId),
-        eq(stagedPayments.status, "pending"),
-      ),
-    )
+    .where(and(eq(stagedPayments.id, depositId), stagedStatusWhere.pending))
     .returning({ id: stagedPayments.id });
   if (!reconciled.length) {
     throw new TransitionError(
@@ -360,12 +381,12 @@ export async function confirmPendingQbDepositInTx(
   };
 }
 
-// ─── CONFIRM-KEEP (approved/reconciled QB deposit) ─────────────────────────
+// ─── CONFIRM-KEEP (already-booked QB deposit) ──────────────────────────────
 // payout `conflict_approved` → `confirmed_reconciled`. The QB deposit was already
-// booked into a gift (status `approved` for legacy rows, `reconciled` going
-// forward); that gift is the authoritative record and is KEPT. We record the
-// payout linkage ONLY and touch neither the deposit nor the gift. qbConflictGiftId
-// is retained as the revert discriminator (a non-null value means "keep" on revert).
+// booked into a gift (a gift on one of its gift-link columns); that gift is the
+// authoritative record and is KEPT. We record the payout linkage ONLY and touch
+// neither the deposit nor the gift. qbConflictGiftId is retained as the revert
+// discriminator (a non-null value means "keep" on revert).
 export function confirmKeepApprovedQbGift(
   args: ConfirmRevertArgs,
 ): Promise<ConfirmRevertResult> {
@@ -419,7 +440,7 @@ export async function confirmKeepApprovedQbGiftInTx(
       "Conflicting QuickBooks deposit not found.",
     );
   }
-  if (deposit.status !== "approved" && deposit.status !== "reconciled") {
+  if (deposit.exclusionReason != null || candidateGiftId(deposit) == null) {
     throw new TransitionError(
       "invalid_transition",
       "The conflicting QuickBooks deposit is no longer booked into a gift. Refresh and retry.",
@@ -577,10 +598,26 @@ export function revertPayoutQbConfirmation(
           "not_found",
           "Linked QuickBooks deposit not found.",
         );
-      // A linkage-only confirm (deposit already `approved` when confirmed) never
-      // touched the deposit — revert must not touch it either (NEVER flip an
-      // approved deposit to pending). Route the link back to proposed only.
-      if (deposit.status === "approved") {
+      // A linkage-only confirm (deposit already booked via its own gift link or
+      // counted ledger rows when confirmed) never touched the deposit — revert
+      // must not touch it either (NEVER unbook a deposit whose money lives in
+      // its own gift links). Route the link back to proposed only.
+      const bookedIndependently =
+        deposit.matchedGiftId != null ||
+        deposit.createdGiftId != null ||
+        deposit.groupReconciledGiftId != null ||
+        (await tx
+          .select({ id: paymentApplications.id })
+          .from(paymentApplications)
+          .where(
+            and(
+              eq(paymentApplications.paymentId, depositId),
+              eq(paymentApplications.linkRole, "counted"),
+            ),
+          )
+          .limit(1)
+          .then((r) => r.length > 0));
+      if (bookedIndependently) {
         const link = proposeSettlementLink(depositId, null);
         const advanced = await transitionSettlementLink(
           tx,
@@ -601,17 +638,21 @@ export function revertPayoutQbConfirmation(
           stagedPaymentId: depositId,
         };
       }
+      // The deposit's confirmed status derives SOLELY from this payout's
+      // confirmed settlement link (no gift link, no counted rows — checked
+      // above); transitioning the link back to `proposed` below is what returns
+      // the deposit to derived `pending`. Guarded on still-match_confirmed so a
+      // drifted (already-reverted) link 409s instead of double-reverting.
       const reverted = await tx
         .update(stagedPayments)
         .set({
-          status: "pending",
           classificationSource: "manual",
           updatedAt: now,
         })
         .where(
           and(
             eq(stagedPayments.id, depositId),
-            eq(stagedPayments.status, "reconciled"),
+            stagedStatusWhere.match_confirmed,
           ),
         )
         .returning({ id: stagedPayments.id });

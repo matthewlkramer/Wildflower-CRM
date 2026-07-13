@@ -14,7 +14,6 @@ import { sql } from "drizzle-orm";
 import {
   quickbooksEntityTypeEnum,
   quickbooksPayerTypeEnum,
-  stagedPaymentStatusEnum,
   stagedPaymentExclusionReasonEnum,
   stagedPaymentMatchStatusEnum,
   stagedPaymentMatchMethodEnum,
@@ -56,17 +55,20 @@ import { entities } from "./entities";
  * Non-deposit rows use qbLineId = '' (empty, NOT null) so the unique index
  * dedupes them too (Postgres treats NULLs as distinct).
  *
- * ── Queues (derived) ───────────────────────────────────────────────────
- *   Auto-matched : status='approved' AND autoApplied=true AND
- *                  matchConfirmedAt IS NULL — high-confidence matches the
- *                  system already applied (linked an existing gift OR minted
- *                  one). Assumed correct; a human reviews/corrects on demand.
- *   Needs review : status='pending' — uncertain. matchStatus may be
- *                  'suggested' (a hint) or 'unmatched' (nothing). Nothing is
- *                  applied to the ledger until a human acts.
- *   Excluded     : status='excluded' — auto/manual non-donation noise.
- *   (Done        : status='approved' AND (matchConfirmedAt IS NOT NULL OR
- *                  autoApplied=false) — fully reconciled, out of review.)
+ * ── Status (fully DERIVED — there is NO stored status column) ──────────
+ * A row's reconciliation status is derived from facts, in precedence order
+ * (see api-server lib/derivedStatus.ts, the single source of truth):
+ *   excluded        ⇐ exclusionReason IS NOT NULL — auto/manual non-donation
+ *                     noise, out of the money flow.
+ *   match_proposed  ⇐ autoApplied AND matchConfirmedAt IS NULL AND a
+ *                     matched/created gift link — a high-confidence match the
+ *                     system already applied, awaiting human review.
+ *   match_confirmed ⇐ any gift link (matched / created / groupReconciled) OR
+ *                     a confirmed settlement link on this deposit row OR a
+ *                     counted payment_applications row — the money is booked.
+ *   pending         ⇐ none of the above — needs review; matchStatus may be
+ *                     'suggested' (a hint) or 'unmatched' (nothing). Nothing
+ *                     is applied to the ledger until a human acts.
  *
  * Donor match follows the same XOR rule as gifts: at most one of
  * organizationId / individualGiverPersonId / householdId is set. The
@@ -117,7 +119,7 @@ export const stagedPayments = pgTable(
     // ── QuickBooks payer + entity context captured at pull time ───────────
     // All of the following are read-only facts mirrored from QuickBooks. They
     // are NEVER part of review state, so the full re-pull may refresh them on
-    // any row (including approved/rejected) without touching the reconcile.
+    // any row (including resolved ones) without touching the reconcile.
     //
     // The kind of QB name the payer resolves to (Customer / Vendor / Employee).
     // A vendor/employee payer is a strong "not a donation" hint. NULL when QB
@@ -166,8 +168,8 @@ export const stagedPayments = pgTable(
     // For deposit-line rows only: the specific deposit Line object, verbatim.
     qbRawLine: jsonb("qb_raw_line"),
 
-    status: stagedPaymentStatusEnum("status").notNull().default("pending"),
-    // Set only when status = "excluded" — why the row was filtered.
+    // Why the row was filtered out of the money flow. NON-NULL is what makes a
+    // row's derived status "excluded" (there is no stored status column).
     exclusionReason: stagedPaymentExclusionReasonEnum("exclusion_reason"),
     // Whether the exclusion classification was set automatically or pinned
     // by a human. The re-runnable classifier never touches a `manual` row.
@@ -191,7 +193,7 @@ export const stagedPayments = pgTable(
 
     // Set when a human confirms the match (confirming a suggestion or
     // picking the donor/gift themselves). NULL while a row is unconfirmed
-    // (including auto-applied rows awaiting review). Independent of `status`.
+    // (including auto-applied rows awaiting review).
     matchConfirmedByUserId: text("match_confirmed_by_user_id").references(
       () => users.id,
       { onDelete: "set null" },
@@ -367,10 +369,6 @@ export const stagedPayments = pgTable(
       onDelete: "set null",
     }),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
-    rejectedByUserId: text("rejected_by_user_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
 
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -382,7 +380,6 @@ export const stagedPayments = pgTable(
       t.qbEntityId,
       t.qbLineId,
     ),
-    index("staged_payments_status_idx").on(t.status),
     index("staged_payments_match_status_idx").on(t.matchStatus),
     // Look up the candidate members of a bank deposit (manual deposit-grouping)
     // and the members of an already-grouped reconciliation.

@@ -4,14 +4,11 @@
 > enum list in `lib/db/src/schema/_enums.ts` are the source of truth. This file is a
 > human-readable map of *what each table is for* and the cross-table invariants that
 > are easy to break — when in doubt, trust the code.
-
-The schema mirrors the Wildflower "crm files" Airtable base (`app8KUcmaHZ0AtcJZ`).
-Every entity table uses the Airtable record ID (`recXXXXXXXX`) directly as its `id`
-primary key so re-imports are idempotent and linked-record arrays from Airtable work
-as foreign keys without translation. Exceptions: `regions`, `entities`,
-`fundable_projects`, and `fiscal_years` use human-readable **slug** PKs. Rows
-synthesized by the importer (`synth-*`, `pi-email-<piId>`, `org-addr-<orgId>`) are
-distinguishable from imported rows by the `id NOT LIKE 'rec%'` predicate.
+>
+> **Historical data:** most of the data in the system comes from experts of Copper that were cleaned up by the user manually in Airtable before
+> importing them into the CRM. Other data comes from several live syncs - of quickbooks, stripe, donorbox, airtable schools database. There is no need for
+> any resyncing with the Airtable files that were cleaned up from copper (sometimes referred to as 'CRM Files') or with copper - the one time sync of those
+> source files is complete.
 
 ## ⚠️ funders + organizations are now ONE table
 
@@ -22,8 +19,7 @@ funder-only fields (capacity rating, enthusiasm, strategic alignment,
 connection status, interests, historical names, self-referencing parent) now live on
 `organizations`. The donor-type discriminator that used to be `"funder"` is now
 `"organization"`. There is **no `funders.ts`** — any reference to a `funders` table
-in older notes is stale. (The Airtable importer has **not** yet been updated for this
-merge — see "Re-importing" below.)
+in older notes is stale.
 
 ## Core entities
 
@@ -138,25 +134,25 @@ merge — see "Re-importing" below.)
   - Enums: `type` (`solicitation` / `renewal` / `open_application`), `stage` (9:
     `cold_lead`, `warm_lead`, `in_conversation`, `convince`,
     `conditional_commitment`, `probable_renewal`, `verbal_confirmation`,
-    `written_commitment`, `cash_in`), `conditional` (`unconditional` /
-    `conditional_unspecified` / `reimbursable` /
+    `written_commitment`, `cash_in`), NOTE: I BELIEVE THIS NEEDS TO BE FIXED AND THAT WRITTEN_COMMITMENT AND CASH IN ARE NO LONGER PARTS OF THIS ENUM.
+     `conditional` (`unconditional` / `conditional_unspecified` / `reimbursable` /
     `conditional_on_funder_determination` / `conditional_on_target`),
     **`fundraising_category`** (`revenue` / `loan_capital`, NOT NULL default
     `revenue`), **`loan_or_grant`** (the authoritative loan-vs-grant flag — see
-    below — dual-written from `fundraising_category`).
+    below — dual-written from `fundraising_category`). NOTE: THESE LAST TWO SEEM DUPLICATIVE (FUNDRAISING CATEGORY VS LOAN VS GRANT)
   - A sticky `was_pledge` flag latches true once a row reaches a commitment stage
     (`conditional_commitment` / `written_commitment`) or gets a grant letter, and is
     never auto-cleared; it drives the **Pledges-page filter, NOT** the calculated
     `status`. `match_id` self-references the original opp a matching-gift row matches. `owner_user_id`,
     `primary_contact_person_id` (frozen historical attribution), `copper_pledge_id`.
   - The old `closed_requires_completion_date` CHECK has been **dropped** (it blocked
-    bulk historical cleanup).
+    bulk historical cleanup). NOTE: I THINK WE SHOULD REINSTATE THIS.
 
 - `pledge_allocations` — line items within an opportunity/pledge. All per-row scope
   (entity, fiscal year `grant_year`, `region_ids text[]`, `intended_usage`,
   `fundable_project_id`) lives here, plus revenue-coding capture (below). `status`
   enum `pledge_allocation_status`: `working` (internal draft), `committed` /
-  `committed_with_conditions` (firm), `superseded_by_pledge` (re-scoped),
+  `committed_with_conditions` (firm), `superseded_by_pledge` (re-scoped), NOTE: IS THIS IN USE? IT SEEMS MESSY
   `superseded_by_gift` (an actual gift took its place), `abandoned` (dropped unpaid).
   Plain legacy `superseded` is retained in the enum but unused.
 
@@ -177,7 +173,7 @@ merge — see "Re-importing" below.)
   is captured on **three independent axes** —
   `regional_restriction_type` / `usage_restriction_type` / `time_restriction_type`,
   each a `restriction_axis` (`donor_restricted` / `wf_restricted` / `unrestricted`),
-  NOT NULL default `unrestricted` (see below). `display_usage` is a
+  NOT NULL default `unrestricted` (see below). NOTE: PLEDGE ALLOCATIONS SHOULD HAVE THE SAME RESTRICTIONS AS GIFT ALLOCATIONS `display_usage` is a 
   **trigger-maintained, read-only** human label
   (`compute_gift_allocation_display_usage` + triggers in `post-import-fixups.sql`);
   renames of a school / region / fundable project cascade into it — **never write
@@ -213,7 +209,7 @@ approved/reconciled into a gift (via `validateGiftInvariants`), not by the table
 `pledge_allocations` and `gift_allocations` each carry an `intended_usage` enum
 (`gen_ops` / `growth` / `school_startup` / `teacher_training` / `project`) plus a
 nullable `fundable_project_id` (populated only when usage = `project`). Parent rows
-are header-only and do not carry these.
+are header-only and do not carry these. NOTE: WE NEED TO CLEAN THIS UP VS. THE RESTRICTION MODEL
 
 ## Restriction taxonomy (three axes)
 
@@ -263,7 +259,7 @@ header `conditional` / `conditions` / `conditions_met` columns are kept physical
 
 The `reimbursement_type` enum (`direct` / `indirect`, renamed from
 `reimbursable_share`) on both allocation tables tags direct-vs-indirect cost share;
-`direct`-tagged lines are recorded in full but **excluded** from goal analytics.
+`direct`-tagged lines are recorded in full but **excluded** from goal analytics. NOTE: THIS SEEMS LIKE IT NEEDS SOME CLEAN UP AS WELL.
 
 ## Fundraising category (revenue vs loan capital)
 
@@ -281,7 +277,7 @@ source of truth** for whether money is loan-fund principal or ordinary
 fundraising money. It supersedes the two scattered legacy signals above:
 `opportunities_and_pledges.fundraising_category` and the gift
 `type='loan_fund_investment'` derivation. Lives on `gifts_and_payments`,
-`opportunities_and_pledges`, and `fiscal_year_entity_goals`.
+`opportunities_and_pledges`, and `fiscal_year_entity_goals`. NOTE: ELIMINATE THE LEGACY SIGNALS
 
 **Semantic map (1:1):** `loan_capital` / `loan_fund_investment` → `loan`;
 `revenue` / every other gift type → `grant`. **`grant` means ALL non-loan
@@ -295,7 +291,7 @@ adds the column, dual-writes it on every opp/gift create/patch/split, and
 backfills it from the legacy signals (migrations 0067/0068) — **legacy stays the
 read source**. A later phase flips analytics/goals/revenue-coding reads to
 `loan_or_grant` behind a parity gate, then deprecates (does not drop) the legacy
-signals.
+signals. NOTE: FINISH THIS
 
 ## Many-to-many via slug arrays
 

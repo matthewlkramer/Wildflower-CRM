@@ -7,6 +7,8 @@ import {
   it,
   vi,
 } from "vitest";
+import { chargeStatusSql } from "../lib/derivedStatus";
+import { getTableColumns } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -134,7 +136,6 @@ async function seedCharge(
     dateReceived: "2026-03-15",
     payerName: opts.payerName ?? `Zztest Bundle Payer ${RUN}`,
     payerEmail: opts.payerEmail ?? `${RUN}-payer@example.invalid`,
-    status: "pending",
   });
   chargeIds.push(id);
   return id;
@@ -142,7 +143,10 @@ async function seedCharge(
 
 async function readCharge(id: string) {
   const [row] = await db
-    .select()
+    .select({
+      ...getTableColumns(schema.stripeStagedCharges),
+      status: chargeStatusSql,
+    })
     .from(schema.stripeStagedCharges)
     .where(eqFn(schema.stripeStagedCharges.id, id));
   return row;
@@ -362,7 +366,7 @@ describe.skipIf(!HAS_DB)("Reconciliation bundle confirm (integration)", () => {
     expect(gift?.finalAmountSource).toBe("stripe");
 
     const charge = await readCharge(chargeId);
-    expect(charge?.status).toBe("reconciled");
+    expect(charge?.status).toBe("match_confirmed");
     expect(charge?.createdGiftId).toBe(giftId);
 
     // Idempotent replay at the committed revision returns the stored result and

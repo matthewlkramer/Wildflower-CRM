@@ -7,6 +7,8 @@ import {
   it,
   vi,
 } from "vitest";
+import { stagedStatusSql } from "../lib/derivedStatus";
+import { getTableColumns } from "drizzle-orm";
 import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -113,7 +115,6 @@ async function seedGift(amount: string): Promise<string> {
 async function seedStaged(
   label: string,
   opts: {
-    status?: "pending" | "approved" | "rejected";
     autoApplied?: boolean;
     matchedGiftId?: string | null;
     createdGiftId?: string | null;
@@ -127,7 +128,6 @@ async function seedStaged(
     qbEntityId: id,
     qbLineId: label,
     amount: "100.00",
-    status: opts.status ?? "approved",
     autoApplied: opts.autoApplied ?? true,
     matchedGiftId: opts.matchedGiftId ?? null,
     createdGiftId: opts.createdGiftId ?? null,
@@ -138,7 +138,10 @@ async function seedStaged(
 
 async function readStaged(id: string) {
   const [row] = await db
-    .select()
+    .select({
+      ...getTableColumns(schema.stagedPayments),
+      status: stagedStatusSql,
+    })
     .from(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.id, id));
   return row;
@@ -250,7 +253,7 @@ describe.skipIf(!HAS_DB)("QuickBooks bulk revert-matches (integration)", () => {
       autoApplied: false,
     });
     // Already pending → not revertible.
-    const pendingId = await seedStaged("pending", { status: "pending" });
+    const pendingId = await seedStaged("pending");
     const missingId = `${RUN}_sp_missing`;
 
     const res = await api("/api/staged-payments/revert-matches", {
@@ -261,9 +264,9 @@ describe.skipIf(!HAS_DB)("QuickBooks bulk revert-matches (integration)", () => {
     expect(res.json.requested).toBe(4);
     expect(res.json.revertedIds).toEqual([okId]);
 
-    // The manual gift survives and its row stays approved.
+    // The manual gift survives and its row stays match_confirmed.
     expect(await giftExists(manualGift)).toBe(true);
-    expect((await readStaged(manualId)).status).toBe("approved");
+    expect((await readStaged(manualId)).status).toBe("match_confirmed");
   }, 30_000);
 
   it("counts duplicate submitted ids in `requested` but reverts each row once", async () => {

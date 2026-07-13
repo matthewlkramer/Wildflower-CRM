@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useListFinancialCorrections,
   getListFinancialCorrectionsQueryKey,
-  useDismissFinancialCorrection,
   useApplyFinancialCorrection,
   useMergeGiftsAndPayments,
   type FinancialCorrection,
@@ -121,7 +120,6 @@ export default function FinancialCorrectionsPage() {
     },
   });
 
-  const dismissMut = useDismissFinancialCorrection();
   const applyMut = useApplyFinancialCorrection();
   const mergeMut = useMergeGiftsAndPayments();
 
@@ -142,28 +140,6 @@ export default function FinancialCorrectionsPage() {
   };
 
   const anyBusy = busyKey !== null;
-
-  const handleDismiss = async (c: FinancialCorrection) => {
-    setBusyKey(c.key);
-    try {
-      await dismissMut.mutateAsync({
-        data: { kind: c.kind, proposalKey: c.key },
-      });
-      invalidate(false);
-      toast({
-        title: "Dismissed",
-        description: "This correction won't be flagged again.",
-      });
-    } catch (err) {
-      toast({
-        title: "Couldn't dismiss",
-        description: errMsg(err),
-        variant: "destructive",
-      });
-    } finally {
-      setBusyKey(null);
-    }
-  };
 
   const handleLink = async (c: FinancialCorrection) => {
     if (!c.evidence) return;
@@ -247,7 +223,7 @@ export default function FinancialCorrectionsPage() {
           collapses near-duplicate gifts into one gift with several allocations;{" "}
           <span className="font-medium text-foreground">Link evidence</span>{" "}
           records that one bulk deposit corroborates several separate gifts.
-          Review each one, then apply or dismiss it.
+          Review each one, then apply it when it looks right.
         </p>
       </div>
 
@@ -310,15 +286,6 @@ export default function FinancialCorrectionsPage() {
                 </div>
 
                 <div className="flex justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={anyBusy}
-                    onClick={() => handleDismiss(c)}
-                    data-testid={`button-dismiss-${c.key}`}
-                  >
-                    Dismiss
-                  </Button>
                   {isMerge ? (
                     <Button
                       size="sm"

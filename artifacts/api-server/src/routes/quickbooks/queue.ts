@@ -30,7 +30,6 @@ router.get(
         "auto_matched",
         "excluded",
         "done",
-        "rejected",
       ] as const
     ).includes(raw as Queue)
       ? (raw as Queue)
@@ -91,21 +90,28 @@ router.get(
   "/staged-payments-summary",
   asyncHandler(async (_req, res) => {
     const [
-      statusRows,
+      excludedRow,
       reasonRows,
+      doneRow,
       autoMatchedRow,
       needsReviewRow,
       fiscallySponsoredRow,
     ] = await Promise.all([
       db
-        .select({ status: stagedPayments.status, value: count() })
+        .select({ value: count() })
         .from(stagedPayments)
-        .groupBy(stagedPayments.status),
+        .where(queueWhere("excluded"))
+        .then((r) => r[0]),
       db
         .select({ reason: stagedPayments.exclusionReason, value: count() })
         .from(stagedPayments)
-        .where(eq(stagedPayments.status, "excluded"))
+        .where(queueWhere("excluded"))
         .groupBy(stagedPayments.exclusionReason),
+      db
+        .select({ value: count() })
+        .from(stagedPayments)
+        .where(queueWhere("done"))
+        .then((r) => r[0]),
       db
         .select({ value: count() })
         .from(stagedPayments)
@@ -124,19 +130,6 @@ router.get(
         .where(queueWhere("fiscally_sponsored"))
         .then((r) => r[0]),
     ]);
-
-    const byStatus = {
-      pending: 0,
-      approved: 0,
-      rejected: 0,
-      excluded: 0,
-      reconciled: 0,
-    };
-    for (const r of statusRows) {
-      if (r.status in byStatus) {
-        byStatus[r.status as keyof typeof byStatus] = r.value;
-      }
-    }
 
     const excludedByReason = {
       zero_amount: 0,
@@ -171,17 +164,14 @@ router.get(
       }
     }
 
-    const autoMatched = autoMatchedRow?.value ?? 0;
     res.json({
       needsReview: needsReviewRow?.value ?? 0,
       fiscallySponsored: fiscallySponsoredRow?.value ?? 0,
-      autoMatched,
-      // "done" = human-resolved `approved` (total minus the still-unconfirmed
-      // auto-matched) PLUS every `reconciled` row (the new model's terminal
-      // evidence-tied-to-an-independent-gift state). Mirrors queueWhere("done").
-      done: byStatus.approved - autoMatched + byStatus.reconciled,
-      rejected: byStatus.rejected,
-      excluded: byStatus.excluded,
+      autoMatched: autoMatchedRow?.value ?? 0,
+      // "done" = derived match_confirmed (queueWhere("done")): a gift link, a
+      // confirmed settlement, or a counted ledger row (splits).
+      done: doneRow?.value ?? 0,
+      excluded: excludedRow?.value ?? 0,
       excludedByReason,
     });
   }),

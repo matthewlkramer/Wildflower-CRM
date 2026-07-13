@@ -67,7 +67,8 @@ async function seed(
   id: string,
   opts: {
     entityId: string | null;
-    status: "pending" | "excluded";
+    /** Set to derive `excluded` (exclusion_reason IS NOT NULL). */
+    exclusionReason?: "other_revenue" | null;
     matchedGiftId?: string | null;
   },
 ): Promise<void> {
@@ -78,7 +79,7 @@ async function seed(
     qbEntityId: id,
     qbLineId: "",
     amount: "100.00",
-    status: opts.status,
+    exclusionReason: opts.exclusionReason ?? null,
     classificationSource: "auto",
     entitySource: "auto",
     entityId: opts.entityId,
@@ -120,14 +121,14 @@ beforeAll(async () => {
   queueWhere = shared.queueWhere;
   queueExpr = shared.queueExpr;
 
-  await seed(PARKED_PENDING_A, { entityId: PARKED_A, status: "pending" });
-  await seed(PARKED_PENDING_B, { entityId: PARKED_B, status: "pending" });
-  await seed(NULL_PENDING, { entityId: null, status: "pending" });
-  await seed(NOT_PARKED_PENDING, {
-    entityId: SPONSORED_NOT_PARKED,
-    status: "pending",
+  await seed(PARKED_PENDING_A, { entityId: PARKED_A });
+  await seed(PARKED_PENDING_B, { entityId: PARKED_B });
+  await seed(NULL_PENDING, { entityId: null });
+  await seed(NOT_PARKED_PENDING, { entityId: SPONSORED_NOT_PARKED });
+  await seed(PARKED_EXCLUDED, {
+    entityId: PARKED_A,
+    exclusionReason: "other_revenue",
   });
-  await seed(PARKED_EXCLUDED, { entityId: PARKED_A, status: "excluded" });
 
   // A parked-entity pending row that already HAS a corresponding gift. Mint a
   // minimal donor (org) + gift to satisfy the Donor-XOR check and the staged
@@ -140,7 +141,6 @@ beforeAll(async () => {
     .values({ id: GIFT_ID, amount: "100.00", organizationId: ORG_ID });
   await seed(PARKED_WITH_GIFT, {
     entityId: PARKED_A,
-    status: "pending",
     matchedGiftId: GIFT_ID,
   });
 }, 60_000);
@@ -171,14 +171,16 @@ describe.skipIf(!HAS_DB)("queueWhere — fiscally sponsored split", () => {
   );
 
   it(
-    "reconciles a parked, already-gifted row in needs_review, not the worklist (no-gift scope)",
+    "routes a parked, already-gifted row to done, not the worklist (no-gift scope)",
     async () => {
       const fs = await idsInQueue("fiscally_sponsored");
       const nr = await idsInQueue("needs_review");
-      // Already has a gift, so it drops OUT of the "without corresponding gift"
-      // worklist and reconciles normally in the main needs_review flow.
+      const done = await idsInQueue("done");
+      // Already has a gift ⇒ it is booked money (derives match_confirmed):
+      // neither parked in the worklist nor open in needs_review — it is done.
       expect(fs.has(PARKED_WITH_GIFT)).toBe(false);
-      expect(nr.has(PARKED_WITH_GIFT)).toBe(true);
+      expect(nr.has(PARKED_WITH_GIFT)).toBe(false);
+      expect(done.has(PARKED_WITH_GIFT)).toBe(true);
     },
     30_000,
   );

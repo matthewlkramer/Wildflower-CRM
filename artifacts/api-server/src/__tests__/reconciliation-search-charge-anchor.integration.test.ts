@@ -149,7 +149,6 @@ beforeAll(async () => {
     dateReceived: ANCHOR_DATE,
     payerName: `Zztest Search Charge ${RUN}`,
     payerEmail: `${RUN}-charge@example.invalid`,
-    status: "pending" as never,
   });
 
   // A gift in the same window linked ONLY via the QuickBooks cash-application
@@ -171,7 +170,6 @@ beforeAll(async () => {
       amount: "100.00",
       dateReceived: ANCHOR_DATE,
       payerName: `Zztest QB Payer ${RUN}`,
-      status: "pending" as never,
     });
   }
   await db.insert(schema.paymentApplications).values({
@@ -200,7 +198,6 @@ beforeAll(async () => {
     dateReceived: ANCHOR_DATE,
     payerName: `Zztest Owning Charge ${RUN}`,
     payerEmail: `${RUN}-charge-b@example.invalid`,
-    status: "reconciled" as never,
     matchedGiftId: GIFT_CH_ID,
   });
 

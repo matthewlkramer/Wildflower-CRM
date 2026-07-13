@@ -13,6 +13,8 @@ import {
   proposeSettlementLink,
   confirmSettlementLink,
 } from "../lib/settlementWriter";
+import { getTableColumns } from "drizzle-orm";
+import { stagedStatusSql } from "../lib/derivedStatus";
 
 /**
  * DB-backed coverage for the UNIFIED settlement-anchor surface of the reactive
@@ -25,8 +27,8 @@ import {
  * payouts AND standalone QuickBooks deposits/payments — without ever turning the
  * same money into two anchors. So these tests assert:
  *   - the list returns BOTH anchor kinds, and OMITS a QB row that is tied to a
- *     Stripe payout (matched / proposed / conflict), already grouped, or in a
- *     non-anchor status (rejected / excluded, incl. processor_payout),
+ *     Stripe payout (matched / proposed / conflict), already grouped, or
+ *     derived `excluded` (exclusion_reason set, incl. processor_payout),
  *   - the `confirmed` queue and the `source` filter bucket correctly,
  *   - assembling from a TIED QB id canonicalizes to the payout's single draft
  *     (no duplicate draft / no double-book),
@@ -202,7 +204,6 @@ async function seedCharge(
   payoutId: string,
   opts: {
     matchedGiftId?: string;
-    status?: string;
     exclusionReason?: string | null;
   } = {},
 ): Promise<string> {
@@ -217,10 +218,8 @@ async function seedCharge(
     dateReceived: futureDate(),
     payerName: `Zztest Anchor Charge ${RUN}`,
     payerEmail: `${RUN}-charge@example.invalid`,
-    // A charge already booked into a gift is `reconciled` evidence. An explicit
-    // `status` override lets a test mark a charge settled without an FK to a gift.
-    status: (opts.status ??
-      (opts.matchedGiftId ? "reconciled" : "pending")) as never,
+    // Status is DERIVED from facts: an exclusion_reason reads `excluded`, a
+    // gift link reads `match_confirmed`, otherwise `pending`.
     exclusionReason: (opts.exclusionReason ?? null) as never,
     matchedGiftId: opts.matchedGiftId ?? null,
   });
@@ -229,12 +228,12 @@ async function seedCharge(
 }
 
 async function seedStaged(opts: {
-  status: string;
   group?: string | null;
   exclusionReason?: string | null;
   amount?: string;
   payerName?: string;
   createdGiftId?: string | null;
+  matchedGiftId?: string | null;
   fundingSource?: string | null;
 }): Promise<string> {
   const id = nextId("sp");
@@ -247,7 +246,6 @@ async function seedStaged(opts: {
     amount: opts.amount ?? "75.00",
     dateReceived: futureDate(),
     payerName: opts.payerName ?? `Zztest Anchor Payer ${RUN}`,
-    status: opts.status as never,
     exclusionReason: (opts.exclusionReason ?? null) as never,
     // A deposit's inferred origin. Clear non-Stripe origins (check/cash/wire/…)
     // are dropped from the "Needs payout tie" anchor column; stripe/donorbox/NULL
@@ -257,6 +255,7 @@ async function seedStaged(opts: {
     // conflict_approved deposit is always linked (that link is where
     // qbConflictGiftId came from), so tests that confirm-keep must wire it.
     createdGiftId: opts.createdGiftId ?? null,
+    matchedGiftId: opts.matchedGiftId ?? null,
   });
   stagedIds.push(id);
   // Grouping is now first-class: membership lives in unit_groups /
@@ -293,7 +292,10 @@ async function seedGift(): Promise<string> {
 
 async function readStaged(id: string) {
   const [row] = await db
-    .select()
+    .select({
+      ...getTableColumns(schema.stagedPayments),
+      status: stagedStatusSql,
+    })
     .from(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.id, id));
   return row;
@@ -477,52 +479,46 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     // Eligible anchors (should appear).
     const pEligible = await seedPayout({ status: "unmatched" });
     await seedCharge(pEligible);
-    const sStandalone = await seedStaged({ status: "pending" });
+    const sStandalone = await seedStaged({});
 
     // QB rows tied to a payout (via a settlement link) → OMITTED; their payouts
     // are the anchor instead. A `confirmed` (matched/settled) tie omits its staged
     // row too, but the payout itself is settled — not needs_review.
-    const sMatched = await seedStaged({ status: "pending" });
+    const sMatched = await seedStaged({});
     const pMatched = await seedPayout({
       status: "confirmed_reconciled",
       matched: sMatched,
     });
-    const sProposed = await seedStaged({ status: "pending" });
+    const sProposed = await seedStaged({});
     const pProposed = await seedPayout({
       status: "proposed",
       proposed: sProposed,
     });
-    const sConflict = await seedStaged({ status: "pending" });
+    const sConflict = await seedStaged({});
     const pConflict = await seedPayout({
       status: "conflict_approved",
       conflict: sConflict,
     });
 
-    // Already grouped, and non-anchor statuses (incl. processor_payout) → OMITTED.
+    // Already grouped, and derived-excluded rows (incl. processor_payout) → OMITTED.
     const sGrouped = await seedStaged({
-      status: "pending",
       group: `grp_${RUN}`,
     });
-    const sRejected = await seedStaged({ status: "rejected" });
     const sProcessorPayout = await seedStaged({
-      status: "excluded",
       exclusionReason: "processor_payout",
     });
 
     // Funding-source filter: a clear non-Stripe deposit (a check) drops out of
     // the standalone-QB anchor column; a `stripe`-sourced and a NULL-source
     // (unknown, no signal) deposit stay — a real Stripe gap is never hidden.
-    const sCheck = await seedStaged({ status: "pending", fundingSource: "check" });
+    const sCheck = await seedStaged({ fundingSource: "check" });
     const sStripeSource = await seedStaged({
-      status: "pending",
       fundingSource: "stripe",
     });
     const sDonorbox = await seedStaged({
-      status: "pending",
       fundingSource: "donorbox",
     });
     const sUnknownSource = await seedStaged({
-      status: "pending",
       fundingSource: null,
     });
 
@@ -546,7 +542,6 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     expect(map.has(`qb_staged_payment:${sProposed}`)).toBe(false);
     expect(map.has(`qb_staged_payment:${sConflict}`)).toBe(false);
     expect(map.has(`qb_staged_payment:${sGrouped}`)).toBe(false);
-    expect(map.has(`qb_staged_payment:${sRejected}`)).toBe(false);
     expect(map.has(`qb_staged_payment:${sProcessorPayout}`)).toBe(false);
     // Omitted: a clear non-Stripe origin (a check) is not a settlement anchor.
     expect(map.has(`qb_staged_payment:${sCheck}`)).toBe(false);
@@ -570,7 +565,6 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     const p = await seedPayout({ status: "unmatched" });
     const chLive = await seedCharge(p);
     const chFailed = await seedCharge(p, {
-      status: "excluded",
       exclusionReason: "failed_charge",
     });
 
@@ -582,7 +576,7 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     // bankAmount is the NEW raw bank figure. A QB anchor never carries one.
     expect(Number(row.amount)).toBeCloseTo(96.8, 2);
     expect(Number(row.bankAmount)).toBeCloseTo(100, 2);
-    const sQb = await seedStaged({ status: "pending" });
+    const sQb = await seedStaged({});
     const qbRow = (await listAnchors("needs_review")).get(
       `qb_staged_payment:${sQb}`,
     );
@@ -606,7 +600,7 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     // left in this workbench — the payout must NOT linger in needs_review, or
     // confirmed money reappears in the settlement queue.
     const pSettled = await seedPayout({ status: "unmatched" });
-    await seedCharge(pSettled, { status: "reconciled" });
+    await seedCharge(pSettled, { matchedGiftId: await seedGift() });
 
     // A sibling unmatched payout that still has an OPEN (pending) charge — a gift
     // still needs minting there, so it MUST remain in needs_review.
@@ -623,11 +617,12 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
   });
 
   it("confirmed queue lists settled rows and omits pending ones", async () => {
-    const sApproved = await seedStaged({ status: "approved" });
-    const sReconciled = await seedStaged({ status: "reconciled" });
-    const sPending = await seedStaged({ status: "pending" });
+    // "Settled" is derived match_confirmed: linked to / minted into a gift.
+    const sApproved = await seedStaged({ matchedGiftId: await seedGift() });
+    const sReconciled = await seedStaged({ createdGiftId: await seedGift() });
+    const sPending = await seedStaged({});
     // A confirmed payout ties to its QB deposit via a confirmed settlement link.
-    const sConfirmedDep = await seedStaged({ status: "reconciled" });
+    const sConfirmedDep = await seedStaged({ matchedGiftId: await seedGift() });
     const pConfirmed = await seedPayout({
       status: "confirmed_reconciled",
       matched: sConfirmedDep,
@@ -647,7 +642,7 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
   it("the source filter returns only the requested anchor kind", async () => {
     const p = await seedPayout({ status: "unmatched" });
     await seedCharge(p);
-    const s = await seedStaged({ status: "pending" });
+    const s = await seedStaged({});
 
     const qbOnly = await listAnchors("needs_review", "qb_staged_payment");
     for (const r of qbOnly.values())
@@ -668,12 +663,11 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     // reject WITHOUT first assembling the full draft, so the anchor row carries
     // the counterpart facts inline.
     const sDep = await seedStaged({
-      status: "pending",
       amount: "80.00",
       payerName: `Zztest Proposed Dep ${RUN}`,
     });
     const pProp = await seedPayout({ status: "proposed", proposed: sDep });
-    const sOrphan = await seedStaged({ status: "pending" });
+    const sOrphan = await seedStaged({});
 
     const map = await listAnchors("all");
 
@@ -722,7 +716,7 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
 
 describe.skipIf(!HAS_DB)("Reject a proposed settlement tie (integration)", () => {
   it("deletes a proposed link (no-op when none), and 409s on a confirmed link", async () => {
-    const sDep = await seedStaged({ status: "pending" });
+    const sDep = await seedStaged({});
     const pProp = await seedPayout({ status: "proposed", proposed: sDep });
     // A pending charge keeps the payout as real work once the tie is dropped.
     await seedCharge(pProp);
@@ -752,7 +746,7 @@ describe.skipIf(!HAS_DB)("Reject a proposed settlement tie (integration)", () =>
     expect(again.json.rejected).toBe(false);
 
     // A CONFIRMED tie is reverted, never rejected here → 409.
-    const sConf = await seedStaged({ status: "reconciled" });
+    const sConf = await seedStaged({});
     const pConf = await seedPayout({
       status: "confirmed_reconciled",
       matched: sConf,
@@ -767,7 +761,7 @@ describe.skipIf(!HAS_DB)("Reject a proposed settlement tie (integration)", () =>
 describe.skipIf(!HAS_DB)("Payout search resolve target (integration)", () => {
   it("finds an orphan payout by id text + amount band, omitting tied payouts", async () => {
     const pOrphan = await seedPayout({ status: "unmatched" });
-    const sTied = await seedStaged({ status: "pending" });
+    const sTied = await seedStaged({});
     const pTied = await seedPayout({ status: "proposed", proposed: sTied });
 
     // By id text → returns exactly the orphan payout with its projected facts.
@@ -796,7 +790,7 @@ describe.skipIf(!HAS_DB)("Payout search resolve target (integration)", () => {
 
 describe.skipIf(!HAS_DB)("Tied-anchor canonicalization (integration)", () => {
   it("assembling a matched-tied QB id yields the payout's single draft", async () => {
-    const staged = await seedStaged({ status: "approved" });
+    const staged = await seedStaged({});
     const payout = await seedPayout({
       status: "confirmed_reconciled",
       matched: staged,
@@ -814,7 +808,7 @@ describe.skipIf(!HAS_DB)("Tied-anchor canonicalization (integration)", () => {
   });
 
   it("a conflict-tied QB id also canonicalizes to its payout", async () => {
-    const staged = await seedStaged({ status: "pending" });
+    const staged = await seedStaged({});
     const payout = await seedPayout({
       status: "conflict_approved",
       conflict: staged,
@@ -833,7 +827,6 @@ describe.skipIf(!HAS_DB)("Tied-anchor canonicalization (integration)", () => {
     // can never be reconciled through the workbench.
     const keptGift = await seedGift();
     const staged = await seedStaged({
-      status: "approved",
       createdGiftId: keptGift,
     });
     const payout = await seedPayout({
@@ -853,7 +846,7 @@ describe.skipIf(!HAS_DB)("Tied-anchor canonicalization (integration)", () => {
   });
 
   it("refuses to derive a standalone QB draft once a payout ties it (proposed)", async () => {
-    const staged = await seedStaged({ status: "pending" });
+    const staged = await seedStaged({});
     // Assemble standalone FIRST — a pure-QB draft persists.
     const a = await assemble("qb_staged_payment", staged);
     expect(a.json.anchorType).toBe("qb_staged_payment");
@@ -881,7 +874,7 @@ describe.skipIf(!HAS_DB)("Tied-anchor canonicalization (integration)", () => {
   });
 
   it("refuses to confirm a standalone QB draft once a payout ties it (conflict)", async () => {
-    const staged = await seedStaged({ status: "pending" });
+    const staged = await seedStaged({});
     const a = await assemble("qb_staged_payment", staged);
     expect(a.json.anchorType).toBe("qb_staged_payment");
 
@@ -920,7 +913,7 @@ describe.skipIf(!HAS_DB)("Tied-anchor canonicalization (integration)", () => {
 
 describe.skipIf(!HAS_DB)("Standalone QB anchor confirm (integration)", () => {
   it("mints a gift from a standalone QB deposit to an existing donor", async () => {
-    const staged = await seedStaged({ status: "pending" });
+    const staged = await seedStaged({});
 
     const a = await assemble("qb_staged_payment", staged);
     expect(a.json.anchorType).toBe("qb_staged_payment");
@@ -956,13 +949,13 @@ describe.skipIf(!HAS_DB)("Standalone QB anchor confirm (integration)", () => {
     const giftId = confirm.json.rows[0].giftId as string;
     expect((await readGift(giftId))?.organizationId).toBe(ORG_ID);
     const sp = await readStaged(staged);
-    expect(sp?.status).toBe("reconciled");
+    expect(sp?.status).toBe("match_confirmed");
     expect(sp?.createdGiftId).toBe(giftId);
   });
 
   it("matches a standalone QB deposit to an existing gift", async () => {
     const gift = await seedGift();
-    const staged = await seedStaged({ status: "pending" });
+    const staged = await seedStaged({});
 
     const a = await assemble("qb_staged_payment", staged);
     const derived = await post(
@@ -986,7 +979,7 @@ describe.skipIf(!HAS_DB)("Standalone QB anchor confirm (integration)", () => {
   });
 
   it("excludes a standalone QB deposit with a reason", async () => {
-    const staged = await seedStaged({ status: "pending" });
+    const staged = await seedStaged({});
 
     const a = await assemble("qb_staged_payment", staged);
     const derived = await post(
@@ -1012,7 +1005,7 @@ describe.skipIf(!HAS_DB)("Standalone QB anchor confirm (integration)", () => {
 describe.skipIf(!HAS_DB)("Conflict-approved payout double-book gate", () => {
   it("blocks minting a pending charge on top of a kept conflict gift", async () => {
     const keptGift = await seedGift();
-    const deposit = await seedStaged({ status: "approved", createdGiftId: keptGift });
+    const deposit = await seedStaged({ createdGiftId: keptGift });
     const payout = await seedPayout({
       status: "conflict_approved",
       conflict: deposit,
@@ -1041,7 +1034,7 @@ describe.skipIf(!HAS_DB)("Conflict-approved payout double-book gate", () => {
 
   it("lets the reviewer defer the charge to research and confirm the kept tie", async () => {
     const keptGift = await seedGift();
-    const deposit = await seedStaged({ status: "approved", createdGiftId: keptGift });
+    const deposit = await seedStaged({ createdGiftId: keptGift });
     const payout = await seedPayout({
       status: "conflict_approved",
       conflict: deposit,
@@ -1070,7 +1063,7 @@ describe.skipIf(!HAS_DB)("Conflict-approved payout double-book gate", () => {
   it("blocks confirming when a charge is already booked into a DIFFERENT gift than the kept QB gift", async () => {
     const keptGift = await seedGift();
     const foreignGift = await seedGift();
-    const deposit = await seedStaged({ status: "approved" });
+    const deposit = await seedStaged({});
     const payout = await seedPayout({
       status: "conflict_approved",
       conflict: deposit,
@@ -1105,7 +1098,7 @@ describe.skipIf(!HAS_DB)("Conflict-approved payout double-book gate", () => {
 
   it("allows confirming when the charge is already booked into the SAME kept QB gift", async () => {
     const keptGift = await seedGift();
-    const deposit = await seedStaged({ status: "approved", createdGiftId: keptGift });
+    const deposit = await seedStaged({ createdGiftId: keptGift });
     const payout = await seedPayout({
       status: "conflict_approved",
       conflict: deposit,
@@ -1146,7 +1139,6 @@ describe.skipIf(!HAS_DB)("Conflict-approved payout double-book gate", () => {
     // the tie must block any mint/match row (the reviewer defers or excludes it).
     const keptGift = await seedGift();
     const deposit = await seedStaged({
-      status: "approved",
       createdGiftId: keptGift,
     });
     const payout = await seedPayout({
@@ -1199,7 +1191,7 @@ describe.skipIf(!HAS_DB)("Conflict-approved payout double-book gate", () => {
     // therefore reads as a plain proposed tie — there is no booked gift to
     // double-book, so a per-charge mint is correct rather than blocked. Prod census
     // for this state is zero; this pins the intentional Phase-4 degrade semantics.
-    const deposit = await seedStaged({ status: "approved" });
+    const deposit = await seedStaged({});
     const payout = await seedPayout({
       status: "conflict_approved",
       conflict: deposit,

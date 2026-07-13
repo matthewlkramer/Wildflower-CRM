@@ -7,6 +7,8 @@ import {
   it,
   vi,
 } from "vitest";
+import { stagedStatusSql } from "../lib/derivedStatus";
+import { getTableColumns } from "drizzle-orm";
 import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -117,7 +119,6 @@ async function seedGift(amount: string): Promise<string> {
 async function seedStaged(
   amount: string,
   opts: {
-    status?: "pending" | "approved" | "rejected";
     matchedGiftId?: string | null;
   } = {},
 ): Promise<string> {
@@ -129,7 +130,6 @@ async function seedStaged(
     qbEntityId: id,
     qbLineId: "0",
     amount,
-    status: opts.status ?? "pending",
     matchedGiftId: opts.matchedGiftId ?? null,
     payerName: "Stripe Payout",
     dateReceived: "2025-07-01",
@@ -153,7 +153,10 @@ async function seedStaged(
 
 async function readStaged(id: string) {
   const [row] = await db
-    .select()
+    .select({
+      ...getTableColumns(schema.stagedPayments),
+      status: stagedStatusSql,
+    })
     .from(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.id, id));
   return row;
@@ -280,7 +283,7 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     expect(res.json.splitTotal).toBe("1000.00");
 
     const row = await readStaged(spId);
-    expect(row.status).toBe("approved");
+    expect(row.status).toBe("match_confirmed");
     expect(row.matchedGiftId).toBeNull();
     expect(row.createdGiftId).toBeNull();
     expect(row.groupReconciledGiftId).toBeNull();
@@ -368,7 +371,7 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     const giftB = await seedGift("400.00");
     const spId = await seedStaged("980.00");
     // giftB is already matched to a different staged row.
-    await seedStaged("400.00", { status: "approved", matchedGiftId: giftB });
+    await seedStaged("400.00", { matchedGiftId: giftB });
 
     const res = await api(`/api/staged-payments/${spId}/split`, {
       giftIds: [giftA, giftB],
@@ -432,7 +435,7 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     expect(res.status).toBe(200);
     expect(res.json.splitTotal).toBe("1000.00");
     const row = await readStaged(spId);
-    expect(row.status).toBe("approved");
+    expect(row.status).toBe("match_confirmed");
     const splits = await readSplits(spId);
     expect(splits.length).toBe(2);
   }, 30_000);
@@ -535,7 +538,9 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
   it("rejects splitting an already-resolved row → 409 not_pending", async () => {
     const giftA = await seedGift("600.00");
     const giftB = await seedGift("400.00");
-    const spId = await seedStaged("980.00", { status: "approved" });
+    // Resolved by fact: already matched to a gift ⇒ derives match_confirmed.
+    const resolvedGift = await seedGift("980.00");
+    const spId = await seedStaged("980.00", { matchedGiftId: resolvedGift });
 
     const res = await api(`/api/staged-payments/${spId}/split`, {
       giftIds: [giftA, giftB],
@@ -543,8 +548,10 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
 
     expect(res.status).toBe(409);
     expect(res.json.error).toBe("not_pending");
-    // No splits were created for it.
+    // No splits were created for the requested gifts (the seed's own legacy
+    // dual-write mirror row for `resolvedGift` is the only ledger row).
     const splits = await readSplits(spId);
-    expect(splits.length).toBe(0);
+    expect(splits.filter((s) => [giftA, giftB].includes(s.giftId)).length).toBe(0);
+    expect(splits.every((s) => s.giftId === resolvedGift)).toBe(true);
   }, 30_000);
 });

@@ -119,25 +119,10 @@ paths:
         should be one gift with several allocations — apply via the existing
         gifts-and-payments/merge endpoint) and `link_evidence` (one bulk deposit
         that corroborates many gifts — apply via /financial-corrections/apply).
-        Proposals an admin has dismissed are excluded.
       parameters:
         - { name: limit, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 200 }, description: "Max proposals to return." }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FinancialCorrectionList" } } } }
-        "403": { $ref: "#/components/responses/Forbidden" }
-  /financial-corrections/dismiss:
-    post:
-      operationId: dismissFinancialCorrection
-      tags: [financial-corrections]
-      summary: >-
-        Admin-only. Mark a proposed correction as "leave as is" so the detector
-        never re-surfaces it. Idempotent.
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/DismissFinancialCorrectionBody" } } }
-      responses:
-        "204": { description: Dismissed (idempotent) }
-        "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
   /financial-corrections/apply:
     post:
@@ -2501,16 +2486,6 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged charge is not pending, or its payout conflicts with an approved QuickBooks lump" }
-  /stripe-staged-charges/{id}/reject:
-    post:
-      operationId: rejectStripeStagedCharge
-      tags: [stripe-staged-charges]
-      summary: Reject a Stripe charge (retained so re-sync won't re-stage it).
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeStagedCharge" } } } }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "Staged charge is not pending" }
   /stripe-staged-charges/{id}/exclude:
     post:
       operationId: excludeStripeStagedCharge
@@ -2864,16 +2839,6 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not pending" }
-  /staged-payments/{id}/reject:
-    post:
-      operationId: rejectStagedPayment
-      tags: [staged-payments]
-      summary: Reject a staged payment (retained so re-sync won't re-stage it).
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "Staged payment is not pending" }
   /staged-payments/{id}/re-include:
     post:
       operationId: reIncludeStagedPayment
@@ -3165,8 +3130,8 @@ paths:
         Reverts many staged-payment matches at once — the bulk equivalent of
         POST /staged-payments/{id}/revert, used to clear auto-applied matches off
         the Auto-matched queue in a single action. Each id is reverted only if it
-        is in a revertible state (an approved row that was reconciled to an
-        existing gift, auto-minted, group-reconciled, or split); the auto-minted
+        is in a revertible state (a match_proposed/match_confirmed row that was
+        tied to an existing gift, auto-minted, group-reconciled, or split); the auto-minted
         gift is deleted, pre-existing gifts are untouched. Ids that are missing or
         not revertible (e.g. a manually-created gift) are silently skipped rather
         than failing the whole batch. The response reports which ids were reverted
@@ -3181,11 +3146,11 @@ paths:
     post:
       operationId: confirmStagedPaymentMatch
       tags: [staged-payments]
-      summary: Confirm a system-suggested or auto-applied donor match (→ human approved / done).
+      summary: Confirm a system-suggested or auto-applied donor match (→ human-confirmed / done).
       description: |
         Stamps the donor match as human-confirmed (match_confirmed_at /
-        match_confirmed_by_user_id). Works on a pending row with a donor OR an
-        auto-applied approved row (graduating it from "Auto-matched" to "Done").
+        match_confirmed_by_user_id). Works on a pending row with a donor OR a
+        match_proposed row (graduating it from "Auto-matched" to "Done").
         Does not change the donor or mint a gift.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
@@ -3206,9 +3171,9 @@ paths:
     post:
       operationId: revertStagedPayment
       tags: [staged-payments]
-      summary: Undo an approved reconciliation/creation (approved → pending).
+      summary: Undo a booked reconciliation/creation (match_proposed/match_confirmed → pending).
       description: |
-        Returns an approved staged payment to the pending queue. If it was
+        Returns a gift-linked staged payment to the pending queue. If it was
         reconciled to an existing gift (matchedGiftId), the link is cleared and
         the pre-existing gift is untouched. If it was an auto-minted gift
         (createdGiftId + autoApplied), the auto-created gift is deleted. A
@@ -4116,10 +4081,10 @@ paths:
         staged_payments row (a QB record is required for every complete match) and
         carries the QB facts plus a compact auto-proposed best guess for the donor /
         gift / opportunity nodes and whether Stripe per-charge evidence backs the
-        same money. `reconciled` cards are excluded by default (filter with
-        queue=reconciled). Use the graph endpoint for the full candidate detail.
+        same money. `match_confirmed` cards are excluded by default (filter with
+        queue=done). Use the graph endpoint for the full candidate detail.
       parameters:
-        - { name: queue, in: query, schema: { $ref: "#/components/schemas/ReconciliationCardQueue" }, description: "Queue bucket to list. Omit for the active work queue (excludes reconciled/excluded/rejected AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable)." }
+        - { name: queue, in: query, schema: { $ref: "#/components/schemas/ReconciliationCardQueue" }, description: "Queue bucket to list. Omit for the active work queue (excludes match_confirmed/excluded rows AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable)." }
         - { name: q, in: query, schema: { type: string }, description: "Free-text over payer name / reference / memo." }
         - { name: entityId, in: query, schema: { type: string }, description: "Filter to one Wildflower legal entity attribution." }
         - { name: ready, in: query, schema: { type: boolean }, description: "Filter to cards whose auto-proposal passes (true) / fails (false) the consistency gate." }
@@ -4248,58 +4213,6 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Card is not in an approvable state, or the chosen gift/opportunity is already claimed." }
-  /reconciliation/cards/{stagedPaymentId}/proposals:
-    get:
-      operationId: listReconciliationCardProposals
-      tags: [reconciliation]
-      summary: List the free-text "propose alternative" comments left on one reconciliation card.
-      description: |
-        Reviewer feedback for ONE card, newest first. These are the human
-        "propose alternative" notes captured beside Approve in the Needs-review
-        queue — context for later improving that row's match (and the matcher as
-        a whole). Read-only. Open to any authenticated fundraiser.
-      parameters:
-        - { name: stagedPaymentId, in: path, required: true, schema: { type: string } }
-      responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationProposalList" } } } }
-        "404": { $ref: "#/components/responses/NotFound" }
-    post:
-      operationId: createReconciliationProposal
-      tags: [reconciliation]
-      summary: Leave a free-text "propose alternative" comment on one reconciliation card.
-      description: |
-        Capture a reviewer's free-text comment "to the system" for a staged-payment
-        card instead of approving it. Append-only: each call stores a new note with
-        the author and timestamp, keyed to the card's staged_payments row (the
-        representative row for a source group). Used to flag how a specific row —
-        or the matcher overall — should change. Does NOT mutate any match/donor/gift
-        state. Open to any authenticated fundraiser.
-      parameters:
-        - { name: stagedPaymentId, in: path, required: true, schema: { type: string } }
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/CreateReconciliationProposalBody" } } }
-      responses:
-        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationProposal" } } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "404": { $ref: "#/components/responses/NotFound" }
-  /reconciliation/proposals:
-    get:
-      operationId: listReconciliationProposals
-      tags: [reconciliation]
-      summary: List all "propose alternative" comments across cards, joined with staged-payment context.
-      description: |
-        Cross-card feed of every reviewer "propose alternative" comment, newest
-        first, each joined with its staged-payment context (payer / amount / date /
-        status / resolved gift) so the notes can be triaged later WITHOUT re-querying
-        per card. This is the endpoint the agent reads when the user comes back to
-        act on the accumulated comments. Read-only.
-      parameters:
-        - { name: stagedPaymentId, in: query, schema: { type: string }, description: "Filter to the comments on one card." }
-        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
-        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
-      responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationProposalWithContextList" } } } }
   /reconciliation/qb-search:
     get:
       operationId: searchReconciliationQbStaged
@@ -6510,7 +6423,7 @@ components:
     # ─── QuickBooks payment sync ──────────────────────────────────────────────
     QuickbooksEntityType: { type: string, enum: [sales_receipt, payment, deposit] }
     QuickbooksPayerType: { type: string, enum: [vendor, customer, employee], description: "The QuickBooks payer/entity kind behind this incoming money (Customer for a SalesReceipt/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line)." }
-    StagedPaymentStatus: { type: string, enum: [pending, approved, rejected, excluded, reconciled], description: "Lifecycle of a staged payment / Stripe charge. reconciled: terminal — this evidence row was tied to a CRM gift as its final-amount source (it is NOT itself a gift and is NEVER archived). Shared by QuickBooks staged_payments and Stripe staged charges." }
+    StagedPaymentStatus: { type: string, enum: [pending, match_proposed, match_confirmed, excluded], description: "DERIVED lifecycle of a staged payment / Stripe charge — computed from the row's facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges." }
     StagedPaymentExclusionReason: { type: string, enum: [zero_amount, membership, interest, tax_refund, other_revenue, earned_income, intercompany_transfer, other, insurance, expense_refund, expensify, returned_wire, processor_payout, loan_repayment, loan_proceeds, note_payable, miscoded_withdrawal, failed_charge, loan, government_reimbursement, fiscally_sponsored], description: "Why a staged QuickBooks payment / Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). loan / government_reimbursement / fiscally_sponsored are LEGACY (no longer produced; retained for historical rows)." }
     StagedPaymentMatchStatus: { type: string, enum: [matched, suggested, unmatched] }
     StagedPaymentMatchMethod: { type: string, enum: [email, name, name_amount_date, amount_date, memo, intermediary, manual] }
@@ -6518,11 +6431,11 @@ components:
     StagedPaymentEntitySource: { type: string, enum: [auto, manual], description: "Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync / reclassify." }
     StagedPaymentFundingSource: { type: string, enum: [stripe, brokerage, daf, donorbox, paypal, wire_ach, check, cash, employer_match, other], description: "WHERE the incoming money came from / how it rendered. A first-class origin dimension, DISTINCT from qbPaymentMethod (the QB instrument like Visa/Check) and from the derived reconciliation funding lane (reconcile progress, not origin). Auto-seeded at ingest by detectFundingSource and human-correctable. other = a known origin outside this list." }
     StagedPaymentFundingSourceProvenance: { type: string, enum: [auto, manual], description: "Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync / reclassify." }
-    StagedPaymentQueue: { type: string, enum: [needs_review, auto_matched, excluded, done, rejected, reconciled, refund_review], description: "Derived queue bucket. reconciled: evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand. refund_review: a Stripe-only cross-cutting filter (independent of status) for charges with an open refund/chargeback proposal awaiting confirm/dismiss — never emitted as a row's derived bucket." }
+    StagedPaymentQueue: { type: string, enum: [needs_review, auto_matched, excluded, done, refund_review], description: "Derived queue bucket. needs_review: pending rows. auto_matched: match_proposed (a system-applied gift link awaiting review). done: match_confirmed evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand. refund_review: a Stripe-only cross-cutting filter (independent of status) for charges with an open refund/chargeback proposal awaiting confirm/dismiss — never emitted as a row's derived bucket." }
     StripeRefundPropagationStatus: { type: string, enum: [none, proposed, applied, dismissed], description: "Lifecycle of a Stripe refund/chargeback proposal against a charge already booked into a CRM gift (INV-13). none: no refund/dispute or no linked gift. proposed: detected, awaiting human confirm. applied: human confirmed (gift reversed/reduced). dismissed: human declined to propagate." }
     StripeRefundKind: { type: string, enum: [full_refund, partial_refund, chargeback], description: "Kind of Stripe reversal. full_refund/chargeback reverse (archive) the gift; partial_refund reduces the gift amount." }
-    QuickbooksStagedPaymentQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done, rejected, reconciled], description: "QuickBooks staged-payment queue buckets. Superset of StagedPaymentQueue adding the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review)." }
-    ReconciliationCardQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done, rejected, reconciled], description: "Queue buckets accepted by the reconciliation cards endpoint query param. Mirrors QuickbooksStagedPaymentQueue but kept as its own schema so card-only query filters never leak into the staged-payment response queue enum." }
+    QuickbooksStagedPaymentQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done], description: "QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only)." }
+    ReconciliationCardQueue: { type: string, enum: [needs_review, fiscally_sponsored, auto_matched, excluded, done], description: "Queue buckets accepted by the reconciliation cards endpoint query param. Mirrors QuickbooksStagedPaymentQueue but kept as its own schema so card-only query filters never leak into the staged-payment response queue enum." }
     StagedPaymentSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc, payer_asc, payer_desc] }
     GiftSort: { type: string, enum: [date_desc, date_asc, amount_desc, amount_asc] }
     QuickbooksOauthStatus:
@@ -7085,7 +6998,7 @@ components:
         donorName:                 { type: string, nullable: true }
         donorEmail:                { type: string, nullable: true }
         donorEmployer:             { type: string, nullable: true }
-        status:                    { type: string, description: "Review status: pending | approved (minted) | reconciled (linked) | excluded." }
+        status:                    { type: string, enum: [pending, match_confirmed, excluded], description: "Review status in the shared derived vocabulary: pending | match_confirmed (linked or minted) | excluded. Donorbox stores its own lifecycle column; it is mapped to this vocabulary at the API edge (match_proposed never occurs here)." }
         exclusionReason:           { allOf: [ { $ref: "#/components/schemas/DonorboxExclusionReason" } ], nullable: true }
         matchStatus:               { type: string, description: "Suggested-donor match tier: unmatched | suggested | matched (a hint; never auto-applied)." }
         matchScore:                { type: integer, nullable: true }
@@ -7466,7 +7379,7 @@ components:
         disputed:     { type: boolean }
         linkSource:   { $ref: "#/components/schemas/SettlementLineageLinkSource" }
         # Explode-into-per-donor-gifts support (read-only; drives the bundle queue).
-        status:            { type: string, nullable: true, description: "The staged charge's reconciliation status (pending | reconciled | excluded)." }
+        status:            { type: string, nullable: true, description: "The staged charge's derived reconciliation status (pending | match_proposed | match_confirmed | excluded)." }
         donorResolved:     { type: boolean, description: "True when a donor (org/person/household) is already resolved on this charge, so it can be exploded into a gift." }
         hasGift:           { type: boolean, description: "True when this charge already has a created or matched gift (already exploded)." }
         resolvedDonorName: { type: string, nullable: true, description: "The resolved donor's display name, when known." }
@@ -7643,46 +7556,6 @@ components:
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/ReconciliationCard" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
-    ReconciliationProposal:
-      type: object
-      description: "One reviewer 'propose alternative' comment left on a reconciliation card, with its author and timestamp."
-      required: [id, stagedPaymentId, comment, createdByUserId, createdByUserName, createdAt]
-      properties:
-        id:                { type: string }
-        stagedPaymentId:   { type: string, description: "The staged_payments row this comment is attached to (the representative row for a source group)." }
-        comment:           { type: string, description: "The reviewer's free-text note 'to the system'." }
-        createdByUserId:   { type: string, nullable: true, description: "Author user id; null if the user row was since removed." }
-        createdByUserName: { type: string, nullable: true, description: "Author display name, joined for convenience." }
-        createdAt:         { type: string, format: date-time }
-    ReconciliationProposalList:
-      type: object
-      required: [data]
-      properties:
-        data: { type: array, items: { $ref: "#/components/schemas/ReconciliationProposal" } }
-    ReconciliationProposalWithContext:
-      description: "A reviewer comment joined with its staged-payment context, for cross-card triage."
-      allOf:
-        - $ref: "#/components/schemas/ReconciliationProposal"
-        - type: object
-          required: [payerName, amount, dateReceived, stagedStatus, resolvedGiftId]
-          properties:
-            payerName:      { type: string, nullable: true }
-            amount:         { type: string, nullable: true, description: "The staged payment's amount (major units)." }
-            dateReceived:   { type: string, format: date, nullable: true }
-            stagedStatus:   { type: string, nullable: true, description: "The staged payment's status at read time (e.g. pending / approved / excluded)." }
-            resolvedGiftId: { type: string, nullable: true, description: "The gift this row is matched/created/group-reconciled into, if any." }
-    ReconciliationProposalWithContextList:
-      type: object
-      required: [data, pagination]
-      properties:
-        data:       { type: array, items: { $ref: "#/components/schemas/ReconciliationProposalWithContext" } }
-        pagination: { $ref: "#/components/schemas/Pagination" }
-    CreateReconciliationProposalBody:
-      type: object
-      required: [comment]
-      description: "Body for leaving a free-text 'propose alternative' comment on a reconciliation card."
-      properties:
-        comment: { type: string, minLength: 1, maxLength: 10000, description: "The reviewer's note. Trimmed server-side; whitespace-only is rejected." }
     ReconciliationCardGroupMember:
       type: object
       required: [stagedPaymentId, isRepresentative]
@@ -7715,7 +7588,7 @@ components:
         description:         { type: string, nullable: true, description: "Charge description (charge.description) — often the real donor name / memo." }
         statementDescriptor: { type: string, nullable: true, description: "Card statement descriptor shown on the payer's statement." }
         date:      { type: string, format: date, nullable: true, description: "Calendar date the charge is credited to (date_received)." }
-        status:    { type: string, nullable: true, description: "Staged-charge review status (pending/approved/rejected/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie." }
+        status:    { type: string, nullable: true, description: "Staged-charge derived review status (pending/match_proposed/match_confirmed/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie." }
         exclusionReason: { type: string, nullable: true, description: "Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, auto-excluded at ingest). Null unless the charge is excluded." }
         linkedQbStagedPaymentId: { type: string, nullable: true, description: "CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied." }
         proposedQb:
@@ -8466,13 +8339,6 @@ components:
       required: [corrections]
       properties:
         corrections: { type: array, items: { $ref: "#/components/schemas/FinancialCorrection" } }
-    DismissFinancialCorrectionBody:
-      type: object
-      required: [kind, proposalKey]
-      description: "Mark a proposed correction as leave-as-is so the detector never re-surfaces it."
-      properties:
-        kind:        { type: string, enum: [merge_gifts, link_evidence] }
-        proposalKey: { type: string }
     ApplyFinancialCorrectionBody:
       type: object
       required: [evidenceKind, evidenceId, giftIds]
