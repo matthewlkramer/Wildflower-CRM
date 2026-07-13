@@ -1,5 +1,6 @@
 import { db } from "@workspace/db";
 import {
+  paymentApplications,
   settlementLinks,
   stagedPayments,
   stripePayouts,
@@ -75,7 +76,13 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * writer) have no revert branch and degrade to `invalid_transition`.
  */
 
-export type ConfirmRevertKind = "confirmed_reconciled" | "reverted";
+export type ConfirmRevertKind =
+  | "confirmed_reconciled"
+  // Linkage-only confirm: the QB deposit was ALREADY booked (legacy `approved`,
+  // e.g. a split whose money lives in counted payment_applications rows), so the
+  // confirm stamped the settlement link only and left the deposit untouched.
+  | "confirmed_linkage_only"
+  | "reverted";
 
 export type ConfirmRevertOk = {
   ok: true;
@@ -88,7 +95,11 @@ export type ConfirmRevertErrorCode =
   | "not_found"
   | "invalid_transition"
   | "charges_already_booked"
-  | "manual_review_required";
+  | "manual_review_required"
+  // Permanent (not drift): the proposed deposit is `approved` but carries NO
+  // provable booking (no counted ledger rows, no gift on any of its 3 gift-link
+  // columns) — a linkage-only confirm can't prove the money is accounted for.
+  | "deposit_not_booked";
 
 export type ConfirmRevertErr = {
   ok: false;
@@ -203,7 +214,77 @@ export async function confirmPendingQbDepositInTx(
       "Proposed QuickBooks deposit not found.",
     );
   }
-  if (deposit.qbEntityType !== "deposit" || deposit.status !== "pending") {
+  if (deposit.qbEntityType !== "deposit") {
+    throw new TransitionError(
+      "invalid_transition",
+      "The proposed QuickBooks deposit is no longer pending. Refresh and retry.",
+    );
+  }
+
+  // ── Linkage-only confirm: the deposit is ALREADY booked (legacy `approved`).
+  // Proposing a tie against an approved deposit is legitimate — the human still
+  // wants the payout↔deposit evidence recorded — but the deposit is terminal and
+  // must NOT be touched. Money-safety gate: only allow this when the deposit's
+  // money is provably accounted for — a gift on one of its 3 gift-link columns,
+  // or counted `payment_applications` ledger rows (the legacy-SPLIT shape, which
+  // carries none of the 3 columns; mirrors the "resolved has 4 forms" predicate).
+  // Otherwise there is no proof the lump was ever credited anywhere, so refuse
+  // with a DISTINCT permanent error (not the generic drift message).
+  if (deposit.status === "approved") {
+    const linkedGiftId =
+      deposit.matchedGiftId ??
+      deposit.createdGiftId ??
+      deposit.groupReconciledGiftId ??
+      null;
+    const hasCountedLedgerRows = linkedGiftId
+      ? true
+      : await tx
+          .select({ id: paymentApplications.id })
+          .from(paymentApplications)
+          .where(
+            and(
+              eq(paymentApplications.paymentId, depositId),
+              eq(paymentApplications.linkRole, "counted"),
+            ),
+          )
+          .limit(1)
+          .then((r) => r.length > 0);
+    if (!linkedGiftId && !hasCountedLedgerRows) {
+      throw new TransitionError(
+        "deposit_not_booked",
+        "This QuickBooks deposit is marked approved but has no record of where its money was booked, so the settlement can't be confirmed safely. Resolve the deposit in QuickBooks review first.",
+      );
+    }
+
+    // Touch nothing but the link — the deposit stays `approved` terminal
+    // evidence; its gifts already carry the money exactly once.
+    const link = confirmSettlementLink({
+      depositStagedPaymentId: depositId,
+      conflictGiftId: priorLink?.conflictGiftId ?? null,
+      confirmedByUserId: userId,
+      confirmedAt: now,
+    });
+    const advanced = await transitionSettlementLink(
+      tx,
+      payoutId,
+      "proposed",
+      link,
+    );
+    if (!advanced) {
+      throw new TransitionError(
+        "invalid_transition",
+        "This payout is no longer proposed. Refresh and retry.",
+      );
+    }
+    return {
+      ok: true,
+      kind: "confirmed_linkage_only",
+      payoutId,
+      stagedPaymentId: depositId,
+    };
+  }
+
+  if (deposit.status !== "pending") {
     throw new TransitionError(
       "invalid_transition",
       "The proposed QuickBooks deposit is no longer pending. Refresh and retry.",
@@ -480,6 +561,30 @@ export function revertPayoutQbConfirmation(
           "not_found",
           "Linked QuickBooks deposit not found.",
         );
+      // A linkage-only confirm (deposit already `approved` when confirmed) never
+      // touched the deposit — revert must not touch it either (NEVER flip an
+      // approved deposit to pending). Route the link back to proposed only.
+      if (deposit.status === "approved") {
+        const link = proposeSettlementLink(depositId, null);
+        const advanced = await transitionSettlementLink(
+          tx,
+          payoutId,
+          "confirmed_reconciled",
+          link,
+        );
+        if (!advanced) {
+          throw new TransitionError(
+            "invalid_transition",
+            "This payout has changed. Refresh and retry.",
+          );
+        }
+        return {
+          ok: true,
+          kind: "reverted",
+          payoutId,
+          stagedPaymentId: depositId,
+        };
+      }
       const reverted = await tx
         .update(stagedPayments)
         .set({

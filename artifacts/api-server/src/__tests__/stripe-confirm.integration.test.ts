@@ -47,6 +47,7 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   settlementLinks: Db["settlementLinks"];
+  paymentApplications: Db["paymentApplications"];
   organizations: Db["organizations"];
   users: Db["users"];
 };
@@ -151,6 +152,20 @@ async function readLink(payoutId: string) {
   return row;
 }
 
+/** Seed a counted QB ledger row anchoring `dep`'s money onto `gift` — the
+ * legacy-SPLIT bookedness shape (all 3 gift-link columns null; the money trail
+ * lives only in payment_applications). Teardown clears these via
+ * clearPaymentApplicationsForStagedIds. */
+async function seedCountedPa(dep: string, gift: string): Promise<void> {
+  await db.insert(schema.paymentApplications).values({
+    id: nextId("pa"),
+    paymentId: dep,
+    giftId: gift,
+    amountApplied: "1000.00",
+    evidenceSource: "quickbooks",
+  });
+}
+
 /** Seed a fully-wired conflict_approved payout: approved deposit booked into a
  * gift, its settlement link proposed with the conflict gift. Mirrors the
  * proposal pass's conflict output. */
@@ -173,6 +188,7 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     settlementLinks: dbMod.settlementLinks,
+    paymentApplications: dbMod.paymentApplications,
     organizations: dbMod.organizations,
     users: dbMod.users,
   };
@@ -243,6 +259,77 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     const deposit = await readDeposit(dep);
     expect(deposit.status).toBe("reconciled");
     expect(deposit.exclusionReason).toBeNull();
+  });
+
+  it("CONFIRM (approved SPLIT deposit, counted ledger rows): linkage-only confirm, deposit untouched", async () => {
+    // The endless-loop shape: a legacy split left the deposit `approved` with
+    // all 3 gift-link columns null but counted payment_applications rows.
+    const gift = await seedGift();
+    const dep = await seedDeposit({ status: "approved" });
+    await seedCountedPa(dep, gift);
+    const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
+
+    const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.kind).toBe("confirmed_linkage_only");
+
+    const link = await readLink(po);
+    expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
+    expect(link?.lifecycle).toBe("confirmed");
+    expect(link?.depositStagedPaymentId).toBe(dep);
+    expect(link?.confirmedByUserId).toBe(USER_ID);
+
+    // The already-booked deposit is NEVER touched — stays approved.
+    expect((await readDeposit(dep)).status).toBe("approved");
+  });
+
+  it("CONFIRM (approved deposit, gift-link column): linkage-only confirm, deposit untouched", async () => {
+    const gift = await seedGift();
+    const dep = await seedDeposit({ status: "approved", createdGiftId: gift });
+    const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
+
+    const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.kind).toBe("confirmed_linkage_only");
+    expect(payoutStatusFromLink((await readLink(po)) ?? null)).toBe(
+      "confirmed_reconciled",
+    );
+    expect((await readDeposit(dep)).status).toBe("approved");
+  });
+
+  it("CONFIRM (approved deposit, NO provable booking): permanent deposit_not_booked, nothing mutated", async () => {
+    const dep = await seedDeposit({ status: "approved" });
+    const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
+
+    const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("deposit_not_booked");
+
+    // Nothing changed: link still proposed, deposit still approved.
+    expect(payoutStatusFromLink((await readLink(po)) ?? null)).toBe("proposed");
+    expect((await readDeposit(dep)).status).toBe("approved");
+  });
+
+  it("REVERT of a linkage-only confirm → proposed, deposit stays approved (never flipped to pending)", async () => {
+    const gift = await seedGift();
+    const dep = await seedDeposit({ status: "approved" });
+    await seedCountedPa(dep, gift);
+    const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
+    const c = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
+    expect(c.ok).toBe(true);
+
+    const r = await confirm.revertPayoutQbConfirmation({ payoutId: po, userId: USER_ID });
+    expect(r.ok).toBe(true);
+
+    const link = await readLink(po);
+    expect(payoutStatusFromLink(link ?? null)).toBe("proposed");
+    expect(link?.depositStagedPaymentId).toBe(dep);
+    expect(link?.confirmedByUserId).toBeNull();
+    // The revert must NOT flip the untouched approved deposit to pending.
+    expect((await readDeposit(dep)).status).toBe("approved");
   });
 
   it("CONFIRM (pending deposit): rejects a payout that is not proposed", async () => {

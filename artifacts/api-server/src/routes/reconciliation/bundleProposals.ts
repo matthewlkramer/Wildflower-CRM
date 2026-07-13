@@ -839,9 +839,16 @@ router.post(
         return;
       }
       if (e instanceof TransitionError) {
-        res
-          .status(409)
-          .json({ error: "tie_transition", message: e.message });
+        // `deposit_not_booked` is a PERMANENT rejection (an approved deposit
+        // with no provable booking) — surface its own code so the card UI can
+        // render it verbatim instead of the "changed — refreshed" drift toast.
+        res.status(409).json({
+          error:
+            e.code === "deposit_not_booked"
+              ? "deposit_not_booked"
+              : "tie_transition",
+          message: e.message,
+        });
         return;
       }
       throw e;
@@ -910,7 +917,9 @@ router.post(
 // report, exactly once.
 //
 // State machine (mirrors the tie step the bundle confirm used, minus the bundle):
-//   • proposed, no conflict gift → confirmPendingQbDepositInTx (deposit → reconciled)
+//   • proposed, no conflict gift → confirmPendingQbDepositInTx (deposit → reconciled;
+//     if the deposit is already `approved` and provably booked, the confirm is
+//     LINKAGE-ONLY: the tie is stamped and the deposit is left untouched)
 //   • proposed + conflict gift   → confirmKeepApprovedQbGiftInTx (keep the gift)
 //   • already confirmed          → idempotent success
 //   • no link + body deposit     → propose the tie, then confirm (Resolve, both dirs)
@@ -990,7 +999,10 @@ router.post(
           const r = await confirmPendingQbDepositInTx(tx, { payoutId, userId });
           return {
             confirmed: true,
-            kind: "confirmed_reconciled" as const,
+            kind:
+              r.kind === "confirmed_linkage_only"
+                ? ("confirmed_linkage_only" as const)
+                : ("confirmed_reconciled" as const),
             payoutId,
             depositStagedPaymentId: r.stagedPaymentId,
           };
@@ -1069,9 +1081,16 @@ router.post(
         return;
       }
       if (e instanceof TransitionError) {
-        res
-          .status(409)
-          .json({ error: "tie_transition", message: e.message });
+        // `deposit_not_booked` is a PERMANENT rejection (an approved deposit
+        // with no provable booking) — surface its own code so the card UI can
+        // render it verbatim instead of the "changed — refreshed" drift toast.
+        res.status(409).json({
+          error:
+            e.code === "deposit_not_booked"
+              ? "deposit_not_booked"
+              : "tie_transition",
+          message: e.message,
+        });
         return;
       }
       throw e;

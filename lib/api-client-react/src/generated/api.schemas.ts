@@ -3629,6 +3629,7 @@ export type StripePayoutReconciliationResultKind = typeof StripePayoutReconcilia
 
 export const StripePayoutReconciliationResultKind = {
   confirmed_reconciled: 'confirmed_reconciled',
+  confirmed_linkage_only: 'confirmed_linkage_only',
   confirmed_excluded: 'confirmed_excluded',
   confirmed_keep: 'confirmed_keep',
   confirmed_replace: 'confirmed_replace',
@@ -4269,13 +4270,14 @@ export interface ConfirmChargeTiesResult {
 }
 
 /**
- * Which path ran: a clean pending-deposit confirm, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link.
+ * Which path ran: a clean pending-deposit confirm, a linkage-only confirm against an already-booked (approved) deposit that was left untouched, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link.
  */
 export type ConfirmSettlementLinkResultKind = typeof ConfirmSettlementLinkResultKind[keyof typeof ConfirmSettlementLinkResultKind];
 
 
 export const ConfirmSettlementLinkResultKind = {
   confirmed_reconciled: 'confirmed_reconciled',
+  confirmed_linkage_only: 'confirmed_linkage_only',
   conflict_kept: 'conflict_kept',
   already_confirmed: 'already_confirmed',
 } as const;
@@ -4283,7 +4285,7 @@ export const ConfirmSettlementLinkResultKind = {
 export interface ConfirmSettlementLinkResult {
   /** True when the settlement link is confirmed after this call. */
   confirmed: boolean;
-  /** Which path ran: a clean pending-deposit confirm, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link. */
+  /** Which path ran: a clean pending-deposit confirm, a linkage-only confirm against an already-booked (approved) deposit that was left untouched, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link. */
   kind: ConfirmSettlementLinkResultKind;
   payoutId: string;
   /** The QB deposit the confirmed link ties to (null only if the link's deposit pointer had degraded). */

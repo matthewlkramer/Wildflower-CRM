@@ -16,7 +16,12 @@ import { decodeHtmlEntities, formatCurrency, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { extractGateIssues } from "@/lib/reconciliation";
 import { ResolveTieDialog } from "./ResolveTieDialog";
-import { is409, resolveConfirmArgs } from "./settlement-actions";
+import {
+  apiErrorCode,
+  apiErrorMessage,
+  is409,
+  resolveConfirmArgs,
+} from "./settlement-actions";
 import { shortId } from "./bundle-ui";
 
 const SOURCE_LABEL: Record<BundleAnchorType, string> = {
@@ -236,16 +241,28 @@ export function SettlementCard({
             ? "Already settled."
             : res.kind === "conflict_kept"
               ? "Settlement confirmed — kept the approved gift."
-              : "Settlement approved.",
+              : res.kind === "confirmed_linkage_only"
+                ? "Settlement approved — the deposit was already booked, so only the link was recorded."
+                : "Settlement approved.",
       });
       onChanged();
     } catch (err) {
       if (is409(err)) {
-        toast({
-          title: "The settlement changed — refreshed.",
-          description: "Review the updated card and try again.",
-        });
-        onChanged();
+        // `deposit_not_booked` is a PERMANENT rejection — retrying will never
+        // succeed, so don't present it as transient drift.
+        if (apiErrorCode(err) === "deposit_not_booked") {
+          toast({
+            title: "Couldn't approve this settlement",
+            description: apiErrorMessage(err) ?? errMessage(err),
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "The settlement changed — refreshed.",
+            description: apiErrorMessage(err) ?? errMessage(err),
+          });
+          onChanged();
+        }
       } else {
         toast({ title: "Couldn't approve", description: errMessage(err) });
       }
@@ -308,7 +325,18 @@ export function SettlementCard({
       onChanged();
     } catch (err) {
       if (is409(err)) {
-        toast({ title: "The settlement changed — try resolving again." });
+        if (apiErrorCode(err) === "deposit_not_booked") {
+          toast({
+            title: "Couldn't resolve this settlement",
+            description: apiErrorMessage(err) ?? errMessage(err),
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "The settlement changed — try resolving again.",
+            description: apiErrorMessage(err) ?? undefined,
+          });
+        }
       } else {
         toast({ title: "Couldn't resolve", description: errMessage(err) });
       }

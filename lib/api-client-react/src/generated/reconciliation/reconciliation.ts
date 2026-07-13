@@ -1102,6 +1102,13 @@ deposit→reconciled flip IS the double-count guard).
 
 Behaviour by the payout's current settlement-link state:
   • proposed (clean)                → confirm; deposit pending → reconciled.
+  • proposed + already-booked deposit (legacy `approved`, e.g. a split
+    whose money lives in counted payment_applications rows or a
+    gift-linked lump) → LINKAGE-ONLY confirm: the tie is stamped and the
+    deposit is left untouched (kind `confirmed_linkage_only`). An
+    approved deposit with NO provable booking is refused with a
+    permanent 409 `deposit_not_booked` — resolve it in QuickBooks
+    review first.
   • proposed + approved-QB-gift conflict → keep the existing gift; confirm
     the linkage only (deposit + gift untouched).
   • already confirmed               → idempotent success (no re-book).

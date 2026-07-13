@@ -1014,7 +1014,7 @@ export const ConfirmStripePayoutExcludeParams = zod.object({
 
 export const ConfirmStripePayoutExcludeResponse = zod.object({
   "ok": zod.literal(true),
-  "kind": zod.enum(['confirmed_reconciled', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted']),
+  "kind": zod.enum(['confirmed_reconciled', 'confirmed_linkage_only', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted']),
   "payoutId": zod.string(),
   "stagedPaymentId": zod.string().nullish().describe('The QB deposit lump that was excluded\/relinked, when applicable.'),
   "archivedGiftId": zod.string().nullish().describe('The QB-derived gift archived by a confirm-replace (kept, never deleted).'),
@@ -1030,7 +1030,7 @@ export const ConfirmStripePayoutKeepParams = zod.object({
 
 export const ConfirmStripePayoutKeepResponse = zod.object({
   "ok": zod.literal(true),
-  "kind": zod.enum(['confirmed_reconciled', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted']),
+  "kind": zod.enum(['confirmed_reconciled', 'confirmed_linkage_only', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted']),
   "payoutId": zod.string(),
   "stagedPaymentId": zod.string().nullish().describe('The QB deposit lump that was excluded\/relinked, when applicable.'),
   "archivedGiftId": zod.string().nullish().describe('The QB-derived gift archived by a confirm-replace (kept, never deleted).'),
@@ -1046,7 +1046,7 @@ export const ConfirmStripePayoutReplaceParams = zod.object({
 
 export const ConfirmStripePayoutReplaceResponse = zod.object({
   "ok": zod.literal(true),
-  "kind": zod.enum(['confirmed_reconciled', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted']),
+  "kind": zod.enum(['confirmed_reconciled', 'confirmed_linkage_only', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted']),
   "payoutId": zod.string(),
   "stagedPaymentId": zod.string().nullish().describe('The QB deposit lump that was excluded\/relinked, when applicable.'),
   "archivedGiftId": zod.string().nullish().describe('The QB-derived gift archived by a confirm-replace (kept, never deleted).'),
@@ -1062,7 +1062,7 @@ export const RevertStripePayoutReconciliationParams = zod.object({
 
 export const RevertStripePayoutReconciliationResponse = zod.object({
   "ok": zod.literal(true),
-  "kind": zod.enum(['confirmed_reconciled', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted']),
+  "kind": zod.enum(['confirmed_reconciled', 'confirmed_linkage_only', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted']),
   "payoutId": zod.string(),
   "stagedPaymentId": zod.string().nullish().describe('The QB deposit lump that was excluded\/relinked, when applicable.'),
   "archivedGiftId": zod.string().nullish().describe('The QB-derived gift archived by a confirm-replace (kept, never deleted).'),
