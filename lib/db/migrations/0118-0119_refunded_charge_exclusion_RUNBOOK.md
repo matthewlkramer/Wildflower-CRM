@@ -20,9 +20,15 @@ charge re-lands the charge in Excluded).
 
 ## Ordering (matters)
 
-1. **Publish first** (schema diff — creates the enum value in prod).
-2. Then apply **0118** (harmless no-op after Publish; kept so the ordering is
-   explicit if data is backfilled before a Publish ever runs):
+> **Update (2026-07-13):** the classifier code shipped to prod in the last
+> Publish, but that Publish predated the dev-DB enum reconciliation — prod
+> verifiably LACKS the `refunded_charge` enum value while live code can try to
+> write it. So run the migrations FIRST (0118 is a safe standalone
+> `ADD VALUE IF NOT EXISTS`); the next Publish's schema diff then sees the
+> value already present. The original "Publish first" ordering below is
+> obsolete.
+
+1. Apply **0118** (adds the enum value; safe before or after Publish):
 
    ```bash
    psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0118_refunded_charge_exclusion_enum.sql
@@ -31,11 +37,14 @@ charge re-lands the charge in Excluded).
    ⚠️ No `-1` on 0118 — Postgres forbids USING a new enum value in the same
    transaction that added it.
 
-3. Then apply **0119** (the backfill; single transaction is fine):
+2. Then apply **0119** (the backfill; single transaction is fine):
 
    ```bash
    psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0119_exclude_refunded_stripe_charges.sql
    ```
+
+3. Publish whenever ready (it also ships the per-charge "create gift" fix for
+   settlement-confirmed deposits and the payout-display fix).
 
 ## What 0119 touches (and refuses to touch)
 

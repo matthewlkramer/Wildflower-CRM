@@ -1,18 +1,22 @@
 ---
-name: QB deposit memo can name the wrong donor
-description: Reconciler card payer labels come from the QB deposit memo, which can name a different donor than the money actually belongs to; the charges inside the settling payout are authoritative.
+name: QB deposit memo / stale charge auto-match can name the wrong donor
+description: Reconciler card donor labels prefer the charge's donor FK (which a stale auto-match can set wrong), falling back to the QB deposit memo (hand-typed, also unreliable); the payout's charges (payer_name/description) are authoritative.
 ---
 
-The reconciliation card's payer label / "Create new gift — <name>" suggestion is derived
-from the QuickBooks deposit memo (payer_name / line_description). That memo can be flat-out
-wrong: a real prod case had a deposit labeled "Donation from Donor A via Stripe" whose
-settling payout contained exactly one charge — Donor B's, for the same amount, one day
-after Donor A's identical-amount donation (which was already fully booked with both QB and
-Stripe evidence on Donor A's gift).
+The reconciliation card's donor label prefers `stripeChargeDonorName` — derived from the
+CHARGE's donor FK COALESCE in cards.ts — over the QB memo `payer_name`. Both sources can be
+wrong: the charge's donor FK can be mis-set by a stale auto-match, and the hand-typed QB memo
+can name a different donor entirely. A real prod case had BOTH wrong the same way: a deposit
+memo "Donation from Donor A via Stripe" AND a charge FK pointing at Donor A, while the charge's
+own `payer_name`/description proved it was Donor B's same-amount donation days after Donor A's
+identical-amount gift (already fully booked with QB+Stripe evidence).
 
-**Why:** Stripe deposits arrive as lump transfers; QB users type the memo by hand and
-same-amount adjacent donations get mislabeled. Accepting the suggested "Create new gift"
-double-books the named donor and loses the real donor's money.
+**Why:** Stripe deposits arrive as lump transfers; QB memos are hand-typed and same-amount
+adjacent donations get mislabeled, and the charge auto-matcher can adopt that wrong name.
+Accepting the suggested "Create new gift" double-books the named donor and loses the real
+donor's money. The per-charge link-gift route ADOPTS THE GIFT'S DONOR, so linking the charge
+to the right donor's existing gift self-heals a wrong charge FK; a guarded one-row SQL repoint
+fixes the label pre-link.
 
 **How to apply:** Before trusting a card's donor label, resolve the deposit → settlement
 link → payout → charges chain; the charge payer(s) are the truth. If the named donor's
