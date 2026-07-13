@@ -579,6 +579,7 @@ export const SearchReconciliationPayoutsResponse = zod.object({
   "statementDescriptor": zod.string().nullish().describe('Card statement descriptor shown on the payer\'s statement.'),
   "date": zod.string().date().nullish().describe('Calendar date the charge is credited to (date_received).'),
   "status": zod.string().nullish().describe('Staged-charge review status (pending\/approved\/rejected\/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie.'),
+  "exclusionReason": zod.string().nullish().describe('Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, auto-excluded at ingest). Null unless the charge is excluded.'),
   "linkedQbStagedPaymentId": zod.string().nullish().describe('CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied.'),
   "proposedQb": zod.object({
   "id": zod.string().describe('staged_payments.id of the proposed QB row.'),
@@ -868,6 +869,7 @@ export const ListReconciliationBundleAnchorsResponse = zod.object({
   "anchorType": zod.enum(['qb_staged_payment', 'stripe_payout']).describe('The settlement anchor a bundle reconciles: a QuickBooks deposit (staged_payments) or a Stripe payout (stripe_payouts).'),
   "anchorId": zod.string().describe('stripe_payouts.id (po_...) or staged_payments.id.'),
   "amount": zod.string().nullish().describe('Net deposited (Stripe net_total, falling back to payout amount) or the QB staged amount, major units.'),
+  "bankAmount": zod.string().nullish().describe('Stripe payout only: the raw bank payout amount (stripe_payouts.amount) — what actually hit the bank. Differs from `amount` (charge-sum net) when the payout absorbed failed-payment reversals or refunds; this is the figure that matches the QB deposit. Null for QB anchors.'),
   "grossTotal": zod.string().nullish().describe('Stripe payout gross total before processor fees (major units); null for QB-only money.'),
   "feeTotal": zod.string().nullish().describe('Stripe payout processor-fee total (major units); null for QB-only money.'),
   "date": zod.string().date().nullish().describe('Stripe arrival date, or the QB date received.'),
@@ -883,6 +885,7 @@ export const ListReconciliationBundleAnchorsResponse = zod.object({
   "statementDescriptor": zod.string().nullish().describe('Card statement descriptor shown on the payer\'s statement.'),
   "date": zod.string().date().nullish().describe('Calendar date the charge is credited to (date_received).'),
   "status": zod.string().nullish().describe('Staged-charge review status (pending\/approved\/rejected\/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie.'),
+  "exclusionReason": zod.string().nullish().describe('Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, auto-excluded at ingest). Null unless the charge is excluded.'),
   "linkedQbStagedPaymentId": zod.string().nullish().describe('CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied.'),
   "proposedQb": zod.object({
   "id": zod.string().describe('staged_payments.id of the proposed QB row.'),

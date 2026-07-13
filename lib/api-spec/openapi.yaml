@@ -7693,6 +7693,7 @@ components:
         statementDescriptor: { type: string, nullable: true, description: "Card statement descriptor shown on the payer's statement." }
         date:      { type: string, format: date, nullable: true, description: "Calendar date the charge is credited to (date_received)." }
         status:    { type: string, nullable: true, description: "Staged-charge review status (pending/approved/rejected/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie." }
+        exclusionReason: { type: string, nullable: true, description: "Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, auto-excluded at ingest). Null unless the charge is excluded." }
         linkedQbStagedPaymentId: { type: string, nullable: true, description: "CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied." }
         proposedQb:
           nullable: true
@@ -8149,6 +8150,7 @@ components:
         anchorType:  { $ref: "#/components/schemas/BundleAnchorType" }
         anchorId:    { type: string, description: "stripe_payouts.id (po_...) or staged_payments.id." }
         amount:      { type: string, nullable: true, description: "Net deposited (Stripe net_total, falling back to payout amount) or the QB staged amount, major units." }
+        bankAmount:  { type: string, nullable: true, description: "Stripe payout only: the raw bank payout amount (stripe_payouts.amount) — what actually hit the bank. Differs from `amount` (charge-sum net) when the payout absorbed failed-payment reversals or refunds; this is the figure that matches the QB deposit. Null for QB anchors." }
         grossTotal:  { type: string, nullable: true, description: "Stripe payout gross total before processor fees (major units); null for QB-only money." }
         feeTotal:    { type: string, nullable: true, description: "Stripe payout processor-fee total (major units); null for QB-only money." }
         date:        { type: string, format: date, nullable: true, description: "Stripe arrival date, or the QB date received." }

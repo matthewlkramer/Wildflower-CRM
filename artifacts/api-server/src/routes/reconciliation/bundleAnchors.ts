@@ -148,6 +148,7 @@ interface PayoutChargeRow {
   statementDescriptor: string | null;
   date: string | null;
   status: string | null;
+  exclusionReason: string | null;
   linkedQbStagedPaymentId: string | null;
   proposedQb: {
     id: string;
@@ -162,6 +163,7 @@ interface AnchorRow {
   anchor_type: AnchorSource;
   anchor_id: string;
   amount: string | null;
+  bank_amount: string | null;
   gross_total: string | null;
   fee_total: string | null;
   anchor_date: string | null;
@@ -237,6 +239,10 @@ router.get(
         'stripe_payout'::text AS anchor_type,
         sp.id AS anchor_id,
         COALESCE(sp.net_total, sp.amount)::text AS amount,
+        -- The raw bank payout amount — what actually hit the bank. Differs from
+        -- the charge-sum net when the payout absorbed failed-payment reversals
+        -- or refunds; this is the figure that matches the QB deposit.
+        sp.amount::text AS bank_amount,
         sp.gross_total::text AS gross_total,
         sp.fee_total::text AS fee_total,
         sp.arrival_date::text AS anchor_date,
@@ -253,6 +259,7 @@ router.get(
               'statementDescriptor', c.statement_descriptor,
               'date', c.date_received::text,
               'status', c.status,
+              'exclusionReason', c.exclusion_reason,
               'linkedQbStagedPaymentId', c.linked_qb_staged_payment_id,
               'proposedQb', CASE WHEN c.pq_id IS NOT NULL THEN json_build_object(
                   'id', c.pq_id,
@@ -265,7 +272,7 @@ router.get(
           FROM (
             SELECT cc.id, cc.payer_name, cc.description, cc.statement_descriptor,
                    cc.gross_amount, cc.fee_amount, cc.net_amount, cc.date_received,
-                   cc.status, cc.linked_qb_staged_payment_id,
+                   cc.status, cc.exclusion_reason, cc.linked_qb_staged_payment_id,
                    pq.id AS pq_id, pq.payer_name AS pq_payer_name,
                    pq.amount::text AS pq_amount, pq.date_received::text AS pq_date,
                    COALESCE(pq.qb_transaction_memo, pq.line_description) AS pq_memo
@@ -330,6 +337,7 @@ router.get(
         'qb_staged_payment'::text AS anchor_type,
         s.id AS anchor_id,
         s.amount::text AS amount,
+        NULL::text AS bank_amount,
         NULL::text AS gross_total,
         NULL::text AS fee_total,
         s.date_received::text AS anchor_date,
@@ -375,7 +383,7 @@ router.get(
     const [dataResult, totalResult] = await Promise.all([
       db.execute(sql`
         SELECT
-          anchor_type, anchor_id, amount, gross_total, fee_total, anchor_date,
+          anchor_type, anchor_id, amount, bank_amount, gross_total, fee_total, anchor_date,
           payer_name, charge_count, charges,
           line_description, memo, reference,
           line_item_names, line_account_names, line_classes,
@@ -402,6 +410,7 @@ router.get(
         anchorType: r.anchor_type,
         anchorId: r.anchor_id,
         amount: r.amount,
+        bankAmount: r.bank_amount,
         grossTotal: r.gross_total,
         feeTotal: r.fee_total,
         date: r.anchor_date,

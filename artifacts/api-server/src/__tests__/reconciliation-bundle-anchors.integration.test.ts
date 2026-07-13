@@ -200,7 +200,11 @@ async function seedPayout(opts: {
 
 async function seedCharge(
   payoutId: string,
-  opts: { matchedGiftId?: string; status?: string } = {},
+  opts: {
+    matchedGiftId?: string;
+    status?: string;
+    exclusionReason?: string | null;
+  } = {},
 ): Promise<string> {
   const id = nextId("ch");
   await db.insert(schema.stripeStagedCharges).values({
@@ -217,6 +221,7 @@ async function seedCharge(
     // `status` override lets a test mark a charge settled without an FK to a gift.
     status: (opts.status ??
       (opts.matchedGiftId ? "reconciled" : "pending")) as never,
+    exclusionReason: (opts.exclusionReason ?? null) as never,
     matchedGiftId: opts.matchedGiftId ?? null,
   });
   chargeIds.push(id);
@@ -553,6 +558,45 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     expect(row.statusLabel).toBe("pending");
     expect(row.chargeCount).toBeNull();
     expect(row.date).toBeTruthy();
+  });
+
+  it("emits the bank amount and per-charge exclusion reason so a failed charge reads as excluded, not a second gift", async () => {
+    // A payout containing a failed-then-reversed payment: the charge-sum net
+    // (net_total 96.80) differs from what actually hit the bank (amount 100.00
+    // — the figure the QB deposit matches). One live charge still needs work;
+    // one FAILED charge was auto-excluded at ingest and must carry its
+    // exclusion reason so the card can grey it instead of rendering it like a
+    // bookable gift.
+    const p = await seedPayout({ status: "unmatched" });
+    const chLive = await seedCharge(p);
+    const chFailed = await seedCharge(p, {
+      status: "excluded",
+      exclusionReason: "failed_charge",
+    });
+
+    const map = await listAnchors("needs_review");
+    const row = map.get(`stripe_payout:${p}`);
+    expect(row).toBeTruthy();
+
+    // amount stays the charge-sum net (existing consumers eyeball-match it);
+    // bankAmount is the NEW raw bank figure. A QB anchor never carries one.
+    expect(Number(row.amount)).toBeCloseTo(96.8, 2);
+    expect(Number(row.bankAmount)).toBeCloseTo(100, 2);
+    const sQb = await seedStaged({ status: "pending" });
+    const qbRow = (await listAnchors("needs_review")).get(
+      `qb_staged_payment:${sQb}`,
+    );
+    expect(qbRow.bankAmount).toBeNull();
+
+    const byId = new Map<string, any>(
+      (row.charges as any[]).map((c) => [c.id, c]),
+    );
+    const live = byId.get(chLive);
+    expect(live.status).toBe("pending");
+    expect(live.exclusionReason).toBeNull();
+    const failed = byId.get(chFailed);
+    expect(failed.status).toBe("excluded");
+    expect(failed.exclusionReason).toBe("failed_charge");
   });
 
   it("omits an unmatched payout whose charges are ALL settled from needs_review (still under all)", async () => {

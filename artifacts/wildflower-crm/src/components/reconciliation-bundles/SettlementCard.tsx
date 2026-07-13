@@ -22,7 +22,7 @@ import {
   is409,
   resolveConfirmArgs,
 } from "./settlement-actions";
-import { shortId } from "./bundle-ui";
+import { chargeExcludedLabel, shortId } from "./bundle-ui";
 
 const SOURCE_LABEL: Record<BundleAnchorType, string> = {
   stripe_payout: "Stripe",
@@ -127,16 +127,31 @@ export function ChargeList({
         const subtitle = decodeHtmlEntities(
           c.description ?? c.statementDescriptor ?? "",
         ).trim();
+        const excludedLabel = chargeExcludedLabel(c);
         return (
-          <li key={c.id} className="border-b border-border/40 pb-1 last:border-0">
+          <li
+            key={c.id}
+            className={cn(
+              "border-b border-border/40 pb-1 last:border-0",
+              excludedLabel && "opacity-50",
+            )}
+          >
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate">
+              <span className={cn("truncate", excludedLabel && "line-through")}>
                 {c.payerName?.trim() || "(no name)"}
               </span>
               <span className="shrink-0 tabular-nums">
                 {c.amount != null ? formatCurrency(c.amount) : "—"}
               </span>
             </div>
+            {excludedLabel && (
+              <div
+                className="text-[10px] font-medium text-muted-foreground"
+                data-testid={`charge-excluded-${c.id}`}
+              >
+                {excludedLabel}
+              </div>
+            )}
             {subtitle && (
               <div className="truncate text-[10px] text-muted-foreground/70">
                 {subtitle}
@@ -224,6 +239,15 @@ export function SettlementCard({
   // human can approve in one click, and already-confirmed ties for context.
   const tiesProposed = a.chargeTiesProposed ?? 0;
   const tiesConfirmed = a.chargeTiesConfirmed ?? 0;
+  // The bank payout amount is what actually hit the bank — the figure that
+  // matches the QB deposit. Show it prominently; when it differs from the
+  // charge-sum net (failed-payment reversals, refunds inside the payout), show
+  // both so the reviewer sees why. Numeric compare tolerates "96.8"/"96.80".
+  const headerAmount = a.bankAmount ?? a.amount ?? null;
+  const bankDiffers =
+    a.bankAmount != null &&
+    a.amount != null &&
+    Number(a.bankAmount) !== Number(a.amount);
   const showApproveTies =
     a.anchorType === "stripe_payout" && tiesProposed > 0;
 
@@ -370,8 +394,10 @@ export function SettlementCard({
               </Badge>
               <span className="font-medium">{shortId(a.anchorId)}</span>
             </span>
+            {/* Prominent figure = what actually hit the bank (matches the QB
+                deposit); falls back to the charge-sum net / QB amount. */}
             <span className="font-semibold">
-              {a.amount != null ? formatCurrency(a.amount) : "—"}
+              {headerAmount != null ? formatCurrency(headerAmount) : "—"}
             </span>
           </div>
           <div className="mt-0.5 text-xs text-muted-foreground">
@@ -381,7 +407,7 @@ export function SettlementCard({
               : ""}
             {a.payerName ? ` · ${a.payerName}` : ""}
           </div>
-          {(a.grossTotal != null || a.feeTotal != null) && (
+          {(a.grossTotal != null || a.feeTotal != null || bankDiffers) && (
             <div className="mt-0.5 text-[11px] tabular-nums text-muted-foreground/70">
               {a.grossTotal != null ? `gross ${formatCurrency(a.grossTotal)}` : ""}
               {a.grossTotal != null && a.feeTotal != null ? " · " : ""}
@@ -389,6 +415,20 @@ export function SettlementCard({
               {(a.grossTotal != null || a.feeTotal != null) && a.amount != null
                 ? ` · net ${formatCurrency(a.amount)}`
                 : ""}
+              {/* Failed-payment reversals / refunds inside the payout make the
+                  bank deposit differ from the charge-sum net — show both so
+                  the reviewer sees WHY, and which figure matches QB. */}
+              {bankDiffers && a.bankAmount != null ? (
+                <span
+                  className="font-medium text-foreground/80"
+                  data-testid={`bank-amount-${a.anchorId}`}
+                >
+                  {" "}
+                  · bank {formatCurrency(a.bankAmount)}
+                </span>
+              ) : (
+                ""
+              )}
             </div>
           )}
           {a.anchorType === "stripe_payout" &&

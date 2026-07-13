@@ -15,8 +15,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { shortId } from "./bundle-ui";
+import { chargeExcludedLabel, shortId } from "./bundle-ui";
 
 interface ResultRow {
   id: string;
@@ -231,16 +232,34 @@ function ResultsList({
             <span className="truncate text-sm font-medium">{r.primary}</span>
             {r.charges.length > 0 ? (
               <span className="mt-0.5 flex max-h-24 flex-col gap-0.5 overflow-y-auto pr-1 text-xs text-muted-foreground">
-                {r.charges.map((c) => (
-                  <span key={c.id} className="flex items-center gap-1.5">
-                    <span className="truncate">
-                      {c.payerName?.trim() || "(no name)"}
+                {r.charges.map((c) => {
+                  // A failed/excluded/rejected charge is out of play — grey it
+                  // and say why so it isn't mistaken for a second gift.
+                  const excludedLabel = chargeExcludedLabel(c);
+                  return (
+                    <span
+                      key={c.id}
+                      className={cn(
+                        "flex items-center gap-1.5",
+                        excludedLabel && "opacity-50",
+                      )}
+                    >
+                      <span
+                        className={cn("truncate", excludedLabel && "line-through")}
+                      >
+                        {c.payerName?.trim() || "(no name)"}
+                      </span>
+                      <span className="shrink-0 tabular-nums">
+                        {c.amount != null ? formatCurrency(c.amount) : "—"}
+                      </span>
+                      {excludedLabel && (
+                        <span className="shrink-0 text-[10px] font-medium">
+                          {excludedLabel}
+                        </span>
+                      )}
                     </span>
-                    <span className="shrink-0 tabular-nums">
-                      {c.amount != null ? formatCurrency(c.amount) : "—"}
-                    </span>
-                  </span>
-                ))}
+                  );
+                })}
               </span>
             ) : (
               r.secondary && (

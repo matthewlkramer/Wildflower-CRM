@@ -1388,6 +1388,8 @@ export interface RecPayoutCharge {
   payerName: string | null;
   amount: string | null;
   date: string | null;
+  status: string | null;
+  exclusionReason: string | null;
 }
 
 export interface RecPayoutCandidate {
@@ -1467,10 +1469,13 @@ export async function searchPayouts(
             'id', c.id,
             'payerName', COALESCE(c.payer_name, c.description),
             'amount', c.gross_amount::text,
-            'date', c.date_received::text
+            'date', c.date_received::text,
+            'status', c.status,
+            'exclusionReason', c.exclusion_reason
           ) ORDER BY c.gross_amount DESC NULLS LAST)
         FROM (
-          SELECT cc.id, cc.payer_name, cc.description, cc.gross_amount, cc.date_received
+          SELECT cc.id, cc.payer_name, cc.description, cc.gross_amount, cc.date_received,
+                 cc.status, cc.exclusion_reason
           FROM stripe_staged_charges cc
           WHERE cc.stripe_payout_id = ${stripePayouts.id}
           ORDER BY cc.gross_amount DESC NULLS LAST

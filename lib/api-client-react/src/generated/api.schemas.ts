@@ -4204,6 +4204,8 @@ export interface PayoutChargeSummary {
   date?: string | null;
   /** Staged-charge review status (pending/approved/rejected/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie. */
   status?: string | null;
+  /** Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, auto-excluded at ingest). Null unless the charge is excluded. */
+  exclusionReason?: string | null;
   /** CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied. */
   linkedQbStagedPaymentId?: string | null;
   /** The system-PROPOSED (not yet confirmed) QuickBooks row for this charge, awaiting a human approve on the Settlement report. Null when nothing is proposed or the tie is already confirmed. */
@@ -4972,6 +4974,8 @@ export interface BundleAnchor {
   anchorId: string;
   /** Net deposited (Stripe net_total, falling back to payout amount) or the QB staged amount, major units. */
   amount?: string | null;
+  /** Stripe payout only: the raw bank payout amount (stripe_payouts.amount) — what actually hit the bank. Differs from `amount` (charge-sum net) when the payout absorbed failed-payment reversals or refunds; this is the figure that matches the QB deposit. Null for QB anchors. */
+  bankAmount?: string | null;
   /** Stripe payout gross total before processor fees (major units); null for QB-only money. */
   grossTotal?: string | null;
   /** Stripe payout processor-fee total (major units); null for QB-only money. */

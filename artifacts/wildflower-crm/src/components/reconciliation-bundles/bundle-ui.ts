@@ -42,3 +42,21 @@ export function shortId(id: string | null | undefined): string {
   if (id.length <= 14) return id;
   return `${id.slice(0, 8)}…${id.slice(-4)}`;
 }
+
+/**
+ * Label for a payout charge that is out of play (excluded/rejected), so charge
+ * lists can grey it and tell the reviewer WHY — a failed charge auto-excluded at
+ * ingest is not a second gift. Null for a live charge.
+ */
+export function chargeExcludedLabel(c: {
+  status?: string | null;
+  exclusionReason?: string | null;
+}): string | null {
+  if (c.status === "excluded") {
+    return c.exclusionReason === "failed_charge"
+      ? "Failed — auto-excluded"
+      : "Excluded";
+  }
+  if (c.status === "rejected") return "Rejected";
+  return null;
+}
