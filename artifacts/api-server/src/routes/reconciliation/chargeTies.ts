@@ -338,4 +338,105 @@ router.post(
   }),
 );
 
+/**
+ * Per-row reject of ONE proposed charge↔QB tie (the "Missing deposit" card's
+ * per-charge Reject). Clears the proposal AND records the dismissed pair on
+ * the charge (`dismissed_qb_staged_payment_ids`) so the idempotent proposal
+ * pass never re-proposes it — the QB row stays a candidate for OTHER charges,
+ * and a manual "Tie selected" still overrides the dismissal. Plane 1 only:
+ * no gift, QB row, or settlement link is touched.
+ */
+router.post(
+  "/reconciliation/charges/:chargeId/qb-tie/reject",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const chargeId = req.params.chargeId as string;
+
+    try {
+      const result = await db.transaction(async (tx) => {
+        const [charge] = await tx
+          .select({
+            id: stripeStagedCharges.id,
+            linkedQbStagedPaymentId:
+              stripeStagedCharges.linkedQbStagedPaymentId,
+            proposedQbStagedPaymentId:
+              stripeStagedCharges.proposedQbStagedPaymentId,
+            dismissedQbStagedPaymentIds:
+              stripeStagedCharges.dismissedQbStagedPaymentIds,
+          })
+          .from(stripeStagedCharges)
+          .where(eq(stripeStagedCharges.id, chargeId))
+          .for("update");
+        if (!charge) {
+          throw new ReconcileAbort(404, {
+            error: "not_found",
+            message: "Stripe charge not found.",
+          });
+        }
+        if (charge.linkedQbStagedPaymentId != null) {
+          throw new ReconcileAbort(409, {
+            error: "already_confirmed",
+            message:
+              "This charge's QuickBooks tie is already confirmed — reverting a confirmed tie is a separate path.",
+          });
+        }
+        const qbId = charge.proposedQbStagedPaymentId;
+        if (qbId == null) {
+          throw new ReconcileAbort(409, {
+            error: "nothing_proposed",
+            message: "This charge has no proposed QuickBooks tie to reject.",
+          });
+        }
+
+        // Dedup-append the dismissed pair, then clear the proposal — guarded
+        // on the exact proposal we read still being in place (the FOR UPDATE
+        // lock makes drift impossible; the guard keeps the write
+        // self-defending).
+        const dismissed = Array.from(
+          new Set([...(charge.dismissedQbStagedPaymentIds ?? []), qbId]),
+        );
+        const upd = await tx
+          .update(stripeStagedCharges)
+          .set({
+            proposedQbStagedPaymentId: null,
+            dismissedQbStagedPaymentIds: dismissed,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(stripeStagedCharges.id, chargeId),
+              eq(stripeStagedCharges.proposedQbStagedPaymentId, qbId),
+              isNull(stripeStagedCharges.linkedQbStagedPaymentId),
+            ),
+          )
+          .returning({ id: stripeStagedCharges.id });
+        if (upd.length === 0) {
+          throw new ReconcileAbort(409, {
+            error: "charge_tie_drift",
+            message: "The charge's tie changed mid-reject. Reload and retry.",
+          });
+        }
+
+        return { rejected: true, chargeId, qbStagedPaymentId: qbId };
+      });
+
+      req.log.info(
+        { chargeId, qbStagedPaymentId: result.qbStagedPaymentId },
+        "Rejected a proposed charge-grain Stripe↔QB tie",
+      );
+      res.json(result);
+    } catch (e) {
+      if (e instanceof ReconcileAbort) {
+        res.status(e.httpStatus).json(e.payload);
+        return;
+      }
+      throw e;
+    }
+  }),
+);
+
 export default router;

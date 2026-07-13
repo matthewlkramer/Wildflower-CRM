@@ -698,6 +698,31 @@ export const ConfirmPayoutChargeTiesResponse = zod.object({
 })
 
 /**
+ * Dismisses the system-PROPOSED QuickBooks tie on ONE Stripe charge (the
+per-row Reject on a "Missing deposit" card). Clears the charge's
+proposedQbStagedPaymentId AND remembers the dismissed charge↔QB pair,
+so the idempotent proposal pass never re-proposes the same pair — the
+QB row remains a candidate for OTHER charges, and a manual human
+"Tie selected" still overrides the dismissal.
+
+Plane 1 only: money is untouched — no gift is minted or changed, no QB
+row's status/donor changes, and settlement links are never touched.
+409 when the charge carries no proposed tie (nothing to reject) or is
+already confirmed-tied (revert is a separate path).
+
+ * @summary Reject ONE proposed charge-grain Stripe↔QuickBooks tie.
+ */
+export const RejectChargeQbTieParams = zod.object({
+  "chargeId": zod.coerce.string()
+})
+
+export const RejectChargeQbTieResponse = zod.object({
+  "rejected": zod.boolean().describe('True when the proposed tie was cleared and the dismissal recorded.'),
+  "chargeId": zod.string().describe('Stripe charge id (ch_...) the proposal was rejected on.'),
+  "qbStagedPaymentId": zod.string().nullish().describe('The staged_payments id of the dismissed QB row (the pair that will never be re-proposed).')
+})
+
+/**
  * Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.
 no QuickBooks cash-application ledger entry exists for the gift — ONE ROW PER
 gift_allocation (a multi-allocation gift surfaces several rows; a gift with no
@@ -918,7 +943,14 @@ export const ListReconciliationBundleAnchorsResponse = zod.object({
   "lineItemNames": zod.array(zod.string()).nullish().describe('QB counterpart\'s line item names captured at pull time.'),
   "lineAccountNames": zod.array(zod.string()).nullish().describe('QB counterpart\'s line account names captured at pull time.'),
   "lineClasses": zod.array(zod.string()).nullish().describe('QB counterpart\'s line class names captured at pull time.'),
-  "conflictGiftId": zod.string().nullish().describe('The already-approved QB gift the proposal collided with (a conflict tie awaiting a keep decision), if any.')
+  "conflictGiftId": zod.string().nullish().describe('The already-approved QB gift the proposal collided with (a conflict tie awaiting a keep decision), if any.'),
+  "conflictGift": zod.object({
+  "id": zod.string().describe('gifts_and_payments.id of the conflicting (kept-on-approve) gift.'),
+  "name": zod.string().nullish().describe('Gift name.'),
+  "donorName": zod.string().nullish().describe('Gift donor display name (organization \/ household \/ person).'),
+  "amount": zod.string().nullish().describe('Gift amount (major units).'),
+  "date": zod.string().date().nullish().describe('Gift date received.')
+}).describe('The already-booked CRM gift a proposed settlement tie collided with —\nthe QB deposit was ALREADY approved into this gift, so confirming the\nsettlement keeps the gift and just records the payout↔deposit linkage.\nEnough display facts to explain the decision on the card.\n').nullish().describe('Display summary of that conflicting gift (name, donor, amount, date) so the card can explain the keep decision without another fetch. Null when conflictGiftId is null or the gift row no longer exists.')
 }).describe('A proposed settlement counterpart for a bundle anchor — the QB deposit\nproposed for a Stripe payout (today the only populated direction; a QB\ndeposit tied to a payout is reconciled THROUGH the payout and never\nsurfaces as its own anchor).\n').nullish().describe('The proposed counterpart for this anchor, populated ONLY when a\n`proposed` (not-yet-confirmed) settlement link exists — enough to\nrender the proposed match inline and drive approve\/reject without\nfirst assembling the full draft. Null for orphan or settled anchors.\n'),
   "readiness": zod.object({
   "ready": zod.boolean(),

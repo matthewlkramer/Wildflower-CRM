@@ -51,6 +51,7 @@ import type {
   ReconciliationProposalList,
   ReconciliationProposalWithContextList,
   ReconciliationSearchList,
+  RejectChargeQbTieResult,
   RejectSettlementProposalResult,
   SearchReconciliationNodeParams,
   SearchReconciliationPayoutsParams,
@@ -1283,6 +1284,87 @@ export const useConfirmPayoutChargeTies = <TError = ErrorType<BadRequestResponse
         TContext
       > => {
       return useMutation(getConfirmPayoutChargeTiesMutationOptions(options));
+    }
+    /**
+ * Dismisses the system-PROPOSED QuickBooks tie on ONE Stripe charge (the
+per-row Reject on a "Missing deposit" card). Clears the charge's
+proposedQbStagedPaymentId AND remembers the dismissed charge↔QB pair,
+so the idempotent proposal pass never re-proposes the same pair — the
+QB row remains a candidate for OTHER charges, and a manual human
+"Tie selected" still overrides the dismissal.
+
+Plane 1 only: money is untouched — no gift is minted or changed, no QB
+row's status/donor changes, and settlement links are never touched.
+409 when the charge carries no proposed tie (nothing to reject) or is
+already confirmed-tied (revert is a separate path).
+
+ * @summary Reject ONE proposed charge-grain Stripe↔QuickBooks tie.
+ */
+export const getRejectChargeQbTieUrl = (chargeId: string,) => {
+
+
+  
+
+  return `/api/reconciliation/charges/${chargeId}/qb-tie/reject`
+}
+
+export const rejectChargeQbTie = async (chargeId: string, options?: RequestInit): Promise<RejectChargeQbTieResult> => {
+  
+  return customFetch<RejectChargeQbTieResult>(getRejectChargeQbTieUrl(chargeId),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getRejectChargeQbTieMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectChargeQbTie>>, TError,{chargeId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rejectChargeQbTie>>, TError,{chargeId: string}, TContext> => {
+
+const mutationKey = ['rejectChargeQbTie'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectChargeQbTie>>, {chargeId: string}> = (props) => {
+          const {chargeId} = props ?? {};
+
+          return  rejectChargeQbTie(chargeId,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RejectChargeQbTieMutationResult = NonNullable<Awaited<ReturnType<typeof rejectChargeQbTie>>>
+    
+    export type RejectChargeQbTieMutationError = ErrorType<void>
+
+    /**
+ * @summary Reject ONE proposed charge-grain Stripe↔QuickBooks tie.
+ */
+export const useRejectChargeQbTie = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectChargeQbTie>>, TError,{chargeId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rejectChargeQbTie>>,
+        TError,
+        {chargeId: string},
+        TContext
+      > => {
+      return useMutation(getRejectChargeQbTieMutationOptions(options));
     }
     /**
  * Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.

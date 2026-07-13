@@ -4452,6 +4452,29 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { description: "The payout no longer exists." }
         "409": { description: "Nothing to confirm, or the state drifted (a QB row was claimed elsewhere / a charge tie changed). Reload and retry. The body's `details.issues` lists the specific rows." }
+  /reconciliation/charges/{chargeId}/qb-tie/reject:
+    post:
+      operationId: rejectChargeQbTie
+      tags: [reconciliation]
+      summary: Reject ONE proposed charge-grain Stripe↔QuickBooks tie.
+      description: |
+        Dismisses the system-PROPOSED QuickBooks tie on ONE Stripe charge (the
+        per-row Reject on a "Missing deposit" card). Clears the charge's
+        proposedQbStagedPaymentId AND remembers the dismissed charge↔QB pair,
+        so the idempotent proposal pass never re-proposes the same pair — the
+        QB row remains a candidate for OTHER charges, and a manual human
+        "Tie selected" still overrides the dismissal.
+
+        Plane 1 only: money is untouched — no gift is minted or changed, no QB
+        row's status/donor changes, and settlement links are never touched.
+        409 when the charge carries no proposed tie (nothing to reject) or is
+        already confirmed-tied (revert is a separate path).
+      parameters:
+        - { name: chargeId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RejectChargeQbTieResult" } } } }
+        "404": { description: "The charge no longer exists." }
+        "409": { description: "No proposed tie to reject, or the tie is already confirmed." }
   /reconciliation/gifts-missing-qb:
     get:
       operationId: listGiftsMissingQb
@@ -7755,6 +7778,13 @@ components:
           type: array
           items: { type: string }
           description: "QB staged_payments ids to tie to this payout's charges. Each must match a distinct untied charge by exact amount and must not already be tied/settlement-linked elsewhere."
+    RejectChargeQbTieResult:
+      type: object
+      required: [rejected, chargeId]
+      properties:
+        rejected:           { type: boolean, description: "True when the proposed tie was cleared and the dismissal recorded." }
+        chargeId:           { type: string, description: "Stripe charge id (ch_...) the proposal was rejected on." }
+        qbStagedPaymentId:  { type: string, nullable: true, description: "The staged_payments id of the dismissed QB row (the pair that will never be re-proposed)." }
     ConfirmChargeTiesResult:
       type: object
       required: [confirmed, payoutId, tied, payoutFullyTied]
@@ -8205,6 +8235,24 @@ components:
         lineAccountNames: { type: array, items: { type: string }, nullable: true, description: "QB counterpart's line account names captured at pull time." }
         lineClasses:      { type: array, items: { type: string }, nullable: true, description: "QB counterpart's line class names captured at pull time." }
         conflictGiftId:  { type: string, nullable: true, description: "The already-approved QB gift the proposal collided with (a conflict tie awaiting a keep decision), if any." }
+        conflictGift:
+          nullable: true
+          allOf: [ { $ref: "#/components/schemas/BundleAnchorConflictGift" } ]
+          description: "Display summary of that conflicting gift (name, donor, amount, date) so the card can explain the keep decision without another fetch. Null when conflictGiftId is null or the gift row no longer exists."
+    BundleAnchorConflictGift:
+      type: object
+      required: [id]
+      description: |
+        The already-booked CRM gift a proposed settlement tie collided with —
+        the QB deposit was ALREADY approved into this gift, so confirming the
+        settlement keeps the gift and just records the payout↔deposit linkage.
+        Enough display facts to explain the decision on the card.
+      properties:
+        id:        { type: string, description: "gifts_and_payments.id of the conflicting (kept-on-approve) gift." }
+        name:      { type: string, nullable: true, description: "Gift name." }
+        donorName: { type: string, nullable: true, description: "Gift donor display name (organization / household / person)." }
+        amount:    { type: string, nullable: true, description: "Gift amount (major units)." }
+        date:      { type: string, format: date, nullable: true, description: "Gift date received." }
     BundleAnchorReadiness:
       type: object
       required: [ready, warningCount, blockerCount]

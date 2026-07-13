@@ -172,6 +172,40 @@ describe("assignChargeQbTies (proposal pass)", () => {
     expect(out.size).toBe(1);
   });
 
+  it("never proposes a DISMISSED charge↔QB pair, but the QB row stays available for other charges", () => {
+    // c1 dismissed q1: even though it's the only exact-amount candidate for
+    // c1, nothing may be proposed there. c2 (no dismissal) still gets q1.
+    const c1 = {
+      ...charge("c1", "40.00", "2026-01-10", "Alice Jones"),
+      dismissedQbIds: ["q1"],
+    };
+    const solo = assignChargeQbTies([c1], [qb("q1", "40.00", "2026-01-10", "Alice Jones")]);
+    expect(solo.size).toBe(0);
+
+    const c2 = charge("c2", "40.00", "2026-01-10", "Alice Jones");
+    const both = assignChargeQbTies(
+      [c1, c2],
+      [qb("q1", "40.00", "2026-01-10", "Alice Jones")],
+    );
+    expect(both.get("c2")).toBe("q1");
+    expect(both.has("c1")).toBe(false);
+  });
+
+  it("a dismissal only blocks the exact pair — other candidates still propose", () => {
+    const c1 = {
+      ...charge("c1", "41.00", "2026-01-10", "Alice Jones"),
+      dismissedQbIds: ["q1"],
+    };
+    const out = assignChargeQbTies(
+      [c1],
+      [
+        qb("q1", "41.00", "2026-01-10", "Alice Jones"),
+        qb("q2", "41.00", "2026-01-11", "Alice Jones"),
+      ],
+    );
+    expect(out.get("c1")).toBe("q2");
+  });
+
   it("is deterministic on equal-evidence ties (stable id ordering)", () => {
     const run = () =>
       assignChargeQbTies(
@@ -189,6 +223,19 @@ describe("assignChargeQbTies (proposal pass)", () => {
 });
 
 describe("assignManualChargeQbTies (Tie selected)", () => {
+  it("IGNORES dismissals — an explicit human tie overrides a prior reject", () => {
+    const c1 = {
+      ...charge("c1", "100.00", "2026-01-10"),
+      dismissedQbIds: ["q1"],
+    };
+    const { assigned, issues } = assignManualChargeQbTies(
+      [c1],
+      [qb("q1", "100.00", "2026-01-10")],
+    );
+    expect(issues).toEqual([]);
+    expect(assigned.get("c1")).toBe("q1");
+  });
+
   it("places every row on an exact-amount charge, ignoring the date window", () => {
     const { assigned, issues } = assignManualChargeQbTies(
       [charge("c1", "100.00", "2026-01-10")],

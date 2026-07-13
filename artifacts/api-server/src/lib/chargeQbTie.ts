@@ -79,6 +79,11 @@ export interface ChargeForTie {
   payerName: string | null;
   /** charge.description — often carries the real donor name. */
   description: string | null;
+  /** QB staged_payments ids a human explicitly DISMISSED for this charge —
+   * the automatic assigner never pairs the charge with any of them again
+   * (per charge↔QB pair; the QB row stays eligible for other charges).
+   * Manual "Tie selected" ignores this list (a human override wins). */
+  dismissedQbIds?: readonly string[] | null;
 }
 
 export interface QbRowForTie {
@@ -159,7 +164,10 @@ export function assignChargeQbTies(
     const eligibleChargeIds = new Set<string>();
     const eligibleQbIds = new Set<string>();
     for (const c of groupCharges) {
+      const dismissed = new Set(c.dismissedQbIds ?? []);
       for (const q of groupCands) {
+        // A human rejected this exact charge↔QB pair — never re-propose it.
+        if (dismissed.has(q.id)) continue;
         const dd = dayDiff(c.dateReceived!, q.dateReceived!);
         if (dd > CHARGE_TIE_WINDOW_DAYS) continue;
         pairs.push({
@@ -360,6 +368,7 @@ export async function runChargeTiePass(
         dateReceived: stripeStagedCharges.dateReceived,
         payerName: stripeStagedCharges.payerName,
         description: stripeStagedCharges.description,
+        dismissedQbIds: stripeStagedCharges.dismissedQbStagedPaymentIds,
         proposedQbStagedPaymentId:
           stripeStagedCharges.proposedQbStagedPaymentId,
       })

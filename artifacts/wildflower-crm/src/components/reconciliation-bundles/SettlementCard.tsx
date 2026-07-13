@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { Check, Link2, Loader2, Search, X } from "lucide-react";
 import {
   useConfirmPayoutChargeTies,
   useConfirmSettlementLink,
+  useRejectChargeQbTie,
   useRejectSettlementProposal,
   type BundleAnchor,
   type BundleAnchorType,
@@ -117,8 +119,15 @@ export function QbDetails({
  */
 export function ChargeList({
   charges,
+  onRejectProposedQb,
+  rejectingChargeId,
 }: {
   charges: PayoutChargeSummary[] | undefined;
+  /** Per-row reject of a charge's PROPOSED QB tie (omit to render read-only —
+   * e.g. a Matched-column card). */
+  onRejectProposedQb?: (chargeId: string) => void;
+  /** Charge whose reject is in flight (disables + spins just that row). */
+  rejectingChargeId?: string | null;
 }) {
   if (!charges || charges.length === 0) return null;
   return (
@@ -176,15 +185,38 @@ export function ChargeList({
                 className="text-[10px] text-sky-700"
                 data-testid={`charge-proposed-qb-${c.id}`}
               >
-                <span className="inline-flex items-center gap-1">
-                  <Link2 className="h-2.5 w-2.5 shrink-0" />
-                  Proposed QB:
-                </span>{" "}
-                {c.proposedQb.payerName?.trim() || "(no name)"}
-                {c.proposedQb.amount != null
-                  ? ` · ${formatCurrency(c.proposedQb.amount)}`
-                  : ""}
-                {c.proposedQb.date ? ` · ${formatDate(c.proposedQb.date)}` : ""}
+                <div className="flex items-start justify-between gap-1">
+                  <span className="min-w-0">
+                    <span className="inline-flex items-center gap-1">
+                      <Link2 className="h-2.5 w-2.5 shrink-0" />
+                      Proposed QB:
+                    </span>{" "}
+                    {c.proposedQb.payerName?.trim() || "(no name)"}
+                    {c.proposedQb.amount != null
+                      ? ` · ${formatCurrency(c.proposedQb.amount)}`
+                      : ""}
+                    {c.proposedQb.date
+                      ? ` · ${formatDate(c.proposedQb.date)}`
+                      : ""}
+                  </span>
+                  {onRejectProposedQb && (
+                    <button
+                      type="button"
+                      className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                      disabled={rejectingChargeId != null}
+                      onClick={() => onRejectProposedQb(c.id)}
+                      title="Reject this suggested QuickBooks match — it won't be suggested for this charge again"
+                      data-testid={`button-reject-charge-tie-${c.id}`}
+                    >
+                      {rejectingChargeId === c.id ? (
+                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      ) : (
+                        <X className="h-2.5 w-2.5" />
+                      )}
+                      Reject
+                    </button>
+                  )}
+                </div>
                 {c.proposedQb.memo?.trim() ? (
                   <span className="block truncate text-muted-foreground/70">
                     {decodeHtmlEntities(c.proposedQb.memo).trim()}
@@ -229,12 +261,23 @@ export function SettlementCard({
   const confirmM = useConfirmSettlementLink();
   const rejectM = useRejectSettlementProposal();
   const chargeTiesM = useConfirmPayoutChargeTies();
+  const rejectTieM = useRejectChargeQbTie();
 
   const [resolveOpen, setResolveOpen] = useState(false);
+  const [rejectingChargeId, setRejectingChargeId] = useState<string | null>(
+    null,
+  );
 
   const busy =
-    confirmM.isPending || rejectM.isPending || chargeTiesM.isPending;
+    confirmM.isPending ||
+    rejectM.isPending ||
+    chargeTiesM.isPending ||
+    rejectTieM.isPending;
   const proposal = a.proposedMatch;
+  // A proposed tie that collided with an already-approved QB gift: approving
+  // KEEPS that gift (no double-booking) and just records the settlement link.
+  const hasConflict = Boolean(proposal?.conflictGiftId);
+  const conflictGift = proposal?.conflictGift ?? null;
   // Charge-grain QB ties (individually-booked payouts): pending proposals a
   // human can approve in one click, and already-confirmed ties for context.
   const tiesProposed = a.chargeTiesProposed ?? 0;
@@ -264,10 +307,14 @@ export function SettlementCard({
           res.kind === "already_confirmed"
             ? "Already settled."
             : res.kind === "conflict_kept"
-              ? "Settlement confirmed — kept the approved gift."
+              ? "Settlement recorded — the existing gift was kept."
               : res.kind === "confirmed_linkage_only"
                 ? "Settlement approved — the deposit was already booked, so only the link was recorded."
                 : "Settlement approved.",
+        description:
+          res.kind === "conflict_kept"
+            ? "No new gift was created and no money was booked twice."
+            : undefined,
       });
       onChanged();
     } catch (err) {
@@ -298,7 +345,9 @@ export function SettlementCard({
       const res = await rejectM.mutateAsync({ payoutId: a.anchorId });
       toast({
         title: res.rejected
-          ? "Proposed match rejected."
+          ? hasConflict
+            ? "Match rejected — the existing gift is untouched."
+            : "Proposed match rejected."
           : "No proposed match to reject.",
       });
       onChanged();
@@ -331,6 +380,33 @@ export function SettlementCard({
       } else {
         toast({ title: "Couldn't approve ties", description: errMessage(err) });
       }
+    }
+  };
+
+  const handleRejectChargeTie = async (chargeId: string) => {
+    // Per-row reject of ONE proposed charge↔QB tie. The dismissal is
+    // remembered server-side, so the proposal pass never suggests the same
+    // pair again (the QB row stays available for other charges).
+    setRejectingChargeId(chargeId);
+    try {
+      await rejectTieM.mutateAsync({ chargeId });
+      toast({
+        title: "Suggested QuickBooks match rejected.",
+        description: "It won't be suggested for this charge again.",
+      });
+      onChanged();
+    } catch (err) {
+      if (is409(err)) {
+        toast({
+          title: "The suggestion changed — refreshed.",
+          description: "Review the updated card and try again.",
+        });
+        onChanged();
+      } else {
+        toast({ title: "Couldn't reject", description: errMessage(err) });
+      }
+    } finally {
+      setRejectingChargeId(null);
     }
   };
 
@@ -443,7 +519,15 @@ export function SettlementCard({
                 {tiesProposed > 0 ? `${tiesProposed} proposed` : ""}
               </div>
             )}
-          <ChargeList charges={a.charges} />
+          <ChargeList
+            charges={a.charges}
+            onRejectProposedQb={
+              selectable && a.anchorType === "stripe_payout"
+                ? handleRejectChargeTie
+                : undefined
+            }
+            rejectingChargeId={rejectingChargeId}
+          />
           <QbDetails
             lineDescription={a.lineDescription}
             memo={a.memo}
@@ -479,9 +563,42 @@ export function SettlementCard({
                 lineAccountNames={proposal.lineAccountNames}
                 lineClasses={proposal.lineClasses}
               />
-              {proposal.conflictGiftId && (
-                <div className="mt-1 text-amber-700">
-                  Conflicts with an approved QB gift — approving keeps it.
+              {hasConflict && (
+                <div
+                  className="mt-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900"
+                  data-testid={`conflict-gift-${a.anchorId}`}
+                >
+                  <div className="font-medium">
+                    This QuickBooks deposit is already recorded as a gift.
+                  </div>
+                  <div className="mt-0.5">
+                    <Link
+                      href={`/gifts/${proposal.conflictGiftId}`}
+                      className="font-medium underline underline-offset-2 hover:text-amber-700"
+                      data-testid={`link-conflict-gift-${a.anchorId}`}
+                    >
+                      {conflictGift?.name?.trim()
+                        ? decodeHtmlEntities(conflictGift.name).trim()
+                        : "View the gift"}
+                    </Link>
+                    {conflictGift && (
+                      <span className="text-amber-800">
+                        {conflictGift.donorName?.trim()
+                          ? ` · ${decodeHtmlEntities(conflictGift.donorName).trim()}`
+                          : ""}
+                        {conflictGift.amount != null
+                          ? ` · ${formatCurrency(conflictGift.amount)}`
+                          : ""}
+                        {conflictGift.date
+                          ? ` · ${formatDate(conflictGift.date)}`
+                          : ""}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-amber-800">
+                    Approving keeps that gift and just records this
+                    payout–deposit match. No money is counted twice.
+                  </div>
                 </div>
               )}
             </div>
@@ -522,7 +639,7 @@ export function SettlementCard({
                     ) : (
                       <Check className="h-3 w-3" />
                     )}
-                    Approve
+                    {hasConflict ? "Approve — keep existing gift" : "Approve"}
                   </Button>
                   <Button
                     type="button"
@@ -534,7 +651,7 @@ export function SettlementCard({
                     data-testid={`button-settlement-reject-${a.anchorId}`}
                   >
                     <X className="h-3 w-3" />
-                    Reject
+                    {hasConflict ? "Reject match" : "Reject"}
                   </Button>
                 </>
               ) : (

@@ -219,6 +219,14 @@ export const stripeStagedCharges = pgTable(
       () => stagedPayments.id,
       { onDelete: "set null" },
     ),
+    // Human-DISMISSED charge↔QB tie proposals: staged_payments ids a reviewer
+    // explicitly rejected for THIS charge, so the idempotent proposal pass
+    // never re-proposes the same pair (dismissal is per charge↔QB pair — the
+    // QB row stays a candidate for other charges). Append-only from the
+    // per-row Reject action; an explicit human "Tie selected" overrides a
+    // dismissal (manual assignment ignores this list). Null/empty = nothing
+    // dismissed.
+    dismissedQbStagedPaymentIds: text("dismissed_qb_staged_payment_ids").array(),
     crossProcessorLinkedByUserId: text(
       "cross_processor_linked_by_user_id",
     ).references(() => users.id, { onDelete: "set null" }),

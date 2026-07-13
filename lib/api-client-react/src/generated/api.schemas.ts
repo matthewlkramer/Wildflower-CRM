@@ -4261,6 +4261,15 @@ export interface ConfirmChargeTiesBody {
   qbStagedPaymentIds?: string[];
 }
 
+export interface RejectChargeQbTieResult {
+  /** True when the proposed tie was cleared and the dismissal recorded. */
+  rejected: boolean;
+  /** Stripe charge id (ch_...) the proposal was rejected on. */
+  chargeId: string;
+  /** The staged_payments id of the dismissed QB row (the pair that will never be re-proposed). */
+  qbStagedPaymentId?: string | null;
+}
+
 export interface ConfirmChargeTiesResult {
   /** True when the ties were written. */
   confirmed: boolean;
@@ -4919,6 +4928,26 @@ export const SettlementBatchStatus = {
 } as const;
 
 /**
+ * The already-booked CRM gift a proposed settlement tie collided with —
+the QB deposit was ALREADY approved into this gift, so confirming the
+settlement keeps the gift and just records the payout↔deposit linkage.
+Enough display facts to explain the decision on the card.
+
+ */
+export interface BundleAnchorConflictGift {
+  /** gifts_and_payments.id of the conflicting (kept-on-approve) gift. */
+  id: string;
+  /** Gift name. */
+  name?: string | null;
+  /** Gift donor display name (organization / household / person). */
+  donorName?: string | null;
+  /** Gift amount (major units). */
+  amount?: string | null;
+  /** Gift date received. */
+  date?: string | null;
+}
+
+/**
  * A proposed settlement counterpart for a bundle anchor — the QB deposit
 proposed for a Stripe payout (today the only populated direction; a QB
 deposit tied to a payout is reconciled THROUGH the payout and never
@@ -4951,6 +4980,8 @@ export interface BundleAnchorProposedMatch {
   lineClasses?: string[] | null;
   /** The already-approved QB gift the proposal collided with (a conflict tie awaiting a keep decision), if any. */
   conflictGiftId?: string | null;
+  /** Display summary of that conflicting gift (name, donor, amount, date) so the card can explain the keep decision without another fetch. Null when conflictGiftId is null or the gift row no longer exists. */
+  conflictGift?: BundleAnchorConflictGift | null;
 }
 
 /**

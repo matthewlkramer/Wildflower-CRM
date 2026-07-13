@@ -196,6 +196,15 @@ interface AnchorRow {
   proposed_line_account_names: string[] | null;
   proposed_line_classes: string[] | null;
   proposed_conflict_gift_id: string | null;
+  // Display summary of the conflicting gift (null when no conflict, or the
+  // gift row no longer exists).
+  proposed_conflict_gift: {
+    id: string;
+    name: string | null;
+    donorName: string | null;
+    amount: string | null;
+    date: string | null;
+  } | null;
   // Cached confirm-readiness from the anchor's latest bundle-draft snapshot.
   readiness_ready: boolean | null;
   readiness_warning: number | null;
@@ -324,6 +333,28 @@ router.get(
         (CASE WHEN sl.lifecycle = 'proposed' THEN ad.line_account_names END) AS proposed_line_account_names,
         (CASE WHEN sl.lifecycle = 'proposed' THEN ad.line_classes END) AS proposed_line_classes,
         (CASE WHEN sl.lifecycle = 'proposed' THEN sl.conflict_gift_id END)::text AS proposed_conflict_gift_id,
+        -- Conflict-gift display summary: enough facts (name / donor / amount /
+        -- date) to explain the keep decision on the card without another
+        -- fetch. NULL when there is no conflict or the gift row is gone.
+        (CASE WHEN sl.lifecycle = 'proposed' AND sl.conflict_gift_id IS NOT NULL THEN (
+          SELECT json_build_object(
+            'id', g.id,
+            'name', g.name,
+            'donorName', COALESCE(
+              (SELECT o.name FROM organizations o WHERE o.id = g.organization_id),
+              (SELECT h.name FROM households h WHERE h.id = g.household_id),
+              (SELECT COALESCE(
+                        NULLIF(TRIM(pp.full_name), ''),
+                        NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), '')
+                      )
+                 FROM people pp WHERE pp.id = g.individual_giver_person_id)
+            ),
+            'amount', g.amount::text,
+            'date', g.date_received::text
+          )
+          FROM gifts_and_payments g
+          WHERE g.id = sl.conflict_gift_id
+        ) END) AS proposed_conflict_gift,
         ${readinessSelect("d")}
       FROM stripe_payouts sp
       LEFT JOIN settlement_links sl ON sl.payout_id = sp.id
@@ -367,6 +398,7 @@ router.get(
         NULL::text[] AS proposed_line_account_names,
         NULL::text[] AS proposed_line_classes,
         NULL::text AS proposed_conflict_gift_id,
+        NULL::json AS proposed_conflict_gift,
         ${readinessSelect("d")}
       FROM staged_payments s
       LEFT JOIN reconciliation_bundle_drafts d
@@ -393,7 +425,7 @@ router.get(
           proposed_date, proposed_payer_name, proposed_charge_count,
           proposed_line_description, proposed_memo, proposed_reference,
           proposed_line_item_names, proposed_line_account_names, proposed_line_classes,
-          proposed_conflict_gift_id,
+          proposed_conflict_gift_id, proposed_conflict_gift,
           readiness_ready, readiness_warning, readiness_blocker
         FROM ( ${merged} ) AS anchors
         ORDER BY anchor_date DESC NULLS LAST, anchor_id DESC
@@ -442,6 +474,7 @@ router.get(
               lineAccountNames: r.proposed_line_account_names,
               lineClasses: r.proposed_line_classes,
               conflictGiftId: r.proposed_conflict_gift_id,
+              conflictGift: r.proposed_conflict_gift,
             }
           : null,
         readiness:
