@@ -19,9 +19,9 @@ import { useToast } from "@/hooks/use-toast";
 import { extractGateIssues } from "@/lib/reconciliation";
 import { ResolveTieDialog } from "./ResolveTieDialog";
 import {
-  apiErrorCode,
   apiErrorMessage,
   is409,
+  isPermanentSettlementError,
   resolveConfirmArgs,
 } from "./settlement-actions";
 import { chargeExcludedLabel, shortId } from "./bundle-ui";
@@ -319,9 +319,10 @@ export function SettlementCard({
       onChanged();
     } catch (err) {
       if (is409(err)) {
-        // `deposit_not_booked` is a PERMANENT rejection — retrying will never
-        // succeed, so don't present it as transient drift.
-        if (apiErrorCode(err) === "deposit_not_booked") {
+        // `deposit_not_booked` / `deposit_unconfirmable` are PERMANENT
+        // rejections — retrying will never succeed, so don't present them as
+        // transient drift.
+        if (isPermanentSettlementError(err)) {
           toast({
             title: "Couldn't approve this settlement",
             description: apiErrorMessage(err) ?? errMessage(err),
@@ -425,7 +426,7 @@ export function SettlementCard({
       onChanged();
     } catch (err) {
       if (is409(err)) {
-        if (apiErrorCode(err) === "deposit_not_booked") {
+        if (isPermanentSettlementError(err)) {
           toast({
             title: "Couldn't resolve this settlement",
             description: apiErrorMessage(err) ?? errMessage(err),

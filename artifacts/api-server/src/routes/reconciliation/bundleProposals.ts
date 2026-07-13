@@ -52,6 +52,7 @@ import {
   confirmKeepApprovedQbGiftInTx,
   TransitionError,
 } from "../../lib/stripeConfirm";
+import { isSettlementLump } from "../../lib/settlementLump";
 import { donorOf, donorsMatch, type LinkDonor } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
@@ -839,13 +840,15 @@ router.post(
         return;
       }
       if (e instanceof TransitionError) {
-        // `deposit_not_booked` is a PERMANENT rejection (an approved deposit
-        // with no provable booking) — surface its own code so the card UI can
-        // render it verbatim instead of the "changed — refreshed" drift toast.
+        // `deposit_not_booked` / `deposit_unconfirmable` are PERMANENT
+        // rejections (no provable booking / row can never back a settlement) —
+        // surface their own codes so the card UI can render them verbatim
+        // instead of the "changed — refreshed" drift toast.
         res.status(409).json({
           error:
-            e.code === "deposit_not_booked"
-              ? "deposit_not_booked"
+            e.code === "deposit_not_booked" ||
+            e.code === "deposit_unconfirmable"
+              ? e.code
               : "tie_transition",
           message: e.message,
         });
@@ -1022,6 +1025,11 @@ router.post(
             id: stagedPayments.id,
             qbEntityType: stagedPayments.qbEntityType,
             status: stagedPayments.status,
+            payerName: stagedPayments.payerName,
+            lineDescription: stagedPayments.lineDescription,
+            qbTransactionMemo: stagedPayments.qbTransactionMemo,
+            rawReference: stagedPayments.rawReference,
+            qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
           })
           .from(stagedPayments)
           .where(eq(stagedPayments.id, pickedDepositId))
@@ -1033,11 +1041,22 @@ router.post(
             message: "The chosen QuickBooks deposit no longer exists.",
           });
         }
-        if (deposit.qbEntityType !== "deposit" || deposit.status !== "pending") {
+        // Lump eligibility mirrors the propose pass + confirm primitive
+        // (settlementLump.ts): a deposit-typed row OR a mis-typed net lump with
+        // a stripe/misc signal. A donor-name payment row is PERMANENTLY
+        // ineligible (charge grain), not transient drift.
+        if (!isSettlementLump(deposit)) {
+          throw new ReconcileAbort(409, {
+            error: "deposit_unconfirmable",
+            message:
+              "The chosen QuickBooks row is an individual donor payment, not a Stripe settlement lump — it can't back this settlement. Match it at the charge grain instead.",
+          });
+        }
+        if (deposit.status !== "pending") {
           throw new ReconcileAbort(409, {
             error: "deposit_ineligible",
             message:
-              "The chosen QuickBooks deposit is no longer an open deposit. Refresh and retry.",
+              "The chosen QuickBooks deposit is no longer open. Refresh and retry.",
           });
         }
         if (await isGroupMember(tx, pickedDepositId)) {
@@ -1081,13 +1100,15 @@ router.post(
         return;
       }
       if (e instanceof TransitionError) {
-        // `deposit_not_booked` is a PERMANENT rejection (an approved deposit
-        // with no provable booking) — surface its own code so the card UI can
-        // render it verbatim instead of the "changed — refreshed" drift toast.
+        // `deposit_not_booked` / `deposit_unconfirmable` are PERMANENT
+        // rejections (no provable booking / row can never back a settlement) —
+        // surface their own codes so the card UI can render them verbatim
+        // instead of the "changed — refreshed" drift toast.
         res.status(409).json({
           error:
-            e.code === "deposit_not_booked"
-              ? "deposit_not_booked"
+            e.code === "deposit_not_booked" ||
+            e.code === "deposit_unconfirmable"
+              ? e.code
               : "tie_transition",
           message: e.message,
         });

@@ -24,6 +24,12 @@ missing-file window mid-regen. Symptom: a false "Vite could not resolve
 **How to apply:** sequence codegen before, not alongside, the web checks; if a web
 check fails with a missing-`generated` import right after codegen, just re-run it.
 
+The `mark_task_complete` validation run fires all checks CONCURRENTLY, so it can
+hit this race by itself (`test-web` fails on './generated', `libs`/`typecheck`/
+`web` fail on TS6053 missing generated files). Verify the failed checks
+sequentially in a shell; if they pass, the validation failure is the race — safe
+to complete with a skip reason.
+
 ## `test-api` needs a current dev DB
 
 `test-api` includes DB-backed HTTP integration tests. A stale dev DB surfaces as

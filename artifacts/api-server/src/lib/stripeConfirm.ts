@@ -7,6 +7,7 @@ import {
 } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
 import { candidateGiftId } from "./stripeReconcile";
+import { isSettlementLump } from "./settlementLump";
 import {
   payoutStatusFromLink,
   transitionSettlementLink,
@@ -99,7 +100,13 @@ export type ConfirmRevertErrorCode =
   // Permanent (not drift): the proposed deposit is `approved` but carries NO
   // provable booking (no counted ledger rows, no gift on any of its 3 gift-link
   // columns) — a linkage-only confirm can't prove the money is accounted for.
-  | "deposit_not_booked";
+  | "deposit_not_booked"
+  // Permanent (not drift): the proposed QB row can never back this settlement —
+  // either it is not a settlement lump at all (a donor-name payment row belongs
+  // at the charge grain), or it was meanwhile resolved elsewhere (excluded,
+  // rejected, split, or reconciled against another payout). Retrying will never
+  // succeed; the card UI renders this destructively instead of "refresh & retry".
+  | "deposit_unconfirmable";
 
 export type ConfirmRevertErr = {
   ok: false;
@@ -214,10 +221,15 @@ export async function confirmPendingQbDepositInTx(
       "Proposed QuickBooks deposit not found.",
     );
   }
-  if (deposit.qbEntityType !== "deposit") {
+  // Lump eligibility — the SHARED predicate the proposal pass uses
+  // (settlementLump.ts): a true deposit-typed row OR a bookkeeper mis-typed
+  // net lump carrying a stripe/misc signal. A donor-name payment row is NOT a
+  // lump (it belongs at the charge grain) and can never back this settlement —
+  // a PERMANENT rejection, not drift.
+  if (!isSettlementLump(deposit)) {
     throw new TransitionError(
-      "invalid_transition",
-      "The proposed QuickBooks deposit is no longer pending. Refresh and retry.",
+      "deposit_unconfirmable",
+      "The proposed QuickBooks row is an individual donor payment, not a Stripe settlement lump — it can't back this settlement. Match it at the charge grain instead.",
     );
   }
 
@@ -285,9 +297,13 @@ export async function confirmPendingQbDepositInTx(
   }
 
   if (deposit.status !== "pending") {
+    // Reaches here only for excluded / rejected / reconciled (approved was
+    // handled above): the row was PERMANENTLY resolved elsewhere — excluded or
+    // rejected in QuickBooks review, split, or reconciled against another
+    // payout. Refreshing can never make this confirmable.
     throw new TransitionError(
-      "invalid_transition",
-      "The proposed QuickBooks deposit is no longer pending. Refresh and retry.",
+      "deposit_unconfirmable",
+      "The proposed QuickBooks deposit was already resolved elsewhere (excluded, rejected, or reconciled), so this settlement can't be approved. Reject the proposal or pick a different deposit.",
     );
   }
 

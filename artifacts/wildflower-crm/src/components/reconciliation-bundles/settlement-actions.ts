@@ -36,9 +36,10 @@ export function is409(err: unknown): boolean {
 /**
  * The machine-readable `error` code from an ApiError's parsed 409 body
  * (`{ error, message }`), or null. Not every 409 is transient drift: the
- * confirm endpoint returns `deposit_not_booked` as a PERMANENT rejection
- * (an approved deposit with no provable booking), which must not be
- * presented as "the settlement changed — try again".
+ * confirm endpoint returns `deposit_not_booked` (an approved deposit with no
+ * provable booking) and `deposit_unconfirmable` (the QB row can never back a
+ * settlement — not a lump, or resolved elsewhere) as PERMANENT rejections,
+ * which must not be presented as "the settlement changed — try again".
  */
 export function apiErrorCode(err: unknown): string | null {
   if (!err || typeof err !== "object") return null;
@@ -46,6 +47,16 @@ export function apiErrorCode(err: unknown): string | null {
   if (!data || typeof data !== "object") return null;
   const code = (data as { error?: unknown }).error;
   return typeof code === "string" ? code : null;
+}
+
+/**
+ * True when a 409's error code marks a PERMANENT rejection — retrying can
+ * never succeed, so the card renders a destructive "couldn't approve" toast
+ * instead of the transient "changed — refreshed" drift toast.
+ */
+export function isPermanentSettlementError(err: unknown): boolean {
+  const code = apiErrorCode(err);
+  return code === "deposit_not_booked" || code === "deposit_unconfirmable";
 }
 
 /** The human-readable `message` from an ApiError's parsed body, or null. */

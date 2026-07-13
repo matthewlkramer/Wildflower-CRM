@@ -96,16 +96,20 @@ async function seedPayout(over: {
 async function seedDeposit(over: {
   status?: "pending" | "approved" | "excluded" | "rejected";
   createdGiftId?: string | null;
+  // QB booking type. Defaults to 'deposit' (the classic Stripe lump); pass
+  // 'payment' to model a bookkeeper mis-typed net lump or a donor payment row.
+  qbEntityType?: "deposit" | "payment" | "sales_receipt";
+  payerName?: string | null;
 }): Promise<string> {
   const id = nextId("sp");
   await db.insert(schema.stagedPayments).values({
     id,
     realmId: REALM_ID,
-    qbEntityType: "deposit",
+    qbEntityType: over.qbEntityType ?? "deposit",
     qbEntityId: nextId("qbe"),
     amount: "1000.00",
     dateReceived: "2026-03-15",
-    payerName: "Stripe",
+    payerName: over.payerName === undefined ? "Stripe" : over.payerName,
     status: over.status ?? "pending",
     createdGiftId: over.createdGiftId ?? null,
   });
@@ -259,6 +263,64 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     const deposit = await readDeposit(dep);
     expect(deposit.status).toBe("reconciled");
     expect(deposit.exclusionReason).toBeNull();
+  });
+
+  it("CONFIRM (mis-typed 'payment' lump, Misc Customer): confirms + reverts like a deposit", async () => {
+    // The stuck-card shape: the bookkeeper booked the Stripe net lump as a
+    // generic 'payment' row with a placeholder payer. The shared lump predicate
+    // (settlementLump.ts) makes it confirmable exactly like a deposit-typed
+    // lump, and revert round-trips it back to pending.
+    const dep = await seedDeposit({
+      status: "pending",
+      qbEntityType: "payment",
+      payerName: "Misc Customer",
+    });
+    const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
+
+    const c = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
+    expect(c.ok).toBe(true);
+    if (!c.ok) return;
+    expect(c.kind).toBe("confirmed_reconciled");
+    expect(payoutStatusFromLink((await readLink(po)) ?? null)).toBe(
+      "confirmed_reconciled",
+    );
+    expect((await readDeposit(dep)).status).toBe("reconciled");
+
+    const r = await confirm.revertPayoutQbConfirmation({ payoutId: po, userId: USER_ID });
+    expect(r.ok).toBe(true);
+    expect(payoutStatusFromLink((await readLink(po)) ?? null)).toBe("proposed");
+    expect((await readDeposit(dep)).status).toBe("pending");
+  });
+
+  it("CONFIRM (donor-name 'payment' row, NOT a lump): permanent deposit_unconfirmable, nothing mutated", async () => {
+    const dep = await seedDeposit({
+      status: "pending",
+      qbEntityType: "payment",
+      payerName: "Jane Donor",
+    });
+    const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
+
+    const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("deposit_unconfirmable");
+
+    // Nothing changed: link still proposed, row still pending.
+    expect(payoutStatusFromLink((await readLink(po)) ?? null)).toBe("proposed");
+    expect((await readDeposit(dep)).status).toBe("pending");
+  });
+
+  it("CONFIRM (deposit resolved elsewhere — excluded): permanent deposit_unconfirmable, nothing mutated", async () => {
+    const dep = await seedDeposit({ status: "excluded" });
+    const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
+
+    const r = await confirm.confirmPendingQbDeposit({ payoutId: po, userId: USER_ID });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("deposit_unconfirmable");
+
+    expect(payoutStatusFromLink((await readLink(po)) ?? null)).toBe("proposed");
+    expect((await readDeposit(dep)).status).toBe("excluded");
   });
 
   it("CONFIRM (approved SPLIT deposit, counted ledger rows): linkage-only confirm, deposit untouched", async () => {

@@ -21,6 +21,7 @@ import { withSyncLock } from "./syncLock";
 import { getUncachableStripeClient } from "./stripeClient";
 import { upsertSettlementLink, deleteSettlementLink } from "./settlementLink";
 import { proposeSettlementLink } from "./settlementWriter";
+import { settlementLumpWhere } from "./settlementLump";
 
 /**
  * Stripe payout ↔ QuickBooks deposit-lump reconciliation (the audit join).
@@ -273,17 +274,9 @@ export async function runProposalPass(
       // recorded under the wrong type is still found. A donor-NAME payment row is
       // deliberately excluded here: that is a single donation and belongs at the
       // charge grain (see the single-charge gate below), not a payout↔deposit tie.
-      const looksLikeLump = or(
-        eq(stagedPayments.qbEntityType, "deposit"),
-        sql`lower(
-          coalesce(${stagedPayments.payerName}, '') || ' ' ||
-          coalesce(${stagedPayments.lineDescription}, '') || ' ' ||
-          coalesce(${stagedPayments.qbTransactionMemo}, '') || ' ' ||
-          coalesce(${stagedPayments.rawReference}, '') || ' ' ||
-          coalesce(${stagedPayments.qbDepositToAccountName}, '')
-        ) like '%stripe%'`,
-        sql`lower(coalesce(${stagedPayments.payerName}, '')) like '%misc%'`,
-      );
+      // SHARED predicate (settlementLump.ts): the confirm paths accept exactly
+      // this same set, so every proposal here is confirmable by construction.
+      const looksLikeLump = settlementLumpWhere();
       const cands = await db
         .select({
           id: stagedPayments.id,
