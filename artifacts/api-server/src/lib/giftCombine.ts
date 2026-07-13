@@ -24,13 +24,12 @@ import type { db } from "@workspace/db";
 import {
   giftsAndPayments,
   stagedPayments,
-  stagedPaymentSplits,
   stripeStagedCharges,
   donorboxDonations,
   paymentApplications,
   settlementLinks,
 } from "@workspace/db/schema";
-import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -75,10 +74,26 @@ export async function absorbGiftEvidenceIntoSurvivor(
     ids.some((id) => id === survivorId);
 
   // ── 1. Read every evidence surface for the whole merged set ──────────────
+  // Split-shape wiring: a counted QB ledger row whose staged payment carries
+  // NONE of the three gift-link columns (a split's resolution lives entirely in
+  // the ledger). This replaces the retired staged_payment_splits table.
   const splitRows = await tx
-    .select({ giftId: stagedPaymentSplits.giftId })
-    .from(stagedPaymentSplits)
-    .where(inArray(stagedPaymentSplits.giftId, allIds));
+    .select({ giftId: paymentApplications.giftId })
+    .from(paymentApplications)
+    .innerJoin(
+      stagedPayments,
+      eq(stagedPayments.id, paymentApplications.paymentId),
+    )
+    .where(
+      and(
+        inArray(paymentApplications.giftId, allIds),
+        eq(paymentApplications.evidenceSource, "quickbooks"),
+        eq(paymentApplications.linkRole, "counted"),
+        isNull(stagedPayments.matchedGiftId),
+        isNull(stagedPayments.createdGiftId),
+        isNull(stagedPayments.groupReconciledGiftId),
+      ),
+    );
 
   const qbStaged = await tx
     .select({

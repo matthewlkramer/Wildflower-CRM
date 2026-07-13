@@ -4,7 +4,6 @@ import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
 import {
   giftsAndPayments,
   giftAllocations,
-  stagedPaymentSplits,
   stagedPayments,
   opportunitiesAndPledges,
   pledgeAllocations,
@@ -1472,12 +1471,20 @@ router.post(
           ),
         )
         .limit(1);
-      const qbSplitLink = await tx
-        .select({ id: stagedPaymentSplits.id })
-        .from(stagedPaymentSplits)
-        .where(eq(stagedPaymentSplits.giftId, id))
+      // The counted QB ledger unifies direct + split + group links, so one
+      // existence check covers the split shape (which carries no pointer column).
+      const qbLedgerLink = await tx
+        .select({ id: paymentApplications.id })
+        .from(paymentApplications)
+        .where(
+          and(
+            eq(paymentApplications.giftId, id),
+            eq(paymentApplications.evidenceSource, "quickbooks"),
+            eq(paymentApplications.linkRole, "counted"),
+          ),
+        )
         .limit(1);
-      if (qbLink.length || qbSplitLink.length) {
+      if (qbLink.length || qbLedgerLink.length) {
         return {
           ok: false,
           status: 409,
@@ -1745,12 +1752,20 @@ router.post(
           ),
         )
         .limit(1);
-      const qbSplitLink = await tx
-        .select({ id: stagedPaymentSplits.id })
-        .from(stagedPaymentSplits)
-        .where(eq(stagedPaymentSplits.giftId, id))
+      // The counted QB ledger unifies direct + split + group links, so one
+      // existence check covers the split shape (which carries no pointer column).
+      const qbLedgerLink = await tx
+        .select({ id: paymentApplications.id })
+        .from(paymentApplications)
+        .where(
+          and(
+            eq(paymentApplications.giftId, id),
+            eq(paymentApplications.evidenceSource, "quickbooks"),
+            eq(paymentApplications.linkRole, "counted"),
+          ),
+        )
         .limit(1);
-      if (qbLink.length || qbSplitLink.length) {
+      if (qbLink.length || qbLedgerLink.length) {
         return {
           ok: false,
           status: 409,
@@ -2299,9 +2314,10 @@ router.get(
     // payment applied to this gift, `amount` = the applied amount (the split
     // sub-amount for split rows, the full staged amount for direct/group rows).
     // The staged_payments join supplies the QB record detail; the cosmetic
-    // linkType label still reads the legacy split table + group column (display
-    // only — deprecated in the cleanup phase). Off-books gifts may still surface
-    // evidence if any exists, but it isn't required of them.
+    // linkType label is derived from the staged row's own gift-link columns —
+    // a split deliberately carries NONE of the three, so a counted ledger row
+    // whose staged payment is 3-cols-null is a split link. Off-books gifts may
+    // still surface evidence if any exists, but it isn't required of them.
     const ledgerRows = await db
       .select({
         stagedPaymentId: paymentApplications.paymentId,
@@ -2315,20 +2331,14 @@ router.get(
         qbPaymentMethod: stagedPayments.qbPaymentMethod,
         payerName: stagedPayments.payerName,
         dateReceived: stagedPayments.dateReceived,
+        matchedGiftId: stagedPayments.matchedGiftId,
+        createdGiftId: stagedPayments.createdGiftId,
         groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
-        splitMarker: stagedPaymentSplits.stagedPaymentId,
       })
       .from(paymentApplications)
       .innerJoin(
         stagedPayments,
         eq(stagedPayments.id, paymentApplications.paymentId),
-      )
-      .leftJoin(
-        stagedPaymentSplits,
-        and(
-          eq(stagedPaymentSplits.stagedPaymentId, paymentApplications.paymentId),
-          eq(stagedPaymentSplits.giftId, id),
-        ),
       )
       .where(
         and(
@@ -2341,7 +2351,9 @@ router.get(
 
     const quickbooksRecords = ledgerRows.map((r) => ({
       stagedPaymentId: r.stagedPaymentId,
-      linkType: (r.splitMarker != null
+      linkType: (r.matchedGiftId == null &&
+      r.createdGiftId == null &&
+      r.groupReconciledGiftId == null
         ? "split"
         : r.createdTheGift
           ? "created"
@@ -2376,19 +2388,11 @@ router.get(
         payerName: stagedPayments.payerName,
         dateReceived: stagedPayments.dateReceived,
         groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
-        splitMarker: stagedPaymentSplits.stagedPaymentId,
       })
       .from(paymentApplications)
       .innerJoin(
         stagedPayments,
         eq(stagedPayments.id, paymentApplications.paymentId),
-      )
-      .leftJoin(
-        stagedPaymentSplits,
-        and(
-          eq(stagedPaymentSplits.stagedPaymentId, paymentApplications.paymentId),
-          eq(stagedPaymentSplits.giftId, id),
-        ),
       )
       .where(
         and(
@@ -2398,15 +2402,15 @@ router.get(
         ),
       );
 
+    // A corroborating row is never how a split books (splits write counted
+    // rows), so its label needs no split branch — matched/created/group only.
     const corroboratingRecords = corroboratingRows.map((r) => ({
       stagedPaymentId: r.stagedPaymentId,
-      linkType: (r.splitMarker != null
-        ? "split"
-        : r.createdTheGift
-          ? "created"
-          : r.groupReconciledGiftId === id
-            ? "group"
-            : "matched") as "matched" | "created" | "group" | "split",
+      linkType: (r.createdTheGift
+        ? "created"
+        : r.groupReconciledGiftId === id
+          ? "group"
+          : "matched") as "matched" | "created" | "group" | "split",
       realmId: r.realmId,
       qbEntityType: r.qbEntityType,
       qbEntityId: r.qbEntityId,

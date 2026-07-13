@@ -2,8 +2,8 @@ import { type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import {
   stagedPayments,
-  stagedPaymentSplits,
   giftsAndPayments,
+  paymentApplications,
   organizations,
   households,
   people,
@@ -210,23 +210,57 @@ export const stagedSelect = {
     )
   )`.as("resolved_gift_allocations"),
   // Split summary: when a staged row is split across several existing gifts its
-  // resolution lives entirely in staged_payment_splits (resolvedGift above is
-  // null because no single matched/created/group gift is set). These correlated
-  // subqueries surface the count, combined gross total, and gift names so the UI
-  // can render "Split across N gifts · $total". 0/null when not split.
+  // resolution lives entirely in counted payment_applications ledger rows
+  // anchored to the payment (resolvedGift above is null because no single
+  // matched/created/group gift is set — a split deliberately carries NONE of the
+  // three id columns). These correlated subqueries surface the count, combined
+  // gross total, and gift names so the UI can render "Split across N gifts ·
+  // $total". Gated on the split shape (all three gift-link columns NULL) so a
+  // direct/mint/group row — which also carries counted ledger rows — stays
+  // 0/null exactly as before. 0/null when not split.
   splitCount: sql<number>`(
-    SELECT COUNT(*)::int FROM staged_payment_splits sps
-    WHERE sps.staged_payment_id = ${stagedPayments.id}
+    SELECT CASE
+      WHEN ${stagedPayments.matchedGiftId} IS NULL
+        AND ${stagedPayments.createdGiftId} IS NULL
+        AND ${stagedPayments.groupReconciledGiftId} IS NULL
+      THEN (
+        SELECT COUNT(*)::int FROM payment_applications pa
+        WHERE pa.payment_id = ${stagedPayments.id}
+          AND pa.evidence_source = 'quickbooks'
+          AND pa.link_role = 'counted'
+      )
+      ELSE 0
+    END
   )`.as("split_count"),
   splitTotal: sql<string | null>`(
-    SELECT SUM(sps.sub_amount) FROM staged_payment_splits sps
-    WHERE sps.staged_payment_id = ${stagedPayments.id}
+    SELECT CASE
+      WHEN ${stagedPayments.matchedGiftId} IS NULL
+        AND ${stagedPayments.createdGiftId} IS NULL
+        AND ${stagedPayments.groupReconciledGiftId} IS NULL
+      THEN (
+        SELECT SUM(pa.amount_applied) FROM payment_applications pa
+        WHERE pa.payment_id = ${stagedPayments.id}
+          AND pa.evidence_source = 'quickbooks'
+          AND pa.link_role = 'counted'
+      )
+      ELSE NULL
+    END
   )`.as("split_total"),
   splitGiftNames: sql<string[] | null>`(
-    SELECT array_agg(g.name ORDER BY g.name)
-    FROM staged_payment_splits sps
-    JOIN gifts_and_payments g ON g.id = sps.gift_id
-    WHERE sps.staged_payment_id = ${stagedPayments.id}
+    SELECT CASE
+      WHEN ${stagedPayments.matchedGiftId} IS NULL
+        AND ${stagedPayments.createdGiftId} IS NULL
+        AND ${stagedPayments.groupReconciledGiftId} IS NULL
+      THEN (
+        SELECT array_agg(g.name ORDER BY g.name)
+        FROM payment_applications pa
+        JOIN gifts_and_payments g ON g.id = pa.gift_id
+        WHERE pa.payment_id = ${stagedPayments.id}
+          AND pa.evidence_source = 'quickbooks'
+          AND pa.link_role = 'counted'
+      )
+      ELSE NULL
+    END
   )`.as("split_gift_names"),
   matchedRuleName: matchedRule.name,
   // Top-level QuickBooks LinkedTxn (e.g. the Deposit a Payment was deposited
@@ -508,26 +542,36 @@ export async function revertOneStagedPayment(
 
       // Split-aware: a row resolved by a split has no matched/created/group
       // gift of its own, so it would fall through to the single-row branch and
-      // be rejected as not-revertible. Detect it first: delete every split
-      // link and return the row to pending. The pre-existing gifts are never
-      // touched (no mint happens in a split).
-      const splitLinks = await tx
-        .select({ id: stagedPaymentSplits.id })
-        .from(stagedPaymentSplits)
-        .where(eq(stagedPaymentSplits.stagedPaymentId, id));
+      // be rejected as not-revertible. Detect it first: a split is the ONLY
+      // shape with counted QB ledger rows anchored to the payment while all
+      // three gift-link columns are NULL (a settlement-only reconciled deposit
+      // is also 3-cols-null but never carries counted rows, so it still falls
+      // through to not-revertible below). Delete the ledger rows and return the
+      // row to pending. The pre-existing gifts are never touched — the split's
+      // optional remainder gift was minted at split time but is deliberately
+      // NOT deleted on revert (it carries no createdGiftId pointer), matching
+      // the pre-ledger behavior.
+      const splitLinks =
+        locked.matchedGiftId == null &&
+        locked.createdGiftId == null &&
+        locked.groupReconciledGiftId == null
+          ? await tx
+              .select({ giftId: paymentApplications.giftId })
+              .from(paymentApplications)
+              .where(
+                and(
+                  eq(paymentApplications.paymentId, id),
+                  eq(paymentApplications.evidenceSource, "quickbooks"),
+                  eq(paymentApplications.linkRole, "counted"),
+                ),
+              )
+          : [];
       if (splitLinks.length > 0) {
         // The pre-existing split-target gifts lose this evidence — recompute.
-        const splitGifts = await tx
-          .select({ giftId: stagedPaymentSplits.giftId })
-          .from(stagedPaymentSplits)
-          .where(eq(stagedPaymentSplits.stagedPaymentId, id));
-        for (const s of splitGifts) if (s.giftId) affectedGiftIds.add(s.giftId);
-        // Ledger cleanup (Phase 2): undo this payment's split cash-applications
+        for (const s of splitLinks) if (s.giftId) affectedGiftIds.add(s.giftId);
+        // Ledger cleanup: undo this payment's split cash-applications
         // (the split-target gifts are pre-existing and are never deleted).
         await removePaymentApplicationsForPayment(tx, id);
-        await tx
-          .delete(stagedPaymentSplits)
-          .where(eq(stagedPaymentSplits.stagedPaymentId, id));
         const [row] = await tx
           .update(stagedPayments)
           .set({

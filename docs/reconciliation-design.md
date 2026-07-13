@@ -513,9 +513,11 @@ Phase 1 (this document); Phases 2–7 were sequenced as follow-on tasks.
 >   (0091), the `stripe_payouts` recon mirror (0093), `gift_allocations.counts_toward_goal`
 >   (0094), and `staged_payments.source_group_id` + its index (0104 — superseded by
 >   `unit_groups`; a read-only prod parity run of the 0088 backfill was clean, and
->   the one-shot parity scripts that were its last readers have been retired/deleted).
->   Remaining §7 candidates are NOT sweepable yet: `staged_payment_splits` still
->   exists (split rows are one of the four "resolved" forms), and the dead-looking
+>   the one-shot parity scripts that were its last readers have been retired/deleted),
+>   and `staged_payment_splits` (0115 — split semantics folded into counted
+>   `payment_applications` rows; a split staged row carries NONE of the three
+>   gift-link columns and its resolution lives entirely in the ledger).
+>   Remaining §7 candidates are NOT sweepable yet: the dead-looking
 >   enum values (`processor_payout`, `confirmed_excluded`) are still read by the
 >   revert paths. **Caution:** several
 >   `@deprecated`-labelled `gifts_and_payments` columns (`quickbooks_tie_status`,
@@ -629,7 +631,8 @@ Phase 1 (this document); Phases 2–7 were sequenced as follow-on tasks.
    above only as a record of the considered design.
 
 7. **Deprecate, then (much later, human-gated) drop legacy.** Mark the retired
-   pointer columns, `staged_payment_splits`, `staged_payments.source_group_id`
+   pointer columns, `staged_payment_splits` (dropped in 0115),
+   `staged_payments.source_group_id`
    (superseded by `unit_groups`, §4.6b), `gift_evidence_links`, and dead enum values
    `@deprecated`; scrub them from API responses (one scrubbed projection — see memory
    `deprecated-column-response-leak`); schedule the physical DROP as reviewed SQL only

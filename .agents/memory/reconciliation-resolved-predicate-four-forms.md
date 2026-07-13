@@ -11,7 +11,9 @@ distinct ways, and only three of them live in columns on `staged_payments`:
 3. `groupReconciledGiftId` — grouped into another row's gift (member rows).
 4. **split** — one payment across several existing gifts. A split deliberately
    carries **NONE** of the three id columns; its resolution lives entirely in
-   `staged_payment_splits` (+ dual-written `payment_applications` rows).
+   counted `payment_applications` rows (`evidence_source='quickbooks'`,
+   `link_role='counted'`). The old `staged_payment_splits` table was retired
+   and dropped (migration 0115).
 
 **Why:** the reconciliation cards live-queue predicate
 (`reconciliationQueueWhere('all')` in `routes/reconciliation/cards.ts`) only
@@ -21,10 +23,12 @@ queue — the payment kept showing as unresolved after a correct split.
 
 **How to apply:** whenever you write or edit a predicate that decides whether a
 staged payment is resolved/booked, enumerate all four forms. For the split form,
-key off `EXISTS (staged_payment_splits WHERE staged_payment_id = <outer>.id)` —
-NOT off `payment_applications` (that ledger was a phased additive backfill, so
-legacy resolved rows may lack PA rows). The schema doc on `stagedPaymentSplits`
-is the authority: "when a staged row is split it carries NONE of matchedGiftId /
-createdGiftId / groupReconciledGiftId." (See also
+key off `EXISTS (payment_applications WHERE payment_id = <outer>.id AND
+evidence_source = 'quickbooks' AND link_role = 'counted')` — the PA ledger is
+now the sole authority (splits table dropped; the backfill that once made PA
+incomplete finished before the drop). Note this predicate also matches rows
+resolved via the id columns (those dual-write counted PA rows too), which is
+fine for "is it booked" checks. "When a staged row is split it carries NONE of
+matchedGiftId / createdGiftId / groupReconciledGiftId" still holds. (See also
 `reconciler-approvable-statuses.md`, which makes the same point for the mint
 double-count guard but predates the split form.)

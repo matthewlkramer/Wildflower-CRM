@@ -282,11 +282,12 @@ const sourceGroupAggExpr = sql<{
 // approved row is excluded iff it is RESOLVED to a gift AND has no Stripe to
 // link; otherwise (unresolved, or Stripe pending) it stays as real work.
 // "Resolved to a gift" covers ALL resolution forms: a 1:1 match (matchedGiftId),
-// a mint (createdGiftId), a group reconcile (groupReconciledGiftId), OR a split
-// (staged_payment_splits rows). A split deliberately carries NONE of the three
-// id columns (its resolution lives entirely in staged_payment_splits), so it
-// must be detected via the splits table — otherwise a fully-split payment would
-// wrongly re-enter the live "unlinked money" queue.
+// a mint (createdGiftId), a group reconcile (groupReconciledGiftId), OR a split.
+// A split deliberately carries NONE of the three id columns — its resolution
+// lives entirely in counted payment_applications ledger rows anchored to the
+// payment — so it must be detected via the ledger, otherwise a fully-split
+// payment would wrongly re-enter the live "unlinked money" queue. (Direct/mint/
+// group rows also carry counted ledger rows, harmlessly subsumed by the OR.)
 // `reconciled` deposits are normally terminal, EXCEPT a Stripe-payout deposit
 // whose payout↔deposit settlement has been confirmed (Plane 1) but whose backing
 // charges are not yet all credited to gifts (Plane 2). The settlement report now
@@ -312,8 +313,10 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
             OR ${stagedPayments.createdGiftId} IS NOT NULL
             OR ${stagedPayments.groupReconciledGiftId} IS NOT NULL
             OR EXISTS (
-              SELECT 1 FROM staged_payment_splits sps
-              WHERE sps.staged_payment_id = ${stagedPayments.id}
+              SELECT 1 FROM payment_applications pa
+              WHERE pa.payment_id = ${stagedPayments.id}
+                AND pa.evidence_source = 'quickbooks'
+                AND pa.link_role = 'counted'
             )
           )
           AND NOT EXISTS (

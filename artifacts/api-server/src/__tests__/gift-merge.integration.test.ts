@@ -68,7 +68,6 @@ let schema: {
   opportunitiesAndPledges: Db["opportunitiesAndPledges"];
   pledgeAllocations: Db["pledgeAllocations"];
   stagedPayments: Db["stagedPayments"];
-  stagedPaymentSplits: Db["stagedPaymentSplits"];
   paymentApplications: Db["paymentApplications"];
   fiscalYears: Db["fiscalYears"];
   bulkOperations: Db["bulkOperations"];
@@ -208,7 +207,6 @@ beforeAll(async () => {
     opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
     pledgeAllocations: dbMod.pledgeAllocations,
     stagedPayments: dbMod.stagedPayments,
-    stagedPaymentSplits: dbMod.stagedPaymentSplits,
     paymentApplications: dbMod.paymentApplications,
     fiscalYears: dbMod.fiscalYears,
     bulkOperations: dbMod.bulkOperations,
@@ -249,13 +247,6 @@ afterAll(async () => {
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   // Children first: staged rows + gift allocations reference gifts; gift
   // payment links + pledge allocations reference pledges.
-  // staged_payment_splits.gift_id is a RESTRICT FK, so clear splits before
-  // their gifts (the staged_payments delete below would cascade these too).
-  if (seededGiftIds.length) {
-    await db
-      .delete(schema.stagedPaymentSplits)
-      .where(inArrayFn(schema.stagedPaymentSplits.giftId, seededGiftIds));
-  }
   await clearPaymentApplicationsForRealm(REALM_ID);
   await db
     .delete(schema.stagedPayments)
@@ -876,6 +867,8 @@ describe.skipIf(!HAS_DB)(
         { subAmount: "40.00" },
       ]);
       const spId = nextId("sp");
+      // Split shape: the staged row carries NONE of the three gift-link
+      // columns; its resolution lives entirely in counted ledger rows.
       await db.insert(schema.stagedPayments).values({
         id: spId,
         realmId: REALM_ID,
@@ -885,11 +878,12 @@ describe.skipIf(!HAS_DB)(
         status: "approved",
         organizationId: ORG_ID,
       });
-      await db.insert(schema.stagedPaymentSplits).values({
-        id: nextId("sps"),
-        stagedPaymentId: spId,
+      await db.insert(schema.paymentApplications).values({
+        id: nextId("pa"),
+        paymentId: spId,
         giftId,
-        subAmount: "100.00",
+        amountApplied: "100.00",
+        evidenceSource: "quickbooks",
       });
 
       const res = await api(

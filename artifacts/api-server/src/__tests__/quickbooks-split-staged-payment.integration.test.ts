@@ -69,7 +69,6 @@ let schema: {
   organizations: Db["organizations"];
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
-  stagedPaymentSplits: Db["stagedPaymentSplits"];
   paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -160,11 +159,19 @@ async function readStaged(id: string) {
   return row;
 }
 
+/**
+ * Read a split's resolution records: the counted QB payment_applications rows
+ * anchored to the staged payment (the sole store of split links — the retired
+ * staged_payment_splits table is gone).
+ */
 async function readSplits(stagedPaymentId: string) {
-  return db
+  const rows = await db
     .select()
-    .from(schema.stagedPaymentSplits)
-    .where(eqFn(schema.stagedPaymentSplits.stagedPaymentId, stagedPaymentId));
+    .from(schema.paymentApplications)
+    .where(eqFn(schema.paymentApplications.paymentId, stagedPaymentId));
+  return rows.filter(
+    (r) => r.evidenceSource === "quickbooks" && r.linkRole === "counted",
+  );
 }
 
 /** Assert a staged row is still a clean, untouched pending row with no splits. */
@@ -190,7 +197,6 @@ beforeAll(async () => {
     organizations: dbMod.organizations,
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
-    stagedPaymentSplits: dbMod.stagedPaymentSplits,
     paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
@@ -218,15 +224,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-  // Children first: splits → staged rows → gifts → org → user.
-  await db
-    .delete(schema.stagedPaymentSplits)
-    .where(
-      inArrayFn(
-        schema.stagedPaymentSplits.giftId,
-        seededGiftIds.length ? seededGiftIds : [""],
-      ),
-    );
+  // Children first: ledger rows → staged rows → gifts → org → user.
   await clearPaymentApplicationsForRealm(REALM_ID);
   // Un-stamp any gift whose final-amount provenance points at this realm's
   // staged rows (the FK would otherwise block the staged_payments delete).
@@ -293,7 +291,7 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
 
     const splits = await readSplits(spId);
     expect(splits.length).toBe(2);
-    const byGift = new Map(splits.map((s) => [s.giftId, s.subAmount]));
+    const byGift = new Map(splits.map((s) => [s.giftId, s.amountApplied]));
     expect(byGift.get(giftA)).toBe("600.00");
     expect(byGift.get(giftB)).toBe("400.00");
   }, 30_000);
@@ -455,8 +453,8 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
   }, 30_000);
 
   it("serializes a split and a reconcile racing for the same gift → exactly one wins", async () => {
-    // The cross-table invariant (a gift is claimed in staged_payments OR
-    // staged_payment_splits, never both) is enforced by the gift row FOR UPDATE
+    // The cross-path invariant (a gift is claimed as a direct match OR as a
+    // split's ledger row, never both) is enforced by the gift row FOR UPDATE
     // lock shared by every claiming path. Fire a split and a single-row
     // reconcile at the SAME gift (via different staged rows) concurrently and
     // assert exactly one succeeds and the gift ends up claimed in one place.
@@ -479,11 +477,11 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     expect(wins).toBe(1);
     expect(conflicts).toBe(1);
 
-    // The shared gift is claimed in exactly ONE place.
-    const sharedSplit = await db
-      .select()
-      .from(schema.stagedPaymentSplits)
-      .where(eqFn(schema.stagedPaymentSplits.giftId, shared));
+    // The shared gift is claimed in exactly ONE place: either the split's
+    // ledger rows (anchored to splitSp) or a direct match on matchSp.
+    const sharedSplit = (await readSplits(splitSp)).filter(
+      (r) => r.giftId === shared,
+    );
     const sharedMatched = await db
       .select()
       .from(schema.stagedPayments)
@@ -520,11 +518,11 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     expect(wins).toBe(1);
     expect(conflicts).toBe(1);
 
-    // The shared gift is claimed in exactly ONE place.
-    const sharedSplit = await db
-      .select()
-      .from(schema.stagedPaymentSplits)
-      .where(eqFn(schema.stagedPaymentSplits.giftId, shared));
+    // The shared gift is claimed in exactly ONE place: either the split's
+    // ledger rows (anchored to splitSp) or a group-reconcile on the grp rows.
+    const sharedSplit = (await readSplits(splitSp)).filter(
+      (r) => r.giftId === shared,
+    );
     const sharedGrouped = await db
       .select()
       .from(schema.stagedPayments)

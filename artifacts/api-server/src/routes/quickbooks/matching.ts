@@ -2,7 +2,6 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
   stagedPayments,
-  stagedPaymentSplits,
   giftsAndPayments,
   giftAllocations,
   paymentApplications,
@@ -634,11 +633,11 @@ router.post(
 // existing gift for that gift's own gross amount; no new gift is minted and
 // QuickBooks is never written back. The staged row is marked approved (human
 // confirmed) and its own donor / single-gift link columns are cleared — its
-// resolution lives entirely in staged_payment_splits. Guards: row pending; at
+// resolution lives entirely in counted payment_applications rows. Guards: row pending; at
 // least two distinct gifts; each gift exists, carries a single valid donor, and
 // is not already linked anywhere (matched / created / group / split); combined
 // gross within the fee-band around the staged net amount. Reversible as a whole
-// (delete the split links) via the split-aware revert above.
+// (delete the ledger rows) via the split-aware revert above.
 router.post(
   "/staged-payments/:id/split",
   asyncHandler(async (req, res) => {
@@ -821,7 +820,7 @@ router.post(
             originalHumanCrmAmount: null,
           });
           // Every gift needs at least one allocation (the sole home of money
-          // scope). The staged_payment_splits rows above are QB link records, NOT
+          // scope). The payment_applications rows below are QB link records, NOT
           // allocations — seed a default full-amount line so the remainder gift is
           // never scope-less. Carries the staged row's attributed entity + goal
           // signal (mirrors the QuickBooks create-gift path).
@@ -835,45 +834,15 @@ router.post(
           await assertGiftHasAllocations(tx, createdGiftId);
         }
 
-        // Insert one split link per gift (sub_amount = that gift's own gross),
-        // plus one for the remainder gift (sub_amount = the remainder amount).
-        // The unique index on gift_id catches a write-skew race (caught below as
-        // a 409 conflict).
-        const splitRows = gifts.map((g) => ({
-          id: newId(),
-          stagedPaymentId: id,
-          giftId: g.id,
-          subAmount: g.amount ?? "0",
-          createdByUserId: user.id,
-        }));
-        if (createdGiftId) {
-          splitRows.push({
-            id: newId(),
-            stagedPaymentId: id,
-            giftId: createdGiftId,
-            subAmount: remainder!.amount,
-            createdByUserId: user.id,
-          });
-        }
-        try {
-          await tx.insert(stagedPaymentSplits).values(splitRows);
-        } catch (e) {
-          if (
-            typeof e === "object" &&
-            e !== null &&
-            "code" in e &&
-            (e as { code?: string }).code === "23505"
-          ) {
-            throw new Error(CONFLICT);
-          }
-          throw e;
-        }
-
-        // Dual-write (Phase 2): one QB cash-application ledger row per split
-        // target gift (amount = that gift's gross sub-amount). The summed GROSS
-        // sub-amounts can run slightly above the NET deposit, so pass a fee-band
-        // tolerance matching the route's band (staged*1.1+1) so the book-once
-        // guard accepts the full set.
+        // One QB cash-application ledger row per split target gift (amount =
+        // that gift's gross sub-amount) — the split's SOLE resolution record
+        // (the staged row keeps all three gift-link columns NULL). A write-skew
+        // race (two concurrent splits grabbing the same gift) is serialized by
+        // the target-gift FOR UPDATE locks above, taken before the
+        // linkedElsewhere ledger check. The summed GROSS sub-amounts can run
+        // slightly above the NET deposit, so pass a fee-band tolerance matching
+        // the route's band (staged*1.1+1) so the book-once guard accepts the
+        // full set.
         const splitLedgerTolerance = Number(locked.amount ?? 0) * 0.1 + 1;
         for (const g of gifts) {
           if (!(g.amount && Number(g.amount) > 0)) continue;

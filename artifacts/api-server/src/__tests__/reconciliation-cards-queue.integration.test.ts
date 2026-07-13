@@ -63,7 +63,6 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   paymentApplications: Db["paymentApplications"];
   settlementLinks: Db["settlementLinks"];
-  stagedPaymentSplits: Db["stagedPaymentSplits"];
 };
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -134,21 +133,22 @@ async function seedStaged(opts: {
   return id;
 }
 
-// Link a staged payment to a pre-existing gift as part of a SPLIT (the split
-// route writes these rows and carries NONE of the matched/created/group id
-// columns — its resolution lives entirely here).
+// Link a staged payment to a pre-existing gift as part of a SPLIT: the staged
+// row carries NONE of the matched/created/group id columns — its resolution
+// lives entirely in counted payment_applications ledger rows (what the split
+// route writes).
 async function seedSplit(
   stagedPaymentId: string,
   giftId: string,
   subAmount: string,
 ): Promise<string> {
   const id = nextId("split");
-  await db.insert(schema.stagedPaymentSplits).values({
+  await db.insert(schema.paymentApplications).values({
     id,
-    stagedPaymentId,
+    paymentId: stagedPaymentId,
     giftId,
-    subAmount,
-    createdByUserId: TEST_USER_ID,
+    amountApplied: subAmount,
+    evidenceSource: "quickbooks",
   });
   splitIds.push(id);
   return id;
@@ -295,7 +295,6 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     paymentApplications: dbMod.paymentApplications,
     settlementLinks: dbMod.settlementLinks,
-    stagedPaymentSplits: dbMod.stagedPaymentSplits,
   };
   inArrayFn = drizzle.inArray;
   eqFn = drizzle.eq;
@@ -332,8 +331,8 @@ afterAll(async () => {
       .where(inArrayFn(schema.stripePayouts.id, payoutIds));
   if (splitIds.length)
     await db
-      .delete(schema.stagedPaymentSplits)
-      .where(inArrayFn(schema.stagedPaymentSplits.id, splitIds));
+      .delete(schema.paymentApplications)
+      .where(inArrayFn(schema.paymentApplications.id, splitIds));
   await clearPaymentApplicationsForStagedIds(stagedIds);
   if (stagedIds.length)
     await db
@@ -423,8 +422,9 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
     // The reported bug (Frey Foundation): a payment split across two existing
     // gifts kept showing as unlinked money. A split carries NONE of
     // matchedGiftId / createdGiftId / groupReconciledGiftId — its resolution
-    // lives entirely in staged_payment_splits — so the old predicate (which only
-    // checked matched/created) wrongly re-admitted it to the live queue.
+    // lives entirely in counted payment_applications rows — so the old
+    // predicate (which only checked matched/created) wrongly re-admitted it to
+    // the live queue.
     const splitGiftA = await seedGift("60.00");
     const splitGiftB = await seedGift("40.00");
     const splitId = await seedStaged({
