@@ -10,7 +10,17 @@ import {
   giftsAndPayments,
   type NewEmailProposal,
 } from "@workspace/db/schema";
-import { and, eq, gte, ilike, lte, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
 import { proposeActionsForProposal } from "./proposeActions";
@@ -842,21 +852,20 @@ async function detectThankYou(args: {
   const windowEnd = new Date(args.sentAt.getTime() + 1 * 24 * 60 * 60 * 1000);
   const startDate = windowStart.toISOString().slice(0, 10);
   const endDate = windowEnd.toISOString().slice(0, 10);
+  // NOTE: never interpolate a JS array into `ANY(${arr}::text[])` in a sql
+  // template — it renders bare params that fail to cast at runtime
+  // ("malformed array literal"). inArray() is the safe equivalent.
   const donorConds: SQL[] = [];
   if (organizationIds.length > 0) {
-    donorConds.push(
-      sql`${giftsAndPayments.organizationId} = ANY(${organizationIds}::text[])`,
-    );
+    donorConds.push(inArray(giftsAndPayments.organizationId, organizationIds));
   }
   if (personIds.length > 0) {
     donorConds.push(
-      sql`${giftsAndPayments.individualGiverPersonId} = ANY(${personIds}::text[])`,
+      inArray(giftsAndPayments.individualGiverPersonId, personIds),
     );
   }
   if (householdIds.length > 0) {
-    donorConds.push(
-      sql`${giftsAndPayments.householdId} = ANY(${householdIds}::text[])`,
-    );
+    donorConds.push(inArray(giftsAndPayments.householdId, householdIds));
   }
   const candidateGifts = await db
     .select({
@@ -931,18 +940,27 @@ export async function resolveThankYouDonors(
   if (recipients.length === 0) {
     return { organizationIds: [], personIds: [], householdIds: [] };
   }
+  // NOTE: interpolating a JS array into `ANY(${arr}::text[])` inside a raw
+  // drizzle sql template does NOT bind a Postgres array — it renders bare
+  // per-element params that fail to cast ("malformed array literal" /
+  // "cannot cast record to text[]") at runtime. Use an IN (...) list instead
+  // (the empty-recipients case early-returns above, so the list is never empty).
+  const recipientList = sql.join(
+    recipients.map((r) => sql`${r}`),
+    sql`, `,
+  );
   const [orgRows, personRows, householdRows] = await Promise.all([
     db.execute<{ organization_id: string }>(sql`
       SELECT DISTINCT organization_id FROM (
         SELECT e.organization_id
         FROM emails e
-        WHERE lower(e.email) = ANY(${recipients}::text[])
+        WHERE lower(e.email) IN (${recipientList})
           AND e.organization_id IS NOT NULL
         UNION
         SELECT per.organization_id
         FROM emails e
         JOIN people_entity_roles per ON per.person_id = e.person_id
-        WHERE lower(e.email) = ANY(${recipients}::text[])
+        WHERE lower(e.email) IN (${recipientList})
           AND e.person_id IS NOT NULL
           AND per.current = 'current'
           AND per.organization_id IS NOT NULL
@@ -951,20 +969,20 @@ export async function resolveThankYouDonors(
     db.execute<{ person_id: string }>(sql`
       SELECT DISTINCT e.person_id
       FROM emails e
-      WHERE lower(e.email) = ANY(${recipients}::text[])
+      WHERE lower(e.email) IN (${recipientList})
         AND e.person_id IS NOT NULL
     `),
     db.execute<{ household_id: string }>(sql`
       SELECT DISTINCT household_id FROM (
         SELECT e.household_id
         FROM emails e
-        WHERE lower(e.email) = ANY(${recipients}::text[])
+        WHERE lower(e.email) IN (${recipientList})
           AND e.household_id IS NOT NULL
         UNION
         SELECT per.household_id
         FROM emails e
         JOIN people_entity_roles per ON per.person_id = e.person_id
-        WHERE lower(e.email) = ANY(${recipients}::text[])
+        WHERE lower(e.email) IN (${recipientList})
           AND e.person_id IS NOT NULL
           AND per.current = 'current'
           AND per.household_id IS NOT NULL

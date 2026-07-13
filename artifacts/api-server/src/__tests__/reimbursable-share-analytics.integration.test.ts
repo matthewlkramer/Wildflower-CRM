@@ -273,6 +273,8 @@ describe.skipIf(!HAS_DB)("reimbursable share — goal analytics exclusion", () =
       .from(schema.opportunitiesAndPledges)
       .where(eqFn(schema.opportunitiesAndPledges.id, oppId));
     expect(row?.status).toBe("cash_in");
-    expect(row?.stage).toBe("cash_in");
+    // A won row's funnel stage always reads 'complete' (deriveOppFields);
+    // 'cash_in' is the derived STATUS, not a funnel stage.
+    expect(row?.stage).toBe("complete");
   });
 });

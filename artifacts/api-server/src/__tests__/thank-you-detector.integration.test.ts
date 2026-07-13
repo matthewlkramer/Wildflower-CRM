@@ -138,7 +138,7 @@ async function accept(
   proposalId: string,
 ): Promise<{ status: number; json: any }> {
   const res = await fetch(
-    `${baseUrl}/email-proposals/${proposalId}/accept`,
+    `${baseUrl}/api/email-proposals/${proposalId}/accept`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },

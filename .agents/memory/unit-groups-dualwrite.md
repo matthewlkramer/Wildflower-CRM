@@ -46,8 +46,10 @@ unit group id directly — never re-concatenate `ug_${...}`.
   `lib/unitGroupMembership.ts` helpers (`isGroupMember`, `groupMemberIdsFor`,
   `isQbGroupMemberSql`).
 
-## Obsolete tooling (left as-is, out of scope to delete)
-`parity-unit-groups.ts` / `parity-group-readflip.ts` still reference
-`sp.source_group_id` in raw SQL — one-shot parity gates that already served their
-purpose; raw SQL so they don't break typecheck, but they will error at runtime now
-that the column is gone.
+## Obsolete tooling (now deleted)
+`parity-unit-groups.ts` / `parity-group-readflip.ts` (one-shot parity gates that
+referenced `sp.source_group_id` in raw SQL) were deleted along with their
+package.json script entries once the column drop landed — they would have errored
+at runtime. Remaining §7 drop candidates are NOT sweepable: `staged_payment_splits`
+still backs split-resolved rows, and `processor_payout`/`confirmed_excluded` enum
+values are still read by revert paths.

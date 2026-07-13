@@ -19,6 +19,11 @@ it slips past unit tests that don't hit Postgres. It cost a full debugging cycle
   `sql\`ARRAY[${sql.join(ids.map((i) => sql\`${i}\`), sql\`, \`)}]::text[]\``
   (the `idArray()` helper in `mergeEntities.ts` does exactly this).
 - Treat any `ANY(${jsArray}::text[])` you see in the codebase as suspect — it is
-  a latent runtime 500 waiting for a non-empty array.
+  a latent runtime 500 waiting for a non-empty array. A second batch was found
+  and fixed in the email-intelligence thank-you detector long after the first
+  fix (error text there: `malformed array literal`), so sweep with grep when you
+  fix one instance.
+- In raw SQL a plain IN list also works when the array is guaranteed non-empty:
+  `sql\`col IN (${sql.join(ids.map((i) => sql\`${i}\`), sql\`, \`)})\``.
 - DB-touching route logic needs an integration test that actually runs the query
   (boot `app.listen(0)` + fetch, mock `requireAuth`), not just a typecheck.

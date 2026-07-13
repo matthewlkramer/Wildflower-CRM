@@ -511,9 +511,13 @@ Phase 1 (this document); Phases 2–7 were sequenced as follow-on tasks.
 >   workbench is the accepted end state (see §4.5 and Decision 4).
 > - **Phase 7 (deprecate → drop): partial.** Dropped so far: `gift_evidence_links`
 >   (0091), the `stripe_payouts` recon mirror (0093), `gift_allocations.counts_toward_goal`
->   (0094). Next clean candidate: `staged_payments.source_group_id` (no live code
->   reads it — only parity scripts; superseded by `unit_groups`; a read-only prod
->   parity run of the 0088 backfill is clean). **Caution:** several
+>   (0094), and `staged_payments.source_group_id` + its index (0104 — superseded by
+>   `unit_groups`; a read-only prod parity run of the 0088 backfill was clean, and
+>   the one-shot parity scripts that were its last readers have been retired/deleted).
+>   Remaining §7 candidates are NOT sweepable yet: `staged_payment_splits` still
+>   exists (split rows are one of the four "resolved" forms), and the dead-looking
+>   enum values (`processor_payout`, `confirmed_excluded`) are still read by the
+>   revert paths. **Caution:** several
 >   `@deprecated`-labelled `gifts_and_payments` columns (`quickbooks_tie_status`,
 >   `final_amount_source` and the `final_amount_*` provenance pointers) are STILL
 >   actively read/written by live code (lane derivation, the gifts filter, QB
