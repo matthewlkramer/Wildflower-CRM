@@ -8,8 +8,9 @@ import {
   households,
   emails,
   settlementLinks,
+  giftAllocations,
 } from "@workspace/db/schema";
-import { and, eq, inArray, ne, or } from "drizzle-orm";
+import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { newId } from "./helpers";
 import { buildGiftValuesFromStripeCharge } from "./stripeGift";
 import { recordAudit } from "./audit";
@@ -19,7 +20,12 @@ import {
   stampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
 } from "./giftFinalAmount";
-import { ReconcileAbort, type Tx, type DonorXor } from "./reconciliationCommit";
+import {
+  ReconcileAbort,
+  copyPledgeAllocationsToGift,
+  type Tx,
+  type DonorXor,
+} from "./reconciliationCommit";
 import { bookStripeChargeApplication } from "./paymentApplications";
 import {
   seedInitialGiftAllocation,
@@ -70,6 +76,17 @@ export async function createGiftFromChargeInTx(
     donor: DonorXor;
     /** Optional payment-intermediary override (conduit the donor gave through). */
     paymentIntermediaryId: string | null;
+    /**
+     * Optional opportunity/pledge this charge PAYS AGAINST (the deposit-approve
+     * opp outcomes routed charge-anchored because the deposit's settlement is
+     * already confirmed settlement-only). Sets gift.opportunityId and seeds the
+     * gift's allocations from the pledge (scaled to the charge GROSS) instead of
+     * the default full-amount line. The caller re-derives the opp post-commit.
+     */
+    opportunityId?: string | null;
+    /** Optional audit override (summary + metadata) — defaults to the
+     *  settlement-bundle labels. */
+    audit?: { summary: string; metadata?: Record<string, unknown> };
     /** App user id stamped as the confirmer / mint owner. */
     userId: string;
     /** Request used for audit attribution. */
@@ -78,6 +95,7 @@ export async function createGiftFromChargeInTx(
 ): Promise<{ giftId: string }> {
   const { newGiftId, charge, donor, paymentIntermediaryId, userId, auditReq } =
     args;
+  const opportunityId = args.opportunityId ?? null;
 
   // QuickBooks reconciliation guard: refuse to mint a per-charge gift when this
   // charge's payout is already booked as an APPROVED QB net lump (an unresolved
@@ -106,8 +124,8 @@ export async function createGiftFromChargeInTx(
     }
   }
 
-  await tx.insert(giftsAndPayments).values(
-    buildGiftValuesFromStripeCharge(
+  await tx.insert(giftsAndPayments).values({
+    ...buildGiftValuesFromStripeCharge(
       newGiftId,
       {
         chargeId: charge.id,
@@ -124,15 +142,34 @@ export async function createGiftFromChargeInTx(
       },
       userId,
     ),
-  );
+    // Payment-on-pledge: tie the gift to the opportunity so the pledge derives
+    // cash_in when fully paid (caller re-derives post-commit).
+    ...(opportunityId ? { opportunityId } : {}),
+  });
 
   // Every gift needs at least one allocation (the sole home of money scope).
-  // Seed a default full-amount line; fundraiser refines scope later.
-  await seedInitialGiftAllocation(tx, {
-    giftId: newGiftId,
-    amount: charge.grossAmount,
-    dateReceived: charge.dateReceived,
-  });
+  // Payment-on-pledge (forward gift intake): seed from the pledge's allocations
+  // scaled to the charge GROSS; else — or when the pledge has none — seed a
+  // default full-amount line the fundraiser refines later.
+  if (opportunityId) {
+    await copyPledgeAllocationsToGift(
+      tx,
+      opportunityId,
+      newGiftId,
+      charge.grossAmount,
+    );
+  }
+  const [{ n: seededAllocations }] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(giftAllocations)
+    .where(eq(giftAllocations.giftId, newGiftId));
+  if (!seededAllocations) {
+    await seedInitialGiftAllocation(tx, {
+      giftId: newGiftId,
+      amount: charge.grossAmount,
+      dateReceived: charge.dateReceived,
+    });
+  }
   await assertGiftHasAllocations(tx, newGiftId);
 
   // The charge OWNS the mint (createdGiftId, not auto-applied → protected from
@@ -180,8 +217,9 @@ export async function createGiftFromChargeInTx(
     action: "create",
     entityType: "gift",
     entityId: newGiftId,
-    summary: "Minted gift from Stripe charge (settlement bundle)",
-    metadata: {
+    summary:
+      args.audit?.summary ?? "Minted gift from Stripe charge (settlement bundle)",
+    metadata: args.audit?.metadata ?? {
       stripeChargeId: charge.id,
       outcome: "bundle_create_gift",
     },

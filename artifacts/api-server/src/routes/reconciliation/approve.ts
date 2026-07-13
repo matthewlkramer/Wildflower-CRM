@@ -33,6 +33,7 @@ import {
   mintGiftInTx,
   linkGiftInTx,
 } from "../../lib/reconciliationCommit";
+import { createGiftFromChargeInTx } from "../../lib/reconciliationBundleCommit";
 import {
   qbLedgerPaymentIdForGiftExcludingPayment,
   qbLedgerGiftIdForPaymentExcludingGift,
@@ -40,6 +41,8 @@ import {
 import {
   chargeStatusIn,
   deriveStripeChargeStatus,
+  stagedConfirmedSettlementLinkExists,
+  stagedCountedApplicationExists,
   stagedStatusSql,
 } from "../../lib/derivedStatus";
 
@@ -171,21 +174,42 @@ async function mintGiftFromEvidence(
       matchedGiftId: stagedPayments.matchedGiftId,
       createdGiftId: stagedPayments.createdGiftId,
       groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
+      // Wrapped one sql-layer deep ON PURPOSE: a Column interpolated directly
+      // into a top-level select field renders UNQUALIFIED, so the correlated
+      // EXISTS would bind "id" to the INNER table and always be wrong.
+      confirmedSettlementLink: sql<boolean>`(${stagedConfirmedSettlementLinkExists})`,
+      countedApplication: sql<boolean>`(${stagedCountedApplicationExists})`,
     })
     .from(stagedPayments)
     .where(inArray(stagedPayments.id, preIds));
   if (preRows.length !== preIds.length) return notFound(res, "staged payment");
+  // Charge-anchored escape hatch: a settlement-only confirmed deposit (Stripe
+  // settlement confirmed, NO gift link at all) is closed for QB-lump minting,
+  // but when the caller selected a SPECIFIC pending charge of that settlement
+  // (e.g. "record on a pledge" from a per-charge card of a multi-charge payout),
+  // the remaining money is booked charge-anchored — the charge OWNS the mint,
+  // the QB lump stays untouched. Single-row only; groups keep the hard 409.
+  let chargeAnchoredIntent = false;
   for (const pre of preRows) {
     if (!isStagedApprovable(pre.status)) {
-      // A settlement-only confirmed deposit (Stripe settlement confirmed, no
-      // gift link at all) is a known dead-end here: its remaining money is
-      // booked from the per-charge Stripe card, never by minting off the whole
-      // QB lump — say so instead of the generic refresh message.
+      // "Settlement-only" means the confirmed evidence is a CONFIRMED
+      // settlement link and nothing else. A split-resolved row (counted
+      // payment_applications rows, no gift-link columns) also derives
+      // match_confirmed with NULL links, but its money is ALREADY booked —
+      // opening the hatch there would double-count it.
       const settlementOnlyConfirmed =
         pre.status === "match_confirmed" &&
         pre.matchedGiftId == null &&
         pre.createdGiftId == null &&
-        pre.groupReconciledGiftId == null;
+        pre.groupReconciledGiftId == null &&
+        pre.confirmedSettlementLink === true &&
+        pre.countedApplication === false;
+      if (settlementOnlyConfirmed && stripeChargeId && !group) {
+        chargeAnchoredIntent = true;
+        continue;
+      }
+      // No charge selected (or a group): the dead-end guidance stands — book
+      // the remaining money from the per-charge Stripe card instead.
       res.status(409).json({
         error: "not_approvable",
         message: settlementOnlyConfirmed
@@ -215,11 +239,18 @@ async function mintGiftFromEvidence(
   // Payouts tied to this staged row — a selected charge must belong to one, and
   // they're the lock targets that serialize us against stripeConfirm.
   const stagedPayoutRows = await db
-    .select({ id: stripePayouts.id })
+    .select({ id: stripePayouts.id, lifecycle: settlementLinks.lifecycle })
     .from(settlementLinks)
     .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
     .where(eq(settlementLinks.depositStagedPaymentId, stagedPaymentId));
+  // ALL tied payouts (any lifecycle) drive the normal path — locks, the
+  // unreconciled-charge gate, and Stripe stamping all consider proposed links.
   const stagedPayoutIds = stagedPayoutRows.map((r) => r.id);
+  // Only CONFIRMED settlements anchor the charge-side escape hatch — a
+  // merely-proposed link's payout must not pass the wrong-payout guard.
+  const confirmedPayoutIds = stagedPayoutRows
+    .filter((r) => r.lifecycle === "confirmed")
+    .map((r) => r.id);
 
   const newGiftId = newId();
   try {
@@ -244,7 +275,15 @@ async function mintGiftFromEvidence(
       // counted ledger row — can't be derived from the row alone, and a
       // split-resolved row carries none of the three gift-link columns).
       const lockedRows = await tx
-        .select({ ...getTableColumns(stagedPayments), status: stagedStatusSql })
+        .select({
+          ...getTableColumns(stagedPayments),
+          status: stagedStatusSql,
+          // Wrapped one sql-layer deep (see the pre-check select): unwrapped,
+          // the correlated EXISTS renders unqualified and binds to the inner
+          // table's columns.
+          confirmedSettlementLink: sql<boolean>`(${stagedConfirmedSettlementLinkExists})`,
+          countedApplication: sql<boolean>`(${stagedCountedApplicationExists})`,
+        })
         .from(stagedPayments)
         .where(inArray(stagedPayments.id, lockIds))
         .orderBy(stagedPayments.id)
@@ -255,8 +294,32 @@ async function mintGiftFromEvidence(
           message: "staged payment not found",
         });
       }
+      // Confirmed under the lock (the pre-check ran unlocked): the anchor is
+      // STILL settlement-only confirmed, so the mint must be charge-anchored.
+      // If a concurrent revert re-opened the row, fall through to the normal
+      // QB-anchored path instead.
+      let chargeAnchored = false;
       for (const row of lockedRows) {
         if (!isStagedApprovable(row.status)) {
+          // Same "settlement-only" definition as the pre-check: a CONFIRMED
+          // settlement link with NO counted ledger rows (a split-resolved row
+          // is already booked — never charge-anchor over it).
+          const settlementOnlyConfirmed =
+            row.status === "match_confirmed" &&
+            row.matchedGiftId == null &&
+            row.createdGiftId == null &&
+            row.groupReconciledGiftId == null &&
+            row.confirmedSettlementLink === true &&
+            row.countedApplication === false;
+          if (
+            chargeAnchoredIntent &&
+            !group &&
+            row.id === stagedPaymentId &&
+            settlementOnlyConfirmed
+          ) {
+            chargeAnchored = true;
+            continue;
+          }
           throw new ApproveAbort(409, {
             error: "not_approvable",
             message:
@@ -350,6 +413,87 @@ async function mintGiftFromEvidence(
               "The selected Stripe charge has already been resolved. Refresh and try again.",
           });
         }
+      }
+
+      // ── Charge-anchored mint (settlement-only confirmed deposit) ──────────
+      // The deposit's Stripe settlement is already confirmed with NO gift — the
+      // QB lump is closed for minting. Book the selected pending charge's money
+      // directly: the CHARGE owns the mint (createdGiftId; the same primitive
+      // the settlement-bundle confirm uses) and the staged row stays untouched.
+      // The QB-anchor consistency gate doesn't apply here — the charge-side
+      // guards (derived-pending re-check above, the qb_conflict settlement-link
+      // guard inside the primitive, Donor XOR) are the operative ones, exactly
+      // as on the standalone per-charge create-gift route.
+      if (chargeAnchored) {
+        if (!charge) {
+          // Unreachable — chargeAnchoredIntent requires a stripeChargeId and a
+          // missing charge already 404'd above — kept as a safety net.
+          throw new ApproveAbort(409, {
+            error: "stripe_charge_required",
+            message:
+              "This deposit's Stripe settlement is already confirmed. Select the Stripe charge to book.",
+          });
+        }
+        // The charge must belong to a payout whose settlement with THIS
+        // deposit is CONFIRMED; an unrelated (or merely-proposed) charge is
+        // booked from its own card, not through here.
+        if (
+          !charge.stripePayoutId ||
+          !confirmedPayoutIds.includes(charge.stripePayoutId)
+        ) {
+          throw new ApproveAbort(409, {
+            error: "stripe_charge_wrong_payout",
+            message:
+              "The selected Stripe charge is not part of this deposit's confirmed settlement. Book it from its own card.",
+          });
+        }
+        // The skipped QB-anchor gate normally rejects archived opportunities —
+        // enforce that directly here.
+        if (opp && opp.archivedAt != null) {
+          throw new ApproveAbort(409, {
+            error: "opportunity_archived",
+            message:
+              "Restore this opportunity before recording a payment against it.",
+          });
+        }
+        // convert: latch the OPEN opportunity into a pledge exactly like the
+        // QB-anchored mint (writtenPledge is the user-driven lifecycle input;
+        // was_pledge/status/stage→complete DERIVE post-commit — invariant #3).
+        // Preserve a real (positive) awarded amount; only when missing fall
+        // back to the charge GROSS so a single-payment commitment derives to
+        // cash_in instead of staying $0.
+        if (opts.convert && opp) {
+          const existingAwarded = Number(opp.awardedAmount ?? 0);
+          const evNum = Number(charge.grossAmount ?? 0);
+          const awardedAmount =
+            !(existingAwarded > 0) && Number.isFinite(evNum) && evNum > 0
+              ? charge.grossAmount
+              : opp.awardedAmount;
+          await tx
+            .update(opportunitiesAndPledges)
+            .set({ writtenPledge: true, awardedAmount, updatedAt: new Date() })
+            .where(eq(opportunitiesAndPledges.id, opp.id));
+        }
+        await createGiftFromChargeInTx(tx, {
+          newGiftId,
+          charge,
+          donor: opp ? donorOf(opp) : bodyDonor!,
+          paymentIntermediaryId: body.paymentIntermediaryId ?? null,
+          opportunityId,
+          audit: {
+            summary:
+              "Minted gift from Stripe charge (deposit settlement already confirmed)",
+            metadata: {
+              stagedPaymentId,
+              stripeChargeId: charge.id,
+              opportunityId: opportunityId ?? null,
+              outcome: opts.outcome,
+            },
+          },
+          userId: user.id,
+          auditReq: req,
+        });
+        return;
       }
 
       // Stripe GROSS is the precise amount when a charge is selected; else the QB

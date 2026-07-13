@@ -14,9 +14,20 @@ Shapes and their rules:
   payment_applications row; the applied-gift check must fall back to the matchedGiftId
   pointer or those rows re-point silently. Same-gift re-link is an idempotent 200 no-op.
 - **Minted (createdGiftId) or grouped rows** → still hard 409 (staged row owns its mint).
-- **Settlement-only confirmed** (status derives ONLY from a confirmed settlement link /
-  counted PA, no gift link) → still a 409 dead-end on BOTH mint and link deposit paths;
-  the correct flow is the per-charge card (charge link-gift / create-gift).
+- **Settlement-only confirmed** (confirmed settlement link, NO gift link, NO counted PA)
+  → the QB-lump mint stays a 409 dead-end, but when the caller selects a specific
+  still-pending charge of that settlement, approve.ts opens a **charge-anchored escape
+  hatch**: the CHARGE owns the mint via `createGiftFromChargeInTx` (same primitive as
+  bundle confirm; optional opportunityId copies pledge allocations scaled to charge
+  GROSS), the staged row stays untouched, QB-anchor gate skipped (charge-side guards +
+  archived-opp + wrong-payout checks apply instead). The wrong-payout guard accepts
+  only payouts whose settlement link with THIS deposit is lifecycle='confirmed';
+  the normal path (locks / unreconciled-charge gate / Stripe stamping) still uses ALL
+  tied payouts regardless of lifecycle — don't filter that shared list.
+- **SPLIT-resolved is NOT settlement-only**: a counted payment_applications row also
+  derives match_confirmed with NULL gift links, but the money is already booked — the
+  hatch predicate must require confirmedSettlementLink && !countedApplication or it
+  double-mints.
 
 **Why:** two prod dead-ends — a settlement-only confirmed deposit with a pending charge
 in a multi-charge payout, and a confirmed direct-matched deposit whose single charge was

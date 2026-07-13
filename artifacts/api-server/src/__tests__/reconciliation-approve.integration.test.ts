@@ -1294,6 +1294,158 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     expect(staged.status).toBe("match_confirmed");
     expect(staged.matchedGiftId).toBeNull();
   }, 30_000);
+
+  it("still dead-ends a settlement-only confirmed row on the MINT path when NO charge is selected (not_approvable, guidance message)", async () => {
+    const stagedId = await seedStaged("100.00", { matchStatus: "matched" });
+    const payoutId = await seedPayout(stagedId);
+    await db
+      .update(schema.settlementLinks)
+      .set({ lifecycle: "confirmed" })
+      .where(eqFn(schema.settlementLinks.payoutId, payoutId));
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+      organizationId: ORG_ID,
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("not_approvable");
+    expect(res.json.message).toContain("Stripe charge card");
+
+    // Untouched — no gift link appeared.
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("match_confirmed");
+    expect(staged.matchedGiftId).toBeNull();
+    expect(staged.createdGiftId).toBeNull();
+  }, 30_000);
+
+  it("charge-anchored escape hatch: records a payment on a pledge from a settlement-only confirmed deposit when a pending charge IS selected (201; charge owns the mint, QB lump untouched)", async () => {
+    // A pledge awaiting its (full) payment.
+    const oppId = await seedOpp({
+      stage: "written_commitment",
+      writtenPledge: true,
+      awardedAmount: "100.00",
+    });
+    // Settlement-only confirmed deposit with a still-pending charge on the
+    // confirmed payout (the Legrand shape: multi-charge payout confirmed
+    // settlement-only, one charge's money not yet booked).
+    const stagedId = await seedStaged("100.00", { matchStatus: "matched" });
+    const payoutId = await seedPayout(stagedId);
+    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
+    await db
+      .update(schema.settlementLinks)
+      .set({ lifecycle: "confirmed" })
+      .where(eqFn(schema.settlementLinks.payoutId, payoutId));
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift_from_opportunity",
+      opportunityId: oppId,
+      stripeChargeId: chargeId,
+    });
+    expect(res.status).toBe(201);
+    expect(res.json.ok).toBe(true);
+    const giftId = res.json.giftId as string;
+    expect(giftId).toBeTruthy();
+    giftIds.push(giftId);
+
+    // Gift: tied to the pledge, donor derived from the opp, amount = Stripe
+    // GROSS with the stripe final-amount pointer (charge-anchored primitive).
+    const gift = await readGift(giftId);
+    expect(gift.opportunityId).toBe(oppId);
+    expect(gift.organizationId).toBe(ORG_ID);
+    expect(gift.amount).toBe("100.00");
+    expect(gift.finalAmountSource).toBe("stripe");
+    expect(gift.finalAmountStripeChargeId).toBe(chargeId);
+
+    // The CHARGE owns the mint (createdGiftId, protected) and is resolved.
+    const charge = await readCharge(chargeId);
+    expect(charge.createdGiftId).toBe(giftId);
+    expect(charge.matchedGiftId).toBeNull();
+    expect(charge.status).toBe("match_confirmed");
+
+    // The QB lump stays untouched: settlement-only confirmed, NO gift link.
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("match_confirmed");
+    expect(staged.matchedGiftId).toBeNull();
+    expect(staged.createdGiftId).toBeNull();
+    expect(staged.groupReconciledGiftId).toBeNull();
+
+    // Fully-paid pledge derives cash_in post-commit (invariant #3).
+    const opp = await readOpp(oppId);
+    expect(opp.status).toBe("cash_in");
+  }, 30_000);
+
+  it("charge-anchored escape hatch rejects a charge from a DIFFERENT payout (stripe_charge_wrong_payout, nothing mutated)", async () => {
+    const stagedId = await seedStaged("100.00", { matchStatus: "matched" });
+    const payoutId = await seedPayout(stagedId);
+    await db
+      .update(schema.settlementLinks)
+      .set({ lifecycle: "confirmed" })
+      .where(eqFn(schema.settlementLinks.payoutId, payoutId));
+    // A pending charge that belongs to some OTHER deposit's payout.
+    const otherPayoutId = await seedPayout(await seedStaged("100.00"));
+    const foreignChargeId = await seedCharge({
+      payoutId: otherPayoutId,
+      grossAmount: "100.00",
+    });
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+      organizationId: ORG_ID,
+      stripeChargeId: foreignChargeId,
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("stripe_charge_wrong_payout");
+
+    // Nothing mutated on either side.
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("match_confirmed");
+    expect(staged.createdGiftId).toBeNull();
+    const charge = await readCharge(foreignChargeId);
+    expect(charge.status).toBe("pending");
+    expect(charge.createdGiftId).toBeNull();
+  }, 30_000);
+
+  it("charge-anchored escape hatch does NOT open for a SPLIT-resolved row (counted ledger rows, no gift links) — 409, no mint", async () => {
+    // A split-resolved deposit also derives match_confirmed with all three
+    // gift-link columns NULL — but its money is ALREADY booked through counted
+    // payment_applications rows. The hatch must stay closed (a mint here would
+    // double-count), even when a pending charge sits on a merely-PROPOSED
+    // settlement link for the same deposit.
+    const splitGift = await seedGift("100.00");
+    const stagedId = await seedStaged("100.00", { matchStatus: "matched" });
+    // Proposed (NOT confirmed) settlement link + a pending charge on its payout.
+    const payoutId = await seedPayout(stagedId);
+    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
+    // The split's counted cash-application ledger row books the money.
+    await db.insert(schema.paymentApplications).values({
+      id: nextId("pa"),
+      paymentId: stagedId,
+      giftId: splitGift,
+      amountApplied: "100.00",
+      evidenceSource: "quickbooks",
+      matchMethod: "human",
+      linkRole: "counted",
+      lifecycle: "confirmed",
+    });
+
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "create_gift",
+      organizationId: ORG_ID,
+      stripeChargeId: chargeId,
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("not_approvable");
+
+    // Nothing minted: staged keeps NO gift links; the charge stays pending.
+    const staged = await readStaged(stagedId);
+    expect(staged.status).toBe("match_confirmed");
+    expect(staged.matchedGiftId).toBeNull();
+    expect(staged.createdGiftId).toBeNull();
+    expect(staged.groupReconciledGiftId).toBeNull();
+    const charge = await readCharge(chargeId);
+    expect(charge.status).toBe("pending");
+    expect(charge.createdGiftId).toBeNull();
+  }, 30_000);
 });
 
 describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integration)", () => {

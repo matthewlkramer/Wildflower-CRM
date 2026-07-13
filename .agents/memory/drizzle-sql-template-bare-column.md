@@ -1,7 +1,18 @@
 ---
 name: drizzle sql-template column interpolation qualification
-description: Bare table-object columns interpolated into a drizzle sql`` template ARE table-qualified (verified on 0.45.1); the alias() case is the unverified suspect. Re-render with PgDialect before assuming a correlation bug.
+description: Bare table-object columns interpolated into a drizzle sql`` template ARE table-qualified (verified on 0.45.1) — EXCEPT when the fragment is a top-level select field, where they render UNQUALIFIED. Re-render with toSQL/PgDialect before assuming a correlation bug.
 ---
+
+## VERIFIED exception: top-level select-field position unqualifies (0.45.1)
+
+A `sql` fragment passed **directly as a `.select({...})` field value** has its
+interpolated `${table.col}` references rendered **UNQUALIFIED** (`"deposit_staged_payment_id" = "id"`),
+so a correlated EXISTS silently binds `"id"` to the INNER table → flag always wrong.
+The SAME fragment nested one sql-layer deeper (inside a CASE, or wrapped as
+``sql`(${fragment})` ``) renders fully qualified. **Fix: wrap the fragment in an outer
+`` sql`(${fragment})` `` when selecting it as a field.** Verified via `q.toSQL().sql`
+on the reconciliation approve pre-check (derivedStatus EXISTS flags). In WHERE
+position and nested composition, qualification holds as documented below.
 
 # drizzle `sql` template column interpolation — VERIFY, don't assume
 

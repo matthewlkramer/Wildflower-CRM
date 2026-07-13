@@ -191,6 +191,11 @@ const EXPECTED: Record<string, FileClass> = {
     classification: "exempt",
     reason: "Stripe reconciliation engine mint/revert (system ground-truth).",
   },
+  "routes/reconciliation/approve.ts": {
+    classification: "exempt",
+    reason:
+      "Unified reconciler approve: the charge-anchored escape hatch latches an OPEN opportunity into a pledge at mint time (writtenPledge/awardedAmount) — the exact write the exempt mint engine (lib/reconciliationCommit.ts mintGiftInTx) performs on the QB-anchored path; system ground-truth booking, not a human edit of an audited fact.",
+  },
 };
 
 function walk(dir: string): string[] {
