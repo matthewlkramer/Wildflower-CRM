@@ -22,7 +22,6 @@ import {
   apiErrorMessage,
   is409,
   isPermanentSettlementError,
-  resolveConfirmArgs,
 } from "./settlement-actions";
 import { chargeExcludedLabel, shortId } from "./bundle-ui";
 
@@ -291,8 +290,7 @@ export function SettlementCard({
     a.bankAmount != null &&
     a.amount != null &&
     Number(a.bankAmount) !== Number(a.amount);
-  const showApproveTies =
-    a.anchorType === "stripe_payout" && tiesProposed > 0;
+  const showApproveTies = tiesProposed > 0;
 
   const handleApprove = async () => {
     // A proposal only ever appears on the Stripe-payout anchor, so anchorId IS
@@ -412,14 +410,12 @@ export function SettlementCard({
   };
 
   const handleResolvePick = async (counterpartId: string) => {
+    // The anchor is always the Stripe payout on this page, and the confirm
+    // endpoint is keyed by the payout — the pick is the QB deposit.
     try {
-      const { payoutId, depositStagedPaymentId } = resolveConfirmArgs(
-        a,
-        counterpartId,
-      );
       await confirmM.mutateAsync({
-        payoutId,
-        data: { depositStagedPaymentId },
+        payoutId: a.anchorId,
+        data: { depositStagedPaymentId: counterpartId },
       });
       setResolveOpen(false);
       toast({ title: "Settlement approved." });
@@ -508,34 +504,23 @@ export function SettlementCard({
               )}
             </div>
           )}
-          {a.anchorType === "stripe_payout" &&
-            (tiesProposed > 0 || tiesConfirmed > 0) && (
-              <div
-                className="mt-0.5 text-[11px] text-muted-foreground"
-                data-testid={`charge-ties-summary-${a.anchorId}`}
-              >
-                QB ties:{" "}
-                {tiesConfirmed > 0 ? `${tiesConfirmed} confirmed` : ""}
-                {tiesConfirmed > 0 && tiesProposed > 0 ? " · " : ""}
-                {tiesProposed > 0 ? `${tiesProposed} proposed` : ""}
-              </div>
-            )}
+          {(tiesProposed > 0 || tiesConfirmed > 0) && (
+            <div
+              className="mt-0.5 text-[11px] text-muted-foreground"
+              data-testid={`charge-ties-summary-${a.anchorId}`}
+            >
+              QB ties:{" "}
+              {tiesConfirmed > 0 ? `${tiesConfirmed} confirmed` : ""}
+              {tiesConfirmed > 0 && tiesProposed > 0 ? " · " : ""}
+              {tiesProposed > 0 ? `${tiesProposed} proposed` : ""}
+            </div>
+          )}
           <ChargeList
             charges={a.charges}
             onRejectProposedQb={
-              selectable && a.anchorType === "stripe_payout"
-                ? handleRejectChargeTie
-                : undefined
+              selectable ? handleRejectChargeTie : undefined
             }
             rejectingChargeId={rejectingChargeId}
-          />
-          <QbDetails
-            lineDescription={a.lineDescription}
-            memo={a.memo}
-            reference={a.reference}
-            lineItemNames={a.lineItemNames}
-            lineAccountNames={a.lineAccountNames}
-            lineClasses={a.lineClasses}
           />
 
           {/* Proposed counterpart inline */}

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Check, Eye, EyeOff, Link2, Loader2, X } from "lucide-react";
+import { AlertCircle, Check, Eye, EyeOff, Loader2, X } from "lucide-react";
 import {
   useConfirmPayoutChargeTies,
   useConfirmSettlementLink,
@@ -8,7 +8,6 @@ import {
   useRejectSettlementProposal,
   getListReconciliationBundleAnchorsQueryKey,
   type BundleAnchor,
-  type FlagForResearchBodyTargetType,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,30 +18,19 @@ import { BulkFlagForResearchDialog } from "@/components/flag-for-research-dialog
 import { SettlementCard } from "./SettlementCard";
 import { is409 } from "./settlement-actions";
 
-/** Selection key for an anchor (stable across the two actionable columns). */
+/** Selection key for an anchor. */
 const anchorKey = (a: Pick<BundleAnchor, "anchorType" | "anchorId">) =>
   `${a.anchorType}:${a.anchorId}`;
 
-/** Cleanup-queue flag target for an anchor (payout vs QB staged deposit). */
-function flagTarget(a: BundleAnchor): {
-  targetType: FlagForResearchBodyTargetType;
-  targetId: string;
-} {
-  return {
-    targetType:
-      a.anchorType === "stripe_payout" ? "stripe_payout" : "staged_payment",
-    targetId: a.anchorId,
-  };
-}
-
 /**
  * Settlement report (design §4.5, Plane 1: Stripe payouts ↔ QB deposits),
- * reworked to the Gift report's card-first model. Anchors are bucketed into
- * three columns by derived batch status:
- *   • Matched        — a CONFIRMED settlement link (settled). Read-only.
+ * reworked to the Gift report's card-first model. The page is a single list of
+ * Stripe payouts missing a confirmed QB deposit (the anchors query is
+ * restricted to `source=stripe_payout`, so standalone QB deposits never load):
  *   • Missing deposit — a Stripe payout with no confirmed deposit (may carry a
  *                       proposed match to approve/reject, else resolve).
- *   • Missing payout  — a standalone QB deposit with no payout (resolve).
+ *   • Matched         — a CONFIRMED settlement link (settled). Read-only,
+ *                       hidden behind the "Show matched" toggle.
  * The proposed match plus its approve/reject/resolve controls and multi-select
  * bulk actions all live on the cards. This report is Plane 1 ONLY
  * (docs/reconciliation-design.md §4.3/§4.4): Approve confirms JUST the
@@ -70,36 +58,34 @@ export function SettlementReport() {
 
   const { data, isLoading, isError } = useListReconciliationBundleAnchors({
     queue: "all",
+    source: "stripe_payout",
     limit: 10000,
   });
 
   const rows = useMemo(() => data?.data ?? [], [data]);
 
-  const { matched, missingDeposit, missingPayout } = useMemo(() => {
+  const { matched, missingDeposit } = useMemo(() => {
     const matched: BundleAnchor[] = [];
     const missingDeposit: BundleAnchor[] = [];
-    const missingPayout: BundleAnchor[] = [];
     for (const a of rows) {
       // Only a CONFIRMED link is "Matched" (read-only). A `proposed` tie is
-      // still actionable, so it stays in its source column with the proposal
+      // still actionable, so it stays in the main list with the proposal
       // shown inline on the card.
       if (a.batchStatus === "settled") {
         matched.push(a);
-      } else if (a.anchorType === "stripe_payout") {
-        missingDeposit.push(a);
       } else {
-        missingPayout.push(a);
+        missingDeposit.push(a);
       }
     }
-    return { matched, missingDeposit, missingPayout };
+    return { matched, missingDeposit };
   }, [rows]);
 
   // Fast lookup for bulk actions over the selected keys.
   const byKey = useMemo(() => {
     const m = new Map<string, BundleAnchor>();
-    for (const a of [...missingDeposit, ...missingPayout]) m.set(anchorKey(a), a);
+    for (const a of missingDeposit) m.set(anchorKey(a), a);
     return m;
-  }, [missingDeposit, missingPayout]);
+  }, [missingDeposit]);
 
   const selectedAnchors = useMemo(
     () =>
@@ -110,7 +96,7 @@ export function SettlementReport() {
   );
 
   const invalidateWorkbench = useCallback(() => {
-    // Drop just-committed anchors from their columns…
+    // Drop just-committed anchors from the list…
     void queryClient.invalidateQueries({
       queryKey: getListReconciliationBundleAnchorsQueryKey(),
     });
@@ -135,15 +121,13 @@ export function SettlementReport() {
   }, [invalidateWorkbench]);
 
   const runBulkApprove = useCallback(async () => {
-    // Proposals only ever live on the Stripe-payout anchor, and both confirm
-    // endpoints are keyed by the payout — so approve those anchors by anchorId.
-    // A deposit-lump proposal approves via the settlement confirm; a payout
-    // whose charges carry proposed QB ties (individually-booked money, no
-    // deposit lump) approves via the charge-ties confirm.
+    // Both confirm endpoints are keyed by the payout, so approve the selected
+    // anchors by anchorId. A deposit-lump proposal approves via the settlement
+    // confirm; a payout whose charges carry proposed QB ties
+    // (individually-booked money, no deposit lump) approves via the
+    // charge-ties confirm.
     const targets = selectedAnchors.filter(
-      (a) =>
-        a.anchorType === "stripe_payout" &&
-        (a.proposedMatch || (a.chargeTiesProposed ?? 0) > 0),
+      (a) => a.proposedMatch || (a.chargeTiesProposed ?? 0) > 0,
     );
     if (targets.length === 0) {
       toast({ title: "No proposed matches in the selection to approve." });
@@ -189,10 +173,7 @@ export function SettlementReport() {
   ]);
 
   const runBulkReject = useCallback(async () => {
-    // Only Stripe-payout anchors carry a proposed link that can be rejected.
-    const targets = selectedAnchors.filter(
-      (a) => a.proposedMatch && a.anchorType === "stripe_payout",
-    );
+    const targets = selectedAnchors.filter((a) => a.proposedMatch);
     if (targets.length === 0) {
       toast({ title: "No proposed matches in the selection to reject." });
       return;
@@ -219,50 +200,6 @@ export function SettlementReport() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAnchors, selection, invalidateWorkbench, rejectM, toast]);
-
-  // Manual charge-grain tie: exactly ONE Stripe payout plus one-or-more QB
-  // staged rows selected → "Tie selected" assigns each QB row to its
-  // same-amount charge on that payout (confirmed immediately, human-driven).
-  const tieSelection = useMemo(() => {
-    const payouts = selectedAnchors.filter(
-      (a) => a.anchorType === "stripe_payout",
-    );
-    const qbRows = selectedAnchors.filter(
-      (a) => a.anchorType === "qb_staged_payment",
-    );
-    if (payouts.length !== 1 || qbRows.length === 0) return null;
-    return { payout: payouts[0], qbRows };
-  }, [selectedAnchors]);
-
-  const runTieSelected = useCallback(async () => {
-    if (!tieSelection) return;
-    setBulkBusy(true);
-    try {
-      const res = await chargeTiesM.mutateAsync({
-        payoutId: tieSelection.payout.anchorId,
-        data: {
-          qbStagedPaymentIds: tieSelection.qbRows.map((a) => a.anchorId),
-        },
-      });
-      selection.clear();
-      invalidateWorkbench();
-      toast({
-        title: res.payoutFullyTied
-          ? `Tied ${res.tied} QB row${res.tied === 1 ? "" : "s"} — payout fully settled.`
-          : `Tied ${res.tied} QB row${res.tied === 1 ? "" : "s"} to the payout.`,
-      });
-    } catch (err) {
-      toast({
-        title: "Couldn't tie the selection",
-        description:
-          err instanceof Error ? err.message : "Something went wrong.",
-      });
-      invalidateWorkbench();
-    } finally {
-      setBulkBusy(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tieSelection, selection, invalidateWorkbench, chargeTiesM, toast]);
 
   const total = data?.pagination.total ?? rows.length;
   const truncated = !isLoading && !isError && total > rows.length;
@@ -321,20 +258,6 @@ export function SettlementReport() {
               )}
               Approve
             </Button>
-            {tieSelection && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1"
-                disabled={busy}
-                onClick={runTieSelected}
-                data-testid="button-settlement-bulk-tie"
-                title="Tie the selected QuickBooks rows to their same-amount charges on the selected Stripe payout."
-              >
-                <Link2 className="h-4 w-4" />
-                Tie selected
-              </Button>
-            )}
             <Button
               size="sm"
               variant="outline"
@@ -380,7 +303,7 @@ export function SettlementReport() {
       ) : (
         <div
           className={`grid grid-cols-1 gap-3 ${
-            showMatched ? "lg:grid-cols-3" : "lg:grid-cols-2"
+            showMatched ? "lg:grid-cols-2" : ""
           }`}
         >
           {showMatched && (
@@ -401,20 +324,15 @@ export function SettlementReport() {
             selection={selection}
             onChanged={handleChanged}
           />
-          <SettlementColumn
-            title="Needs payout tie"
-            hint="QB deposits that may still need a Stripe payout (known non-Stripe money excluded)"
-            rows={missingPayout}
-            selectable
-            selection={selection}
-            onChanged={handleChanged}
-          />
         </div>
       )}
 
       {flagOpen && (
         <BulkFlagForResearchDialog
-          targets={selectedAnchors.map(flagTarget)}
+          targets={selectedAnchors.map((a) => ({
+            targetType: "stripe_payout" as const,
+            targetId: a.anchorId,
+          }))}
           open={flagOpen}
           onOpenChange={setFlagOpen}
           onDone={() => {
