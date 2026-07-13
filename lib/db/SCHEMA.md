@@ -324,13 +324,13 @@ Column-level detail lives in each schema file; this is the orientation map.
 - `payment_applications` — the authoritative **cash-application ledger** (M:N
   between `staged_payments` and `gifts_and_payments`), which replaced the
   scattered linkage columns (`matched_gift_id` / `created_gift_id` /
-  `group_reconciled_gift_id` / `final_amount_qb_staged_payment_id`) and the
+  `group_reconciled_gift_id` / `final_amount_qb_staged_payment_id`) NOTE: HAVE WE REMOVED ALL THE FIELDS WE'RE NOT USING ANYMORE? IF NOT, LETS DO IT and the
   retired `staged_payment_splits` table (dropped in 0115 — a split's resolution
   now lives entirely in counted ledger rows while the staged row keeps all three
   gift-link columns NULL). One row per payment↔gift booking (HEADER grain):
   `amount_applied` (> 0); `evidence_source` (`quickbooks` / `stripe` / `donorbox`,
   with the matching `stripe_charge_id` / `donorbox_donation_id` required by CHECK);
-  `match_method` (`system` / `system_confirmed` / `human`); `created_the_gift`
+  `match_method` (`system` / `system_confirmed` / `human` NOTE: I THINK THIS IS OUT OF DATE); `created_the_gift`
   (preserves the mint-ownership signal); `link_role` (`counted` /
   `corroborating` — money reads filter `counted`). Both FKs are **RESTRICT**
   (the QB record and the gift are anchors). Book-once = `UNIQUE(payment_id, gift_id)`
@@ -406,21 +406,3 @@ Column-level detail lives in each schema file; this is the orientation map.
 UI for everyone except the record owner and admins. **UI-only** — names are still in
 API responses. Keep `canSeeIdentity` (display) separate from `canManageIdentity`
 (toggle). Join-projection name references aren't masked yet.
-
-## Manual fixups
-
-Data corrections layered on top of the original one-time Airtable import live in
-idempotent [`lib/db/src/post-import-fixups.sql`](src/post-import-fixups.sql) —
-kept as a historical record now that the importer is retired.
-
-## Airtable import (retired)
-
-The one-time importer script (`lib/db/src/import-airtable.mjs`) has been **retired
-and removed**: it targeted the old split funders/organizations model, the CRM is
-now the system of record, and no re-import is planned. Git history preserves the
-script if it is ever needed again. Airtable record IDs remain the PKs on most
-tables (see above) as a legacy of that original import.
-
-Airtable is slated for archival; ongoing CRM-side drift is not written back to
-Airtable. (The live Airtable→schools sync is a separate, working feature and is
-unaffected.)
