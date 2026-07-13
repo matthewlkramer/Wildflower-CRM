@@ -1,0 +1,96 @@
+---
+name: Money sync & reconciliation
+description: Grouped index of money-sync lessons — QuickBooks/Stripe/Donorbox ingest, staged-payment review, the reconciliation ledger/model, workbench UI & queues, and imports/backfills.
+---
+
+## QuickBooks ingest & sync
+
+- [QuickBooks payment sync](quickbooks-payment-sync.md) — pull-only QBO→CRM; idempotent (realmId,type,id) rows retained; dev keys⇒sandbox host, prod keys⇒live; redirect URI exact-match per key set; approve mints gift w/ Donor XOR.
+- [QuickBooks exclusion rules](quickbooks-exclusion-rules.md) — TS classifier ↔ SQL backfill lockstep; donation-first guard; classifier is insert-time only, watermark sync won't re-enrich historical line detail ([auto-exclude](quickbooks-staged-exclude.md)).
+- [QuickBooks editable handling rules](quickbooks-editable-rules.md) — QB ingest rules now DB-editable; engine SEED_RULES must mirror code classifier (fidelity test); auto_create_approve mints+allocates+approves; GenOps=intended_usage not a project row.
+- [Entity attribution (replaced fiscally_sponsored exclusion)](quickbooks-fiscally-sponsored-exclusion.md) — that EXCLUSION retired; detectEntity/ENTITY_MARKERS set staged_payments.entity_id + keep row in queue; markers TS↔SQL lockstep.
+- [QB sync worker never mints](quickbooks-worker-no-mint.md) — worker autoApply only reconciles to ONE existing gift; new-gift auto-create is rule-only (AmazonSmile auto_create_approve at ingest), else row stays pending for review.
+- [QB LinkedTxn provenance](quickbooks-linkedtxn-provenance.md) — top-level LinkedTxn=deposit it was deposited into, line-level=invoices it applies to; deposit link derived read-only from qb_raw at query time, not a column.
+- [QB back-catalog stays stale](quickbooks-clean-reingest.md) — watermark sync never re-pulls back-catalog & donor matching is ingest-only; wipe+reset watermark to re-pull (keep auto-created gifts=reconcile not re-mint); or admin rematchStagedPayments for donor-only ([donor rematch](quickbooks-donor-rematch-backfill.md)).
+- [QB full re-pull (background, non-destructive)](quickbooks-nondestructive-repull.md) — ~4min job exceeds proxy timeout→fire-and-forget + GET resync-status poll (advisory lock is the real guard); backfill qb_* via fullResync+enrichAllStatuses NOT a wipe; set stays read-only QB facts, qb_raw excluded ([polled](quickbooks-resync-background.md)).
+- [QB deposit-coding preserve-on-conflict](quickbooks-deposit-coding-preserve.md) — staged-payment upsert must keep stored line coding when incremental pull is empty (edited payment + out-of-window deposit); reseed must reset watermark.
+- [QBO inactive-item income account](quickbooks-deleted-item-income-account.md) — QBO /query hides Active=false items; deleted service items keep IncomeAccountRef but need a 2nd Active=false pass or revenue coding stays blank; backfill via full re-pull only.
+- [QBO/live data lives in PROD not dev](qbo-data-prod-only.md) — dev DB is stale/partial; QuickBooks staged_payments + recently changed schools are prod-only; query prod read-only for QBO facts, don't conclude "missing" from dev.
+
+## Staged-payment review & resolution
+
+- [QB staged↔gift linkage & resolution races](quickbooks-staged-link.md) — distinct matched/created gift cols; one-staged↔one-gift via partial-unique+NOT EXISTS/23505; mint-gate=zero fee-band vs reconcile-target=single exact; every state transition guards status='pending' in the UPDATE, 409 on zero rows ([races](quickbooks-staged-resolution-races.md)).
+- [QB matching gifts vs duplicates](quickbooks-matching-gifts.md) — never dedupe by donor+amount+date (matching gifts are identical); only QB LinkedTxn/same entity_id proves same money; second matching gift must be MINTED not linked.
+- [QB fee-band auto-reconcile](quickbooks-feeband-reconcile.md) — single near-amount gift w/ no exact match = net of processor fee → reconcile not mint; backfill mirrors donorWhere+null-date+one-gift-per-row; when Stripe NET known return [net,gross] window directly, don't fall through to legacy gross*1.1+1 ([net-aware](reconciliation-net-aware-feeband.md)).
+- [QuickBooks reconcile adopts gift donor](quickbooks-reconcile-donor-adoption.md) — explicit human Match links to a gift by adopting the GIFT donor (overrides auto-guess); donorsMatch/validateGiftLink no longer enforced on that path.
+- [QuickBooks reconciler intermediary donor seed](quickbooks-intermediary-donor-seed.md) — when payer is Stripe/Donorbox/DAF, seed gift search with the donor pulled from the memo (after "from"/dash), conservatively.
+- [DAF sponsor is never the donor](quickbooks-daf-sponsor-attribution.md) — DAF sponsor = payment intermediary, not donor; matcher guard drops sponsor-as-org donor; historical cleanup SQL repoints to advisor or flags daf-donor-review.
+- [QB deposit memo wrong donor](quickbooks-deposit-memo-wrong-donor.md) — card payer label = QB memo, can name the WRONG donor; the payout's charges are authoritative; check screenshot image_<ms>.png epoch vs match_confirmed_at before claiming "didn't work".
+- [QuickBooks payment grouping](quickbooks-deposit-grouping.md) — manual group of staged payments→one gift; key = same deposit OR payer-only (deposit-null); cross-date needs confirmMultiDate; null date is its own bucket (client/server lockstep); rep gets matched_gift_id, rest group_reconciled.
+- [Grouped create-gift → optional allocation split](grouped-create-gift-allocations.md) — splitGroupIntoAllocations seeds one allocation per group member (no scaling); header-only otherwise; ignored on opp outcomes.
+- [Staged-payment funding source + grouping](staged-payment-funding-source-grouping.md) — funding_source=origin (≠ instrument ≠ derived lane); auto|manual provenance guards re-pull clobber; group-approve mints ONE gift atomically (count-guard or 409).
+- [Forward gift intake](forward-gift-intake.md) — reconciliation suggests collectible pledges first; copies pledge allocs onto minted gift PROPORTIONALLY (last-row remainder); manual-form dup guard via pending-for-donor.
+- [gift merge evidence combine](gift-merge-evidence-combine.md) — merge now absorbs losers' reconciled evidence onto survivor (was 409-block) then archives them; still 409 on split/2+ Stripe/Donorbox; MUST reject archived participants or replay double-counts.
+- [Gift QB tie status](gift-qb-tie-status.md) — derived+persisted quickbooks_tie_status; recompute at every gift link/amount mutation or it silently goes stale; off-books exempts; audit view excludes off-books.
+- [Gift↔payment match band policy](gift-match-band-policy.md) — all gift-match amount/window logic flows through lib/giftMatch.ts; strict=ready/gate, widened=propose, known-net=Stripe net (guard net NOT NULL); ready ⊆ approve-gate invariant.
+- [Reconciler approvable + 3 gift-link cols](reconciler-approvable-statuses.md) — approvable=pending+approved (legacy approved rows still reconcilable); mint double-count guard must check ALL 3 staged gift links: matched/created/groupReconciled.
+- [Reconciler approve gift ownership](reconciliation-approve-outcomes.md) — QB staged row OWNS the gift (createdGiftId+autoApplied=false on create_gift = protected mint); Stripe charge is ALWAYS matchedGiftId evidence (revert un-sources, never deletes); create_gift NOT idempotent.
+- [Reconciliation "resolved" has 4 forms](reconciliation-resolved-predicate-four-forms.md) — any staged-payment "is it booked?" predicate must count matched+created+group-reconciled+SPLIT (splits carry none of the 3 id cols; live queue re-admitted them).
+- [Confirmed staged-row relink](reconciliation-confirmed-relink.md) — match_confirmed is not uniformly terminal: direct match = guarded relink (moveOwnApplication, legacy no-ledger fallback), minted/group/settlement-only stay 409.
+
+## Stripe
+
+- [Stripe history backfill](stripe-history-csv-backfill.md) — prior account (id-infix) loads from CSV only (omit donor FKs=cross-env drift, amount=bank net, ON CONFLICT DO NOTHING); first sync seeds watermark to "now" so fullResync re-walks all but must NOT short-circuit the no-cursor seed-return guard ([full re-pull](stripe-full-repull-backfill.md)).
+- [Stripe restricted live key vs connector](stripe-restricted-key.md) — STRIPE_RESTRICTED_KEY (rk_live) preferred over test-only connector; account id regexed from KYC-scope error; backfill never seeds sync_state.
+- [Stripe charge evidence linkage](stripe-charge-evidence-linkage.md) — marking a charge 'reconciled' must ALSO set row-local matchedGiftId (resolvedGift COALESCE + revert depend on it), not just status; gift pointer alone is invisible there.
+- [Stripe→QB historical restitch trigger](stripe-historical-restitch-trigger.md) — incremental sync only proposes its own run's payouts; historical/prior-account stay unmatched so cards show no Stripe until the admin propose-all pass runs (proposals only, human-driven in prod).
+- [Stripe refund/chargeback propagation](stripe-refund-propagation.md) — refunds/disputes reach gifts via propose-then-confirm; forward-only, re-confirm 409s; confirm archives/reduces gift + re-derives pledge + recomputes QB tie; evidence retained as applied.
+- [Failed Stripe charges auto-excluded](stripe-failed-charge-exclusion.md) — ingest/upsert/revert all land failed charges in excluded/failed_charge; exclusion-reason enum lives in 4 places that must move together ([retarget move](reconciliation-move-own-application.md): ledger==matchedGiftId & no mint/group).
+- [Charge-grain Stripe↔QB ties](charge-grain-qb-ties.md) — Missing-deposit payouts tie per CHARGE (proposed vs confirmed cols); lump settlement-link owns its payout; settled=every non-terminal charge confirmed-tied.
+- [Charge-tie pair dismissals](charge-tie-dismissals.md) — reject persists the exact charge↔QB pair; propose pass skips it forever, other pairings unaffected; manual "Tie selected" deliberately overrides dismissals.
+
+## Donorbox
+
+- [Donorbox pull-sync money model](donorbox-sync-model.md) — Stripe-type donations enrich only (never mint; stripe_charge_id joins 1:1 to staged charges); PayPal = new money, human-reviewed; row FOR UPDATE guards double-mint ([API auth](donorbox-api-integration.md): login email + key).
+
+## Reconciliation model & ledger
+
+- [Reconciliation single-source-of-truth (D4)](reconciliation-single-source-of-truth.md) — CRM gifts are the only gifts; Stripe/QB rows are permanent `reconciled` evidence; Stripe GROSS wins; confirm stamps not archives; processor_payout/confirmed_excluded kept only for revert.
+- [Two-lane reconciliation model](reconciliation-two-lane-model.md) — every unit of money tracks funding + crmRecord lanes, both DERIVED (no column); replaces blended badge; gift link ≠ donor confirmed; emit on ALL evidence endpoints.
+- [Reconciliation target-state design](reconciliation-target-design.md) — ratified two-plane/one-ledger simplification lives in docs/reconciliation-design.md; the 5 open decisions are resolved there.
+- [Reconciliation status is derived](reconciliation-derived-status.md) — staged/charge status derived from facts via derivedStatus.ts (pending|match_proposed|match_confirmed|excluded); "rejected" removed; Donorbox maps stored→vocab at the API edge; older stored-status notes predate this.
+- [Reconciliation phase status source](reconciliation-phase-status-source.md) — trust the migration ledger + schema header comments for phase status; phases 2-5 shipped, Phase-6 two-report UI RETIRED (six-queue workbench is final); only the drop tail remains.
+- [payment_applications ledger](payment-applications-ledger.md) — authoritative QB cash-application M:N ledger; phased additive prod rollout; book-once in service layer (not DB); gift_id RESTRICT means hard-delete paths clear/block first.
+- [Ledger read-cutover prod gate](ledger-read-cutover-prod-gate.md) — additive dual-write→backfill→flip-reads is only safe once parity runs on PROD (dev parity ≠ prod); after a flip, fixtures seeding legacy-only links must dual-write the ledger row.
+- [unit_groups is the sole grouping store](unit-groups-dualwrite.md) — source_group_id retired; grouping = unit_groups/unit_group_members; group id IS unit_groups.id; group_reconciled_gift_id separate.
+- [settlement_links constraints](settlement-links-parity.md) — sole payout↔deposit store; status derived; conflict_approved = proposed+conflict_gift_id; deposit hard-delete errors on required-deposit CHECK.
+- [PA counted vs corroborating link_role](reconciliation-corroborating-link-role.md) — every payment_applications money/settled read MUST filter link_role='counted'; corroborating rows are audit-only (amount NULL) and leaked into giftPaymentSummary once.
+- [Raw-SQL PA insert guards](raw-sql-pa-insert-guards.md) — migration-file PA inserts must guard on matched_gift_id=target (not existence) or drift-window rematches double-book.
+- [Reconciliation conflict_approved = awaiting](reconciliation-conflict-approved-per-track.md) — Stripe payout conflict_approved is NOT a discrepancy (QB already approved into a gift, Stripe just needs human confirm); show recon status per-track (QB vs Stripe), never one sweeping badge.
+- [Conflict-keep double-book gate](reconciliation-conflict-keep-gate.md) — a conflict_approved "keep" is safe only if the kept gift is known & == the deposit's gift link; enforce at BOTH the pure derive blocker and the tx write boundary (legacy confirm bypasses re-derive).
+- [Settlement needs_review derivation](reconciliation-needs-review-derivation.md) — needs_review gates an unmatched payout on having an OPEN charge, not on qb status alone; fully-settled unmatched payouts must drop out (don't write a terminal status).
+- [Double-book guard is anchor-kind-aware](reconciliation-parallel-evidence-doublebook.md) — a gift's "already linked" guard counts only SAME-kind evidence (QB+Stripe = parallel evidence for one gift); fix all 4 layers (search flag/derive+confirm/tx guard) or the false positive just moves downstream.
+- [Terminal charges count as settled](reconciliation-terminal-charge-queue-pin.md) — excluded/rejected charges never get a gift link; "no gift link == open work" pins the deposit card forever; terminal set NOT IN ('excluded','rejected') everywhere.
+- [Settlement-only confirm vs gift-report queue](reconciliation-settlement-only-confirm.md) — settlement-only confirm stamps deposit reconciled; gift-report queue must still show reconciled deposits with unbooked charges or money under-credits.
+- [Reconciliation re-target conflict composition](reconciliation-retarget-conflict-compose.md) — gate collects ALL issues so stripe re-source + QB-link displacement resolve in ONE confirm; displace only DIRECT-match incumbents.
+
+## Workbench UI & queues
+
+- [QB reconciler left-card UI model](quickbooks-reconciler-ui-model.md) — donor matching is right-pane only (no left donor picker); reject is UI-removed but backend-kept; intercompany_transfer/other are manual-only reasons (no classifier/backfill).
+- [Reconciliation gate vs client blockers](reconciliation-gate-vs-blockers.md) — approve button mirrors only SOME server gate codes (stripe_charge_required etc. slip→409); don't duplicate the gate, surface ApiError.data.details.issues via extractGateIssues.
+- [Bundle queue axis mapping](reconciliation-bundle-queue.md) — settlement bundles are payout-anchored; qg/qd axes intentionally empty, qs/ds/all show all; confirm-ties is additive enrich-only (NULL-fill, mints nothing).
+- [Reconciler card readiness pool](reconciler-card-readiness-pool.md) — n()/unlinkedDonorGiftWhere is the shared count/pick/ready gift pool (cards.ts only); STRICT ±90d date clause (not null-tolerant); separate from matcher's 60d.
+- [Reconciliation card queue enum](reconciliation-card-queue-enum.md) — cards query-param uses its own ReconciliationCardQueue, NOT the shared QuickbooksStagedPaymentQueue; research=needsResearch filter never a bucket; card-only values in the shared enum = silent drift.
+- [Reconciliation gift search modes](reconciliation-gift-search-modes.md) — one endpoint, two windows via `split` flag: 1:1 match = near-equal to full amount; split = fractions (drop lower floor, relax date, no confidence); never fold them.
+- [Bundle confirm cache invalidation](reconciliation-bundle-confirm-invalidation.md) — confirming a settlement bundle reconciles the SAME staged/charge/gift rows the workbench's other queues render; invalidate cards + staged-payments + gifts + gifts-missing-qb, not just the anchor list.
+- [Matched column is read-only](reconciliation-matched-column-readonly.md) — the done/Matched report renders cards view-only (no confirm/group/checkbox); gate by COLUMN not derived status or settled grouped cards 409 on re-confirm.
+- [Multi-charge payout per-charge link-gift](reconciliation-multicharge-link-gift.md) — a per-charge card in a >1-charge payout can't approve via the deposit path (graph chargeId null→409 stripe_charge_required); use POST link-gift to tie the charge to its existing gift.
+- [Reconciliation already-linked pickers](reconciliation-already-linked-picker.md) — re-link pickers gray a candidate already tied to a gift via COALESCE(matched/created/groupReconciled) (NOT PA ledger); split-resolved rows un-grayed but safe (reconcile 409s on non-pending); unlink must also invalidate gifts-missing-QB.
+- [cards resolved-gift FY wrong-table 500](cards-resolved-gift-fy-wrong-table.md) — grant_year is gift_allocations-only (gifts_and_payments has none); chargeSub hand-dupes shared resolved-gift subqueries & can drift; diagnose raw-sql column errs via drizzle .toSQL()+EXPLAIN (no exec).
+- [CRM-only worklist allocation rows](crm-only-allocation-rows.md) — worklist is allocation-granular (1 row/gift_allocation, rowKey=giftId:allocId) but reconcile + revert are gift-level; no allocation-level payment link exists.
+
+## Imports/backfills & prod verification
+
+- [Coding-form import staging](coding-form-import-staging.md) — one-time xlsx→coding_form_rows staging + compare-don't-clobber reconciliation; cross-check derived live on read, apply writes only reviewer-approved attrs, idempotent via stored applied_* ids.
+- [Reconciliation cross-check prod verification](reconciliation-crosscheck-prod-verification.md) — prod read-only pass: Stripe 39/39 solid, QBO trustworthy except 45d window too tight (false-negative), amount-only path unreliable (zero/neg/wrong-donor), sheet self-dupes double-count.
+- [Grant-agreement Drive backfill](grant-agreement-drive-backfill.md) — pull coding_form_rows.drive_link PDFs onto matched OPPS (never gifts) via grant-letter flow; per-row idempotent, conflict never auto-overwrites, status derived; Drive client = connector-token proxy (no googleapis pkg).
