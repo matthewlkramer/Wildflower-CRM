@@ -17,42 +17,32 @@ Semantic map (1:1): `loan_capital` / `loan_fund_investment` → `loan`; `revenue
 and everything else → `grant`. Caveat: `grant` means "all non-loan money"
 (including individual donations), NOT literally grant-maker grants.
 
-**Rule:** while both the legacy signal and `loan_or_grant` coexist, EVERY write
-path that sets a legacy classification signal must ALSO mirror `loanOrGrant` in
-the same write — opp create/patch (from `fundraisingCategory`), gift
-create/patch (from `type`), goals upsert insert+onConflict (from the
-`:category` path param), gift bulk-update (only when `type` is in the patch,
-via the `deriveColumns` hook so the mirror lands in the same atomic UPDATE), and
-the two gift→pledge transforms (split-into-pledge carries the source gift's
-flag onto the pledge + every minted payment gift; merge-into-pledge =
-any-source-loan ⇒ loan). A patch that does NOT touch the legacy signal must NOT
-reset the mirror.
+**Current state (A003 cutover COMPLETE, 2026-07):** the dual-write has ENDED.
+`loan_or_grant` is the ONLY signal read or written for opps and goals; the goals
+PK is now `(fiscal_year_id, entity_id, loan_or_grant)`. Legacy
+`fundraising_category` / goals `category` columns are `@deprecated` — physical
+only, never written, never read, scrubbed from every API response via explicit
+column projections (`goalResponseColumns` / `oppHeaderColumns`). Gift `type` is
+still real (not legacy) and still derives `loanOrGrant` via
+`giftTypeToLoanOrGrant` on gift writes.
 
-**Why:** with reads still on the legacy column (phase A001), a missed mirror is
-invisible until reads flip (A002) — then that row silently classifies wrong.
-This is the same drift trap as gift-qb-tie-status and driver-tree cache keys: a
-derived-but-persisted field goes stale the instant one writer forgets it.
+**Rules that survive the cutover:**
+- Never reintroduce a write to `fundraising_category`/goals `category`; a new
+  full-row opp/goal select that reaches the client leaks the deprecated column
+  (no Zod stripping) — route responses through the scrub projections.
+- Goals `:category` path param accepts BOTH token families (`loan`/`grant` and
+  legacy `loan_capital`/`revenue`), normalized to `loan_or_grant`.
+- The mappers in `@workspace/api-zod` stay env-neutral;
+  `legacyCategoryToLoanOrGrant`/`loanOrGrantToLegacyCategory` remain only for
+  the HISTORICAL parity script (post-cutover drift vs frozen legacy columns is
+  expected, not a bug).
 
-**How to apply:** the mappers live in `@workspace/api-zod`
-(`legacyCategoryToLoanOrGrant`, `loanOrGrantToLegacyCategory`,
-`giftTypeToLoanOrGrant`) and are pure/env-neutral (imported by both server and
-browser — keep them free of node/DOM/URL globals). When you add ANY new write
-path that sets `fundraising_category`/gift `type`/goals `category`, mirror
-`loanOrGrant` there too, and add a case to
-`artifacts/api-server/src/__tests__/loan-or-grant-dualwrite.integration.test.ts`.
+**Why:** `grant` means "all non-loan money" (including individual donations),
+NOT literally grant-maker grants — keep that caveat when naming UI options.
 
-**Rollout discipline (mirrors the payment_applications ledger rollout):**
-- A001 — additive: enum + `NOT NULL DEFAULT 'grant'` columns + mappers +
-  dual-write + idempotent backfill. Legacy stays the READ source. DONE.
-- A002 — parity gate (legacy rollups == loan_or_grant rollups for
-  dashboard-summary / fiscal-year-breakdown / projections / goals /
-  revenue-coding) THEN flip reads (analytics.ts, fiscalYearEntityGoals.ts route,
-  revenue-coding.ts) contract-first (expose `loanOrGrant`; goals `:category`
-  accepts new `loan`/`grant` tokens alongside old). Keep dual-write + legacy
-  cols for rollback. Human PROD GATE: apply schema+backfill SQL to prod, run
-  parity vs prod, zero drift, then Publish flipped reads.
-- A003 — deprecate (not drop) the legacy signals after one full prod cycle;
-  consider goals PK → `(fy, entity, loan_or_grant)`.
+Prod path: goals PK swap ships as idempotent hand-applied
+`lib/db/migrations/0120_goals_pk_loan_or_grant.sql` (+ runbook) BEFORE/with the
+Publish that stops dual-writing; agent cannot write prod.
 
 Constraints that bound this work: agent cannot write prod (schema ships as
 additive idempotent hand-applied SQL in `lib/db/migrations/`, NOT Publish —

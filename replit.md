@@ -38,8 +38,10 @@ These recur across the whole app — keep them true whenever you change things:
    PATCH state. Staged payment/charge queue rows hold *at most one* candidate donor;
    exactly-one is enforced only when they approve/reconcile into a gift
    (`validateGiftInvariants`).
-5. **Revenue and loan capital are parallel tracks.** Never fold `loan_capital` into
-   revenue rollups; goals and analytics split by `fundraising_category`.
+5. **Revenue and loan capital are parallel tracks.** Never fold loan capital into
+   revenue rollups; goals and analytics split by the authoritative `loan_or_grant`
+   flag (the legacy `fundraising_category` is deprecated — physical only, never
+   written/read/returned).
 6. **Archive, don't delete.** Soft-delete (`archived_at`) is the app-wide default;
    only a few explicit paths still hard-delete.
 7. **Non-destructive, human-applied prod data changes.** The agent cannot write to
@@ -168,9 +170,12 @@ reference, and the design docs.
   The sticky flag auto-latches true only when an *unpaid* grant letter exists; a
   fully-paid grant or merely-described money is NOT a pledge. Grant-letter upload
   via object storage (presigned GCS URL).
-- **Fundraising categories (revenue vs loan capital)** — parallel analytics tracks
-  (invariant #5): `fundraising_category` enum, per-category goals, dashboard renders
-  a track per fiscal year. All pre-existing data is `revenue`.
+- **Loan vs grant tracks (revenue vs loan capital)** — parallel analytics tracks
+  (invariant #5) keyed by the authoritative `loan_or_grant` enum: per-track goals
+  (goals PK includes `loan_or_grant`), dashboard renders a track per fiscal year.
+  Gift `type` still derives the flag (`loan_fund_investment` → `loan`). Legacy
+  `fundraising_category` columns are deprecated (physical only). All pre-existing
+  data is `grant`.
 - **List-page choosers** — per-page filter + column choosers on the 4 list pages,
   persisted in saved views.
 - **Media-mention ingestion** — daily off-hours GDELT DOC 2.0 pull (free, no key)

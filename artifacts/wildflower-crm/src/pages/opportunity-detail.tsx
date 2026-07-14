@@ -22,7 +22,7 @@ import {
   type OpportunityType,
   type OpportunityConditional,
   type OpportunityConditionsMet,
-  type FundraisingCategory,
+  type LoanOrGrant,
   type PeopleEntityRole,
 } from "@workspace/api-client-react";
 import { PledgeAllocationsEditor } from "@/components/allocation-editors";
@@ -94,11 +94,11 @@ const TYPE_OPTIONS = [
 ] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityType>>;
 
 // Loan-fund capital is a fundraising track parallel to revenue; the two are
-// never mixed in analytics. Defaults to revenue for all existing records.
+// never mixed in analytics. Defaults to grant (revenue) for all records.
 const CATEGORY_OPTIONS = [
-  { value: "revenue", label: "Revenue / Gifts" },
-  { value: "loan_capital", label: "Loan Capital" },
-] as const satisfies ReadonlyArray<InlineSelectOption<FundraisingCategory>>;
+  { value: "grant", label: "Revenue / Gifts" },
+  { value: "loan", label: "Loan Capital" },
+] as const satisfies ReadonlyArray<InlineSelectOption<LoanOrGrant>>;
 
 const CONDITIONS_MET_LABELS: Record<OpportunityConditionsMet, string> = {
   no: "No",
@@ -581,12 +581,16 @@ function OppView({
           align="left"
           label="Fundraising category"
           testIdBase="opp-category"
-          value={opp.fundraisingCategory ?? "revenue"}
+          value={opp.loanOrGrant ?? "grant"}
           options={CATEGORY_OPTIONS}
-          display={formatEnum(opp.fundraisingCategory) || "Revenue / Gifts"}
+          display={
+            (opp.loanOrGrant ?? "grant") === "loan"
+              ? "Loan Capital"
+              : "Revenue / Gifts"
+          }
           allowNull={false}
           onSave={(next) =>
-            patch({ fundraisingCategory: (next ?? "revenue") as FundraisingCategory })
+            patch({ loanOrGrant: (next ?? "grant") as LoanOrGrant })
           }
         />
       ),

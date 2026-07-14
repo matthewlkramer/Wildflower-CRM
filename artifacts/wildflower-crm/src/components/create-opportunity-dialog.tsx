@@ -7,7 +7,7 @@ import {
   type CreateOpportunityOrPledgeBody,
   type OpportunityStage,
   type OpportunityType,
-  type FundraisingCategory,
+  type LoanOrGrant,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -72,7 +72,7 @@ type FormState = {
   name: string;
   stage: OpportunityStage | "";
   type: OpportunityType | "";
-  fundraisingCategory: FundraisingCategory;
+  loanOrGrant: LoanOrGrant;
   askAmount: string;
   awardedAmount: string;
   projectedCloseDate: string;
@@ -82,7 +82,7 @@ const EMPTY_FORM: FormState = {
   name: "",
   stage: "",
   type: "",
-  fundraisingCategory: "revenue",
+  loanOrGrant: "grant",
   askAmount: "",
   awardedAmount: "",
   projectedCloseDate: "",
@@ -183,7 +183,7 @@ export function CreateOpportunityDialog({
         ...(isPledge ? { writtenPledge: true } : {}),
         ...(form.stage ? { stage: form.stage } : {}),
         ...(form.type ? { type: form.type } : {}),
-        fundraisingCategory: form.fundraisingCategory,
+        loanOrGrant: form.loanOrGrant,
         ...(ask ? { askAmount: ask } : {}),
         ...(awarded ? { awardedAmount: awarded } : {}),
         ...(closeDate ? { projectedCloseDate: closeDate } : {}),
@@ -272,17 +272,17 @@ export function CreateOpportunityDialog({
           <div className="space-y-1.5">
             <Label>Fundraising category</Label>
             <Select
-              value={form.fundraisingCategory}
+              value={form.loanOrGrant}
               onValueChange={(v) =>
-                setForm({ ...form, fundraisingCategory: v as FundraisingCategory })
+                setForm({ ...form, loanOrGrant: v as LoanOrGrant })
               }
             >
               <SelectTrigger data-testid="select-new-opportunity-category">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="revenue">Revenue / Gifts</SelectItem>
-                <SelectItem value="loan_capital">Loan Capital</SelectItem>
+                <SelectItem value="grant">Revenue / Gifts</SelectItem>
+                <SelectItem value="loan">Loan Capital</SelectItem>
               </SelectContent>
             </Select>
           </div>

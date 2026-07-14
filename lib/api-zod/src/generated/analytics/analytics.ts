@@ -82,7 +82,7 @@ export const GetProjectionsByFyEntityResponse = zod.object({
   "rows": zod.array(zod.object({
   "grantYear": zod.string().nullable().describe('fiscal_years.id, or null for unbucketed allocations.'),
   "entityId": zod.string().nullable().describe('entities.id, or null for unbucketed allocations.'),
-  "category": zod.enum(['revenue', 'loan_capital']).describe('Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n'),
+  "category": zod.enum(['revenue', 'loan_capital']).describe('Analytics\/track TOKEN vocabulary only (revenue vs loan-capital track).\nUsed as a derived bucket label on analytics rows and as a filter token;\nevery value is derived server-side from the authoritative `loan_or_grant`\nflag (loan → `loan_capital`, grant → `revenue`). The legacy persisted\ncolumns of the same name are @deprecated and no longer written or\nreturned.\n'),
   "allocationCount": zod.number(),
   "totalSubAmount": zod.string().describe('SUM(sub_amount) for the group, as numeric string.'),
   "expected": zod.string().describe('SUM(sub_amount × COALESCE(parent.win_probability, 1)) for the group, as numeric string.')
@@ -121,7 +121,7 @@ export const GetFiscalYearBreakdownResponse = zod.object({
   "rows": zod.array(zod.object({
   "allocationId": zod.string(),
   "subAmount": zod.string().describe('gift_allocations.sub_amount (numeric string).'),
-  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n'),
+  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Analytics\/track TOKEN vocabulary only (revenue vs loan-capital track).\nUsed as a derived bucket label on analytics rows and as a filter token;\nevery value is derived server-side from the authoritative `loan_or_grant`\nflag (loan → `loan_capital`, grant → `revenue`). The legacy persisted\ncolumns of the same name are @deprecated and no longer written or\nreturned.\n'),
   "entityId": zod.string().nullish(),
   "intendedUsage": zod.string().nullish(),
   "displayUsage": zod.string().nullish().describe('Server-computed human-readable usage label from gift_allocations.display_usage.'),
@@ -147,7 +147,7 @@ export const GetFiscalYearBreakdownResponse = zod.object({
   "allocationId": zod.string(),
   "subAmount": zod.string().describe('pledge_allocations.sub_amount (numeric string).'),
   "weightedAmount": zod.string().describe('sub_amount × COALESCE(parent.win_probability, 1) (numeric string).'),
-  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n'),
+  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Analytics\/track TOKEN vocabulary only (revenue vs loan-capital track).\nUsed as a derived bucket label on analytics rows and as a filter token;\nevery value is derived server-side from the authoritative `loan_or_grant`\nflag (loan → `loan_capital`, grant → `revenue`). The legacy persisted\ncolumns of the same name are @deprecated and no longer written or\nreturned.\n'),
   "allocationStatus": zod.string().nullish(),
   "entityId": zod.string().nullish(),
   "intendedUsage": zod.string().nullish(),
@@ -175,7 +175,7 @@ export const GetFiscalYearBreakdownResponse = zod.object({
   "rows": zod.array(zod.object({
   "allocationId": zod.string(),
   "subAmount": zod.string().describe('gift_allocations.sub_amount (numeric string).'),
-  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n'),
+  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Analytics\/track TOKEN vocabulary only (revenue vs loan-capital track).\nUsed as a derived bucket label on analytics rows and as a filter token;\nevery value is derived server-side from the authoritative `loan_or_grant`\nflag (loan → `loan_capital`, grant → `revenue`). The legacy persisted\ncolumns of the same name are @deprecated and no longer written or\nreturned.\n'),
   "entityId": zod.string().nullish(),
   "intendedUsage": zod.string().nullish(),
   "displayUsage": zod.string().nullish().describe('Server-computed human-readable usage label from gift_allocations.display_usage.'),
@@ -201,7 +201,7 @@ export const GetFiscalYearBreakdownResponse = zod.object({
   "allocationId": zod.string(),
   "subAmount": zod.string().describe('pledge_allocations.sub_amount (numeric string).'),
   "weightedAmount": zod.string().describe('sub_amount × COALESCE(parent.win_probability, 1) (numeric string).'),
-  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n'),
+  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Analytics\/track TOKEN vocabulary only (revenue vs loan-capital track).\nUsed as a derived bucket label on analytics rows and as a filter token;\nevery value is derived server-side from the authoritative `loan_or_grant`\nflag (loan → `loan_capital`, grant → `revenue`). The legacy persisted\ncolumns of the same name are @deprecated and no longer written or\nreturned.\n'),
   "allocationStatus": zod.string().nullish(),
   "entityId": zod.string().nullish(),
   "intendedUsage": zod.string().nullish(),
@@ -253,7 +253,7 @@ export const GetFiscalYearReportResponse = zod.object({
   "startDate": zod.string().date(),
   "endDate": zod.string().date()
 }),
-  "category": zod.enum(['revenue', 'loan_capital']).describe('Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n'),
+  "category": zod.enum(['revenue', 'loan_capital']).describe('Analytics\/track TOKEN vocabulary only (revenue vs loan-capital track).\nUsed as a derived bucket label on analytics rows and as a filter token;\nevery value is derived server-side from the authoritative `loan_or_grant`\nflag (loan → `loan_capital`, grant → `revenue`). The legacy persisted\ncolumns of the same name are @deprecated and no longer written or\nreturned.\n'),
   "totals": zod.object({
   "received": zod.string().describe('SUM of received rows\' amount.'),
   "committed": zod.string().describe('SUM of committed rows\' amount (100% unpaid remainder).'),
@@ -268,7 +268,7 @@ export const GetFiscalYearReportResponse = zod.object({
   "bucket": zod.enum(['received', 'committed', 'open']).describe('Which slice of a fiscal year\'s progress-to-goal calculation a row\ncontributes to: `received` (cash-in gift allocations), `committed`\n(per-opp unpaid remainder of a written pledge), or `open` (weighted\nopen opportunity pipeline).\n'),
   "amount": zod.string().describe('received: gift_allocations.sub_amount; committed: per-opp unpaid remainder (pledged − paid-this-FY, clamped ≥ 0); open: pledge_allocations.sub_amount (ask). Numeric string.'),
   "weightedAmount": zod.string().nullish().describe('committed: remainder × win_probability; open: sub_amount × win_probability; null for received. Numeric string.'),
-  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Splits loan-fund capital out of revenue so the two tracks report in\nparallel. `loan_capital` = principal investments (`loan_fund_investment`\ngifts + opportunities\/pledges flagged loan-capital); `revenue` = everything\nelse. Defaults to `revenue` so existing data is treated as revenue.\n'),
+  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Analytics\/track TOKEN vocabulary only (revenue vs loan-capital track).\nUsed as a derived bucket label on analytics rows and as a filter token;\nevery value is derived server-side from the authoritative `loan_or_grant`\nflag (loan → `loan_capital`, grant → `revenue`). The legacy persisted\ncolumns of the same name are @deprecated and no longer written or\nreturned.\n'),
   "entityId": zod.string().nullish(),
   "intendedUsage": zod.string().nullish(),
   "displayUsage": zod.string().nullish().describe('Server-computed human-readable usage label (received rows only).'),

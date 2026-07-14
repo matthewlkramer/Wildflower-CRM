@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { fiscalYearEntityGoals, fiscalYears, entities } from "@workspace/db/schema";
-import { and, asc, eq, type SQL } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, type SQL } from "drizzle-orm";
 import {
   ListFiscalYearEntityGoalsQueryParams,
   UpsertFiscalYearEntityGoalBody,
@@ -18,31 +18,31 @@ router.use(requireAuth);
 // a `numeric` cast error.
 const DECIMAL_RE = /^-?\d+(\.\d{1,2})?$/;
 
-// Goal category token → { legacy `category` PK value, authoritative
-// `loan_or_grant` }. A002 READ CUTOVER: reads now filter on the authoritative
-// `loan_or_grant` flag, but the table PK is still the legacy `category`, which
-// the upsert/delete keep writing 1:1 (dual-write). Accepts BOTH token families
-// during the transition:
+// Goal category token → authoritative `loan_or_grant`. The legacy `category`
+// column is @deprecated (frozen, never written/read); the table PK is
+// (fiscal_year_id, entity_id, loan_or_grant). Accepts BOTH token families so
+// older clients keep working:
 //   - new:    'loan' | 'grant'
 //   - legacy: 'loan_capital' | 'revenue'
 // Returns null for an unknown token.
-function normalizeGoalCategory(
-  raw: string,
-): { category: "revenue" | "loan_capital"; loanOrGrant: "loan" | "grant" } | null {
-  if (raw === "revenue" || raw === "grant") return { category: "revenue", loanOrGrant: "grant" };
-  if (raw === "loan_capital" || raw === "loan") return { category: "loan_capital", loanOrGrant: "loan" };
+function normalizeGoalCategory(raw: string): "loan" | "grant" | null {
+  if (raw === "revenue" || raw === "grant") return "grant";
+  if (raw === "loan_capital" || raw === "loan") return "loan";
   return null;
 }
 
 // Path-param variant for the PUT/DELETE `:category` segment. An absent segment
 // defaults to the revenue/grant track so older clients hitting the legacy
 // two-segment path still resolve.
-function parseCategoryParam(
-  raw: unknown,
-): { category: "revenue" | "loan_capital"; loanOrGrant: "loan" | "grant" } | null {
-  if (raw === undefined) return { category: "revenue", loanOrGrant: "grant" };
+function parseCategoryParam(raw: unknown): "loan" | "grant" | null {
+  if (raw === undefined) return "grant";
   return typeof raw === "string" ? normalizeGoalCategory(raw) : null;
 }
+
+// Response projection: every column EXCEPT the @deprecated `category`, which
+// must never leak to clients (responses are plain res.json — no Zod stripping).
+const { category: _deprecatedCategory, ...goalResponseColumns } =
+  getTableColumns(fiscalYearEntityGoals);
 
 router.get(
   "/fiscal-year-entity-goals",
@@ -52,9 +52,8 @@ router.get(
     const filters: SQL[] = [];
     if (q.fyId) filters.push(eq(fiscalYearEntityGoals.fiscalYearId, q.fyId));
     if (q.entityId) filters.push(eq(fiscalYearEntityGoals.entityId, q.entityId));
-    // Filter on the authoritative loan_or_grant flag (A002 read cutover),
-    // accepting both the new loan|grant and the legacy revenue|loan_capital
-    // tokens.
+    // Filter on the authoritative loan_or_grant flag, accepting both the new
+    // loan|grant and the legacy revenue|loan_capital tokens.
     if (q.category) {
       const norm = normalizeGoalCategory(q.category);
       if (!norm) {
@@ -64,17 +63,17 @@ router.get(
         });
         return;
       }
-      filters.push(eq(fiscalYearEntityGoals.loanOrGrant, norm.loanOrGrant));
+      filters.push(eq(fiscalYearEntityGoals.loanOrGrant, norm));
     }
     const where = filters.length ? and(...filters) : undefined;
     const rows = await db
-      .select()
+      .select(goalResponseColumns)
       .from(fiscalYearEntityGoals)
       .where(where)
       .orderBy(
         asc(fiscalYearEntityGoals.fiscalYearId),
         asc(fiscalYearEntityGoals.entityId),
-        asc(fiscalYearEntityGoals.category),
+        asc(fiscalYearEntityGoals.loanOrGrant),
       );
     res.json(rows);
   }),
@@ -95,15 +94,14 @@ router.put(
       });
       return;
     }
-    const parsed = parseCategoryParam(req.params.category);
-    if (!parsed) {
+    const loanOrGrant = parseCategoryParam(req.params.category);
+    if (!loanOrGrant) {
       res.status(400).json({
         error: "validation_error",
         message: "category must be one of 'revenue', 'loan_capital', 'loan', 'grant'.",
       });
       return;
     }
-    const { category, loanOrGrant } = parsed;
     const fyId = String(req.params.fyId);
     const entityId = String(req.params.entityId);
     // Validate FKs up front so we can return a clean 404 instead of a 500 from
@@ -116,20 +114,20 @@ router.put(
     if (!fy) return notFound(res, `fiscal year '${fyId}'`);
     if (!ent) return notFound(res, `entity '${entityId}'`);
 
-    // The table PK is still the legacy `category`; dual-write the authoritative
-    // loan_or_grant alongside it (1:1) so reads can flip to loan_or_grant.
+    // Upsert on the authoritative PK (fy, entity, loan_or_grant). The legacy
+    // `category` column is frozen — never written; new rows keep its default.
     const [row] = await db
       .insert(fiscalYearEntityGoals)
-      .values({ fiscalYearId: fyId, entityId, category, goalAmount: body.goalAmount, loanOrGrant })
+      .values({ fiscalYearId: fyId, entityId, goalAmount: body.goalAmount, loanOrGrant })
       .onConflictDoUpdate({
         target: [
           fiscalYearEntityGoals.fiscalYearId,
           fiscalYearEntityGoals.entityId,
-          fiscalYearEntityGoals.category,
+          fiscalYearEntityGoals.loanOrGrant,
         ],
-        set: { goalAmount: body.goalAmount, loanOrGrant, updatedAt: new Date() },
+        set: { goalAmount: body.goalAmount, updatedAt: new Date() },
       })
-      .returning();
+      .returning(goalResponseColumns);
     res.json(row);
   }),
 );
@@ -139,25 +137,22 @@ router.delete(
   asyncHandler(async (req, res) => {
     // Deleting a goal is admin-only for the same reason as the upsert above.
     if (!requireAdmin(req, res)) return;
-    const parsed = parseCategoryParam(req.params.category);
-    if (!parsed) {
+    const loanOrGrant = parseCategoryParam(req.params.category);
+    if (!loanOrGrant) {
       res.status(400).json({
         error: "validation_error",
         message: "category must be one of 'revenue', 'loan_capital', 'loan', 'grant'.",
       });
       return;
     }
-    // Delete by the legacy PK `category` AND the authoritative loan_or_grant
-    // (1:1 aligned) — defensive: if they ever drift, delete nothing rather than
-    // the wrong row.
+    // Delete by the authoritative PK (fy, entity, loan_or_grant).
     await db
       .delete(fiscalYearEntityGoals)
       .where(
         and(
           eq(fiscalYearEntityGoals.fiscalYearId, String(req.params.fyId)),
           eq(fiscalYearEntityGoals.entityId, String(req.params.entityId)),
-          eq(fiscalYearEntityGoals.category, parsed.category),
-          eq(fiscalYearEntityGoals.loanOrGrant, parsed.loanOrGrant),
+          eq(fiscalYearEntityGoals.loanOrGrant, loanOrGrant),
         ),
       );
     res.status(204).end();

@@ -3,16 +3,18 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
 /**
- * End-to-end coverage for the loan_or_grant DUAL-WRITE (phase A001). Every
- * write path that sets a legacy signal (opp `fundraising_category`, gift
- * `type`, goal `category`) must also mirror the authoritative `loan_or_grant`
- * column so legacy + new stay in lockstep until reads flip (A002).
+ * End-to-end coverage for the loan_or_grant CUTOVER (phase A003). The
+ * `loan_or_grant` column is now the sole authoritative loan-vs-grant signal:
+ * opportunity and goal writes take `loanOrGrant` directly (the legacy
+ * `fundraising_category` / goal `category` are no longer written or returned),
+ * while gift `type` still derives the flag (loan_fund_investment → loan).
  *
  * Exercises the real route handlers against the dev Postgres so it can assert
  * the persisted `loan_or_grant` value, covering: gift create/patch/bulk-update,
  * opportunity create/patch, goal upsert, and the two gift->pledge paths
  * (split-into-pledge, merge-into-pledge) which must inherit loan-vs-grant from
- * their source gift(s).
+ * their source gift(s). Also asserts the deprecated legacy fields are scrubbed
+ * from API responses.
  *
  * The only seam mocked is the Clerk auth gate (`requireAuth`) — a seeded admin
  * user is injected (goal upsert is admin-only). All seeded rows use a unique
@@ -303,7 +305,7 @@ beforeEach(() => {
   if (!HAS_DB) console.warn("[loan-or-grant-dualwrite] skipped: no live DATABASE_URL");
 });
 
-describe.skipIf(!HAS_DB)("loan_or_grant dual-write", () => {
+describe.skipIf(!HAS_DB)("loan_or_grant authoritative writes", () => {
   it("gift create mirrors loan_or_grant from type", async () => {
     const loan = await send("POST", "/api/gifts-and-payments", {
       amount: "100.00",
@@ -390,20 +392,22 @@ describe.skipIf(!HAS_DB)("loan_or_grant dual-write", () => {
     expect(await readGiftLoanOrGrant(ids[0])).toBe("loan");
   });
 
-  it("opportunity create mirrors loan_or_grant from fundraising_category", async () => {
+  it("opportunity create takes loanOrGrant directly (default grant) and scrubs the legacy field", async () => {
     const loan = await send("POST", "/api/opportunities-and-pledges", {
       name: `${RUN} loan opp`,
       organizationId: ORG_ID,
-      fundraisingCategory: "loan_capital",
+      loanOrGrant: "loan",
     });
     expect(loan.status).toBe(201);
     expect(loan.json.loanOrGrant).toBe("loan");
+    // Deprecated legacy column must never reach the client.
+    expect(loan.json).not.toHaveProperty("fundraisingCategory");
     seededPledgeIds.push(loan.json.id);
 
     const grant = await send("POST", "/api/opportunities-and-pledges", {
       name: `${RUN} grant opp`,
       organizationId: ORG_ID,
-      fundraisingCategory: "revenue",
+      loanOrGrant: "grant",
     });
     expect(grant.json.loanOrGrant).toBe("grant");
     seededPledgeIds.push(grant.json.id);
@@ -416,44 +420,47 @@ describe.skipIf(!HAS_DB)("loan_or_grant dual-write", () => {
     seededPledgeIds.push(omitted.json.id);
   });
 
-  it("opportunity patch flips loan_or_grant when fundraising_category changes", async () => {
+  it("opportunity patch flips loan_or_grant via loanOrGrant", async () => {
     const created = await send("POST", "/api/opportunities-and-pledges", {
       name: `${RUN} flip opp`,
       organizationId: ORG_ID,
-      fundraisingCategory: "revenue",
+      loanOrGrant: "grant",
     });
     const id = created.json.id as string;
     seededPledgeIds.push(id);
 
     const toLoan = await send("PATCH", `/api/opportunities-and-pledges/${id}`, {
-      fundraisingCategory: "loan_capital",
+      loanOrGrant: "loan",
     });
     expect(toLoan.status).toBe(200);
     expect(toLoan.json.loanOrGrant).toBe("loan");
+    expect(toLoan.json).not.toHaveProperty("fundraisingCategory");
 
     const back = await send("PATCH", `/api/opportunities-and-pledges/${id}`, {
-      fundraisingCategory: "revenue",
+      loanOrGrant: "grant",
     });
     expect(back.json.loanOrGrant).toBe("grant");
   });
 
-  it("goal upsert mirrors loan_or_grant from the category path param", async () => {
+  it("goal upsert keys on loan_or_grant (both path-token families) and scrubs legacy category", async () => {
     const loan = await send(
       "PUT",
-      `/api/fiscal-year-entity-goals/${FY_ID}/${ENTITY_ID}/loan_capital`,
+      `/api/fiscal-year-entity-goals/${FY_ID}/${ENTITY_ID}/loan`,
       { goalAmount: "1000" },
     );
     expect(loan.status).toBe(200);
     expect(loan.json.loanOrGrant).toBe("loan");
+    expect(loan.json).not.toHaveProperty("category");
 
     const grant = await send(
       "PUT",
-      `/api/fiscal-year-entity-goals/${FY_ID}/${ENTITY_ID}/revenue`,
+      `/api/fiscal-year-entity-goals/${FY_ID}/${ENTITY_ID}/grant`,
       { goalAmount: "2000" },
     );
     expect(grant.json.loanOrGrant).toBe("grant");
 
-    // onConflict update path keeps the mirrored flag correct.
+    // Legacy path tokens still normalize onto the same rows (onConflict
+    // update, not a duplicate insert).
     const reLoan = await send(
       "PUT",
       `/api/fiscal-year-entity-goals/${FY_ID}/${ENTITY_ID}/loan_capital`,
@@ -461,6 +468,14 @@ describe.skipIf(!HAS_DB)("loan_or_grant dual-write", () => {
     );
     expect(reLoan.json.loanOrGrant).toBe("loan");
     expect(reLoan.json.goalAmount).toBe("1500.00");
+
+    const reGrant = await send(
+      "PUT",
+      `/api/fiscal-year-entity-goals/${FY_ID}/${ENTITY_ID}/revenue`,
+      { goalAmount: "2500" },
+    );
+    expect(reGrant.json.loanOrGrant).toBe("grant");
+    expect(reGrant.json.goalAmount).toBe("2500.00");
   });
 
   it("split-into-pledge inherits loan from the source gift", async () => {
@@ -472,7 +487,6 @@ describe.skipIf(!HAS_DB)("loan_or_grant dual-write", () => {
 
     const pledge = await readPledge(pledgeId);
     expect(pledge?.loanOrGrant).toBe("loan");
-    expect(pledge?.fundraisingCategory).toBe("loan_capital");
 
     // Every payment-gift (original + minted) carries the loan flag.
     for (const gid of res.json.giftIds as string[]) {
@@ -494,7 +508,6 @@ describe.skipIf(!HAS_DB)("loan_or_grant dual-write", () => {
 
     const pledge = await readPledge(pledgeId);
     expect(pledge?.loanOrGrant).toBe("loan");
-    expect(pledge?.fundraisingCategory).toBe("loan_capital");
   });
 });
 

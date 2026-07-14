@@ -102,19 +102,17 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   // every payment link/amount/archive mutation. Surfaced as the API
   // `paidAmount` field and drives the cash_in status derivation (paid≥awarded).
   paid: numeric("paid", { precision: 14, scale: 2 }).notNull().default("0"),
-  // Fundraising category — designates whether this opportunity/pledge is a
-  // revenue commitment or a loan-fund capital (principal) commitment. Kept
-  // independent of `status` (which is calculated) and of donor type. Default
-  // 'revenue' so all existing opps are non-destructively treated as revenue.
-  // The dashboard/projections split open + committed money by this column.
+  // @deprecated — superseded by `loanOrGrant` (the authoritative flag). Frozen
+  // as of the cutover: never written (new rows get the 'revenue' default and it
+  // stays there regardless of loanOrGrant) and never read or returned by the
+  // API (scrubbed from every response projection). Kept physical only for the
+  // deprecate-then-drop window; do NOT resurrect reads or writes.
   fundraisingCategory: fundraisingCategoryEnum("fundraising_category")
     .notNull()
     .default("revenue"),
-  // Authoritative loan-vs-grant flag (see loanOrGrantEnum). Backfilled from
-  // fundraisingCategory (revenue→grant, loan_capital→loan) and dual-written on
-  // every create/patch during the transition. Becomes the single read source
-  // (replacing fundraisingCategory in dashboard/projections/goals) once the
-  // parity-gated read cutover lands. Default 'grant' (non-destructive).
+  // Authoritative loan-vs-grant flag (see loanOrGrantEnum). User-settable on
+  // create/patch (defaults 'grant'); the single read source for dashboard /
+  // projections / goals / revenue coding. Supersedes fundraisingCategory.
   loanOrGrant: loanOrGrantEnum("loan_or_grant").notNull().default("grant"),
   type: opportunityTypeEnum("type"),
   conditional: opportunityConditionalEnum("conditional"),

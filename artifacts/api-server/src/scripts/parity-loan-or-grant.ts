@@ -2,6 +2,12 @@
  * A002 PARITY GATE — authoritative `loan_or_grant` vs. the legacy signals it
  * supersedes, across the three tables that carry it.
  *
+ * HISTORICAL (A003 cutover complete): the dual-write has ended — the API no
+ * longer writes `fundraising_category` / goal `category`, so NEW rows will
+ * legitimately drift from the frozen legacy columns. This script remains only
+ * as a point-in-time gate for the prod cutover (run BEFORE the cutover
+ * deploys); do not treat post-cutover drift as a bug.
+ *
  * For EVERY row it derives loan_or_grant from the LEGACY signal and compares it
  * to the PERSISTED `loan_or_grant` column:
  *   - gifts_and_payments         : legacy = giftTypeToLoanOrGrant(type)

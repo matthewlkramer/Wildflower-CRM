@@ -19,8 +19,16 @@ const primaryContact = alias(people, "primary_contact_person");
 // self-contained so the UI doesn't fire one fetch per row.
 // Person display name matches the client's `personDisplayName`:
 // COALESCE(full_name, trim(first||' '||last)).
+
+// Header projection: every opportunity column EXCEPT the @deprecated
+// fundraising_category (superseded by loanOrGrant). Responses are plain
+// res.json — no Zod stripping — so every select/returning that reaches the
+// client must go through this scrubbed projection.
+const { fundraisingCategory: _deprecatedFundraisingCategory, ...oppHeaderColumns } =
+  getTableColumns(opportunitiesAndPledges);
+
 const donorJoinSelect = {
-  ...getTableColumns(opportunitiesAndPledges),
+  ...oppHeaderColumns,
   // Shared donor display names + priorities + anonymous/owner helpers
   // (see lib/donorJoinSelect.ts) — identical to the gifts route.
   ...donorDisplayColumns,
@@ -88,7 +96,6 @@ import {
   WriteOffPledgeBody,
   MintGiftFromOpportunityBody,
   validateOppInvariants,
-  legacyCategoryToLoanOrGrant,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { copyPledgeAllocationsToGift } from "../lib/reconciliationCommit";
@@ -600,11 +607,10 @@ router.post(
     // and re-canonicalises once payments are known.)
     const writeValues: typeof body & {
       winProbability?: string | null;
-      loanOrGrant?: "loan" | "grant";
     } = { ...body };
-    // Dual-write the authoritative loan_or_grant flag from the legacy
-    // fundraising_category signal (legacy stays the read source this phase).
-    writeValues.loanOrGrant = legacyCategoryToLoanOrGrant(body.fundraisingCategory);
+    // loanOrGrant comes straight from the body (authoritative flag); omitted →
+    // the DB default 'grant'. The legacy fundraising_category is frozen — the
+    // new row keeps its 'revenue' column default regardless.
     if (
       (body.stage !== undefined || body.lossType !== undefined) &&
       body.winProbability === undefined
@@ -632,7 +638,7 @@ router.post(
     const [row] = await db
       .insert(opportunitiesAndPledges)
       .values({ id: newId(), ...writeValues })
-      .returning();
+      .returning(oppHeaderColumns);
     if (row) {
       await applyDerivedOppFields(row.id);
       // New opportunity/pledge is a fresh relationship signal — refresh the
@@ -643,7 +649,7 @@ router.post(
       });
     }
     const final = row
-      ? (await db.select().from(opportunitiesAndPledges).where(eq(opportunitiesAndPledges.id, row.id)).then((r) => r[0])) ?? row
+      ? (await db.select(oppHeaderColumns).from(opportunitiesAndPledges).where(eq(opportunitiesAndPledges.id, row.id)).then((r) => r[0])) ?? row
       : row;
     if (final) await auditCreate(req, "opportunity", final.id, "Created opportunity");
     res.status(201).json(final);
@@ -820,7 +826,6 @@ router.post(
         // write-off itself governed by an open (mutable) FY.
         actualCompletionDate: todayInChicago(),
         loanOrGrant: original.loanOrGrant,
-        fundraisingCategory: original.fundraisingCategory,
         usageNotes: body.reason ?? null,
       });
       // Mirror each source bucket's scope with a NEGATIVE sub_amount, all booked
@@ -855,7 +860,7 @@ router.post(
     // awarded amount keeps it out of cash_in (which needs awarded > 0).
     await applyDerivedOppFields(writeOffId);
     const final = await db
-      .select()
+      .select(oppHeaderColumns)
       .from(opportunitiesAndPledges)
       .where(eq(opportunitiesAndPledges.id, writeOffId))
       .then((r) => r[0]);
@@ -1019,14 +1024,11 @@ router.patch(
       body.stage !== undefined || body.lossType !== undefined;
     const writeData: typeof body & {
       winProbability?: string | null;
-      loanOrGrant?: "loan" | "grant";
     } = {
       ...body,
     };
-    // Mirror loan_or_grant whenever the legacy fundraising_category is set.
-    if (body.fundraisingCategory !== undefined) {
-      writeData.loanOrGrant = legacyCategoryToLoanOrGrant(body.fundraisingCategory);
-    }
+    // loanOrGrant (authoritative flag) flows straight from the body when set;
+    // the legacy fundraising_category is frozen and never written.
     if (stageOrLossTypeInBody && body.winProbability === undefined) {
       // Conditions live on the pledge allocations now; the inline stamp uses the
       // non-conditional default and applyDerivedOppFields below re-canonicalises
@@ -1052,7 +1054,7 @@ router.patch(
       .update(opportunitiesAndPledges)
       .set({ ...writeData, updatedAt: new Date() })
       .where(eq(opportunitiesAndPledges.id, id))
-      .returning();
+      .returning(oppHeaderColumns);
     if (!row) return notFound(res, "opportunity");
     // The patch may have changed stage, awardedAmount, or status — any
     // of which can flip written_pledge sticky-true, change the derived
@@ -1060,7 +1062,7 @@ router.patch(
     // (which itself re-canonicalises win_probability inside the helper).
     await applyDerivedOppFields(id);
     const final = await db
-      .select()
+      .select(oppHeaderColumns)
       .from(opportunitiesAndPledges)
       .where(eq(opportunitiesAndPledges.id, id))
       .then((r) => r[0]);
@@ -1115,6 +1117,7 @@ router.post(
     await archiveOne(req, res, {
       entity: "opportunity",
       table: opportunitiesAndPledges,
+      responseColumns: oppHeaderColumns,
       freezeResolver: resolvePledgeFreezeById,
     });
   }),
@@ -1126,6 +1129,7 @@ router.post(
     await unarchiveOne(req, res, {
       entity: "opportunity",
       table: opportunitiesAndPledges,
+      responseColumns: oppHeaderColumns,
       freezeResolver: resolvePledgeFreezeById,
     });
   }),

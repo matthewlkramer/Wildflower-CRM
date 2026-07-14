@@ -447,10 +447,12 @@ export const GiftType = {
 } as const;
 
 /**
- * Splits loan-fund capital out of revenue so the two tracks report in
-parallel. `loan_capital` = principal investments (`loan_fund_investment`
-gifts + opportunities/pledges flagged loan-capital); `revenue` = everything
-else. Defaults to `revenue` so existing data is treated as revenue.
+ * Analytics/track TOKEN vocabulary only (revenue vs loan-capital track).
+Used as a derived bucket label on analytics rows and as a filter token;
+every value is derived server-side from the authoritative `loan_or_grant`
+flag (loan → `loan_capital`, grant → `revenue`). The legacy persisted
+columns of the same name are @deprecated and no longer written or
+returned.
 
  */
 export type FundraisingCategory = typeof FundraisingCategory[keyof typeof FundraisingCategory];
@@ -462,14 +464,15 @@ export const FundraisingCategory = {
 } as const;
 
 /**
- * The single authoritative loan-vs-grant classification, superseding three
-scattered legacy signals during the transition:
-  - opportunities_and_pledges.fundraising_category (revenue | loan_capital)
-  - gifts_and_payments.type (loan-ness derived from 'loan_fund_investment')
-  - fiscal_year_entity_goals.category (= fundraising_category)
-Mapping (1:1): loan_capital / loan_fund_investment → `loan`; everything
-else → `grant`. NOTE: `grant` means ALL non-loan money (individual
-donations, foundation grants, earned revenue, …), not literally grants.
+ * The single authoritative loan-vs-grant classification. Supersedes the
+legacy signals, which are write-deprecated (no longer dual-written):
+  - opportunities_and_pledges.fundraising_category (kept physical, frozen)
+  - fiscal_year_entity_goals.category (kept physical, frozen)
+Gifts still derive their flag from `type` ('loan_fund_investment' → loan)
+because the gift type IS the user input. Mapping (1:1): loan_capital /
+loan_fund_investment → `loan`; everything else → `grant`. NOTE: `grant`
+means ALL non-loan money (individual donations, foundation grants, earned
+revenue, …), not literally grants.
 
  */
 export type LoanOrGrant = typeof LoanOrGrant[keyof typeof LoanOrGrant];
@@ -748,9 +751,8 @@ export interface UpdateEntityBody {
 export interface FiscalYearEntityGoal {
   fiscalYearId: string;
   entityId: string;
-  category: FundraisingCategory;
-  /** Authoritative loan-vs-grant classification (supersedes category). Derived-but-persisted; dual-written from category. */
-  readonly loanOrGrant?: LoanOrGrant;
+  /** Authoritative loan-vs-grant track this goal targets. Part of the goal's identity: one goal per (fiscalYearId, entityId, loanOrGrant). Set via the `:category` path segment on PUT/DELETE (accepts loan|grant and the legacy revenue|loan_capital tokens). */
+  loanOrGrant: LoanOrGrant;
   /** Decimal string (numeric(14,2)). */
   goalAmount: string;
   createdAt: string;
@@ -1788,9 +1790,8 @@ export interface OpportunityOrPledge {
   name?: string | null;
   organizationId?: string | null;
   householdId?: string | null;
-  fundraisingCategory: FundraisingCategory;
-  /** Authoritative loan-vs-grant classification (supersedes fundraisingCategory). Derived-but-persisted; dual-written from fundraisingCategory during the transition. Analytics read from this. */
-  readonly loanOrGrant?: LoanOrGrant;
+  /** Authoritative loan-vs-grant classification. User-settable on create/update; defaults to 'grant'. Analytics, goals, and revenue coding all read from this. (The legacy fundraising_category column is @deprecated — frozen, never returned.) */
+  loanOrGrant: LoanOrGrant;
   askAmount?: string | null;
   awardedAmount?: string | null;
   readonly paidAmount?: string;
@@ -1971,7 +1972,7 @@ export interface GiftOrPayment {
   readonly offBooks: boolean;
   /** Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update. */
   readonly quickbooksTieStatus: GiftQuickbooksTie;
-  /** Authoritative loan-vs-grant classification (supersedes the type='loan_fund_investment' loan signal). Derived-but-persisted; dual-written from type during the transition. */
+  /** Authoritative loan-vs-grant classification. Derived-but-persisted from the gift `type` on every write ('loan_fund_investment' → loan, everything else → grant) — the gift type IS the user input for loan-ness. */
   readonly loanOrGrant?: LoanOrGrant;
   /** Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses. */
   readonly reconciliationLanes?: ReconciliationLanes;
@@ -2056,7 +2057,8 @@ export interface CreateOpportunityOrPledgeBody {
   name?: string;
   organizationId?: string;
   householdId?: string;
-  fundraisingCategory?: FundraisingCategory;
+  /** Authoritative loan-vs-grant classification. Omitted → 'grant'. */
+  loanOrGrant?: LoanOrGrant;
   askAmount?: string;
   awardedAmount?: string;
   type?: OpportunityType;
@@ -2085,7 +2087,8 @@ export interface UpdateOpportunityOrPledgeBody {
   name?: string | null;
   organizationId?: string | null;
   householdId?: string | null;
-  fundraisingCategory?: FundraisingCategory;
+  /** Authoritative loan-vs-grant classification (not nullable — every opportunity is exactly one of the two). */
+  loanOrGrant?: LoanOrGrant;
   askAmount?: string | null;
   awardedAmount?: string | null;
   type?: OpportunityType | null;

@@ -106,14 +106,12 @@ in older notes is stale.
   goals live in `fiscal_year_entity_goals`.
 
 - `fiscal_year_entity_goals` — per-track fundraising goals. **PK is
-  `(fiscal_year_id, entity_id, category)`** where `category` is the
-  `fundraising_category` enum, so the revenue and loan-capital tracks each carry their
-  own goal. Cascading FKs to both parents. Analytics sum across this table honoring
-  the same entity/category filters as the money rollups. Also carries the
-  authoritative **`loan_or_grant`** flag (see below), dual-written 1:1 from
-  `category` during the transition; not yet in the PK (a later phase adds a
-  unique `(fiscal_year_id, entity_id, loan_or_grant)` and flips the goals route
-  to read it).
+  `(fiscal_year_id, entity_id, loan_or_grant)`** (migration 0120), so the grant
+  (revenue) and loan-capital tracks each carry their own goal. Cascading FKs to
+  both parents. Analytics sum across this table honoring the same entity/track
+  filters as the money rollups. The legacy `category` column
+  (`fundraising_category` enum) is **deprecated** — still physical, no longer in
+  the PK, never written or returned by the API.
 
 - `users` — Clerk-provisioned app users (`role` includes `admin`; admin gates
   show-archived, restore, and admin-only screens).
@@ -144,9 +142,10 @@ in older notes is stale.
     last rows carrying them to `verbal_confirmation`, so zero rows use them.
     `conditional` (`unconditional` / `conditional_unspecified` / `reimbursable` /
     `conditional_on_funder_determination` / `conditional_on_target`),
-    **`fundraising_category`** (`revenue` / `loan_capital`, NOT NULL default
-    `revenue`), **`loan_or_grant`** (the authoritative loan-vs-grant flag — see
-    below — dual-written from `fundraising_category`). NOTE: THESE LAST TWO SEEM DUPLICATIVE (FUNDRAISING CATEGORY VS LOAN VS GRANT)
+    **`loan_or_grant`** (the authoritative loan-vs-grant flag — see below). The
+    legacy **`fundraising_category`** column (`revenue` / `loan_capital`) is
+    **deprecated** — still physical, but no longer written, read, or returned by
+    the API.
   - A sticky `written_pledge` flag (renamed from `was_pledge`) latches true only
     when a grant letter is uploaded while the money is not already fully in, or
     on an explicit user set — never auto-cleared. It drives the calculated
@@ -273,37 +272,27 @@ The `reimbursement_type` enum (`direct` / `indirect`, renamed from
 `reimbursable_share`) on both allocation tables tags direct-vs-indirect cost share;
 `direct`-tagged lines are recorded in full but **excluded** from goal analytics.
 
-## Fundraising category (revenue vs loan capital)
-
-`fundraising_category` enum (`revenue` / `loan_capital`) splits loan-fund principal
-out of revenue so the two tracks report in parallel. Loan capital =
-`loan_fund_investment` gifts + loan-capital opportunities/pledges. Opportunities
-carry `fundraising_category` (NOT NULL default `revenue`); goals are per-category via
-`fiscal_year_entity_goals`'s composite PK. All pre-existing data is `revenue`
-(non-destructive).
-
 ## loan_or_grant (the authoritative loan-vs-grant flag)
 
 `loan_or_grant` enum (`loan` / `grant`, NOT NULL default `grant`) is the **single
 source of truth** for whether money is loan-fund principal or ordinary
-fundraising money. It supersedes the two scattered legacy signals above:
-`opportunities_and_pledges.fundraising_category` and the gift
-`type='loan_fund_investment'` derivation. Lives on `gifts_and_payments`,
-`opportunities_and_pledges`, and `fiscal_year_entity_goals`. NOTE: ELIMINATE THE LEGACY SIGNALS
+fundraising money — the two tracks report in parallel and are never mixed in
+analytics. Lives on `gifts_and_payments`, `opportunities_and_pledges`, and
+`fiscal_year_entity_goals` (where it is part of the PK). Opportunity and goal
+writes take it directly; a gift's flag is still derived from its `type`
+(`loan_fund_investment` → `loan`, everything else → `grant`) via
+`giftTypeToLoanOrGrant` in `@workspace/api-zod` (`loan-or-grant.ts`).
 
-**Semantic map (1:1):** `loan_capital` / `loan_fund_investment` → `loan`;
-`revenue` / every other gift type → `grant`. **`grant` means ALL non-loan
-money** — individual donations, foundation grants, earned revenue, etc. — **not
-literally only grants.** The pure mappers live in `@workspace/api-zod`
-(`loan-or-grant.ts`: `legacyCategoryToLoanOrGrant`, `loanOrGrantToLegacyCategory`,
-`giftTypeToLoanOrGrant`).
+**`grant` means ALL non-loan money** — individual donations, foundation grants,
+earned revenue, etc. — **not literally only grants.**
 
-Rolled out in additive phases (mirrors the ledger discipline): Phase 1 (current)
-adds the column, dual-writes it on every opp/gift create/patch/split, and
-backfills it from the legacy signals (migrations 0067/0068) — **legacy stays the
-read source**. A later phase flips analytics/goals/revenue-coding reads to
-`loan_or_grant` behind a parity gate, then deprecates (does not drop) the legacy
-signals. NOTE: FINISH THIS
+The cutover is complete: analytics, goals, and revenue coding all read
+`loan_or_grant`, and the legacy signals — `opportunities_and_pledges.
+fundraising_category` and `fiscal_year_entity_goals.category` (both the
+`fundraising_category` enum, historical 1:1 map `loan_capital` → `loan`,
+`revenue` → `grant`) — are **deprecated**: still physical (not dropped), but no
+longer written, read, or returned by the API. Backfills were migrations
+0067/0068; the goals PK swap is 0120.
 
 ## Many-to-many via slug arrays
 

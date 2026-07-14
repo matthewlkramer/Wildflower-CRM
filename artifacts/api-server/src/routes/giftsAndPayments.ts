@@ -126,7 +126,6 @@ import {
   validateGiftInvariants,
   validateOppInvariants,
   giftTypeToLoanOrGrant,
-  loanOrGrantToLegacyCategory,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -1351,10 +1350,8 @@ router.post(
           writtenPledge: true,
           // Inherit loan-vs-grant from the source gift(s) so loan-fund money
           // doesn't create a grant pledge; if any source gift is loan the
-          // pledge is loan. Keep the legacy fundraising_category in lockstep.
-          fundraisingCategory: loanOrGrantToLegacyCategory(
-            gifts.some((g) => g.loanOrGrant === "loan") ? "loan" : "grant",
-          ),
+          // pledge is loan. (The legacy fundraising_category is frozen —
+          // never written.)
           loanOrGrant: gifts.some((g) => g.loanOrGrant === "loan") ? "loan" : "grant",
         });
         // Minimal allocation so the pledge satisfies the "at least one
@@ -1570,9 +1567,8 @@ router.post(
         stage: "verbal_confirmation",
         writtenPledge: true,
         // Inherit loan-vs-grant from the source gift so a loan-fund gift
-        // doesn't create a grant pledge; keep legacy fundraising_category in
-        // lockstep with the authoritative flag.
-        fundraisingCategory: loanOrGrantToLegacyCategory(gift.loanOrGrant),
+        // doesn't create a grant pledge. (The legacy fundraising_category is
+        // frozen — never written.)
         loanOrGrant: gift.loanOrGrant,
       });
 
@@ -1796,9 +1792,8 @@ router.post(
         awardedAmount: gift.amount,
         stage: asPledge ? "verbal_confirmation" : "in_conversation",
         writtenPledge: asPledge,
-        // Inherit loan-vs-grant from the source gift; keep legacy
-        // fundraising_category in lockstep with the authoritative flag.
-        fundraisingCategory: loanOrGrantToLegacyCategory(gift.loanOrGrant),
+        // Inherit loan-vs-grant from the source gift. (The legacy
+        // fundraising_category is frozen — never written.)
         loanOrGrant: gift.loanOrGrant,
       });
 

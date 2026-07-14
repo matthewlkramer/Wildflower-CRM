@@ -58,7 +58,7 @@ import {
 import type {
   Entity,
   FiscalYearEntityGoal,
-  FundraisingCategory,
+  LoanOrGrant,
   FiscalYear,
   EmailIntelPrompt,
   EmailIntelPromptKey,
@@ -1054,7 +1054,7 @@ function GoalsSection({
   const [showRetired, setShowRetired] = useState(false);
   // Loan-fund capital goals are a track parallel to revenue. The toggle
   // swaps which category's goals this grid shows + edits; the two never mix.
-  const [category, setCategory] = useState<FundraisingCategory>("revenue");
+  const [category, setCategory] = useState<LoanOrGrant>("grant");
 
   // FY list newest-first; partition by recent vs older for the toggle.
   const sortedFy = useMemo(() => {
@@ -1081,10 +1081,10 @@ function GoalsSection({
   const retiredEntities = sortedEntities.filter((e) => !e.active);
   const visibleEntities = showRetired ? sortedEntities : activeEntities;
 
-  // Build (fyId, entityId, category) -> goalAmount map for O(1) lookup.
+  // Build (fyId, entityId, loanOrGrant) -> goalAmount map for O(1) lookup.
   const goalMap = useMemo(() => {
     const m = new Map<string, string>();
-    for (const g of goals) m.set(`${g.fiscalYearId}|${g.entityId}|${g.category}`, g.goalAmount);
+    for (const g of goals) m.set(`${g.fiscalYearId}|${g.entityId}|${g.loanOrGrant}`, g.goalAmount);
     return m;
   }, [goals]);
 
@@ -1102,9 +1102,9 @@ function GoalsSection({
         <div className="flex items-center gap-1" data-testid="goals-category-toggle">
           {(
             [
-              { value: "revenue", label: "Revenue / Gifts" },
-              { value: "loan_capital", label: "Loan Capital" },
-            ] as { value: FundraisingCategory; label: string }[]
+              { value: "grant", label: "Revenue / Gifts" },
+              { value: "loan", label: "Loan Capital" },
+            ] as { value: LoanOrGrant; label: string }[]
           ).map((c) => (
             <button
               key={c.value}
@@ -1199,7 +1199,7 @@ function GoalCell({
 }: {
   fyId: string;
   entityId: string;
-  category: FundraisingCategory;
+  category: LoanOrGrant;
   current: string | null;
 }) {
   const queryClient = useQueryClient();
