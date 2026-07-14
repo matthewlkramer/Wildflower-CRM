@@ -162,9 +162,13 @@ in older notes is stale.
   `time_restriction_type` — see Restriction taxonomy below) and revenue-coding
   capture (below). `status`
   enum `pledge_allocation_status`: `working` (internal draft), `committed` /
-  `committed_with_conditions` (firm), `superseded_by_pledge` (re-scoped), NOTE: IS THIS IN USE? IT SEEMS MESSY
-  `superseded_by_gift` (an actual gift took its place), `abandoned` (dropped unpaid).
-  Plain legacy `superseded` is retained in the enum but unused.
+  `committed_with_conditions` (firm), `abandoned` (dropped unpaid). The
+  **superseded family is retired** (Task #665): `superseded` /
+  `superseded_by_pledge` / `superseded_by_gift` were removed from the API contract
+  and the UI (users keep allocations accurate directly; a gift→pledge split now
+  writes `committed`), the historical rows were remapped to `abandoned`
+  (migration 0120), and the three values remain in the pg enum only because
+  removing a pg enum value requires a type rebuild.
 
 - `gifts_and_payments` — gift records + payments against pledges, **header-only**.
   Scope lives on `gift_allocations`. `payment_on_pledge_id` →

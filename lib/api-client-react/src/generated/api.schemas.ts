@@ -427,10 +427,7 @@ export type PledgeAllocationStatus = typeof PledgeAllocationStatus[keyof typeof 
 export const PledgeAllocationStatus = {
   working: 'working',
   committed: 'committed',
-  superseded: 'superseded',
   committed_with_conditions: 'committed_with_conditions',
-  superseded_by_pledge: 'superseded_by_pledge',
-  superseded_by_gift: 'superseded_by_gift',
   abandoned: 'abandoned',
 } as const;
 

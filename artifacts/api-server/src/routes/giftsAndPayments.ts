@@ -1573,10 +1573,12 @@ router.post(
       });
 
       // 2. Mirror each gift allocation onto a pledge allocation. The gifts are
-      // immediately canonical, so the pledge allocations are flagged
-      // superseded_by_gift (the pledge derives cash_in from the payment-gifts).
-      // pledge_allocations collapse the two gift-level restriction booleans into
-      // one and have no school column (directToSchool stands in for it).
+      // immediately canonical; the pledge allocations are recorded as committed
+      // (the pledge derives cash_in from the payment-gifts, so a fully-paid split
+      // never re-enters open-pipeline analytics; the superseded_by_gift status
+      // is retired — Task #665). pledge_allocations collapse the two gift-level
+      // restriction booleans into one and have no school column (directToSchool
+      // stands in for it).
       for (const a of allocs) {
         await tx.insert(pledgeAllocations).values({
           id: newId(),
@@ -1596,7 +1598,7 @@ router.post(
           // Carry the direct/indirect reimbursement tag onto the pledge allocation
           // so the goal-analytics exclusion survives a gift→pledge split.
           reimbursementType: a.reimbursementType,
-          status: "superseded_by_gift",
+          status: "committed",
         });
       }
 

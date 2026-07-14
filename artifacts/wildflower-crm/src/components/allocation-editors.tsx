@@ -80,13 +80,12 @@ const INTENDED_USAGE_OPTIONS: ReadonlyArray<Option> = [
   { value: "project", label: "Project" },
 ];
 
+// The superseded family (superseded / superseded_by_pledge / superseded_by_gift)
+// is retired (Task #665) — users keep pledge allocations accurate directly.
 const PLEDGE_ALLOCATION_STATUS_OPTIONS: ReadonlyArray<Option> = [
   { value: "working", label: "Working" },
   { value: "committed", label: "Committed" },
   { value: "committed_with_conditions", label: "Committed (conditions)" },
-  { value: "superseded", label: "Superseded" },
-  { value: "superseded_by_pledge", label: "Superseded by pledge" },
-  { value: "superseded_by_gift", label: "Superseded by gift" },
   { value: "abandoned", label: "Abandoned" },
 ];
 

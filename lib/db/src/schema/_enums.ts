@@ -79,14 +79,17 @@ export const opportunityLossTypeEnum = pgEnum("opportunity_loss_type", [
 
 // Lifecycle of a single pledge_allocation row. `working` is a draft an
 // internal user is iterating on; `committed` / `committed_with_conditions`
-// are firm commitments from the funder; `superseded_by_pledge` means the
-// row was replaced by a later allocation (re-scoped or split differently);
-// `superseded_by_gift` means an actual gift_allocation has taken its place
-// (the money landed and the pledge row is now historical); `abandoned`
-// means the allocation was dropped without being paid (the opp may still
-// be open at a different scope, or fully lost). The legacy plain
-// `superseded` value is retained in the DB enum for safety but unused —
-// new writes should pick one of the two more specific variants.
+// are firm commitments from the funder; `abandoned` means the allocation
+// was dropped without being paid (the opp may still be open at a
+// different scope, or fully lost).
+//
+// RETIRED (Task #665): the superseded family (`superseded`,
+// `superseded_by_pledge`, `superseded_by_gift`) was removed from the API
+// contract and the UI — users keep pledge allocations accurate directly
+// instead. The three values remain in the pg enum below only because
+// removing a pg enum value requires a type rebuild; the API rejects new
+// writes and the historical rows were remapped to `abandoned`
+// (migration 0120). Do not write them from application code.
 export const pledgeAllocationStatusEnum = pgEnum("pledge_allocation_status", [
   "working",
   "committed",

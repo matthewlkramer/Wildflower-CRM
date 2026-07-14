@@ -32,11 +32,12 @@ import { households } from "./households";
 // pledge_allocations row even while the conversation is still fuzzy —
 // during early talks those rows carry status='working' and act as the
 // scratch pad; once a funder commits they flip to 'committed' /
-// 'committed_with_conditions'; once the money lands they flip to
-// 'superseded_by_gift' and the corresponding gift_allocations rows
-// become the canonical record. This keeps a single shape across the
-// opportunity → pledge → payment lifecycle instead of duplicating scope
-// fields at every level.
+// 'committed_with_conditions'. Once the money lands the corresponding
+// gift_allocations rows become the canonical record (the pledge rows
+// simply stay 'committed' — the superseded_* statuses are retired,
+// Task #665). This keeps a single shape across the opportunity →
+// pledge → payment lifecycle instead of duplicating scope fields at
+// every level.
 //
 // ─── status vs loss_type ──────────────────────────────────────────────
 // `status` is FULLY CALCULATED (never set directly by users) from

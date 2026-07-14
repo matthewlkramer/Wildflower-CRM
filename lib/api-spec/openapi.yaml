@@ -3327,7 +3327,7 @@ paths:
       summary: Open-pipeline pledge_allocations aggregated by (grantYear, entityId).
       description: |
         Joins `pledge_allocations` to its parent `opportunities_and_pledges` where status='open',
-        excludes superseded/abandoned allocation rows, and groups remaining rows by
+        excludes abandoned allocation rows, and groups remaining rows by
         (grantYear, entityId). `expected` weights `sub_amount` by the parent opp's `win_probability`
         (defaulting to 1 when null). Both grouping keys may be null.
       parameters:
@@ -4664,7 +4664,10 @@ components:
         Tri-state record of whether a grant's conditions have been met:
         'no' (none met), 'partial' (some met), or 'yes' (fully met).
         Replaces the prior boolean flag (false→'no', true→'yes').
-    PledgeAllocationStatus: { type: string, enum: [working, committed, superseded, committed_with_conditions, superseded_by_pledge, superseded_by_gift, abandoned] }
+    # The superseded family (superseded / superseded_by_pledge / superseded_by_gift)
+    # is RETIRED (Task #665): removed from the contract so new writes are rejected;
+    # the values remain in the pg enum only (historical rows were remapped to abandoned).
+    PledgeAllocationStatus: { type: string, enum: [working, committed, committed_with_conditions, abandoned] }
     GiftType: { type: string, enum: [standard_gift, pledge_payment, directed_gift, loan_fund_investment, matching_gift, reimbursement] }
     FundraisingCategory:
       type: string

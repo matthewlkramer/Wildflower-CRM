@@ -68,7 +68,7 @@ export const GetDashboardSummaryResponse = zod.object({
 
 /**
  * Joins `pledge_allocations` to its parent `opportunities_and_pledges` where status='open',
-excludes superseded/abandoned allocation rows, and groups remaining rows by
+excludes abandoned allocation rows, and groups remaining rows by
 (grantYear, entityId). `expected` weights `sub_amount` by the parent opp's `win_probability`
 (defaulting to 1 when null). Both grouping keys may be null.
 

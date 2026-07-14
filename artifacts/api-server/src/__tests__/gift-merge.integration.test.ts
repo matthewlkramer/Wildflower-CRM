@@ -711,13 +711,15 @@ describe.skipIf(!HAS_DB)(
       expect(pledge.status).toBe("cash_in");
       expect(pledge.organizationId).toBe(ORG_ID);
 
-      // One pledge allocation per gift allocation, all superseded by the gifts.
+      // One pledge allocation per gift allocation, recorded as committed (the
+      // superseded_by_gift status is retired — Task #665; the gifts stay the
+      // canonical record and the fully-paid pledge derives cash_in).
       const pAllocs = await db
         .select()
         .from(schema.pledgeAllocations)
         .where(eqFn(schema.pledgeAllocations.pledgeOrOpportunityId, pledgeId));
       expect(pAllocs.length).toBe(2);
-      expect(pAllocs.every((a) => a.status === "superseded_by_gift")).toBe(true);
+      expect(pAllocs.every((a) => a.status === "committed")).toBe(true);
 
       // Original gift: amount = first allocation, points at the pledge; the kept
       // allocation carries FY_A (grant year is allocation-level now).

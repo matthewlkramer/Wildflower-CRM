@@ -37,6 +37,17 @@ signal is untouched, so a filtered name pair still surfaces if it shares a phone
 - Known false-negative class: person nicknames (Bill/William) now token-conflict and
   are suppressed from the name signal; a nickname-equivalence map is the fix if it bites.
 
+## Crashed-run seed pollution breaks later runs
+The integration test seeds orgs/people with **fixed** phone constants (`+1 (555) 010-…`);
+names are per-RUN but phones are not. If a run crashes before `afterAll` (e.g. an
+unrelated enum-drift failure aborts the file), the leftover rows share those phones
+with the next run's seeds — the phone-signal pairs multiply and the expected pair
+drops out of the limited response, failing "unsafe pair present" / "shared-phone"
+assertions with no code change.
+**How to apply:** on mysterious potentialDuplicates failures, check for leftover
+`dupspec_%` rows and delete them (duplicate_dismissals, gifts, phone_numbers, emails,
+people, organizations, users — in that FK order).
+
 ## Other durable constraints
 - Dismiss persists to a `duplicate_dismissals` table keyed on canonicalized ids
   (`id_a < id_b`) so dismissed pairs never reappear; the endpoint is idempotent (204).
