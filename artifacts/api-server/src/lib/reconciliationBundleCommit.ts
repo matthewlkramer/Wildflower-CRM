@@ -1,16 +1,17 @@
 import { type Request } from "express";
 import {
-  giftsAndPayments,
-  stripeStagedCharges,
-  stagedPayments,
-  organizations,
-  people,
-  households,
   emails,
-  settlementLinks,
   giftAllocations,
+  giftsAndPayments,
+  households,
+  organizations,
+  paymentApplications,
+  people,
+  settlementLinks,
+  stagedPayments,
+  stripeStagedCharges,
 } from "@workspace/db/schema";
-import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { newId } from "./helpers";
 import { buildGiftValuesFromStripeCharge } from "./stripeGift";
 import { recordAudit } from "./audit";
@@ -26,7 +27,7 @@ import {
   type Tx,
   type DonorXor,
 } from "./reconciliationCommit";
-import { bookStripeChargeApplication } from "./paymentApplications";
+import { bookStripeChargeApplicationAndRefresh } from "./paymentApplicationMutations";
 import {
   seedInitialGiftAllocation,
   assertGiftHasAllocations,
@@ -37,59 +38,19 @@ import type {
 } from "./reconciliationBundleProposal";
 
 /**
- * Net-new in-transaction money-write primitives the settlement-bundle confirm
- * needs that the QB-anchored manual reconciler (`reconciliationCommit.ts`) does
- * not already provide:
- *
- *   - per-Stripe-charge mint / link (the existing `mintGiftInTx` / `linkGiftInTx`
- *     book a QuickBooks staged payment; these book a Stripe charge directly,
- *     crediting the donor the GROSS charge with the fee recorded separately).
- *   - new-donor materialization (propose-new-donor): insert the org / person /
- *     household + an optional email, returning the Donor XOR.
- *   - human-driven exclude of a charge / staged row.
- *
- * Every primitive runs on rows the CONFIRM caller has ALREADY locked FOR UPDATE
- * and re-read; they throw a res-free `ReconcileAbort` (the caller rolls the
- * whole bundle back) and return the ids the caller must re-derive after the
- * single commit. There is still exactly ONE money path — these mirror the
- * existing Stripe create-gift / link / exclude routes 1:1, just made tx-safe and
- * reusable. The payout↔deposit tie + payout reconciliation is owned by the tie
- * primitives (`stripeConfirm.ts`); the charge primitives never touch the payout
- * (matching the standalone per-charge create-gift route).
- */
-
-/**
- * Mint a real gift from a single Stripe charge, crediting the donor the GROSS
- * amount (fee recorded separately) and marking the charge permanent reconciled
- * EVIDENCE (createdGiftId). Mirrors POST /stripe-staged-charges/:id/create-gift,
- * including the QuickBooks-conflict guard that refuses to double-book a payout
- * already booked as an approved QB lump.
+ * Mint a gift from one locked pending Stripe charge. The relationship is written
+ * only to payment_applications; the deprecated charge gift pointers remain null.
  */
 export async function createGiftFromChargeInTx(
   tx: Tx,
   args: {
-    /** Pre-allocated id for the gift being minted. */
     newGiftId: string;
-    /** The charge, ALREADY locked + re-read pending by the caller. */
     charge: typeof stripeStagedCharges.$inferSelect;
-    /** Resolved gift donor (Donor XOR; existing or freshly created). */
     donor: DonorXor;
-    /** Optional payment-intermediary override (conduit the donor gave through). */
     paymentIntermediaryId: string | null;
-    /**
-     * Optional opportunity/pledge this charge PAYS AGAINST (the deposit-approve
-     * opp outcomes routed charge-anchored because the deposit's settlement is
-     * already confirmed settlement-only). Sets gift.opportunityId and seeds the
-     * gift's allocations from the pledge (scaled to the charge GROSS) instead of
-     * the default full-amount line. The caller re-derives the opp post-commit.
-     */
     opportunityId?: string | null;
-    /** Optional audit override (summary + metadata) — defaults to the
-     *  settlement-bundle labels. */
     audit?: { summary: string; metadata?: Record<string, unknown> };
-    /** App user id stamped as the confirmer / mint owner. */
     userId: string;
-    /** Request used for audit attribution. */
     auditReq: Request;
   },
 ): Promise<{ giftId: string }> {
@@ -97,24 +58,12 @@ export async function createGiftFromChargeInTx(
     args;
   const opportunityId = args.opportunityId ?? null;
 
-  // QuickBooks reconciliation guard: refuse to mint a per-charge gift when this
-  // charge's payout is already booked as an APPROVED QB net lump (an unresolved
-  // conflict, or a confirmed "keep" that left that QB gift in place). Minting
-  // here would double-count the same money. Mirrors the standalone create-gift
-  // route. The payout row is already locked by the caller.
   if (charge.stripePayoutId) {
-    // Read-flip: the settlement link is authoritative. A link carrying a conflict
-    // gift means this payout's money is already booked as a QB-derived gift —
-    // whether an unresolved conflict (proposed link + conflict gift) or a confirmed
-    // "keep" that left that gift in place (confirmed link + conflict gift). A link
-    // with no conflict gift reconciled a bare deposit into no gift, so per-charge
-    // gifts are still correct — allow it. The payout row is already locked by the
-    // caller, so all settlement-link writers are serialized behind it.
     const link = await tx
       .select({ conflictGiftId: settlementLinks.conflictGiftId })
       .from(settlementLinks)
       .where(eq(settlementLinks.payoutId, charge.stripePayoutId))
-      .then((r) => r[0]);
+      .then((rows) => rows[0]);
     if (link?.conflictGiftId) {
       throw new ReconcileAbort(409, {
         error: "qb_conflict",
@@ -142,15 +91,9 @@ export async function createGiftFromChargeInTx(
       },
       userId,
     ),
-    // Payment-on-pledge: tie the gift to the opportunity so the pledge derives
-    // cash_in when fully paid (caller re-derives post-commit).
     ...(opportunityId ? { opportunityId } : {}),
   });
 
-  // Every gift needs at least one allocation (the sole home of money scope).
-  // Payment-on-pledge (forward gift intake): seed from the pledge's allocations
-  // scaled to the charge GROSS; else — or when the pledge has none — seed a
-  // default full-amount line the fundraiser refines later.
   if (opportunityId) {
     await copyPledgeAllocationsToGift(
       tx,
@@ -172,22 +115,18 @@ export async function createGiftFromChargeInTx(
   }
   await assertGiftHasAllocations(tx, newGiftId);
 
-  // The charge OWNS the mint (createdGiftId, not auto-applied → protected from
-  // casual revert). Adopt the chosen donor onto the evidence row. Guarded on
-  // still-pending to catch a concurrent resolve.
+  const now = new Date();
   const updated = await tx
     .update(stripeStagedCharges)
     .set({
       ...donor,
-      createdGiftId: newGiftId,
-      matchedGiftId: null,
       autoApplied: false,
       matchStatus: "matched",
       matchConfirmedByUserId: userId,
-      matchConfirmedAt: new Date(),
+      matchConfirmedAt: now,
       approvedByUserId: userId,
-      approvedAt: new Date(),
-      updatedAt: new Date(),
+      approvedAt: now,
+      updatedAt: now,
     })
     .where(
       and(eq(stripeStagedCharges.id, charge.id), chargeStatusWhere.pending),
@@ -201,15 +140,13 @@ export async function createGiftFromChargeInTx(
     });
   }
 
-  // Dual-write (Phase 2): the charge MINTED this gift (createdTheGift:true).
-  // Book the charge → gift ledger row; delete-by-anchor keeps it idempotent.
-  await bookStripeChargeApplication(tx, {
+  await bookStripeChargeApplicationAndRefresh(tx, {
     stripeChargeId: charge.id,
     grossAmount: charge.grossAmount,
     giftId: newGiftId,
     matchMethod: "human",
     confirmedByUserId: userId,
-    confirmedAt: new Date(),
+    confirmedAt: now,
     createdTheGift: true,
   });
 
@@ -229,28 +166,18 @@ export async function createGiftFromChargeInTx(
 }
 
 /**
- * Tie a single Stripe charge to an EXISTING gift as permanent reconciled
- * evidence, stamping the gift's final amount to the charge GROSS (and
- * rebalancing its single allocation, or flagging a multi-allocation gift whose
- * splits no longer sum). Mirrors `linkGiftInTx`'s charge branch MINUS the QB
- * cash-application ledger and the payout update (the tie owns the payout).
+ * Tie one locked pending Stripe charge to an existing locked gift. The ledger is
+ * the sole durable relationship; charge pointer columns are not touched.
  */
 export async function linkChargeToGiftInTx(
   tx: Tx,
   args: {
-    /** The charge, ALREADY locked + re-read pending by the caller. */
     charge: typeof stripeStagedCharges.$inferSelect;
-    /** The existing gift, ALREADY locked by the caller. */
     gift: typeof giftsAndPayments.$inferSelect;
-    /** Existing gift id. */
     giftId: string;
-    /** Donor to record on the evidence (the gift's donor, or a confirmed switch). */
     effectiveGiftDonor: DonorXor;
-    /** Whether the reviewer confirmed a gift-donor switch (re-points the gift). */
     donorSwitching: boolean;
-    /** App user id stamped as the confirmer. */
     userId: string;
-    /** Request used for audit attribution. */
     auditReq: Request;
   },
 ): Promise<{ giftId: string; rederivePledgeIds: string[] }> {
@@ -265,20 +192,16 @@ export async function linkChargeToGiftInTx(
   } = args;
   const rederivePledgeIds: string[] = [];
 
-  // Reject if ANOTHER Stripe charge already owns this gift as evidence. The
-  // partial-unique on matched_gift_id covers a second MATCH (23505), but not the
-  // case where another charge already CREATED (auto-minted) the gift — this
-  // closes that gap with a clean 409 instead of a silent double-tie.
   const ownedByOtherCharge = await tx
-    .select({ id: stripeStagedCharges.id })
-    .from(stripeStagedCharges)
+    .select({ stripeChargeId: paymentApplications.stripeChargeId })
+    .from(paymentApplications)
     .where(
       and(
-        ne(stripeStagedCharges.id, charge.id),
-        or(
-          eq(stripeStagedCharges.matchedGiftId, giftId),
-          eq(stripeStagedCharges.createdGiftId, giftId),
-        ),
+        eq(paymentApplications.giftId, giftId),
+        eq(paymentApplications.evidenceSource, "stripe"),
+        eq(paymentApplications.linkRole, "counted"),
+        sql`${paymentApplications.lifecycle} IN ('proposed', 'confirmed')`,
+        ne(paymentApplications.stripeChargeId, charge.id),
       ),
     )
     .limit(1);
@@ -290,22 +213,18 @@ export async function linkChargeToGiftInTx(
     });
   }
 
-  // Tie the charge to the gift. Guarded on still-pending; the partial-unique on
-  // matched_gift_id also makes a gift claimable by at most ONE charge (23505 →
-  // surfaced as a link conflict by the caller).
+  const now = new Date();
   const updated = await tx
     .update(stripeStagedCharges)
     .set({
       ...effectiveGiftDonor,
-      matchedGiftId: giftId,
-      createdGiftId: null,
       autoApplied: false,
       matchStatus: "matched",
       matchConfirmedByUserId: userId,
-      matchConfirmedAt: new Date(),
+      matchConfirmedAt: now,
       approvedByUserId: userId,
-      approvedAt: new Date(),
-      updatedAt: new Date(),
+      approvedAt: now,
+      updatedAt: now,
     })
     .where(
       and(eq(stripeStagedCharges.id, charge.id), chargeStatusWhere.pending),
@@ -315,12 +234,10 @@ export async function linkChargeToGiftInTx(
     throw new ReconcileAbort(409, {
       error: "link_conflict",
       message:
-        "This staged charge is no longer open, or that gift was just linked to another charge. Refresh and try again.",
+        "This staged charge is no longer open, or that gift is already tied to another Stripe charge. Refresh and try again.",
     });
   }
 
-  // Re-point the gift's donor when the reviewer confirmed a switch (Donor XOR
-  // was validated by the caller before this).
   if (donorSwitching) {
     await tx
       .update(giftsAndPayments)
@@ -328,13 +245,11 @@ export async function linkChargeToGiftInTx(
         organizationId: effectiveGiftDonor.organizationId,
         individualGiverPersonId: effectiveGiftDonor.individualGiverPersonId,
         householdId: effectiveGiftDonor.householdId,
-        updatedAt: new Date(),
+        updatedAt: now,
       })
       .where(eq(giftsAndPayments.id, giftId));
   }
 
-  // Stamp the gift's FINAL amount to the Stripe GROSS + rebalance its single
-  // allocation (or flag a multi-allocation gift whose splits no longer sum).
   const stamp = await stampGiftFinalAmount(tx, giftId, {
     source: "stripe",
     stripeChargeId: charge.id,
@@ -349,20 +264,17 @@ export async function linkChargeToGiftInTx(
       "stripe",
     );
   }
-  // A changed gift amount shifts the paid total of the pledge it's on (if any).
   if (stamp.changed && gift.opportunityId) {
     rederivePledgeIds.push(gift.opportunityId);
   }
 
-  // Dual-write (Phase 2): book the charge → existing-gift ledger row (GROSS
-  // source, createdTheGift:false). Delete-by-anchor keeps re-links idempotent.
-  await bookStripeChargeApplication(tx, {
+  await bookStripeChargeApplicationAndRefresh(tx, {
     stripeChargeId: charge.id,
     grossAmount: charge.grossAmount,
     giftId,
     matchMethod: "human",
     confirmedByUserId: userId,
-    confirmedAt: new Date(),
+    confirmedAt: now,
     createdTheGift: false,
   });
 
@@ -383,14 +295,6 @@ export async function linkChargeToGiftInTx(
   return { giftId, rederivePledgeIds };
 }
 
-/**
- * Materialize a proposed NEW donor (propose-new-donor) and return its Donor XOR.
- * Inserts the organization / person / household; for org + person also attaches
- * the payer email (skipped for households, which are name-only). The email is
- * inserted with onConflictDoNothing so the global lower(email) uniqueness never
- * aborts the bundle — a colliding address means the contact already exists and
- * the donor record still stands on its name.
- */
 export async function createDonorRecordInTx(
   tx: Tx,
   args: { draft: BundleNewDonorDraft; userId: string },
@@ -399,36 +303,35 @@ export async function createDonorRecordInTx(
   const email = draft.email?.trim() ? draft.email.trim() : null;
 
   if (draft.kind === "organization") {
-    const orgId = newId();
+    const organizationId = newId();
     await tx.insert(organizations).values({
-      id: orgId,
+      id: organizationId,
       name: draft.name,
       ownerUserId: userId,
     });
     if (email) {
       await tx
         .insert(emails)
-        .values({ id: newId(), email, organizationId: orgId })
+        .values({ id: newId(), email, organizationId })
         .onConflictDoNothing();
     }
     return {
-      organizationId: orgId,
+      organizationId,
       individualGiverPersonId: null,
       householdId: null,
     };
   }
 
   if (draft.kind === "household") {
-    const hhId = newId();
-    await tx.insert(households).values({ id: hhId, name: draft.name });
+    const householdId = newId();
+    await tx.insert(households).values({ id: householdId, name: draft.name });
     return {
       organizationId: null,
       individualGiverPersonId: null,
-      householdId: hhId,
+      householdId,
     };
   }
 
-  // individual (person)
   const personId = newId();
   await tx.insert(people).values({
     id: personId,
@@ -450,11 +353,6 @@ export async function createDonorRecordInTx(
   };
 }
 
-/**
- * Human-driven exclude of a Stripe charge in a bundle confirm: file it under a
- * non-gift category, pinning classificationSource='manual'. Guarded on
- * still-pending (a committed/reconciled charge is skipped upstream).
- */
 export async function excludeChargeInTx(
   tx: Tx,
   args: {
@@ -466,7 +364,6 @@ export async function excludeChargeInTx(
   const updated = await tx
     .update(stripeStagedCharges)
     .set({
-      // Status is DERIVED: setting an exclusion reason ⇒ excluded.
       exclusionReason: args.exclusionReason,
       classificationSource: "manual",
       updatedAt: new Date(),
@@ -484,10 +381,6 @@ export async function excludeChargeInTx(
   }
 }
 
-/**
- * Human-driven exclude of a QuickBooks staged payment in a bundle confirm.
- * Guarded on still-approvable.
- */
 export async function excludeStagedInTx(
   tx: Tx,
   args: {
@@ -499,7 +392,6 @@ export async function excludeStagedInTx(
   const updated = await tx
     .update(stagedPayments)
     .set({
-      // Status is DERIVED: setting an exclusion reason ⇒ excluded.
       exclusionReason: args.exclusionReason,
       classificationSource: "manual",
       updatedAt: new Date(),
