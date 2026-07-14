@@ -126,31 +126,42 @@ in older notes is stale.
   - **`status` is FULLY CALCULATED server-side — never written directly.** Enum
     `opportunity_status` = `open` / `pledge` / `cash_in` / `dormant` / `lost`.
     Derivation (see `pledgeStage.ts` / `deriveOppFields`): if `loss_type` is set →
-    status = that; else fully paid (paid ≥ awarded) or stage = `cash_in` → `cash_in`;
-    else stage = `written_commitment` → `pledge`; else `open`.
+    status = that; else fully paid (paid ≥ awarded > 0) → `cash_in`
+    (payment-driven only); else `written_pledge` → `pledge`; else `open`. Stage
+    never drives status.
   - **`loss_type`** (enum `opportunity_loss_type` = `dormant` / `lost`, nullable) is
     the **only** user-settable part of the old status overload — it pulls a row out of
     the calculated funnel.
-  - Enums: `type` (`solicitation` / `renewal` / `open_application`), `stage` (9:
+  - Enums: `type` (`solicitation` / `renewal` / `open_application`), `stage` (10:
     `cold_lead`, `warm_lead`, `in_conversation`, `convince`,
     `conditional_commitment`, `probable_renewal`, `verbal_confirmation`,
-    `written_commitment`, `cash_in`), NOTE: I BELIEVE THIS NEEDS TO BE FIXED AND THAT WRITTEN_COMMITMENT AND CASH IN ARE NO LONGER PARTS OF THIS ENUM.
-     `conditional` (`unconditional` / `conditional_unspecified` / `reimbursable` /
+    `written_commitment`, `cash_in`, `complete`). Stage is a pure funnel,
+    separate from the outcome — a WON row (status `pledge` / `cash_in`) reads
+    `complete`; everything else keeps its real funnel stage. The three legacy
+    commitment/outcome values (`conditional_commitment`, `written_commitment`,
+    `cash_in`) are **retained in the pg type for history but no longer written**
+    by the app and no longer latch `written_pledge`; migration 0121 remapped the
+    last rows carrying them to `verbal_confirmation`, so zero rows use them.
+    `conditional` (`unconditional` / `conditional_unspecified` / `reimbursable` /
     `conditional_on_funder_determination` / `conditional_on_target`),
     **`fundraising_category`** (`revenue` / `loan_capital`, NOT NULL default
     `revenue`), **`loan_or_grant`** (the authoritative loan-vs-grant flag — see
     below — dual-written from `fundraising_category`). NOTE: THESE LAST TWO SEEM DUPLICATIVE (FUNDRAISING CATEGORY VS LOAN VS GRANT)
-  - A sticky `was_pledge` flag latches true once a row reaches a commitment stage
-    (`conditional_commitment` / `written_commitment`) or gets a grant letter, and is
-    never auto-cleared; it drives the **Pledges-page filter, NOT** the calculated
-    `status`. `match_id` self-references the original opp a matching-gift row matches. `owner_user_id`,
+  - A sticky `written_pledge` flag (renamed from `was_pledge`) latches true only
+    when a grant letter is uploaded while the money is not already fully in, or
+    on an explicit user set — never auto-cleared. It drives the calculated
+    `status` (→ `pledge`) and the Pledges-page filter.
+    `match_id` self-references the original opp a matching-gift row matches. `owner_user_id`,
     `primary_contact_person_id` (frozen historical attribution), `copper_pledge_id`.
   - The old `closed_requires_completion_date` CHECK has been **dropped** (it blocked
     bulk historical cleanup). NOTE: I THINK WE SHOULD REINSTATE THIS.
 
 - `pledge_allocations` — line items within an opportunity/pledge. All per-row scope
   (entity, fiscal year `grant_year`, `region_ids text[]`, `intended_usage`,
-  `fundable_project_id`) lives here, plus revenue-coding capture (below). `status`
+  `fundable_project_id`) lives here, plus the **same three restriction axes as
+  `gift_allocations`** (`regional_restriction_type` / `usage_restriction_type` /
+  `time_restriction_type` — see Restriction taxonomy below) and revenue-coding
+  capture (below). `status`
   enum `pledge_allocation_status`: `working` (internal draft), `committed` /
   `committed_with_conditions` (firm), `superseded_by_pledge` (re-scoped), NOTE: IS THIS IN USE? IT SEEMS MESSY
   `superseded_by_gift` (an actual gift took its place), `abandoned` (dropped unpaid).
@@ -173,7 +184,8 @@ in older notes is stale.
   is captured on **three independent axes** —
   `regional_restriction_type` / `usage_restriction_type` / `time_restriction_type`,
   each a `restriction_axis` (`donor_restricted` / `wf_restricted` / `unrestricted`),
-  NOT NULL default `unrestricted` (see below). NOTE: PLEDGE ALLOCATIONS SHOULD HAVE THE SAME RESTRICTIONS AS GIFT ALLOCATIONS `display_usage` is a 
+  NOT NULL default `unrestricted` (see below); `pledge_allocations` carries the
+  same three axes. `display_usage` is a
   **trigger-maintained, read-only** human label
   (`compute_gift_allocation_display_usage` + triggers in `post-import-fixups.sql`);
   renames of a school / region / fundable project cascade into it — **never write
@@ -259,7 +271,7 @@ header `conditional` / `conditions` / `conditions_met` columns are kept physical
 
 The `reimbursement_type` enum (`direct` / `indirect`, renamed from
 `reimbursable_share`) on both allocation tables tags direct-vs-indirect cost share;
-`direct`-tagged lines are recorded in full but **excluded** from goal analytics. NOTE: THIS SEEMS LIKE IT NEEDS SOME CLEAN UP AS WELL.
+`direct`-tagged lines are recorded in full but **excluded** from goal analytics.
 
 ## Fundraising category (revenue vs loan capital)
 
