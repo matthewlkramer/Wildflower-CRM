@@ -1,0 +1,80 @@
+This appears to be two overlapping bugs plus a likely data-consistency problem. It is not primarily a React refresh issue.
+
+1. The card is incorrectly replacing the QBO payer with a Stripe payer
+
+The reconciliation-card API looks for a Stripe payout linked to the QBO deposit and, for a single-charge payout, returns that charge’s payerName. The query uses an unordered LIMIT 1.
+
+The frontend then does this:
+
+const qbPayerName = card.stripeChargeDonorName ?? card.payerName;
+
+So when Stripe data exists, the card displays the Stripe charge donor instead of the actual QuickBooks payer.
+
+That directly explains why QBO deposit 31718 displays Jamie Rue. Jamie is probably the payer on a Stripe charge associated—correctly or incorrectly—with one of the deposit’s linked payouts. The UI is presenting that as though it were the QBO payer.
+
+This part is certain from the code.
+
+2. Deposit 31718 may have more than one payout link
+
+The database guarantees that each Stripe payout has only one settlement-link row, but it does not guarantee that each QBO deposit is used by only one payout:
+
+payout_id has a unique index.
+deposit_staged_payment_id only has an ordinary index.
+
+Therefore this is currently legal:
+
+Stripe payout	QBO deposit
+Jamie Rue payout	31718
+Dionne Kirby payout	31718
+
+Newer manual code tries to prevent this at the application layer, but older records, automated proposals, or prior code paths could already have produced duplicates.
+
+The lower-level settlement writer only upserts by payout ID. It does not check whether another payout already points to that deposit.
+
+Worse, several read paths simply choose the first matching payout:
+
+Card enrichment uses LIMIT 1 without ordering.
+Bundle canonicalization takes the first result without checking whether several exist.
+
+So the likely sequence is:
+
+31718 already had a stale or incorrect Jamie Rue payout link.
+Resolving Dionne Kirby created or confirmed another payout link.
+The UI reported success because that write succeeded.
+The old Jamie relationship remained.
+The card query continued selecting Jamie’s payout or charge.
+31718 remained in the work queue because at least one linked payout still had unresolved charges.
+
+The queue intentionally keeps a QBO deposit visible when any payout tied to it still has unresolved charge-level work.
+
+This is the strongest explanation for the “successful connection that does not appear to stick.”
+
+3. The Jamie Rue 409 is probably a ledger-versus-pointer mismatch
+
+The right-hand column decides that a gift is “unlinked to money” primarily by looking for counted rows in payment_applications.
+
+But the QBO linking endpoint also checks:
+
+whether the QBO row is still derived as pending;
+whether it belongs to a group;
+whether another payment has already claimed the gift through the ledger;
+whether a legacy physical matchedGiftId, createdGiftId, or related relationship already prevents the update.
+
+It returns 409 when those facts disagree with the right-column proposal.
+
+The most plausible Jamie state is:
+
+the gift has an old header-level or staged-row relationship;
+the corresponding payment_applications row is missing or points elsewhere;
+therefore the right column believes the gift lacks money;
+but the reconcile mutation sees the existing claim and refuses to create a second one.
+
+A second possibility is that the Jamie QBO payment has already been claimed as charge-level Stripe↔QBO settlement evidence. That relationship is stored separately in linked_qb_staged_payment_id, and the right-column QBO proposer does not appear to exclude every such claimed row.
+
+The exact 409 response body would distinguish these cases:
+
+not_pending
+source_group_member
+link_conflict
+gift_already_stripe_sourced
+another claimed-row conflict

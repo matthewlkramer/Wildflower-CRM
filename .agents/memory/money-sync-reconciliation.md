@@ -89,6 +89,7 @@ description: Grouped index of money-sync lessons — QuickBooks/Stripe/Donorbox 
 - [Reconciliation already-linked pickers](reconciliation-already-linked-picker.md) — re-link pickers gray a candidate already tied to a gift via COALESCE(matched/created/groupReconciled) (NOT PA ledger); split-resolved rows un-grayed but safe (reconcile 409s on non-pending); unlink must also invalidate gifts-missing-QB.
 - [cards resolved-gift FY wrong-table 500](cards-resolved-gift-fy-wrong-table.md) — grant_year is gift_allocations-only (gifts_and_payments has none); chargeSub hand-dupes shared resolved-gift subqueries & can drift; diagnose raw-sql column errs via drizzle .toSQL()+EXPLAIN (no exec).
 - [CRM-only worklist allocation rows](crm-only-allocation-rows.md) — worklist is allocation-granular (1 row/gift_allocation, rowKey=giftId:allocId) but reconcile + revert are gift-level; no allocation-level payment link exists.
+- [Stripe charge donor crossing](stripe-charge-donor-crossing.md) — gift proposals are donor-scoped, so a wrong confirmed donor on a charge deterministically links the wrong donor's gift; repairs must mirror the FULL link write-set (PA row + charge stamps + final-amount stamp + tie re-derivation, which reads Stripe rows too).
 
 ## Imports/backfills & prod verification
 
