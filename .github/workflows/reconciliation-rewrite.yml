@@ -1,0 +1,52 @@
+name: Reconciliation rewrite checks
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/api-server/**"
+      - "artifacts/api-spec/**"
+      - "lib/db/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/reconciliation-rewrite.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reconciliation-rewrite-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck API
+        run: pnpm check:api
+
+      - name: Check generated API contract
+        run: pnpm check:codegen
+
+      - name: Run API tests
+        run: pnpm check:test-api
