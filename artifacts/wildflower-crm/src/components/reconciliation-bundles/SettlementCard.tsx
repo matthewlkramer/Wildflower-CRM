@@ -180,9 +180,23 @@ export function ChargeList({
             {/* Charge-grain QB settlement tie: confirmed link, or the proposed
                 QB row a human still needs to approve. */}
             {c.linkedQbStagedPaymentId ? (
-              <div className="flex items-center gap-1 text-[10px] text-emerald-700">
+              <div
+                className="flex items-center gap-1 text-[10px] text-emerald-700"
+                data-testid={`charge-qb-tied-${c.id}`}
+              >
                 <Link2 className="h-2.5 w-2.5 shrink-0" />
                 QB tied
+                {c.linkedFeeQbStagedPaymentId ? (
+                  // The sibling negative "Stripe fee" QB row of the same
+                  // deposit was auto-claimed at confirm — that row is
+                  // explained by this charge, not unreconciled money.
+                  <span
+                    className="text-muted-foreground"
+                    title="The matching negative QuickBooks 'Stripe fee' row in the same deposit was linked to this charge"
+                  >
+                    · fee row linked
+                  </span>
+                ) : null}
               </div>
             ) : c.proposedQb ? (
               <div
@@ -387,6 +401,10 @@ export function SettlementCard({
         title: res.payoutFullyTied
           ? `Approved ${res.tied} QB tie${res.tied === 1 ? "" : "s"} — payout fully settled.`
           : `Approved ${res.tied} QB tie${res.tied === 1 ? "" : "s"}.`,
+        description:
+          res.feeRowsTied > 0
+            ? `Also linked ${res.feeRowsTied} matching QuickBooks Stripe-fee row${res.feeRowsTied === 1 ? "" : "s"}.`
+            : undefined,
       });
       onChanged();
     } catch (err) {
@@ -443,6 +461,10 @@ export function SettlementCard({
         title: res.payoutFullyTied
           ? "QuickBooks tie recorded — payout fully settled."
           : "QuickBooks tie recorded.",
+        description:
+          res.feeRowsTied > 0
+            ? `Also linked ${res.feeRowsTied} matching QuickBooks Stripe-fee row${res.feeRowsTied === 1 ? "" : "s"}.`
+            : undefined,
       });
       onChanged();
     } catch (err) {

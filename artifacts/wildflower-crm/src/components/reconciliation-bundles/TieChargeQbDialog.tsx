@@ -31,8 +31,9 @@ function toCents(v: string | null | undefined): number | null {
  * QB staged rows near the charge's amount/date, pick the right one, and the
  * caller confirms it via the charge-ties endpoint's manual mode.
  *
- * The server places a picked row onto an untied charge by EXACT amount, so
- * rows whose amount differs from this charge are shown grayed with that reason
+ * The server places a picked row onto an untied charge by EXACT amount — the
+ * charge's GROSS (donation amount) or NET (post-fee bank deposit), both to
+ * the cent — so rows matching neither are shown grayed with that reason
  * (never hidden — the user should see and question a near-miss), alongside the
  * server-labeled blockers (excluded / settled elsewhere / already tied).
  * Plane 1 only: a tie is settlement evidence — no gift is minted or changed.
@@ -74,8 +75,12 @@ export function TieChargeQbDialog({
               ? ` (${formatCurrency(charge.amount)}`
               : " ("}
             {charge.date ? ` · ${formatDate(charge.date)})` : ")"} on payout{" "}
-            {shortId(payoutId)}. The row's amount must match the charge
-            exactly.
+            {shortId(payoutId)}. The row's amount must exactly match the
+            charge's gross
+            {charge.net != null && charge.net !== charge.amount
+              ? ` or net (${formatCurrency(charge.net)})`
+              : ""}{" "}
+            amount.
           </DialogDescription>
         </DialogHeader>
         <div className="relative">
@@ -120,9 +125,15 @@ function QbRowResults({
     limit: 25,
   });
   const chargeCents = toCents(charge.amount);
+  const netCents = toCents(charge.net);
   const rows: ResultRow[] = (data?.data ?? []).map((c) => {
+    const rowCents = toCents(c.amount);
+    // The confirm accepts an exact match on the charge GROSS or NET (the
+    // bookkeeper may have booked the post-fee bank deposit) — to the cent.
     const amountMismatch =
-      chargeCents != null && toCents(c.amount) !== chargeCents;
+      chargeCents != null &&
+      rowCents !== chargeCents &&
+      (netCents == null || rowCents !== netCents);
     return {
       id: c.id,
       primary: c.label ?? shortId(c.id),
@@ -135,7 +146,7 @@ function QbRowResults({
       blockedReason:
         c.conflictReason ??
         (amountMismatch
-          ? "Amount differs from the charge — an exact match is required"
+          ? "Amount matches neither the charge's gross nor its net — an exact match is required"
           : null),
     };
   });

@@ -4,9 +4,12 @@ import {
   assignManualChargeQbTies,
   nameSimilarity,
   nameTokens,
+  pairChargeFeeRows,
   CHARGE_TIE_WINDOW_DAYS,
   NAME_SIM_THRESHOLD,
   type ChargeForTie,
+  type FeeChargeInput,
+  type FeeRowInput,
   type QbRowForTie,
 } from "../lib/chargeQbTie";
 
@@ -16,8 +19,9 @@ function charge(
   dateReceived: string | null,
   payerName: string | null = null,
   description: string | null = null,
+  netAmount: string | null = null,
 ): ChargeForTie {
-  return { id, grossAmount, dateReceived, payerName, description };
+  return { id, grossAmount, netAmount, dateReceived, payerName, description };
 }
 
 function qb(
@@ -172,6 +176,69 @@ describe("assignChargeQbTies (proposal pass)", () => {
     expect(out.size).toBe(1);
   });
 
+  it("matches a NET-booked QB row exactly (bookkeeper booked post-fee)", () => {
+    // $600 gross / $584.70 net — QB row records the net bank deposit.
+    const out = assignChargeQbTies(
+      [charge("c1", "600.00", "2026-01-10", "Allen Vasan", null, "584.70")],
+      [qb("q1", "584.70", "2026-01-12", "Allen Vasan")],
+    );
+    expect(out.get("c1")).toBe("q1");
+  });
+
+  it("still requires NET to match exactly to the cent", () => {
+    const out = assignChargeQbTies(
+      [charge("c1", "600.00", "2026-01-10", null, null, "584.70")],
+      [qb("q1", "584.71", "2026-01-12")],
+    );
+    expect(out.size).toBe(0);
+  });
+
+  it("prefers the GROSS row when both a gross and a net row fit", () => {
+    const out = assignChargeQbTies(
+      [charge("c1", "100.00", "2026-01-10", "Alice Jones", null, "95.05")],
+      [
+        qb("qNet", "95.05", "2026-01-10", "Alice Jones"),
+        qb("qGross", "100.00", "2026-01-10", "Alice Jones"),
+      ],
+    );
+    expect(out.get("c1")).toBe("qGross");
+    expect(out.size).toBe(1);
+  });
+
+  it("a row equal to one charge's NET and another's GROSS is ambiguous — name similarity required", () => {
+    // q1 = c1's net AND c2's gross → 2 eligible charges at 95.05; no names →
+    // nothing assigns on amount alone.
+    const out = assignChargeQbTies(
+      [
+        charge("c1", "100.00", "2026-01-10", null, null, "95.05"),
+        charge("c2", "95.05", "2026-01-10"),
+      ],
+      [qb("q1", "95.05", "2026-01-11")],
+    );
+    expect(out.size).toBe(0);
+  });
+
+  it("disambiguates the cross gross/net collision by payer name", () => {
+    const out = assignChargeQbTies(
+      [
+        charge("c1", "100.00", "2026-01-10", "Hilary Beard", null, "95.05"),
+        charge("c2", "95.05", "2026-01-10", "John Smith"),
+      ],
+      [qb("q1", "95.05", "2026-01-11", "Smith, John")],
+    );
+    expect(out.get("c2")).toBe("q1");
+    expect(out.has("c1")).toBe(false);
+  });
+
+  it("zero-fee charge (net == gross) registers once and matches normally", () => {
+    const out = assignChargeQbTies(
+      [charge("c1", "50.00", "2026-01-10", null, null, "50.00")],
+      [qb("q1", "50.00", "2026-01-10")],
+    );
+    expect(out.get("c1")).toBe("q1");
+    expect(out.size).toBe(1);
+  });
+
   it("is deterministic on equal-evidence ties (stable id ordering)", () => {
     const run = () =>
       assignChargeQbTies(
@@ -247,6 +314,28 @@ describe("assignManualChargeQbTies (Tie selected)", () => {
     expect(issues[0]!.reason).toMatch(/no amount/i);
   });
 
+  it("places a row matching a charge's NET amount", () => {
+    const { assigned, issues } = assignManualChargeQbTies(
+      [charge("c1", "600.00", "2026-01-10", null, null, "584.70")],
+      [qb("q1", "584.70", "2026-01-15")],
+    );
+    expect(issues).toEqual([]);
+    expect(assigned.get("c1")).toBe("q1");
+  });
+
+  it("a charge is placed at most once even though it registers under gross AND net", () => {
+    // Two rows both fit c1 (one = gross, one = net) — only one may land; the
+    // other is an issue (a charge is booked once).
+    const { assigned, issues } = assignManualChargeQbTies(
+      [charge("c1", "100.00", "2026-01-10", null, null, "95.05")],
+      [qb("q1", "100.00", "2026-01-10"), qb("q2", "95.05", "2026-01-10")],
+    );
+    expect(assigned.size).toBe(1);
+    expect(assigned.get("c1")).toBe("q1"); // gross fit wins
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.qbStagedPaymentId).toBe("q2");
+  });
+
   it("threshold sanity: NAME_SIM_THRESHOLD blocks propose but not manual", () => {
     const chargesArr = [
       charge("c1", "25.00", "2026-01-10", "AAA"),
@@ -263,5 +352,134 @@ describe("assignManualChargeQbTies (Tie selected)", () => {
     const manual = assignManualChargeQbTies(chargesArr, rowsArr);
     expect(manual.issues).toEqual([]);
     expect(manual.assigned.size).toBe(2);
+  });
+});
+
+// ── Sibling "Stripe fee" row pairing (confirm-time claim + 0127 backfill) ──
+
+function feeCharge(
+  chargeId: string,
+  depositKey: string,
+  feeCents: number,
+): FeeChargeInput {
+  return { chargeId, depositKey, feeCents };
+}
+
+function feeRow(
+  id: string,
+  depositKey: string,
+  feeCents: number,
+  qbLineId = "",
+): FeeRowInput {
+  return { id, depositKey, feeCents, qbLineId };
+}
+
+describe("pairChargeFeeRows (sibling Stripe-fee claim)", () => {
+  it("pairs a single charge with the single exact-fee row of its deposit", () => {
+    const out = pairChargeFeeRows(
+      [feeCharge("c1", "dep1", 1311)],
+      [feeRow("f1", "dep1", 1311)],
+    );
+    expect(out.size).toBe(1);
+    expect(out.get("c1")).toBe("f1");
+  });
+
+  it("requires the deposit to match — same fee amount in another deposit is ignored", () => {
+    const out = pairChargeFeeRows(
+      [feeCharge("c1", "dep1", 1311)],
+      [feeRow("f1", "dep2", 1311)],
+    );
+    expect(out.size).toBe(0);
+  });
+
+  it("requires the fee to match to the cent", () => {
+    const out = pairChargeFeeRows(
+      [feeCharge("c1", "dep1", 1311)],
+      [feeRow("f1", "dep1", 1312)],
+    );
+    expect(out.size).toBe(0);
+  });
+
+  it("equal-fee twins pair rank-to-rank (charge id order × qbLineId order)", () => {
+    // Two $500 donations in one deposit, each with a −$13.11 fee line.
+    const out = pairChargeFeeRows(
+      [feeCharge("c2", "dep1", 1311), feeCharge("c1", "dep1", 1311)],
+      [feeRow("f9", "dep1", 1311, "2"), feeRow("f5", "dep1", 1311, "1")],
+    );
+    expect(out.size).toBe(2);
+    expect(out.get("c1")).toBe("f5"); // 1st charge (id order) ↔ 1st row (line order)
+    expect(out.get("c2")).toBe("f9");
+    // A fee row is never claimed twice.
+    expect(new Set(out.values()).size).toBe(2);
+  });
+
+  it("more charges than rows: only the leading ranks pair; rest stay unclaimed", () => {
+    const out = pairChargeFeeRows(
+      [
+        feeCharge("c1", "dep1", 1311),
+        feeCharge("c2", "dep1", 1311),
+        feeCharge("c3", "dep1", 1311),
+      ],
+      [feeRow("f1", "dep1", 1311, "1")],
+    );
+    expect(out.size).toBe(1);
+    expect(out.get("c1")).toBe("f1");
+  });
+
+  it("more rows than charges: surplus rows stay unclaimed", () => {
+    const out = pairChargeFeeRows(
+      [feeCharge("c1", "dep1", 1311)],
+      [feeRow("f1", "dep1", 1311, "1"), feeRow("f2", "dep1", 1311, "2")],
+    );
+    expect(out.size).toBe(1);
+    expect(out.get("c1")).toBe("f1");
+  });
+
+  it("mixed deposits and fee amounts partition independently", () => {
+    const out = pairChargeFeeRows(
+      [
+        feeCharge("c1", "dep1", 1311),
+        feeCharge("c2", "dep1", 725),
+        feeCharge("c3", "dep2", 1311),
+      ],
+      [
+        feeRow("f1", "dep1", 725),
+        feeRow("f2", "dep2", 1311),
+        feeRow("f3", "dep1", 1311),
+      ],
+    );
+    expect(out.size).toBe(3);
+    expect(out.get("c1")).toBe("f3");
+    expect(out.get("c2")).toBe("f1");
+    expect(out.get("c3")).toBe("f2");
+  });
+
+  it("is deterministic: shuffled input order yields the same pairing", () => {
+    const charges = [
+      feeCharge("c2", "dep1", 1311),
+      feeCharge("c1", "dep1", 1311),
+    ];
+    const rows = [
+      feeRow("f2", "dep1", 1311, "2"),
+      feeRow("f1", "dep1", 1311, "1"),
+    ];
+    const a = pairChargeFeeRows(charges, rows);
+    const b = pairChargeFeeRows([...charges].reverse(), [...rows].reverse());
+    expect([...a.entries()].sort()).toEqual([...b.entries()].sort());
+  });
+
+  it("qbLineId ties break by row id", () => {
+    const out = pairChargeFeeRows(
+      [feeCharge("c1", "dep1", 1311), feeCharge("c2", "dep1", 1311)],
+      [feeRow("fB", "dep1", 1311, "1"), feeRow("fA", "dep1", 1311, "1")],
+    );
+    expect(out.get("c1")).toBe("fA");
+    expect(out.get("c2")).toBe("fB");
+  });
+
+  it("empty inputs are a no-op", () => {
+    expect(pairChargeFeeRows([], []).size).toBe(0);
+    expect(pairChargeFeeRows([feeCharge("c1", "d", 1)], []).size).toBe(0);
+    expect(pairChargeFeeRows([], [feeRow("f1", "d", 1)]).size).toBe(0);
   });
 });

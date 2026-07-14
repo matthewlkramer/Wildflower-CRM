@@ -162,6 +162,7 @@ interface PayoutChargeRow {
   status: string | null;
   exclusionReason: string | null;
   linkedQbStagedPaymentId: string | null;
+  linkedFeeQbStagedPaymentId: string | null;
   proposedQb: {
     id: string;
     payerName: string | null;
@@ -282,6 +283,7 @@ router.get(
               'status', c.status,
               'exclusionReason', c.exclusion_reason,
               'linkedQbStagedPaymentId', c.linked_qb_staged_payment_id,
+              'linkedFeeQbStagedPaymentId', c.linked_fee_qb_staged_payment_id,
               'proposedQb', CASE WHEN c.pq_id IS NOT NULL THEN json_build_object(
                   'id', c.pq_id,
                   'payerName', c.pq_payer_name,
@@ -311,6 +313,7 @@ router.get(
               ELSE 'pending'
             END) AS status,
                    cc.exclusion_reason, cc.linked_qb_staged_payment_id,
+                   cc.linked_fee_qb_staged_payment_id,
                    pq.id AS pq_id, pq.payer_name AS pq_payer_name,
                    pq.amount::text AS pq_amount, pq.date_received::text AS pq_date,
                    COALESCE(pq.qb_transaction_memo, pq.line_description) AS pq_memo

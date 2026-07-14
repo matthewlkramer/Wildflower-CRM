@@ -492,6 +492,7 @@ export const SearchReconciliationPayoutsResponse = zod.object({
   "status": zod.string().nullish().describe('Staged-charge derived review status (pending\/match_proposed\/match_confirmed\/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie.'),
   "exclusionReason": zod.string().nullish().describe('Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, or refunded_charge for a fully-refunded charge that was never booked into a gift — both auto-excluded). Null unless the charge is excluded.'),
   "linkedQbStagedPaymentId": zod.string().nullish().describe('CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied.'),
+  "linkedFeeQbStagedPaymentId": zod.string().nullish().describe('The sibling NEGATIVE QuickBooks \'Stripe fee\' row auto-claimed when the donor-line tie was confirmed — same QB deposit, amount exactly −(gross − net). Plane-1 settlement evidence only (fees never enter payment applications). Null when no fee row was found or the tie is unconfirmed.'),
   "proposedQb": zod.object({
   "id": zod.string().describe('staged_payments.id of the proposed QB row.'),
   "payerName": zod.string().nullish(),
@@ -605,6 +606,7 @@ export const ConfirmPayoutChargeTiesResponse = zod.object({
   "confirmed": zod.boolean().describe('True when the ties were written.'),
   "payoutId": zod.string(),
   "tied": zod.number().describe('Charges that gained a confirmed QuickBooks tie in this call.'),
+  "feeRowsTied": zod.number().describe('Sibling NEGATIVE QuickBooks \'Stripe fee\' rows auto-detected and claimed alongside the donor-line ties in this call (same QB deposit, amount exactly −(gross − net)). Fee rows are plane-1 settlement evidence only — they never enter payment applications.'),
   "payoutFullyTied": zod.boolean().describe('True when, after this call, every charge of the payout is tied or excluded\/rejected — the payout now shows as settled (Matched) on the Settlement report.')
 })
 
@@ -823,6 +825,7 @@ export const ListReconciliationBundleAnchorsResponse = zod.object({
   "status": zod.string().nullish().describe('Staged-charge derived review status (pending\/match_proposed\/match_confirmed\/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie.'),
   "exclusionReason": zod.string().nullish().describe('Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, or refunded_charge for a fully-refunded charge that was never booked into a gift — both auto-excluded). Null unless the charge is excluded.'),
   "linkedQbStagedPaymentId": zod.string().nullish().describe('CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied.'),
+  "linkedFeeQbStagedPaymentId": zod.string().nullish().describe('The sibling NEGATIVE QuickBooks \'Stripe fee\' row auto-claimed when the donor-line tie was confirmed — same QB deposit, amount exactly −(gross − net). Plane-1 settlement evidence only (fees never enter payment applications). Null when no fee row was found or the tie is unconfirmed.'),
   "proposedQb": zod.object({
   "id": zod.string().describe('staged_payments.id of the proposed QB row.'),
   "payerName": zod.string().nullish(),

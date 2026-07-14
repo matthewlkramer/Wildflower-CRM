@@ -48,6 +48,7 @@ description: Grouped index of money-sync lessons — QuickBooks/Stripe/Donorbox 
 - [Failed Stripe charges auto-excluded](stripe-failed-charge-exclusion.md) — ingest/upsert/revert all land failed charges in excluded/failed_charge; exclusion-reason enum lives in 4 places that must move together ([retarget move](reconciliation-move-own-application.md): ledger==matchedGiftId & no mint/group).
 - [Charge-grain Stripe↔QB ties](charge-grain-qb-ties.md) — Missing-deposit payouts tie per CHARGE (proposed vs confirmed cols); lump settlement-link owns its payout; settled=every non-terminal charge confirmed-tied.
 - [Charge-tie pair dismissals](charge-tie-dismissals.md) — reject persists the exact charge↔QB pair; propose pass skips it forever, other pairings unaffected; manual "Tie selected" deliberately overrides dismissals.
+- [Sibling Stripe-fee row link](charge-fee-row-link.md) — charge ties match gross OR net exactly; confirm auto-claims the deposit's negative fee row as plane-1 evidence ONLY (never payment_applications); TS pairing must stay lockstep with the SQL backfill; stamp under savepoint so a race never aborts confirm.
 
 ## Donorbox
 

@@ -653,6 +653,18 @@ export const GetGiftAuditReconciliationResponse = zod.object({
   "amount": zod.string().nullish().describe('QuickBooks amount for this record (the split sub-amount for split links).'),
   "dateReceived": zod.string().date().nullish()
 }).describe('A QuickBooks record this gift appears in (\"where\"), derived read-only from the gift\'s QB linkage.')),
+  "stripeFeeRecords": zod.array(zod.object({
+  "stagedPaymentId": zod.string().describe('staged_payments.id of the fee row.'),
+  "chargeId": zod.string().describe('Stripe charge id (ch_...) the fee row belongs to.'),
+  "realmId": zod.string().nullish(),
+  "qbEntityType": zod.string().nullish(),
+  "qbEntityId": zod.string().nullish(),
+  "qbDocNumber": zod.string().nullish(),
+  "payerName": zod.string().nullish(),
+  "lineDescription": zod.string().nullish().describe('QB line description (e.g. \'Stripe fee\').'),
+  "amount": zod.string().nullish().describe('Fee row amount — NEGATIVE (e.g. \"-13.11\").'),
+  "dateReceived": zod.string().date().nullish()
+}).describe('The NEGATIVE QuickBooks \"Stripe fee\" row claimed as settlement evidence for one of this gift\'s Stripe charges (auto-detected when the charge\'s donor-line QB tie was confirmed). Audit-only, plane 1: fee rows never enter payment applications and are never summed into the money trail.')),
   "restrictions": zod.array(zod.object({
   "allocationId": zod.string(),
   "regionalRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),

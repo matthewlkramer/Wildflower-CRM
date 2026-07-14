@@ -2291,6 +2291,26 @@ export interface GiftAuditReconciliationDonor {
 }
 
 /**
+ * The NEGATIVE QuickBooks "Stripe fee" row claimed as settlement evidence for one of this gift's Stripe charges (auto-detected when the charge's donor-line QB tie was confirmed). Audit-only, plane 1: fee rows never enter payment applications and are never summed into the money trail.
+ */
+export interface GiftAuditStripeFeeRecord {
+  /** staged_payments.id of the fee row. */
+  stagedPaymentId: string;
+  /** Stripe charge id (ch_...) the fee row belongs to. */
+  chargeId: string;
+  realmId?: string | null;
+  qbEntityType?: string | null;
+  qbEntityId?: string | null;
+  qbDocNumber?: string | null;
+  payerName?: string | null;
+  /** QB line description (e.g. 'Stripe fee'). */
+  lineDescription?: string | null;
+  /** Fee row amount — NEGATIVE (e.g. "-13.11"). */
+  amount?: string | null;
+  dateReceived?: string | null;
+}
+
+/**
  * Per-gift audit-reconciliation view: when the money arrived, the
 QuickBooks record(s) it appears in, who gave it, and its restrictions.
 Off-books gifts are flagged `auditExcluded` (excluded from audit
@@ -2312,6 +2332,7 @@ export interface GiftAuditReconciliation {
   donor?: GiftAuditReconciliationDonor | null;
   quickbooksRecords: GiftAuditReconciliationRecord[];
   corroboratingRecords: GiftAuditReconciliationRecord[];
+  stripeFeeRecords: GiftAuditStripeFeeRecord[];
   restrictions: GiftAuditReconciliationRestriction[];
 }
 
@@ -4152,6 +4173,8 @@ export interface PayoutChargeSummary {
   exclusionReason?: string | null;
   /** CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied. */
   linkedQbStagedPaymentId?: string | null;
+  /** The sibling NEGATIVE QuickBooks 'Stripe fee' row auto-claimed when the donor-line tie was confirmed — same QB deposit, amount exactly −(gross − net). Plane-1 settlement evidence only (fees never enter payment applications). Null when no fee row was found or the tie is unconfirmed. */
+  linkedFeeQbStagedPaymentId?: string | null;
   /** The system-PROPOSED (not yet confirmed) QuickBooks row for this charge, awaiting a human approve on the Settlement report. Null when nothing is proposed or the tie is already confirmed. */
   proposedQb?: ChargeProposedQbTie | null;
 }
@@ -4220,6 +4243,8 @@ export interface ConfirmChargeTiesResult {
   payoutId: string;
   /** Charges that gained a confirmed QuickBooks tie in this call. */
   tied: number;
+  /** Sibling NEGATIVE QuickBooks 'Stripe fee' rows auto-detected and claimed alongside the donor-line ties in this call (same QB deposit, amount exactly −(gross − net)). Fee rows are plane-1 settlement evidence only — they never enter payment applications. */
+  feeRowsTied: number;
   /** True when, after this call, every charge of the payout is tied or excluded/rejected — the payout now shows as settled (Matched) on the Settlement report. */
   payoutFullyTied: boolean;
 }

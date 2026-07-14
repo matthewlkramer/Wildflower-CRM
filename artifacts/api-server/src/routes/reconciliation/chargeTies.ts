@@ -12,6 +12,7 @@ import { ReconcileAbort } from "../../lib/reconciliationCommit";
 import { ConfirmPayoutChargeTiesBody } from "@workspace/api-zod";
 import {
   assignManualChargeQbTies,
+  claimSiblingFeeRows,
   type ChargeForTie,
   type QbRowForTie,
 } from "../../lib/chargeQbTie";
@@ -94,6 +95,7 @@ router.post(
           .select({
             id: stripeStagedCharges.id,
             grossAmount: stripeStagedCharges.grossAmount,
+            netAmount: stripeStagedCharges.netAmount,
             dateReceived: stripeStagedCharges.dateReceived,
             payerName: stripeStagedCharges.payerName,
             description: stripeStagedCharges.description,
@@ -175,6 +177,7 @@ router.post(
           const chargesForTie: ChargeForTie[] = openCharges.map((c) => ({
             id: c.id,
             grossAmount: c.grossAmount,
+            netAmount: c.netAmount,
             dateReceived: c.dateReceived,
             payerName: c.payerName,
             description: c.description,
@@ -193,7 +196,7 @@ router.post(
             throw new ReconcileAbort(409, {
               error: "unassignable_qb_rows",
               message:
-                "Some selected QuickBooks rows match no untied charge of this payout by exact amount.",
+                "Some selected QuickBooks rows match no untied charge of this payout by exact amount (gross or net).",
               details: { issues: manual.issues },
             });
           }
@@ -320,15 +323,37 @@ router.post(
           tied += 1;
         }
 
+        // Auto-claim the sibling NEGATIVE "Stripe fee" QB rows of the same
+        // deposits (amount exactly −(gross − net)) — plane-1 settlement
+        // evidence only; fee rows never enter payment_applications. Both
+        // modes run this; manual mode auto-grabs too but the response
+        // surfaces the count so nothing happens silently.
+        const chargeAmounts = new Map(
+          charges.map((c) => [
+            c.id,
+            { grossAmount: c.grossAmount, netAmount: c.netAmount },
+          ]),
+        );
+        const feeRowsTied = await claimSiblingFeeRows(
+          tx,
+          [...ties].map(([chargeId, qbId]) => ({ chargeId, qbId })),
+          chargeAmounts,
+        );
+
         // Fully tied when every charge is either confirmed-tied or terminal.
         const stillOpen = openCharges.filter((c) => !ties.has(c.id)).length;
         const payoutFullyTied = charges.length > 0 && stillOpen === 0;
 
-        return { confirmed: true, payoutId, tied, payoutFullyTied };
+        return { confirmed: true, payoutId, tied, feeRowsTied, payoutFullyTied };
       });
 
       req.log.info(
-        { payoutId, tied: result.tied, fullyTied: result.payoutFullyTied },
+        {
+          payoutId,
+          tied: result.tied,
+          feeRowsTied: result.feeRowsTied,
+          fullyTied: result.payoutFullyTied,
+        },
         "Confirmed charge-grain Stripe↔QB ties",
       );
 

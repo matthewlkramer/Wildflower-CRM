@@ -219,6 +219,17 @@ export const stripeStagedCharges = pgTable(
       () => stagedPayments.id,
       { onDelete: "set null" },
     ),
+    // The sibling NEGATIVE QuickBooks "Stripe fee" row auto-detected and
+    // claimed when this charge's donor-line tie is CONFIRMED: same QB deposit
+    // (realm + entity type + entity id) as the tied donor line, amount equal
+    // to −(gross − net) exactly. Plane-1 settlement evidence ONLY — fees NEVER
+    // enter payment_applications (design doc: intentional and permanent), so
+    // this column is how a fee row is accounted for without touching plane 2.
+    // At most one charge may claim a given fee row (UNIQUE below). SET NULL if
+    // the QB staged row is removed.
+    linkedFeeQbStagedPaymentId: text(
+      "linked_fee_qb_staged_payment_id",
+    ).references(() => stagedPayments.id, { onDelete: "set null" }),
     crossProcessorLinkedByUserId: text(
       "cross_processor_linked_by_user_id",
     ).references(() => users.id, { onDelete: "set null" }),
@@ -243,6 +254,11 @@ export const stripeStagedCharges = pgTable(
     index("stripe_staged_charges_proposed_qb_staged_payment_id_idx").on(
       t.proposedQbStagedPaymentId,
     ),
+    // A QB fee row is settlement evidence for AT MOST ONE charge — a partial
+    // unique index (NULLs excluded) enforces the bijection.
+    uniqueIndex("stripe_staged_charges_linked_fee_qb_staged_payment_id_uq")
+      .on(t.linkedFeeQbStagedPaymentId)
+      .where(sql`${t.linkedFeeQbStagedPaymentId} IS NOT NULL`),
     index("stripe_staged_charges_date_received_idx").on(t.dateReceived),
     index("stripe_staged_charges_gross_amount_idx").on(t.grossAmount),
     index("stripe_staged_charges_organization_id_idx").on(t.organizationId),

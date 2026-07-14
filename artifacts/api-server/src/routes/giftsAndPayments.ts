@@ -2261,6 +2261,7 @@ router.get(
         donor: null,
         quickbooksRecords: [],
         corroboratingRecords: [],
+        stripeFeeRecords: [],
         restrictions: [],
       });
     }
@@ -2420,6 +2421,40 @@ router.get(
       dateReceived: r.dateReceived,
     }));
 
+    // STRIPE FEES — the sibling negative QB "Stripe fee" rows claimed for this
+    // gift's Stripe charges when their donor-line QB ties were confirmed
+    // (stripe_staged_charges.linked_fee_qb_staged_payment_id). The gift ↔
+    // charge hop is the counted stripe application (the ledger is the only
+    // gift↔charge pointer). Audit-only plane-1 evidence — fee rows never
+    // enter payment_applications and are never summed into the money trail.
+    const stripeFeeRecords = await db
+      .select({
+        stagedPaymentId: stagedPayments.id,
+        chargeId: stripeStagedCharges.id,
+        realmId: stagedPayments.realmId,
+        qbEntityType: stagedPayments.qbEntityType,
+        qbEntityId: stagedPayments.qbEntityId,
+        qbDocNumber: stagedPayments.qbDocNumber,
+        payerName: stagedPayments.payerName,
+        lineDescription: stagedPayments.lineDescription,
+        amount: stagedPayments.amount,
+        dateReceived: stagedPayments.dateReceived,
+      })
+      .from(stripeStagedCharges)
+      .innerJoin(
+        stagedPayments,
+        eq(stagedPayments.id, stripeStagedCharges.linkedFeeQbStagedPaymentId),
+      )
+      .where(
+        sql`EXISTS (
+          SELECT 1 FROM payment_applications pa
+          WHERE pa.stripe_charge_id = ${stripeStagedCharges.id}
+            AND pa.evidence_source = 'stripe'
+            AND pa.link_role = 'counted'
+            AND pa.gift_id = ${id}
+        )`,
+      );
+
     // RESTRICTIONS — the per-allocation restriction coding under this gift.
     const restrictions = await db
       .select({
@@ -2446,6 +2481,7 @@ router.get(
       donor,
       quickbooksRecords,
       corroboratingRecords,
+      stripeFeeRecords,
       restrictions,
     });
   }),

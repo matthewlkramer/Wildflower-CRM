@@ -6321,9 +6321,28 @@ components:
         kind: { type: string, enum: [organization, individual, household] }
         id:   { type: string }
         name: { type: string, nullable: true }
+    GiftAuditStripeFeeRecord:
+      type: object
+      required: [stagedPaymentId, chargeId]
+      description: >-
+        The NEGATIVE QuickBooks "Stripe fee" row claimed as settlement evidence
+        for one of this gift's Stripe charges (auto-detected when the charge's
+        donor-line QB tie was confirmed). Audit-only, plane 1: fee rows never
+        enter payment applications and are never summed into the money trail.
+      properties:
+        stagedPaymentId: { type: string, description: "staged_payments.id of the fee row." }
+        chargeId:        { type: string, description: "Stripe charge id (ch_...) the fee row belongs to." }
+        realmId:         { type: string, nullable: true }
+        qbEntityType:    { type: string, nullable: true }
+        qbEntityId:      { type: string, nullable: true }
+        qbDocNumber:     { type: string, nullable: true }
+        payerName:       { type: string, nullable: true }
+        lineDescription: { type: string, nullable: true, description: "QB line description (e.g. 'Stripe fee')." }
+        amount:          { type: string, nullable: true, description: "Fee row amount — NEGATIVE (e.g. \"-13.11\")." }
+        dateReceived:    { type: string, format: date, nullable: true }
     GiftAuditReconciliation:
       type: object
-      required: [giftId, quickbooksTieStatus, reconciliationLanes, offBooks, auditExcluded, quickbooksRecords, corroboratingRecords, restrictions]
+      required: [giftId, quickbooksTieStatus, reconciliationLanes, offBooks, auditExcluded, quickbooksRecords, corroboratingRecords, stripeFeeRecords, restrictions]
       description: |
         Per-gift audit-reconciliation view: when the money arrived, the
         QuickBooks record(s) it appears in, who gave it, and its restrictions.
@@ -6351,6 +6370,11 @@ components:
         corroboratingRecords:
           type: array
           items: { $ref: "#/components/schemas/GiftAuditReconciliationRecord" }
+        # STRIPE FEES — the sibling negative QB "Stripe fee" rows claimed for
+        # this gift's charges at charge-tie confirm. Audit-only; never summed.
+        stripeFeeRecords:
+          type: array
+          items: { $ref: "#/components/schemas/GiftAuditStripeFeeRecord" }
         # RESTRICTIONS
         restrictions:
           type: array
@@ -7594,6 +7618,7 @@ components:
         status:    { type: string, nullable: true, description: "Staged-charge derived review status (pending/match_proposed/match_confirmed/excluded) — lets the Settlement report tell an excluded charge from one still needing a QB tie." }
         exclusionReason: { type: string, nullable: true, description: "Why an excluded charge was excluded (e.g. failed_charge for a Stripe charge that never settled, or refunded_charge for a fully-refunded charge that was never booked into a gift — both auto-excluded). Null unless the charge is excluded." }
         linkedQbStagedPaymentId: { type: string, nullable: true, description: "CONFIRMED per-charge QuickBooks tie: the staged_payments row recording this same money (individually-booked payouts). Null when untied." }
+        linkedFeeQbStagedPaymentId: { type: string, nullable: true, description: "The sibling NEGATIVE QuickBooks 'Stripe fee' row auto-claimed when the donor-line tie was confirmed — same QB deposit, amount exactly −(gross − net). Plane-1 settlement evidence only (fees never enter payment applications). Null when no fee row was found or the tie is unconfirmed." }
         proposedQb:
           nullable: true
           allOf: [ { $ref: "#/components/schemas/ChargeProposedQbTie" } ]
@@ -7663,11 +7688,12 @@ components:
         qbStagedPaymentId:  { type: string, nullable: true, description: "The staged_payments id of the dismissed QB row (the pair that will never be re-proposed)." }
     ConfirmChargeTiesResult:
       type: object
-      required: [confirmed, payoutId, tied, payoutFullyTied]
+      required: [confirmed, payoutId, tied, feeRowsTied, payoutFullyTied]
       properties:
         confirmed: { type: boolean, description: "True when the ties were written." }
         payoutId:  { type: string }
         tied:      { type: integer, description: "Charges that gained a confirmed QuickBooks tie in this call." }
+        feeRowsTied: { type: integer, description: "Sibling NEGATIVE QuickBooks 'Stripe fee' rows auto-detected and claimed alongside the donor-line ties in this call (same QB deposit, amount exactly −(gross − net)). Fee rows are plane-1 settlement evidence only — they never enter payment applications." }
         payoutFullyTied: { type: boolean, description: "True when, after this call, every charge of the payout is tied or excluded/rejected — the payout now shows as settled (Matched) on the Settlement report." }
     ConfirmSettlementLinkResult:
       type: object

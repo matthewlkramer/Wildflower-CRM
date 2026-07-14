@@ -33,6 +33,9 @@ const REALM_ID = `${RUN}_realm`;
 const AMT_A = "1234.57";
 const AMT_B = "2345.68";
 const AMT_C = "3456.79";
+// Net-booked fixture: gross/net pair (bookkeeper booked the post-fee net).
+const AMT_D_GROSS = "4567.91";
+const AMT_D_NET = "4435.26";
 
 type Db = typeof import("@workspace/db");
 let db: Db["db"];
@@ -68,6 +71,7 @@ async function seedPayout(over: { amount: string; arrivalDate: string }) {
 async function seedCharge(over: {
   payoutId: string;
   grossAmount: string;
+  netAmount?: string | null;
   dateReceived: string;
   payerName?: string | null;
   /** Set to derive `excluded` (exclusion_reason IS NOT NULL). */
@@ -81,6 +85,7 @@ async function seedCharge(over: {
     stripeAccountId: ACCOUNT_ID,
     stripePayoutId: over.payoutId,
     grossAmount: over.grossAmount,
+    netAmount: over.netAmount ?? null,
     dateReceived: over.dateReceived,
     payerName: over.payerName ?? null,
     exclusionReason: over.exclusionReason ?? null,
@@ -227,10 +232,29 @@ describe.skipIf(!HAS_DB)("runChargeTiePass (DB)", () => {
         dateReceived: "2026-02-12",
       });
 
-      const scope = [po1, po2, po3, po4];
+      // ── Fixture 5: NET-booked payout — the only QB row records the charge's
+      // post-fee NET amount exactly; it must be proposed via the net match.
+      const po5 = await seedPayout({
+        amount: AMT_D_NET,
+        arrivalDate: "2026-02-10",
+      });
+      const ch5 = await seedCharge({
+        payoutId: po5,
+        grossAmount: AMT_D_GROSS,
+        netAmount: AMT_D_NET,
+        dateReceived: "2026-02-08",
+        payerName: "Allen Vasan",
+      });
+      const qb5 = await seedQbRow({
+        amount: AMT_D_NET,
+        dateReceived: "2026-02-11",
+        payerName: "Vasan, Allen",
+      });
+
+      const scope = [po1, po2, po3, po4, po5];
       const first = await runChargeTiePass(scope);
       // po2 has a settlement link → out of the evaluated pool.
-      expect(first.payoutsEvaluated).toBe(3);
+      expect(first.payoutsEvaluated).toBe(4);
 
       // 1) exact-amount close-date proposal landed (window decoy ignored).
       expect((await readCharge(ch1)).proposed).toBe(qb1);
@@ -244,10 +268,13 @@ describe.skipIf(!HAS_DB)("runChargeTiePass (DB)", () => {
       expect(c3.proposed).toBeNull();
       expect((await readCharge(ch4)).proposed).toBeNull();
       expect((await readCharge(chExcluded)).proposed).toBeNull();
+      // 3b) net-booked QB row proposed via the exact-NET match.
+      expect((await readCharge(ch5)).proposed).toBe(qb5);
 
       // 4) idempotent re-run: same proposals, nothing newly cleared.
       const second = await runChargeTiePass(scope);
       expect((await readCharge(ch1)).proposed).toBe(qb1);
+      expect((await readCharge(ch5)).proposed).toBe(qb5);
       expect(second.cleared).toBe(0);
       expect(second.proposed).toBeGreaterThanOrEqual(1);
     },
