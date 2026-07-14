@@ -119,8 +119,6 @@ const linkHandler = asyncHandler(async (req, res) => {
         });
       }
       if (relationship?.lifecycle === "proposed") {
-        // The human is explicitly approving or retargeting the proposal. Remove
-        // the non-money proposal before writing the confirmed application.
         await removePaymentApplicationsForStripeCharge(tx, chargeId);
       }
 
@@ -192,9 +190,6 @@ router.post(
   "/stripe-staged-charges/:id/link-gift",
   requireAuth,
   (req, res, next) => {
-    // Source switching includes orphaning and final-amount unwind semantics that
-    // are being migrated separately. Let the existing route handle only that
-    // explicitly requested rare workflow during the rolling cutover.
     if (
       req.body != null &&
       typeof req.body === "object" &&
@@ -254,13 +249,8 @@ router.post(
         if (issues.length > 0) {
           throw new ReconcileAbort(400, {
             error: "validation_error",
-            message: "Request validation failed",
-            details: {
-              issues: issues.map((issue) => ({
-                path: [issue.path],
-                message: issue.message,
-              })),
-            },
+            message: issues.map((issue) => issue.message).join("; "),
+            issues,
           });
         }
 
