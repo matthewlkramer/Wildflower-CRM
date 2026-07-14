@@ -26,17 +26,30 @@ export interface ResultRow {
    *  tied) — shown as a label and the row disabled, never hidden, so users can
    *  spot (and help debug) a mis-derived status. */
   blockedReason: string | null;
-  /** True only for the exclusion blocker: the row stays clickable and a
-   *  deliberate second click ties anyway (the server re-includes it in the
-   *  same transaction). Settled/tied-elsewhere blockers are never overridable
-   *  — overriding those would double-count money. */
+  /** True only for deliberately overridable blockers (exclusion, and — on
+   *  the per-charge tie dialog — an amount mismatch): the row stays clickable
+   *  and a deliberate second click ties anyway. Settled/tied-elsewhere
+   *  blockers are never overridable — overriding those would double-count
+   *  money. */
   overridable?: boolean;
+  /** The override flags the second (confirming) click sends. Defaults to
+   *  `{ overrideExclusion: true }` for back-compat with exclusion-only rows. */
+  overridePick?: PickOptions;
+  /** Hint under an un-armed overridable row ("Click to override …"). */
+  overrideHint?: string;
+  /** Warning under an ARMED overridable row — say exactly what the second
+   *  click will do. */
+  armedHint?: string;
 }
 
 export interface PickOptions {
   /** The user deliberately picked a row that was excluded from review —
    *  the confirm should re-include it and tie in one transaction. */
   overrideExclusion?: boolean;
+  /** The user deliberately picked a row whose amount matches neither the
+   *  charge's gross nor its net — the confirm should tie it to the pinned
+   *  charge anyway (charge-tie dialog only; requires the pinned chargeId). */
+  overrideAmountMismatch?: boolean;
 }
 
 /**
@@ -217,10 +230,11 @@ export function ResultsList({
               onPick(r.id);
               return;
             }
-            // Overridable (excluded) row: first click arms, second confirms.
+            // Overridable blocked row: first click arms, second confirms
+            // with the row's specific override flags.
             if (armed) {
               setArmedId(null);
-              onPick(r.id, { overrideExclusion: true });
+              onPick(r.id, r.overridePick ?? { overrideExclusion: true });
             } else {
               setArmedId(r.id);
             }
@@ -240,14 +254,14 @@ export function ResultsList({
               </span>
             )}
             {armed ? (
-              <span className="truncate text-xs font-medium text-amber-700">
-                Click again to tie anyway — this row will be put back into
-                review and tied.
+              <span className="whitespace-normal text-xs font-medium text-amber-700">
+                {r.armedHint ??
+                  "Click again to tie anyway — this row will be put back into review and tied."}
               </span>
             ) : (
               canOverride && (
                 <span className="truncate text-xs text-muted-foreground">
-                  Click to override the exclusion.
+                  {r.overrideHint ?? "Click to override the exclusion."}
                 </span>
               )
             )}

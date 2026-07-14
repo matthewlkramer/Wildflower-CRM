@@ -960,6 +960,14 @@ Two modes, by body:
     order the assignment when several same-amount charges compete) and
     confirms all of them. 400/409 with per-row issues when any row
     cannot be assigned (nothing is written).
+  • qbStagedPaymentIds (exactly one) + chargeId — PINNED manual tie:
+    tie that one QB row to that specific untied charge of this payout
+    (the per-charge "Find the QuickBooks row" dialog). The row's
+    amount must still equal the charge's gross or net exactly UNLESS
+    overrideAmountMismatch is set — the deliberate human assertion
+    that this row records this charge's money even though the
+    bookkeeper booked a different amount. 409 amount_mismatch
+    otherwise (nothing is written).
 
 Plane 1 only: ties are permanent settlement EVIDENCE. No gift is ever
 minted, no QB row's status/donor changes, and per-charge → gift booking

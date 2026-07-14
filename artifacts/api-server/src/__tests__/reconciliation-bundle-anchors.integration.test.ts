@@ -1160,6 +1160,170 @@ describe.skipIf(!HAS_DB)("Manual charge-tie exclusion override (integration)", (
   });
 });
 
+describe.skipIf(!HAS_DB)("Pinned charge-tie + amount-mismatch override (integration)", () => {
+  it("409s amount_mismatch on a pinned mismatched row without the flag; nothing is written", async () => {
+    const po = await seedPayout({ status: "unmatched" });
+    const chargeId = await seedCharge(po); // gross 100.00 / net 96.80
+    const qb = await seedStaged({ amount: "75.00" }); // matches neither
+
+    const r = await post(
+      `/api/reconciliation/payouts/${po}/charge-ties/confirm`,
+      { qbStagedPaymentIds: [qb], chargeId },
+    );
+    expect(r.status).toBe(409);
+    expect(r.json.error).toBe("amount_mismatch");
+
+    const [charge] = await db
+      .select()
+      .from(schema.stripeStagedCharges)
+      .where(eqFn(schema.stripeStagedCharges.id, chargeId));
+    expect(charge!.linkedQbStagedPaymentId).toBeNull();
+  });
+
+  it("ties a mismatched row to the PINNED charge with overrideAmountMismatch", async () => {
+    const po = await seedPayout({ status: "unmatched" });
+    const chargeId = await seedCharge(po);
+    const qb = await seedStaged({ amount: "75.00" });
+
+    const r = await post(
+      `/api/reconciliation/payouts/${po}/charge-ties/confirm`,
+      { qbStagedPaymentIds: [qb], chargeId, overrideAmountMismatch: true },
+    );
+    expect(r.status).toBe(200);
+    expect(r.json.confirmed).toBe(true);
+    expect(r.json.tied).toBe(1);
+
+    const [charge] = await db
+      .select()
+      .from(schema.stripeStagedCharges)
+      .where(eqFn(schema.stripeStagedCharges.id, chargeId));
+    expect(charge!.linkedQbStagedPaymentId).toBe(qb);
+    expect(charge!.crossProcessorLinkedByUserId).toBe(TEST_USER_ID);
+  });
+
+  it("a pinned EXACT match still ties without any flag — and lands on the named charge", async () => {
+    const po = await seedPayout({ status: "unmatched" });
+    // Two same-amount charges: the pin decides which one gets the row.
+    const chargeA = await seedCharge(po);
+    const chargeB = await seedCharge(po);
+    const qb = await seedStaged({ amount: "100.00" });
+
+    const r = await post(
+      `/api/reconciliation/payouts/${po}/charge-ties/confirm`,
+      { qbStagedPaymentIds: [qb], chargeId: chargeB },
+    );
+    expect(r.status).toBe(200);
+    expect(r.json.tied).toBe(1);
+
+    const [a] = await db
+      .select()
+      .from(schema.stripeStagedCharges)
+      .where(eqFn(schema.stripeStagedCharges.id, chargeA));
+    const [b] = await db
+      .select()
+      .from(schema.stripeStagedCharges)
+      .where(eqFn(schema.stripeStagedCharges.id, chargeB));
+    expect(b!.linkedQbStagedPaymentId).toBe(qb);
+    expect(a!.linkedQbStagedPaymentId).toBeNull();
+  });
+
+  it("excluded + mismatched needs BOTH flags: exclusion 409 first, then both flags tie and re-include", async () => {
+    const po = await seedPayout({ status: "unmatched" });
+    const chargeId = await seedCharge(po);
+    const qb = await seedStaged({
+      amount: "75.00",
+      exclusionReason: "other_revenue",
+    });
+
+    // The amount flag alone does NOT sneak past the exclusion blocker.
+    const stillExcluded = await post(
+      `/api/reconciliation/payouts/${po}/charge-ties/confirm`,
+      { qbStagedPaymentIds: [qb], chargeId, overrideAmountMismatch: true },
+    );
+    expect(stillExcluded.status).toBe(409);
+    expect(stillExcluded.json.error).toBe("qb_rows_unavailable");
+
+    const r = await post(
+      `/api/reconciliation/payouts/${po}/charge-ties/confirm`,
+      {
+        qbStagedPaymentIds: [qb],
+        chargeId,
+        overrideExclusion: true,
+        overrideAmountMismatch: true,
+      },
+    );
+    expect(r.status).toBe(200);
+    expect(r.json.tied).toBe(1);
+
+    const [row] = await db
+      .select()
+      .from(schema.stagedPayments)
+      .where(eqFn(schema.stagedPayments.id, qb));
+    expect(row!.exclusionReason).toBeNull();
+    expect(row!.classificationSource).toBe("manual");
+    const [charge] = await db
+      .select()
+      .from(schema.stripeStagedCharges)
+      .where(eqFn(schema.stripeStagedCharges.id, chargeId));
+    expect(charge!.linkedQbStagedPaymentId).toBe(qb);
+  });
+
+  it("rejects malformed pins: multiple rows with chargeId, or the amount flag without a pin (400)", async () => {
+    const po = await seedPayout({ status: "unmatched" });
+    const chargeId = await seedCharge(po);
+    const qb1 = await seedStaged({ amount: "100.00" });
+    const qb2 = await seedStaged({ amount: "100.00" });
+
+    const multi = await post(
+      `/api/reconciliation/payouts/${po}/charge-ties/confirm`,
+      { qbStagedPaymentIds: [qb1, qb2], chargeId },
+    );
+    expect(multi.status).toBe(400);
+    expect(multi.json.message).toMatch(/exactly one/i);
+
+    const noPin = await post(
+      `/api/reconciliation/payouts/${po}/charge-ties/confirm`,
+      { qbStagedPaymentIds: [qb1], overrideAmountMismatch: true },
+    );
+    expect(noPin.status).toBe(400);
+    expect(noPin.json.message).toMatch(/requires chargeId/i);
+  });
+
+  it("409s charge_unavailable when the pinned charge is already tied, 404 when it's another payout's", async () => {
+    const qbClaimed = await seedStaged({ amount: "100.00" });
+    const po = await seedPayout({ status: "unmatched" });
+    const tiedCharge = await seedCharge(po, {
+      linkedQbStagedPaymentId: qbClaimed,
+    });
+    const qb = await seedStaged({ amount: "75.00" });
+
+    const taken = await post(
+      `/api/reconciliation/payouts/${po}/charge-ties/confirm`,
+      {
+        qbStagedPaymentIds: [qb],
+        chargeId: tiedCharge,
+        overrideAmountMismatch: true,
+      },
+    );
+    expect(taken.status).toBe(409);
+    expect(taken.json.error).toBe("charge_unavailable");
+    expect(taken.json.message).toMatch(/already carries/i);
+
+    const poOther = await seedPayout({ status: "unmatched" });
+    const otherCharge = await seedCharge(poOther);
+    const wrongPayout = await post(
+      `/api/reconciliation/payouts/${po}/charge-ties/confirm`,
+      {
+        qbStagedPaymentIds: [qb],
+        chargeId: otherCharge,
+        overrideAmountMismatch: true,
+      },
+    );
+    expect(wrongPayout.status).toBe(404);
+    expect(wrongPayout.json.error).toBe("not_found");
+  });
+});
+
 describe.skipIf(!HAS_DB)("Revert confirmed charge↔QB tie (integration)", () => {
   it("clears the tie, the claimed fee row, and the provenance, and frees the QB row for re-picking", async () => {
     // The undo for a wrong confirm ("tied the wrong QB charge to a donor"):

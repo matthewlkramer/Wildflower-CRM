@@ -588,6 +588,14 @@ Two modes, by body:
     order the assignment when several same-amount charges compete) and
     confirms all of them. 400/409 with per-row issues when any row
     cannot be assigned (nothing is written).
+  • qbStagedPaymentIds (exactly one) + chargeId — PINNED manual tie:
+    tie that one QB row to that specific untied charge of this payout
+    (the per-charge "Find the QuickBooks row" dialog). The row's
+    amount must still equal the charge's gross or net exactly UNLESS
+    overrideAmountMismatch is set — the deliberate human assertion
+    that this row records this charge's money even though the
+    bookkeeper booked a different amount. 409 amount_mismatch
+    otherwise (nothing is written).
 
 Plane 1 only: ties are permanent settlement EVIDENCE. No gift is ever
 minted, no QB row's status/donor changes, and per-charge → gift booking
@@ -604,7 +612,9 @@ export const ConfirmPayoutChargeTiesParams = zod.object({
 
 export const ConfirmPayoutChargeTiesBody = zod.object({
   "qbStagedPaymentIds": zod.array(zod.string()).optional().describe('QB staged_payments ids to tie to this payout\'s charges. Each must match a distinct untied charge by exact amount and must not already be tied\/settlement-linked elsewhere.'),
-  "overrideExclusion": zod.boolean().optional().describe('Deliberate human override for manually selected QB rows that were excluded from review: re-includes them (clears the exclusion, pinning classification_source=\'manual\') in the same transaction before tying. Manual mode only — ignored when approving system-proposed ties. Default false: excluded rows are refused with a 409.')
+  "overrideExclusion": zod.boolean().optional().describe('Deliberate human override for manually selected QB rows that were excluded from review: re-includes them (clears the exclusion, pinning classification_source=\'manual\') in the same transaction before tying. Manual mode only — ignored when approving system-proposed ties. Default false: excluded rows are refused with a 409.'),
+  "chargeId": zod.string().optional().describe('PIN the manual tie to this specific untied charge of the payout (requires exactly ONE qbStagedPaymentIds entry). Without it, manual rows are placed by exact amount onto whichever untied charge fits. Required for overrideAmountMismatch — an amount-agnostic tie is only meaningful against an explicit charge.'),
+  "overrideAmountMismatch": zod.boolean().optional().describe('Deliberate human override of the exact-amount rule for a PINNED tie (chargeId required): tie the row to the charge even though its amount matches neither the charge\'s gross nor its net — the human asserts the row records this charge\'s money (e.g. the bookkeeper booked a partial\/adjusted amount). Default false: a mismatched pinned row is refused with 409 amount_mismatch.')
 }).describe('Optional manual-tie payload. Omit (or send no body) to approve the\nsystem-proposed per-charge ties. Provide qbStagedPaymentIds to manually\ntie the selected QB staged rows to this payout\'s untied charges\n(the Settlement report\'s \"Tie selected\" gesture).\n')
 
 export const ConfirmPayoutChargeTiesResponse = zod.object({

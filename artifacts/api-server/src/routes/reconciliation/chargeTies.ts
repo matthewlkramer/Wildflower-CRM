@@ -81,6 +81,29 @@ router.post(
       });
       return;
     }
+    // PINNED manual tie: the caller names the exact charge (the per-charge
+    // "Find the QuickBooks row" dialog). Only meaningful for exactly one row —
+    // pinning several rows to one charge is a contradiction.
+    const pinChargeId = body.chargeId;
+    if (pinChargeId !== undefined && (manualIds?.length ?? 0) !== 1) {
+      res.status(400).json({
+        error: "bad_request",
+        message:
+          "chargeId requires exactly one qbStagedPaymentIds entry — a pinned tie places one QB row on one charge.",
+      });
+      return;
+    }
+    // Explicit-flag gating: the amount override exists ONLY for pinned ties.
+    // Without a named charge the server assigns by exact amount, so there is
+    // no coherent target for a mismatched row.
+    if (body.overrideAmountMismatch && pinChargeId === undefined) {
+      res.status(400).json({
+        error: "bad_request",
+        message:
+          "overrideAmountMismatch requires chargeId — an amount override is only meaningful against an explicitly named charge.",
+      });
+      return;
+    }
 
     const [payout] = await db
       .select({ id: stripePayouts.id })
@@ -223,16 +246,58 @@ router.post(
               payerName: r.payerName,
             };
           });
-          const manual = assignManualChargeQbTies(chargesForTie, rowsForTie);
-          if (manual.issues.length > 0) {
-            throw new ReconcileAbort(409, {
-              error: "unassignable_qb_rows",
-              message:
-                "Some selected QuickBooks rows match no untied charge of this payout by exact amount (gross or net).",
-              details: { issues: manual.issues },
-            });
+          if (pinChargeId !== undefined) {
+            // PINNED tie: the human named the exact charge, so the ONLY open
+            // question is the exact-amount rule. Reuse the same matcher on
+            // the single (charge, row) pair; a mismatch is overridable by the
+            // explicit overrideAmountMismatch assertion — never implicitly.
+            const target = chargesForTie.find((c) => c.id === pinChargeId);
+            if (!target) {
+              const anywhere = charges.find((c) => c.id === pinChargeId);
+              if (!anywhere) {
+                throw new ReconcileAbort(404, {
+                  error: "not_found",
+                  message: "That charge does not belong to this payout.",
+                });
+              }
+              throw new ReconcileAbort(409, {
+                error: "charge_unavailable",
+                message:
+                  anywhere.linkedQbStagedPaymentId != null
+                    ? "That charge already carries a confirmed QuickBooks tie — untie it first."
+                    : "That charge is excluded — excluded charges never get a QuickBooks tie.",
+                details: {
+                  issues: [
+                    { chargeId: pinChargeId, reason: "charge unavailable" },
+                  ],
+                },
+              });
+            }
+            const rowId = manualIds[0]!;
+            const pinned = assignManualChargeQbTies([target], rowsForTie);
+            if (pinned.issues.length > 0 && !body.overrideAmountMismatch) {
+              throw new ReconcileAbort(409, {
+                error: "amount_mismatch",
+                message:
+                  "The QuickBooks row's amount matches neither the charge's gross nor its net. Confirm the override to tie it anyway.",
+                details: { issues: pinned.issues },
+              });
+            }
+            // Either an exact fit, or the human overrode the amount rule —
+            // the tie target is the pinned charge either way.
+            ties = new Map([[pinChargeId, rowId]]);
+          } else {
+            const manual = assignManualChargeQbTies(chargesForTie, rowsForTie);
+            if (manual.issues.length > 0) {
+              throw new ReconcileAbort(409, {
+                error: "unassignable_qb_rows",
+                message:
+                  "Some selected QuickBooks rows match no untied charge of this payout by exact amount (gross or net).",
+                details: { issues: manual.issues },
+              });
+            }
+            ties = manual.assigned;
           }
-          ties = manual.assigned;
         }
 
         // Shared availability guard: no QB row may already be spoken for —

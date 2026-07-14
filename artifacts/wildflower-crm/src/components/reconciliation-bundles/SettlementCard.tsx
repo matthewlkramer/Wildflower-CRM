@@ -539,18 +539,25 @@ export function SettlementCard({
 
   const handleTieChargePick = async (
     qbStagedPaymentId: string,
-    opts?: { overrideExclusion?: boolean },
+    opts?: { overrideExclusion?: boolean; overrideAmountMismatch?: boolean },
   ) => {
-    // Manual charge-grain tie: the picked QB row is this charge's money. The
-    // endpoint's manual mode places it onto an untied charge of this payout by
-    // exact amount (the dialog pre-grays near-miss amounts), all-or-nothing.
-    // A deliberate exclusion override re-includes the row in the same tx.
+    // Manual charge-grain tie, PINNED to the dialog's charge: the picked QB
+    // row is asserted to be THIS charge's money (the dialog is per-charge, so
+    // naming the charge beats the amount-based placement). All-or-nothing.
+    // A deliberate exclusion override re-includes the row in the same tx; a
+    // deliberate amount override ties despite a gross/net mismatch (e.g. the
+    // bookkeeper booked a partial or adjusted amount).
+    if (!tieCharge) return;
     try {
       const res = await chargeTiesM.mutateAsync({
         payoutId: a.anchorId,
         data: {
           qbStagedPaymentIds: [qbStagedPaymentId],
+          chargeId: tieCharge.id,
           ...(opts?.overrideExclusion ? { overrideExclusion: true } : {}),
+          ...(opts?.overrideAmountMismatch
+            ? { overrideAmountMismatch: true }
+            : {}),
         },
       });
       setTieCharge(null);

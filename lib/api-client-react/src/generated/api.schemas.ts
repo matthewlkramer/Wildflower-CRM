@@ -4244,6 +4244,10 @@ export interface ConfirmChargeTiesBody {
   qbStagedPaymentIds?: string[];
   /** Deliberate human override for manually selected QB rows that were excluded from review: re-includes them (clears the exclusion, pinning classification_source='manual') in the same transaction before tying. Manual mode only — ignored when approving system-proposed ties. Default false: excluded rows are refused with a 409. */
   overrideExclusion?: boolean;
+  /** PIN the manual tie to this specific untied charge of the payout (requires exactly ONE qbStagedPaymentIds entry). Without it, manual rows are placed by exact amount onto whichever untied charge fits. Required for overrideAmountMismatch — an amount-agnostic tie is only meaningful against an explicit charge. */
+  chargeId?: string;
+  /** Deliberate human override of the exact-amount rule for a PINNED tie (chargeId required): tie the row to the charge even though its amount matches neither the charge's gross nor its net — the human asserts the row records this charge's money (e.g. the bookkeeper booked a partial/adjusted amount). Default false: a mismatched pinned row is refused with 409 amount_mismatch. */
+  overrideAmountMismatch?: boolean;
 }
 
 export interface RejectChargeQbTieResult {
