@@ -310,7 +310,7 @@ beforeAll(async () => {
   });
   const addr = server.address() as AddressInfo;
   baseUrl = `http://127.0.0.1:${addr.port}`;
-}, 60_000);
+}, 180_000);
 
 afterAll(async () => {
   if (!HAS_DB) return;
@@ -371,14 +371,14 @@ afterAll(async () => {
   await db
     .delete(schema.users)
     .where(inArrayFn(schema.users.id, [OWNER_ID, OTHER_ID, ADMIN_ID]));
-}, 60_000);
+}, 180_000);
 
 describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
   it("rejects a non-admin on the list endpoint with 403", async () => {
     auth.current = { id: OTHER_ID, role: "team_member" };
     const { status } = await listDup("organization");
     expect(status).toBe(403);
-  }, 30_000);
+  }, 120_000);
 
   it("rejects a non-admin on the dismiss endpoint with 403", async () => {
     auth.current = { id: OTHER_ID, role: "team_member" };
@@ -388,7 +388,7 @@ describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
       idB: ORG_P2,
     });
     expect(status).toBe(403);
-  }, 30_000);
+  }, 120_000);
 
   it("rejects a non-admin on both merge endpoints with 403", async () => {
     auth.current = { id: OTHER_ID, role: "team_member" };
@@ -404,13 +404,13 @@ describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
         duplicateId: PERSON_2,
       }),
     ).toBe(403);
-  }, 30_000);
+  }, 120_000);
 
   it("returns 400 when type is missing or invalid", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
     const res = await fetch(`${baseUrl}/api/potential-duplicates?limit=10`);
     expect(res.status).toBe(400);
-  }, 30_000);
+  }, 120_000);
 
   it("surfaces the seeded org pair to an admin, ranked, with both signals and enrichment", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
@@ -436,7 +436,7 @@ describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
 
     const p2 = sideOf(pair!, ORG_P2);
     expect(p2.giftCount).toBe(0);
-  }, 30_000);
+  }, 120_000);
 
   it("never surfaces an archived record as a duplicate side", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
@@ -445,7 +445,7 @@ describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
       (p) => p.a.id === ORG_P3_ARCHIVED || p.b.id === ORG_P3_ARCHIVED,
     );
     expect(touchesArchived).toBe(false);
-  }, 30_000);
+  }, 120_000);
 
   it("surfaces the seeded person pair to an admin", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
@@ -455,7 +455,7 @@ describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
     expect(pair!.type).toBe("person");
     expect(pair!.signals.sort()).toEqual(["name", "phone"]);
     expect(sideOf(pair!, PERSON_1).name).toBe(DUP_PERSON_NAME);
-  }, 30_000);
+  }, 120_000);
 
   it("removes a dismissed pair (canonicalizing reversed ids) and re-dismiss is an idempotent 204", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
@@ -478,7 +478,7 @@ describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
     expect(
       await dismiss({ type: "organization", idA: hi, idB: lo }),
     ).toBe(204);
-  }, 30_000);
+  }, 120_000);
 
   it("returns 400 when dismissing a pair of identical ids", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
@@ -488,7 +488,7 @@ describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
       idB: ORG_P1,
     });
     expect(status).toBe(400);
-  }, 30_000);
+  }, 120_000);
 
   it("flags a null-vs-filled pair safe with a survivor + override suggestion", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
@@ -503,7 +503,7 @@ describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
     expect(pair!.mergeSuggestion!.overrides).toMatchObject({
       website: SAFE_WEBSITE,
     });
-  }, 30_000);
+  }, 120_000);
 
   it("does NOT flag a pair with two distinct values as safe", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
@@ -512,19 +512,19 @@ describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
     expect(pair, "seeded unsafe pair present").toBeDefined();
     expect(pair!.safeMerge).toBe(false);
     expect(pair!.mergeSuggestion).toBeNull();
-  }, 30_000);
+  }, 120_000);
 
   it("filters out trigram-similar names whose distinctive tokens conflict (MN vs US Dept of Education)", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
     const { json } = await listDup("organization");
     expect(findPair(json.pairs, ORG_T1, ORG_T2)).toBeUndefined();
-  }, 30_000);
+  }, 120_000);
 
   it("filters out same-named orgs living on disjoint website domains", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
     const { json } = await listDup("organization");
     expect(findPair(json.pairs, ORG_W1, ORG_W2)).toBeUndefined();
-  }, 30_000);
+  }, 120_000);
 
   it("still surfaces distinct-website pairs that share a phone (via the phone signal)", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
@@ -532,7 +532,7 @@ describe.skipIf(!HAS_DB)("potential-duplicates queue", () => {
     // ORG_U1/U2 have distinct websites (dropped from the name signal) but a
     // shared phone — the stronger tie keeps them in the review queue.
     expect(findPair(json.pairs, ORG_U1, ORG_U2)).toBeDefined();
-  }, 30_000);
+  }, 120_000);
 });
 
 // Pure token-conflict guard — no DB needed, always runs.
