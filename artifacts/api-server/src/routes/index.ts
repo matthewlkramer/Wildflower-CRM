@@ -49,6 +49,7 @@ import quickbooksRulesRouter from "./quickbooksRules";
 import revenueCodingRouter from "./revenueCoding";
 import revenueExtractorRouter from "./revenueExtractor";
 import stripeLedgerReadsRouter from "./stripeLedgerReads";
+import stripeLedgerActionsRouter from "./stripeLedgerActions";
 import stripeRouter from "./stripe";
 import donorboxRouter from "./donorbox";
 import grantLeadsRouter from "./grantLeads";
@@ -64,9 +65,6 @@ import codingFormRowsRouter from "./codingFormRows";
 const router: IRouter = Router();
 
 router.use(healthRouter);
-// emailTrackingRouter mounts here (NOT at the bottom) on purpose. Several
-// sub-routers below apply module-level auth middleware. The browser extension's
-// anonymous tracking endpoints must be reachable before those routers run.
 router.use(emailTrackingRouter);
 router.use(usersRouter);
 router.use(regionsRouter);
@@ -115,10 +113,11 @@ router.use(quickbooksRouter);
 router.use(quickbooksRulesRouter);
 router.use(revenueCodingRouter);
 router.use(revenueExtractorRouter);
-// These GET routes intentionally mount before the legacy Stripe action router.
-// They are ledger-authoritative and prevent stale gift pointers from affecting
-// charge queue membership or display while action writers are retired in slices.
+// Ledger-authoritative Stripe reads and normal link/mint actions mount before the
+// remaining legacy Stripe endpoints. The explicit source-switch action falls
+// through until its orphan/unwind workflow is migrated.
 router.use(stripeLedgerReadsRouter);
+router.use(stripeLedgerActionsRouter);
 router.use(stripeRouter);
 router.use(donorboxRouter);
 router.use(grantLeadsRouter);
