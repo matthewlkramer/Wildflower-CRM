@@ -23,7 +23,10 @@ import {
 } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
-import { groupMemberIdsFor } from "../../lib/unitGroupMembership";
+import {
+  groupMemberIdsFor,
+  isQbGroupMemberSql,
+} from "../../lib/unitGroupMembership";
 import {
   runConsistencyGate,
   isStagedApprovable,
@@ -37,12 +40,14 @@ import { createGiftFromChargeInTx } from "../../lib/reconciliationBundleCommit";
 import {
   qbLedgerPaymentIdForGiftExcludingPayment,
   qbLedgerGiftIdForPaymentExcludingGift,
+  qbLedgerExistsForPayment,
+  qbLedgerSoleGiftIdForPayment,
+  qbLedgerMintedGiftIdForPayment,
 } from "../../lib/paymentApplications";
 import {
   chargeStatusIn,
   deriveStripeChargeStatus,
   stagedConfirmedSettlementLinkExists,
-  stagedCountedApplicationExists,
   stagedStatusSql,
 } from "../../lib/derivedStatus";
 
@@ -171,14 +176,13 @@ async function mintGiftFromEvidence(
   const preRows = await db
     .select({
       status: stagedStatusSql,
-      matchedGiftId: stagedPayments.matchedGiftId,
-      createdGiftId: stagedPayments.createdGiftId,
-      groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
       // Wrapped one sql-layer deep ON PURPOSE: a Column interpolated directly
       // into a top-level select field renders UNQUALIFIED, so the correlated
       // EXISTS would bind "id" to the INNER table and always be wrong.
       confirmedSettlementLink: sql<boolean>`(${stagedConfirmedSettlementLinkExists})`,
-      countedApplication: sql<boolean>`(${stagedCountedApplicationExists})`,
+      // Ledger-derived link state (the legacy staged gift-link columns are
+      // @deprecated and no longer written).
+      hasLedgerLink: qbLedgerExistsForPayment(),
     })
     .from(stagedPayments)
     .where(inArray(stagedPayments.id, preIds));
@@ -199,11 +203,8 @@ async function mintGiftFromEvidence(
       // opening the hatch there would double-count it.
       const settlementOnlyConfirmed =
         pre.status === "match_confirmed" &&
-        pre.matchedGiftId == null &&
-        pre.createdGiftId == null &&
-        pre.groupReconciledGiftId == null &&
         pre.confirmedSettlementLink === true &&
-        pre.countedApplication === false;
+        pre.hasLedgerLink === false;
       if (settlementOnlyConfirmed && stripeChargeId && !group) {
         chargeAnchoredIntent = true;
         continue;
@@ -218,15 +219,11 @@ async function mintGiftFromEvidence(
       });
       return;
     }
-    // A row that already has a gift (matched, minted, OR grouped) must NOT mint a
-    // second one — that would double-count the money. Legacy `approved` rows
-    // carrying any gift link belong on the link path (tie evidence to the existing
-    // gift), never here.
-    if (
-      pre.matchedGiftId != null ||
-      pre.createdGiftId != null ||
-      pre.groupReconciledGiftId != null
-    ) {
+    // A row that already has a gift (matched, minted, OR grouped — i.e. any
+    // counted QB ledger application) must NOT mint a second one — that would
+    // double-count the money. Legacy `approved` rows carrying any gift link
+    // belong on the link path (tie evidence to the existing gift), never here.
+    if (pre.hasLedgerLink) {
       res.status(409).json({
         error: "gift_already_linked",
         message:
@@ -282,7 +279,9 @@ async function mintGiftFromEvidence(
           // the correlated EXISTS renders unqualified and binds to the inner
           // table's columns.
           confirmedSettlementLink: sql<boolean>`(${stagedConfirmedSettlementLinkExists})`,
-          countedApplication: sql<boolean>`(${stagedCountedApplicationExists})`,
+          // Ledger-derived link state (the legacy staged gift-link columns are
+          // @deprecated and no longer written).
+          hasLedgerLink: qbLedgerExistsForPayment(),
         })
         .from(stagedPayments)
         .where(inArray(stagedPayments.id, lockIds))
@@ -306,11 +305,8 @@ async function mintGiftFromEvidence(
           // is already booked — never charge-anchor over it).
           const settlementOnlyConfirmed =
             row.status === "match_confirmed" &&
-            row.matchedGiftId == null &&
-            row.createdGiftId == null &&
-            row.groupReconciledGiftId == null &&
             row.confirmedSettlementLink === true &&
-            row.countedApplication === false;
+            row.hasLedgerLink === false;
           if (
             chargeAnchoredIntent &&
             !group &&
@@ -327,13 +323,9 @@ async function mintGiftFromEvidence(
           });
         }
         // Re-check under the row lock: never mint a second gift for a row that
-        // already has one (matched, minted, OR grouped) — it belongs on the link
-        // path.
-        if (
-          row.matchedGiftId != null ||
-          row.createdGiftId != null ||
-          row.groupReconciledGiftId != null
-        ) {
+        // already has one (matched, minted, OR grouped — any counted ledger
+        // row) — it belongs on the link path.
+        if (row.hasLedgerLink) {
           throw new ApproveAbort(409, {
             error: "gift_already_linked",
             message:
@@ -844,16 +836,24 @@ router.post(
     const pre = await db
       .select({
         status: stagedStatusSql,
-        matchedGiftId: stagedPayments.matchedGiftId,
-        createdGiftId: stagedPayments.createdGiftId,
-        groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
+        // Ledger-derived link state (the legacy staged gift-link columns are
+        // @deprecated and no longer written). `linkedGiftId` is the sole
+        // resolved gift (NULL for a split); `mintedGiftId` marks a row that
+        // OWNS a created gift; group membership comes from unit_group_members.
+        linkedGiftId: qbLedgerSoleGiftIdForPayment(),
+        mintedGiftId: qbLedgerMintedGiftIdForPayment(),
+        isGroupMember: sql<boolean>`EXISTS (
+          SELECT 1 FROM unit_group_members ugm
+          WHERE ugm.evidence_source = 'quickbooks'
+            AND ugm.source_id = ${stagedPayments.id}
+        )`,
       })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, stagedPaymentId))
       .then((r) => r[0]);
     if (!pre) return notFound(res, "staged payment");
     if (pre.status === "match_confirmed") {
-      const tiedGiftId = pre.matchedGiftId ?? pre.groupReconciledGiftId ?? null;
+      const tiedGiftId = pre.mintedGiftId == null ? pre.linkedGiftId : null;
       if (tiedGiftId != null && tiedGiftId === giftId) {
         res.json({
           ok: true as const,
@@ -866,7 +866,7 @@ router.post(
         });
         return;
       }
-      if (pre.createdGiftId != null) {
+      if (pre.mintedGiftId != null) {
         // The row OWNS a minted gift — re-pointing would orphan the mint.
         res.status(409).json({
           error: "gift_already_linked",
@@ -875,7 +875,7 @@ router.post(
         });
         return;
       }
-      if (pre.groupReconciledGiftId != null) {
+      if (pre.isGroupMember) {
         // Group members can't be individually re-targeted without corrupting
         // the group's combined booking.
         res.status(409).json({
@@ -885,7 +885,7 @@ router.post(
         });
         return;
       }
-      if (pre.matchedGiftId == null) {
+      if (pre.linkedGiftId == null) {
         // Settlement-only confirm (or split): the deposit's Stripe settlement
         // was confirmed with no gift on the deposit itself. The remaining money
         // is booked from the per-charge card, never by linking the whole QB
@@ -942,6 +942,12 @@ router.post(
           .select({
             ...getTableColumns(stagedPayments),
             status: stagedStatusSql,
+            // Ledger-derived link shape (the legacy staged gift-link columns
+            // are @deprecated and never read): the single counted gift, the
+            // minted gift, and QB group membership.
+            ledgerSoleGiftId: qbLedgerSoleGiftIdForPayment(),
+            ledgerMintedGiftId: qbLedgerMintedGiftIdForPayment(),
+            ledgerGroupMember: isQbGroupMemberSql(),
           })
           .from(stagedPayments)
           .where(eq(stagedPayments.id, stagedPaymentId))
@@ -953,16 +959,17 @@ router.post(
             message: "staged payment not found",
           });
         }
-        // A confirmed DIRECT match (matchedGiftId set, no created/group gift) may
-        // be re-targeted onto a different gift through the guarded move/displace
-        // flow below — the gate still composes payment_already_applied unless the
-        // reviewer confirmed moveOwnApplication. Every other confirmed shape
-        // (settlement-only, group, split, minted) stays closed.
+        // A confirmed DIRECT match (exactly one counted ledger row, not a mint,
+        // not a group member) may be re-targeted onto a different gift through
+        // the guarded move/displace flow below — the gate still composes
+        // payment_already_applied unless the reviewer confirmed
+        // moveOwnApplication. Every other confirmed shape (settlement-only,
+        // group, split, minted) stays closed.
         const openForRelink =
           staged.status === "match_confirmed" &&
-          staged.matchedGiftId != null &&
-          staged.createdGiftId == null &&
-          staged.groupReconciledGiftId == null;
+          staged.ledgerSoleGiftId != null &&
+          staged.ledgerMintedGiftId == null &&
+          !staged.ledgerGroupMember;
         if (!isStagedApprovable(staged.status) && !openForRelink) {
           throw new ApproveAbort(409, {
             error: "not_approvable",
@@ -970,11 +977,12 @@ router.post(
               "This staged payment is no longer open for reconciliation. Refresh and try again.",
           });
         }
-        // A row that OWNS a minted gift (createdGiftId) must not be re-pointed to
-        // some other gift here — that would demote its provenance and orphan the
-        // mint. No such row reaches the work queue today (minting sets the row
-        // `reconciled`); this is a forward guard against future approved+created rows.
-        if (staged.createdGiftId != null) {
+        // A row that OWNS a minted gift (a counted ledger row with
+        // created_the_gift = true) must not be re-pointed to some other gift
+        // here — that would demote its provenance and orphan the mint. No such
+        // row reaches the work queue today (minting confirms the row); this is
+        // a forward guard against future approved+created rows.
+        if (staged.ledgerMintedGiftId != null) {
           throw new ApproveAbort(409, {
             error: "gift_already_linked",
             message:
@@ -1060,21 +1068,20 @@ router.post(
         let oldAppliedGift: typeof giftsAndPayments.$inferSelect | null = null;
         let movableOwnApplication: string | null = null;
         // On the guarded relink path (confirmed DIRECT match being re-pointed)
-        // the row may carry only the legacy matchedGiftId pointer with no
-        // ledger row (rows confirmed before the ledger read-flip). Treat that
-        // pointer as the applied gift so the re-target still composes
+        // the applied gift is the payment's single counted ledger gift. Treat
+        // it as the applied gift so the re-target still composes
         // payment_already_applied and requires the reviewer's explicit
         // moveOwnApplication confirmation — never a silent re-point.
         const effectiveAppliedGiftId =
           ownAppliedGiftId ??
-          (openForRelink && staged.matchedGiftId !== giftId
-            ? staged.matchedGiftId
+          (openForRelink && staged.ledgerSoleGiftId !== giftId
+            ? staged.ledgerSoleGiftId
             : null);
         if (
           effectiveAppliedGiftId &&
-          staged.matchedGiftId === effectiveAppliedGiftId &&
-          staged.createdGiftId == null &&
-          staged.groupReconciledGiftId == null
+          staged.ledgerSoleGiftId === effectiveAppliedGiftId &&
+          staged.ledgerMintedGiftId == null &&
+          !staged.ledgerGroupMember
         ) {
           movableOwnApplication = effectiveAppliedGiftId;
           oldAppliedGift =

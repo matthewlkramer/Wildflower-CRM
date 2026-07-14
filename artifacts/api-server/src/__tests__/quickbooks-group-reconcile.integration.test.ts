@@ -7,7 +7,11 @@ import {
   it,
   vi,
 } from "vitest";
-import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
+import {
+  clearPaymentApplicationsForRealm,
+  qbCountedRowsForPayment,
+  qbSoleGiftIdForPayment,
+} from "./paymentApplicationsTestUtil";
 import { stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
@@ -20,9 +24,10 @@ import type { Server } from "node:http";
  * database), this exercises the real route handlers against the dev Postgres so
  * it can assert the actual DB state transitions the SQL preserve-on-conflict
  * unit tests can't see: grouping 2+ staged rows that share one bank deposit,
- * reconciling the group to ONE existing gift inside the fee band, the
- * representative/member column split (matchedGiftId vs groupReconciledGiftId),
- * fee-band rejection, and the group-aware revert that reverts the WHOLE group.
+ * reconciling the group to ONE existing gift inside the fee band (durable
+ * `unit_group_members` membership + one counted `payment_applications` ledger
+ * row per member), fee-band rejection, and the group-aware revert that reverts
+ * the WHOLE group.
  *
  * The only seam we mock is the Clerk auth gate (`requireAuth`) — we inject a
  * seeded test user so the handlers run with a real `appUser`; everything else
@@ -344,17 +349,15 @@ describe.skipIf(!HAS_DB)(
       const rep = await readStaged(repId);
       const member = await readStaged(memberId);
 
-      // Representative carries matchedGiftId (gift shows linked) AND the group id.
-      expect(rep.matchedGiftId).toBe(giftId);
-      expect(rep.groupReconciledGiftId).toBe(giftId);
+      // Every member (representative included) carries its own counted ledger
+      // row applying its amount to the group's gift.
       expect(rep.status).toBe("match_confirmed");
+      expect(await qbSoleGiftIdForPayment(repId)).toBe(giftId);
       // The donor was adopted from the gift.
       expect(rep.organizationId).toBe(ORG_ID);
 
-      // Every member carries the group id but NOT matchedGiftId.
-      expect(member.groupReconciledGiftId).toBe(giftId);
-      expect(member.matchedGiftId).toBeNull();
       expect(member.status).toBe("match_confirmed");
+      expect(await qbSoleGiftIdForPayment(memberId)).toBe(giftId);
     }, 30_000);
 
     it("adopts an individual-giver donor and nulls the other donor FKs", async () => {
@@ -384,10 +387,8 @@ describe.skipIf(!HAS_DB)(
         expect(row.organizationId).toBeNull();
         expect(row.householdId).toBeNull();
         expect(row.status).toBe("match_confirmed");
-        expect(row.groupReconciledGiftId).toBe(giftId);
+        expect(await qbSoleGiftIdForPayment(row.id)).toBe(giftId);
       }
-      expect(rep.matchedGiftId).toBe(giftId);
-      expect(member.matchedGiftId).toBeNull();
     }, 30_000);
 
     it("adopts a household donor and nulls the other donor FKs", async () => {
@@ -415,10 +416,8 @@ describe.skipIf(!HAS_DB)(
         expect(row.organizationId).toBeNull();
         expect(row.individualGiverPersonId).toBeNull();
         expect(row.status).toBe("match_confirmed");
-        expect(row.groupReconciledGiftId).toBe(giftId);
+        expect(await qbSoleGiftIdForPayment(row.id)).toBe(giftId);
       }
-      expect(rep.matchedGiftId).toBe(giftId);
-      expect(member.matchedGiftId).toBeNull();
     }, 30_000);
 
     it("leaves a Stripe-sourced gift's final amount untouched when QB reconciles", async () => {
@@ -460,8 +459,8 @@ describe.skipIf(!HAS_DB)(
       const member = await readStaged(memberId);
       expect(rep.status).toBe("match_confirmed");
       expect(member.status).toBe("match_confirmed");
-      expect(rep.groupReconciledGiftId).toBe(giftId);
-      expect(member.groupReconciledGiftId).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(repId)).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(memberId)).toBe(giftId);
 
       // ... but the gift stays Stripe-sourced — QB never overrides GROSS.
       const [gift] = await db
@@ -470,7 +469,6 @@ describe.skipIf(!HAS_DB)(
         .where(eqFn(schema.giftsAndPayments.id, giftId));
       expect(gift.finalAmountSource).toBe("stripe");
       expect(gift.finalAmountStripeChargeId).toBe(chargeId);
-      expect(gift.finalAmountQbStagedPaymentId).toBeNull();
       expect(gift.amount).toBe("100.00");
     }, 30_000);
 
@@ -494,8 +492,7 @@ describe.skipIf(!HAS_DB)(
       const b = await readStaged(bId);
       for (const row of [a, b]) {
         expect(row.status).toBe("pending");
-        expect(row.matchedGiftId).toBeNull();
-        expect(row.groupReconciledGiftId).toBeNull();
+        expect(await qbCountedRowsForPayment(row.id)).toHaveLength(0);
         expect(row.organizationId).toBe(ORG_ID);
       }
     }, 30_000);
@@ -526,8 +523,7 @@ describe.skipIf(!HAS_DB)(
       const b = await readStaged(bId);
       for (const row of [a, b]) {
         expect(row.status).toBe("pending");
-        expect(row.matchedGiftId).toBeNull();
-        expect(row.groupReconciledGiftId).toBeNull();
+        expect(await qbCountedRowsForPayment(row.id)).toHaveLength(0);
       }
     }, 30_000);
 
@@ -572,7 +568,7 @@ describe.skipIf(!HAS_DB)(
       const b = await readStaged(bId);
       for (const row of [a, b]) {
         expect(row.status).toBe("match_confirmed");
-        expect(row.groupReconciledGiftId).toBe(giftId);
+        expect(await qbSoleGiftIdForPayment(row.id)).toBe(giftId);
       }
     }, 30_000);
 
@@ -591,16 +587,14 @@ describe.skipIf(!HAS_DB)(
       expect(grouped.json.representativeStagedPaymentId).toBe(repId);
 
       // Revert from a NON-representative member: the whole group must revert,
-      // including the representative's matchedGiftId.
+      // clearing every member's counted ledger rows.
       const reverted = await api(`/api/staged-payments/${m1Id}/revert`);
       expect(reverted.status).toBe(200);
 
       for (const id of [repId, m1Id, m2Id]) {
         const row = await readStaged(id);
         expect(row.status).toBe("pending");
-        expect(row.matchedGiftId).toBeNull();
-        expect(row.groupReconciledGiftId).toBeNull();
-        expect(row.createdGiftId).toBeNull();
+        expect(await qbCountedRowsForPayment(id)).toHaveLength(0);
         expect(row.approvedByUserId).toBeNull();
         expect(row.matchConfirmedAt).toBeNull();
       }

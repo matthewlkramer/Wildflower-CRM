@@ -740,3 +740,76 @@ export function qbLedgerExistsForPayment(
     WHERE pa.payment_id = ${paymentIdSql} AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
   )`;
 }
+
+// ─── Read-cutover helpers (drop tail of the legacy gift-link columns) ─────────
+//
+// Ledger replacements for the retired staged_payments gift-link columns
+// (matched_gift_id / created_gift_id / group_reconciled_gift_id) and the gift's
+// final_amount_qb_staged_payment_id pointer. Same bare-column footgun rule —
+// the DEFAULT targets an un-aliased `.from(stagedPayments)` query; aliased/raw
+// callers pass their own pre-qualified payment-id expression.
+
+/**
+ * THE single gift the staged payment resolves to via the QuickBooks ledger, or
+ * null. Ledger replacement for the legacy
+ * `COALESCE(matched_gift_id, created_gift_id, group_reconciled_gift_id)`
+ * "resolved gift" surface. NULL when the payment has no counted rows (pending /
+ * excluded / settlement-only deposit) AND when it has more than one (a split) —
+ * a split deliberately carried none of the three legacy columns, so the legacy
+ * surface was null for it too; exactly-one preserves that behavior.
+ */
+export function qbLedgerSoleGiftIdForPayment(
+  paymentIdSql: SQL = DEFAULT_PAYMENT_ID_SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT CASE WHEN COUNT(*) = 1 THEN MIN(pa.gift_id) END
+    FROM payment_applications pa
+    WHERE pa.payment_id = ${paymentIdSql}
+      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+  )`;
+}
+
+/**
+ * The gift this staged payment MINTED (auto-create rule / approve-create /
+ * split remainder), or null. Ledger replacement for the legacy
+ * `created_gift_id` column: the counted QB row with created_the_gift = true.
+ */
+export function qbLedgerMintedGiftIdForPayment(
+  paymentIdSql: SQL = DEFAULT_PAYMENT_ID_SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT pa.gift_id FROM payment_applications pa
+    WHERE pa.payment_id = ${paymentIdSql}
+      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+      AND pa.created_the_gift = true
+    LIMIT 1
+  )`;
+}
+
+/**
+ * EXISTS a DIRECT (non-mint, non-group) counted QB application from the staged
+ * payment to THIS gift. Ledger replacement for the legacy
+ * `matched_gift_id = gift AND created_gift_id IS NULL AND
+ * group_reconciled_gift_id IS NULL` shape guard (displacement / relink /
+ * cascade-reset paths): the pair must be counted, must not be a mint, and the
+ * payment must not be reconciled as a member of a QB deposit group (the legacy
+ * group REPRESENTATIVE carried matched_gift_id too, and those guards
+ * deliberately refused it). Both args are pre-qualified SQL exprs.
+ */
+export function qbLedgerDirectMatchExists(
+  paymentIdSql: SQL,
+  giftIdSql: SQL,
+): SQL<boolean> {
+  return sql<boolean>`(
+    EXISTS (
+      SELECT 1 FROM payment_applications pa
+      WHERE pa.payment_id = ${paymentIdSql} AND pa.gift_id = ${giftIdSql}
+        AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+        AND pa.created_the_gift = false
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM unit_group_members ugm
+      WHERE ugm.evidence_source = 'quickbooks' AND ugm.source_id = ${paymentIdSql}
+    )
+  )`;
+}

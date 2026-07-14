@@ -131,14 +131,11 @@ function qbWhere(queue: AnchorQueue): SQL {
         'brokerage','daf','paypal','wire_ach','check','cash','employer_match','other'
       )
     )`;
-  const resolvedEvidence = `(
-      s.matched_gift_id IS NOT NULL
-      OR s.created_gift_id IS NOT NULL
-      OR s.group_reconciled_gift_id IS NOT NULL
-      OR EXISTS (
-        SELECT 1 FROM payment_applications pa
-        WHERE pa.payment_id = s.id AND pa.link_role = 'counted'
-      )
+  // Counted-ledger rows are the SOLE gift-link source (the legacy staged
+  // gift-link columns are @deprecated and no longer written).
+  const resolvedEvidence = `EXISTS (
+      SELECT 1 FROM payment_applications pa
+      WHERE pa.payment_id = s.id AND pa.link_role = 'counted'
     )`;
   const statusClause =
     queue === "confirmed"
@@ -404,11 +401,12 @@ router.get(
         (CASE
           WHEN s.exclusion_reason IS NOT NULL THEN 'excluded'
           WHEN s.auto_applied = true AND s.match_confirmed_at IS NULL
-               AND (s.matched_gift_id IS NOT NULL OR s.created_gift_id IS NOT NULL)
+               AND EXISTS (
+                 SELECT 1 FROM payment_applications pa
+                 WHERE pa.payment_id = s.id AND pa.link_role = 'counted'
+               )
             THEN 'match_proposed'
-          WHEN s.matched_gift_id IS NOT NULL OR s.created_gift_id IS NOT NULL
-               OR s.group_reconciled_gift_id IS NOT NULL
-               OR EXISTS (
+          WHEN EXISTS (
                  SELECT 1 FROM payment_applications pa
                  WHERE pa.payment_id = s.id AND pa.link_role = 'counted'
                )

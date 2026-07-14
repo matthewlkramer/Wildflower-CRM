@@ -6,7 +6,7 @@ import {
   stripePayouts,
 } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
-import { candidateGiftId } from "./stripeReconcile";
+import { qbLedgerSoleGiftIdForPayment } from "./paymentApplications";
 import {
   deriveStagedPaymentStatus,
   stagedStatusWhere,
@@ -241,16 +241,12 @@ export async function confirmPendingQbDepositInTx(
     );
   }
 
-  // Derive the deposit's status from facts: its gift links, counted
-  // `payment_applications` ledger rows (the legacy-SPLIT shape, which carries
-  // none of the 3 gift-link columns), and any CONFIRMED settlement link naming
-  // it as a deposit lump (this payout's own link is still only `proposed`, so a
-  // confirmed link means it settled against ANOTHER payout).
-  const linkedGiftId =
-    deposit.matchedGiftId ??
-    deposit.createdGiftId ??
-    deposit.groupReconciledGiftId ??
-    null;
+  // Derive the deposit's status from facts: its counted `payment_applications`
+  // ledger rows (the SOLE gift-link source after the read cutover — direct,
+  // mint, group, and split resolutions all anchor counted rows here) and any
+  // CONFIRMED settlement link naming it as a deposit lump (this payout's own
+  // link is still only `proposed`, so a confirmed link means it settled
+  // against ANOTHER payout).
   const hasCountedLedgerRows = await tx
     .select({ id: paymentApplications.id })
     .from(paymentApplications)
@@ -285,7 +281,7 @@ export async function confirmPendingQbDepositInTx(
   // wants the payout↔deposit evidence recorded — but the deposit's money is
   // already accounted for exactly once, so we touch nothing but the link.
   if (depositStatus === "match_confirmed" && !settledElsewhere) {
-    if (!linkedGiftId && !hasCountedLedgerRows) {
+    if (!hasCountedLedgerRows) {
       // Defensive: unreachable under the derivation above (match_confirmed
       // without another payout's link requires one of these facts), kept so a
       // future derivation change can't silently confirm an unbooked lump.
@@ -440,7 +436,14 @@ export async function confirmKeepApprovedQbGiftInTx(
       "Conflicting QuickBooks deposit not found.",
     );
   }
-  if (deposit.exclusionReason != null || candidateGiftId(deposit) == null) {
+  // Ledger-derived resolved gift (the legacy staged gift-link columns are
+  // @deprecated and no longer written); splits resolve to NULL.
+  const [depLink] = await tx
+    .select({ giftId: qbLedgerSoleGiftIdForPayment() })
+    .from(stagedPayments)
+    .where(eq(stagedPayments.id, depositId));
+  const depositLedgerGiftId = depLink?.giftId ?? null;
+  if (deposit.exclusionReason != null || depositLedgerGiftId == null) {
     throw new TransitionError(
       "invalid_transition",
       "The conflicting QuickBooks deposit is no longer booked into a gift. Refresh and retry.",
@@ -451,7 +454,7 @@ export async function confirmKeepApprovedQbGiftInTx(
   // truth, so downstream per-charge mint guards skip it. We MUST therefore know
   // WHICH gift that is, and it must still be the gift the deposit is booked into.
   // A well-formed conflict records this at propose time
-  // (qbConflictGiftId = candidateGiftId(deposit)); a null value is a
+  // (qbConflictGiftId = the deposit's ledger-resolved gift); a null value is a
   // legacy/malformed row and a mismatch is post-propose drift — in either case
   // we cannot prove a per-charge gift wouldn't double-book it, so we refuse the
   // keep instead of risking it. This also guards the legacy standalone
@@ -463,7 +466,7 @@ export async function confirmKeepApprovedQbGiftInTx(
       "This conflicting payout has no recorded gift to keep. Resolve it in QuickBooks review before confirming.",
     );
   }
-  if (candidateGiftId(deposit) !== keptGiftId) {
+  if (depositLedgerGiftId !== keptGiftId) {
     throw new TransitionError(
       "invalid_transition",
       "The conflicting QuickBooks deposit's gift changed since this conflict was detected. Refresh and retry.",
@@ -598,14 +601,11 @@ export function revertPayoutQbConfirmation(
           "not_found",
           "Linked QuickBooks deposit not found.",
         );
-      // A linkage-only confirm (deposit already booked via its own gift link or
-      // counted ledger rows when confirmed) never touched the deposit — revert
-      // must not touch it either (NEVER unbook a deposit whose money lives in
-      // its own gift links). Route the link back to proposed only.
+      // A linkage-only confirm (deposit already booked via its own counted
+      // ledger rows when confirmed) never touched the deposit — revert must
+      // not touch it either (NEVER unbook a deposit whose money lives in its
+      // own gift links). Route the link back to proposed only.
       const bookedIndependently =
-        deposit.matchedGiftId != null ||
-        deposit.createdGiftId != null ||
-        deposit.groupReconciledGiftId != null ||
         (await tx
           .select({ id: paymentApplications.id })
           .from(paymentApplications)

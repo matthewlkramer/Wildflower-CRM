@@ -36,6 +36,7 @@ import {
 import { maskName, type Viewer } from "./identityVisibility";
 import { loadEntityCodingRules } from "./revenueCoding";
 import { derivedProcessorFeeForGift } from "./giftPaymentSummary";
+import { qbLedgerSoleGiftIdForPayment } from "./paymentApplications";
 
 // ── Revenue Extractor report (Task #607) ─────────────────────────────────────
 //
@@ -248,11 +249,12 @@ export async function buildRevenueExtractorReport(
   }
 
   // 5. QuickBooks coding snapshot from staged payments linked to these gifts.
+  //    Link state comes from the counted cash-application ledger (the legacy
+  //    staged gift-link columns are @deprecated and no longer written); a split
+  //    payment resolves to NULL, matching the legacy no-columns-set behavior.
   const stagedRows = await db
     .select({
-      matchedGiftId: stagedPayments.matchedGiftId,
-      createdGiftId: stagedPayments.createdGiftId,
-      groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
+      linkedGiftId: qbLedgerSoleGiftIdForPayment(),
       objectCode: stagedPayments.objectCode,
       objectCodeOverride: stagedPayments.objectCodeOverride,
       revenueLocation: stagedPayments.revenueLocation,
@@ -261,19 +263,13 @@ export async function buildRevenueExtractorReport(
       revenueClassOverride: stagedPayments.revenueClassOverride,
     })
     .from(stagedPayments)
-    .where(
-      or(
-        inArray(stagedPayments.matchedGiftId, giftIds),
-        inArray(stagedPayments.createdGiftId, giftIds),
-        inArray(stagedPayments.groupReconciledGiftId, giftIds),
-      ),
-    );
+    .where(inArray(qbLedgerSoleGiftIdForPayment(), giftIds));
   const qbByGift = new Map<
     string,
     { objectCode: string | null; location: string | null; revenueClass: string | null }
   >();
   for (const s of stagedRows) {
-    const giftId = s.matchedGiftId ?? s.createdGiftId ?? s.groupReconciledGiftId;
+    const giftId = s.linkedGiftId;
     if (!giftId || qbByGift.has(giftId)) continue;
     qbByGift.set(giftId, {
       objectCode: effectiveCoding(s.objectCodeOverride, s.objectCode),

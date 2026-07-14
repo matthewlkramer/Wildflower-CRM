@@ -95,6 +95,9 @@ async function seedPayout(over: {
   return id;
 }
 
+// The gift link is a counted QB `payment_applications` ledger row (the legacy
+// matched/created pointer columns are @deprecated and never written).
+// `createdGiftId` models a mint (created_the_gift:true).
 async function seedDeposit(over: {
   createdGiftId?: string | null;
   matchedGiftId?: string | null;
@@ -114,11 +117,21 @@ async function seedDeposit(over: {
     amount: "1000.00",
     dateReceived: "2026-03-15",
     payerName: over.payerName === undefined ? "Stripe" : over.payerName,
-    createdGiftId: over.createdGiftId ?? null,
-    matchedGiftId: over.matchedGiftId ?? null,
     autoApplied: over.autoApplied ?? false,
     exclusionReason: over.exclusionReason ?? null,
   });
+  const linkedGiftId = over.createdGiftId ?? over.matchedGiftId;
+  if (linkedGiftId) {
+    await db.insert(schema.paymentApplications).values({
+      id: nextId("pa"),
+      paymentId: id,
+      giftId: linkedGiftId,
+      amountApplied: "1000.00",
+      evidenceSource: "quickbooks",
+      matchMethod: "system",
+      createdTheGift: !!over.createdGiftId,
+    });
+  }
   stagedIds.push(id);
   return id;
 }

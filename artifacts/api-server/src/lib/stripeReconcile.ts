@@ -10,10 +10,8 @@ import {
   exists,
   gte,
   inArray,
-  isNotNull,
   lte,
   notExists,
-  or,
   sql,
 } from "drizzle-orm";
 import { logger } from "./logger";
@@ -23,6 +21,10 @@ import { upsertSettlementLink, deleteSettlementLink } from "./settlementLink";
 import { proposeSettlementLink } from "./settlementWriter";
 import { settlementLumpWhere } from "./settlementLump";
 import { stagedStatusSql, stagedStatusWhere } from "./derivedStatus";
+import {
+  qbLedgerExistsForPayment,
+  qbLedgerSoleGiftIdForPayment,
+} from "./paymentApplications";
 
 /**
  * Stripe payout ↔ QuickBooks deposit-lump reconciliation (the audit join).
@@ -66,9 +68,6 @@ export interface QbDepositForScore {
   rawReference: string | null;
   qbDepositToAccountName: string | null;
   status: string;
-  matchedGiftId: string | null;
-  createdGiftId: string | null;
-  groupReconciledGiftId: string | null;
 }
 
 export interface PayoutQbScore {
@@ -121,16 +120,6 @@ function hasStripeSignal(c: QbDepositForScore): boolean {
     .join(" ")
     .toLowerCase();
   return hay.includes("stripe");
-}
-
-/** The CRM gift a QB deposit is already booked into, if any. Accepts any row
- * carrying the three gift-link columns (the full scoring row is a superset). */
-export function candidateGiftId(c: {
-  matchedGiftId: string | null;
-  createdGiftId: string | null;
-  groupReconciledGiftId: string | null;
-}): string | null {
-  return c.createdGiftId ?? c.matchedGiftId ?? c.groupReconciledGiftId ?? null;
 }
 
 /**
@@ -263,7 +252,10 @@ export async function runProposalPass(
 
   for (const p of payouts) {
     const target = p.amount ?? p.netTotal;
-    let best: { c: QbDepositForScore; s: PayoutQbScore } | null = null;
+    let best: {
+      c: QbDepositForScore & { linkedGiftId: string | null };
+      s: PayoutQbScore;
+    } | null = null;
 
     if (target && p.arrivalDate) {
       const fromStr = shiftDate(p.arrivalDate, -RECONCILE_WINDOW_DAYS);
@@ -290,9 +282,9 @@ export async function runProposalPass(
           rawReference: stagedPayments.rawReference,
           qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
           status: stagedStatusSql,
-          matchedGiftId: stagedPayments.matchedGiftId,
-          createdGiftId: stagedPayments.createdGiftId,
-          groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
+          // Ledger-derived resolved gift (the legacy staged gift-link columns
+          // are @deprecated and no longer written); splits resolve to NULL.
+          linkedGiftId: qbLedgerSoleGiftIdForPayment(),
         })
         .from(stagedPayments)
         .where(
@@ -377,8 +369,8 @@ export async function runProposalPass(
     }
 
     assigned.add(best.c.id);
-    const giftId = candidateGiftId(best.c);
-    // A deposit already resolved to a gift (any gift-link column set) is a
+    const giftId = best.c.linkedGiftId ?? null;
+    // A deposit already resolved to a gift (counted in the QB ledger) is a
     // conflict: the payout's per-charge Stripe gifts are the precise record,
     // so the human must confirm reconciling the coarse deposit.
     const isConflict = giftId != null;
@@ -397,11 +389,8 @@ export async function runProposalPass(
       .where(
         and(
           eq(stagedPayments.id, best.c.id),
-          or(
-            isNotNull(stagedPayments.createdGiftId),
-            isNotNull(stagedPayments.matchedGiftId),
-            isNotNull(stagedPayments.groupReconciledGiftId),
-          ),
+          // Ledger-derived: a counted QB application IS the gift link now.
+          qbLedgerExistsForPayment(),
         ),
       );
     const candidateStateGuard = isConflict

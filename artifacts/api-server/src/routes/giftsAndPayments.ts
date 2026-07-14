@@ -51,11 +51,17 @@ const maskGiftDonorRow = maskDonorDisplayFields;
 // payments projection and the archive/unarchive routes.
 // This is the single named column set every full-row gift select flows through
 // (see deprecated-column-response-leak). Deprecated-but-physical columns still
-// present in the schema (e.g. originalHumanCrmAmount, final_amount_*) are
-// intentionally echoed here to match their deprecated OpenAPI response fields;
-// columns fully retired from the schema (grant_year, needs_research, processor_fee)
-// simply fall out of getTableColumns and never reach a response.
-const giftHeaderColumns = getTableColumns(giftsAndPayments);
+// present in the schema (e.g. originalHumanCrmAmount, finalAmountStripeChargeId)
+// are intentionally echoed here to match their deprecated OpenAPI response
+// fields; columns fully retired from the schema (grant_year, needs_research,
+// processor_fee) simply fall out of getTableColumns and never reach a response.
+// finalAmountQbStagedPaymentId is @deprecated NEVER READ / NEVER WRITTEN (the
+// counted payment_applications ledger is the sole QB gift-link source), so it
+// is scrubbed here ahead of its physical drop.
+const {
+  finalAmountQbStagedPaymentId: _finalAmountQbStagedPaymentId,
+  ...giftHeaderColumns
+} = getTableColumns(giftsAndPayments);
 export { giftHeaderColumns };
 const donorJoinSelect = {
   ...giftHeaderColumns,
@@ -1461,19 +1467,9 @@ router.post(
       // A gift wired into a QuickBooks staged payment must be unlinked first —
       // splitting changes its amount and would falsify an approved
       // reconciliation. New payment-gifts intentionally carry no QB links.
-      const qbLink = await tx
-        .select({ id: stagedPayments.id })
-        .from(stagedPayments)
-        .where(
-          or(
-            eq(stagedPayments.matchedGiftId, id),
-            eq(stagedPayments.createdGiftId, id),
-            eq(stagedPayments.groupReconciledGiftId, id),
-          ),
-        )
-        .limit(1);
       // The counted QB ledger unifies direct + split + group links, so one
-      // existence check covers the split shape (which carries no pointer column).
+      // existence check covers every link shape (the legacy staged gift-link
+      // columns are @deprecated and no longer written).
       const qbLedgerLink = await tx
         .select({ id: paymentApplications.id })
         .from(paymentApplications)
@@ -1485,7 +1481,7 @@ router.post(
           ),
         )
         .limit(1);
-      if (qbLink.length || qbLedgerLink.length) {
+      if (qbLedgerLink.length) {
         return {
           ok: false,
           status: 409,
@@ -1742,19 +1738,9 @@ router.post(
 
       // A gift wired into a QuickBooks staged payment must be unlinked first —
       // reverting archives it and would falsify an approved reconciliation.
-      const qbLink = await tx
-        .select({ id: stagedPayments.id })
-        .from(stagedPayments)
-        .where(
-          or(
-            eq(stagedPayments.matchedGiftId, id),
-            eq(stagedPayments.createdGiftId, id),
-            eq(stagedPayments.groupReconciledGiftId, id),
-          ),
-        )
-        .limit(1);
       // The counted QB ledger unifies direct + split + group links, so one
-      // existence check covers the split shape (which carries no pointer column).
+      // existence check covers every link shape (the legacy staged gift-link
+      // columns are @deprecated and no longer written).
       const qbLedgerLink = await tx
         .select({ id: paymentApplications.id })
         .from(paymentApplications)
@@ -1766,7 +1752,7 @@ router.post(
           ),
         )
         .limit(1);
-      if (qbLink.length || qbLedgerLink.length) {
+      if (qbLedgerLink.length) {
         return {
           ok: false,
           status: 409,
@@ -2322,10 +2308,12 @@ router.get(
     // payment applied to this gift, `amount` = the applied amount (the split
     // sub-amount for split rows, the full staged amount for direct/group rows).
     // The staged_payments join supplies the QB record detail; the cosmetic
-    // linkType label is derived from the staged row's own gift-link columns —
-    // a split deliberately carries NONE of the three, so a counted ledger row
-    // whose staged payment is 3-cols-null is a split link. Off-books gifts may
-    // still surface evidence if any exists, but it isn't required of them.
+    // linkType label is derived from the ledger itself (the legacy staged
+    // gift-link columns are @deprecated and no longer written): a payment
+    // whose counted rows fan out to >1 application is a split; a payment in a
+    // QuickBooks unit group booked its gift through the group; created comes
+    // straight from created_the_gift. Off-books gifts may still surface
+    // evidence if any exists, but it isn't required of them.
     const ledgerRows = await db
       .select({
         stagedPaymentId: paymentApplications.paymentId,
@@ -2339,9 +2327,17 @@ router.get(
         qbPaymentMethod: stagedPayments.qbPaymentMethod,
         payerName: stagedPayments.payerName,
         dateReceived: stagedPayments.dateReceived,
-        matchedGiftId: stagedPayments.matchedGiftId,
-        createdGiftId: stagedPayments.createdGiftId,
-        groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
+        isGroupMember: sql<boolean>`EXISTS (
+          SELECT 1 FROM unit_group_members ugm
+          WHERE ugm.evidence_source = 'quickbooks'
+            AND ugm.source_id = ${paymentApplications.paymentId}
+        )`,
+        countedAppCount: sql<number>`(
+          SELECT COUNT(*)::int FROM payment_applications pa2
+          WHERE pa2.payment_id = ${paymentApplications.paymentId}
+            AND pa2.evidence_source = 'quickbooks'
+            AND pa2.link_role = 'counted'
+        )`,
       })
       .from(paymentApplications)
       .innerJoin(
@@ -2359,13 +2355,11 @@ router.get(
 
     const quickbooksRecords = ledgerRows.map((r) => ({
       stagedPaymentId: r.stagedPaymentId,
-      linkType: (r.matchedGiftId == null &&
-      r.createdGiftId == null &&
-      r.groupReconciledGiftId == null
+      linkType: (r.countedAppCount > 1
         ? "split"
         : r.createdTheGift
           ? "created"
-          : r.groupReconciledGiftId === id
+          : r.isGroupMember
             ? "group"
             : "matched") as "matched" | "created" | "group" | "split",
       realmId: r.realmId,
@@ -2395,7 +2389,11 @@ router.get(
         qbPaymentMethod: stagedPayments.qbPaymentMethod,
         payerName: stagedPayments.payerName,
         dateReceived: stagedPayments.dateReceived,
-        groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
+        isGroupMember: sql<boolean>`EXISTS (
+          SELECT 1 FROM unit_group_members ugm
+          WHERE ugm.evidence_source = 'quickbooks'
+            AND ugm.source_id = ${paymentApplications.paymentId}
+        )`,
       })
       .from(paymentApplications)
       .innerJoin(
@@ -2416,7 +2414,7 @@ router.get(
       stagedPaymentId: r.stagedPaymentId,
       linkType: (r.createdTheGift
         ? "created"
-        : r.groupReconciledGiftId === id
+        : r.isGroupMember
           ? "group"
           : "matched") as "matched" | "created" | "group" | "split",
       realmId: r.realmId,

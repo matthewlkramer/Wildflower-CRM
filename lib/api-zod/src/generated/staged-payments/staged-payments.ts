@@ -72,9 +72,6 @@ export const ListStagedPaymentsResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "matchedPaymentIntermediaryId": zod.string().nullish(),
-  "matchedGiftId": zod.string().nullish(),
-  "createdGiftId": zod.string().nullish(),
-  "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -249,9 +246,6 @@ export const ResolveStagedPaymentResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "matchedPaymentIntermediaryId": zod.string().nullish(),
-  "matchedGiftId": zod.string().nullish(),
-  "createdGiftId": zod.string().nullish(),
-  "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -355,9 +349,6 @@ export const ReIncludeStagedPaymentResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "matchedPaymentIntermediaryId": zod.string().nullish(),
-  "matchedGiftId": zod.string().nullish(),
-  "createdGiftId": zod.string().nullish(),
-  "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -465,9 +456,6 @@ export const SetStagedPaymentEntityResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "matchedPaymentIntermediaryId": zod.string().nullish(),
-  "matchedGiftId": zod.string().nullish(),
-  "createdGiftId": zod.string().nullish(),
-  "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -575,9 +563,6 @@ export const SetStagedPaymentFundingSourceResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "matchedPaymentIntermediaryId": zod.string().nullish(),
-  "matchedGiftId": zod.string().nullish(),
-  "createdGiftId": zod.string().nullish(),
-  "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -695,9 +680,6 @@ export const SetStagedPaymentCodingResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "matchedPaymentIntermediaryId": zod.string().nullish(),
-  "matchedGiftId": zod.string().nullish(),
-  "createdGiftId": zod.string().nullish(),
-  "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -805,9 +787,6 @@ export const ExcludeStagedPaymentResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "matchedPaymentIntermediaryId": zod.string().nullish(),
-  "matchedGiftId": zod.string().nullish(),
-  "createdGiftId": zod.string().nullish(),
-  "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -881,7 +860,6 @@ export const ListStagedPaymentGiftCandidatesResponse = zod.object({
   "originalHumanCrmAmount": zod.string().nullish().describe('DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount.'),
   "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.').describe('DEPRECATED (Task #448) — `amount` is always the human-entered amount now; settled money is derivedSettledAmount.'),
   "finalAmountStripeChargeId": zod.string().nullish().describe('DEPRECATED (Task #448) — Stripe linkage lives on stripe_staged_charges; settled amount is derived.'),
-  "finalAmountQbStagedPaymentId": zod.string().nullish().describe('DEPRECATED (Task #448) — QuickBooks linkage lives on payment_applications; settled amount is derived.'),
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
@@ -995,7 +973,6 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
   "originalHumanCrmAmount": zod.string().nullish().describe('DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount.'),
   "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.').describe('DEPRECATED (Task #448) — `amount` is always the human-entered amount now; settled money is derivedSettledAmount.'),
   "finalAmountStripeChargeId": zod.string().nullish().describe('DEPRECATED (Task #448) — Stripe linkage lives on stripe_staged_charges; settled amount is derived.'),
-  "finalAmountQbStagedPaymentId": zod.string().nullish().describe('DEPRECATED (Task #448) — QuickBooks linkage lives on payment_applications; settled amount is derived.'),
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
@@ -1074,7 +1051,8 @@ export const ListStagedPaymentGiftWindowResponse = zod.object({
 
 /**
  * Ties the staged payment to an already-recorded gifts_and_payments row by
-setting matchedGiftId. Marks the row approved (autoApplied=false). If the
+booking a counted payment_applications ledger row (the sole gift-link
+record). Marks the row approved (autoApplied=false). If the
 staged row has no donor yet it adopts the gift's donor; otherwise the
 donors must match. The gift must not already be linked to another staged
 payment. An optional allocationId narrows the link to one of the gift's
@@ -1108,7 +1086,6 @@ export const ReconcileStagedPaymentResponse = zod.object({
   "originalHumanCrmAmount": zod.string().nullish().describe('DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount.'),
   "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.').describe('DEPRECATED (Task #448) — `amount` is always the human-entered amount now; settled money is derivedSettledAmount.'),
   "finalAmountStripeChargeId": zod.string().nullish().describe('DEPRECATED (Task #448) — Stripe linkage lives on stripe_staged_charges; settled amount is derived.'),
-  "finalAmountQbStagedPaymentId": zod.string().nullish().describe('DEPRECATED (Task #448) — QuickBooks linkage lives on payment_applications; settled amount is derived.'),
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
@@ -1232,8 +1209,8 @@ ONE underlying bank Deposit (same qbDepositId), or — when no deposit was
 captured — they share the same payer name (e.g. a single wire, or a
 series of stock sales, split across several QuickBooks records). No new
 gift is minted and QuickBooks is never written back. Every member is set
-to approved with groupReconciledGiftId = the gift; one deterministic
-representative member also carries matchedGiftId so the gift shows linked.
+to approved and books a counted payment_applications ledger row to the
+gift; the members' group membership is recorded durably in unit_groups.
 The group adopts the gift's donor (Donor XOR). Guards: at least two rows,
 all pending and unresolved, all sharing one grouping key (deposit or
 payer) — OR all already belonging to one "same physical gift" unit
@@ -1280,7 +1257,6 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
   "originalHumanCrmAmount": zod.string().nullish().describe('DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount.'),
   "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.').describe('DEPRECATED (Task #448) — `amount` is always the human-entered amount now; settled money is derivedSettledAmount.'),
   "finalAmountStripeChargeId": zod.string().nullish().describe('DEPRECATED (Task #448) — Stripe linkage lives on stripe_staged_charges; settled amount is derived.'),
-  "finalAmountQbStagedPaymentId": zod.string().nullish().describe('DEPRECATED (Task #448) — QuickBooks linkage lives on payment_applications; settled amount is derived.'),
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
@@ -1351,7 +1327,7 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
   "updatedAt": zod.string().datetime({})
 }),
   "stagedPaymentIds": zod.array(zod.string()),
-  "representativeStagedPaymentId": zod.string().describe('The group member that also carries matchedGiftId (the one that makes the gift show linked).')
+  "representativeStagedPaymentId": zod.string().describe('The deterministic group representative (min id among members). Informational only — every member books its own counted payment_applications ledger row to the gift.')
 })
 
 /**
@@ -1515,9 +1491,6 @@ export const ConfirmStagedPaymentMatchResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "matchedPaymentIntermediaryId": zod.string().nullish(),
-  "matchedGiftId": zod.string().nullish(),
-  "createdGiftId": zod.string().nullish(),
-  "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -1614,9 +1587,6 @@ export const UnmatchStagedPaymentResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "matchedPaymentIntermediaryId": zod.string().nullish(),
-  "matchedGiftId": zod.string().nullish(),
-  "createdGiftId": zod.string().nullish(),
-  "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),
@@ -1661,9 +1631,10 @@ export const UnmatchStagedPaymentResponse = zod.object({
 
 /**
  * Returns a gift-linked staged payment to the pending queue. If it was
-reconciled to an existing gift (matchedGiftId), the link is cleared and
-the pre-existing gift is untouched. If it was an auto-minted gift
-(createdGiftId + autoApplied), the auto-created gift is deleted. A
+reconciled to an existing gift (a counted ledger row with
+created_the_gift=false), the ledger link is removed and the pre-existing
+gift is untouched. If it was an auto-minted gift (a created_the_gift
+ledger row + autoApplied), the auto-created gift is deleted. A
 manually created gift cannot be reverted (it would orphan a
 fundraiser-created ledger row). The donor match is left intact.
 
@@ -1720,9 +1691,6 @@ export const RevertStagedPaymentResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "matchedPaymentIntermediaryId": zod.string().nullish(),
-  "matchedGiftId": zod.string().nullish(),
-  "createdGiftId": zod.string().nullish(),
-  "groupReconciledGiftId": zod.string().nullish().describe('Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert.'),
   "autoApplied": zod.boolean(),
   "approvedByUserId": zod.string().nullish(),
   "approvedAt": zod.string().datetime({}).nullish(),

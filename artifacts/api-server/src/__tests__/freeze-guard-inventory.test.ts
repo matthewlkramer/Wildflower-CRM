@@ -147,11 +147,6 @@ const EXPECTED: Record<string, FileClass> = {
     reason:
       "One-time admin coding-form import/reconciliation over historical, pre-audit data.",
   },
-  "lib/giftCombine.ts": {
-    classification: "exempt",
-    reason:
-      "Gift merge/dedup engine. FOLLOW-UP: merge freeze (archiving audited losers) is not enforced yet.",
-  },
   "lib/mergeEntities.ts": {
     classification: "exempt",
     reason:

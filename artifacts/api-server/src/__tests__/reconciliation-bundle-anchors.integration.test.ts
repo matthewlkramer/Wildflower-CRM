@@ -15,6 +15,10 @@ import {
 } from "../lib/settlementWriter";
 import { getTableColumns } from "drizzle-orm";
 import { stagedStatusSql } from "../lib/derivedStatus";
+import {
+  qbMintedGiftIdForPayment,
+  qbSoleGiftIdForPayment,
+} from "./paymentApplicationsTestUtil";
 
 /**
  * DB-backed coverage for the UNIFIED settlement-anchor surface of the reactive
@@ -251,13 +255,25 @@ async function seedStaged(opts: {
     // are dropped from the "Needs payout tie" anchor column; stripe/donorbox/NULL
     // stay visible.
     fundingSource: (opts.fundingSource ?? null) as never,
-    // A booked QB deposit/payment carries the gift it was minted into. A real
-    // conflict_approved deposit is always linked (that link is where
-    // qbConflictGiftId came from), so tests that confirm-keep must wire it.
-    createdGiftId: opts.createdGiftId ?? null,
-    matchedGiftId: opts.matchedGiftId ?? null,
   });
   stagedIds.push(id);
+  // A booked QB deposit/payment carries the gift it was minted into / matched
+  // to via the authoritative `payment_applications` ledger (the deprecated
+  // staged link columns are no longer written). A real conflict_approved
+  // deposit is always linked (that link is where qbConflictGiftId came from),
+  // so tests that confirm-keep must wire it.
+  const linkedGiftId = opts.createdGiftId ?? opts.matchedGiftId ?? null;
+  if (linkedGiftId) {
+    await db.insert(schema.paymentApplications).values({
+      id: nextId("pa"),
+      paymentId: id,
+      giftId: linkedGiftId,
+      amountApplied: opts.amount ?? "75.00",
+      evidenceSource: "quickbooks",
+      matchMethod: "system",
+      createdTheGift: opts.createdGiftId != null,
+    });
+  }
   // Grouping is now first-class: membership lives in unit_groups /
   // unit_group_members (evidence_source='quickbooks', source_id=staged id), not
   // on staged_payments. A grouped row must be OMITTED from anchor eligibility.
@@ -950,7 +966,7 @@ describe.skipIf(!HAS_DB)("Standalone QB anchor confirm (integration)", () => {
     expect((await readGift(giftId))?.organizationId).toBe(ORG_ID);
     const sp = await readStaged(staged);
     expect(sp?.status).toBe("match_confirmed");
-    expect(sp?.createdGiftId).toBe(giftId);
+    expect(await qbMintedGiftIdForPayment(staged)).toBe(giftId);
   });
 
   it("matches a standalone QB deposit to an existing gift", async () => {
@@ -975,7 +991,8 @@ describe.skipIf(!HAS_DB)("Standalone QB anchor confirm (integration)", () => {
     expect(confirm.status).toBe(200);
     expect(confirm.json.giftsMatched).toBe(1);
     expect(confirm.json.rows[0].outcome).toBe("matched_gift");
-    expect((await readStaged(staged))?.matchedGiftId).toBe(gift);
+    expect((await readStaged(staged))?.status).toBe("match_confirmed");
+    expect(await qbSoleGiftIdForPayment(staged)).toBe(gift);
   });
 
   it("excludes a standalone QB deposit with a reason", async () => {

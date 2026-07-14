@@ -1955,11 +1955,6 @@ export interface GiftOrPayment {
    * @deprecated
    */
   readonly finalAmountStripeChargeId?: string | null;
-  /**
-   * DEPRECATED (Task #448) — QuickBooks linkage lives on payment_applications; settled amount is derived.
-   * @deprecated
-   */
-  readonly finalAmountQbStagedPaymentId?: string | null;
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
@@ -3027,10 +3022,6 @@ export interface StagedPayment {
   individualGiverPersonId?: string | null;
   householdId?: string | null;
   matchedPaymentIntermediaryId?: string | null;
-  matchedGiftId?: string | null;
-  createdGiftId?: string | null;
-  /** Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert. */
-  groupReconciledGiftId?: string | null;
   autoApplied: boolean;
   approvedByUserId?: string | null;
   approvedAt?: string | null;
@@ -5824,7 +5815,7 @@ export interface GroupReconcileStagedPaymentsBody {
 export interface GroupReconcileStagedPaymentsResponse {
   gift: GiftOrPayment;
   stagedPaymentIds: string[];
-  /** The group member that also carries matchedGiftId (the one that makes the gift show linked). */
+  /** The deterministic group representative (min id among members). Informational only — every member books its own counted payment_applications ledger row to the gift. */
   representativeStagedPaymentId: string;
 }
 

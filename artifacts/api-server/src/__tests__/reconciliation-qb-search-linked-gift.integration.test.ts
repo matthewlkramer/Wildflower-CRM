@@ -58,6 +58,7 @@ let schema: {
   organizations: Db["organizations"];
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
+  paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let server: Server;
@@ -93,6 +94,7 @@ beforeAll(async () => {
     organizations: dbMod.organizations,
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
+    paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
 
@@ -116,7 +118,8 @@ beforeAll(async () => {
     });
   }
   // Three staged payments sharing the distinctive payer name: one already tied
-  // to a gift via matchedGiftId, one via createdGiftId, one with no gift link.
+  // to a pre-existing gift (counted ledger row), one that minted its gift
+  // (counted ledger row with createdTheGift), one with no gift link.
   await db.insert(schema.stagedPayments).values({
     id: STAGED_MATCHED_ID,
     realmId: REALM_ID,
@@ -126,7 +129,14 @@ beforeAll(async () => {
     amount: "250.00",
     dateReceived: "2099-11-15",
     payerName: PAYER,
-    matchedGiftId: GIFT_MATCHED_ID,
+  });
+  await db.insert(schema.paymentApplications).values({
+    id: `${STAGED_MATCHED_ID}_pa`,
+    paymentId: STAGED_MATCHED_ID,
+    giftId: GIFT_MATCHED_ID,
+    amountApplied: "250.00",
+    evidenceSource: "quickbooks",
+    createdTheGift: false,
   });
   await db.insert(schema.stagedPayments).values({
     id: STAGED_CREATED_ID,
@@ -137,7 +147,14 @@ beforeAll(async () => {
     amount: "250.00",
     dateReceived: "2099-11-15",
     payerName: PAYER,
-    createdGiftId: GIFT_CREATED_ID,
+  });
+  await db.insert(schema.paymentApplications).values({
+    id: `${STAGED_CREATED_ID}_pa`,
+    paymentId: STAGED_CREATED_ID,
+    giftId: GIFT_CREATED_ID,
+    amountApplied: "250.00",
+    evidenceSource: "quickbooks",
+    createdTheGift: true,
   });
   await db.insert(schema.stagedPayments).values({
     id: STAGED_FREE_ID,
@@ -162,6 +179,9 @@ afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const id of [STAGED_MATCHED_ID, STAGED_CREATED_ID, STAGED_FREE_ID]) {
+    await db
+      .delete(schema.paymentApplications)
+      .where(eqFn(schema.paymentApplications.paymentId, id));
     await db
       .delete(schema.stagedPayments)
       .where(eqFn(schema.stagedPayments.id, id));
@@ -197,7 +217,7 @@ describe.skipIf(!HAS_DB)(
       expect(hit!.alreadyLinkedGiftId).toBe(GIFT_MATCHED_ID);
     });
 
-    it("flags a QB payment that minted a gift (createdGiftId)", async () => {
+    it("flags a QB payment that minted a gift (createdTheGift ledger row)", async () => {
       const { status, json } = await qbSearch(`q=${encodeURIComponent(PAYER)}`);
       expect(status).toBe(200);
       const hit = (json.data ?? []).find((c) => c.id === STAGED_CREATED_ID);

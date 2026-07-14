@@ -51,16 +51,27 @@ Three generations of "this money links to that record" are all live at once:
 3. **`gift_evidence_links`** — a *second* M:N "corroborating, never counted" link
    table, used only by financial corrections (polymorphic, no FKs).
 
-The ledger cutover is **half-done**. The system **dual-writes** to both the legacy
-pointer columns and `payment_applications` (`reconciliationCommit.ts`:
-`applyPaymentApplication` called inside `mintGiftInTx` / `linkGiftInTx`). Reads are
-**partially flipped**:
+The **QB plane-2 (unit↔gift) cutover is DONE**: `payment_applications` is the
+SOLE link record for QB staged payments ↔ gifts. The four legacy pointer
+columns (`staged_payments.matched_gift_id` / `created_gift_id` /
+`group_reconciled_gift_id`, `gifts_and_payments.final_amount_qb_staged_payment_id`)
+are `@deprecated` — **never read, never written** (no writes, no null-clears;
+revert/reset paths leave any stale legacy values in place as inert history).
+Migration 0120 closed the backfill parity gap (every positive-amount legacy link
+has a counted ledger row) before the reads flipped, and both the API responses
+and the OpenAPI spec no longer expose the four columns. They stay physical,
+frozen at their pre-cutover values, until a much-later drop migration (INV-F).
+Group membership is now durable in `unit_groups` / `unit_group_members` for
+ad-hoc groups too — no representative pointer dance.
 
-- **Flipped to the ledger:** the QB-tie deriver (`giftQbTie.ts` reads
-  `qbLedgerSumForGift()` / `qbLedgerExistsForGift()`), the workbench's "current
-  link" (`giftsAndPayments.ts` exposes `quickbooksStagedPaymentId` via
-  `qbLedgerPaymentIdForGift()`), the reconciliation guards in
-  `reconciliation/cards.ts` and `quickbooks/shared.ts`, and `reconciliationGraph.ts`.
+- **Flipped to the ledger (all QB unit↔gift reads):** the QB-tie deriver
+  (`giftQbTie.ts` reads `qbLedgerSumForGift()` / `qbLedgerExistsForGift()`), the
+  workbench's "current link" (`giftsAndPayments.ts` exposes
+  `quickbooksStagedPaymentId` via `qbLedgerPaymentIdForGift()`), the derived
+  staged-payment status (`derivedStatus.ts`), the reconciliation guards in
+  `reconciliation/cards.ts` and `quickbooks/shared.ts`, `reconciliationGraph.ts`,
+  and every route in `quickbooks/matching.ts` / `quickbooks/actions.ts` /
+  `reconciliation/approve.ts`.
 - **NOT a cash-application surface (was mis-listed here):** `coding-form-import.tsx`
   reads/writes `matchedGiftId`, but that is `coding_form_rows.matched_gift_id` — a
   coding-import *staging* pointer (spreadsheet row ↔ gift), **not** a
@@ -69,7 +80,9 @@ pointer columns and `payment_applications` (`reconciliationCommit.ts`:
 - **Still legacy:**
   Plane 1 settlement is **100% legacy** (`stripe_payouts.qb_reconciliation_status`,
   a 7-value enum, plus `qbSupersedeStatus` + `proposed/matched/conflict` pointer
-  columns). The ledger has **no rows** for Stripe charge↔gift or payout↔deposit.
+  columns). The ledger has **no rows** for Stripe charge↔gift or payout↔deposit —
+  `stripe_staged_charges.matched_gift_id` / `created_gift_id` and the Donorbox
+  equivalents remain the live link columns on those sources.
 
 On top of the links sit **five derived-status projections**:
 `gifts_and_payments.quickbooks_tie_status` (now derived+persisted via

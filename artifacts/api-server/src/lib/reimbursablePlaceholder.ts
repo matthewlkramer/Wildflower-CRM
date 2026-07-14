@@ -69,7 +69,6 @@ export async function isReimbursablePlaceholderGift(
           WHERE g3.gift_being_matched_id = ${giftsAndPayments.id}
              OR g3.overpay_of_gift_id = ${giftsAndPayments.id}
         )
-        AND ${giftsAndPayments.finalAmountQbStagedPaymentId} IS NULL
         AND ${giftsAndPayments.finalAmountStripeChargeId} IS NULL
         AND NOT ${qbLedgerExistsForGift()}
         AND NOT ${stripeLedgerExistsForGift()}

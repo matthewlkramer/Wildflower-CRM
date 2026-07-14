@@ -18,6 +18,7 @@ import { ensureBundleDraftsForAnchors } from "./reconciliationBundleSync";
 import {
   bookStripeChargeApplication,
   PaymentOverApplicationError,
+  qbLedgerExistsForGift,
 } from "./paymentApplications";
 
 function isUniqueViolation(e: unknown): boolean {
@@ -428,10 +429,9 @@ async function stripeAutoApply(
           and(
             eq(stripeStagedCharges.id, chargeId),
             chargeStatusWhere.pending,
-            sql`NOT EXISTS (
-            SELECT 1 FROM staged_payments sp
-            WHERE sp.matched_gift_id = ${giftId} OR sp.created_gift_id = ${giftId}
-          )`,
+            // Ledger-based QB ownership guard (legacy staged gift-link columns
+            // are @deprecated and no longer written).
+            sql`NOT ${qbLedgerExistsForGift(sql`${giftId}`)}`,
             sql`NOT EXISTS (
             SELECT 1 FROM stripe_staged_charges sc2
             WHERE (sc2.matched_gift_id = ${giftId} OR sc2.created_gift_id = ${giftId})

@@ -10,13 +10,14 @@ import {
   stripePayouts,
   settlementLinks,
 } from "@workspace/db/schema";
-import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { newId } from "./helpers";
 import { buildGiftValuesFromStaged } from "./quickbooksGift";
 import {
   applyPaymentApplication,
   bookStripeChargeApplication,
   PaymentOverApplicationError,
+  qbLedgerDirectMatchExists,
   qbLedgerExistsForGiftExcludingPayment,
   removePaymentApplicationsForPayment,
   removePaymentApplicationsForStripeCharge,
@@ -268,15 +269,16 @@ export async function mintGiftInTx(
     ),
     amount: evidenceAmount,
     ...(opportunityId ? { opportunityId } : {}),
+    // The legacy final_amount_qb_staged_payment_id pointer is @deprecated and
+    // never written — WHICH payment stamped a QB-sourced gift is answered by
+    // the counted QB ledger row(s) booked below.
     ...(charge
       ? {
           finalAmountSource: "stripe" as const,
           finalAmountStripeChargeId: charge.id,
-          finalAmountQbStagedPaymentId: null,
         }
       : {
           finalAmountSource: "quickbooks" as const,
-          finalAmountQbStagedPaymentId: stagedPaymentId,
           finalAmountStripeChargeId: null,
         }),
     originalHumanCrmAmount: null,
@@ -335,15 +337,16 @@ export async function mintGiftInTx(
   }
   await assertGiftHasAllocations(tx, newGiftId);
 
-  // The QB anchor OWNS the mint (createdGiftId, not auto-applied → protected from
-  // casual revert). Adopt the chosen donor onto the evidence row. Guarded on
-  // still-approvable to catch a concurrent resolve.
+  // The QB anchor OWNS the mint — recorded as the counted ledger row's
+  // created_the_gift=true (booked below by the caller's applier), not
+  // auto-applied → protected from casual revert. The legacy created/matched
+  // gift-link columns are @deprecated and no longer written. Adopt the chosen
+  // donor onto the evidence row. Guarded on still-approvable to catch a
+  // concurrent resolve.
   const updated = await tx
     .update(stagedPayments)
     .set({
       ...donor,
-      createdGiftId: newGiftId,
-      matchedGiftId: null,
       autoApplied: false,
       matchStatus: "matched",
       matchConfirmedByUserId: userId,
@@ -367,10 +370,12 @@ export async function mintGiftInTx(
     });
   }
 
-  // Source group: the representative carries createdGiftId (owns the mint); every
-  // OTHER member ties to the same gift via groupReconciledGiftId so the whole
-  // physical gift resolves as one unit and no slice can be re-reconciled into a
-  // second gift. Members were locked + re-checked approvable by the caller.
+  // Source group: every member's tie to the minted gift lives in its counted
+  // payment_applications ledger row (booked by the caller's applier) plus the
+  // unit_group_members membership, so the whole physical gift resolves as one
+  // unit and no slice can be re-reconciled into a second gift. The legacy
+  // group_reconciled_gift_id column is @deprecated and no longer written.
+  // Members were locked + re-checked approvable by the caller.
   if (group) {
     const otherIds = group.memberIds.filter((id) => id !== stagedPaymentId);
     if (otherIds.length > 0) {
@@ -378,9 +383,6 @@ export async function mintGiftInTx(
         .update(stagedPayments)
         .set({
           ...donor,
-          groupReconciledGiftId: newGiftId,
-          createdGiftId: null,
-          matchedGiftId: null,
           autoApplied: false,
           matchStatus: "matched",
           matchConfirmedByUserId: userId,
@@ -644,7 +646,9 @@ export async function linkGiftInTx(
   const movedOwnApplication =
     moveOwnApplication && !!oldAppliedGift && oldAppliedGift.id !== giftId;
   if (movedOwnApplication && oldAppliedGift) {
-    await removePaymentApplicationsForPayment(tx, stagedPaymentId);
+    // Unstamp BEFORE removing the ledger rows — the unstamp guard verifies
+    // provenance via the counted QB application (the legacy pointer column is
+    // no longer written), so the row must still exist when it runs.
     const un = await unstampGiftFinalAmount(tx, oldAppliedGift.id, {
       source: "quickbooks",
       qbStagedPaymentId: stagedPaymentId,
@@ -658,6 +662,7 @@ export async function linkGiftInTx(
         "quickbooks",
       );
     }
+    await removePaymentApplicationsForPayment(tx, stagedPaymentId);
     // The old gift's pledge paid-total shifts when its amount was restored; the
     // target-gift stamp below never touches the OLD gift, so re-derive it here.
     if (un.restored && oldAppliedGift.opportunityId) {
@@ -710,20 +715,29 @@ export async function linkGiftInTx(
     incumbentStagedPayment.id !== stagedPaymentId;
   if (displacedLinkedPayment && incumbentStagedPayment) {
     // Only a DIRECT match incumbent is safely displaceable one-at-a-time. A gift
-    // linked through a group (groupReconciledGiftId) or a split (paymentless on
-    // this gift, resolved via child split rows) must be reverted deliberately —
+    // linked through a group or a split must be reverted deliberately —
     // half-releasing it would corrupt the group/split invariant. Refuse it.
-    const isDirectMatch =
-      incumbentStagedPayment.matchedGiftId === giftId &&
-      incumbentStagedPayment.groupReconciledGiftId == null;
-    if (!isDirectMatch) {
+    // The shape is read from the LEDGER (the legacy gift-link columns are
+    // @deprecated and no longer written): a counted non-mint QB application
+    // from the incumbent to THIS gift, with the incumbent not a group member.
+    const [dm] = await tx
+      .select({
+        ok: qbLedgerDirectMatchExists(
+          sql`${incumbentStagedPayment.id}`,
+          sql`${giftId}`,
+        ),
+      })
+      .from(stagedPayments)
+      .where(eq(stagedPayments.id, incumbentStagedPayment.id));
+    if (!dm?.ok) {
       throw new ReconcileAbort(409, {
         error: "incumbent_not_displaceable",
         message:
           "That gift is linked to another payment through a group or split. Revert that reconciliation first, then re-target.",
       });
     }
-    await removePaymentApplicationsForPayment(tx, incumbentStagedPayment.id);
+    // Unstamp BEFORE removing the incumbent's ledger rows — the unstamp guard
+    // verifies provenance via the counted QB application.
     const un = await unstampGiftFinalAmount(tx, giftId, {
       source: "quickbooks",
       qbStagedPaymentId: incumbentStagedPayment.id,
@@ -737,14 +751,13 @@ export async function linkGiftInTx(
         "quickbooks",
       );
     }
+    await removePaymentApplicationsForPayment(tx, incumbentStagedPayment.id);
     await tx
       .update(stagedPayments)
       .set({
-        // Clearing the gift links + confirmation facts derives the row back to
-        // `pending` (status is DERIVED — lib/derivedStatus.ts).
-        matchedGiftId: null,
-        createdGiftId: null,
-        groupReconciledGiftId: null,
+        // Clearing the confirmation facts (the ledger rows are already gone)
+        // derives the row back to `pending` (status is DERIVED —
+        // lib/derivedStatus.ts reads the ledger).
         autoApplied: false,
         matchConfirmedByUserId: null,
         matchConfirmedAt: null,
@@ -757,16 +770,14 @@ export async function linkGiftInTx(
 
   // Tie the staged row to the gift. Only succeeds if still approvable AND no
   // other staged payment already QB-claims this gift in the ledger — the ledger
-  // guard + the (still-dual-written) partial-unique index on matched_gift_id
-  // backstop a write-skew between the lock and the commit.
+  // guard backstops a write-skew between the lock and the commit. The tie
+  // itself is the counted payment_applications row booked by the caller's
+  // applier after this commit; the legacy matched/created gift-link columns
+  // are @deprecated and no longer written.
   const updated = await tx
     .update(stagedPayments)
     .set({
       ...finalDonor,
-      // Permanent EVIDENCE tied to the gift — the gift link derives the row to
-      // `match_confirmed`, the terminal tie; never archived, never a second gift.
-      matchedGiftId: giftId,
-      createdGiftId: null,
       autoApplied: false,
       matchStatus: "matched",
       matchConfirmedByUserId: userId,
@@ -780,18 +791,20 @@ export async function linkGiftInTx(
         eq(stagedPayments.id, stagedPaymentId),
         // Normally the row must still be approvable. On the guarded relink
         // path (allowRelink — set only by the link route after verifying the
-        // shape under the row lock) also accept a confirmed DIRECT match:
-        // matchedGiftId set, no created/group gift. The shape is re-checked
-        // here in SQL so a concurrent writer changing the row between the
-        // caller's check and this UPDATE makes it match zero rows (409 below).
+        // shape under the row lock) also accept a confirmed DIRECT match to
+        // THIS gift (ledger shape: counted non-mint application, not a group
+        // member). The shape is re-checked here in SQL so a concurrent writer
+        // changing the row between the caller's check and this UPDATE makes
+        // it match zero rows (409 below). A cross-gift re-target runs the
+        // moveOwnApplication branch first, which deletes the payment's ledger
+        // rows — the row then DERIVES back to pending and passes the normal
+        // approvable arm instead.
         allowRelink
           ? or(
               stagedStatusIn(APPROVABLE_STAGED_STATUSES),
               and(
                 stagedStatusIn(["match_confirmed"]),
-                isNotNull(stagedPayments.matchedGiftId),
-                isNull(stagedPayments.createdGiftId),
-                isNull(stagedPayments.groupReconciledGiftId),
+                sql`${qbLedgerDirectMatchExists(sql`${stagedPayments.id}`, sql`${giftId}`)}`,
               ),
             )
           : stagedStatusIn(APPROVABLE_STAGED_STATUSES),

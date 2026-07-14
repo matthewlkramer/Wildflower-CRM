@@ -22,14 +22,12 @@
 // no-op rollback.
 import type { db } from "@workspace/db";
 import {
-  giftsAndPayments,
-  stagedPayments,
   stripeStagedCharges,
   donorboxDonations,
   paymentApplications,
   settlementLinks,
 } from "@workspace/db/schema";
-import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -74,40 +72,24 @@ export async function absorbGiftEvidenceIntoSurvivor(
     ids.some((id) => id === survivorId);
 
   // ── 1. Read every evidence surface for the whole merged set ──────────────
-  // Split-shape wiring: a counted QB ledger row whose staged payment carries
-  // NONE of the three gift-link columns (a split's resolution lives entirely in
-  // the ledger). This replaces the retired staged_payment_splits table.
+  // Split-shape wiring: a counted QB ledger row whose staged payment is applied
+  // to MORE THAN ONE gift (a split's resolution lives entirely in the ledger —
+  // the legacy staged_payments gift-link columns are @deprecated and no longer
+  // written, so the split shape is COUNT(counted QB rows for the payment) > 1).
   const splitRows = await tx
     .select({ giftId: paymentApplications.giftId })
     .from(paymentApplications)
-    .innerJoin(
-      stagedPayments,
-      eq(stagedPayments.id, paymentApplications.paymentId),
-    )
     .where(
       and(
         inArray(paymentApplications.giftId, allIds),
         eq(paymentApplications.evidenceSource, "quickbooks"),
         eq(paymentApplications.linkRole, "counted"),
-        isNull(stagedPayments.matchedGiftId),
-        isNull(stagedPayments.createdGiftId),
-        isNull(stagedPayments.groupReconciledGiftId),
-      ),
-    );
-
-  const qbStaged = await tx
-    .select({
-      id: stagedPayments.id,
-      matchedGiftId: stagedPayments.matchedGiftId,
-      createdGiftId: stagedPayments.createdGiftId,
-      groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
-    })
-    .from(stagedPayments)
-    .where(
-      or(
-        inArray(stagedPayments.matchedGiftId, allIds),
-        inArray(stagedPayments.createdGiftId, allIds),
-        inArray(stagedPayments.groupReconciledGiftId, allIds),
+        sql`(
+          SELECT COUNT(*) FROM payment_applications pa2
+          WHERE pa2.payment_id = ${paymentApplications.paymentId}
+            AND pa2.evidence_source = 'quickbooks'
+            AND pa2.link_role = 'counted'
+        ) > 1`,
       ),
     );
 
@@ -184,10 +166,9 @@ export async function absorbGiftEvidenceIntoSurvivor(
   // ── 2. Collision detection (no writes past this point until it passes) ───
   const loserSplit = splitRows.some((r) => loserSet.has(r.giftId));
   const survivorSplit = splitRows.some((r) => r.giftId === survivorId);
+  // QB evidence is read from the counted ledger only (the legacy staged
+  // gift-link columns are @deprecated); Stripe/Donorbox still read pointers.
   const loserQbEvidence =
-    qbStaged.some((r) =>
-      refsLoser(r.matchedGiftId, r.createdGiftId, r.groupReconciledGiftId),
-    ) ||
     stripeCharges.some((r) => refsLoser(r.matchedGiftId, r.createdGiftId)) ||
     donorboxRows.some((r) => refsLoser(r.matchedGiftId, r.createdGiftId)) ||
     ledgerRows.some((r) => loserSet.has(r.giftId));
@@ -283,42 +264,11 @@ export async function absorbGiftEvidenceIntoSurvivor(
       .where(eq(paymentApplications.id, keeper.id));
   }
 
-  // ── 4. Normalize the QuickBooks staged pointers onto the survivor ────────
-  if (qbStaged.length === 1) {
-    // A single QB payment stays a clean DIRECT match (clears any created flag so
-    // a later revert links, never deletes, the survivor).
-    const row = qbStaged[0]!;
-    await tx
-      .update(stagedPayments)
-      .set({
-        matchedGiftId: survivorId,
-        createdGiftId: null,
-        groupReconciledGiftId: null,
-        updatedAt: now,
-      })
-      .where(eq(stagedPayments.id, row.id));
-  } else if (qbStaged.length >= 2) {
-    // Multiple QB payments must become a GROUP (the only legacy shape that sums
-    // several payments onto one gift). Clear all matched/created first so the
-    // partial-unique on matched_gift_id is free, then re-stamp one
-    // representative as the group's matched row.
-    const ids = qbStaged.map((r) => r.id);
-    await tx
-      .update(stagedPayments)
-      .set({
-        groupReconciledGiftId: survivorId,
-        matchedGiftId: null,
-        createdGiftId: null,
-        updatedAt: now,
-      })
-      .where(inArray(stagedPayments.id, ids));
-    const representative =
-      qbStaged.find((r) => r.matchedGiftId === survivorId) ?? qbStaged[0]!;
-    await tx
-      .update(stagedPayments)
-      .set({ matchedGiftId: survivorId, updatedAt: now })
-      .where(eq(stagedPayments.id, representative.id));
-  }
+  // ── 4. QuickBooks link state ──────────────────────────────────────────────
+  // Nothing to normalize: the counted ledger consolidation in §3 IS the QB link
+  // state now (the legacy staged gift-link columns are @deprecated and never
+  // written). Several payments counted against one survivor is a perfectly
+  // representable ledger shape — no group re-stamping is needed.
 
   // ── 5. Re-point the single absorbed Stripe / Donorbox pointer ────────────
   for (const r of loserStripe) {
@@ -383,18 +333,10 @@ export async function absorbGiftEvidenceIntoSurvivor(
     }
   }
 
-  // ── 7. Clear each loser's dangling QB final-amount stamp ─────────────────
-  // The parity gate flags a gift that still carries final_amount_qb_staged_
-  // payment_id but has no QB ledger row (its rows just moved to the survivor).
-  await tx
-    .update(giftsAndPayments)
-    .set({ finalAmountQbStagedPaymentId: null, updatedAt: now })
-    .where(
-      and(
-        inArray(giftsAndPayments.id, loserIds),
-        isNotNull(giftsAndPayments.finalAmountQbStagedPaymentId),
-      ),
-    );
+  // ── 7. (retired) Loser QB final-amount pointer clearing ──────────────────
+  // The legacy gifts_and_payments.final_amount_qb_staged_payment_id pointer is
+  // @deprecated and no longer written or read — stamp provenance is derived
+  // from the counted QB ledger, whose rows §3 just moved to the survivor.
 
   // ── 8. Re-point the conflict-kept gift pointer ─────────────────────────────
   // A `conflict_approved` settlement KEEPS an already-approved QB deposit gift as

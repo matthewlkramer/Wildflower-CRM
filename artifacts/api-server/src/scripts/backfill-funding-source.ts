@@ -54,14 +54,17 @@ async function main(): Promise<void> {
         pi.type                    AS "intermediaryType",
         (
           sp.exclusion_reason = 'processor_payout'
+          -- A Stripe charge evidences a gift this payment is counted against
+          -- in the QB cash-application ledger (the legacy staged gift-link
+          -- columns are @deprecated and no longer written).
           OR EXISTS (
-            SELECT 1 FROM stripe_staged_charges sc
-            WHERE (sp.matched_gift_id IS NOT NULL
-                   AND (sc.matched_gift_id = sp.matched_gift_id
-                        OR sc.created_gift_id = sp.matched_gift_id))
-               OR (sp.created_gift_id IS NOT NULL
-                   AND (sc.matched_gift_id = sp.created_gift_id
-                        OR sc.created_gift_id = sp.created_gift_id))
+            SELECT 1 FROM payment_applications pa
+            JOIN stripe_staged_charges sc
+              ON sc.matched_gift_id = pa.gift_id
+              OR sc.created_gift_id = pa.gift_id
+            WHERE pa.payment_id = sp.id
+              AND pa.evidence_source = 'quickbooks'
+              AND pa.link_role = 'counted'
           )
         )                          AS "hasStripeEvidence"
       FROM staged_payments sp

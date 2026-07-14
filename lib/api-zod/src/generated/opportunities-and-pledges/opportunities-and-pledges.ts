@@ -226,7 +226,6 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "originalHumanCrmAmount": zod.string().nullish().describe('DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount.'),
   "finalAmountSource": zod.enum(['human', 'stripe', 'quickbooks']).describe('Where a gift\'s final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.').describe('DEPRECATED (Task #448) — `amount` is always the human-entered amount now; settled money is derivedSettledAmount.'),
   "finalAmountStripeChargeId": zod.string().nullish().describe('DEPRECATED (Task #448) — Stripe linkage lives on stripe_staged_charges; settled amount is derived.'),
-  "finalAmountQbStagedPaymentId": zod.string().nullish().describe('DEPRECATED (Task #448) — QuickBooks linkage lives on payment_applications; settled amount is derived.'),
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),

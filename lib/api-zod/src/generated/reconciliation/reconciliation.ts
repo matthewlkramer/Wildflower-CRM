@@ -353,8 +353,9 @@ returns its current state.
 
 Source groups (a card whose stagedPaymentId belongs to a unit group)
 approve as a WHOLE: the create-* outcomes mint ONE gift whose amount sums
-every non-archived member, with a deterministic representative carrying
-createdGiftId and the other members groupReconciledGiftId (so no slice can
+every non-archived member, booking one counted payment_applications
+ledger row per member (the representative's row carries
+created_the_gift, so no slice can
 be reconciled twice); link_existing_gift is rejected (409
 source_group_use_reconcile) — link the whole group via group-reconcile
 instead; and a group whose members carry a tied Stripe payout, or an

@@ -10,6 +10,10 @@ import {
 import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
+  qbCountedRowsForPayment,
+  qbSoleGiftIdForPayment,
+  qbMintedGiftIdForPayment,
+  qbPaymentIdForGift,
 } from "./paymentApplicationsTestUtil";
 import { payoutStatusFromLink } from "../lib/settlementLink";
 import { proposeSettlementLink } from "../lib/settlementWriter";
@@ -151,12 +155,19 @@ async function seedStaged(
     payerName?: string;
     organizationId?: string | null;
     matchStatus?: "matched" | "suggested" | "unmatched";
-    matchedGiftId?: string | null;
-    createdGiftId?: string | null;
-    groupReconciledGiftId?: string | null;
-    // Status is DERIVED from facts: no links ⇒ pending; a gift link with
-    // autoApplied=true (and no matchConfirmedAt) ⇒ match_proposed; a gift link
-    // otherwise ⇒ match_confirmed.
+    /** Seed a counted QB cash-application ledger row linking this payment to
+     * the gift (the SOLE gift-link source — the legacy staged gift-link
+     * columns are @deprecated and never written/read). */
+    linkedGiftId?: string | null;
+    /** Seed a counted ledger row that MINTED the gift (created_the_gift). */
+    mintedGiftId?: string | null;
+    /** Seed a group-resolution link: counted ledger row + match_confirmed_at
+     * (group/split resolutions always carry the confirm stamp, so the row
+     * derives match_confirmed even when auto_applied). */
+    groupLinkedGiftId?: string | null;
+    // Status is DERIVED from facts: no ledger row ⇒ pending; a counted ledger
+    // row with autoApplied=true (and no matchConfirmedAt) ⇒ match_proposed; a
+    // counted ledger row otherwise ⇒ match_confirmed.
     autoApplied?: boolean;
   } = {},
 ): Promise<string> {
@@ -174,17 +185,27 @@ async function seedStaged(
       ? { organizationId: opts.organizationId }
       : {}),
     ...(opts.matchStatus !== undefined ? { matchStatus: opts.matchStatus } : {}),
-    ...(opts.matchedGiftId !== undefined
-      ? { matchedGiftId: opts.matchedGiftId }
-      : {}),
-    ...(opts.createdGiftId !== undefined
-      ? { createdGiftId: opts.createdGiftId }
-      : {}),
-    ...(opts.groupReconciledGiftId !== undefined
-      ? { groupReconciledGiftId: opts.groupReconciledGiftId }
+    ...(opts.groupLinkedGiftId != null
+      ? { matchConfirmedAt: new Date() }
       : {}),
   });
   stagedIds.push(id);
+  const ledgerGiftId =
+    opts.linkedGiftId ?? opts.mintedGiftId ?? opts.groupLinkedGiftId;
+  if (ledgerGiftId != null) {
+    await db.insert(schema.paymentApplications).values({
+      id: nextId("pa"),
+      paymentId: id,
+      giftId: ledgerGiftId,
+      amountApplied: amount,
+      evidenceSource: "quickbooks",
+      linkRole: "counted",
+      lifecycle: "confirmed",
+      matchMethod: opts.autoApplied ? "system" : "human",
+      createdTheGift: opts.mintedGiftId != null,
+      ...(opts.autoApplied ? {} : { confirmedAt: new Date() }),
+    });
+  }
   return id;
 }
 
@@ -526,10 +547,11 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — link existing gift (integra
     expect(charge.matchStatus).toBe("matched");
     expect(charge.matchConfirmedByUserId).toBe(TEST_USER_ID);
 
-    // QB staged row + payout become permanent reconciled evidence.
+    // QB staged row + payout become permanent reconciled evidence (the counted
+    // cash-application ledger row is the sole gift-link record).
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.matchedGiftId).toBe(giftId);
+    expect(await qbSoleGiftIdForPayment(stagedId)).toBe(giftId);
 
     const link = await readLink(payoutId);
     expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
@@ -758,7 +780,7 @@ describe.skipIf(!HAS_DB)(
         { outcome: "link_existing_gift", giftId },
       );
       expect(res.status).toBe(200);
-      expect((await readStaged(incumbentId)).matchedGiftId).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(incumbentId)).toBe(giftId);
       return incumbentId;
     }
 
@@ -783,7 +805,7 @@ describe.skipIf(!HAS_DB)(
       // Nothing mutated: the incumbent still holds the gift; the new row is
       // still pending.
       expect((await readStaged(incumbentId)).status).toBe("match_confirmed");
-      expect((await readStaged(incumbentId)).matchedGiftId).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(incumbentId)).toBe(giftId);
       expect((await readStaged(stagedId)).status).toBe("pending");
     }, 30_000);
 
@@ -800,18 +822,17 @@ describe.skipIf(!HAS_DB)(
       expect(res.status).toBe(200);
       expect(res.json.ok).toBe(true);
 
-      // The incumbent is returned to the pending/unmatched queue, fully unlinked.
+      // The incumbent is returned to the pending/unmatched queue, fully
+      // unlinked — its counted ledger rows are gone.
       const incumbent = await readStaged(incumbentId);
       expect(incumbent.status).toBe("pending");
-      expect(incumbent.matchedGiftId).toBeNull();
-      expect(incumbent.createdGiftId).toBeNull();
-      expect(incumbent.groupReconciledGiftId).toBeNull();
+      expect(await qbCountedRowsForPayment(incumbentId)).toHaveLength(0);
       expect(incumbent.matchConfirmedAt).toBeNull();
 
       // The new payment now holds the gift as permanent reconciled evidence.
       const staged = await readStaged(stagedId);
       expect(staged.status).toBe("match_confirmed");
-      expect(staged.matchedGiftId).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(stagedId)).toBe(giftId);
     }, 30_000);
 
     // Reproduce the QB worker autoApply end-state: the payment is left APPROVED
@@ -826,7 +847,6 @@ describe.skipIf(!HAS_DB)(
         .update(schema.stagedPayments)
         .set({
           matchStatus: "matched",
-          matchedGiftId: giftA,
           autoApplied: true,
         })
         .where(eqFn(schema.stagedPayments.id, paymentId));
@@ -865,40 +885,11 @@ describe.skipIf(!HAS_DB)(
       expect(issue.details?.currentAppliedGift?.id).toBe(giftA);
       expect(issue.details?.targetGiftId).toBe(giftB);
 
-      // The blocked re-target mutated nothing: the payment still holds gift A
+      // The blocked re-target mutated nothing: the ledger still holds gift A
       // (an unconfirmed auto-match derives match_proposed).
       const after = await readStaged(paymentId);
-      expect(after.matchedGiftId).toBe(giftA);
+      expect(await qbSoleGiftIdForPayment(paymentId)).toBe(giftA);
       expect(after.status).toBe("match_proposed");
-    }, 30_000);
-
-    it("a NON-movable own application (ledger disagrees with matchedGiftId) still 409s as handled, never a 500", async () => {
-      // When the row's matchedGiftId does NOT agree with the ledger (drift, or a
-      // split/group unwind half-done), the move is not offered. Under derived
-      // status the counted ledger row alone makes the row `match_confirmed`, so
-      // the approve gate rejects it up-front as not approvable — a handled 409
-      // (nothing mutated), never an escape to the global 500 handler.
-      const giftA = await seedGift("100.00");
-      const paymentId = await seedWorkerAutoMatch(giftA, "100.00");
-      // Break the agreement: the row itself no longer points at gift A.
-      await db
-        .update(schema.stagedPayments)
-        .set({ matchedGiftId: null })
-        .where(eqFn(schema.stagedPayments.id, paymentId));
-
-      const giftB = await seedGift("100.00");
-      const res = await api(`/api/reconciliation/cards/${paymentId}/approve`, {
-        outcome: "link_existing_gift",
-        giftId: giftB,
-        moveOwnApplication: true,
-      });
-      expect(res.status).toBe(409);
-      expect(res.json.error).toBe("not_approvable");
-      expect(typeof res.json.message).toBe("string");
-      // The blocked approve mutated nothing: the ledger still holds gift A.
-      const after = await readStaged(paymentId);
-      expect(after.matchedGiftId).toBeNull();
-      expect(after.status).toBe("match_confirmed");
     }, 30_000);
 
     it("with moveOwnApplication moves the payment off the wrong gift and applies it to the right one", async () => {
@@ -917,7 +908,6 @@ describe.skipIf(!HAS_DB)(
       // The payment now holds gift B as permanent reconciled evidence.
       const after = await readStaged(paymentId);
       expect(after.status).toBe("match_confirmed");
-      expect(after.matchedGiftId).toBe(giftB);
 
       // The cash-application ledger moved with it: the old COUNTED row to gift A
       // is gone; exactly one counted row ties this payment's money to gift B.
@@ -996,8 +986,8 @@ describe.skipIf(!HAS_DB)(
       // QB incumbent released; new payment linked.
       const incumbent = await readStaged(incumbentId);
       expect(incumbent.status).toBe("pending");
-      expect(incumbent.matchedGiftId).toBeNull();
-      expect((await readStaged(stagedId)).matchedGiftId).toBe(giftId);
+      expect(await qbCountedRowsForPayment(incumbentId)).toHaveLength(0);
+      expect(await qbSoleGiftIdForPayment(stagedId)).toBe(giftId);
 
       // Stripe source switched: gift now sourced from the new charge; old charge
       // orphaned back to the unmatched-money queue.
@@ -1038,18 +1028,17 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)",
     expect(gift.amount).toBe("100.00");
     expect(gift.finalAmountSource).toBe("stripe");
     expect(gift.finalAmountStripeChargeId).toBe(chargeId);
-    expect(gift.finalAmountQbStagedPaymentId).toBeNull();
     expect(gift.originalHumanCrmAmount).toBeNull();
     // processor_fee header column is dropped; the fee now lives on the linked charge
     // (derivedProcessorFee sums exactly this) — assert it at the source.
     expect((await readCharge(chargeId)).feeAmount).toBe("3.00");
 
-    // The QB anchor OWNS the mint (createdGiftId, not auto-applied); the charge
-    // is matchedGiftId-linked precise evidence; the payout is confirmed.
+    // The QB anchor OWNS the mint (a counted ledger row with created_the_gift,
+    // not auto-applied); the charge is matchedGiftId-linked precise evidence;
+    // the payout is confirmed.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.createdGiftId).toBe(newGiftId);
-    expect(staged.matchedGiftId).toBeNull();
+    expect(await qbMintedGiftIdForPayment(stagedId)).toBe(newGiftId);
     expect(staged.autoApplied).toBe(false);
     expect(staged.matchStatus).toBe("matched");
     expect(staged.organizationId).toBe(ORG_ID);
@@ -1079,13 +1068,15 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)",
     const gift = await readGift(newGiftId);
     expect(gift.amount).toBe("250.00");
     expect(gift.finalAmountSource).toBe("quickbooks");
-    expect(gift.finalAmountQbStagedPaymentId).toBe(stagedId);
+    // QB amount provenance lives on the counted ledger row (the legacy gift
+    // pointer column is @deprecated and never written).
+    expect(await qbPaymentIdForGift(newGiftId)).toBe(stagedId);
     expect(gift.finalAmountStripeChargeId).toBeNull();
     expect(gift.originalHumanCrmAmount).toBeNull();
 
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.createdGiftId).toBe(newGiftId);
+    expect(await qbMintedGiftIdForPayment(stagedId)).toBe(newGiftId);
     expect(staged.autoApplied).toBe(false);
   }, 30_000);
 
@@ -1139,8 +1130,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)",
     expect(second.json.error).toBe("not_approvable");
 
     // Still tied to the FIRST minted gift only.
-    const staged = await readStaged(stagedId);
-    expect(staged.createdGiftId).toBe(first.json.giftId);
+    expect(await qbMintedGiftIdForPayment(stagedId)).toBe(first.json.giftId);
   }, 30_000);
 });
 
@@ -1154,7 +1144,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     const stagedId = await seedStaged("100.00", {
       autoApplied: true,
       matchStatus: "matched",
-      matchedGiftId: giftId,
+      linkedGiftId: giftId,
     });
     const payoutId = await seedPayout(stagedId);
     const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
@@ -1170,7 +1160,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // The auto-proposed row reconciles cleanly — no 409 not_approvable.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.matchedGiftId).toBe(giftId);
+    expect(await qbSoleGiftIdForPayment(stagedId)).toBe(giftId);
 
     const charge = await readCharge(chargeId);
     expect(charge.status).toBe("match_confirmed");
@@ -1182,7 +1172,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     const stagedId = await seedStaged("100.00", {
       autoApplied: true,
       matchStatus: "matched",
-      matchedGiftId: giftId,
+      linkedGiftId: giftId,
     });
 
     const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
@@ -1195,8 +1185,8 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // Nothing minted; the row keeps its existing gift link and derived status.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_proposed");
-    expect(staged.matchedGiftId).toBe(giftId);
-    expect(staged.createdGiftId).toBeNull();
+    expect(await qbSoleGiftIdForPayment(stagedId)).toBe(giftId);
+    expect(await qbMintedGiftIdForPayment(stagedId)).toBeNull();
   }, 30_000);
 
   it("rejects minting a NEW gift on a row already tied to a GROUPED gift (not_approvable, no double-count)", async () => {
@@ -1207,7 +1197,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     const stagedId = await seedStaged("100.00", {
       autoApplied: true,
       matchStatus: "matched",
-      groupReconciledGiftId: giftId,
+      groupLinkedGiftId: giftId,
     });
 
     const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
@@ -1220,8 +1210,8 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // Nothing minted; the row keeps its grouped gift link and derived status.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.groupReconciledGiftId).toBe(giftId);
-    expect(staged.createdGiftId).toBeNull();
+    expect(await qbSoleGiftIdForPayment(stagedId)).toBe(giftId);
+    expect(await qbMintedGiftIdForPayment(stagedId)).toBeNull();
   }, 30_000);
 
   it("re-targeting a confirmed (`match_confirmed`) direct match is guarded: 409 payment_already_applied until moveOwnApplication, then re-points", async () => {
@@ -1229,12 +1219,12 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     const otherGiftId = await seedGift("100.00");
     const stagedId = await seedStaged("100.00", {
       matchStatus: "matched",
-      matchedGiftId: giftId,
+      linkedGiftId: giftId,
     });
 
     // Without the explicit confirmation the re-target must NOT silently
-    // re-point — even when the confirmed row carries only the legacy
-    // matchedGiftId pointer with no cash-application ledger row.
+    // re-point — the confirmed row's counted ledger application to gift A
+    // requires the reviewer's explicit moveOwnApplication.
     const blocked = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
       outcome: "link_existing_gift",
       giftId: otherGiftId,
@@ -1253,7 +1243,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // Untouched.
     let staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.matchedGiftId).toBe(giftId);
+    expect(await qbSoleGiftIdForPayment(stagedId)).toBe(giftId);
 
     // The human-confirmed move re-points the confirmed row onto the new gift.
     const moved = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
@@ -1266,7 +1256,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
 
     staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.matchedGiftId).toBe(otherGiftId);
+    expect(await qbSoleGiftIdForPayment(stagedId)).toBe(otherGiftId);
   }, 30_000);
 
   it("still dead-ends a settlement-only confirmed row on the link path (not_approvable)", async () => {
@@ -1292,7 +1282,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // Untouched — no gift link appeared.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.matchedGiftId).toBeNull();
+    expect(await qbCountedRowsForPayment(stagedId)).toHaveLength(0);
   }, 30_000);
 
   it("still dead-ends a settlement-only confirmed row on the MINT path when NO charge is selected (not_approvable, guidance message)", async () => {
@@ -1314,8 +1304,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // Untouched — no gift link appeared.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.matchedGiftId).toBeNull();
-    expect(staged.createdGiftId).toBeNull();
+    expect(await qbCountedRowsForPayment(stagedId)).toHaveLength(0);
   }, 30_000);
 
   it("charge-anchored escape hatch: records a payment on a pledge from a settlement-only confirmed deposit when a pending charge IS selected (201; charge owns the mint, QB lump untouched)", async () => {
@@ -1365,9 +1354,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // The QB lump stays untouched: settlement-only confirmed, NO gift link.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.matchedGiftId).toBeNull();
-    expect(staged.createdGiftId).toBeNull();
-    expect(staged.groupReconciledGiftId).toBeNull();
+    expect(await qbCountedRowsForPayment(stagedId)).toHaveLength(0);
 
     // Fully-paid pledge derives cash_in post-commit (invariant #3).
     const opp = await readOpp(oppId);
@@ -1399,7 +1386,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // Nothing mutated on either side.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.createdGiftId).toBeNull();
+    expect(await qbCountedRowsForPayment(stagedId)).toHaveLength(0);
     const charge = await readCharge(foreignChargeId);
     expect(charge.status).toBe("pending");
     expect(charge.createdGiftId).toBeNull();
@@ -1478,12 +1465,13 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     expect(gift.organizationId).toBe(ORG_ID);
     expect(gift.amount).toBe("100.00");
     expect(gift.finalAmountSource).toBe("quickbooks");
-    expect(gift.finalAmountQbStagedPaymentId).toBe(stagedId);
+    // QB amount provenance lives on the counted ledger row.
+    expect(await qbPaymentIdForGift(giftId)).toBe(stagedId);
 
     // The QB anchor owns the mint.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.createdGiftId).toBe(giftId);
+    expect(await qbMintedGiftIdForPayment(stagedId)).toBe(giftId);
 
     // Fully paid (100 >= awarded 100) ⇒ status derives to cash_in and the funnel
     // stage advances to the terminal `complete` (won).
@@ -1657,7 +1645,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     expect(gift.opportunityId).toBe(oppId);
     expect(gift.finalAmountSource).toBe("stripe");
     expect(gift.finalAmountStripeChargeId).toBe(chargeId);
-    expect(gift.finalAmountQbStagedPaymentId).toBeNull();
 
     const charge = await readCharge(chargeId);
     expect(charge.status).toBe("match_confirmed");
@@ -1669,8 +1656,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     const link = await readLink(payoutId);
     expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
 
-    const staged = await readStaged(stagedId);
-    expect(staged.createdGiftId).toBe(giftId);
+    expect(await qbMintedGiftIdForPayment(stagedId)).toBe(giftId);
   }, 30_000);
 
   it("create_gift IGNORES a stray opportunityId — mints for the body donor, does NOT attach to the opp or re-derive it", async () => {
@@ -1861,7 +1847,7 @@ describe.skipIf(!HAS_DB)("Reconciliation cards — queue visibility (integration
     const reconciledId = await seedStaged("100.00", {
       payerName: marker,
       matchStatus: "matched",
-      matchedGiftId: doneGiftId,
+      linkedGiftId: doneGiftId,
     });
 
     const live = await apiGet(
@@ -1936,7 +1922,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
     expect(gift.amount).toBe("98.50");
     expect(gift.finalAmountSource).toBe("stripe");
     expect(gift.finalAmountStripeChargeId).toBe(chargeId);
-    expect(gift.finalAmountQbStagedPaymentId).toBeNull();
     // No overwrite ⇒ nothing snapshotted, no allocation rescale, no review flag.
     expect(gift.originalHumanCrmAmount).toBeNull();
     expect((await readAlloc(allocId)).subAmount).toBe("98.50");
@@ -2075,7 +2060,7 @@ describe.skipIf(!HAS_DB)(
       // switched donor adopted.
       const staged = await readStaged(stagedId);
       expect(staged.status).toBe("match_confirmed");
-      expect(staged.matchedGiftId).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(stagedId)).toBe(giftId);
       expect(staged.organizationId).toBe(ORG2_ID);
     }, 30_000);
 

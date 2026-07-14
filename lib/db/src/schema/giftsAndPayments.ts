@@ -88,8 +88,13 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
     (): AnyPgColumn => stripeStagedCharges.id,
     { onDelete: "restrict" },
   ),
-  // TRANSITIONAL — still WRITTEN (the staged-payment id) by QB matching. FK +
-  // RESTRICT kept while the column lives. See originalHumanCrmAmount above.
+  /**
+   * @deprecated NEVER READ, NEVER WRITTEN. QB amount provenance is derived
+   * from the counted `payment_applications` ledger (the minting/stamping
+   * payment's `created_the_gift` row). Backfilled into the ledger by
+   * migration 0120; FK + column kept physical only until the reviewed drop
+   * migration ships.
+   */
   finalAmountQbStagedPaymentId: text(
     "final_amount_qb_staged_payment_id",
   ).references((): AnyPgColumn => stagedPayments.id, { onDelete: "restrict" }),

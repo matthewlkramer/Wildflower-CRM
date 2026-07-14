@@ -322,15 +322,19 @@ Column-level detail lives in each schema file; this is the orientation map.
   re-classify/re-sync). Carries a *candidate* donor (all three FKs nullable;
   exactly-one enforced only at approve/reconcile) + an `entity_id` attribution.
 - `payment_applications` — the authoritative **cash-application ledger** (M:N
-  between `staged_payments` and `gifts_and_payments`), which replaced the
-  scattered linkage columns (`matched_gift_id` / `created_gift_id` /
-  `group_reconciled_gift_id` / `final_amount_qb_staged_payment_id`) NOTE: HAVE WE REMOVED ALL THE FIELDS WE'RE NOT USING ANYMORE? IF NOT, LETS DO IT and the
-  retired `staged_payment_splits` table (dropped in 0115 — a split's resolution
-  now lives entirely in counted ledger rows while the staged row keeps all three
-  gift-link columns NULL). One row per payment↔gift booking (HEADER grain):
+  between `staged_payments` and `gifts_and_payments`). It is the **SOLE**
+  QB↔gift link record: the four legacy pointer columns
+  (`staged_payments.matched_gift_id` / `created_gift_id` /
+  `group_reconciled_gift_id`, `gifts_and_payments.final_amount_qb_staged_payment_id`)
+  are `@deprecated` — never read, never written (migration 0120 closed the
+  backfill parity gap before the read cutover; the columns stay physical,
+  frozen at their pre-cutover values, until a later drop migration). The
+  retired `staged_payment_splits` table was dropped in 0115 — a split's
+  resolution lives entirely in counted ledger rows. One row per payment↔gift
+  booking (HEADER grain):
   `amount_applied` (> 0); `evidence_source` (`quickbooks` / `stripe` / `donorbox`,
   with the matching `stripe_charge_id` / `donorbox_donation_id` required by CHECK);
-  `match_method` (`system` / `system_confirmed` / `human` NOTE: I THINK THIS IS OUT OF DATE); `created_the_gift`
+  `match_method` (`system` / `system_confirmed` / `human`); `created_the_gift`
   (preserves the mint-ownership signal); `link_role` (`counted` /
   `corroborating` — money reads filter `counted`). Both FKs are **RESTRICT**
   (the QB record and the gift are anchors). Book-once = `UNIQUE(payment_id, gift_id)`

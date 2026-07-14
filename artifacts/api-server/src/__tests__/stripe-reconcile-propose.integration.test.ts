@@ -52,6 +52,7 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   giftAllocations: Db["giftAllocations"];
   organizations: Db["organizations"];
+  paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -110,6 +111,11 @@ async function seedDeposit(over: {
   qbEntityType?: "deposit" | "payment" | "sales_receipt";
   /** Set to derive `excluded` (exclusion_reason IS NOT NULL wins the CASE). */
   exclusionReason?: "other_revenue" | null;
+  /**
+   * Model a mint: a counted QB `payment_applications` ledger row with
+   * created_the_gift:true (the legacy pointer column is @deprecated and never
+   * written).
+   */
   createdGiftId?: string | null;
 }): Promise<string> {
   const id = nextId("sp");
@@ -122,8 +128,18 @@ async function seedDeposit(over: {
     dateReceived: over.dateReceived,
     payerName: over.payerName === undefined ? "Stripe" : over.payerName,
     exclusionReason: over.exclusionReason ?? null,
-    createdGiftId: over.createdGiftId ?? null,
   });
+  if (over.createdGiftId) {
+    await db.insert(schema.paymentApplications).values({
+      id: nextId("pa"),
+      paymentId: id,
+      giftId: over.createdGiftId,
+      amountApplied: over.amount,
+      evidenceSource: "quickbooks",
+      matchMethod: "system",
+      createdTheGift: true,
+    });
+  }
   stagedIds.push(id);
   return id;
 }
@@ -164,6 +180,7 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     giftAllocations: dbMod.giftAllocations,
     organizations: dbMod.organizations,
+    paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;

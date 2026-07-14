@@ -3,8 +3,9 @@ import {
   giftsAndPayments,
   giftAllocations,
   giftAmountAllocationReview,
+  paymentApplications,
 } from "@workspace/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { newId } from "./helpers";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -121,21 +122,21 @@ export async function stampGiftFinalAmount(
   // QuickBooks settlement (Phase 2: payment_applications rollout). A QB stamp no
   // longer overwrites the gift's human-entered amount — the QB-settled figure
   // now lives in the payment_applications ledger, and giftQbTie compares that
-  // ledger SUM against the (preserved) human amount. We STILL record the
-  // provenance pointer: live readers (gifts-missing-qb, financialCorrections)
-  // filter on final_amount_qb_staged_payment_id, and the schema's
-  // source⇔pointer CHECK requires it. `amount` and `original_human_crm_amount`
-  // are deliberately left untouched, so the QB revert (unstampGiftFinalAmount,
-  // which restores amount ← original_human_crm_amount ?? amount) is a correct
-  // no-op for the amount. changed=false ⇒ callers' adjustSingleAllocationOrFlag
-  // no-ops (no rescale of allocations to the QB figure).
+  // ledger SUM against the (preserved) human amount. The legacy
+  // final_amount_qb_staged_payment_id pointer is @deprecated and NO LONGER
+  // WRITTEN — WHICH payment stamped the source is now answered by the counted
+  // QB ledger row(s) for the gift (the source⇔pointer CHECK was already
+  // dropped). `amount` and `original_human_crm_amount` are deliberately left
+  // untouched, so the QB revert (unstampGiftFinalAmount, which restores
+  // amount ← original_human_crm_amount ?? amount) is a correct no-op for the
+  // amount. changed=false ⇒ callers' adjustSingleAllocationOrFlag no-ops (no
+  // rescale of allocations to the QB figure).
   if (args.source === "quickbooks") {
     await tx
       .update(giftsAndPayments)
       .set({
         finalAmountSource: "quickbooks",
         finalAmountStripeChargeId: null,
-        finalAmountQbStagedPaymentId: qbStagedPaymentId,
         updatedAt: new Date(),
       })
       .where(eq(giftsAndPayments.id, giftId));
@@ -146,17 +147,18 @@ export async function stampGiftFinalAmount(
   // read time from the linked Stripe charge (gross) + Donorbox/QB ledger — see
   // giftPaymentSummary. So a Stripe stamp NO LONGER overwrites the human-entered
   // `amount`; it only records the provenance pointer (deprecated, still read by
-  // transitional reconciliation code until those readers are retired). `amount`
-  // and `original_human_crm_amount` are left untouched so the entered
-  // figure is preserved and any settled≠entered disagreement surfaces in
-  // the reconciliation queue instead of silently rescaling allocations.
+  // transitional reconciliation code until those readers are retired). The
+  // legacy final_amount_qb_staged_payment_id pointer is @deprecated and never
+  // written (not even nulled) — source='stripe' alone supersedes any stale QB
+  // value. `amount` and `original_human_crm_amount` are left untouched so the
+  // entered figure is preserved and any settled≠entered disagreement surfaces
+  // in the reconciliation queue instead of silently rescaling allocations.
   // changed=false ⇒ callers' adjustSingleAllocationOrFlag no-ops.
   await tx
     .update(giftsAndPayments)
     .set({
       finalAmountSource: "stripe",
       finalAmountStripeChargeId: stripeChargeId,
-      finalAmountQbStagedPaymentId: null,
       updatedAt: new Date(),
     })
     .where(eq(giftsAndPayments.id, giftId));
@@ -187,15 +189,24 @@ export interface UnstampResult {
  * that stamped it is being undone (revert/unmatch).
  *
  * Pointer-safe — a STRICT no-op unless the gift's CURRENT final_amount_source
- * still equals the reverting `source` AND its single XOR pointer still equals
- * the reverting evidence id. This guarantees:
- *   - a QB stamp later SUPERSEDED by a Stripe stamp (source flipped to 'stripe',
- *     QB pointer cleared) is never clobbered when the QB evidence is reverted;
+ * still equals the reverting `source` AND the reverting evidence still backs
+ * the gift:
+ *   - stripe: the gift's finalAmountStripeChargeId pointer must still equal
+ *     the reverting charge id (unchanged legacy behavior);
+ *   - quickbooks: the reverting staged payment must still hold a COUNTED QB
+ *     cash-application ledger row to this gift (the legacy
+ *     final_amount_qb_staged_payment_id pointer is @deprecated and no longer
+ *     written, so provenance is answered by the ledger). Callers MUST
+ *     therefore unstamp BEFORE removing the payment's ledger rows.
+ * This guarantees:
+ *   - a QB stamp later SUPERSEDED by a Stripe stamp (source flipped to
+ *     'stripe') is never clobbered when the QB evidence is reverted;
  *   - reverting one Stripe charge can't disturb a gift now stamped from another.
  *
  * On restore: amount ← original_human_crm_amount (snapshot), source ← 'human',
- * both pointers ← NULL, and original_human_crm_amount ← NULL. (The processor fee
- * is no longer a stored column — it is derived from the gift's linked payments.)
+ * the Stripe pointer ← NULL, and original_human_crm_amount ← NULL. (The
+ * processor fee is no longer a stored column — it is derived from the gift's
+ * linked payments.)
  * Caller MUST hold an open transaction and is responsible for rebalancing
  * allocations afterward
  * (see adjustSingleAllocationOrFlag) exactly as the stamp path does.
@@ -217,8 +228,6 @@ export async function unstampGiftFinalAmount(
       originalHumanCrmAmount: giftsAndPayments.originalHumanCrmAmount,
       finalAmountSource: giftsAndPayments.finalAmountSource,
       finalAmountStripeChargeId: giftsAndPayments.finalAmountStripeChargeId,
-      finalAmountQbStagedPaymentId:
-        giftsAndPayments.finalAmountQbStagedPaymentId,
     })
     .from(giftsAndPayments)
     .where(eq(giftsAndPayments.id, giftId))
@@ -231,7 +240,7 @@ export async function unstampGiftFinalAmount(
   // Source must still be the one we're reverting.
   if (gift.finalAmountSource !== args.source) return noop;
 
-  // …and the single XOR pointer must still be THIS evidence.
+  // …and the reverting evidence must still back the gift.
   if (args.source === "stripe") {
     if (
       !args.stripeChargeId ||
@@ -240,12 +249,26 @@ export async function unstampGiftFinalAmount(
       return noop;
     }
   } else {
-    if (
-      !args.qbStagedPaymentId ||
-      gift.finalAmountQbStagedPaymentId !== args.qbStagedPaymentId
-    ) {
-      return noop;
-    }
+    // Ledger-backed provenance (the legacy final_amount_qb_staged_payment_id
+    // pointer is @deprecated and no longer written): the reverting payment
+    // must still hold a counted QB cash-application to THIS gift. Callers
+    // unstamp BEFORE removing the ledger rows, so the row is still present
+    // here. For a group-reconciled gift ANY member payment passes — correct,
+    // since a group revert removes the whole group's evidence at once.
+    if (!args.qbStagedPaymentId) return noop;
+    const backed = await tx
+      .select({ one: sql`1` })
+      .from(paymentApplications)
+      .where(
+        and(
+          eq(paymentApplications.paymentId, args.qbStagedPaymentId),
+          eq(paymentApplications.giftId, giftId),
+          eq(paymentApplications.evidenceSource, "quickbooks"),
+          eq(paymentApplications.linkRole, "counted"),
+        ),
+      )
+      .limit(1);
+    if (backed.length === 0) return noop;
   }
 
   const oldAmount = gift.amount;
@@ -257,7 +280,6 @@ export async function unstampGiftFinalAmount(
       originalHumanCrmAmount: null,
       finalAmountSource: "human",
       finalAmountStripeChargeId: null,
-      finalAmountQbStagedPaymentId: null,
       updatedAt: new Date(),
     })
     .where(eq(giftsAndPayments.id, giftId));

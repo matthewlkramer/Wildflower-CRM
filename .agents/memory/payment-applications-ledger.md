@@ -123,6 +123,18 @@ to prod until a reviewed SQL file ships it; the Publish diff is distrusted here
 "runnable on prod," verify each column/index it depends on actually exists in
 prod (read-only query), don't assume drizzle push == prod.
 
+## QB legacy gift-link columns are DEAD (deprecated, never written or read)
+The four QB-side pointers (`staged_payments.matched/created/group_reconciled_gift_id`,
+`gifts_and_payments.final_amount_qb_staged_payment_id`) are @deprecated-but-physical:
+all reads flipped to ledger predicates, all writes removed, values scrubbed from API
+responses. Ledger equivalents: mint ownership = `created_the_gift`; group-reconciled
+vs direct = presence of a `unit_group_members(quickbooks, source_id)` row (the
+direct-match / cascade predicates require NOT EXISTS membership — a bare PA row is
+treated as a direct match). **How to apply:** tests must seed `payment_applications`
+rows (and `unit_groups`+`unit_group_members` for group-reconciled state), never the
+legacy columns; the STRIPE-charge pointers (`stripe_staged_charges.matched/created_gift_id`,
+`gift.final_amount_stripe_charge_id`) are still live and intentionally untouched.
+
 ## Untouched by design
 `pledgeStage.ts` pledge `paid_amount` (SUM of `gifts_and_payments.amount` on the
 pledge, excluding archived) is a separate 1:N and is NOT folded into the ledger.

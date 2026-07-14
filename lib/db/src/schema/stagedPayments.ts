@@ -60,12 +60,12 @@ import { entities } from "./entities";
  * (see api-server lib/derivedStatus.ts, the single source of truth):
  *   excluded        ⇐ exclusionReason IS NOT NULL — auto/manual non-donation
  *                     noise, out of the money flow.
- *   match_proposed  ⇐ autoApplied AND matchConfirmedAt IS NULL AND a
- *                     matched/created gift link — a high-confidence match the
+ *   match_proposed  ⇐ autoApplied AND matchConfirmedAt IS NULL AND a counted
+ *                     payment_applications row — a high-confidence match the
  *                     system already applied, awaiting human review.
- *   match_confirmed ⇐ any gift link (matched / created / groupReconciled) OR
- *                     a confirmed settlement link on this deposit row OR a
- *                     counted payment_applications row — the money is booked.
+ *   match_confirmed ⇐ a counted payment_applications row OR a confirmed
+ *                     settlement link on this deposit row — the money is
+ *                     booked.
  *   pending         ⇐ none of the above — needs review; matchStatus may be
  *                     'suggested' (a hint) or 'unmatched' (nothing). Nothing
  *                     is applied to the ledger until a human acts.
@@ -74,11 +74,13 @@ import { entities } from "./entities";
  * organizationId / individualGiverPersonId / householdId is set. The
  * approve/reconcile endpoints enforce exactly-one via validateGiftInvariants.
  *
- * A row is reconciled in exactly one of two ways (mutually exclusive):
- *   - matchedGiftId set  → linked to a PRE-EXISTING gifts_and_payments row.
- *   - createdGiftId set  → a NEW gifts_and_payments row was minted from it.
- * Unlinking is only allowed for matchedGiftId (unlinking a minted gift would
- * orphan it).
+ * A row's gift linkage lives SOLELY in the counted `payment_applications`
+ * ledger: a counted row with `created_the_gift = false` links the payment to a
+ * PRE-EXISTING gift; `created_the_gift = true` records that a NEW gift was
+ * minted from it. Unlinking is only allowed for non-mint links (unlinking a
+ * minted gift would orphan it). The legacy gift-link columns below
+ * (matchedGiftId / createdGiftId / groupReconciledGiftId) are @deprecated —
+ * never read, never written.
  */
 export const stagedPayments = pgTable(
   "staged_payments",
@@ -229,29 +231,37 @@ export const stagedPayments = pgTable(
       "matched_payment_intermediary_id",
     ).references(() => paymentIntermediaries.id, { onDelete: "set null" }),
 
-    // Reconciliation target (mutually exclusive):
-    //   matchedGiftId — linked to a PRE-EXISTING gift (no new ledger row).
+    /**
+     * @deprecated NEVER READ, NEVER WRITTEN. The counted `payment_applications`
+     * ledger is the SOLE gift-link record (link to an existing gift = a counted
+     * ledger row with `created_the_gift = false`). Legacy values were
+     * backfilled into the ledger (migration 0120); the column is kept physical
+     * only until the reviewed drop migration ships. Do not reintroduce reads
+     * or writes.
+     */
     matchedGiftId: text("matched_gift_id").references(
       () => giftsAndPayments.id,
       { onDelete: "set null" },
     ),
-    //   createdGiftId — a NEW gift minted from this staged payment.
+    /**
+     * @deprecated NEVER READ, NEVER WRITTEN. Mint-ownership ("a NEW gift was
+     * minted from this staged payment") lives on the ledger row's
+     * `created_the_gift` flag. Backfilled by migration 0120; kept physical
+     * only until the reviewed drop migration ships.
+     */
     createdGiftId: text("created_gift_id").references(
       () => giftsAndPayments.id,
       { onDelete: "set null" },
     ),
 
-    // Deposit-group reconciliation (manual): when a fundraiser groups several
-    // staged rows that share one bank deposit and matches the GROUP to a single
-    // existing multi-allocation gift, EVERY member (including the representative)
-    // gets this set to that gift's id. It marks group membership; the group is
-    // exactly the rows sharing this gift id. To stay compatible with the
-    // one-staged↔one-gift partial-unique index on matchedGiftId, only ONE member
-    // (the "representative") also carries matchedGiftId = the same gift; the
-    // others reconcile to the gift via this column alone. A grouped gift is
-    // therefore "linked" through its representative's matchedGiftId (existing
-    // gift-linkage logic is unchanged), while members still display the gift via
-    // the resolved-gift join's COALESCE. Cleared for the whole group on revert.
+    /**
+     * @deprecated NEVER READ, NEVER WRITTEN. Group reconciliation books one
+     * counted `payment_applications` row PER member and durable
+     * `unit_groups`/`unit_group_members` membership — there is no
+     * representative/member pointer asymmetry anymore. Backfilled by
+     * migration 0120; kept physical only until the reviewed drop migration
+     * ships.
+     */
     groupReconciledGiftId: text("group_reconciled_gift_id").references(
       () => giftsAndPayments.id,
       { onDelete: "set null" },

@@ -113,17 +113,18 @@ router.post(
       });
       return;
     }
-    res.json(stagedRowWithStatus(row));
+    // Donor-only resolve on a pending row: no counted ledger row exists.
+    res.json(stagedRowWithStatus(row, false));
   }),
 );
 
 // ─── POST /staged-payments/:id/create-gift ─────────────────────────────────
 // Mint a real gifts_and_payments row from the staged payment (donor XOR). The
 // minted gift's amount IS this QB evidence, so it is stamped at insert
-// (final_amount_source='quickbooks', pointer → this staged row, no original
-// human amount to snapshot). The staged row becomes permanent EVIDENCE tied to
-// the gift via created_gift_id (derived status match_confirmed — never
-// archived, never a second gift).
+// (final_amount_source='quickbooks', no original human amount to snapshot).
+// The staged row becomes permanent EVIDENCE tied to the gift via the counted
+// payment_applications ledger row (created_the_gift = true; derived status
+// match_confirmed — never archived, never a second gift).
 router.post(
   "/staged-payments/:id/create-gift",
   asyncHandler(async (req, res) => {
@@ -211,10 +212,11 @@ router.post(
             user.id,
           ),
           // Stamp provenance at insert: the gift's amount IS this QB evidence
-          // (no prior human figure to snapshot). Pointer ties the gift to the
-          // staged row permanently (single XOR pointer, qb side).
+          // (no prior human figure to snapshot). The legacy
+          // final_amount_qb_staged_payment_id pointer is @deprecated and no
+          // longer written — the counted ledger row (created_the_gift = true,
+          // booked below) carries the tie.
           finalAmountSource: "quickbooks",
-          finalAmountQbStagedPaymentId: id,
           finalAmountStripeChargeId: null,
           originalHumanCrmAmount: null,
         });
@@ -232,8 +234,9 @@ router.post(
         await tx
           .update(stagedPayments)
           .set({
-            createdGiftId: giftId,
-            matchedGiftId: null,
+            // The counted ledger row (created_the_gift = true, booked below) +
+            // the confirmation stamps derive the terminal match_confirmed; the
+            // legacy gift-link columns are @deprecated and no longer written.
             autoApplied: false,
             matchStatus: "matched",
             matchConfirmedByUserId: user.id,
@@ -244,8 +247,8 @@ router.post(
           })
           .where(eq(stagedPayments.id, id));
 
-        // Dual-write (Phase 2): book the QB cash-application ledger row for the
-        // freshly-minted gift (this staged payment created + fully applies to it).
+        // Book the QB cash-application ledger row — the SOLE resolution record —
+        // for the freshly-minted gift (this staged payment created + fully applies to it).
         if (locked.amount && Number(locked.amount) > 0) {
           await applyPaymentApplication(tx, {
             paymentId: id,
@@ -322,7 +325,8 @@ router.post(
       });
       return;
     }
-    res.json(stagedRowWithStatus(row));
+    // Excluded → pending: an excluded row never carries counted ledger rows.
+    res.json(stagedRowWithStatus(row, false));
   }),
 );
 
@@ -383,7 +387,8 @@ router.post(
       });
       return;
     }
-    res.json(stagedRowWithStatus(row));
+    // Excludable only from pending/excluded — neither carries counted rows.
+    res.json(stagedRowWithStatus(row, false));
   }),
 );
 

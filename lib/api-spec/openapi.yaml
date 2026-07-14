@@ -2972,7 +2972,8 @@ paths:
       summary: Reconcile a staged payment to an existing gift (no new gift is created).
       description: |
         Ties the staged payment to an already-recorded gifts_and_payments row by
-        setting matchedGiftId. Marks the row approved (autoApplied=false). If the
+        booking a counted payment_applications ledger row (the sole gift-link
+        record). Marks the row approved (autoApplied=false). If the
         staged row has no donor yet it adopts the gift's donor; otherwise the
         donors must match. The gift must not already be linked to another staged
         payment. An optional allocationId narrows the link to one of the gift's
@@ -3030,8 +3031,8 @@ paths:
         captured — they share the same payer name (e.g. a single wire, or a
         series of stock sales, split across several QuickBooks records). No new
         gift is minted and QuickBooks is never written back. Every member is set
-        to approved with groupReconciledGiftId = the gift; one deterministic
-        representative member also carries matchedGiftId so the gift shows linked.
+        to approved and books a counted payment_applications ledger row to the
+        gift; the members' group membership is recorded durably in unit_groups.
         The group adopts the gift's donor (Donor XOR). Guards: at least two rows,
         all pending and unresolved, all sharing one grouping key (deposit or
         payer) — OR all already belonging to one "same physical gift" unit
@@ -3174,9 +3175,10 @@ paths:
       summary: Undo a booked reconciliation/creation (match_proposed/match_confirmed → pending).
       description: |
         Returns a gift-linked staged payment to the pending queue. If it was
-        reconciled to an existing gift (matchedGiftId), the link is cleared and
-        the pre-existing gift is untouched. If it was an auto-minted gift
-        (createdGiftId + autoApplied), the auto-created gift is deleted. A
+        reconciled to an existing gift (a counted ledger row with
+        created_the_gift=false), the ledger link is removed and the pre-existing
+        gift is untouched. If it was an auto-minted gift (a created_the_gift
+        ledger row + autoApplied), the auto-created gift is deleted. A
         manually created gift cannot be reverted (it would orphan a
         fundraiser-created ledger row). The donor match is left intact.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
@@ -4195,8 +4197,9 @@ paths:
 
         Source groups (a card whose stagedPaymentId belongs to a unit group)
         approve as a WHOLE: the create-* outcomes mint ONE gift whose amount sums
-        every non-archived member, with a deterministic representative carrying
-        createdGiftId and the other members groupReconciledGiftId (so no slice can
+        every non-archived member, booking one counted payment_applications
+        ledger row per member (the representative's row carries
+        created_the_gift, so no slice can
         be reconciled twice); link_existing_gift is rejected (409
         source_group_use_reconcile) — link the whole group via group-reconcile
         instead; and a group whose members carry a tied Stripe payout, or an
@@ -6178,7 +6181,6 @@ components:
         originalHumanCrmAmount:     { type: string, nullable: true, readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount." }
         finalAmountSource:          { allOf: [ { $ref: "#/components/schemas/GiftFinalAmountSource" } ], readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — `amount` is always the human-entered amount now; settled money is derivedSettledAmount." }
         finalAmountStripeChargeId:  { type: string, nullable: true, readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — Stripe linkage lives on stripe_staged_charges; settled amount is derived." }
-        finalAmountQbStagedPaymentId: { type: string, nullable: true, readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — QuickBooks linkage lives on payment_applications; settled amount is derived." }
         organizationId:                   { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
@@ -6740,9 +6742,6 @@ components:
         individualGiverPersonId:   { type: string, nullable: true }
         householdId:               { type: string, nullable: true }
         matchedPaymentIntermediaryId: { type: string, nullable: true }
-        matchedGiftId:             { type: string, nullable: true }
-        createdGiftId:             { type: string, nullable: true }
-        groupReconciledGiftId:     { type: string, nullable: true, description: "Set on every member of a manually grouped deposit unit that was reconciled as a whole to one existing gift. The group is exactly the rows sharing this gift id; one representative member also carries matchedGiftId. Cleared for the whole group on revert." }
         autoApplied:               { type: boolean }
         approvedByUserId:          { type: string, nullable: true }
         approvedAt:                { type: string, format: date-time, nullable: true }
@@ -8630,7 +8629,7 @@ components:
       properties:
         gift: { $ref: "#/components/schemas/GiftOrPayment" }
         stagedPaymentIds: { type: array, items: { type: string } }
-        representativeStagedPaymentId: { type: string, description: "The group member that also carries matchedGiftId (the one that makes the gift show linked)." }
+        representativeStagedPaymentId: { type: string, description: "The deterministic group representative (min id among members). Informational only — every member books its own counted payment_applications ledger row to the gift." }
     ConfirmStagedPaymentMatchesBody:
       type: object
       required: [ids]

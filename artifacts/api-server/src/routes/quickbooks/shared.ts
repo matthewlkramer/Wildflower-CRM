@@ -39,9 +39,12 @@ import {
   qbLedgerExistsForGift,
   qbLedgerExistsForGiftExcludingPayment,
   qbLedgerPaymentIdForGiftExcludingPayment,
+  qbLedgerExistsForPayment,
+  qbLedgerSoleGiftIdForPayment,
   DEFAULT_GIFT_ID_SQL,
 } from "../../lib/paymentApplications";
 import { giftMatchAmountBounds } from "../../lib/giftMatch";
+import { groupMemberIdsFor } from "../../lib/unitGroupMembership";
 import {
   stagedStatusSql,
   stagedStatusWhere,
@@ -97,14 +100,11 @@ export const isFiscallySponsoredRow = inArray(stagedPayments.entityId, [
   ...FISCALLY_SPONSORED_ENTITY_IDS,
 ]);
 
-// A staged row with no gift yet (neither a manually-matched nor a minted gift,
-// and not group-reconciled into someone else's gift). Used to scope the
-// fiscally-sponsored worklist to receipts that still NEED a hand-made gift.
-export const hasNoGiftLink = sql`(
-  ${stagedPayments.matchedGiftId} IS NULL
-  AND ${stagedPayments.createdGiftId} IS NULL
-  AND ${stagedPayments.groupReconciledGiftId} IS NULL
-)`;
+// A staged row with no gift yet — no counted QB cash-application ledger row
+// (the SOLE gift-link source: direct, mint, group, and split resolutions all
+// anchor counted rows on the payment). Used to scope the fiscally-sponsored
+// worklist to receipts that still NEED a hand-made gift.
+export const hasNoGiftLink = sql`(NOT ${qbLedgerExistsForPayment()})`;
 
 // The fiscally-sponsored money that is PARKED out of the main reconciliation flow
 // and surfaced in the "Fiscally-sponsored without corresponding gift" worklist:
@@ -130,31 +130,49 @@ export const queueExpr = sql<string>`
 // The verbatim raw QB JSON (qbRaw / qbRawLine) is stored for audit but excluded
 // from every list/detail response — it is large and never needed by the UI, so
 // the shared staged projection (consumed by the QuickBooks queue + reconciliation
-// cards) strips it. (The retired needs_research column has been physically dropped
-// — migration 0107 — so it no longer needs scrubbing here.)
+// cards) strips it. The @deprecated legacy gift-link columns (matchedGiftId /
+// createdGiftId / groupReconciledGiftId — never read, never written; the
+// counted payment_applications ledger is the sole gift-link source) are
+// scrubbed here too so stale values never leak into a response.
 const {
   qbRaw: _qbRaw,
   qbRawLine: _qbRawLine,
+  matchedGiftId: _matchedGiftId,
+  createdGiftId: _createdGiftId,
+  groupReconciledGiftId: _groupReconciledGiftId,
   ...stagedColumns
 } = getTableColumns(stagedPayments);
 
 // Staged-row projection for the mutation endpoints that echo the freshly-updated
 // row directly (match / unmatch / revert + the actions.ts staged actions). Unlike
 // `stagedSelect` (the joined list/card projection) it KEEPS qbRaw/qbRawLine — the
-// historical raw-return shape of those endpoints.
-const stagedReturnColumns = getTableColumns(stagedPayments);
+// historical raw-return shape of those endpoints. The @deprecated legacy
+// gift-link columns are scrubbed like everywhere else.
+const {
+  matchedGiftId: _mgId,
+  createdGiftId: _cgId,
+  groupReconciledGiftId: _grgId,
+  ...stagedReturnColumns
+} = getTableColumns(stagedPayments);
 export { stagedReturnColumns };
-export type StagedReturnRow = typeof stagedPayments.$inferSelect;
+export type StagedReturnRow = Omit<
+  typeof stagedPayments.$inferSelect,
+  "matchedGiftId" | "createdGiftId" | "groupReconciledGiftId"
+>;
 
 // Attach the derived status to a raw staged row echoed by a mutation endpoint.
-// The TS derivation covers the row-local facts; the two EXISTS arms (confirmed
-// settlement link / counted ledger row) default to false, which is correct for
-// every mutation echo: revert deletes the ledger rows before echoing, and the
-// settlement-only deposit shape is never echoed by these endpoints.
+// The counted-ledger EXISTS arm is the SOLE gift-link fact (read cutover), so
+// each caller states what it just did to the ledger: link/mint/split echoes
+// pass true, revert/unmatch echoes pass false. The settlement-link arm stays
+// false — the settlement-only deposit shape is never echoed by these endpoints.
 export function stagedRowWithStatus(
   row: StagedReturnRow,
+  hasCountedApplication: boolean,
 ): StagedReturnRow & { status: ReturnType<typeof deriveStagedPaymentStatus> } {
-  return { ...row, status: deriveStagedPaymentStatus(row) };
+  return {
+    ...row,
+    status: deriveStagedPaymentStatus({ ...row, hasCountedApplication }),
+  };
 }
 export const stagedSelect = {
   ...stagedColumns,
@@ -180,26 +198,23 @@ export const stagedSelect = {
   // side. The deprecated gifts_and_payments.grant_year header column was retired
   // (Task #598); grant_year now lives on the allocation lines, so derive a single
   // representative slug from the earliest non-null allocation. Correlated on the
-  // staged row's gift-link COLUMNS (matched/created/group), NOT on the resolvedGift
-  // alias — a bare aliased column interpolated into a correlated subquery renders
-  // unqualified and would bind to the inner table.
+  // staged row's SOLE ledger gift (counted payment_applications), NOT on the
+  // resolvedGift alias — a bare aliased column interpolated into a correlated
+  // subquery renders unqualified and would bind to the inner table.
   resolvedGiftFiscalYear: sql<string | null>`(
     SELECT ga.grant_year
     FROM gift_allocations ga
-    WHERE ga.gift_id = COALESCE(
-      ${stagedPayments.matchedGiftId},
-      ${stagedPayments.createdGiftId},
-      ${stagedPayments.groupReconciledGiftId}
-    )
+    WHERE ga.gift_id = ${qbLedgerSoleGiftIdForPayment()}
       AND ga.grant_year IS NOT NULL
     ORDER BY ga.created_at, ga.id
     LIMIT 1
   )`.as("resolved_gift_fiscal_year"),
   // Intended-usage rollup of the resolved gift's allocation lines (entity +
   // usage label + restriction), so a reviewer can judge the match on the card.
-  // Correlated on the staged row's gift-link COLUMNS (matched/created/group),
-  // NOT on the resolvedGift alias — a bare aliased column interpolated into a
-  // correlated subquery renders unqualified and would bind to the inner table.
+  // Correlated on the staged row's SOLE ledger gift (counted
+  // payment_applications), NOT on the resolvedGift alias — a bare aliased
+  // column interpolated into a correlated subquery renders unqualified and
+  // would bind to the inner table.
   resolvedGiftAllocations: sql<
     | {
         entityName: string | null;
@@ -221,64 +236,38 @@ export const stagedSelect = {
     )
     FROM gift_allocations ga
     LEFT JOIN entities e ON e.id = ga.entity_id
-    WHERE ga.gift_id = COALESCE(
-      ${stagedPayments.matchedGiftId},
-      ${stagedPayments.createdGiftId},
-      ${stagedPayments.groupReconciledGiftId}
-    )
+    WHERE ga.gift_id = ${qbLedgerSoleGiftIdForPayment()}
   )`.as("resolved_gift_allocations"),
   // Split summary: when a staged row is split across several existing gifts its
   // resolution lives entirely in counted payment_applications ledger rows
-  // anchored to the payment (resolvedGift above is null because no single
-  // matched/created/group gift is set — a split deliberately carries NONE of the
-  // three id columns). These correlated subqueries surface the count, combined
-  // gross total, and gift names so the UI can render "Split across N gifts ·
-  // $total". Gated on the split shape (all three gift-link columns NULL) so a
-  // direct/mint/group row — which also carries counted ledger rows — stays
-  // 0/null exactly as before. 0/null when not split.
+  // anchored to the payment (resolvedGift above is null because
+  // qbLedgerSoleGiftIdForPayment returns null for >1 counted rows). These
+  // correlated subqueries surface the count, combined gross total, and gift
+  // names so the UI can render "Split across N gifts · $total". Gated on the
+  // ledger split shape (MORE THAN ONE counted row) so a direct/mint/group row —
+  // exactly one counted row — stays 0/null exactly as before. 0/null when not
+  // split.
   splitCount: sql<number>`(
-    SELECT CASE
-      WHEN ${stagedPayments.matchedGiftId} IS NULL
-        AND ${stagedPayments.createdGiftId} IS NULL
-        AND ${stagedPayments.groupReconciledGiftId} IS NULL
-      THEN (
-        SELECT COUNT(*)::int FROM payment_applications pa
-        WHERE pa.payment_id = ${stagedPayments.id}
-          AND pa.evidence_source = 'quickbooks'
-          AND pa.link_role = 'counted'
-      )
-      ELSE 0
-    END
+    SELECT CASE WHEN COUNT(*) > 1 THEN COUNT(*)::int ELSE 0 END
+    FROM payment_applications pa
+    WHERE pa.payment_id = ${stagedPayments.id}
+      AND pa.evidence_source = 'quickbooks'
+      AND pa.link_role = 'counted'
   )`.as("split_count"),
   splitTotal: sql<string | null>`(
-    SELECT CASE
-      WHEN ${stagedPayments.matchedGiftId} IS NULL
-        AND ${stagedPayments.createdGiftId} IS NULL
-        AND ${stagedPayments.groupReconciledGiftId} IS NULL
-      THEN (
-        SELECT SUM(pa.amount_applied) FROM payment_applications pa
-        WHERE pa.payment_id = ${stagedPayments.id}
-          AND pa.evidence_source = 'quickbooks'
-          AND pa.link_role = 'counted'
-      )
-      ELSE NULL
-    END
+    SELECT CASE WHEN COUNT(*) > 1 THEN SUM(pa.amount_applied) END
+    FROM payment_applications pa
+    WHERE pa.payment_id = ${stagedPayments.id}
+      AND pa.evidence_source = 'quickbooks'
+      AND pa.link_role = 'counted'
   )`.as("split_total"),
   splitGiftNames: sql<string[] | null>`(
-    SELECT CASE
-      WHEN ${stagedPayments.matchedGiftId} IS NULL
-        AND ${stagedPayments.createdGiftId} IS NULL
-        AND ${stagedPayments.groupReconciledGiftId} IS NULL
-      THEN (
-        SELECT array_agg(g.name ORDER BY g.name)
-        FROM payment_applications pa
-        JOIN gifts_and_payments g ON g.id = pa.gift_id
-        WHERE pa.payment_id = ${stagedPayments.id}
-          AND pa.evidence_source = 'quickbooks'
-          AND pa.link_role = 'counted'
-      )
-      ELSE NULL
-    END
+    SELECT CASE WHEN COUNT(*) > 1 THEN array_agg(g.name ORDER BY g.name) END
+    FROM payment_applications pa
+    JOIN gifts_and_payments g ON g.id = pa.gift_id
+    WHERE pa.payment_id = ${stagedPayments.id}
+      AND pa.evidence_source = 'quickbooks'
+      AND pa.link_role = 'counted'
   )`.as("split_gift_names"),
   matchedRuleName: matchedRule.name,
   // Top-level QuickBooks LinkedTxn (e.g. the Deposit a Payment was deposited
@@ -305,8 +294,7 @@ export const stagedSelect = {
   // create a new gift (or exclude a true duplicate) rather than trusting a high
   // match score that points at an already-claimed gift.
   giftAlreadyLinkedElsewhere: sql<boolean>`(
-    ${stagedPayments.matchedGiftId} IS NULL
-    AND ${stagedPayments.createdGiftId} IS NULL
+    NOT ${qbLedgerExistsForPayment()}
     AND ${stagedPayments.amount} IS NOT NULL
     AND EXISTS (
       SELECT 1 FROM gifts_and_payments g
@@ -353,7 +341,10 @@ export function withJoins<T extends PgSelect>(q: T) {
     )
     .leftJoin(
       resolvedGift,
-      sql`${resolvedGift.id} = COALESCE(${stagedPayments.matchedGiftId}, ${stagedPayments.createdGiftId}, ${stagedPayments.groupReconciledGiftId})`,
+      // The SOLE ledger gift (counted payment_applications) — null for a
+      // pending row AND for a split (>1 counted rows), matching the legacy
+      // single-gift display semantics.
+      sql`${resolvedGift.id} = ${qbLedgerSoleGiftIdForPayment()}`,
     )
     .leftJoin(matchedRule, eq(matchedRule.id, stagedPayments.matchedRuleId))
     .leftJoin(entities, eq(entities.id, stagedPayments.entityId));
@@ -500,12 +491,18 @@ export function giftCandidateJoins<T extends PgSelect>(q: T) {
 
 // ─── revert helpers ────────────────────────────────────────────────────────
 // Undo an approved reconciliation/creation, returning the row to the pending
-// queue. Reversible cases:
-//   - matchedGiftId set  → clear the link (pre-existing gift untouched).
-//   - createdGiftId + autoApplied → delete the auto-minted gift + clear it.
-// A MANUALLY created gift (createdGiftId, autoApplied=false) cannot be reverted
-// — deleting it would orphan a fundraiser-created ledger row. The donor match
-// is left intact so the row can be re-resolved.
+// queue. The resolution SHAPE is read from the payment_applications ledger
+// (the SOLE gift-link source — the legacy matched/created/group columns are
+// @deprecated and no longer written). Reversible cases:
+//   - split (>1 counted ledger rows) → delete the ledger rows.
+//   - group (unit-group member with counted rows) → revert the WHOLE group.
+//   - direct match (1 counted row, created_the_gift=false) → clear the link
+//     (pre-existing gift untouched).
+//   - auto-mint (1 counted row, created_the_gift=true, autoApplied) → delete
+//     the auto-minted gift + its ledger rows.
+// A MANUALLY created gift (created_the_gift=true, autoApplied=false) cannot be
+// reverted — deleting it would orphan a fundraiser-created ledger row. The
+// donor match is left intact so the row can be re-resolved.
 const REVERT_NOT_FOUND = "__not_found__";
 const REVERT_NOT_REVERTIBLE = "__not_revertible__";
 
@@ -537,53 +534,120 @@ export async function revertOneStagedPayment(
       if (!locked) throw new Error(REVERT_NOT_FOUND);
       // Facts-based revertibility (status is derived, never stored): an
       // excluded row is un-excluded via the exclusion actions, not reverted
-      // here. A row with no resolution facts at all (pending) falls through
-      // the branches below to not-revertible, as does a deposit lump whose
-      // only resolution is a confirmed settlement link to a Stripe PAYOUT
-      // (no matched/created/group gift, no counted ledger rows) — that shape
-      // is undone via the payout revert, not here.
+      // here.
       if (locked.exclusionReason != null) {
         throw new Error(REVERT_NOT_REVERTIBLE);
       }
 
-      // Split-aware: a row resolved by a split has no matched/created/group
-      // gift of its own, so it would fall through to the single-row branch and
-      // be rejected as not-revertible. Detect it first: a split is the ONLY
-      // shape with counted QB ledger rows anchored to the payment while all
-      // three gift-link columns are NULL (a settlement-only reconciled deposit
-      // is also 3-cols-null but never carries counted rows, so it still falls
-      // through to not-revertible below). Delete the ledger rows and return the
-      // row to pending. The pre-existing gifts are never touched — the split's
-      // optional remainder gift was minted at split time but is deliberately
-      // NOT deleted on revert (it carries no createdGiftId pointer), matching
-      // the pre-ledger behavior.
-      const splitLinks =
-        locked.matchedGiftId == null &&
-        locked.createdGiftId == null &&
-        locked.groupReconciledGiftId == null
-          ? await tx
-              .select({ giftId: paymentApplications.giftId })
-              .from(paymentApplications)
-              .where(
-                and(
-                  eq(paymentApplications.paymentId, id),
-                  eq(paymentApplications.evidenceSource, "quickbooks"),
-                  eq(paymentApplications.linkRole, "counted"),
-                ),
-              )
-          : [];
-      if (splitLinks.length > 0) {
+      // The resolution shape is read from the LEDGER: the counted QB cash-
+      // application rows anchored on this payment. No rows ⇒ nothing to
+      // revert — a pending row, or a deposit lump whose only resolution is a
+      // confirmed settlement link to a Stripe PAYOUT (undone via the payout
+      // revert, not here).
+      const countedApps = await tx
+        .select({
+          giftId: paymentApplications.giftId,
+          createdTheGift: paymentApplications.createdTheGift,
+        })
+        .from(paymentApplications)
+        .where(
+          and(
+            eq(paymentApplications.paymentId, id),
+            eq(paymentApplications.evidenceSource, "quickbooks"),
+            eq(paymentApplications.linkRole, "counted"),
+          ),
+        );
+      if (countedApps.length === 0) throw new Error(REVERT_NOT_REVERTIBLE);
+
+      // Group-aware: a deposit-group member reverts the WHOLE group back to
+      // pending. Membership comes from the unit_group_members table; the
+      // group's single gift from this member's counted ledger row (every
+      // member applies to the SAME pre-existing gift — a group reconciles to
+      // an existing gift, never a minted one, so no gift is deleted).
+      const groupIds = await groupMemberIdsFor(tx, id);
+      if (groupIds.length > 0) {
+        const gid = countedApps[0]?.giftId;
+        if (!gid) throw new Error(REVERT_NOT_REVERTIBLE);
+        // The group's pre-existing gift loses this evidence — recompute.
+        affectedGiftIds.add(gid);
+        // Every payment whose counted application ties it to the group gift
+        // gets its queue facts reset. Collect BEFORE deleting the ledger rows.
+        const memberApps = await tx
+          .select({ paymentId: paymentApplications.paymentId })
+          .from(paymentApplications)
+          .where(
+            and(
+              eq(paymentApplications.giftId, gid),
+              eq(paymentApplications.evidenceSource, "quickbooks"),
+              eq(paymentApplications.linkRole, "counted"),
+            ),
+          );
+        const memberIds = [
+          ...new Set(
+            memberApps
+              .map((m) => m.paymentId)
+              .filter((p): p is string => p != null),
+          ),
+        ];
+        await tx
+          .select({ id: stagedPayments.id })
+          .from(stagedPayments)
+          .where(inArray(stagedPayments.id, memberIds))
+          .for("update");
+        // Reverse the group gift's final-amount stamp BEFORE deleting the
+        // ledger rows (the unstamp guard verifies provenance via the ledger —
+        // any member payment passes, and the whole group's evidence is being
+        // removed). Then rebalance the gift's single allocation (or flag a
+        // multi-alloc gift). No-op if a later Stripe stamp superseded it.
+        const un = await unstampGiftFinalAmount(tx, gid, {
+          source: "quickbooks",
+          qbStagedPaymentId: id,
+        });
+        if (un.restored) {
+          await adjustSingleAllocationOrFlag(
+            tx,
+            gid,
+            un.oldAmount,
+            un.newAmount,
+            "quickbooks",
+          );
+        }
+        // Ledger cleanup: undo every member payment's QB cash-application to
+        // the group gift (the gift is pre-existing, not deleted).
+        await removePaymentApplicationsForGift(tx, gid);
+        await tx
+          .update(stagedPayments)
+          .set({
+            autoApplied: false,
+            matchConfirmedByUserId: null,
+            matchConfirmedAt: null,
+            approvedByUserId: null,
+            approvedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(inArray(stagedPayments.id, memberIds));
+        const [row] = await tx
+          .select(stagedReturnColumns)
+          .from(stagedPayments)
+          .where(eq(stagedPayments.id, id));
+        result = row ?? null;
+        return;
+      }
+
+      // Split: one payment applied across SEVERAL existing gifts (>1 counted
+      // rows). Delete the ledger rows and return the row to pending. The
+      // pre-existing gifts are never touched — the split's optional remainder
+      // gift was minted at split time but is deliberately NOT deleted on
+      // revert, matching the pre-ledger behavior.
+      if (countedApps.length > 1) {
         // The pre-existing split-target gifts lose this evidence — recompute.
-        for (const s of splitLinks) if (s.giftId) affectedGiftIds.add(s.giftId);
+        for (const s of countedApps) if (s.giftId) affectedGiftIds.add(s.giftId);
         // Ledger cleanup: undo this payment's split cash-applications
         // (the split-target gifts are pre-existing and are never deleted).
         await removePaymentApplicationsForPayment(tx, id);
         const [row] = await tx
           .update(stagedPayments)
           .set({
-            matchedGiftId: null,
-            createdGiftId: null,
-            groupReconciledGiftId: null,
             autoApplied: false,
             matchConfirmedByUserId: null,
             matchConfirmedAt: null,
@@ -597,113 +661,53 @@ export async function revertOneStagedPayment(
         return;
       }
 
-      // Group-aware: a deposit-group member (incl. the representative, which
-      // also carries matchedGiftId) reverts the WHOLE group back to pending.
-      // No gift is deleted — a group reconciles to a pre-existing gift, never
-      // a minted one. Check this first so the representative isn't handled by
-      // the single-row branch (which would orphan the other members).
-      if (locked.groupReconciledGiftId != null) {
-        const gid = locked.groupReconciledGiftId;
-        // The group's pre-existing gift loses this evidence — recompute.
-        affectedGiftIds.add(gid);
-        // Ledger cleanup (Phase 2): undo every member payment's QB cash-
-        // application to the group gift (the gift is pre-existing, not deleted).
-        await removePaymentApplicationsForGift(tx, gid);
-        const members = await tx
-          .select({
-            id: stagedPayments.id,
-            matchedGiftId: stagedPayments.matchedGiftId,
-          })
-          .from(stagedPayments)
-          .where(eq(stagedPayments.groupReconciledGiftId, gid))
-          .for("update");
-        // The group gift was stamped (final-amount) from the REPRESENTATIVE
-        // member (the one that also carries matchedGiftId = gid). Reverse that
-        // stamp before unlinking, restoring the original human amount, then
-        // rebalance the gift's single allocation (or flag a multi-alloc gift).
-        const repId =
-          members.find((m) => m.matchedGiftId === gid)?.id ?? null;
-        if (repId) {
-          const un = await unstampGiftFinalAmount(tx, gid, {
-            source: "quickbooks",
-            qbStagedPaymentId: repId,
-          });
-          if (un.restored) {
-            await adjustSingleAllocationOrFlag(
-              tx,
-              gid,
-              un.oldAmount,
-              un.newAmount,
-              "quickbooks",
-            );
-          }
-        }
-        await tx
-          .update(stagedPayments)
-          .set({
-            matchedGiftId: null,
-            createdGiftId: null,
-            groupReconciledGiftId: null,
-            autoApplied: false,
-            matchConfirmedByUserId: null,
-            matchConfirmedAt: null,
-            approvedByUserId: null,
-            approvedAt: null,
-            updatedAt: new Date(),
-          })
-          .where(eq(stagedPayments.groupReconciledGiftId, gid));
-        const [row] = await tx
-          .select(stagedReturnColumns)
-          .from(stagedPayments)
-          .where(eq(stagedPayments.id, id));
-        result = row ?? null;
-        return;
-      }
-
-      const isReconcile = locked.matchedGiftId != null;
-      const isAutoMint =
-        locked.createdGiftId != null && locked.autoApplied === true;
+      // Exactly one counted ledger row: a direct match to a pre-existing gift
+      // (created_the_gift=false), or a mint (created_the_gift=true).
+      const app = countedApps[0];
+      const gid = app?.giftId;
+      if (!app || !gid) throw new Error(REVERT_NOT_REVERTIBLE);
+      const isReconcile = !app.createdTheGift;
+      const isAutoMint = app.createdTheGift && locked.autoApplied === true;
+      // A MANUAL mint (created_the_gift=true, autoApplied=false) is not
+      // revertible — deleting it would orphan a fundraiser-created gift.
       if (!isReconcile && !isAutoMint) throw new Error(REVERT_NOT_REVERTIBLE);
 
       // Reconcile (matched a pre-existing gift): reverse the final-amount stamp
-      // before unlinking so the gift falls back to its original human amount,
+      // BEFORE deleting the ledger row (the unstamp guard verifies provenance
+      // via the ledger) so the gift falls back to its original human amount,
       // then rebalance allocations. No-op if a later Stripe stamp superseded it.
-      if (isReconcile && locked.matchedGiftId) {
+      if (isReconcile) {
         // The pre-existing matched gift loses this evidence — recompute.
-        affectedGiftIds.add(locked.matchedGiftId);
-        // Ledger cleanup (Phase 2): undo this payment's cash-application to the
-        // matched gift (the gift is pre-existing and is never deleted).
-        await removePaymentApplicationsForPayment(tx, id);
-        const un = await unstampGiftFinalAmount(tx, locked.matchedGiftId, {
+        affectedGiftIds.add(gid);
+        const un = await unstampGiftFinalAmount(tx, gid, {
           source: "quickbooks",
           qbStagedPaymentId: id,
         });
         if (un.restored) {
           await adjustSingleAllocationOrFlag(
             tx,
-            locked.matchedGiftId,
+            gid,
             un.oldAmount,
             un.newAmount,
             "quickbooks",
           );
         }
+        // Ledger cleanup: undo this payment's cash-application to the matched
+        // gift (the gift is pre-existing and is never deleted).
+        await removePaymentApplicationsForPayment(tx, id);
       }
 
-      if (isAutoMint && locked.createdGiftId) {
+      if (isAutoMint) {
         // payment_applications.gift_id is RESTRICT — clear the QB cash-
         // application ledger row(s) booked at mint for this auto-minted gift
-        // before deleting it (Phase 2 dual-write books one on auto-create).
-        await removePaymentApplicationsForGift(tx, locked.createdGiftId);
-        await tx
-          .delete(giftsAndPayments)
-          .where(eq(giftsAndPayments.id, locked.createdGiftId));
+        // before deleting it.
+        await removePaymentApplicationsForGift(tx, gid);
+        await tx.delete(giftsAndPayments).where(eq(giftsAndPayments.id, gid));
       }
 
       const [row] = await tx
         .update(stagedPayments)
         .set({
-          matchedGiftId: null,
-          createdGiftId: null,
           autoApplied: false,
           matchConfirmedByUserId: null,
           matchConfirmedAt: null,

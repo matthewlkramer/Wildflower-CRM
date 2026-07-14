@@ -42,11 +42,13 @@ describe("buildStagedLineUpsert — preserve-on-conflict coding", () => {
   it("only refreshes coding while a row is still pending/excluded (derived)", () => {
     expect(lower).toContain("where");
     // The guard is the DERIVED pending/excluded predicate (no stored status
-    // column): pending = no gift link + no confirmed settlement link + no
-    // counted ledger row; excluded = exclusion_reason set.
-    expect(lower).toContain('"staged_payments"."matched_gift_id" is null');
+    // column, and the legacy gift-link columns are @deprecated — never read):
+    // pending = no counted ledger row + no confirmed settlement link;
+    // excluded = exclusion_reason set.
     expect(lower).toContain("settlement_links");
     expect(lower).toContain("payment_applications");
+    expect(lower).toContain("link_role");
+    expect(lower).not.toContain("matched_gift_id\" is null");
     expect(lower).toContain('"staged_payments"."exclusion_reason" is not null');
   });
 

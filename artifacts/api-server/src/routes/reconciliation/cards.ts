@@ -13,6 +13,9 @@ import { opportunitiesAndPledges } from "@workspace/db/schema";
 import {
   qbLedgerExistsForGiftExcludingPayment,
   chargeIdOwningGiftExcludingCharge,
+  qbLedgerExistsForPayment,
+  qbLedgerSoleGiftIdForPayment,
+  qbLedgerMintedGiftIdForPayment,
 } from "../../lib/paymentApplications";
 import { asyncHandler, notFound } from "../../lib/helpers";
 import { getViewer } from "../../lib/identityVisibility";
@@ -315,17 +318,8 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
         -- gift is already the single counted record for this money (design
         -- §4.3), so re-expanding it would invite a double-counting gift.
         ${stagedPayments.exclusionReason} IS NULL
-        AND ${stagedPayments.createdGiftId} IS NULL
-        AND (
-          ${stagedPayments.matchedGiftId} IS NOT NULL
-          OR ${stagedPayments.groupReconciledGiftId} IS NOT NULL
-          OR EXISTS (
-            SELECT 1 FROM payment_applications pa
-            WHERE pa.payment_id = ${stagedPayments.id}
-              AND pa.evidence_source = 'quickbooks'
-              AND pa.link_role = 'counted'
-          )
-        )
+        AND ${qbLedgerMintedGiftIdForPayment()} IS NULL
+        AND ${qbLedgerExistsForPayment()}
         AND EXISTS (
           SELECT 1 FROM settlement_links sl
           WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
@@ -344,9 +338,7 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
         -- double-counting gift, so it stays out of the live gift queue and
         -- shows only in the done/Matched queue.
         ${stagedStatusWhere.match_confirmed}
-        AND ${stagedPayments.matchedGiftId} IS NULL
-        AND ${stagedPayments.createdGiftId} IS NULL
-        AND ${stagedPayments.groupReconciledGiftId} IS NULL
+        AND NOT ${qbLedgerExistsForPayment()}
         AND EXISTS (
           SELECT 1 FROM settlement_links sl
           JOIN stripe_staged_charges c ON c.stripe_payout_id = sl.payout_id
@@ -616,8 +608,9 @@ router.get(
         .select({
           ...stagedSelect,
           // Donor the LINKED gift is recorded under. Correlated on the staged
-          // row's gift-link COLUMNS (matched/created/group) — NOT the resolvedGift
-          // alias — to avoid a bare aliased column rendering unqualified inside a
+          // row's ledger-resolved gift (the legacy gift-link columns are
+          // @deprecated and no longer written) — NOT the resolvedGift alias —
+          // to avoid a bare aliased column rendering unqualified inside a
           // correlated subquery. Distinct from proposedDonorName (the payer-side
           // donor) so the card can surface a payer-vs-gift-donor difference.
           resolvedGiftDonorName: sql<string | null>`(
@@ -631,11 +624,7 @@ router.get(
                  FROM people pp WHERE pp.id = g.individual_giver_person_id)
             )
             FROM gifts_and_payments g
-            WHERE g.id = COALESCE(
-              ${stagedPayments.matchedGiftId},
-              ${stagedPayments.createdGiftId},
-              ${stagedPayments.groupReconciledGiftId}
-            )
+            WHERE g.id = ${qbLedgerSoleGiftIdForPayment()}
           )`,
           finalAmountSource: resolvedGift.finalAmountSource,
           autoGiftCount: autoGiftCountExpr,

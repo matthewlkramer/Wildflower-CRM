@@ -21,15 +21,16 @@ import type { Server } from "node:http";
  * POST /api/stripe-staged-charges/:id/revert (the "Nneka" recovery path).
  *
  * When a Stripe charge reconciled to a gift is reverted, any QuickBooks staged
- * row still DIRECTLY matched (`matched_gift_id`) to the same gift must be
- * cascade-reset to pending alongside it — otherwise the QB row stays locked to
- * a gift that just lost its Stripe evidence and every re-link attempt 409s
- * with no recovery path. The cascade must:
- *   - reset the QB row's gift link + confirmation stamps (derived status back
- *     to `pending`) and drop its payment_applications ledger rows,
- *   - leave mint-owned (`created_gift_id`) and group-reconciled
- *     (`group_reconciled_gift_id`) rows untouched — those revert through their
- *     own explicit paths,
+ * row still DIRECTLY matched (a sole counted `payment_applications` ledger row,
+ * non-mint, non-group) to the same gift must be cascade-reset to pending
+ * alongside it — otherwise the QB row stays locked to a gift that just lost
+ * its Stripe evidence and every re-link attempt 409s with no recovery path.
+ * The cascade must:
+ *   - reset the QB row's confirmation stamps (derived status back to
+ *     `pending`) and drop its payment_applications ledger rows,
+ *   - leave mint-owned (ledger `created_the_gift`) and group-reconciled
+ *     (unit-group member) rows untouched — those revert through their own
+ *     explicit paths,
  *   - unblock the full user flow: re-approving the freed QB row to the CORRECT
  *     gift afterwards succeeds (no `not_approvable` 409).
  *
@@ -72,6 +73,8 @@ let schema: {
   stagedPayments: Db["stagedPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   paymentApplications: Db["paymentApplications"];
+  unitGroups: Db["unitGroups"];
+  unitGroupMembers: Db["unitGroupMembers"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -81,6 +84,7 @@ let baseUrl = "";
 const giftIds: string[] = [];
 const stagedIds: string[] = [];
 const chargeIds: string[] = [];
+const unitGroupIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 
@@ -145,15 +149,8 @@ async function seedReconciledCharge(
   return id;
 }
 
-/** A QuickBooks staged row with the given gift links (facts drive the derived status). */
-async function seedQbStaged(
-  amount: string,
-  links: {
-    matchedGiftId?: string | null;
-    createdGiftId?: string | null;
-    groupReconciledGiftId?: string | null;
-  } = {},
-): Promise<string> {
+/** A bare QuickBooks staged row (gift links live in the ledger, seeded separately). */
+async function seedQbStaged(amount: string): Promise<string> {
   const id = nextId("sp");
   await db.insert(schema.stagedPayments).values({
     id,
@@ -165,19 +162,21 @@ async function seedQbStaged(
     payerName: `${RUN} qb payer`,
     organizationId: ORG_ID,
     matchStatus: "matched",
-    matchedGiftId: links.matchedGiftId ?? null,
-    createdGiftId: links.createdGiftId ?? null,
-    groupReconciledGiftId: links.groupReconciledGiftId ?? null,
   });
   stagedIds.push(id);
   return id;
 }
 
-/** Mirror production's dual-write: a linked QB row also carries a ledger row. */
+/**
+ * The authoritative gift link: a counted QB `payment_applications` ledger row
+ * (the deprecated staged link columns are no longer written). Pass
+ * `createdTheGift` to model a mint-owned row.
+ */
 async function seedPaymentApplication(
   stagedPaymentId: string,
   giftId: string,
   amount: string,
+  opts: { createdTheGift?: boolean } = {},
 ): Promise<void> {
   await db.insert(schema.paymentApplications).values({
     id: `${stagedPaymentId}_pa`,
@@ -186,7 +185,22 @@ async function seedPaymentApplication(
     amountApplied: amount,
     evidenceSource: "quickbooks",
     matchMethod: "system",
-    createdTheGift: false,
+    createdTheGift: opts.createdTheGift ?? false,
+  });
+}
+
+/** Make a staged row a durable unit-group member (the group-reconciled shape). */
+async function seedGroupMembership(stagedPaymentId: string): Promise<void> {
+  const groupId = nextId("ug");
+  await db
+    .insert(schema.unitGroups)
+    .values({ id: groupId, createdByUserId: TEST_USER_ID });
+  unitGroupIds.push(groupId);
+  await db.insert(schema.unitGroupMembers).values({
+    id: `ugm_${stagedPaymentId}`,
+    groupId,
+    evidenceSource: "quickbooks",
+    sourceId: stagedPaymentId,
   });
 }
 
@@ -229,6 +243,8 @@ beforeAll(async () => {
     stagedPayments: dbMod.stagedPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     paymentApplications: dbMod.paymentApplications,
+    unitGroups: dbMod.unitGroups,
+    unitGroupMembers: dbMod.unitGroupMembers,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -269,6 +285,14 @@ afterAll(async () => {
       .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
   await clearPaymentApplicationsForGiftIds(giftIds);
   await clearPaymentApplicationsForStagedIds(stagedIds);
+  if (stagedIds.length)
+    await db
+      .delete(schema.unitGroupMembers)
+      .where(inArrayFn(schema.unitGroupMembers.sourceId, stagedIds));
+  if (unitGroupIds.length)
+    await db
+      .delete(schema.unitGroups)
+      .where(inArrayFn(schema.unitGroups.id, unitGroupIds));
   if (giftIds.length)
     await db
       .delete(schema.giftAllocations)
@@ -303,7 +327,7 @@ describe.skipIf(!HAS_DB)(
     it("reverting a charge also resets a QB row matched to the same gift back to pending (link + stamps + ledger row cleared)", async () => {
       const giftId = await seedGift("250.00");
       const chargeId = await seedReconciledCharge("250.00", giftId);
-      const stagedId = await seedQbStaged("250.00", { matchedGiftId: giftId });
+      const stagedId = await seedQbStaged("250.00");
       await seedPaymentApplication(stagedId, giftId, "250.00");
 
       expect((await readStaged(stagedId)).status).toBe("match_confirmed");
@@ -318,7 +342,6 @@ describe.skipIf(!HAS_DB)(
       // confirmation stamp cleared, so the derived status is pending again.
       const staged = await readStaged(stagedId);
       expect(staged.status).toBe("pending");
-      expect(staged.matchedGiftId).toBeNull();
       expect(staged.autoApplied).toBe(false);
       expect(staged.matchConfirmedAt).toBeNull();
       expect(staged.matchConfirmedByUserId).toBeNull();
@@ -333,9 +356,7 @@ describe.skipIf(!HAS_DB)(
       const wrongGiftId = await seedGift("100.00");
       const correctGiftId = await seedGift("100.00");
       const chargeId = await seedReconciledCharge("100.00", wrongGiftId);
-      const stagedId = await seedQbStaged("100.00", {
-        matchedGiftId: wrongGiftId,
-      });
+      const stagedId = await seedQbStaged("100.00");
       await seedPaymentApplication(stagedId, wrongGiftId, "100.00");
 
       // Without the cascade this approve would 409 not_approvable — the QB row
@@ -355,30 +376,39 @@ describe.skipIf(!HAS_DB)(
 
       const staged = await readStaged(stagedId);
       expect(staged.status).toBe("match_confirmed");
-      expect(staged.matchedGiftId).toBe(correctGiftId);
+      const apps = await readPaymentApplications(stagedId);
+      expect(apps).toHaveLength(1);
+      expect(apps[0].giftId).toBe(correctGiftId);
     }, 30_000);
 
     it("mint-owned and group-reconciled QB rows are NOT cascade-reset (they revert through their own paths)", async () => {
       const giftId = await seedGift("75.00");
       const chargeId = await seedReconciledCharge("75.00", giftId);
-      // A row that MINTED the gift and a row group-reconciled into it — both
-      // excluded from the cascade by design.
-      const mintOwnedId = await seedQbStaged("75.00", {
-        createdGiftId: giftId,
+      // A row that MINTED the gift (ledger created_the_gift) and a row
+      // group-reconciled into it (unit-group member) — both excluded from the
+      // cascade by design.
+      const mintOwnedId = await seedQbStaged("75.00");
+      await seedPaymentApplication(mintOwnedId, giftId, "75.00", {
+        createdTheGift: true,
       });
-      const groupedId = await seedQbStaged("75.00", {
-        groupReconciledGiftId: giftId,
-      });
+      const groupedId = await seedQbStaged("75.00");
+      await seedPaymentApplication(groupedId, giftId, "75.00");
+      await seedGroupMembership(groupedId);
 
       const res = await apiPost(`/api/stripe-staged-charges/${chargeId}/revert`);
       expect(res.status).toBe(200);
 
       const mintOwned = await readStaged(mintOwnedId);
-      expect(mintOwned.createdGiftId).toBe(giftId);
+      const mintApps = await readPaymentApplications(mintOwnedId);
+      expect(mintApps).toHaveLength(1);
+      expect(mintApps[0].giftId).toBe(giftId);
+      expect(mintApps[0].createdTheGift).toBe(true);
       expect(mintOwned.status).toBe("match_confirmed");
 
       const grouped = await readStaged(groupedId);
-      expect(grouped.groupReconciledGiftId).toBe(giftId);
+      const groupApps = await readPaymentApplications(groupedId);
+      expect(groupApps).toHaveLength(1);
+      expect(groupApps[0].giftId).toBe(giftId);
       expect(grouped.status).toBe("match_confirmed");
     }, 30_000);
   },

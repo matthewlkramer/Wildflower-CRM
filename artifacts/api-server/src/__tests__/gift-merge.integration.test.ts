@@ -414,7 +414,6 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
       qbEntityId: nextId("qbe"),
       amount: "100.00",
       organizationId: ORG_ID,
-      matchedGiftId: b,
     });
     await db.insert(schema.paymentApplications).values({
       id: nextId("pa"),
@@ -432,15 +431,6 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
     expect(res.status).toBe(200);
     // The loser is archived; its evidence is re-homed onto the survivor.
     expect((await readGift(b)).archivedAt).not.toBeNull();
-
-    // The staged payment now points at the survivor as a clean direct match.
-    const [staged] = await db
-      .select()
-      .from(schema.stagedPayments)
-      .where(eqFn(schema.stagedPayments.id, sp));
-    expect(staged.matchedGiftId).toBe(a);
-    expect(staged.createdGiftId).toBeNull();
-    expect(staged.groupReconciledGiftId).toBeNull();
 
     // The ledger row moved to the survivor; none remain on the loser.
     const survivorLedger = await ledgerFor(a);
@@ -462,7 +452,6 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
         qbEntityId: nextId("qbe"),
         amount: "100.00",
         organizationId: ORG_ID,
-        matchedGiftId: a,
       },
       {
         id: sp2,
@@ -471,7 +460,6 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
         qbEntityId: nextId("qbe"),
         amount: "60.00",
         organizationId: ORG_ID,
-        matchedGiftId: b,
       },
     ]);
     await db.insert(schema.paymentApplications).values([
@@ -499,19 +487,6 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
     expect(res.status).toBe(200);
     expect(Number((await readGift(a)).amount)).toBeCloseTo(160);
     expect((await readGift(b)).archivedAt).not.toBeNull();
-
-    // Both staged payments now belong to the survivor as a GROUP: both carry
-    // groupReconciledGiftId = survivor, exactly one is the matched representative,
-    // and neither still points at the loser.
-    const staged = await db
-      .select()
-      .from(schema.stagedPayments)
-      .where(inArrayFn(schema.stagedPayments.id, [sp1, sp2]));
-    expect(staged.every((s) => s.groupReconciledGiftId === a)).toBe(true);
-    expect(staged.filter((s) => s.matchedGiftId === a).length).toBe(1);
-    expect(
-      staged.some((s) => s.matchedGiftId === b || s.createdGiftId === b),
-    ).toBe(false);
 
     // Both ledger rows moved to the survivor; their SUM is preserved.
     const survivorLedger = await ledgerFor(a);
@@ -837,14 +812,22 @@ describe.skipIf(!HAS_DB)(
         { subAmount: "60.00" },
         { subAmount: "40.00" },
       ]);
+      const spId = nextId("sp");
       await db.insert(schema.stagedPayments).values({
-        id: nextId("sp"),
+        id: spId,
         realmId: REALM_ID,
         qbEntityType: "payment",
         qbEntityId: nextId("qbe"),
         amount: "100.00",
         organizationId: ORG_ID,
-        matchedGiftId: giftId,
+      });
+      // The QB link lives in the counted ledger (the sole gift-link source).
+      await db.insert(schema.paymentApplications).values({
+        id: nextId("pa"),
+        paymentId: spId,
+        giftId,
+        amountApplied: "100.00",
+        evidenceSource: "quickbooks",
       });
 
       const res = await api(

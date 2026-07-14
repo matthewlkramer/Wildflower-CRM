@@ -391,7 +391,6 @@ async function applyAutoCreateRule(
       .update(stagedPayments)
       .set({
         matchStatus: "matched",
-        createdGiftId: giftId,
         autoApplied: true,
         // Pin the staged row's donor to the gift's donor (the target org).
         organizationId: orgId,
@@ -401,8 +400,9 @@ async function applyAutoCreateRule(
         updatedAt: new Date(),
       })
       .where(eq(stagedPayments.id, stagedId));
-    // Dual-write (Phase 2): book the QB cash-application ledger for the
-    // auto-minted gift (this rule created it; the staged payment fully applies).
+    // Book the QB cash-application ledger row for the auto-minted gift (this
+    // rule created it; the staged payment fully applies) — the ledger is the
+    // SOLE resolution record (legacy gift-link columns retired).
     await applyPaymentApplication(tx, {
       paymentId: stagedId,
       giftId,
@@ -593,7 +593,6 @@ async function applyAutoCreateRuleToRow(
       .update(stagedPayments)
       .set({
         matchStatus: "matched",
-        createdGiftId: giftId,
         autoApplied: true,
         organizationId: orgId,
         individualGiverPersonId: null,
@@ -602,8 +601,9 @@ async function applyAutoCreateRuleToRow(
         updatedAt: new Date(),
       })
       .where(eq(stagedPayments.id, stagedId));
-    // Dual-write (Phase 2): book the QB cash-application ledger for the
-    // auto-minted gift (this rule created it; the staged payment fully applies).
+    // Book the QB cash-application ledger row for the auto-minted gift (this
+    // rule created it; the staged payment fully applies) — the ledger is the
+    // SOLE resolution record (legacy gift-link columns retired).
     await applyPaymentApplication(tx, {
       paymentId: stagedId,
       giftId,
@@ -840,7 +840,7 @@ export async function syncQuickbooks(
 
 /**
  * Apply a high-confidence match to the ledger inside a guarded transaction.
- *   single unambiguous gift     → RECONCILE (matchedGiftId): one exact-amount
+ *   single unambiguous gift     → RECONCILE (a counted ledger row): one exact-amount
  *                                 gift, or one fee-band gift when none are exact.
  *   zero OR many in-window gifts → leave the row PENDING (needs review).
  * The worker NEVER mints a gift here. Auto-creating a brand-new gift without a
@@ -872,7 +872,6 @@ async function autoApply(
           .update(stagedPayments)
           .set({
             matchStatus: "matched",
-            matchedGiftId: giftId,
             autoApplied: true,
             updatedAt: new Date(),
           })
@@ -886,8 +885,8 @@ async function autoApply(
           )
           .returning({ id: stagedPayments.id, amount: stagedPayments.amount });
         if (rows.length > 0) {
-          // Dual-write (Phase 2): book the QB cash-application ledger row for
-          // this auto-reconciled (system) match to an existing gift.
+          // Book the QB cash-application ledger row for this auto-reconciled
+          // (system) match to an existing gift — the SOLE resolution record.
           const amt = rows[0].amount;
           if (amt && Number(amt) > 0) {
             await applyPaymentApplication(tx, {

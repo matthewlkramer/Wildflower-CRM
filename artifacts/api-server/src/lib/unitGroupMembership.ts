@@ -9,11 +9,13 @@
 // grouped today (source_group_id was QB-only), so every helper defaults to
 // `evidence_source = 'quickbooks'`. A `source_id` here is a `staged_payments.id`.
 //
-// DUAL-WRITE INVARIANT: this task changes what code READS, not what
-// group-reconcile WRITES. The legacy pointers (representative `matched_gift_id`,
-// others' `group_reconciled_gift_id`, and `source_group_id`) keep being written
-// until Phase 7. Routing every group read through this one module makes that
-// Phase-7 drop a single-file audit.
+// SINGLE-SOURCE INVARIANT: `unit_groups`/`unit_group_members` is the SOLE
+// group store. The legacy gift-link pointers (representative
+// `matched_gift_id`, others' `group_reconciled_gift_id`) are @deprecated and
+// no longer written — group-reconcile now writes durable membership rows
+// (both the source-group route and the ad hoc group-reconcile path) plus
+// counted `payment_applications` rows. Routing every group read through this
+// one module keeps the eventual physical column drop a single-file audit.
 
 // `db` is imported type-only ONLY to derive the transaction type — importing
 // this helper carries no runtime DB coupling; every function takes the caller's

@@ -9,7 +9,10 @@ import {
 } from "vitest";
 import { stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
-import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
+import {
+  clearPaymentApplicationsForRealm,
+  qbCountedRowsForPayment,
+} from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -64,6 +67,7 @@ let schema: {
   organizations: Db["organizations"];
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
+  paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -108,16 +112,18 @@ async function seedGift(amount: string): Promise<string> {
 }
 
 /**
- * Seed an approved staged row. Defaults to an auto-RECONCILED row (links an
- * existing gift via matchedGiftId, autoApplied=true) — i.e. an "Auto-matched"
- * card. Override via opts for auto-mint / manual / pending variants.
+ * Seed an approved staged row. Defaults to an auto-applied row; a
+ * `linkedGiftId` (auto-RECONCILED, "Auto-matched" card) or `mintedGiftId`
+ * (auto-MINT — createdTheGift) seeds the counted `payment_applications`
+ * ledger row (the sole gift-link source). Override via opts for manual /
+ * pending variants.
  */
 async function seedStaged(
   label: string,
   opts: {
     autoApplied?: boolean;
-    matchedGiftId?: string | null;
-    createdGiftId?: string | null;
+    linkedGiftId?: string | null;
+    mintedGiftId?: string | null;
   } = {},
 ): Promise<string> {
   const id = `${RUN}_sp_${label}`;
@@ -129,10 +135,19 @@ async function seedStaged(
     qbLineId: label,
     amount: "100.00",
     autoApplied: opts.autoApplied ?? true,
-    matchedGiftId: opts.matchedGiftId ?? null,
-    createdGiftId: opts.createdGiftId ?? null,
     organizationId: ORG_ID,
   });
+  const linkGiftId = opts.linkedGiftId ?? opts.mintedGiftId;
+  if (linkGiftId) {
+    await db.insert(schema.paymentApplications).values({
+      id: `${id}_pa`,
+      paymentId: id,
+      giftId: linkGiftId,
+      amountApplied: "100.00",
+      evidenceSource: "quickbooks",
+      createdTheGift: !!opts.mintedGiftId,
+    });
+  }
   return id;
 }
 
@@ -165,6 +180,7 @@ beforeAll(async () => {
     organizations: dbMod.organizations,
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
+    paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -218,10 +234,10 @@ describe.skipIf(!HAS_DB)("QuickBooks bulk revert-matches (integration)", () => {
   it("reverts several auto-applied matches in one call", async () => {
     // Auto-reconciled: links an existing gift (gift must survive the revert).
     const reconGift = await seedGift("100.00");
-    const reconId = await seedStaged("recon", { matchedGiftId: reconGift });
+    const reconId = await seedStaged("recon", { linkedGiftId: reconGift });
     // Auto-minted: the created gift must be DELETED by the revert.
     const mintGift = await seedGift("100.00");
-    const mintId = await seedStaged("mint", { createdGiftId: mintGift });
+    const mintId = await seedStaged("mint", { mintedGiftId: mintGift });
 
     const res = await api("/api/staged-payments/revert-matches", {
       ids: [reconId, mintId],
@@ -234,8 +250,7 @@ describe.skipIf(!HAS_DB)("QuickBooks bulk revert-matches (integration)", () => {
     for (const id of [reconId, mintId]) {
       const row = await readStaged(id);
       expect(row.status).toBe("pending");
-      expect(row.matchedGiftId).toBeNull();
-      expect(row.createdGiftId).toBeNull();
+      expect(await qbCountedRowsForPayment(id)).toHaveLength(0);
       expect(row.autoApplied).toBe(false);
     }
     // Pre-existing reconciled gift is untouched; auto-minted gift is gone.
@@ -245,11 +260,11 @@ describe.skipIf(!HAS_DB)("QuickBooks bulk revert-matches (integration)", () => {
 
   it("skips ids that aren't revertible but reverts the rest", async () => {
     const okGift = await seedGift("100.00");
-    const okId = await seedStaged("ok", { matchedGiftId: okGift });
+    const okId = await seedStaged("ok", { linkedGiftId: okGift });
     // Manually created gift (autoApplied=false) → not revertible.
     const manualGift = await seedGift("100.00");
     const manualId = await seedStaged("manual", {
-      createdGiftId: manualGift,
+      mintedGiftId: manualGift,
       autoApplied: false,
     });
     // Already pending → not revertible.
@@ -271,7 +286,7 @@ describe.skipIf(!HAS_DB)("QuickBooks bulk revert-matches (integration)", () => {
 
   it("counts duplicate submitted ids in `requested` but reverts each row once", async () => {
     const gift = await seedGift("100.00");
-    const id = await seedStaged("dup", { matchedGiftId: gift });
+    const id = await seedStaged("dup", { linkedGiftId: gift });
 
     const res = await api("/api/staged-payments/revert-matches", {
       ids: [id, id, id],

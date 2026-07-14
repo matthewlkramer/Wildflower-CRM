@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
 
 /**
  * DB-backed guard for the "Fiscally sponsored" queue split. Money attributed to
@@ -44,6 +45,7 @@ let db: Db["db"];
 let stagedPayments: Db["stagedPayments"];
 let organizations: Db["organizations"];
 let giftsAndPayments: Db["giftsAndPayments"];
+let paymentApplications: Db["paymentApplications"];
 let andFn: (typeof import("drizzle-orm"))["and"];
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let queueWhere: (typeof import("../routes/quickbooks/shared"))["queueWhere"];
@@ -69,7 +71,8 @@ async function seed(
     entityId: string | null;
     /** Set to derive `excluded` (exclusion_reason IS NOT NULL). */
     exclusionReason?: "other_revenue" | null;
-    matchedGiftId?: string | null;
+    /** Seeds the counted ledger row that links this staged row to a gift. */
+    linkedGiftId?: string | null;
   },
 ): Promise<void> {
   await db.insert(stagedPayments).values({
@@ -83,8 +86,16 @@ async function seed(
     classificationSource: "auto",
     entitySource: "auto",
     entityId: opts.entityId,
-    matchedGiftId: opts.matchedGiftId ?? null,
   } satisfies StagedInsert);
+  if (opts.linkedGiftId) {
+    await db.insert(paymentApplications).values({
+      id: `${id}_pa`,
+      paymentId: id,
+      giftId: opts.linkedGiftId,
+      amountApplied: "100.00",
+      evidenceSource: "quickbooks",
+    });
+  }
 }
 
 /** IDs (within this run's realm) currently in the given queue. */
@@ -116,6 +127,7 @@ beforeAll(async () => {
   stagedPayments = dbMod.stagedPayments;
   organizations = dbMod.organizations;
   giftsAndPayments = dbMod.giftsAndPayments;
+  paymentApplications = dbMod.paymentApplications;
   andFn = drizzle.and;
   eqFn = drizzle.eq;
   queueWhere = shared.queueWhere;
@@ -131,8 +143,9 @@ beforeAll(async () => {
   });
 
   // A parked-entity pending row that already HAS a corresponding gift. Mint a
-  // minimal donor (org) + gift to satisfy the Donor-XOR check and the staged
-  // matched_gift_id FK, then link the staged row to it.
+  // minimal donor (org) + gift to satisfy the Donor-XOR check, then link the
+  // staged row to it via its counted `payment_applications` ledger row (the
+  // sole gift-link source).
   await db
     .insert(organizations)
     .values({ id: ORG_ID, name: `${RUN} Fiscally Sponsored Test Org` });
@@ -141,12 +154,13 @@ beforeAll(async () => {
     .values({ id: GIFT_ID, amount: "100.00", organizationId: ORG_ID });
   await seed(PARKED_WITH_GIFT, {
     entityId: PARKED_A,
-    matchedGiftId: GIFT_ID,
+    linkedGiftId: GIFT_ID,
   });
 }, 60_000);
 
 afterAll(async () => {
   if (!HAS_DB) return;
+  await clearPaymentApplicationsForRealm(REALM_ID);
   await db.delete(stagedPayments).where(eqFn(stagedPayments.realmId, REALM_ID));
   await db.delete(giftsAndPayments).where(eqFn(giftsAndPayments.id, GIFT_ID));
   await db.delete(organizations).where(eqFn(organizations.id, ORG_ID));

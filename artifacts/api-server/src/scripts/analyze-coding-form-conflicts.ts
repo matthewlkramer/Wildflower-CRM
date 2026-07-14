@@ -38,8 +38,9 @@ import {
   organizations,
   people,
   households,
+  paymentApplications,
 } from "@workspace/db/schema";
-import { asc, eq, or } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   computeProposedMatch,
   crossChecksFor,
@@ -276,19 +277,26 @@ async function main(): Promise<void> {
         .from(giftsAndPayments)
         .where(eq(giftsAndPayments.id, match.matchedGiftId))
         .limit(1);
-      // The QB staged payment behind this gift (linked, minted, or grouped) —
-      // carries the QB instrument + txn/deposit date to check the sheet against.
+      // The QB staged payment behind this gift (linked, minted, grouped, or
+      // split — resolved through the counted cash-application ledger; the
+      // legacy staged gift-link columns are @deprecated and no longer written)
+      // — carries the QB instrument + txn/deposit date to check the sheet
+      // against.
       const [sp] = await db
         .select({
           dateReceived: stagedPayments.dateReceived,
           qbMethod: stagedPayments.qbPaymentMethod,
         })
-        .from(stagedPayments)
+        .from(paymentApplications)
+        .innerJoin(
+          stagedPayments,
+          eq(stagedPayments.id, paymentApplications.paymentId),
+        )
         .where(
-          or(
-            eq(stagedPayments.matchedGiftId, match.matchedGiftId),
-            eq(stagedPayments.createdGiftId, match.matchedGiftId),
-            eq(stagedPayments.groupReconciledGiftId, match.matchedGiftId),
+          and(
+            eq(paymentApplications.giftId, match.matchedGiftId),
+            eq(paymentApplications.evidenceSource, "quickbooks"),
+            eq(paymentApplications.linkRole, "counted"),
           ),
         )
         .limit(1);

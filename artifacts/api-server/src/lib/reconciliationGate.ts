@@ -100,7 +100,8 @@ export interface GateStaged {
   id: string;
   status: string;
   /** Set ONLY by the link_existing_gift route when the row is a confirmed
-   *  DIRECT match (matchedGiftId set, no created/group gift) being re-targeted
+   *  DIRECT match (a sole counted non-mint ledger application, no mint/group
+   *  membership) being re-targeted
    *  under the guarded move/displace flow. Suppresses the qb_not_pending issue
    *  for that one path — every other caller leaves it unset, so a confirmed
    *  row stays blocked everywhere else. */

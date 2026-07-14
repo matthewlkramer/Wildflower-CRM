@@ -31,6 +31,7 @@ import {
   qbLedgerExistsForGift,
   stripeLedgerExistsForGift,
   donorboxLedgerExistsForGift,
+  qbLedgerExistsForPayment,
 } from "../../lib/paymentApplications";
 import { reimbursablePledgeExistsSql } from "../../lib/reimbursablePlaceholder";
 
@@ -104,9 +105,9 @@ async function proposeQbPaymentForGift(opts: {
   if (!hasText && !hasAmount) return null;
 
   const conds: SQL[] = [
-    sql`${stagedPayments.matchedGiftId} IS NULL`,
-    sql`${stagedPayments.createdGiftId} IS NULL`,
-    sql`${stagedPayments.groupReconciledGiftId} IS NULL`,
+    // Not yet applied to any gift in the counted QB ledger (the legacy staged
+    // gift-link columns are @deprecated and no longer written).
+    sql`NOT ${qbLedgerExistsForPayment()}`,
     // A row can be resolved WITHOUT a gift link: a settlement-only confirm
     // settles the deposit (payout↔deposit tie, no gift), and excluded rows
     // aren't donation money. Proposing any of those is a dead end (the
@@ -310,9 +311,7 @@ function qbProposalExistsSql(name: SQL, amount: SQL, date: SQL): SQL {
     (${hasText} OR ${hasAmount})
     AND EXISTS (
       SELECT 1 FROM ${stagedPayments}
-      WHERE ${stagedPayments.matchedGiftId} IS NULL
-        AND ${stagedPayments.createdGiftId} IS NULL
-        AND ${stagedPayments.groupReconciledGiftId} IS NULL
+      WHERE NOT ${qbLedgerExistsForPayment()}
         AND ${stagedStatusWhere.pending}
         AND (NOT ${hasText} OR (${stagedSearchWhereExpr(namePattern)}))
         AND (NOT ${hasAmount} OR (

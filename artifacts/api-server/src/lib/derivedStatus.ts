@@ -19,19 +19,21 @@ import {
  *                     non-donation noise (auto or manual) — out of the money
  *                     flow entirely.
  *   match_proposed  ⇐ auto_applied AND match_confirmed_at IS NULL AND a
- *                     matched/created gift link. The system applied a
- *                     high-confidence match that a human has not yet reviewed.
+ *                     gift link (QB: a counted payment_applications row;
+ *                     Stripe/Donorbox: matched/created gift columns). The
+ *                     system applied a high-confidence match that a human has
+ *                     not yet reviewed.
  *   match_confirmed ⇐ the money is booked to a CRM gift, evidenced by ANY of:
- *                       - matched_gift_id   (linked to a pre-existing gift)
- *                       - created_gift_id   (a gift was minted from this row)
- *                       - group_reconciled_gift_id (member of a group
- *                         reconciled to one gift; QB only)
+ *                       - a counted payment_applications ledger row anchored
+ *                         on this row (QB — the SOLE gift-link record; covers
+ *                         direct links, mints, group members, and splits; the
+ *                         legacy staged gift-link columns are @deprecated,
+ *                         never read, never written)
  *                       - a CONFIRMED settlement link naming this row as the
  *                         QB deposit lump (QB only — the deposit is settled
  *                         against a Stripe payout, its money booked per-charge)
- *                       - a counted payment_applications ledger row anchored
- *                         on this row (QB only — covers splits, which carry
- *                         none of the three gift-link columns)
+ *                       - matched_gift_id / created_gift_id (Stripe charges
+ *                         and Donorbox donations only)
  *   pending         ⇐ none of the above — open work awaiting review.
  *
  * `match_proposed` is checked BEFORE `match_confirmed` because a proposed row
@@ -68,23 +70,20 @@ export const stagedCountedApplicationExists: SQL<boolean> = sql`EXISTS (
     AND ${paymentApplications.linkRole} = 'counted'
 )`;
 
-/** Any of the three direct gift-link columns is set. */
-export const stagedAnyGiftLink: SQL<boolean> = sql`(
-  ${stagedPayments.matchedGiftId} IS NOT NULL
-  OR ${stagedPayments.createdGiftId} IS NOT NULL
-  OR ${stagedPayments.groupReconciledGiftId} IS NOT NULL
-)`;
-
+// A system-proposed (worker/rule) application awaiting human review. The
+// counted ledger row is the sole gift-link source (read cutover — the legacy
+// matched/created/group columns are no longer consulted); group and split
+// resolutions always carry match_confirmed_at, so only worker auto-matches and
+// rule auto-mints can sit here.
 const stagedProposedCondition: SQL<boolean> = sql`(
   ${stagedPayments.autoApplied} = true
   AND ${stagedPayments.matchConfirmedAt} IS NULL
-  AND (${stagedPayments.matchedGiftId} IS NOT NULL OR ${stagedPayments.createdGiftId} IS NOT NULL)
+  AND ${stagedCountedApplicationExists}
 )`;
 
 const stagedConfirmedEvidence: SQL<boolean> = sql`(
-  ${stagedAnyGiftLink}
+  ${stagedCountedApplicationExists}
   OR ${stagedConfirmedSettlementLinkExists}
-  OR ${stagedCountedApplicationExists}
 )`;
 
 /** SELECTable CASE expression emitting the derived status for a staged payment. */
@@ -109,11 +108,8 @@ export const stagedStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
   )`,
   pending: sql`(
     ${stagedPayments.exclusionReason} IS NULL
-    AND ${stagedPayments.matchedGiftId} IS NULL
-    AND ${stagedPayments.createdGiftId} IS NULL
-    AND ${stagedPayments.groupReconciledGiftId} IS NULL
-    AND NOT ${stagedConfirmedSettlementLinkExists}
     AND NOT ${stagedCountedApplicationExists}
+    AND NOT ${stagedConfirmedSettlementLinkExists}
   )`,
 };
 
@@ -176,26 +172,23 @@ export interface StagedStatusFacts {
   exclusionReason: string | null;
   autoApplied: boolean;
   matchConfirmedAt: Date | string | null;
-  matchedGiftId: string | null;
-  createdGiftId: string | null;
-  groupReconciledGiftId: string | null;
-  /** EXISTS arms — pass when known; default false (both are QB-rare). */
+  /**
+   * EXISTS: a counted QB cash-application ledger row anchored on this payment.
+   * The SOLE gift-link fact (read cutover) — the legacy matched/created/group
+   * columns are no longer consulted. Callers must pass what they know about
+   * the ledger at echo time (link/mint/split echoes → true; revert → false).
+   */
+  hasCountedApplication: boolean;
+  /** EXISTS arm — pass when known; default false (QB-rare deposit shape). */
   hasConfirmedSettlementLink?: boolean;
-  hasCountedApplication?: boolean;
 }
 
 export function deriveStagedPaymentStatus(f: StagedStatusFacts): DerivedStatus {
   if (f.exclusionReason != null) return "excluded";
-  const linkedOrMinted = f.matchedGiftId != null || f.createdGiftId != null;
-  if (f.autoApplied && f.matchConfirmedAt == null && linkedOrMinted) {
+  if (f.autoApplied && f.matchConfirmedAt == null && f.hasCountedApplication) {
     return "match_proposed";
   }
-  if (
-    linkedOrMinted ||
-    f.groupReconciledGiftId != null ||
-    f.hasConfirmedSettlementLink === true ||
-    f.hasCountedApplication === true
-  ) {
+  if (f.hasCountedApplication || f.hasConfirmedSettlementLink === true) {
     return "match_confirmed";
   }
   return "pending";

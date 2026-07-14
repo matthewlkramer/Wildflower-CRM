@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   scoreQbDepositCandidate,
-  candidateGiftId,
   MIN_PROPOSE_SCORE,
   RECONCILE_WINDOW_DAYS,
   type PayoutForScore,
@@ -31,9 +30,6 @@ const deposit = (over: Partial<QbDepositForScore> = {}): QbDepositForScore => ({
   rawReference: null,
   qbDepositToAccountName: null,
   status: "pending",
-  matchedGiftId: null,
-  createdGiftId: null,
-  groupReconciledGiftId: null,
   ...over,
 });
 
@@ -156,19 +152,5 @@ describe("scoreQbDepositCandidate", () => {
       deposit({ dateReceived: "2026-01-18" }),
     );
     expect(near!.score).toBeGreaterThan(far!.score);
-  });
-});
-
-describe("candidateGiftId", () => {
-  it("prefers created over matched over group-reconciled", () => {
-    expect(candidateGiftId(deposit({ createdGiftId: "g1", matchedGiftId: "g2" }))).toBe(
-      "g1",
-    );
-    expect(candidateGiftId(deposit({ matchedGiftId: "g2" }))).toBe("g2");
-    expect(candidateGiftId(deposit({ groupReconciledGiftId: "g3" }))).toBe("g3");
-  });
-
-  it("is null when the deposit is not booked into a gift", () => {
-    expect(candidateGiftId(deposit())).toBeNull();
   });
 });

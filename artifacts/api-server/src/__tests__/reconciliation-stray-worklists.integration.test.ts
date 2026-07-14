@@ -158,15 +158,12 @@ async function seedStaged(opts: {
     dateReceived: opts.dateReceived ?? "2026-03-15",
     payerName: `${MARKER} ${opts.label}`,
     matchStatus: "unmatched",
-    matchedGiftId: opts.matchedGiftId ?? null,
-    createdGiftId: opts.createdGiftId ?? null,
-    groupReconciledGiftId: opts.groupReconciledGiftId ?? null,
   });
   stagedIds.push(id);
-  // QB cash-application reads now come from the authoritative ledger, so mirror
-  // the production dual-write: any staged payment that links a gift (matched /
-  // created / group-reconciled) also gets a `payment_applications` row. The
-  // teardown clears these by payment_id before deleting staged_payments.
+  // QB cash-application links live SOLELY in the authoritative ledger: any
+  // staged payment that links a gift (matched / created / group-reconciled)
+  // gets a `payment_applications` row. The teardown clears these by
+  // payment_id before deleting staged_payments.
   const linkedGiftId =
     opts.matchedGiftId ?? opts.createdGiftId ?? opts.groupReconciledGiftId ?? null;
   if (linkedGiftId) {

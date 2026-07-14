@@ -8,6 +8,7 @@ import {
   people,
   households,
   settlementLinks,
+  paymentApplications,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
@@ -19,8 +20,8 @@ import {
   type ScoredMatch,
   type MatchMethod,
 } from "./quickbooksMatch";
-import { candidateGiftId } from "./stripeReconcile";
 import { chargeStatusSql, stagedStatusSql } from "./derivedStatus";
+import { qbLedgerSoleGiftIdForPayment } from "./paymentApplications";
 import { amountWithinFeeBand } from "./reconciliationGate";
 import { maskName, type Viewer } from "./identityVisibility";
 
@@ -1134,21 +1135,23 @@ async function loadFacts(
     // linkedElsewhereFor).
     const linkedByStaged = new Map<string, string>();
     const linkedByCharge = new Map<string, string>();
+    // QB side reads the counted cash-application ledger (the legacy staged
+    // gift-link columns are @deprecated and no longer written).
     const stagedLinks = await conn
       .select({
-        gid: sql<string>`coalesce(${stagedPayments.createdGiftId}, ${stagedPayments.matchedGiftId}, ${stagedPayments.groupReconciledGiftId})`,
-        sid: stagedPayments.id,
+        gid: paymentApplications.giftId,
+        sid: paymentApplications.paymentId,
       })
-      .from(stagedPayments)
+      .from(paymentApplications)
       .where(
-        or(
-          inArray(stagedPayments.createdGiftId, [...giftIds]),
-          inArray(stagedPayments.matchedGiftId, [...giftIds]),
-          inArray(stagedPayments.groupReconciledGiftId, [...giftIds]),
+        and(
+          inArray(paymentApplications.giftId, [...giftIds]),
+          eq(paymentApplications.evidenceSource, "quickbooks"),
+          eq(paymentApplications.linkRole, "counted"),
         ),
       );
     for (const r of stagedLinks) {
-      if (r.gid && !bundleStagedIds.includes(r.sid))
+      if (r.gid && r.sid && !bundleStagedIds.includes(r.sid))
         linkedByStaged.set(r.gid, r.sid);
     }
     const chargeLinks = await conn
@@ -1447,15 +1450,15 @@ export async function loadBundleBase(opts: {
         lineDescription: stagedPayments.lineDescription,
         status: stagedStatusSql,
         exclusionReason: stagedPayments.exclusionReason,
-        matchedGiftId: stagedPayments.matchedGiftId,
-        createdGiftId: stagedPayments.createdGiftId,
-        groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
+        // Ledger-derived resolved gift (the legacy staged gift-link columns
+        // are @deprecated and no longer written); splits resolve to NULL.
+        linkedGiftId: qbLedgerSoleGiftIdForPayment(),
       })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, opts.anchorId));
     if (!s) return null;
 
-    const committedGiftId = candidateGiftId(s);
+    const committedGiftId = s.linkedGiftId ?? null;
     const match = committedGiftId
       ? {
           donor: { organizationId: null, individualGiverPersonId: null, householdId: null },

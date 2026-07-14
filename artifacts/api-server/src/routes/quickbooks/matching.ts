@@ -5,6 +5,8 @@ import {
   giftsAndPayments,
   giftAllocations,
   paymentApplications,
+  unitGroups,
+  unitGroupMembers,
 } from "@workspace/db/schema";
 import {
   and,
@@ -58,8 +60,9 @@ import {
 const router: IRouter = Router();
 
 // ─── POST /staged-payments/:id/reconcile ───────────────────────────────────
-// Tie a staged payment to an EXISTING gift (no new gift minted). Sets
-// matchedGiftId → the chosen gift, autoApplied=false (derives match_confirmed). An
+// Tie a staged payment to an EXISTING gift (no new gift minted). Books a
+// counted QB cash-application ledger row → the chosen gift, autoApplied=false
+// (derives match_confirmed). An
 // explicit human Match treats the selected gift as authoritative: the staged
 // row ADOPTS the gift's donor, overriding any auto-guessed donor. Guards: row
 // pending, gift exists with a single valid donor, gift not already linked.
@@ -172,10 +175,8 @@ router.post(
 
     // Atomic: only succeeds if still pending AND no other staged row has grabbed
     // this gift (matched, created, group-reconciled OR split-linked) since the
-    // pre-check. The NOT EXISTS guards handle the common case and the
-    // partial-unique index on matched_gift_id backstops a same-table write-skew,
-    // but the split table has no shared unique with staged_payments, so the
-    // cross-table invariant (a gift is claimed in exactly one place) is enforced
+    // pre-check. The ledger NOT EXISTS guard handles the common case, and the
+    // cross-path invariant (a gift is claimed in exactly one place) is enforced
     // by taking the gift row FOR UPDATE first. Every gift-claiming path (this
     // reconcile, group-reconcile, split) locks staged-then-gift in that order so
     // they serialize on the gift row without deadlocking.
@@ -197,10 +198,10 @@ router.post(
           .set({
             ...finalDonor,
             // The new model: this staged row is permanent EVIDENCE tied to the
-            // gift, never archived and never a second gift. matched_gift_id +
-            // autoApplied=false derive the terminal match_confirmed status.
-            matchedGiftId: giftId,
-            createdGiftId: null,
+            // gift, never archived and never a second gift. The counted ledger
+            // row (booked below) + autoApplied=false derive the terminal
+            // match_confirmed status; the legacy gift-link columns are
+            // @deprecated and no longer written.
             autoApplied: false,
             matchStatus: "matched",
             matchConfirmedByUserId: user.id,
@@ -241,8 +242,8 @@ router.post(
             );
           }
 
-          // Dual-write (Phase 2): book the QB cash-application ledger row. This
-          // staged payment fully applies to the matched gift (1:1 link).
+          // Book the QB cash-application ledger row — the SOLE resolution record.
+          // This staged payment fully applies to the matched gift (1:1 link).
           if (existing.amount && Number(existing.amount) > 0) {
             await applyPaymentApplication(tx, {
               paymentId: id,
@@ -304,10 +305,10 @@ router.post(
 // deposit the caller must pass confirmMultiDate; the gift exists with a single
 // valid donor and is not
 // already linked to any other staged row; the members' combined total sits in
-// the fee-band tolerance around the gift amount. On success EVERY member gets
-// groupReconciledGiftId = the gift; exactly one deterministic "representative"
-// also gets matchedGiftId = the gift (satisfying the one-staged↔one-gift
-// partial-unique index and making the gift show linked). Reversible as a whole
+// the fee-band tolerance around the gift amount. On success EVERY member books
+// a counted QB cash-application ledger row → the gift, and the members' group
+// membership is made durable in `unit_groups` (the legacy pointer columns are
+// @deprecated and no longer written). Reversible as a whole
 // via the group-aware revert. Idempotent: re-running with the same rows already
 // grouped is blocked by the not-pending guard.
 router.post(
@@ -500,45 +501,53 @@ router.post(
           .then((r) => r[0]);
         if (conflict) throw new Error(CONFLICT);
 
-        const stamp = {
-          ...giftDonor,
-          // Permanent EVIDENCE tied to the gift (never archived, never a second
-          // gift): the gift links below derive the terminal match_confirmed.
-          createdGiftId: null,
-          autoApplied: false,
-          matchStatus: "matched" as const,
-          matchMethod: "manual" as const,
-          matchConfirmedByUserId: user.id,
-          matchConfirmedAt: new Date(),
-          approvedByUserId: user.id,
-          approvedAt: new Date(),
-          groupReconciledGiftId: giftId,
-          updatedAt: new Date(),
-        };
-
-        try {
-          // Representative carries matchedGiftId (gift shows linked); the rest
-          // reconcile via groupReconciledGiftId alone.
+        // Make the group durable in `unit_groups` (the sole group store —
+        // docs/reconciliation-design.md §4.6b): an ad hoc coherent selection
+        // becomes a first-class group at reconcile time; a source group is
+        // already recorded. With the legacy pointer columns retired, ugm
+        // membership is what marks these rows as group-reconciled (the audit
+        // view's "group" label, and the direct-match guards' group exclusion).
+        if (!isSourceGroup) {
+          const unitGroupId = newId();
           await tx
-            .update(stagedPayments)
-            .set({ ...stamp, matchedGiftId: giftId })
-            .where(eq(stagedPayments.id, representativeId));
-          const memberIds = ids.filter((mid) => mid !== representativeId);
+            .insert(unitGroups)
+            .values({ id: unitGroupId, createdByUserId: user.id });
           await tx
-            .update(stagedPayments)
-            .set({ ...stamp, matchedGiftId: null })
-            .where(inArray(stagedPayments.id, memberIds));
-        } catch (e) {
-          if (
-            typeof e === "object" &&
-            e !== null &&
-            "code" in e &&
-            (e as { code?: string }).code === "23505"
-          ) {
-            throw new Error(CONFLICT);
-          }
-          throw e;
+            .delete(unitGroupMembers)
+            .where(
+              and(
+                eq(unitGroupMembers.evidenceSource, "quickbooks"),
+                inArray(unitGroupMembers.sourceId, ids),
+              ),
+            );
+          await tx.insert(unitGroupMembers).values(
+            ids.map((sid) => ({
+              id: `ugm_${sid}`,
+              groupId: unitGroupId,
+              evidenceSource: "quickbooks" as const,
+              sourceId: sid,
+            })),
+          );
         }
+
+        // Permanent EVIDENCE tied to the gift (never archived, never a second
+        // gift): the counted ledger rows booked below derive the terminal
+        // match_confirmed; the legacy gift-link columns are @deprecated and no
+        // longer written.
+        await tx
+          .update(stagedPayments)
+          .set({
+            ...giftDonor,
+            autoApplied: false,
+            matchStatus: "matched" as const,
+            matchMethod: "manual" as const,
+            matchConfirmedByUserId: user.id,
+            matchConfirmedAt: new Date(),
+            approvedByUserId: user.id,
+            approvedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(inArray(stagedPayments.id, ids));
 
         // The group's combined QB net total is the gift's final amount, sourced
         // from the representative member's evidence (pointer = representativeId).
@@ -560,7 +569,7 @@ router.post(
           );
         }
 
-        // Dual-write (Phase 2): one QB cash-application ledger row PER member
+        // Book one QB cash-application ledger row (the SOLE resolution record) PER member
         // payment → the group's gift (each payment fully applies to it; the
         // per-member amounts SUM to the group total).
         for (const member of locked) {
@@ -827,8 +836,11 @@ router.post(
               user.id,
             ),
             amount: remainder.amount,
+            // Provenance stamped at insert: the gift's amount IS this QB
+            // evidence. The legacy final_amount_qb_staged_payment_id pointer is
+            // @deprecated and no longer written — the counted ledger row
+            // (created_the_gift = true, booked below) carries the tie.
             finalAmountSource: "quickbooks" as const,
-            finalAmountQbStagedPaymentId: id,
             finalAmountStripeChargeId: null,
             originalHumanCrmAmount: null,
           });
@@ -887,16 +899,15 @@ router.post(
 
         // Mark the staged row resolved. Its own donor columns are NOT
         // authoritative for a split (the money spans several donors), so clear
-        // them along with every single-gift link column.
+        // them. The legacy single-gift link columns are @deprecated and no
+        // longer written (a split's resolution lives entirely in the counted
+        // ledger rows above).
         await tx
           .update(stagedPayments)
           .set({
             organizationId: null,
             individualGiverPersonId: null,
             householdId: null,
-            matchedGiftId: null,
-            createdGiftId: null,
-            groupReconciledGiftId: null,
             autoApplied: false,
             matchStatus: "matched",
             matchMethod: "manual",
@@ -1071,8 +1082,22 @@ router.post(
       // system_confirmed; no-op when the row wasn't confirmable or had none.
       if (updated) {
         await confirmPaymentApplicationsForPayment(tx, id, user.id, now);
+        // Echo status from the ledger: an auto-applied row keeps its counted
+        // application (now confirmed); a donor-only row has none.
+        const hasApp = await tx
+          .select({ id: paymentApplications.id })
+          .from(paymentApplications)
+          .where(
+            and(
+              eq(paymentApplications.paymentId, id),
+              eq(paymentApplications.linkRole, "counted"),
+            ),
+          )
+          .limit(1)
+          .then((r) => r.length > 0);
+        return stagedRowWithStatus(updated, hasApp);
       }
-      return updated ? stagedRowWithStatus(updated) : updated;
+      return updated;
     });
     if (!row) {
       const exists = await db
@@ -1134,7 +1159,8 @@ router.post(
       });
       return;
     }
-    res.json(stagedRowWithStatus(row));
+    // A pending row has no counted ledger rows by definition.
+    res.json(stagedRowWithStatus(row, false));
   }),
 );
 

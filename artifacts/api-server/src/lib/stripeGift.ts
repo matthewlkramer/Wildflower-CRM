@@ -53,7 +53,6 @@ export function buildGiftValuesFromStripeCharge(
     // was never a human-entered figure to snapshot).
     finalAmountSource: "stripe",
     finalAmountStripeChargeId: staged.chargeId,
-    finalAmountQbStagedPaymentId: null,
     originalHumanCrmAmount: null,
   };
 }

@@ -7,7 +7,11 @@ import {
   it,
   vi,
 } from "vitest";
-import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
+import {
+  clearPaymentApplicationsForRealm,
+  qbCountedRowsForPayment,
+  qbSoleGiftIdForPayment,
+} from "./paymentApplicationsTestUtil";
 import { stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
@@ -118,9 +122,11 @@ async function seedGift(amount: string): Promise<string> {
 
 /**
  * Seed a staged row. `depositId` is required so each test can opt into the
- * same/different/null deposit it needs; `matchedGiftId`, `autoApplied` and
- * `groupReconciledGiftId` default to a clean pending row (status is DERIVED
- * from these facts — there is no stored column).
+ * same/different/null deposit it needs; `linkedGiftId` and `autoApplied`
+ * default to a clean pending row (status is DERIVED from the ledger — there is
+ * no stored column, and the legacy staged gift-link columns are @deprecated,
+ * never written). A `linkedGiftId` seeds the counted `payment_applications`
+ * ledger row production would have booked.
  */
 async function seedStaged(
   giftId: string,
@@ -129,8 +135,7 @@ async function seedStaged(
   opts: {
     depositId: string | null;
     autoApplied?: boolean;
-    matchedGiftId?: string | null;
-    groupReconciledGiftId?: string | null;
+    linkedGiftId?: string | null;
     payerName?: string | null;
     dateReceived?: string | null;
   },
@@ -145,26 +150,15 @@ async function seedStaged(
     amount,
     qbDepositId: opts.depositId,
     autoApplied: opts.autoApplied ?? false,
-    matchedGiftId: opts.matchedGiftId ?? null,
-    groupReconciledGiftId: opts.groupReconciledGiftId ?? null,
     payerName: opts.payerName ?? null,
     dateReceived: opts.dateReceived ?? null,
     organizationId: ORG_ID,
   });
-  // Mirror production's dual-write: any legacy QB link seeded here also gets an
-  // authoritative `payment_applications` row, since reads now consult the ledger.
-  const linkGiftIds = [
-    ...new Set(
-      [opts.matchedGiftId, opts.groupReconciledGiftId].filter(
-        (g): g is string => !!g,
-      ),
-    ),
-  ];
-  for (const linkGiftId of linkGiftIds) {
+  if (opts.linkedGiftId) {
     await db.insert(schema.paymentApplications).values({
-      id: `${id}_pa_${linkGiftId}`,
+      id: `${id}_pa_${opts.linkedGiftId}`,
       paymentId: id,
-      giftId: linkGiftId,
+      giftId: opts.linkedGiftId,
       amountApplied: amount,
       evidenceSource: "quickbooks",
       matchMethod: "system",
@@ -266,9 +260,7 @@ beforeEach(() => {
 async function expectUntouchedPending(id: string) {
   const row = await readStaged(id);
   expect(row.status).toBe("pending");
-  expect(row.matchedGiftId).toBeNull();
-  expect(row.groupReconciledGiftId).toBeNull();
-  expect(row.createdGiftId).toBeNull();
+  expect(await qbCountedRowsForPayment(id)).toHaveLength(0);
   expect(row.approvedByUserId).toBeNull();
   expect(row.matchConfirmedAt).toBeNull();
 }
@@ -336,16 +328,13 @@ describe.skipIf(!HAS_DB)(
 
       expect(res.status).toBe(200);
 
-      // Representative (smallest id — "a") carries matchedGiftId; both rows get
-      // groupReconciledGiftId and flip to reconciled.
+      // Both rows flip to reconciled, each with its own counted ledger row.
       const a = await readStaged(aId);
       const b = await readStaged(bId);
       expect(a.status).toBe("match_confirmed");
       expect(b.status).toBe("match_confirmed");
-      expect(a.groupReconciledGiftId).toBe(giftId);
-      expect(b.groupReconciledGiftId).toBe(giftId);
-      expect(a.matchedGiftId).toBe(giftId);
-      expect(b.matchedGiftId).toBeNull();
+      expect(await qbSoleGiftIdForPayment(aId)).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(bId)).toBe(giftId);
     }, 30_000);
 
     it("gates same payer + date but DIFFERENT non-null deposits behind confirmMultiDate, then reconciles", async () => {
@@ -386,10 +375,8 @@ describe.skipIf(!HAS_DB)(
       const b = await readStaged(bId);
       expect(a.status).toBe("match_confirmed");
       expect(b.status).toBe("match_confirmed");
-      expect(a.groupReconciledGiftId).toBe(giftId);
-      expect(b.groupReconciledGiftId).toBe(giftId);
-      expect(a.matchedGiftId).toBe(giftId);
-      expect(b.matchedGiftId).toBeNull();
+      expect(await qbSoleGiftIdForPayment(aId)).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(bId)).toBe(giftId);
     }, 30_000);
 
     it("reconciles same payer across DIFFERENT deposits AND dates with confirmMultiDate (the Arthur Rock case)", async () => {
@@ -427,8 +414,8 @@ describe.skipIf(!HAS_DB)(
       const b = await readStaged(bId);
       expect(a.status).toBe("match_confirmed");
       expect(b.status).toBe("match_confirmed");
-      expect(a.groupReconciledGiftId).toBe(giftId);
-      expect(b.groupReconciledGiftId).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(aId)).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(bId)).toBe(giftId);
     }, 30_000);
 
     it("needs confirmMultiDate then a corrected gift amount when the Arthur Rock group spans dates/deposits AND its proceeds exceed the gift", async () => {
@@ -487,8 +474,8 @@ describe.skipIf(!HAS_DB)(
       const b = await readStaged(bId);
       expect(a.status).toBe("match_confirmed");
       expect(b.status).toBe("match_confirmed");
-      expect(a.groupReconciledGiftId).toBe(giftId);
-      expect(b.groupReconciledGiftId).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(aId)).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(bId)).toBe(giftId);
     }, 30_000);
 
     it("rejects same payer but DIFFERENT dates without confirmMultiDate (400 multi_date_confirmation_required) and changes nothing", async () => {
@@ -544,10 +531,8 @@ describe.skipIf(!HAS_DB)(
       const b = await readStaged(bId);
       expect(a.status).toBe("match_confirmed");
       expect(b.status).toBe("match_confirmed");
-      expect(a.groupReconciledGiftId).toBe(giftId);
-      expect(b.groupReconciledGiftId).toBe(giftId);
-      expect(a.matchedGiftId).toBe(giftId);
-      expect(b.matchedGiftId).toBeNull();
+      expect(await qbSoleGiftIdForPayment(aId)).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(bId)).toBe(giftId);
     }, 30_000);
 
     it("treats a null date as its own distinct date: one real + one null date needs confirmMultiDate", async () => {
@@ -582,7 +567,7 @@ describe.skipIf(!HAS_DB)(
       expect(ok.status).toBe(200);
       const a = await readStaged(aId);
       expect(a.status).toBe("match_confirmed");
-      expect(a.groupReconciledGiftId).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(aId)).toBe(giftId);
     }, 30_000);
 
     it("rejects rows sharing ONE deposit but with DIFFERENT payers with 400 not_groupable", async () => {
@@ -628,7 +613,7 @@ describe.skipIf(!HAS_DB)(
       // rejection is specifically the link.
       const resolvedId = await seedStaged(giftId, "b", "50.00", {
         depositId,
-        groupReconciledGiftId: otherGiftId,
+        linkedGiftId: otherGiftId,
       });
 
       const res = await api("/api/staged-payments/group-reconcile", {
@@ -644,7 +629,7 @@ describe.skipIf(!HAS_DB)(
       // The already-linked row is left exactly as seeded.
       const resolved = await readStaged(resolvedId);
       expect(resolved.status).toBe("match_confirmed");
-      expect(resolved.groupReconciledGiftId).toBe(otherGiftId);
+      expect(await qbSoleGiftIdForPayment(resolvedId)).toBe(otherGiftId);
     }, 30_000);
 
     it("accepts an FK-stranded auto-applied row with no gift link and reconciles the whole group", async () => {
@@ -669,16 +654,14 @@ describe.skipIf(!HAS_DB)(
 
       expect(res.status).toBe(200);
 
-      // Both members flip to reconciled and tie to the group's gift; the
-      // representative (smallest id — "a") additionally carries matchedGiftId.
+      // Both members flip to reconciled and tie to the group's gift via their
+      // own counted ledger rows.
       const a = await readStaged(pendingId);
       const b = await readStaged(strandedId);
       expect(a.status).toBe("match_confirmed");
       expect(b.status).toBe("match_confirmed");
-      expect(a.groupReconciledGiftId).toBe(giftId);
-      expect(b.groupReconciledGiftId).toBe(giftId);
-      expect(a.matchedGiftId).toBe(giftId);
-      expect(b.matchedGiftId).toBeNull();
+      expect(await qbSoleGiftIdForPayment(pendingId)).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(strandedId)).toBe(giftId);
     }, 30_000);
 
     it("rejects when the gift is already linked outside the group with 409 link_conflict", async () => {
@@ -692,7 +675,7 @@ describe.skipIf(!HAS_DB)(
       const outsiderId = await seedStaged(giftId, "out", "100.00", {
         depositId: `${RUN}_dep_other`,
         autoApplied: true,
-        matchedGiftId: giftId,
+        linkedGiftId: giftId,
       });
 
       const res = await api("/api/staged-payments/group-reconcile", {
@@ -709,7 +692,7 @@ describe.skipIf(!HAS_DB)(
       // The outsider keeps its existing link, unchanged (an unconfirmed
       // auto-match derives match_proposed).
       const outsider = await readStaged(outsiderId);
-      expect(outsider.matchedGiftId).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(outsiderId)).toBe(giftId);
       expect(outsider.status).toBe("match_proposed");
     }, 30_000);
 

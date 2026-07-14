@@ -1069,7 +1069,8 @@ export function useListStagedPaymentGiftWindow<TData = Awaited<ReturnType<typeof
 
 /**
  * Ties the staged payment to an already-recorded gifts_and_payments row by
-setting matchedGiftId. Marks the row approved (autoApplied=false). If the
+booking a counted payment_applications ledger row (the sole gift-link
+record). Marks the row approved (autoApplied=false). If the
 staged row has no donor yet it adopts the gift's donor; otherwise the
 donors must match. The gift must not already be linked to another staged
 payment. An optional allocationId narrows the link to one of the gift's
@@ -1241,8 +1242,8 @@ ONE underlying bank Deposit (same qbDepositId), or — when no deposit was
 captured — they share the same payer name (e.g. a single wire, or a
 series of stock sales, split across several QuickBooks records). No new
 gift is minted and QuickBooks is never written back. Every member is set
-to approved with groupReconciledGiftId = the gift; one deterministic
-representative member also carries matchedGiftId so the gift shows linked.
+to approved and books a counted payment_applications ledger row to the
+gift; the members' group membership is recorded durably in unit_groups.
 The group adopts the gift's donor (Donor XOR). Guards: at least two rows,
 all pending and unresolved, all sharing one grouping key (deposit or
 payer) — OR all already belonging to one "same physical gift" unit
@@ -1793,9 +1794,10 @@ export const useUnmatchStagedPayment = <TError = ErrorType<NotFoundResponse | vo
     }
     /**
  * Returns a gift-linked staged payment to the pending queue. If it was
-reconciled to an existing gift (matchedGiftId), the link is cleared and
-the pre-existing gift is untouched. If it was an auto-minted gift
-(createdGiftId + autoApplied), the auto-created gift is deleted. A
+reconciled to an existing gift (a counted ledger row with
+created_the_gift=false), the ledger link is removed and the pre-existing
+gift is untouched. If it was an auto-minted gift (a created_the_gift
+ledger row + autoApplied), the auto-created gift is deleted. A
 manually created gift cannot be reverted (it would orphan a
 fundraiser-created ledger row). The donor match is left intact.
 

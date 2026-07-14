@@ -62,6 +62,9 @@ import {
   removePaymentApplicationsForGift,
   removePaymentApplicationsForPayment,
   removePaymentApplicationsForStripeCharge,
+  qbLedgerDirectMatchExists,
+  qbLedgerSoleGiftIdForPayment,
+  DEFAULT_PAYMENT_ID_SQL,
 } from "../lib/paymentApplications";
 import {
   unstampGiftFinalAmount,
@@ -1072,11 +1075,14 @@ async function cascadeResetLinkedQbStagedRows(
     .from(stagedPayments)
     .where(
       and(
-        // matched_gift_id set (with no mint/group link) IS the linked state —
-        // status is derived from it, so no extra status filter is needed.
-        eq(stagedPayments.matchedGiftId, giftId),
-        isNull(stagedPayments.createdGiftId),
-        isNull(stagedPayments.groupReconciledGiftId),
+        // A DIRECT 1:1 counted ledger match to this gift IS the linked state
+        // (ledger replacement for the @deprecated matched_gift_id shape —
+        // non-mint, non-group). The sole-gift check additionally excludes
+        // split payments (a split fans out to other gifts; resetting it here
+        // would wipe the other legs' applications too — legacy splits carried
+        // no pointer column and were never cascade-reset).
+        qbLedgerDirectMatchExists(DEFAULT_PAYMENT_ID_SQL, sql`${giftId}`),
+        sql`${qbLedgerSoleGiftIdForPayment()} = ${giftId}`,
       ),
     )
     .for("update");
@@ -1101,8 +1107,10 @@ async function cascadeResetLinkedQbStagedRows(
     await tx
       .update(stagedPayments)
       .set({
-        // Clearing the gift link (+ confirmation stamps) derives back to pending.
-        matchedGiftId: null,
+        // The counted ledger rows were just removed above — that IS the unlink
+        // (the legacy gift-link columns are @deprecated and never written, so
+        // there is nothing to clear); resetting the confirmation stamps
+        // derives the row back to pending.
         autoApplied: false,
         matchConfirmedByUserId: null,
         matchConfirmedAt: null,
@@ -1708,15 +1716,13 @@ const reconSelect = {
     WHEN "active_deposit"."exclusion_reason" IS NOT NULL THEN 'excluded'
     WHEN "active_deposit"."auto_applied" = true
          AND "active_deposit"."match_confirmed_at" IS NULL
-         AND ("active_deposit"."matched_gift_id" IS NOT NULL
-              OR "active_deposit"."created_gift_id" IS NOT NULL)
+         AND EXISTS (SELECT 1 FROM payment_applications pa
+                     WHERE pa.payment_id = "active_deposit"."id"
+                       AND pa.link_role = 'counted')
       THEN 'match_proposed'
-    WHEN "active_deposit"."matched_gift_id" IS NOT NULL
-         OR "active_deposit"."created_gift_id" IS NOT NULL
-         OR "active_deposit"."group_reconciled_gift_id" IS NOT NULL
-         OR EXISTS (SELECT 1 FROM settlement_links sl
-                    WHERE sl.deposit_staged_payment_id = "active_deposit"."id"
-                      AND sl.lifecycle = 'confirmed')
+    WHEN EXISTS (SELECT 1 FROM settlement_links sl
+                 WHERE sl.deposit_staged_payment_id = "active_deposit"."id"
+                   AND sl.lifecycle = 'confirmed')
          OR EXISTS (SELECT 1 FROM payment_applications pa
                     WHERE pa.payment_id = "active_deposit"."id"
                       AND pa.link_role = 'counted')

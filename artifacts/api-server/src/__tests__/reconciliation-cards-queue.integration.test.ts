@@ -105,6 +105,10 @@ async function seedGift(
   return id;
 }
 
+// The gift link is a counted QB `payment_applications` ledger row (the legacy
+// matched/created/group pointer columns are @deprecated and never written).
+// `createdGiftId` models a mint (created_the_gift:true); `matchedGiftId` and
+// `groupReconciledGiftId` are plain reconciles (created_the_gift:false).
 async function seedStaged(opts: {
   label: string;
   matchedGiftId?: string | null;
@@ -123,10 +127,20 @@ async function seedStaged(opts: {
     payerName: `${MARKER} ${opts.label}`,
     organizationId: ORG_ID,
     matchStatus: "matched",
-    matchedGiftId: opts.matchedGiftId ?? null,
-    createdGiftId: opts.createdGiftId ?? null,
-    groupReconciledGiftId: opts.groupReconciledGiftId ?? null,
   });
+  const linkedGiftId =
+    opts.matchedGiftId ?? opts.createdGiftId ?? opts.groupReconciledGiftId;
+  if (linkedGiftId) {
+    await db.insert(schema.paymentApplications).values({
+      id: nextId("pa"),
+      paymentId: id,
+      giftId: linkedGiftId,
+      amountApplied: opts.amount ?? "100.00",
+      evidenceSource: "quickbooks",
+      matchMethod: "system",
+      createdTheGift: !!opts.createdGiftId,
+    });
+  }
   stagedIds.push(id);
   return id;
 }
@@ -437,8 +451,8 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
     await seedSplit(splitStripeId, splitGiftC, "100.00");
     await seedPayoutFor(splitStripeId);
 
-    // A group-reconciled member row (groupReconciledGiftId set, no matched/
-    // created) is likewise resolved and must drop out of the live queue.
+    // A group-reconciled member row (counted ledger row from a group
+    // reconcile) is likewise resolved and must drop out of the live queue.
     const groupGift = await seedGift("100.00");
     const groupReconciledId = await seedStaged({
       label: "approved-groupreconciled-nostripe",

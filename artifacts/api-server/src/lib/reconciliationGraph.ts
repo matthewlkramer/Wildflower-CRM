@@ -72,6 +72,7 @@ import {
 import {
   DEFAULT_GIFT_ID_SQL,
   chargeIdOwningGiftExcludingCharge,
+  qbLedgerSoleGiftIdForPayment,
 } from "./paymentApplications";
 import { payoutStatusFromLink } from "./settlementLink";
 import {
@@ -788,7 +789,14 @@ export async function buildReconciliationGraph(
   // Full row + the DERIVED status (the EXISTS arms — settlement link, counted
   // ledger row — can't be derived from the row's own columns).
   const staged = await db
-    .select({ ...getTableColumns(stagedPayments), status: stagedStatusSql })
+    .select({
+      ...getTableColumns(stagedPayments),
+      status: stagedStatusSql,
+      // Ledger-derived resolved gift (the legacy staged gift-link columns are
+      // @deprecated and never read): the single counted QB ledger gift, or
+      // null (pending / excluded / settlement-only / split).
+      ledgerSoleGiftId: qbLedgerSoleGiftIdForPayment(),
+    })
     .from(stagedPayments)
     .where(eq(stagedPayments.id, stagedPaymentId))
     .then((r) => r[0]);
@@ -981,11 +989,7 @@ export async function buildReconciliationGraph(
   const giftDonorFilter = donorState === "determined" ? selectedDonor : null;
 
   // ── Gift node ──
-  const resolvedGiftId =
-    staged.matchedGiftId ??
-    staged.createdGiftId ??
-    staged.groupReconciledGiftId ??
-    null;
+  const resolvedGiftId = staged.ledgerSoleGiftId ?? null;
 
   let giftRows: NonNullable<RecGiftRow>[] = [];
   let giftCandidates: RecCandidate[] = [];
@@ -1653,9 +1657,11 @@ async function searchQbStagedRows(
       rawReference: stagedPayments.rawReference,
       amount: stagedPayments.amount,
       dateReceived: stagedPayments.dateReceived,
-      matchedGiftId: stagedPayments.matchedGiftId,
-      createdGiftId: stagedPayments.createdGiftId,
-      groupReconciledGiftId: stagedPayments.groupReconciledGiftId,
+      // A QB payment already counted against a gift in the ledger can't be
+      // re-linked without double-counting — surface the owning gift so the
+      // picker can gray the row and offer an unlink. Splits resolve to NULL
+      // (same as the legacy gift-link columns, which are no longer written).
+      linkedGiftId: qbLedgerSoleGiftIdForPayment(),
     })
     .from(stagedPayments)
     .where(and(...conds))
@@ -1671,11 +1677,7 @@ async function searchQbStagedRows(
       amount: r.amount,
       date: r.dateReceived,
       source: "manual",
-      // A QB payment already tied to a gift (matched / created / group-
-      // reconciled) can't be re-linked without double-counting — surface the
-      // owning gift so the picker can gray the row and offer an unlink.
-      alreadyLinkedGiftId:
-        r.matchedGiftId ?? r.createdGiftId ?? r.groupReconciledGiftId ?? null,
+      alreadyLinkedGiftId: r.linkedGiftId ?? null,
     }),
   );
 }

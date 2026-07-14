@@ -42,6 +42,7 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
+  paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -64,6 +65,7 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
+    paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -85,7 +87,14 @@ beforeAll(async () => {
     realmId: RUN,
     qbEntityType: "payment",
     qbEntityId: stagedId,
-    matchedGiftId: qbGiftId,
+  });
+  // QB ownership lives in the counted ledger row (the sole gift-link source).
+  await db.insert(schema.paymentApplications).values({
+    id: `${stagedId}_pa`,
+    paymentId: stagedId,
+    giftId: qbGiftId,
+    amountApplied: QB_GIFT_AMOUNT,
+    evidenceSource: "quickbooks",
   });
   seededGiftIds.push(qbGiftId);
   seededStagedIds.push(stagedId);
@@ -110,6 +119,9 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (seededStagedIds.length) {
+    await db
+      .delete(schema.paymentApplications)
+      .where(inArrayFn(schema.paymentApplications.paymentId, seededStagedIds));
     await db
       .delete(schema.stagedPayments)
       .where(inArrayFn(schema.stagedPayments.id, seededStagedIds));

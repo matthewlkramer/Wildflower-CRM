@@ -119,7 +119,7 @@ async function seedGift(amount: string): Promise<string> {
 async function seedStaged(
   amount: string,
   opts: {
-    matchedGiftId?: string | null;
+    linkedGiftId?: string | null;
   } = {},
 ): Promise<string> {
   const id = nextId("sp");
@@ -130,18 +130,17 @@ async function seedStaged(
     qbEntityId: id,
     qbLineId: "0",
     amount,
-    matchedGiftId: opts.matchedGiftId ?? null,
     payerName: "Stripe Payout",
     dateReceived: "2025-07-01",
     organizationId: ORG_ID,
   });
-  // Mirror production's dual-write: a legacy QB match seeded here also gets an
-  // authoritative `payment_applications` row, since reads now consult the ledger.
-  if (opts.matchedGiftId) {
+  // A QB match lives SOLELY in the authoritative `payment_applications`
+  // ledger row (the deprecated staged link columns are no longer written).
+  if (opts.linkedGiftId) {
     await db.insert(schema.paymentApplications).values({
       id: nextId("pa"),
       paymentId: id,
-      giftId: opts.matchedGiftId,
+      giftId: opts.linkedGiftId,
       amountApplied: amount,
       evidenceSource: "quickbooks",
       matchMethod: "system",
@@ -181,11 +180,9 @@ async function readSplits(stagedPaymentId: string) {
 async function expectUntouchedPending(id: string) {
   const row = await readStaged(id);
   expect(row.status).toBe("pending");
-  expect(row.matchedGiftId).toBeNull();
-  expect(row.groupReconciledGiftId).toBeNull();
-  expect(row.createdGiftId).toBeNull();
   expect(row.approvedByUserId).toBeNull();
   expect(row.matchConfirmedAt).toBeNull();
+  // No ledger rows at all ⇒ no gift link and no splits.
   const splits = await readSplits(id);
   expect(splits.length).toBe(0);
 }
@@ -284,9 +281,6 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
 
     const row = await readStaged(spId);
     expect(row.status).toBe("match_confirmed");
-    expect(row.matchedGiftId).toBeNull();
-    expect(row.createdGiftId).toBeNull();
-    expect(row.groupReconciledGiftId).toBeNull();
     expect(row.organizationId).toBeNull();
     expect(row.individualGiverPersonId).toBeNull();
     expect(row.householdId).toBeNull();
@@ -371,7 +365,7 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     const giftB = await seedGift("400.00");
     const spId = await seedStaged("980.00");
     // giftB is already matched to a different staged row.
-    await seedStaged("400.00", { matchedGiftId: giftB });
+    await seedStaged("400.00", { linkedGiftId: giftB });
 
     const res = await api(`/api/staged-payments/${spId}/split`, {
       giftIds: [giftA, giftB],
@@ -481,15 +475,15 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     expect(conflicts).toBe(1);
 
     // The shared gift is claimed in exactly ONE place: either the split's
-    // ledger rows (anchored to splitSp) or a direct match on matchSp.
-    const sharedSplit = (await readSplits(splitSp)).filter(
-      (r) => r.giftId === shared,
-    );
-    const sharedMatched = await db
+    // ledger rows (anchored to splitSp) or a direct-match ledger row on matchSp.
+    const sharedClaims = await db
       .select()
-      .from(schema.stagedPayments)
-      .where(eqFn(schema.stagedPayments.matchedGiftId, shared));
+      .from(schema.paymentApplications)
+      .where(eqFn(schema.paymentApplications.giftId, shared));
+    const sharedSplit = sharedClaims.filter((r) => r.paymentId === splitSp);
+    const sharedMatched = sharedClaims.filter((r) => r.paymentId === matchSp);
     expect(sharedSplit.length + sharedMatched.length).toBe(1);
+    expect(sharedClaims.length).toBe(1);
   }, 30_000);
 
   it("serializes a split and a group-reconcile racing for the same gift → exactly one wins", async () => {
@@ -522,17 +516,20 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     expect(conflicts).toBe(1);
 
     // The shared gift is claimed in exactly ONE place: either the split's
-    // ledger rows (anchored to splitSp) or a group-reconcile on the grp rows.
-    const sharedSplit = (await readSplits(splitSp)).filter(
-      (r) => r.giftId === shared,
-    );
-    const sharedGrouped = await db
+    // ledger rows (anchored to splitSp) or group-reconcile ledger rows on the
+    // grp member rows.
+    const sharedClaims = await db
       .select()
-      .from(schema.stagedPayments)
-      .where(eqFn(schema.stagedPayments.groupReconciledGiftId, shared));
+      .from(schema.paymentApplications)
+      .where(eqFn(schema.paymentApplications.giftId, shared));
+    const sharedSplit = sharedClaims.filter((r) => r.paymentId === splitSp);
+    const sharedGrouped = sharedClaims.filter(
+      (r) => r.paymentId !== null && [grpA, grpB].includes(r.paymentId),
+    );
     const claimedInSplit = sharedSplit.length > 0 ? 1 : 0;
     const claimedInGroup = sharedGrouped.length > 0 ? 1 : 0;
     expect(claimedInSplit + claimedInGroup).toBe(1);
+    expect(sharedClaims.length).toBe(sharedSplit.length + sharedGrouped.length);
   }, 30_000);
 
   it("rejects splitting an already-resolved row → 409 not_pending", async () => {
@@ -540,7 +537,7 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     const giftB = await seedGift("400.00");
     // Resolved by fact: already matched to a gift ⇒ derives match_confirmed.
     const resolvedGift = await seedGift("980.00");
-    const spId = await seedStaged("980.00", { matchedGiftId: resolvedGift });
+    const spId = await seedStaged("980.00", { linkedGiftId: resolvedGift });
 
     const res = await api(`/api/staged-payments/${spId}/split`, {
       giftIds: [giftA, giftB],
@@ -548,8 +545,8 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
 
     expect(res.status).toBe(409);
     expect(res.json.error).toBe("not_pending");
-    // No splits were created for the requested gifts (the seed's own legacy
-    // dual-write mirror row for `resolvedGift` is the only ledger row).
+    // No splits were created for the requested gifts (the seed's own ledger
+    // row for `resolvedGift` is the only ledger row).
     const splits = await readSplits(spId);
     expect(splits.filter((s) => [giftA, giftB].includes(s.giftId)).length).toBe(0);
     expect(splits.every((s) => s.giftId === resolvedGift)).toBe(true);
