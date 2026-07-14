@@ -53,7 +53,6 @@ import {
   TransitionError,
 } from "../../lib/stripeConfirm";
 import { isSettlementLump } from "../../lib/settlementLump";
-import { stagedStatusSql } from "../../lib/derivedStatus";
 import { donorOf, donorsMatch, type LinkDonor } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
@@ -985,7 +984,11 @@ router.post(
           .where(eq(settlementLinks.payoutId, payoutId))
           .then((r) => r[0] ?? null);
 
-        // Already settled — idempotent success (never re-book).
+        // Already settled — idempotent success (never re-book). Note: if the
+        // caller picked a DIFFERENT deposit than the confirmed one, we still
+        // return success with the ACTUAL depositStagedPaymentId — the UI can
+        // detect the mismatch from the response; a confirmed tie is only ever
+        // changed via the explicit revert path.
         if (link?.lifecycle === "confirmed") {
           return {
             confirmed: true,
@@ -1036,8 +1039,6 @@ router.post(
           .select({
             id: stagedPayments.id,
             qbEntityType: stagedPayments.qbEntityType,
-            // DERIVED lifecycle status (no stored column) — lib/derivedStatus.ts.
-            status: stagedStatusSql.as("status"),
             payerName: stagedPayments.payerName,
             lineDescription: stagedPayments.lineDescription,
             qbTransactionMemo: stagedPayments.qbTransactionMemo,
@@ -1065,13 +1066,16 @@ router.post(
               "The chosen QuickBooks row is an individual donor payment, not a Stripe settlement lump — it can't back this settlement. Match it at the charge grain instead.",
           });
         }
-        if (deposit.status !== "pending") {
-          throw new ReconcileAbort(409, {
-            error: "deposit_ineligible",
-            message:
-              "The chosen QuickBooks deposit is no longer open. Refresh and retry.",
-          });
-        }
+        // No status pre-gate here: the confirm primitive re-derives the
+        // deposit's status under the same lock and handles every arm —
+        // `pending` → full confirm (deposit stamped reconciled),
+        // `match_confirmed` + not settled elsewhere → LINKAGE-ONLY confirm
+        // (the tie is recorded and §4.3 supersede demotes the deposit's coarse
+        // counted QB rows so the money is never double-counted — this is the
+        // repair path for a deposit that was booked before its payout tie),
+        // `excluded` / `match_proposed` → permanent `deposit_unconfirmable`.
+        // A stricter pending-only gate here previously blocked the repair path
+        // with a misleading transient "refresh and retry" 409.
         if (await isGroupMember(tx, pickedDepositId)) {
           throw new ReconcileAbort(409, {
             error: "deposit_grouped",
@@ -1102,7 +1106,12 @@ router.post(
         supersedeGiftIds.push(...r.rederiveGiftIds);
         return {
           confirmed: true,
-          kind: "confirmed_reconciled" as const,
+          // Mirror the proposed-arm mapping: an already-booked deposit takes
+          // the linkage-only arm and must SAY so, not claim a full reconcile.
+          kind:
+            r.kind === "confirmed_linkage_only"
+              ? ("confirmed_linkage_only" as const)
+              : ("confirmed_reconciled" as const),
           payoutId,
           depositStagedPaymentId: r.stagedPaymentId,
         };

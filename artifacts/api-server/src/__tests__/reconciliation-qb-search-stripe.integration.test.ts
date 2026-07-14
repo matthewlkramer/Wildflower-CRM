@@ -273,6 +273,29 @@ describe.skipIf(!HAS_DB)(
       expect(ids).not.toContain(CH_FAILED_ID);
     });
 
+    it("text overrides the amount band — an out-of-band amount only ranks, never hides name matches", async () => {
+      // The regression: with BOTH text and amount, the band was ANDed in, so a
+      // name search silently hid rows whose amount sat outside ±20%/±$50 of
+      // the target. Text must be the filter; amount only ranks.
+      const { status, json } = await qbSearch(
+        `q=${encodeURIComponent(PAYER)}&amount=1000&includeStripe=true`,
+      );
+      expect(status).toBe(200);
+      const ids = (json.data ?? []).map((c) => c.id);
+      // QB row ($260) and Stripe charge (gross $250) are far outside any
+      // band around 1000 — both must still return on the name match.
+      expect(ids).toContain(STAGED_QB_ID);
+      expect(ids).toContain(CH_FREE_ID);
+    });
+
+    it("amount-only search keeps the hard band (sole criterion)", async () => {
+      const { status, json } = await qbSearch(`amount=1000&includeStripe=true`);
+      expect(status).toBe(200);
+      const ids = (json.data ?? []).map((c) => c.id);
+      expect(ids).not.toContain(STAGED_QB_ID);
+      expect(ids).not.toContain(CH_FREE_ID);
+    });
+
     it("interleaves by amount proximity — a closer Stripe charge sorts before a farther QB row", async () => {
       const { status, json } = await qbSearch(
         `q=${encodeURIComponent(PAYER)}&amount=248&includeStripe=true`,

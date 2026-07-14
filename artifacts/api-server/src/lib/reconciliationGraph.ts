@@ -1506,11 +1506,23 @@ export async function searchPayouts(
     sql`NOT EXISTS (SELECT 1 FROM ${settlementLinks} WHERE ${settlementLinks.payoutId} = ${stripePayouts.id})`,
   ];
   if (hasText) {
-    conds.push(ilike(stripePayouts.id, `%${escapeLike(q)}%`));
+    // A payout has no human-readable name of its own — the donor names live on
+    // its charges. Match the payout id OR any of its charges' payer fields so a
+    // reviewer can find "the payout with Jane Doe's charge in it" by name.
+    conds.push(
+      sql`(${ilike(stripePayouts.id, `%${escapeLike(q)}%`)} OR EXISTS (
+        SELECT 1 FROM ${stripeStagedCharges}
+        WHERE ${stripeStagedCharges.stripePayoutId} = ${stripePayouts.id}
+          AND (${stripeChargeSearchWhere(q)})
+      ))`,
+    );
   }
-  if (hasAmount) {
+  if (hasAmount && !hasText) {
     // A QB deposit sits near its payout (gross deposit vs net payout differ by
     // processor fees) — band generously against the payout NET: ±20% or ±$50.
+    // Same text-overrides-band rule as searchQbStagedRows: the band
+    // hard-filters only a criterion-less (no text) search; with text, the
+    // amount only RANKS (below).
     const net = sql`COALESCE(${stripePayouts.netTotal}, ${stripePayouts.amount})`;
     const lo = Math.min(amt * 0.8, amt - 50);
     const hi = Math.max(amt * 1.2, amt + 50);
@@ -1630,9 +1642,14 @@ async function searchQbStagedRows(
     const w = stagedSearchWhere(q);
     if (w) conds.push(w);
   }
-  if (hasAmount) {
+  if (hasAmount && !hasText) {
     // A QB deposit matching a Stripe payout sits near the payout amount (gross
     // vs net differ by processor fees) — band generously: ±20% or ±$50.
+    // The band HARD-FILTERS only a criterion-less (no text) search, where it is
+    // the sole positive criterion. When the user typed text, the text is the
+    // filter and the amount only RANKS (below): a payout booked as several
+    // smaller per-donor QB rows has no row anywhere near the payout net, so an
+    // ANDed band would hide the very rows an explicit name search asks for.
     const lo = Math.min(amt * 0.8, amt - 50);
     const hi = Math.max(amt * 1.2, amt + 50);
     conds.push(
@@ -1718,7 +1735,9 @@ async function searchStripeChargeRows(
     eq(stripeStagedCharges.disputed, false),
   ];
   if (hasText) conds.push(stripeChargeSearchWhere(q));
-  if (hasAmount) {
+  if (hasAmount && !hasText) {
+    // Same text-overrides-band rule as the QB leg: the fee band hard-filters
+    // only when there is no text criterion; with text, amount only ranks.
     conds.push(sql`${stripeStagedCharges.grossAmount} IS NOT NULL`);
     conds.push(
       giftMatchAmountBoundsKnownNet(

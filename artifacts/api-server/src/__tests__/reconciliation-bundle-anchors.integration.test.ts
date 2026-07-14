@@ -247,18 +247,24 @@ async function seedStaged(opts: {
   createdGiftId?: string | null;
   matchedGiftId?: string | null;
   fundingSource?: string | null;
+  /** `deposit` makes the row a settlement lump (isSettlementLump). */
+  entityType?: "payment" | "deposit";
+  /** Marks a matcher auto-application (derives `match_proposed` when the
+   * counted link exists but was never human-confirmed). */
+  autoApplied?: boolean;
 }): Promise<string> {
   const id = nextId("sp");
   await db.insert(schema.stagedPayments).values({
     id,
     realmId: REALM_ID,
-    qbEntityType: "payment",
+    qbEntityType: opts.entityType ?? "payment",
     qbEntityId: id,
     qbLineId: "",
     amount: opts.amount ?? "75.00",
     dateReceived: futureDate(),
     payerName: opts.payerName ?? `Zztest Anchor Payer ${RUN}`,
     exclusionReason: (opts.exclusionReason ?? null) as never,
+    autoApplied: opts.autoApplied ?? false,
     // A deposit's inferred origin. Clear non-Stripe origins (check/cash/wire/…)
     // are dropped from the "Needs payout tie" anchor column; stripe/donorbox/NULL
     // stay visible.
@@ -809,6 +815,127 @@ describe.skipIf(!HAS_DB)("Payout search resolve target (integration)", () => {
       `/api/reconciliation/payout-search?amount=96.80&limit=100`,
     );
     expect((byAmt.json.data as any[]).map((c) => c.id)).toContain(pOrphan);
+  });
+
+  it("finds a payout by its charges' payer name; text overrides the amount band", async () => {
+    // A payout has no name of its own — the donor names live on its charges.
+    // The search must surface "the payout containing Jane's charge" by name.
+    const pOrphan = await seedPayout({ status: "unmatched" });
+    await seedCharge(pOrphan);
+    const sTied = await seedStaged({});
+    const pTied = await seedPayout({ status: "proposed", proposed: sTied });
+    await seedCharge(pTied);
+
+    const payer = encodeURIComponent(`Zztest Anchor Charge ${RUN}`);
+
+    // By charge payer name → the orphan surfaces; a tied payout stays excluded
+    // even though its charge matches the same name.
+    const byName = await getJson(
+      `/api/reconciliation/payout-search?q=${payer}&limit=100`,
+    );
+    expect(byName.status).toBe(200);
+    const ids = (byName.json.data as any[]).map((c) => c.id);
+    expect(ids).toContain(pOrphan);
+    expect(ids).not.toContain(pTied);
+
+    // Text + far-off amount: the band must only RANK, not hard-filter — the
+    // named payout (net 96.80) still returns against amount=5000. This is the
+    // regression: a payout booked as several small per-donor QB rows has no
+    // row near the deposit amount, and an ANDed band hid name matches.
+    const byBoth = await getJson(
+      `/api/reconciliation/payout-search?q=${payer}&amount=5000&limit=100`,
+    );
+    expect(byBoth.status).toBe(200);
+    expect((byBoth.json.data as any[]).map((c) => c.id)).toContain(pOrphan);
+
+    // Amount-only search keeps the hard band (it is the sole criterion).
+    const byAmtOnly = await getJson(
+      `/api/reconciliation/payout-search?amount=5000&limit=100`,
+    );
+    expect(byAmtOnly.status).toBe(200);
+    expect((byAmtOnly.json.data as any[]).map((c) => c.id)).not.toContain(
+      pOrphan,
+    );
+  });
+});
+
+describe.skipIf(!HAS_DB)("Resolve-confirm settlement tie (integration)", () => {
+  it("confirms a picked ALREADY-BOOKED lump deposit linkage-only (repair path, no pending-only 409)", async () => {
+    // The prod regression: a bookkeeper books the deposit BEFORE the payout
+    // tie exists. The deposit derives `match_confirmed`, and the old
+    // pending-only pre-gate rejected the pick with a misleading transient
+    // "settlement changed — refresh and retry". The primitive's linkage-only
+    // arm handles exactly this: record the tie, demote covered coarse rows.
+    const gift = await seedGift();
+    const dep = await seedStaged({
+      entityType: "deposit",
+      amount: "96.80",
+      matchedGiftId: gift, // counted ledger row → derives match_confirmed
+    });
+    const po = await seedPayout({ status: "unmatched" });
+    await seedCharge(po);
+
+    const r = await post(
+      `/api/reconciliation/settlement-links/${po}/confirm`,
+      { depositStagedPaymentId: dep },
+    );
+    expect(r.status).toBe(200);
+    expect(r.json.confirmed).toBe(true);
+    expect(r.json.kind).toBe("confirmed_linkage_only");
+    expect(r.json.depositStagedPaymentId).toBe(dep);
+
+    // The tie is recorded CONFIRMED in one transaction.
+    const [link] = await db
+      .select()
+      .from(schema.settlementLinks)
+      .where(eqFn(schema.settlementLinks.payoutId, po));
+    expect(link).toBeTruthy();
+    expect(link!.lifecycle).toBe("confirmed");
+    expect(link!.depositStagedPaymentId).toBe(dep);
+
+    // Idempotent re-confirm: already settled → success, never re-booked.
+    const again = await post(
+      `/api/reconciliation/settlement-links/${po}/confirm`,
+      { depositStagedPaymentId: dep },
+    );
+    expect(again.status).toBe(200);
+    expect(again.json.kind).toBe("already_confirmed");
+  });
+
+  it("still fully reconciles a picked PENDING lump deposit", async () => {
+    const dep = await seedStaged({ entityType: "deposit", amount: "96.80" });
+    const po = await seedPayout({ status: "unmatched" });
+    await seedCharge(po);
+
+    const r = await post(
+      `/api/reconciliation/settlement-links/${po}/confirm`,
+      { depositStagedPaymentId: dep },
+    );
+    expect(r.status).toBe(200);
+    expect(r.json.confirmed).toBe(true);
+    expect(r.json.kind).toBe("confirmed_reconciled");
+  });
+
+  it("rejects a matcher-proposed (never human-confirmed) deposit as PERMANENT deposit_unconfirmable", async () => {
+    // `match_proposed` (auto-applied, unreviewed) stays unconfirmable — the
+    // proposed booking must be resolved first. The code must be the permanent
+    // `deposit_unconfirmable`, not the transient tie_transition retry toast.
+    const gift = await seedGift();
+    const dep = await seedStaged({
+      entityType: "deposit",
+      amount: "96.80",
+      matchedGiftId: gift,
+      autoApplied: true, // counted but never human-confirmed → match_proposed
+    });
+    const po = await seedPayout({ status: "unmatched" });
+    await seedCharge(po);
+
+    const r = await post(
+      `/api/reconciliation/settlement-links/${po}/confirm`,
+      { depositStagedPaymentId: dep },
+    );
+    expect(r.status).toBe(409);
+    expect(r.json.error).toBe("deposit_unconfirmable");
   });
 });
 
