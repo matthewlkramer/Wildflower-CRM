@@ -18,6 +18,7 @@ import { decodeHtmlEntities, formatCurrency, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { extractGateIssues } from "@/lib/reconciliation";
 import { ResolveTieDialog } from "./ResolveTieDialog";
+import { TieChargeQbDialog } from "./TieChargeQbDialog";
 import {
   apiErrorMessage,
   is409,
@@ -120,6 +121,7 @@ export function ChargeList({
   charges,
   onRejectProposedQb,
   rejectingChargeId,
+  onTieCharge,
 }: {
   charges: PayoutChargeSummary[] | undefined;
   /** Per-row reject of a charge's PROPOSED QB tie (omit to render read-only —
@@ -127,6 +129,9 @@ export function ChargeList({
   onRejectProposedQb?: (chargeId: string) => void;
   /** Charge whose reject is in flight (disables + spins just that row). */
   rejectingChargeId?: string | null;
+  /** Per-row manual tie for a charge with NO confirmed or proposed QB tie —
+   * opens the search-to-tie dialog (omit to render read-only). */
+  onTieCharge?: (charge: PayoutChargeSummary) => void;
 }) {
   if (!charges || charges.length === 0) return null;
   return (
@@ -222,6 +227,19 @@ export function ChargeList({
                   </span>
                 ) : null}
               </div>
+            ) : !excludedLabel && onTieCharge ? (
+              // No confirmed tie, no proposal, still live money: the human's
+              // manual entry point — find the QB row recording this charge.
+              <button
+                type="button"
+                className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => onTieCharge(c)}
+                title="Search QuickBooks rows and tie the one recording this same donation"
+                data-testid={`button-tie-charge-${c.id}`}
+              >
+                <Search className="h-2.5 w-2.5" />
+                Find QuickBooks match
+              </button>
             ) : null}
           </li>
         );
@@ -266,6 +284,8 @@ export function SettlementCard({
   const [rejectingChargeId, setRejectingChargeId] = useState<string | null>(
     null,
   );
+  // Charge whose manual "Find QuickBooks match" dialog is open (null = closed).
+  const [tieCharge, setTieCharge] = useState<PayoutChargeSummary | null>(null);
 
   const busy =
     confirmM.isPending ||
@@ -409,6 +429,40 @@ export function SettlementCard({
     }
   };
 
+  const handleTieChargePick = async (qbStagedPaymentId: string) => {
+    // Manual charge-grain tie: the picked QB row is this charge's money. The
+    // endpoint's manual mode places it onto an untied charge of this payout by
+    // exact amount (the dialog pre-grays near-miss amounts), all-or-nothing.
+    try {
+      const res = await chargeTiesM.mutateAsync({
+        payoutId: a.anchorId,
+        data: { qbStagedPaymentIds: [qbStagedPaymentId] },
+      });
+      setTieCharge(null);
+      toast({
+        title: res.payoutFullyTied
+          ? "QuickBooks tie recorded — payout fully settled."
+          : "QuickBooks tie recorded.",
+      });
+      onChanged();
+    } catch (err) {
+      if (is409(err)) {
+        toast({
+          title: "Couldn't tie that QuickBooks row",
+          description: errMessage(err),
+          variant: "destructive",
+        });
+        onChanged();
+      } else {
+        toast({
+          title: "Couldn't tie",
+          description: errMessage(err),
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
   const handleResolvePick = async (counterpartId: string) => {
     // The anchor is always the Stripe payout on this page, and the confirm
     // endpoint is keyed by the payout — the pick is the QB deposit.
@@ -521,6 +575,7 @@ export function SettlementCard({
               selectable ? handleRejectChargeTie : undefined
             }
             rejectingChargeId={rejectingChargeId}
+            onTieCharge={selectable ? setTieCharge : undefined}
           />
 
           {/* Proposed counterpart inline */}
@@ -665,6 +720,19 @@ export function SettlementCard({
           open={resolveOpen}
           onOpenChange={setResolveOpen}
           onPick={handleResolvePick}
+          busy={busy}
+        />
+      )}
+
+      {tieCharge && (
+        <TieChargeQbDialog
+          payoutId={a.anchorId}
+          charge={tieCharge}
+          open={tieCharge != null}
+          onOpenChange={(v) => {
+            if (!v) setTieCharge(null);
+          }}
+          onPick={handleTieChargePick}
           busy={busy}
         />
       )}

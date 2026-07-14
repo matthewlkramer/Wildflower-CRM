@@ -210,6 +210,8 @@ async function seedCharge(
   opts: {
     matchedGiftId?: string;
     exclusionReason?: string | null;
+    /** Confirmed charge-grain QB tie: this charge already claims that QB row. */
+    linkedQbStagedPaymentId?: string | null;
   } = {},
 ): Promise<string> {
   const id = nextId("ch");
@@ -227,6 +229,7 @@ async function seedCharge(
     // counted stripe ledger row reads `match_confirmed`, otherwise `pending`
     // (the pointer columns are retired and never written).
     exclusionReason: (opts.exclusionReason ?? null) as never,
+    linkedQbStagedPaymentId: opts.linkedQbStagedPaymentId ?? null,
   });
   if (opts.matchedGiftId) {
     await seedStripeApplication({
@@ -1020,6 +1023,12 @@ describe.skipIf(!HAS_DB)("QB pick-list search labels unpickable rows (integratio
     });
     const sSettled = await seedStaged({ payerName: payer });
     await seedPayout({ status: "confirmed_reconciled", matched: sSettled });
+    // A row already claimed by a confirmed CHARGE-grain tie (an individually
+    // booked payout's charge) — the manual "Find QuickBooks match" dialog
+    // would otherwise offer it and only fail at confirm with a 409.
+    const sChargeTied = await seedStaged({ payerName: payer });
+    const poTied = await seedPayout({ status: "unmatched" });
+    await seedCharge(poTied, { linkedQbStagedPaymentId: sChargeTied });
 
     const r = await getJson(
       `/api/reconciliation/qb-search?q=${encodeURIComponent(payer)}&limit=100`,
@@ -1028,11 +1037,12 @@ describe.skipIf(!HAS_DB)("QB pick-list search labels unpickable rows (integratio
     const rows = r.json.data as any[];
     const byId = new Map(rows.map((c) => [c.id, c]));
 
-    // ALL four rows come back — nothing is filtered out.
+    // ALL five rows come back — nothing is filtered out.
     expect(byId.has(sPending)).toBe(true);
     expect(byId.has(sBooked)).toBe(true);
     expect(byId.has(sExcluded)).toBe(true);
     expect(byId.has(sSettled)).toBe(true);
+    expect(byId.has(sChargeTied)).toBe(true);
 
     // Pickable rows carry NO blocking label.
     expect(byId.get(sPending).conflictReason).toBeNull();
@@ -1045,6 +1055,9 @@ describe.skipIf(!HAS_DB)("QB pick-list search labels unpickable rows (integratio
     expect(byId.get(sExcluded).conflictReason).toMatch(/other revenue/i);
     expect(byId.get(sSettled).conflictReason).toMatch(
       /settled against another Stripe payout/i,
+    );
+    expect(byId.get(sChargeTied).conflictReason).toMatch(
+      /tied to another Stripe charge/i,
     );
   });
 });

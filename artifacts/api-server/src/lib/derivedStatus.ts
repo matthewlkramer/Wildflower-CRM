@@ -70,6 +70,13 @@ export const stagedCountedApplicationExists: SQL<boolean> = sql`EXISTS (
     AND ${paymentApplications.linkRole} = 'counted'
 )`;
 
+/** EXISTS: a confirmed CHARGE-grain tie claims this row — some Stripe charge
+ *  (of an individually-booked payout) already names it as its QB record. */
+export const stagedChargeTieExists: SQL<boolean> = sql`EXISTS (
+  SELECT 1 FROM ${stripeStagedCharges}
+  WHERE ${stripeStagedCharges.linkedQbStagedPaymentId} = ${stagedPayments.id}
+)`;
+
 // A system-proposed (worker/rule) application awaiting human review. The
 // counted ledger row is the sole gift-link source (read cutover — the legacy
 // matched/created/group columns are no longer consulted); group and split

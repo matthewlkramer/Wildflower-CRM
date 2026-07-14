@@ -24,7 +24,14 @@ grain, parallel to the settlement-link (lump) path.
   (not excluded/rejected) charge has a confirmed tie — derived in
   bundleAnchors, no status column.
 - Candidate QB rows must not be settlement-link deposits, already
-  confirmed-tied, or proposed to another payout's charge.
+  confirmed-tied, or proposed to another payout's charge. The un-anchored
+  qb-search labels confirmed-charge-tied rows with a conflictReason
+  (grayed, never hidden) alongside excluded/settled-elsewhere.
+- Manual tie targets a PAYOUT, not a charge: the confirm endpoint has no
+  chargeId param — the picked QB row lands on the best (name-sim, then date)
+  untied same-exact-amount charge. With two same-amount untied charges and
+  weak name signals the tie can land on the sibling; durable fix would be an
+  optional chargeId hint on the endpoint.
 
 **Why:** keeps the lump and charge-grain planes from double-booking the same
 money and lets re-runs stay idempotent while a human approve always wins races.

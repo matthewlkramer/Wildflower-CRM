@@ -326,8 +326,17 @@ export function extractGateIssues(err: unknown): string[] {
   const out: string[] = [];
   for (const issue of issues) {
     if (issue && typeof issue === "object") {
+      // Gate issues carry `message`; the charge-tie confirm's per-row issues
+      // carry `reason` — surface either so a 409 toast names the real blocker.
       const message = (issue as { message?: unknown }).message;
-      if (typeof message === "string" && message.trim()) out.push(message.trim());
+      const reason = (issue as { reason?: unknown }).reason;
+      const text =
+        typeof message === "string" && message.trim()
+          ? message
+          : typeof reason === "string"
+            ? reason
+            : "";
+      if (text.trim()) out.push(text.trim());
     }
   }
   return out;

@@ -3783,7 +3783,7 @@ export interface ReconciliationCandidate {
   alreadyLinkedStagedPaymentId?: string | null;
   /** For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or group-reconciled onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting. */
   alreadyLinkedGiftId?: string | null;
-  /** Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can't currently be picked (excluded from review, already settled against another payout). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409. */
+  /** Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can't currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409. */
   conflictReason?: string | null;
 }
 

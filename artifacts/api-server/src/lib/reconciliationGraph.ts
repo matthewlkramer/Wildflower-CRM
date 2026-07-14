@@ -63,6 +63,7 @@ import {
 import { stripeChargeSearchWhere } from "./stripeChargeSearch";
 import {
   chargeStatusWhere,
+  stagedChargeTieExists,
   stagedConfirmedSettlementLinkExists,
   stagedStatusSql,
   stagedStatusWhere,
@@ -1700,9 +1701,12 @@ async function searchQbStagedRows(
       linkedGiftId: qbLedgerSoleGiftIdForPayment(),
       // Blocking facts for the conflictReason label (never used to filter):
       // an exclusion takes the row out of review; a confirmed settlement link
-      // means its money is already accounted for against another payout.
+      // means its money is already accounted for against another payout; a
+      // confirmed charge-grain tie means an individually-booked payout's
+      // charge already claims this exact row.
       exclusionReason: stagedPayments.exclusionReason,
       settledElsewhere: sql<boolean>`${stagedConfirmedSettlementLinkExists}`,
+      tiedToCharge: sql<boolean>`${stagedChargeTieExists}`,
     })
     .from(stagedPayments)
     .where(and(...conds))
@@ -1723,7 +1727,9 @@ async function searchQbStagedRows(
         ? `Excluded from review (${String(r.exclusionReason).replace(/_/g, " ")})`
         : r.settledElsewhere
           ? "Already settled against another Stripe payout"
-          : null,
+          : r.tiedToCharge
+            ? "Already tied to another Stripe charge"
+            : null,
     }),
   );
 }

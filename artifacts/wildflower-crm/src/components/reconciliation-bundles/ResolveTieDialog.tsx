@@ -16,15 +16,15 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { shortId } from "./bundle-ui";
 
-interface ResultRow {
+export interface ResultRow {
   id: string;
   primary: string;
   secondary: string | null;
   amount: string | null;
   date: string | null;
-  /** Set when the row can't be picked (excluded / already settled) — shown as
-   *  a label and the row disabled, never hidden, so users can spot (and help
-   *  debug) a mis-derived status. */
+  /** Set when the row can't be picked (excluded / already settled / already
+   *  tied) — shown as a label and the row disabled, never hidden, so users can
+   *  spot (and help debug) a mis-derived status. */
   blockedReason: string | null;
 }
 
@@ -129,7 +129,7 @@ function DepositResults({
   );
 }
 
-function ResultsList({
+export function ResultsList({
   rows,
   isFetching,
   isError,
