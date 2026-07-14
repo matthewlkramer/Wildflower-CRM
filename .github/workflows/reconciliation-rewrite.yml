@@ -22,7 +22,7 @@ concurrency:
 jobs:
   api:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -43,10 +43,44 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck API
-        run: pnpm check:api
+        id: typecheck
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm check:api 2>&1 | tee typecheck.log
 
       - name: Check generated API contract
-        run: pnpm check:codegen
+        id: codegen
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm check:codegen 2>&1 | tee codegen.log
 
       - name: Run API tests
-        run: pnpm check:test-api
+        id: tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm check:test-api 2>&1 | tee tests.log
+
+      - name: Upload check logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconciliation-check-logs-${{ github.run_id }}
+          path: |
+            typecheck.log
+            codegen.log
+            tests.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Fail when a check failed
+        if: >-
+          steps.typecheck.outcome == 'failure' ||
+          steps.codegen.outcome == 'failure' ||
+          steps.tests.outcome == 'failure'
+        run: exit 1
