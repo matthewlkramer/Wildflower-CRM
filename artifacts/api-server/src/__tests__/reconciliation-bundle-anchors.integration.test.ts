@@ -1160,6 +1160,102 @@ describe.skipIf(!HAS_DB)("Manual charge-tie exclusion override (integration)", (
   });
 });
 
+describe.skipIf(!HAS_DB)("Revert confirmed charge↔QB tie (integration)", () => {
+  it("clears the tie, the claimed fee row, and the provenance, and frees the QB row for re-picking", async () => {
+    // The undo for a wrong confirm ("tied the wrong QB charge to a donor"):
+    // plane-1 only — both derived statuses fall out of the cleared link, so
+    // the QB row must come back PICKABLE in the manual search afterwards.
+    const payer = `Zztest RevertTie ${RUN}`;
+    const qb = await seedStaged({ amount: "100.00", payerName: payer });
+    const feeQb = await seedStaged({ amount: "-3.20", payerName: payer });
+    const po = await seedPayout({ status: "unmatched" });
+    const chargeId = await seedCharge(po, { linkedQbStagedPaymentId: qb });
+    // The confirm path also stamps the claimed sibling fee row + who/when —
+    // seed those directly so the revert must clear ALL of it.
+    await db
+      .update(schema.stripeStagedCharges)
+      .set({
+        linkedFeeQbStagedPaymentId: feeQb,
+        crossProcessorLinkedByUserId: TEST_USER_ID,
+        crossProcessorLinkedAt: new Date(),
+      })
+      .where(eqFn(schema.stripeStagedCharges.id, chargeId));
+
+    // Sanity: while tied, the QB row is labeled unpickable in the search.
+    const before = await getJson(
+      `/api/reconciliation/qb-search?q=${encodeURIComponent(payer)}&limit=100`,
+    );
+    expect(before.status).toBe(200);
+    const beforeRow = (before.json.data as any[]).find((r) => r.id === qb);
+    expect(beforeRow?.conflictKind).toBe("tied_to_charge");
+
+    const r = await post(
+      `/api/reconciliation/charges/${chargeId}/qb-tie/revert`,
+    );
+    expect(r.status).toBe(200);
+    expect(r.json.reverted).toBe(true);
+    expect(r.json.chargeId).toBe(chargeId);
+    expect(r.json.qbStagedPaymentId).toBe(qb);
+    expect(r.json.feeQbStagedPaymentId).toBe(feeQb);
+
+    const [charge] = await db
+      .select()
+      .from(schema.stripeStagedCharges)
+      .where(eqFn(schema.stripeStagedCharges.id, chargeId));
+    expect(charge!.linkedQbStagedPaymentId).toBeNull();
+    expect(charge!.linkedFeeQbStagedPaymentId).toBeNull();
+    expect(charge!.crossProcessorLinkedByUserId).toBeNull();
+    expect(charge!.crossProcessorLinkedAt).toBeNull();
+
+    // The QB row is pickable again — no blocking label, no owning charge.
+    const after = await getJson(
+      `/api/reconciliation/qb-search?q=${encodeURIComponent(payer)}&limit=100`,
+    );
+    expect(after.status).toBe(200);
+    const afterRow = (after.json.data as any[]).find((r) => r.id === qb);
+    expect(afterRow?.conflictReason).toBeNull();
+    expect(afterRow?.conflictKind).toBeNull();
+  });
+
+  it("404s on an unknown charge", async () => {
+    const r = await post(
+      `/api/reconciliation/charges/${RUN}_missing_charge/qb-tie/revert`,
+    );
+    expect(r.status).toBe(404);
+    expect(r.json.error).toBe("not_found");
+  });
+
+  it("409s not_confirmed on a charge with no confirmed tie (reject handles proposals)", async () => {
+    const po = await seedPayout({ status: "unmatched" });
+    const chargeId = await seedCharge(po);
+
+    const r = await post(
+      `/api/reconciliation/charges/${chargeId}/qb-tie/revert`,
+    );
+    expect(r.status).toBe(409);
+    expect(r.json.error).toBe("not_confirmed");
+  });
+
+  it("is idempotent-safe: a second revert of the same charge 409s instead of silently succeeding", async () => {
+    // Two reviewers double-clicking / racing: the loser must get a clear
+    // signal the state moved, not a fake success on an already-untied charge.
+    const qb = await seedStaged({ amount: "100.00" });
+    const po = await seedPayout({ status: "unmatched" });
+    const chargeId = await seedCharge(po, { linkedQbStagedPaymentId: qb });
+
+    const first = await post(
+      `/api/reconciliation/charges/${chargeId}/qb-tie/revert`,
+    );
+    expect(first.status).toBe(200);
+
+    const second = await post(
+      `/api/reconciliation/charges/${chargeId}/qb-tie/revert`,
+    );
+    expect(second.status).toBe(409);
+    expect(second.json.error).toBe("not_confirmed");
+  });
+});
+
 describe.skipIf(!HAS_DB)("Tied-anchor canonicalization (integration)", () => {
   it("assembling a matched-tied QB id yields the payout's single draft", async () => {
     const staged = await seedStaged({});

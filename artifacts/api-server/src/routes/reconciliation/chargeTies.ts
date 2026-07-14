@@ -497,4 +497,110 @@ router.post(
   }),
 );
 
+/**
+ * Revert ONE CONFIRMED charge↔QB tie — the undo for an accidental or wrong
+ * confirm (the "separate path" the reject endpoint's 409 points at). Clears
+ * the charge's permanent `linked_qb_staged_payment_id` (+ who/when
+ * provenance) and frees the sibling negative "Stripe fee" QB row claimed at
+ * confirm time, if any. Plane 1 only: no gift, donor, or settlement link is
+ * touched — both statuses are derived, so the QB row returns to the open
+ * review flow and the charge reopens for a new tie on their own. The original
+ * proposal is NOT restored and the pair is NOT remembered as dismissed, so a
+ * later proposal pass may re-propose it. One deliberate asymmetry: a confirm
+ * done with overrideExclusion cleared the QB row's exclusion_reason (manual
+ * pin) — revert does NOT restore that exclusion; the row returns to review as
+ * pending for a human to re-classify.
+ */
+router.post(
+  "/reconciliation/charges/:chargeId/qb-tie/revert",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const chargeId = req.params.chargeId as string;
+
+    try {
+      const result = await db.transaction(async (tx) => {
+        const [charge] = await tx
+          .select({
+            id: stripeStagedCharges.id,
+            linkedQbStagedPaymentId:
+              stripeStagedCharges.linkedQbStagedPaymentId,
+            linkedFeeQbStagedPaymentId:
+              stripeStagedCharges.linkedFeeQbStagedPaymentId,
+          })
+          .from(stripeStagedCharges)
+          .where(eq(stripeStagedCharges.id, chargeId))
+          .for("update");
+        if (!charge) {
+          throw new ReconcileAbort(404, {
+            error: "not_found",
+            message: "Stripe charge not found.",
+          });
+        }
+        const qbId = charge.linkedQbStagedPaymentId;
+        if (qbId == null) {
+          throw new ReconcileAbort(409, {
+            error: "not_confirmed",
+            message:
+              "This charge has no confirmed QuickBooks tie to revert (an unconfirmed proposal is rejected instead).",
+          });
+        }
+        const feeQbId = charge.linkedFeeQbStagedPaymentId;
+
+        // Clear the tie — guarded on the exact link we read still being in
+        // place (the FOR UPDATE lock makes drift impossible; the guard keeps
+        // the write self-defending).
+        const upd = await tx
+          .update(stripeStagedCharges)
+          .set({
+            linkedQbStagedPaymentId: null,
+            linkedFeeQbStagedPaymentId: null,
+            crossProcessorLinkedByUserId: null,
+            crossProcessorLinkedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(stripeStagedCharges.id, chargeId),
+              eq(stripeStagedCharges.linkedQbStagedPaymentId, qbId),
+            ),
+          )
+          .returning({ id: stripeStagedCharges.id });
+        if (upd.length === 0) {
+          throw new ReconcileAbort(409, {
+            error: "charge_tie_drift",
+            message: "The charge's tie changed mid-revert. Reload and retry.",
+          });
+        }
+
+        return {
+          reverted: true,
+          chargeId,
+          qbStagedPaymentId: qbId,
+          feeQbStagedPaymentId: feeQbId,
+        };
+      });
+
+      req.log.info(
+        {
+          chargeId,
+          qbStagedPaymentId: result.qbStagedPaymentId,
+          feeQbStagedPaymentId: result.feeQbStagedPaymentId,
+        },
+        "Reverted a confirmed charge-grain Stripe↔QB tie",
+      );
+      res.json(result);
+    } catch (e) {
+      if (e instanceof ReconcileAbort) {
+        res.status(e.httpStatus).json(e.payload);
+        return;
+      }
+      throw e;
+    }
+  }),
+);
+
 export default router;

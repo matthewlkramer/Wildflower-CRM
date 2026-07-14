@@ -6,6 +6,7 @@ import {
   useConfirmSettlementLink,
   useRejectChargeQbTie,
   useRejectSettlementProposal,
+  useRevertChargeQbTie,
   type BundleAnchor,
   type BundleAnchorType,
   type PayoutChargeSummary,
@@ -122,6 +123,8 @@ export function ChargeList({
   onRejectProposedQb,
   rejectingChargeId,
   onTieCharge,
+  onUntieConfirmedQb,
+  untieingChargeId,
 }: {
   charges: PayoutChargeSummary[] | undefined;
   /** Per-row reject of a charge's PROPOSED QB tie (omit to render read-only —
@@ -132,7 +135,17 @@ export function ChargeList({
   /** Per-row manual tie for a charge with NO confirmed or proposed QB tie —
    * opens the search-to-tie dialog (omit to render read-only). */
   onTieCharge?: (charge: PayoutChargeSummary) => void;
+  /** Per-row untie of a charge's CONFIRMED QB tie — the undo for a wrong
+   * confirm. Deliberately available on Matched-column cards too (a fully-tied
+   * payout lives there, and that's exactly where a wrong tie is spotted).
+   * Two-click: the first click arms the row, the second unties. */
+  onUntieConfirmedQb?: (chargeId: string) => void;
+  /** Charge whose untie is in flight (disables + spins just that row). */
+  untieingChargeId?: string | null;
 }) {
+  // Two-click arm for untie: a single stray click is how a wrong tie happens,
+  // so undoing a CONFIRMED tie asks for a deliberate second click.
+  const [armedUntieId, setArmedUntieId] = useState<string | null>(null);
   if (!charges || charges.length === 0) return null;
   return (
     <ul className="mt-1 max-h-32 space-y-1 overflow-y-auto pr-1 text-xs text-muted-foreground">
@@ -197,6 +210,45 @@ export function ChargeList({
                     · fee row linked
                   </span>
                 ) : null}
+                {onUntieConfirmedQb && (
+                  // Undo for a wrong confirm — two-click so a stray click
+                  // can't silently undo settlement evidence.
+                  <button
+                    type="button"
+                    className={cn(
+                      "ml-auto inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[10px]",
+                      armedUntieId === c.id
+                        ? "bg-destructive/10 font-medium text-destructive"
+                        : "text-muted-foreground hover:bg-destructive/10 hover:text-destructive",
+                      "disabled:opacity-50",
+                    )}
+                    disabled={untieingChargeId != null}
+                    onClick={() => {
+                      if (armedUntieId === c.id) {
+                        setArmedUntieId(null);
+                        onUntieConfirmedQb(c.id);
+                      } else {
+                        setArmedUntieId(c.id);
+                      }
+                    }}
+                    onBlur={() =>
+                      setArmedUntieId((prev) => (prev === c.id ? null : prev))
+                    }
+                    title={
+                      armedUntieId === c.id
+                        ? "Click again to remove this confirmed QuickBooks tie — the QB row returns to review and the charge can be re-tied"
+                        : "Untie this charge from its QuickBooks row (undo a wrong tie)"
+                    }
+                    data-testid={`button-untie-charge-qb-${c.id}`}
+                  >
+                    {untieingChargeId === c.id ? (
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                    ) : (
+                      <X className="h-2.5 w-2.5" />
+                    )}
+                    {armedUntieId === c.id ? "Untie? Click again" : "Untie"}
+                  </button>
+                )}
               </div>
             ) : c.proposedQb ? (
               <div
@@ -293,9 +345,13 @@ export function SettlementCard({
   const rejectM = useRejectSettlementProposal();
   const chargeTiesM = useConfirmPayoutChargeTies();
   const rejectTieM = useRejectChargeQbTie();
+  const revertTieM = useRevertChargeQbTie();
 
   const [resolveOpen, setResolveOpen] = useState(false);
   const [rejectingChargeId, setRejectingChargeId] = useState<string | null>(
+    null,
+  );
+  const [untieingChargeId, setUntieingChargeId] = useState<string | null>(
     null,
   );
   // Charge whose manual "Find QuickBooks match" dialog is open (null = closed).
@@ -305,7 +361,8 @@ export function SettlementCard({
     confirmM.isPending ||
     rejectM.isPending ||
     chargeTiesM.isPending ||
-    rejectTieM.isPending;
+    rejectTieM.isPending ||
+    revertTieM.isPending;
   const proposal = a.proposedMatch;
   // A proposed tie that collided with an already-approved QB gift: approving
   // KEEPS that gift (no double-booking) and just records the settlement link.
@@ -444,6 +501,39 @@ export function SettlementCard({
       }
     } finally {
       setRejectingChargeId(null);
+    }
+  };
+
+  const handleUntieChargeTie = async (chargeId: string) => {
+    // Undo of ONE CONFIRMED charge↔QB tie (a wrong "Tie selected" / approve).
+    // Plane 1 only: the QB row returns to review, the charge reopens for a
+    // new tie, and no gift or settlement link is touched.
+    setUntieingChargeId(chargeId);
+    try {
+      const res = await revertTieM.mutateAsync({ chargeId });
+      toast({
+        title: "QuickBooks tie removed.",
+        description: res.feeQbStagedPaymentId
+          ? "The QuickBooks row is back in review and its Stripe-fee row was released — the charge can be re-tied."
+          : "The QuickBooks row is back in review — the charge can be re-tied.",
+      });
+      onChanged();
+    } catch (err) {
+      if (is409(err)) {
+        toast({
+          title: "The tie changed — refreshed.",
+          description: apiErrorMessage(err) ?? errMessage(err),
+        });
+        onChanged();
+      } else {
+        toast({
+          title: "Couldn't untie",
+          description: errMessage(err),
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setUntieingChargeId(null);
     }
   };
 
@@ -612,6 +702,11 @@ export function SettlementCard({
             }
             rejectingChargeId={rejectingChargeId}
             onTieCharge={selectable ? setTieCharge : undefined}
+            // Untie is NOT gated on `selectable`: a fully-tied payout sits in
+            // the read-only Matched column, and that's exactly where a wrong
+            // confirmed tie is spotted and needs undoing.
+            onUntieConfirmedQb={handleUntieChargeTie}
+            untieingChargeId={untieingChargeId}
           />
 
           {/* Proposed counterpart inline */}

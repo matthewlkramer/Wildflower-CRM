@@ -641,6 +641,35 @@ export const RejectChargeQbTieResponse = zod.object({
 })
 
 /**
+ * Reverts a CONFIRMED QuickBooks tie on ONE Stripe charge — the undo for
+an accidental or wrong "Tie selected" / proposal approval. Clears the
+charge's linkedQbStagedPaymentId (+ the who/when provenance) and, when
+a sibling negative "Stripe fee" QB row was auto-claimed at confirm
+time, frees that fee row too (clears linkedFeeQbStagedPaymentId). The
+QB row immediately returns to the open review flow (its status is
+derived, nothing stored) and the charge reopens for a new tie. The
+original proposal is NOT restored, and the pair is not remembered as
+dismissed — a later proposal pass may re-propose it.
+
+Plane 1 only: money is untouched — no gift is minted or changed, no QB
+row's donor changes, and settlement links are never touched. 409 when
+the charge carries no confirmed tie (a merely-PROPOSED tie is rejected
+via the reject endpoint instead).
+
+ * @summary Untie ONE CONFIRMED charge-grain Stripe↔QuickBooks tie.
+ */
+export const RevertChargeQbTieParams = zod.object({
+  "chargeId": zod.coerce.string()
+})
+
+export const RevertChargeQbTieResponse = zod.object({
+  "reverted": zod.boolean().describe('True when the confirmed tie was cleared.'),
+  "chargeId": zod.string().describe('Stripe charge id (ch_...) the confirmed tie was reverted on.'),
+  "qbStagedPaymentId": zod.string().describe('The staged_payments id of the QB row this charge was untied from — it returns to the open review flow.'),
+  "feeQbStagedPaymentId": zod.string().nullish().describe('The sibling negative \'Stripe fee\' QB row freed alongside the donor row (null when none was claimed at confirm time).')
+})
+
+/**
  * Lists on-books gifts that are genuinely UN-reconciled with QuickBooks — i.e.
 no QuickBooks cash-application ledger entry exists for the gift — ONE ROW PER
 gift_allocation (a multi-allocation gift surfaces several rows; a gift with no

@@ -4255,6 +4255,17 @@ export interface RejectChargeQbTieResult {
   qbStagedPaymentId?: string | null;
 }
 
+export interface RevertChargeQbTieResult {
+  /** True when the confirmed tie was cleared. */
+  reverted: boolean;
+  /** Stripe charge id (ch_...) the confirmed tie was reverted on. */
+  chargeId: string;
+  /** The staged_payments id of the QB row this charge was untied from — it returns to the open review flow. */
+  qbStagedPaymentId: string;
+  /** The sibling negative 'Stripe fee' QB row freed alongside the donor row (null when none was claimed at confirm time). */
+  feeQbStagedPaymentId?: string | null;
+}
+
 export interface ConfirmChargeTiesResult {
   /** True when the ties were written. */
   confirmed: boolean;
