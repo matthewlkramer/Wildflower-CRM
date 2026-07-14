@@ -1,31 +1,16 @@
-// Ledger-aware gift COMBINE: absorb one or more "loser" gifts' reconciled
-// payment evidence onto a surviving gift so the two-plane redesign's cash
-// ledger (payment_applications) and the legacy pointer surfaces stay parity-
-// consistent after a merge.
+// Ledger-authoritative gift COMBINE.
 //
-// Historically the merge route hard-BLOCKED (409) whenever a loser carried ANY
-// QuickBooks / Stripe / Donorbox link. That is too blunt now that everything is
-// dual-written into the ledger: a mundane "two duplicate gifts, one has a QB
-// match" merge should just re-home that evidence onto the survivor. This helper
-// does exactly that, and 409s ONLY on the handful of link shapes the legacy
-// pointer columns genuinely cannot represent on a single gift:
-//   - split_link       — a loser wired into a staged-payment SPLIT, or a
-//                         survivor split that would have to coexist with
-//                         absorbed group/direct QB evidence (split precedence
-//                         reads a single sub-amount, so it can't sum a group).
-//   - stripe_charge    — two+ distinct Stripe charges would have to point at the
-//                         one survivor (matched/created are single-valued).
-//   - donorbox_donation — same, for Donorbox donations.
+// Absorb one or more loser gifts' payment applications onto a surviving gift.
+// Stripe and Donorbox gift pointers are intentionally ignored and never rewritten:
+// payment_applications is the authoritative unit-to-gift relationship.
 //
-// Everything it writes lives inside the caller's transaction; on a collision it
-// writes NOTHING and returns the collision so the route can 409 with a clean,
-// no-op rollback.
+// QuickBooks pointer normalization remains during its separate staged cutover.
+// Everything runs inside the caller's transaction. Collision checks happen before
+// writes so a rejected merge remains a clean no-op.
 import type { db } from "@workspace/db";
 import {
   giftsAndPayments,
   stagedPayments,
-  stripeStagedCharges,
-  donorboxDonations,
   paymentApplications,
   settlementLinks,
 } from "@workspace/db/schema";
@@ -35,6 +20,8 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export type CombineCollision =
   | { kind: "split_link" }
+  // Retained for API compatibility. Ledger-first merges no longer emit these:
+  // a gift may be funded by multiple independent processor units.
   | { kind: "stripe_charge" }
   | { kind: "donorbox_donation" };
 
@@ -42,41 +29,59 @@ export interface AbsorbEvidenceResult {
   collision: CombineCollision | null;
 }
 
-const num = (v: string | number | null | undefined): number => {
-  if (v == null || v === "") return 0;
-  const n = Number(v);
-  return Number.isNaN(n) ? 0 : n;
+const num = (value: string | number | null | undefined): number => {
+  if (value == null || value === "") return 0;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+type CountedLedgerRow = {
+  id: string;
+  giftId: string;
+  paymentId: string | null;
+  stripeChargeId: string | null;
+  donorboxDonationId: string | null;
+  evidenceSource: "quickbooks" | "stripe" | "donorbox";
+  amountApplied: string;
+  giftAllocationId: string | null;
+  note: string | null;
+  createdTheGift: boolean;
+};
+
+function countedAnchorKey(row: CountedLedgerRow): string {
+  switch (row.evidenceSource) {
+    case "quickbooks":
+      return row.paymentId ? `qb:${row.paymentId}` : `invalid:${row.id}`;
+    case "stripe":
+      return row.stripeChargeId ? `stripe:${row.stripeChargeId}` : `invalid:${row.id}`;
+    case "donorbox":
+      return row.donorboxDonationId
+        ? `donorbox:${row.donorboxDonationId}`
+        : `invalid:${row.id}`;
+  }
+}
+
 /**
- * Absorb every loser gift's reconciled payment evidence onto `survivorId`,
- * inside the caller's transaction. Detects the unrepresentable link collisions
- * FIRST (before any write); on collision returns `{ collision }` having written
- * nothing so the caller can 409 and let the transaction roll back cleanly.
+ * Absorb every loser gift's payment evidence onto survivorId.
  *
- * On success the counted ledger, the QuickBooks staged pointers, the
- * Stripe/Donorbox pointers, and the corroborating ledger rows are all re-homed
- * onto the survivor, and each loser's dangling QB final-amount stamp is cleared.
- * The caller is still responsible for moving allocations, summing the survivor
- * amount, clearing self-referential match pointers, archiving the losers, and
- * recomputing derived fields / QB tie afterward.
+ * Split QuickBooks rows remain the one blocked shape because the legacy QBO
+ * pointer model cannot safely combine a split with direct/group QBO evidence.
+ * Stripe and Donorbox applications do not collide merely because several
+ * independent charges or donations fund the same surviving gift.
  */
 export async function absorbGiftEvidenceIntoSurvivor(
   tx: Tx,
   survivorId: string,
   loserIds: string[],
 ): Promise<AbsorbEvidenceResult> {
+  if (loserIds.length === 0) return { collision: null };
+
   const allIds = [survivorId, ...loserIds];
   const loserSet = new Set(loserIds);
-  const refsLoser = (...ids: Array<string | null>): boolean =>
-    ids.some((id) => id != null && loserSet.has(id));
-  const refsSurvivor = (...ids: Array<string | null>): boolean =>
-    ids.some((id) => id === survivorId);
+  const now = new Date();
 
-  // ── 1. Read every evidence surface for the whole merged set ──────────────
-  // Split-shape wiring: a counted QB ledger row whose staged payment carries
-  // NONE of the three gift-link columns (a split's resolution lives entirely in
-  // the ledger). This replaces the retired staged_payment_splits table.
+  // A split is represented by counted QBO applications whose staged payment has
+  // none of the three legacy gift pointers.
   const splitRows = await tx
     .select({ giftId: paymentApplications.giftId })
     .from(paymentApplications)
@@ -95,6 +100,7 @@ export async function absorbGiftEvidenceIntoSurvivor(
       ),
     );
 
+  // QBO pointers remain a compatibility surface until the separate QBO cutover.
   const qbStaged = await tx
     .select({
       id: stagedPayments.id,
@@ -111,37 +117,7 @@ export async function absorbGiftEvidenceIntoSurvivor(
       ),
     );
 
-  const stripeCharges = await tx
-    .select({
-      id: stripeStagedCharges.id,
-      matchedGiftId: stripeStagedCharges.matchedGiftId,
-      createdGiftId: stripeStagedCharges.createdGiftId,
-    })
-    .from(stripeStagedCharges)
-    .where(
-      or(
-        inArray(stripeStagedCharges.matchedGiftId, allIds),
-        inArray(stripeStagedCharges.createdGiftId, allIds),
-      ),
-    );
-
-  const donorboxRows = await tx
-    .select({
-      id: donorboxDonations.id,
-      matchedGiftId: donorboxDonations.matchedGiftId,
-      createdGiftId: donorboxDonations.createdGiftId,
-    })
-    .from(donorboxDonations)
-    .where(
-      or(
-        inArray(donorboxDonations.matchedGiftId, allIds),
-        inArray(donorboxDonations.createdGiftId, allIds),
-      ),
-    );
-
-  // Only COUNTED cash-application rows consolidate; corroborating rows (Phase 5)
-  // never sum and are left untouched here.
-  const ledgerRows = await tx
+  const ledgerRows = (await tx
     .select({
       id: paymentApplications.id,
       giftId: paymentApplications.giftId,
@@ -160,18 +136,16 @@ export async function absorbGiftEvidenceIntoSurvivor(
         inArray(paymentApplications.giftId, allIds),
         eq(paymentApplications.linkRole, "counted"),
       ),
-    );
+    )) as CountedLedgerRow[];
 
-  // Corroborating ledger rows (the Phase-5 fold of gift_evidence_links). Kept
-  // separate from the counted ledger above (which drives the money trail) — these
-  // are audit-only and never enter a SUM, so they re-home by simple dedupe.
-  const corrLedger = await tx
+  const corroboratingRows = await tx
     .select({
       id: paymentApplications.id,
       giftId: paymentApplications.giftId,
       evidenceSource: paymentApplications.evidenceSource,
       paymentId: paymentApplications.paymentId,
       stripeChargeId: paymentApplications.stripeChargeId,
+      donorboxDonationId: paymentApplications.donorboxDonationId,
     })
     .from(paymentApplications)
     .where(
@@ -181,67 +155,39 @@ export async function absorbGiftEvidenceIntoSurvivor(
       ),
     );
 
-  // ── 2. Collision detection (no writes past this point until it passes) ───
-  const loserSplit = splitRows.some((r) => loserSet.has(r.giftId));
-  const survivorSplit = splitRows.some((r) => r.giftId === survivorId);
-  const loserQbEvidence =
-    qbStaged.some((r) =>
-      refsLoser(r.matchedGiftId, r.createdGiftId, r.groupReconciledGiftId),
+  // A loser split cannot be re-homed. A survivor split also cannot coexist with
+  // additional direct/group QBO evidence because QBO split precedence would mask
+  // the combined booking. Processor evidence does not create this QBO collision.
+  const loserSplit = splitRows.some((row) => loserSet.has(row.giftId));
+  const survivorSplit = splitRows.some((row) => row.giftId === survivorId);
+  const loserDirectQbEvidence =
+    qbStaged.some(
+      (row) =>
+        (row.matchedGiftId != null && loserSet.has(row.matchedGiftId)) ||
+        (row.createdGiftId != null && loserSet.has(row.createdGiftId)) ||
+        (row.groupReconciledGiftId != null &&
+          loserSet.has(row.groupReconciledGiftId)),
     ) ||
-    stripeCharges.some((r) => refsLoser(r.matchedGiftId, r.createdGiftId)) ||
-    donorboxRows.some((r) => refsLoser(r.matchedGiftId, r.createdGiftId)) ||
-    ledgerRows.some((r) => loserSet.has(r.giftId));
-  // A loser split can't be re-homed (a split sub-amount is single-valued, no
-  // group shape); a survivor split can't coexist with absorbed group/direct QB
-  // evidence (split precedence would mask the summed group). Either way: 409.
-  if (loserSplit || (survivorSplit && loserQbEvidence)) {
+    ledgerRows.some(
+      (row) =>
+        row.evidenceSource === "quickbooks" && loserSet.has(row.giftId),
+    );
+
+  if (loserSplit || (survivorSplit && loserDirectQbEvidence)) {
     return { collision: { kind: "split_link" } };
   }
 
-  // At most ONE Stripe charge / Donorbox donation can point at the survivor
-  // (matched & created are single-valued). Absorbing a loser's charge is only
-  // possible when doing so leaves the survivor with a single charge total.
-  const loserStripe = stripeCharges.filter((r) =>
-    refsLoser(r.matchedGiftId, r.createdGiftId),
-  );
-  const survivorStripe = stripeCharges.filter((r) =>
-    refsSurvivor(r.matchedGiftId, r.createdGiftId),
-  );
-  if (loserStripe.length >= 1 && loserStripe.length + survivorStripe.length >= 2) {
-    return { collision: { kind: "stripe_charge" } };
-  }
-  const loserDonorbox = donorboxRows.filter((r) =>
-    refsLoser(r.matchedGiftId, r.createdGiftId),
-  );
-  const survivorDonorbox = donorboxRows.filter((r) =>
-    refsSurvivor(r.matchedGiftId, r.createdGiftId),
-  );
-  if (
-    loserDonorbox.length >= 1 &&
-    loserDonorbox.length + survivorDonorbox.length >= 2
-  ) {
-    return { collision: { kind: "donorbox_donation" } };
+  // Consolidate counted applications by immutable processor/QBO unit. Multiple
+  // independent Stripe charges or Donorbox donations remain separate rows and
+  // can all fund the surviving gift.
+  const groups = new Map<string, CountedLedgerRow[]>();
+  for (const row of ledgerRows) {
+    const key = countedAnchorKey(row);
+    const existing = groups.get(key);
+    if (existing) existing.push(row);
+    else groups.set(key, [row]);
   }
 
-  const now = new Date();
-
-  // ── 3. Consolidate the cash-application ledger onto the survivor ──────────
-  // Group counted rows by their anchor (a QB payment / Stripe charge / Donorbox
-  // donation). The SAME anchor can only span multiple merged gifts for QB
-  // partial applications; Stripe/Donorbox anchors settle a single gift, so their
-  // groups have size 1 and simply re-point. NEVER sum across anchors.
-  const groups = new Map<string, typeof ledgerRows>();
-  for (const r of ledgerRows) {
-    const anchor =
-      r.evidenceSource === "quickbooks"
-        ? `qb:${r.paymentId}`
-        : r.evidenceSource === "stripe"
-          ? `st:${r.stripeChargeId}`
-          : `db:${r.donorboxDonationId}`;
-    const list = groups.get(anchor);
-    if (list) list.push(r);
-    else groups.set(anchor, [r]);
-  }
   for (const rows of groups.values()) {
     if (rows.length === 1) {
       const row = rows[0]!;
@@ -253,40 +199,49 @@ export async function absorbGiftEvidenceIntoSurvivor(
       }
       continue;
     }
-    // Keeper = the survivor's own row if present, else the lowest id for
-    // determinism. Delete the rest FIRST so re-pointing the keeper onto the
-    // survivor can't transiently collide with the per-anchor UNIQUE.
+
+    // Multiple rows for one anchor are valid only for QBO partial applications.
+    // Coalesce them deterministically before moving to avoid unique collisions.
     const keeper =
-      rows.find((r) => r.giftId === survivorId) ??
-      [...rows].sort((a, b) => (a.id < b.id ? -1 : 1))[0]!;
-    const others = rows.filter((r) => r.id !== keeper.id);
-    await tx.delete(paymentApplications).where(
-      inArray(
-        paymentApplications.id,
-        others.map((r) => r.id),
-      ),
+      rows.find((row) => row.giftId === survivorId) ??
+      [...rows].sort((a, b) => a.id.localeCompare(b.id))[0]!;
+    const others = rows.filter((row) => row.id !== keeper.id);
+
+    if (others.length > 0) {
+      await tx
+        .delete(paymentApplications)
+        .where(
+          inArray(
+            paymentApplications.id,
+            others.map((row) => row.id),
+          ),
+        );
+    }
+
+    const amountApplied = rows.reduce(
+      (total, row) => total + num(row.amountApplied),
+      0,
     );
-    const summed = rows.reduce((acc, r) => acc + num(r.amountApplied), 0);
+
     await tx
       .update(paymentApplications)
       .set({
         giftId: survivorId,
-        amountApplied: summed.toFixed(2),
-        createdTheGift: rows.some((r) => r.createdTheGift),
+        amountApplied: amountApplied.toFixed(2),
+        createdTheGift: rows.some((row) => row.createdTheGift),
         giftAllocationId:
           keeper.giftAllocationId ??
-          rows.find((r) => r.giftAllocationId != null)?.giftAllocationId ??
+          rows.find((row) => row.giftAllocationId != null)?.giftAllocationId ??
           null,
-        note: keeper.note ?? rows.find((r) => r.note != null)?.note ?? null,
+        note:
+          keeper.note ?? rows.find((row) => row.note != null)?.note ?? null,
         updatedAt: now,
       })
       .where(eq(paymentApplications.id, keeper.id));
   }
 
-  // ── 4. Normalize the QuickBooks staged pointers onto the survivor ────────
+  // Preserve the temporary QBO pointer representation.
   if (qbStaged.length === 1) {
-    // A single QB payment stays a clean DIRECT match (clears any created flag so
-    // a later revert links, never deletes, the survivor).
     const row = qbStaged[0]!;
     await tx
       .update(stagedPayments)
@@ -298,11 +253,7 @@ export async function absorbGiftEvidenceIntoSurvivor(
       })
       .where(eq(stagedPayments.id, row.id));
   } else if (qbStaged.length >= 2) {
-    // Multiple QB payments must become a GROUP (the only legacy shape that sums
-    // several payments onto one gift). Clear all matched/created first so the
-    // partial-unique on matched_gift_id is free, then re-stamp one
-    // representative as the group's matched row.
-    const ids = qbStaged.map((r) => r.id);
+    const ids = qbStaged.map((row) => row.id);
     await tx
       .update(stagedPayments)
       .set({
@@ -312,80 +263,57 @@ export async function absorbGiftEvidenceIntoSurvivor(
         updatedAt: now,
       })
       .where(inArray(stagedPayments.id, ids));
+
     const representative =
-      qbStaged.find((r) => r.matchedGiftId === survivorId) ?? qbStaged[0]!;
+      qbStaged.find((row) => row.matchedGiftId === survivorId) ?? qbStaged[0]!;
     await tx
       .update(stagedPayments)
       .set({ matchedGiftId: survivorId, updatedAt: now })
       .where(eq(stagedPayments.id, representative.id));
   }
 
-  // ── 5. Re-point the single absorbed Stripe / Donorbox pointer ────────────
-  for (const r of loserStripe) {
-    await tx
-      .update(stripeStagedCharges)
-      .set({
-        matchedGiftId: loserSet.has(r.matchedGiftId ?? "")
-          ? survivorId
-          : r.matchedGiftId,
-        createdGiftId: loserSet.has(r.createdGiftId ?? "")
-          ? survivorId
-          : r.createdGiftId,
-        updatedAt: now,
-      })
-      .where(eq(stripeStagedCharges.id, r.id));
-  }
-  for (const r of loserDonorbox) {
-    await tx
-      .update(donorboxDonations)
-      .set({
-        matchedGiftId: loserSet.has(r.matchedGiftId ?? "")
-          ? survivorId
-          : r.matchedGiftId,
-        createdGiftId: loserSet.has(r.createdGiftId ?? "")
-          ? survivorId
-          : r.createdGiftId,
-        updatedAt: now,
-      })
-      .where(eq(donorboxDonations.id, r.id));
-  }
+  // Re-home corroborating evidence by immutable anchor, deduplicating when the
+  // survivor already has the same corroborating unit.
+  const corroboratingAnchorKey = (
+    row: (typeof corroboratingRows)[number],
+  ): string => {
+    switch (row.evidenceSource) {
+      case "quickbooks":
+        return row.paymentId ? `qb:${row.paymentId}` : `invalid:${row.id}`;
+      case "stripe":
+        return row.stripeChargeId
+          ? `stripe:${row.stripeChargeId}`
+          : `invalid:${row.id}`;
+      case "donorbox":
+        return row.donorboxDonationId
+          ? `donorbox:${row.donorboxDonationId}`
+          : `invalid:${row.id}`;
+    }
+  };
 
-  // ── 6. Re-home corroborating payment_applications (Phase-5 fold of gel) ──
-  // The corroborating ledger is now the sole home for evidence↔gift links
-  // (Phase-5 read-flip: gift_evidence_links is frozen). Re-point each loser's
-  // corroborating row to the survivor, or delete it when the survivor already
-  // corroborates that anchor (the corroborating per-anchor UNIQUE would
-  // otherwise 23505). Audit-only, so this never sums and never blocks the merge
-  // (the §2 collision detector reads the counted ledger only). Keyed on the
-  // anchor, independent of gel ids.
-  const corrAnchorKey = (r: (typeof corrLedger)[number]): string =>
-    r.evidenceSource === "quickbooks"
-      ? `qb:${r.paymentId}`
-      : `st:${r.stripeChargeId}`;
-  const survivorCorrKeys = new Set(
-    corrLedger
-      .filter((r) => r.giftId === survivorId)
-      .map((r) => corrAnchorKey(r)),
+  const survivorCorroboratingKeys = new Set(
+    corroboratingRows
+      .filter((row) => row.giftId === survivorId)
+      .map(corroboratingAnchorKey),
   );
-  for (const r of corrLedger) {
-    if (!loserSet.has(r.giftId)) continue;
-    const key = corrAnchorKey(r);
-    if (survivorCorrKeys.has(key)) {
+
+  for (const row of corroboratingRows) {
+    if (!loserSet.has(row.giftId)) continue;
+    const key = corroboratingAnchorKey(row);
+    if (survivorCorroboratingKeys.has(key)) {
       await tx
         .delete(paymentApplications)
-        .where(eq(paymentApplications.id, r.id));
+        .where(eq(paymentApplications.id, row.id));
     } else {
       await tx
         .update(paymentApplications)
         .set({ giftId: survivorId, updatedAt: now })
-        .where(eq(paymentApplications.id, r.id));
-      survivorCorrKeys.add(key);
+        .where(eq(paymentApplications.id, row.id));
+      survivorCorroboratingKeys.add(key);
     }
   }
 
-  // ── 7. Clear each loser's dangling QB final-amount stamp ─────────────────
-  // The parity gate flags a gift that still carries final_amount_qb_staged_
-  // payment_id but has no QB ledger row (its rows just moved to the survivor).
+  // Loser gifts no longer own any QBO application after the move.
   await tx
     .update(giftsAndPayments)
     .set({ finalAmountQbStagedPaymentId: null, updatedAt: now })
@@ -396,13 +324,7 @@ export async function absorbGiftEvidenceIntoSurvivor(
       ),
     );
 
-  // ── 8. Re-point the conflict-kept gift pointer ─────────────────────────────
-  // A `conflict_approved` settlement KEEPS an already-approved QB deposit gift as
-  // the single source of truth (`settlement_links.conflict_gift_id`). The FK is
-  // ON DELETE SET NULL, but merge ARCHIVES losers (soft-delete) rather than
-  // deleting them, so a pointer at a merged-away kept gift would otherwise
-  // survive pointing at a tombstone — and the conflict-keep double-book guard
-  // compares that pointer to the deposit's gift link. Follow it to the survivor.
+  // Settlement conflict references follow the surviving gift.
   await tx
     .update(settlementLinks)
     .set({ conflictGiftId: survivorId, updatedAt: now })

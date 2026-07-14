@@ -15,17 +15,16 @@ import { runProposalPass } from "./stripeReconcile";
 import { deriveRefundProposal, isFullyRefunded } from "./stripeRefund";
 import { sweepRefundedQbStagedPayments } from "./refundedChargeSweep";
 import { ensureBundleDraftsForAnchors } from "./reconciliationBundleSync";
-import {
-  bookStripeChargeApplication,
-  PaymentOverApplicationError,
-} from "./paymentApplications";
+import { getStripeChargeGiftRelationship } from "./stripeChargeLedger";
+import { proposeStripeAutoApplyInTx } from "./stripeAutoApply";
+import { removePaymentApplicationsForStripeCharge } from "./paymentApplications";
 
-function isUniqueViolation(e: unknown): boolean {
+function isUniqueViolation(error: unknown): boolean {
   return (
-    typeof e === "object" &&
-    e !== null &&
-    "code" in e &&
-    (e as { code?: string }).code === "23505"
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "23505"
   );
 }
 
@@ -38,9 +37,6 @@ export interface StripeSyncSummary {
   refundProposals: number;
 }
 
-// ── Pure helpers (unit-testable without Stripe) ───────────────────────────
-
-/** Stripe minor units (integer cents) → major-unit fixed-2 string. */
 export function minorToAmount(
   minor: number | null | undefined,
 ): string | null {
@@ -55,10 +51,6 @@ const CHICAGO_DATE = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
-/**
- * Stripe epoch-seconds → "YYYY-MM-DD" in America/Chicago (the org's books are
- * kept in central time). en-CA already formats as ISO yyyy-mm-dd.
- */
 export function chargeDateReceived(
   epochSeconds: number | null | undefined,
 ): string | null {
@@ -84,31 +76,27 @@ export interface ChargeFacts {
   dateReceived: string | null;
 }
 
-/**
- * Pull the donor-identifying facts off a (settled) Stripe charge. Donors are
- * credited the captured GROSS amount; the processor fee is taken out at the
- * payout level, not the donor's gift.
- */
 export function extractChargeFacts(charge: Stripe.Charge): ChargeFacts {
-  const bd = charge.billing_details;
+  const billing = charge.billing_details;
   const card =
     charge.payment_method_details && "card" in charge.payment_method_details
       ? charge.payment_method_details.card
       : null;
-  const meta =
+  const metadata =
     charge.metadata && Object.keys(charge.metadata).length > 0
       ? charge.metadata
       : null;
+
   return {
-    payerName: bd?.name ?? null,
-    payerEmail: bd?.email ?? charge.receipt_email ?? null,
+    payerName: billing?.name ?? null,
+    payerEmail: billing?.email ?? charge.receipt_email ?? null,
     description: charge.description ?? null,
     statementDescriptor:
       charge.statement_descriptor ??
       charge.calculated_statement_descriptor ??
       null,
     cardBrand: card?.brand ?? null,
-    metadata: meta,
+    metadata,
     refunded: charge.refunded === true,
     disputed: charge.disputed === true,
     grossAmount: minorToAmount(charge.amount_captured ?? charge.amount),
@@ -135,40 +123,36 @@ export interface PayoutRollup {
   chargeCount: number;
 }
 
-/**
- * Roll a payout's balance transactions into payout-level totals:
- *   gross  — Σ charge/payment amounts (what donors gave)
- *   fee    — Σ processor fees on every txn
- *   refund — Σ |refund amounts|
- *   net    — gross − fee − refund  (≈ payout.amount that hit the bank)
- */
 export function rollupPayout(
-  bts: Stripe.BalanceTransaction[],
+  balanceTransactions: Stripe.BalanceTransaction[],
 ): PayoutRollup {
   let grossMinor = 0;
   let feeMinor = 0;
   let refundMinor = 0;
   let chargeCount = 0;
-  for (const bt of bts) {
-    feeMinor += bt.fee ?? 0;
-    if (bt.type === "charge" || bt.type === "payment") {
-      grossMinor += bt.amount;
+
+  for (const transaction of balanceTransactions) {
+    feeMinor += transaction.fee ?? 0;
+    if (transaction.type === "charge" || transaction.type === "payment") {
+      grossMinor += transaction.amount;
       chargeCount += 1;
-    } else if (bt.type === "refund" || bt.type === "payment_refund") {
-      refundMinor += Math.abs(bt.amount);
+    } else if (
+      transaction.type === "refund" ||
+      transaction.type === "payment_refund"
+    ) {
+      refundMinor += Math.abs(transaction.amount);
     }
   }
-  const netMinor = grossMinor - feeMinor - refundMinor;
+
   return {
     grossTotal: (grossMinor / 100).toFixed(2),
     feeTotal: (feeMinor / 100).toFixed(2),
     refundTotal: (refundMinor / 100).toFixed(2),
-    netTotal: (netMinor / 100).toFixed(2),
+    netTotal: ((grossMinor - feeMinor - refundMinor) / 100).toFixed(2),
     chargeCount,
   };
 }
 
-/** Narrow an expanded balance-transaction source to a Charge. */
 function chargeFromSource(
   source: Stripe.BalanceTransaction["source"],
 ): Stripe.Charge | null {
@@ -178,84 +162,61 @@ function chargeFromSource(
   return null;
 }
 
-/**
- * Resolve the charge id behind a refund- or dispute-type balance transaction
- * (the original charge is not re-listed when a refund/dispute settles later, so
- * we key off the refund/dispute source's `charge` pointer). Returns null for
- * any other balance-transaction type.
- */
 function refundOrDisputeChargeId(
-  bt: Stripe.BalanceTransaction,
+  transaction: Stripe.BalanceTransaction,
 ): string | null {
-  const src = bt.source;
-  if (!src || typeof src === "string") return null;
-  if (src.object === "refund" || src.object === "dispute") {
-    const ch = (src as Stripe.Refund | Stripe.Dispute).charge;
-    return typeof ch === "string" ? ch : (ch?.id ?? null);
+  const source = transaction.source;
+  if (!source || typeof source === "string") return null;
+  if (source.object === "refund" || source.object === "dispute") {
+    const charge = (source as Stripe.Refund | Stripe.Dispute).charge;
+    return typeof charge === "string" ? charge : (charge?.id ?? null);
   }
   return null;
 }
 
 /**
- * Detect Stripe refunds / chargebacks that landed on charges already booked
- * into CRM gifts and RAISE a propose-then-confirm proposal on the staged row
- * (INV-13). Never mutates the gift — a human confirms/dismisses in the queue.
- *
- * The original charge is not in this payout's balance transactions, so we
- * resolve the charge id from each refund/dispute source, re-retrieve the charge
- * for authoritative `refunded` / `disputed` / `amount_refunded` facts, refresh
- * those live facts on the staged row (bypassing the upsert status guard that
- * skips reconciled rows), and raise/escalate a proposal when one is warranted.
- * Idempotent: `deriveRefundProposal` won't re-raise an already-handled refund.
+ * Refresh refund facts and raise proposals only for gifts owned by a confirmed,
+ * counted Stripe payment application. Legacy charge gift pointers are ignored.
  */
 async function propagateRefundsForPayout(
   stripe: Stripe,
-  bts: Stripe.BalanceTransaction[],
+  balanceTransactions: Stripe.BalanceTransaction[],
 ): Promise<number> {
   const chargeIds = new Set<string>();
-  for (const bt of bts) {
-    const cid = refundOrDisputeChargeId(bt);
-    if (cid) chargeIds.add(cid);
+  for (const transaction of balanceTransactions) {
+    const chargeId = refundOrDisputeChargeId(transaction);
+    if (chargeId) chargeIds.add(chargeId);
   }
   if (chargeIds.size === 0) return 0;
 
   let proposed = 0;
   for (const chargeId of chargeIds) {
-    // Only charges we've already staged are relevant; an unstaged charge has no
-    // gift to propagate to and will be handled when it is first staged.
     const row = await db
       .select({
         id: stripeStagedCharges.id,
-        matchedGiftId: stripeStagedCharges.matchedGiftId,
-        createdGiftId: stripeStagedCharges.createdGiftId,
-        refundPropagationGiftId: stripeStagedCharges.refundPropagationGiftId,
         refundPropagationStatus: stripeStagedCharges.refundPropagationStatus,
         refundPropagationKind: stripeStagedCharges.refundPropagationKind,
         refundProposedAmount: stripeStagedCharges.refundProposedAmount,
       })
       .from(stripeStagedCharges)
       .where(eq(stripeStagedCharges.id, chargeId))
-      .then((r) => r[0]);
+      .then((rows) => rows[0]);
     if (!row) continue;
 
     let charge: Stripe.Charge;
     try {
       charge = await stripe.charges.retrieve(chargeId);
-    } catch (e) {
+    } catch (error) {
       logger.warn(
-        { err: e, chargeId },
+        { err: error, chargeId },
         "Stripe refund sync: charge retrieve failed; skipping",
       );
       continue;
     }
+
     const facts = extractChargeFacts(charge);
-
-    const giftId =
-      row.matchedGiftId ??
-      row.createdGiftId ??
-      row.refundPropagationGiftId ??
-      null;
-
+    const relationship = await getStripeChargeGiftRelationship(db, chargeId);
+    const giftId = relationship?.giftId ?? null;
     const proposal = deriveRefundProposal(
       {
         refunded: facts.refunded,
@@ -274,9 +235,6 @@ async function propagateRefundsForPayout(
     await db
       .update(stripeStagedCharges)
       .set({
-        // Always refresh the live refund facts (the upsert guard skips
-        // reconciled rows, so reconciled-then-refunded would otherwise stay
-        // stale).
         refunded: facts.refunded,
         disputed: facts.disputed,
         amountRefunded: facts.amountRefunded,
@@ -294,25 +252,27 @@ async function propagateRefundsForPayout(
       })
       .where(eq(stripeStagedCharges.id, chargeId));
 
-    // A NEVER-BOOKED charge whose refund just landed fully is not workable
-    // money — auto-exclude it (refunded_charge) instead of leaving it in the
-    // live queue. Guarded to still-derived-pending + auto-classified rows so a
-    // human resolve / manual re-include pin is never clobbered. Booked charges
-    // (giftId set) take the propose-then-confirm propagation path above.
+    // A fully refunded charge that never reached a confirmed gift is not money.
+    // Remove any system proposal and classify it terminally instead of leaving a
+    // proposed application stranded in the queue.
     if (giftId == null && isFullyRefunded(facts)) {
-      await db
-        .update(stripeStagedCharges)
-        .set({
-          exclusionReason: "refunded_charge",
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(stripeStagedCharges.id, chargeId),
-            chargeStatusWhere.pending,
-            eq(stripeStagedCharges.classificationSource, "auto"),
-          ),
-        );
+      await db.transaction(async (tx) => {
+        await removePaymentApplicationsForStripeCharge(tx, chargeId);
+        await tx
+          .update(stripeStagedCharges)
+          .set({
+            exclusionReason: "refunded_charge",
+            autoApplied: false,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(stripeStagedCharges.id, chargeId),
+              chargeStatusWhere.pending,
+              eq(stripeStagedCharges.classificationSource, "auto"),
+            ),
+          );
+      });
     }
 
     if (proposal) proposed += 1;
@@ -320,16 +280,7 @@ async function propagateRefundsForPayout(
   return proposed;
 }
 
-// ── Idempotent staged-charge upsert (preserve review state) ───────────────
-
-/**
- * Upsert one staged charge keyed on its Stripe charge id (the PK). On conflict
- * we only refresh read-only Stripe facts (amounts, payer, refund/dispute flags,
- * payout link) and NEVER touch review state (status / donor match / gift
- * linkage). `enrichAllStatuses` lifts the status guard for a full backfill.
- * Exported for DB-backed tests (the failed-charge CASE flip is raw SQL that
- * only real execution can validate).
- */
+/** Preserve review state while refreshing read-only Stripe facts. */
 export function buildStagedChargeUpsert(
   values: typeof stripeStagedCharges.$inferInsert,
   opts: { enrichAllStatuses?: boolean } = {},
@@ -352,34 +303,28 @@ export function buildStagedChargeUpsert(
     statementDescriptor: sql`coalesce(excluded.statement_descriptor, ${stripeStagedCharges.statementDescriptor})`,
     cardBrand: sql`coalesce(excluded.card_brand, ${stripeStagedCharges.cardBrand})`,
     metadata: sql`coalesce(excluded.metadata, ${stripeStagedCharges.metadata})`,
-    // Live facts that can flip after staging — always refresh.
     refunded: sql`excluded.refunded`,
     disputed: sql`excluded.disputed`,
     rawCharge: sql`coalesce(excluded.raw_charge, ${stripeStagedCharges.rawCharge})`,
-    // A charge that transitioned to failed AFTER staging (an ACH debit can
-    // bounce days later) must stop looking like real money: set
-    // exclusion_reason on a still-derived-pending, auto-classified row (which
-    // is what derives it to excluded). Rows a human has resolved (gift link /
-    // exclusion facts in the derived-pending guard) or pinned via re-include
-    // (manual) are never touched.
-    //
-    // Likewise a charge FULLY refunded after staging with no gift link is not
-    // workable money → refunded_charge (failed wins when both apply; a
-    // disputed charge is a chargeback, not this — mirrors isFullyRefunded).
-    // A charge WITH a gift link is never pending, so booked-then-refunded
-    // charges keep flowing through refund propagation untouched.
     exclusionReason: sql`CASE
-      WHEN ${chargeStatusWhere.pending} AND ${stripeStagedCharges.classificationSource} = 'auto' AND excluded.raw_charge->>'status' = 'failed' THEN 'failed_charge'::staged_payment_exclusion_reason
-      WHEN ${chargeStatusWhere.pending} AND ${stripeStagedCharges.classificationSource} = 'auto'
-        AND excluded.refunded = true AND excluded.disputed IS NOT TRUE
-        AND excluded.gross_amount IS NOT NULL AND excluded.gross_amount > 0
+      WHEN ${chargeStatusWhere.pending}
+        AND ${stripeStagedCharges.classificationSource} = 'auto'
+        AND excluded.raw_charge->>'status' = 'failed'
+        THEN 'failed_charge'::staged_payment_exclusion_reason
+      WHEN ${chargeStatusWhere.pending}
+        AND ${stripeStagedCharges.classificationSource} = 'auto'
+        AND excluded.refunded = true
+        AND excluded.disputed IS NOT TRUE
+        AND excluded.gross_amount IS NOT NULL
+        AND excluded.gross_amount > 0
         AND coalesce(excluded.amount_refunded, excluded.gross_amount) >= excluded.gross_amount - 0.005
         THEN 'refunded_charge'::staged_payment_exclusion_reason
       ELSE ${stripeStagedCharges.exclusionReason}
     END`,
     updatedAt: new Date(),
   };
-  const base = db
+
+  return db
     .insert(stripeStagedCharges)
     .values(values)
     .onConflictDoUpdate({
@@ -387,93 +332,25 @@ export function buildStagedChargeUpsert(
       set,
       ...(opts.enrichAllStatuses
         ? {}
-        : {
-            setWhere: chargeStatusIn(["pending", "excluded"]),
-          }),
+        : { setWhere: chargeStatusIn(["pending", "excluded"]) }),
     });
-  return base;
 }
 
-/**
- * Auto-RECONCILE a high-confidence charge to the single existing gift it
- * matched (never mints). Guards that no other staged_payments OR
- * stripe_staged_charges row already claims the gift; the partial-unique index
- * backstops a true race. Leaves the row pending on contention.
- *
- * NOTE: this guard is DELIBERATELY cross-kind — it will not auto-link even to a
- * gift only a QuickBooks staged payment owns, despite the matcher now treating
- * QB and Stripe as parallel evidence (giftsInWindow "charge" kind). Auto-apply
- * stays conservative on purpose: a cross-processor tie is a book-once decision a
- * human confirms in the Reconciliation Workbench, so here the update simply
- * no-ops and the row surfaces for review. Do NOT loosen this to honor parallel
- * evidence without moving the book-once dedupe onto the ledger first.
- */
+/** Write a high-confidence system match as a proposed ledger application. */
 async function stripeAutoApply(
   chargeId: string,
   giftId: string,
 ): Promise<boolean> {
   try {
-    return await db.transaction(async (tx) => {
-      const upd = await tx
-        .update(stripeStagedCharges)
-        .set({
-          // matchedGiftId + autoApplied (with matchConfirmedAt still NULL) is
-          // exactly what derives the row to `match_proposed` — no status write.
-          matchStatus: "matched",
-          matchedGiftId: giftId,
-          autoApplied: true,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(stripeStagedCharges.id, chargeId),
-            chargeStatusWhere.pending,
-            sql`NOT EXISTS (
-            SELECT 1 FROM staged_payments sp
-            WHERE sp.matched_gift_id = ${giftId} OR sp.created_gift_id = ${giftId}
-          )`,
-            sql`NOT EXISTS (
-            SELECT 1 FROM stripe_staged_charges sc2
-            WHERE (sc2.matched_gift_id = ${giftId} OR sc2.created_gift_id = ${giftId})
-              AND sc2.id <> ${chargeId}
-          )`,
-          ),
-        )
-        .returning({
-          id: stripeStagedCharges.id,
-          grossAmount: stripeStagedCharges.grossAmount,
-        });
-      if (upd.length === 0) return false;
-      // Dual-write (Phase 2): book the charge → gift ledger row. Worker
-      // auto-apply is `system` provenance and TERMINAL-until-revert — no
-      // confirm-promotion path (a human revert deletes the row; a later human
-      // re-reconcile writes a fresh `human` row via delete-by-anchor).
-      await bookStripeChargeApplication(tx, {
-        stripeChargeId: chargeId,
-        grossAmount: upd[0]!.grossAmount,
-        giftId,
-        matchMethod: "system",
-        createdTheGift: false,
-      });
-      return true;
-    });
-  } catch (e) {
-    // A concurrent tie (partial-unique 23505) or an over-application leaves the
-    // charge pending for human review — never a hard failure of the sync run.
-    if (isUniqueViolation(e)) return false;
-    if (e instanceof PaymentOverApplicationError) return false;
-    throw e;
+    return await db.transaction((tx) =>
+      proposeStripeAutoApplyInTx(tx, { chargeId, giftId }),
+    );
+  } catch (error) {
+    if (isUniqueViolation(error)) return false;
+    throw error;
   }
 }
 
-/**
- * Stage one payout: record its rollup (idempotent) and stage one review-queue
- * row per settled charge (idempotent by charge id, preserving review state),
- * reconcile-only auto-applying high-confidence matches. Shared by the ongoing
- * sync and the historical backfill. `enrichAllStatuses` lifts the upsert status
- * guard so a full re-pull refreshes read-only Stripe facts on already-resolved
- * rows non-destructively (never touches review/reconciliation state).
- */
 async function stagePayoutAndCharges(
   stripe: Stripe,
   accountId: string,
@@ -489,17 +366,15 @@ async function stagePayoutAndCharges(
   let matched = 0;
   let autoApplied = 0;
 
-  // All balance transactions that settled in this payout, charge sources
-  // expanded so we can read donor facts in one pass.
-  const bts: Stripe.BalanceTransaction[] = [];
-  for await (const bt of stripe.balanceTransactions.list({
+  const balanceTransactions: Stripe.BalanceTransaction[] = [];
+  for await (const transaction of stripe.balanceTransactions.list({
     payout: payout.id,
     limit: 100,
     expand: ["data.source"],
   })) {
-    bts.push(bt);
+    balanceTransactions.push(transaction);
   }
-  const rollup = rollupPayout(bts);
+  const rollup = rollupPayout(balanceTransactions);
 
   await db
     .insert(stripePayouts)
@@ -541,20 +416,13 @@ async function stagePayoutAndCharges(
       },
     });
 
-  for (const bt of bts) {
-    if (bt.type !== "charge" && bt.type !== "payment") continue;
-    const charge = chargeFromSource(bt.source);
+  for (const transaction of balanceTransactions) {
+    if (transaction.type !== "charge" && transaction.type !== "payment") continue;
+    const charge = chargeFromSource(transaction.source);
     if (!charge) continue;
 
     const facts = extractChargeFacts(charge);
-    // A failed charge (e.g. an ACH debit that bounced; Stripe retries create a
-    // NEW charge) is staged so the mirror stays 1:1 with Stripe, but classified
-    // excluded up front so it never surfaces as real money in the queues.
     const chargeFailed = charge.status === "failed";
-    // A charge fully refunded before we ever staged it is likewise not
-    // workable money — auto-exclude with refunded_charge (failed wins when
-    // both apply). Insert-time only affects brand-new rows; the upsert CASE
-    // above handles refunds that land after staging.
     const chargeFullyRefunded = !chargeFailed && isFullyRefunded(facts);
     const scored = await scoreStripeCharge({
       payerName: facts.payerName,
@@ -585,12 +453,12 @@ async function stagePayoutAndCharges(
         id: charge.id,
         stripeAccountId: accountId,
         stripePayoutId: payout.id,
-        stripeBalanceTransactionId: bt.id,
+        stripeBalanceTransactionId: transaction.id,
         stripePaymentIntentId: facts.stripePaymentIntentId,
         stripeCustomerId: facts.stripeCustomerId,
         grossAmount: facts.grossAmount,
-        feeAmount: minorToAmount(bt.fee),
-        netAmount: minorToAmount(bt.net),
+        feeAmount: minorToAmount(transaction.fee),
+        netAmount: minorToAmount(transaction.net),
         amountRefunded: facts.amountRefunded,
         currency: facts.currency,
         chargeCreated: facts.chargeCreated,
@@ -629,37 +497,23 @@ async function stagePayoutAndCharges(
     staged += 1;
     if (scored.method && scored.tier !== "none") matched += 1;
 
-    // Reconcile-only auto-apply (mirrors QuickBooks): link to the single
-    // existing gift when confident; never mint here. A failed or fully-
-    // refunded charge is not money — never auto-link it to a gift.
     if (
       !chargeFailed &&
       !chargeFullyRefunded &&
       scored.tier === "high" &&
       scored.matchedGiftId
     ) {
-      const did = await stripeAutoApply(charge.id, scored.matchedGiftId);
-      if (did) autoApplied += 1;
+      const didApply = await stripeAutoApply(charge.id, scored.matchedGiftId);
+      if (didApply) autoApplied += 1;
     }
   }
 
-  // Propose any refunds/chargebacks that landed on this payout against the
-  // already-booked gifts behind the original charges (propose-then-confirm).
-  const refundProposals = await propagateRefundsForPayout(stripe, bts);
-
+  const refundProposals = await propagateRefundsForPayout(
+    stripe,
+    balanceTransactions,
+  );
   return { staged, matched, autoApplied, refundProposals };
 }
-
-// ── Background full re-pull ("backfill all payouts") ──────────────────────
-//
-// The ongoing syncStripe() only pulls payouts created at/after the per-account
-// watermark, and the first-ever run seeds that watermark to "now" — so the
-// historical back-catalogue (e.g. 2019–2021 payouts that predate when the sync
-// was first switched on) was never pulled. A full re-pull lifts the watermark
-// floor and re-walks every payout from the account's beginning, backfilling the
-// missing payout + charge records non-destructively (review state preserved). It
-// can take several minutes, so it runs in the background and the UI polls the
-// status below — mirrors the QuickBooks full re-pull pattern.
 
 export type StripeFullResyncStatus = "idle" | "running" | "done" | "error";
 
@@ -683,13 +537,6 @@ export function getStripeFullResyncState(): StripeFullResyncState {
   return stripeFullResyncState;
 }
 
-/**
- * Start a full Stripe re-pull in the background and return the current state
- * immediately. If one is already running this is a no-op that returns the
- * in-progress state (the per-account advisory lock is the real guard against
- * concurrent Stripe pulls; this only keeps the UI from launching a second
- * poller).
- */
 export function startStripeFullResync(): StripeFullResyncState {
   if (stripeFullResyncState.status === "running") return stripeFullResyncState;
 
@@ -716,66 +563,63 @@ export function startStripeFullResync(): StripeFullResyncState {
         { payouts: summary.payouts, staged: summary.staged },
         "Stripe full re-pull (background) complete",
       );
-    } catch (e) {
+    } catch (error) {
       stripeFullResyncState = {
         status: "error",
         startedAt,
         finishedAt: new Date().toISOString(),
         summary: null,
-        error: e instanceof Error ? e.message : "Stripe full re-pull failed",
+        error:
+          error instanceof Error ? error.message : "Stripe full re-pull failed",
       };
-      logger.error({ err: e }, "Stripe full re-pull (background) failed");
+      logger.error({ err: error }, "Stripe full re-pull (background) failed");
     }
   })();
 
   return stripeFullResyncState;
 }
 
-// ── Sync worker ───────────────────────────────────────────────────────────
-
-/**
- * Ongoing Stripe → CRM payout sync. Pulls payouts created at/after the per-
- * account watermark, lists each payout's balance transactions (charges +
- * refunds + fees), stages one review-queue row per charge (idempotent by charge
- * id, preserving review state), and records payout-level rollups. Advisory-
- * locked per Stripe account under the "stripe" source tag.
- *
- * First-ever run seeds the watermark to "now" and stages nothing — the
- * historical back-catalogue (already booked in QuickBooks as net lumps) is
- * intentionally not reprocessed (ongoing-only first cut).
- *
- * `fullResync` lifts the created-watermark floor and the upsert status guard so
- * an admin can backfill Stripe facts onto already-resolved rows non-
- * destructively.
- */
 export async function syncStripe(
   opts: { fullResync?: boolean } = {},
 ): Promise<StripeSyncSummary> {
   const fullResync = opts.fullResync === true;
-
   let client: { stripe: Stripe; accountId: string | null };
+
   try {
     client = await getUncachableStripeClient();
-  } catch (e) {
-    logger.debug({ err: e }, "Stripe sync: connector unavailable, skipping");
-    return { ran: false, payouts: 0, staged: 0, matched: 0, autoApplied: 0, refundProposals: 0 };
+  } catch (error) {
+    logger.debug({ err: error }, "Stripe sync: connector unavailable, skipping");
+    return {
+      ran: false,
+      payouts: 0,
+      staged: 0,
+      matched: 0,
+      autoApplied: 0,
+      refundProposals: 0,
+    };
   }
+
   const { stripe, accountId } = client;
   if (!accountId) {
     logger.warn("Stripe sync: no account id from connector, skipping");
-    return { ran: false, payouts: 0, staged: 0, matched: 0, autoApplied: 0, refundProposals: 0 };
+    return {
+      ran: false,
+      payouts: 0,
+      staged: 0,
+      matched: 0,
+      autoApplied: 0,
+      refundProposals: 0,
+    };
   }
 
   const outcome = await withSyncLock(accountId, "stripe", async () => {
-    // Load or seed the per-account cursor.
     const state = await db
       .select()
       .from(stripeSyncState)
       .where(eq(stripeSyncState.stripeAccountId, accountId))
-      .then((r) => r[0]);
+      .then((rows) => rows[0]);
 
     if (!state) {
-      // First-ever run for this account: seed the cursor.
       await db
         .insert(stripeSyncState)
         .values({
@@ -786,31 +630,27 @@ export async function syncStripe(
           consecutiveErrors: 0,
         })
         .onConflictDoNothing();
-      // The ongoing (incremental) path stops here and stages nothing — the
-      // historical back-catalogue is intentionally not reprocessed on first cut.
-      // A fullResync, however, exists PRECISELY to backfill that history, so it
-      // must NOT short-circuit: it falls through to walk every payout below
-      // (watermark lifted). The cursor just inserted is overwritten at the end of
-      // the walk with the newest payout seen, so subsequent incremental syncs
-      // continue correctly from there.
       if (!fullResync) {
         logger.info(
           { accountId },
-          "Stripe sync: seeded watermark to now (ongoing-only); first run stages nothing",
+          "Stripe sync: seeded watermark to now; first run stages nothing",
         );
-        return { payouts: 0, staged: 0, matched: 0, autoApplied: 0, refundProposals: 0 };
+        return {
+          payouts: 0,
+          staged: 0,
+          matched: 0,
+          autoApplied: 0,
+          refundProposals: 0,
+        };
       }
-      logger.info(
-        { accountId },
-        "Stripe full re-pull: no prior cursor; seeded one and walking the full payout history",
-      );
     }
 
-    const watermark = fullResync ? null : (state?.payoutCreatedWatermark ?? null);
+    const watermark = fullResync
+      ? null
+      : (state?.payoutCreatedWatermark ?? null);
     let maxCreated: number | null = state?.payoutCreatedWatermark
       ? Math.floor(state.payoutCreatedWatermark.getTime() / 1000)
       : null;
-
     let payoutsSeen = 0;
     let staged = 0;
     let matched = 0;
@@ -821,8 +661,6 @@ export async function syncStripe(
     try {
       const params: Stripe.PayoutListParams = { limit: 100 };
       if (watermark) {
-        // gte (not gt) + idempotent upsert tolerates the boundary payout being
-        // re-pulled rather than risk skipping one created in the watermark sec.
         params.created = { gte: Math.floor(watermark.getTime() / 1000) };
       }
 
@@ -835,18 +673,19 @@ export async function syncStripe(
         ) {
           maxCreated = payout.created;
         }
-
-        const r = await stagePayoutAndCharges(stripe, accountId, payout, {
+        const result = await stagePayoutAndCharges(stripe, accountId, payout, {
           enrichAllStatuses: fullResync,
         });
-        staged += r.staged;
-        matched += r.matched;
-        autoApplied += r.autoApplied;
-        refundProposals += r.refundProposals;
+        staged += result.staged;
+        matched += result.matched;
+        autoApplied += result.autoApplied;
+        refundProposals += result.refundProposals;
       }
 
       const newWatermark =
-        maxCreated !== null ? new Date(maxCreated * 1000) : (watermark ?? new Date());
+        maxCreated !== null
+          ? new Date(maxCreated * 1000)
+          : (watermark ?? new Date());
       await db
         .update(stripeSyncState)
         .set({
@@ -859,34 +698,27 @@ export async function syncStripe(
         })
         .where(eq(stripeSyncState.stripeAccountId, accountId));
 
-      // Generate/refresh settlement-bundle drafts for the payouts we touched
-      // (best-effort: never throws, never clobbers human overrides).
       await ensureBundleDraftsForAnchors(
         seenPayoutIds.map((id) => ({
           anchorType: "stripe_payout" as const,
           anchorId: id,
         })),
       );
-
-      // Refund facts arrive from the Stripe side, often after the QB row and
-      // its ties/links already exist — sweep pending QB rows whose full Stripe
-      // trace is now refunded money (idempotent, one guarded UPDATE).
       await sweepRefundedQbStagedPayments();
-
       return { payouts: payoutsSeen, staged, matched, autoApplied, refundProposals };
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       await db
         .update(stripeSyncState)
         .set({
           lastRunAt: new Date(),
           lastRunStatus: "error",
-          lastError: msg,
+          lastError: message,
           consecutiveErrors: sql`${stripeSyncState.consecutiveErrors} + 1`,
           updatedAt: new Date(),
         })
         .where(eq(stripeSyncState.stripeAccountId, accountId));
-      throw e;
+      throw error;
     }
   });
 
@@ -914,19 +746,6 @@ export interface StripeBackfillSummary {
   cleared: number;
 }
 
-/**
- * Historical backfill. Pulls payouts CREATED within [from, to] (open-ended end
- * when `to` is omitted), stages their charges + payout rollups with
- * `enrichAllStatuses` (refresh read-only Stripe facts on already-staged rows
- * without disturbing review state), then runs the payout↔QB-deposit proposal
- * pass over exactly the payouts it touched.
- *
- * UNLIKE syncStripe this NEVER moves the ongoing watermark and never seeds sync
- * state: it is a bounded, repeatable admin pull of the back-catalogue that the
- * first-run watermark intentionally skipped, leaving the ongoing cursor exactly
- * where it is. Advisory-locked per account under the "stripe" tag so it
- * serializes with the ongoing sync (no nested lock around the proposal pass).
- */
 export async function syncStripeBackfill(opts: {
   from: Date;
   to?: Date;
@@ -945,10 +764,14 @@ export async function syncStripeBackfill(opts: {
   let client: { stripe: Stripe; accountId: string | null };
   try {
     client = await getUncachableStripeClient();
-  } catch (e) {
-    logger.debug({ err: e }, "Stripe backfill: connector unavailable, skipping");
+  } catch (error) {
+    logger.debug(
+      { err: error },
+      "Stripe backfill: connector unavailable, skipping",
+    );
     return empty;
   }
+
   const { stripe, accountId } = client;
   if (!accountId) {
     logger.warn("Stripe backfill: no account id from connector, skipping");
@@ -957,35 +780,31 @@ export async function syncStripeBackfill(opts: {
 
   const fromSec = Math.floor(opts.from.getTime() / 1000);
   const toSec = opts.to ? Math.floor(opts.to.getTime() / 1000) : null;
-
   const outcome = await withSyncLock(accountId, "stripe", async () => {
     let payoutsSeen = 0;
     let staged = 0;
     let matched = 0;
     let autoApplied = 0;
     const seenIds: string[] = [];
-
     const params: Stripe.PayoutListParams = {
       limit: 100,
       created: toSec != null ? { gte: fromSec, lte: toSec } : { gte: fromSec },
     };
+
     for await (const payout of stripe.payouts.list(params)) {
       payoutsSeen += 1;
       seenIds.push(payout.id);
-      const r = await stagePayoutAndCharges(stripe, accountId, payout, {
+      const result = await stagePayoutAndCharges(stripe, accountId, payout, {
         enrichAllStatuses: true,
       });
-      staged += r.staged;
-      matched += r.matched;
-      autoApplied += r.autoApplied;
+      staged += result.staged;
+      matched += result.matched;
+      autoApplied += result.autoApplied;
     }
 
-    const prop = seenIds.length
+    const proposal = seenIds.length
       ? await runProposalPass(seenIds)
       : { evaluated: 0, proposed: 0, conflicts: 0, cleared: 0 };
-
-    // Newly-backfilled refund facts + newly-proposed links can complete a QB
-    // row's refunded Stripe trace — sweep after the proposal pass.
     await sweepRefundedQbStagedPayments();
 
     logger.info(
@@ -993,8 +812,8 @@ export async function syncStripeBackfill(opts: {
         accountId,
         payouts: payoutsSeen,
         staged,
-        proposed: prop.proposed,
-        conflicts: prop.conflicts,
+        proposed: proposal.proposed,
+        conflicts: proposal.conflicts,
       },
       "Stripe backfill complete",
     );
@@ -1004,9 +823,9 @@ export async function syncStripeBackfill(opts: {
       staged,
       matched,
       autoApplied,
-      proposed: prop.proposed,
-      conflicts: prop.conflicts,
-      cleared: prop.cleared,
+      proposed: proposal.proposed,
+      conflicts: proposal.conflicts,
+      cleared: proposal.cleared,
     };
   });
 
@@ -1022,24 +841,18 @@ export interface StripeRematchSummary {
 
 const STRIPE_REMATCH_CONCURRENCY = 8;
 
-/**
- * On-demand donor backfill: re-score still-`pending` + `unmatched` + donor-less
- * Stripe charges with the latest matching logic and record any donor hint found.
- * DONOR-ONLY by design — never mints or reconciles a gift (that auto-apply only
- * happens on fresh ingestion), so the manual "rematch" button can never bulk-
- * write the ledger by surprise. Each write is a guarded conditional UPDATE
- * (still pending + unmatched + donor-less) so a concurrent human resolve is
- * never clobbered. Advisory-locked under the same per-account "stripe" key so it
- * serializes against the sync worker.
- */
 export async function rematchStripeCharges(): Promise<StripeRematchSummary> {
   let client: { stripe: Stripe; accountId: string | null };
   try {
     client = await getUncachableStripeClient();
-  } catch (e) {
-    logger.debug({ err: e }, "Stripe rematch: connector unavailable, skipping");
+  } catch (error) {
+    logger.debug(
+      { err: error },
+      "Stripe rematch: connector unavailable, skipping",
+    );
     return { ran: false, scanned: 0, matched: 0 };
   }
+
   const { accountId } = client;
   if (!accountId) return { ran: false, scanned: 0, matched: 0 };
 
@@ -1066,8 +879,8 @@ export async function rematchStripeCharges(): Promise<StripeRematchSummary> {
       );
 
     let matched = 0;
-    for (let i = 0; i < candidates.length; i += STRIPE_REMATCH_CONCURRENCY) {
-      const chunk = candidates.slice(i, i + STRIPE_REMATCH_CONCURRENCY);
+    for (let index = 0; index < candidates.length; index += STRIPE_REMATCH_CONCURRENCY) {
+      const chunk = candidates.slice(index, index + STRIPE_REMATCH_CONCURRENCY);
       const results = await Promise.all(
         chunk.map(async (row) => {
           const scored = await scoreStripeCharge({
@@ -1081,7 +894,7 @@ export async function rematchStripeCharges(): Promise<StripeRematchSummary> {
           if (scored.tier === "none" || !scored.method) return false;
           const newMatchStatus =
             scored.tier === "high" ? "matched" : "suggested";
-          const upd = await db
+          const updated = await db
             .update(stripeStagedCharges)
             .set({
               matchStatus: newMatchStatus,
@@ -1104,7 +917,7 @@ export async function rematchStripeCharges(): Promise<StripeRematchSummary> {
               ),
             )
             .returning({ id: stripeStagedCharges.id });
-          return upd.length > 0;
+          return updated.length > 0;
         }),
       );
       matched += results.filter(Boolean).length;

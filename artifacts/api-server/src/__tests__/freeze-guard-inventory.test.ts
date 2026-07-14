@@ -28,16 +28,8 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const SRC = join(here, "..");
 
-// A write is a `.insert|.update|.delete(` applied directly to one of the four
-// table identifiers. Aliased imports would evade this (same limitation the
-// enumeration below inherits) — none exist today.
 const WRITE_RE =
   /\.(insert|update|delete)\(\s*(giftsAndPayments|opportunitiesAndPledges|giftAllocations|pledgeAllocations)\b/;
-
-// Generic table-agnostic helpers (bulk-update, archive, entity merge) write to a
-// `cfg.table` / `config.table` passed in by the caller, so they can target the
-// audited money tables without naming them. They MUST be censused too — a
-// generic writer is exactly how the freeze was bypassed before this net widened.
 const GENERIC_WRITE_RE = /\.(insert|update|delete)\(\s*(cfg|config)\.table\b/;
 
 const GUARD_SYMBOLS = [
@@ -62,7 +54,6 @@ interface FileClass {
 }
 
 const EXPECTED: Record<string, FileClass> = {
-  // ── GUARDED — human-edit routes over audited gift/pledge facts ──
   "routes/giftsAndPayments.ts": {
     classification: "guarded",
     reason:
@@ -93,8 +84,6 @@ const EXPECTED: Record<string, FileClass> = {
     reason:
       "Generic archive/unarchive/bulk-archive helper: enforces the optional freezeResolver the gift/pledge routes wire in (frozen → 409, or skipped in bulk). Non-audited tables pass no resolver.",
   },
-
-  // ── EXEMPT — derived appliers, grant-letter artifacts, system money writers ──
   "lib/giftQbTie.ts": {
     classification: "exempt",
     reason: "Derived-column applier: writes only the derived quickbooks_tie_status.",
@@ -136,6 +125,11 @@ const EXPECTED: Record<string, FileClass> = {
     classification: "exempt",
     reason:
       "Stripe refund/chargeback propagation (system, forward-only). FOLLOW-UP: re-yearing a refund that reduces a closed-FY gift is not handled yet.",
+  },
+  "lib/stripeChargeRevert.ts": {
+    classification: "exempt",
+    reason:
+      "Ledger-authoritative reversal of a Stripe charge's own application; deletes a charge-minted gift only when no other evidence still funds it.",
   },
   "lib/applyProposalActions.ts": {
     classification: "exempt",
@@ -220,7 +214,9 @@ describe("freeze-guard inventory", () => {
   const writers = new Map<string, string>();
   for (const full of walk(SRC)) {
     const src = readFileSync(full, "utf8");
-    if (WRITE_RE.test(src) || GENERIC_WRITE_RE.test(src)) writers.set(relKey(full), src);
+    if (WRITE_RE.test(src) || GENERIC_WRITE_RE.test(src)) {
+      writers.set(relKey(full), src);
+    }
   }
 
   it("every gift/pledge/allocation write surface is classified", () => {
@@ -234,7 +230,7 @@ describe("freeze-guard inventory", () => {
       if (meta.classification !== "guarded") continue;
       const src = writers.get(rel);
       expect(src, `${rel} is classified guarded but has no write surface`).toBeDefined();
-      const usesGuard = GUARD_SYMBOLS.some((s) => src!.includes(s));
+      const usesGuard = GUARD_SYMBOLS.some((symbol) => src!.includes(symbol));
       expect(
         usesGuard,
         `${rel} is classified guarded but never references the freeze guard`,

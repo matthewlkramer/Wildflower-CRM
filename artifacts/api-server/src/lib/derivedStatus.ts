@@ -1,49 +1,19 @@
 import { sql, type SQL } from "drizzle-orm";
 import {
+  donorboxDonations,
+  paymentApplications,
+  settlementLinks,
   stagedPayments,
   stripeStagedCharges,
-  settlementLinks,
-  paymentApplications,
 } from "@workspace/db/schema";
 
 /**
- * SINGLE SOURCE OF TRUTH for the derived reconciliation status of staged
- * QuickBooks payments (`staged_payments`) and staged Stripe charges
- * (`stripe_staged_charges`).
+ * Shared reconciliation lifecycle derivation.
  *
- * There is NO stored status column on either table — status is a pure
- * derivation over facts, so a row can never claim a state its facts don't
- * support and nothing can silently go stale. Precedence order:
- *
- *   excluded        ⇐ exclusion_reason IS NOT NULL. The row was classified as
- *                     non-donation noise (auto or manual) — out of the money
- *                     flow entirely.
- *   match_proposed  ⇐ auto_applied AND match_confirmed_at IS NULL AND a
- *                     matched/created gift link. The system applied a
- *                     high-confidence match that a human has not yet reviewed.
- *   match_confirmed ⇐ the money is booked to a CRM gift, evidenced by ANY of:
- *                       - matched_gift_id   (linked to a pre-existing gift)
- *                       - created_gift_id   (a gift was minted from this row)
- *                       - group_reconciled_gift_id (member of a group
- *                         reconciled to one gift; QB only)
- *                       - a CONFIRMED settlement link naming this row as the
- *                         QB deposit lump (QB only — the deposit is settled
- *                         against a Stripe payout, its money booked per-charge)
- *                       - a counted payment_applications ledger row anchored
- *                         on this row (QB only — covers splits, which carry
- *                         none of the three gift-link columns)
- *   pending         ⇐ none of the above — open work awaiting review.
- *
- * `match_proposed` is checked BEFORE `match_confirmed` because a proposed row
- * also carries a gift link; human confirmation (match_confirmed_at) or
- * autoApplied=false is what promotes it.
- *
- * NOTE (drizzle footgun): these fragments reference the BASE tables. Columns
- * of an alias() table render UNQUALIFIED inside sql`` — do not pass these
- * fragments into queries that alias staged_payments / stripe_staged_charges;
- * build alias-local predicates at the call site instead.
+ * Stripe and Donorbox unit-to-gift status is authoritative in
+ * payment_applications. QuickBooks remains in a staged cutover because direct,
+ * grouped, and split QBO shapes are not all pointer-free yet.
  */
-
 export const DERIVED_STATUSES = [
   "pending",
   "match_proposed",
@@ -54,21 +24,19 @@ export type DerivedStatus = (typeof DERIVED_STATUSES)[number];
 
 /* ── staged_payments (QuickBooks) ──────────────────────────────────────── */
 
-/** EXISTS: a confirmed settlement link names this row as the deposit lump. */
 export const stagedConfirmedSettlementLinkExists: SQL<boolean> = sql`EXISTS (
   SELECT 1 FROM ${settlementLinks}
   WHERE ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id}
     AND ${settlementLinks.lifecycle} = 'confirmed'
 )`;
 
-/** EXISTS: a counted cash-application ledger row is anchored on this row. */
 export const stagedCountedApplicationExists: SQL<boolean> = sql`EXISTS (
   SELECT 1 FROM ${paymentApplications}
   WHERE ${paymentApplications.paymentId} = ${stagedPayments.id}
     AND ${paymentApplications.linkRole} = 'counted'
+    AND ${paymentApplications.lifecycle} = 'confirmed'
 )`;
 
-/** Any of the three direct gift-link columns is set. */
 export const stagedAnyGiftLink: SQL<boolean> = sql`(
   ${stagedPayments.matchedGiftId} IS NOT NULL
   OR ${stagedPayments.createdGiftId} IS NOT NULL
@@ -87,7 +55,6 @@ const stagedConfirmedEvidence: SQL<boolean> = sql`(
   OR ${stagedCountedApplicationExists}
 )`;
 
-/** SELECTable CASE expression emitting the derived status for a staged payment. */
 export const stagedStatusSql: SQL<DerivedStatus> = sql`CASE
   WHEN ${stagedPayments.exclusionReason} IS NOT NULL THEN 'excluded'
   WHEN ${stagedProposedCondition} THEN 'match_proposed'
@@ -95,7 +62,6 @@ export const stagedStatusSql: SQL<DerivedStatus> = sql`CASE
   ELSE 'pending'
 END`.mapWith(String) as SQL<DerivedStatus>;
 
-/** Per-status WHERE predicates (mutually exclusive, exhaustive). */
 export const stagedStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
   excluded: sql`${stagedPayments.exclusionReason} IS NOT NULL`,
   match_proposed: sql`(
@@ -117,55 +83,113 @@ export const stagedStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
   )`,
 };
 
-/** OR-combination of per-status predicates for queue/filter params. */
 export function stagedStatusIn(statuses: readonly DerivedStatus[]): SQL<boolean> {
-  const parts = statuses.map((s) => stagedStatusWhere[s]);
+  const parts = statuses.map((status) => stagedStatusWhere[status]);
   if (parts.length === 0) return sql`false`;
   return sql`(${sql.join(parts, sql` OR `)})`;
 }
 
 /* ── stripe_staged_charges ─────────────────────────────────────────────── */
 
-const chargeProposedCondition: SQL<boolean> = sql`(
-  ${stripeStagedCharges.autoApplied} = true
-  AND ${stripeStagedCharges.matchConfirmedAt} IS NULL
-  AND (${stripeStagedCharges.matchedGiftId} IS NOT NULL OR ${stripeStagedCharges.createdGiftId} IS NOT NULL)
+export const chargeProposedApplicationExists: SQL<boolean> = sql`EXISTS (
+  SELECT 1 FROM ${paymentApplications}
+  WHERE ${paymentApplications.stripeChargeId} = ${stripeStagedCharges.id}
+    AND ${paymentApplications.evidenceSource} = 'stripe'
+    AND ${paymentApplications.linkRole} = 'counted'
+    AND ${paymentApplications.lifecycle} = 'proposed'
 )`;
 
-const chargeConfirmedEvidence: SQL<boolean> = sql`(
-  ${stripeStagedCharges.matchedGiftId} IS NOT NULL
-  OR ${stripeStagedCharges.createdGiftId} IS NOT NULL
+export const chargeConfirmedApplicationExists: SQL<boolean> = sql`EXISTS (
+  SELECT 1 FROM ${paymentApplications}
+  WHERE ${paymentApplications.stripeChargeId} = ${stripeStagedCharges.id}
+    AND ${paymentApplications.evidenceSource} = 'stripe'
+    AND ${paymentApplications.linkRole} = 'counted'
+    AND ${paymentApplications.lifecycle} = 'confirmed'
 )`;
 
-/** SELECTable CASE expression emitting the derived status for a Stripe charge. */
 export const chargeStatusSql: SQL<DerivedStatus> = sql`CASE
   WHEN ${stripeStagedCharges.exclusionReason} IS NOT NULL THEN 'excluded'
-  WHEN ${chargeProposedCondition} THEN 'match_proposed'
-  WHEN ${chargeConfirmedEvidence} THEN 'match_confirmed'
+  WHEN ${chargeProposedApplicationExists} THEN 'match_proposed'
+  WHEN ${chargeConfirmedApplicationExists} THEN 'match_confirmed'
   ELSE 'pending'
 END`.mapWith(String) as SQL<DerivedStatus>;
 
-/** Per-status WHERE predicates (mutually exclusive, exhaustive). */
 export const chargeStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
   excluded: sql`${stripeStagedCharges.exclusionReason} IS NOT NULL`,
   match_proposed: sql`(
     ${stripeStagedCharges.exclusionReason} IS NULL
-    AND ${chargeProposedCondition}
+    AND ${chargeProposedApplicationExists}
   )`,
   match_confirmed: sql`(
     ${stripeStagedCharges.exclusionReason} IS NULL
-    AND NOT ${chargeProposedCondition}
-    AND ${chargeConfirmedEvidence}
+    AND NOT ${chargeProposedApplicationExists}
+    AND ${chargeConfirmedApplicationExists}
   )`,
   pending: sql`(
     ${stripeStagedCharges.exclusionReason} IS NULL
-    AND ${stripeStagedCharges.matchedGiftId} IS NULL
-    AND ${stripeStagedCharges.createdGiftId} IS NULL
+    AND NOT ${chargeProposedApplicationExists}
+    AND NOT ${chargeConfirmedApplicationExists}
   )`,
 };
 
 export function chargeStatusIn(statuses: readonly DerivedStatus[]): SQL<boolean> {
-  const parts = statuses.map((s) => chargeStatusWhere[s]);
+  const parts = statuses.map((status) => chargeStatusWhere[status]);
+  if (parts.length === 0) return sql`false`;
+  return sql`(${sql.join(parts, sql` OR `)})`;
+}
+
+/* ── donorbox_donations ────────────────────────────────────────────────── */
+
+export const donorboxProposedApplicationExists: SQL<boolean> = sql`EXISTS (
+  SELECT 1 FROM ${paymentApplications}
+  WHERE ${paymentApplications.donorboxDonationId} = ${donorboxDonations.id}
+    AND ${paymentApplications.evidenceSource} = 'donorbox'
+    AND ${paymentApplications.linkRole} = 'counted'
+    AND ${paymentApplications.lifecycle} = 'proposed'
+)`;
+
+export const donorboxConfirmedApplicationExists: SQL<boolean> = sql`EXISTS (
+  SELECT 1 FROM ${paymentApplications}
+  WHERE ${paymentApplications.donorboxDonationId} = ${donorboxDonations.id}
+    AND ${paymentApplications.evidenceSource} = 'donorbox'
+    AND ${paymentApplications.linkRole} = 'counted'
+    AND ${paymentApplications.lifecycle} = 'confirmed'
+)`;
+
+const donorboxExcludedCondition: SQL<boolean> = sql`(
+  ${donorboxDonations.exclusionReason} IS NOT NULL
+  OR ${donorboxDonations.status} IN ('excluded', 'rejected')
+)`;
+
+export const donorboxStatusSql: SQL<DerivedStatus> = sql`CASE
+  WHEN ${donorboxExcludedCondition} THEN 'excluded'
+  WHEN ${donorboxProposedApplicationExists} THEN 'match_proposed'
+  WHEN ${donorboxConfirmedApplicationExists} THEN 'match_confirmed'
+  ELSE 'pending'
+END`.mapWith(String) as SQL<DerivedStatus>;
+
+export const donorboxStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
+  excluded: donorboxExcludedCondition,
+  match_proposed: sql`(
+    NOT ${donorboxExcludedCondition}
+    AND ${donorboxProposedApplicationExists}
+  )`,
+  match_confirmed: sql`(
+    NOT ${donorboxExcludedCondition}
+    AND NOT ${donorboxProposedApplicationExists}
+    AND ${donorboxConfirmedApplicationExists}
+  )`,
+  pending: sql`(
+    NOT ${donorboxExcludedCondition}
+    AND NOT ${donorboxProposedApplicationExists}
+    AND NOT ${donorboxConfirmedApplicationExists}
+  )`,
+};
+
+export function donorboxStatusIn(
+  statuses: readonly DerivedStatus[],
+): SQL<boolean> {
+  const parts = statuses.map((status) => donorboxStatusWhere[status]);
   if (parts.length === 0) return sql`false`;
   return sql`(${sql.join(parts, sql` OR `)})`;
 }
@@ -179,22 +203,22 @@ export interface StagedStatusFacts {
   matchedGiftId: string | null;
   createdGiftId: string | null;
   groupReconciledGiftId: string | null;
-  /** EXISTS arms — pass when known; default false (both are QB-rare). */
   hasConfirmedSettlementLink?: boolean;
   hasCountedApplication?: boolean;
 }
 
-export function deriveStagedPaymentStatus(f: StagedStatusFacts): DerivedStatus {
-  if (f.exclusionReason != null) return "excluded";
-  const linkedOrMinted = f.matchedGiftId != null || f.createdGiftId != null;
-  if (f.autoApplied && f.matchConfirmedAt == null && linkedOrMinted) {
+export function deriveStagedPaymentStatus(facts: StagedStatusFacts): DerivedStatus {
+  if (facts.exclusionReason != null) return "excluded";
+  const linkedOrMinted =
+    facts.matchedGiftId != null || facts.createdGiftId != null;
+  if (facts.autoApplied && facts.matchConfirmedAt == null && linkedOrMinted) {
     return "match_proposed";
   }
   if (
     linkedOrMinted ||
-    f.groupReconciledGiftId != null ||
-    f.hasConfirmedSettlementLink === true ||
-    f.hasCountedApplication === true
+    facts.groupReconciledGiftId != null ||
+    facts.hasConfirmedSettlementLink === true ||
+    facts.hasCountedApplication === true
   ) {
     return "match_confirmed";
   }
@@ -203,38 +227,63 @@ export function deriveStagedPaymentStatus(f: StagedStatusFacts): DerivedStatus {
 
 export interface ChargeStatusFacts {
   exclusionReason: string | null;
-  autoApplied: boolean;
-  matchConfirmedAt: Date | string | null;
-  matchedGiftId: string | null;
-  createdGiftId: string | null;
+  hasProposedApplication?: boolean;
+  hasConfirmedApplication?: boolean;
+  /** Deprecated compatibility facts for in-memory callers only. */
+  autoApplied?: boolean;
+  matchConfirmedAt?: Date | string | null;
+  matchedGiftId?: string | null;
+  createdGiftId?: string | null;
 }
 
-export function deriveStripeChargeStatus(f: ChargeStatusFacts): DerivedStatus {
-  if (f.exclusionReason != null) return "excluded";
-  const linkedOrMinted = f.matchedGiftId != null || f.createdGiftId != null;
-  if (f.autoApplied && f.matchConfirmedAt == null && linkedOrMinted) {
+export function deriveStripeChargeStatus(facts: ChargeStatusFacts): DerivedStatus {
+  if (facts.exclusionReason != null) return "excluded";
+  if (facts.hasProposedApplication === true) return "match_proposed";
+  if (facts.hasConfirmedApplication === true) return "match_confirmed";
+
+  const linkedOrMinted =
+    facts.matchedGiftId != null || facts.createdGiftId != null;
+  if (
+    facts.autoApplied === true &&
+    facts.matchConfirmedAt == null &&
+    linkedOrMinted
+  ) {
     return "match_proposed";
   }
   if (linkedOrMinted) return "match_confirmed";
   return "pending";
 }
 
-/**
- * Donorbox keeps its STORED status column (its lifecycle is genuinely
- * write-driven), but the API speaks the same derived vocabulary everywhere:
- * both legacy resolutions map to match_confirmed.
- */
-export function donorboxEmittedStatus(
-  stored: "pending" | "approved" | "rejected" | "excluded" | "reconciled",
+export interface DonorboxStatusFacts {
+  status: "pending" | "approved" | "rejected" | "excluded" | "reconciled";
+  exclusionReason?: string | null;
+  hasProposedApplication?: boolean;
+  hasConfirmedApplication?: boolean;
+}
+
+export function deriveDonorboxDonationStatus(
+  facts: DonorboxStatusFacts,
 ): DerivedStatus {
-  switch (stored) {
-    case "approved":
-    case "reconciled":
-      return "match_confirmed";
-    case "excluded":
-    case "rejected":
-      return "excluded";
-    default:
-      return "pending";
+  if (
+    facts.exclusionReason != null ||
+    facts.status === "excluded" ||
+    facts.status === "rejected"
+  ) {
+    return "excluded";
   }
+  if (facts.hasProposedApplication === true) return "match_proposed";
+  if (facts.hasConfirmedApplication === true) return "match_confirmed";
+
+  // Compatibility only. Operational SQL queues use the ledger expressions above.
+  if (facts.status === "approved" || facts.status === "reconciled") {
+    return "match_confirmed";
+  }
+  return "pending";
+}
+
+/** Backward-compatible wrapper used by older response mappers. */
+export function donorboxEmittedStatus(
+  stored: DonorboxStatusFacts["status"],
+): DerivedStatus {
+  return deriveDonorboxDonationStatus({ status: stored });
 }

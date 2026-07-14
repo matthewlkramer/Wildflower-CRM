@@ -1,19 +1,15 @@
 import { db } from "@workspace/db";
 import { settlementLinks } from "@workspace/db/schema";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { applySettlementSupersedeForDeposits } from "./settlementSupersede";
 
 /**
  * Plane-1 settlement-link primitives (docs/reconciliation-design.md §4.3).
  *
- * `settlement_links` is the AUTHORITATIVE store AND the optimistic-lock surface:
- * every payout reconciliation choke point (proposal pass, human confirm/revert,
- * mint/link commit) expresses its INTENT as the `settlement_links` row it wants
- * (built in `settlementWriter.ts`) and persists it here. The reconciliation status
- * enum a link represents is derived on read by {@link payoutStatusFromLink} /
- * {@link payoutStatusLabelSql}. `upsertSettlementLink` / `transitionSettlementLink`
- * / `deleteSettlementLink` are the low-level physical writes shared with the
- * authoritative writer. The legacy `stripe_payouts.qb_reconciliation_status` +
- * pointer mirror columns this store replaced have been dropped.
+ * `settlement_links` is the authoritative payout↔deposit store. Every physical
+ * mutation also recomputes Plane-2 settlement supersession for both the prior
+ * and resulting deposit anchors. This keeps the coarse QBO application counted
+ * only while confirmed Stripe charge applications do not cover it.
  */
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -23,26 +19,16 @@ export type SettlementLinkFields = {
   lifecycle: "proposed" | "confirmed" | "exempt";
   provenance: "system" | "system_confirmed" | "human";
   depositStagedPaymentId: string;
-  // The already-approved QB gift the proposal collided with (legacy
-  // `conflict_approved`) — mirrors `stripe_payouts.qb_conflict_gift_id`. Non-null
-  // on a proposed link marks a conflict; retained on the resulting confirmed link
-  // as the revert-of-keep discriminator. Null for a clean proposal / confirm.
   conflictGiftId: string | null;
   confirmedByUserId: string | null;
   confirmedAt: Date | null;
 };
 
-/**
- * The reconciliation status enum a settlement link REPRESENTS, for readers that
- * expose / gate on the enum shape (all now sourced from `settlement_links`, never
- * the retired legacy `stripe_payouts.qb_reconciliation_status` mirror).
- *
- * Emits only the four states the authoritative writer produces and NEVER throws:
- * it is a read path, so an `exempt` link (which no payout link is in this model)
- * degrades to `unmatched` rather than 500-ing an evidence view.
- */
 export function payoutStatusFromLink(
-  link: { lifecycle: SettlementLinkFields["lifecycle"]; conflictGiftId: string | null } | null,
+  link: {
+    lifecycle: SettlementLinkFields["lifecycle"];
+    conflictGiftId: string | null;
+  } | null,
 ): "unmatched" | "proposed" | "conflict_approved" | "confirmed_reconciled" {
   if (!link) return "unmatched";
   if (link.lifecycle === "confirmed") return "confirmed_reconciled";
@@ -52,19 +38,6 @@ export function payoutStatusFromLink(
   return "unmatched";
 }
 
-/**
- * SQL twin of {@link payoutStatusFromLink}: the legacy reconciliation status enum
- * a payout's settlement link REPRESENTS, computed inline for the raw-SQL evidence
- * readers (the reconciliation bundle-anchor list + card evidence expression) that
- * have been flipped off `stripe_payouts.qb_reconciliation_status`.
- *
- * REQUIRES the surrounding query to alias `settlement_links` as `sl`. A missing
- * link (LEFT JOIN → all-null `sl`) falls through to `'unmatched'`, exactly like
- * the null branch of {@link payoutStatusFromLink}. It emits ONLY the four live
- * values the authoritative writer produces and MUST stay in lockstep with that
- * function; the retired 7-value display distinction is not reconstructible (and,
- * per prod, has zero live rows), so it is intentionally collapsed here.
- */
 export const payoutStatusLabelSql = sql`CASE
   WHEN sl.lifecycle = 'confirmed' THEN 'confirmed_reconciled'
   WHEN sl.lifecycle = 'proposed' AND sl.conflict_gift_id IS NOT NULL THEN 'conflict_approved'
@@ -72,17 +45,33 @@ export const payoutStatusLabelSql = sql`CASE
   ELSE 'unmatched'
 END`;
 
+async function currentDepositForPayout(
+  dbi: DbLike,
+  payoutId: string,
+): Promise<string | null> {
+  const [row] = await dbi
+    .select({ depositId: settlementLinks.depositStagedPaymentId })
+    .from(settlementLinks)
+    .where(eq(settlementLinks.payoutId, payoutId))
+    .limit(1);
+  return row?.depositId ?? null;
+}
+
+const uniqueDeposits = (
+  ...ids: Array<string | null | undefined>
+): string[] => [...new Set(ids.filter((id): id is string => !!id))];
+
 /**
- * Physical upsert of ONE settlement link from explicit fields (deterministic id
- * `sl_<payoutId>`). The single low-level write used by the authoritative writer
- * (`settlementWriter.ts`), which builds the fields from explicit human/system
- * intent.
+ * Physical upsert of one settlement link. Recomputes supersession for the old
+ * and new deposit in the same transaction/DB context so moving a payout cannot
+ * leave either deposit in a stale counted/corroborating state.
  */
 export async function upsertSettlementLink(
   dbi: DbLike,
   payoutId: string,
   fields: SettlementLinkFields,
 ): Promise<void> {
+  const previousDepositId = await currentDepositForPayout(dbi, payoutId);
   const id = `sl_${payoutId}`;
   await dbi
     .insert(settlementLinks)
@@ -108,32 +97,33 @@ export async function upsertSettlementLink(
         updatedAt: sql`now()`,
       },
     });
+
+  await applySettlementSupersedeForDeposits(
+    dbi,
+    uniqueDeposits(previousDepositId, fields.depositStagedPaymentId),
+  );
 }
 
-/** Remove the settlement link for a payout (no-op if absent). */
+/** Remove the settlement link and restore any QBO application it superseded. */
 export async function deleteSettlementLink(
   dbi: DbLike,
   payoutId: string,
 ): Promise<void> {
+  const previousDepositId = await currentDepositForPayout(dbi, payoutId);
   await dbi
     .delete(settlementLinks)
     .where(eq(settlementLinks.id, `sl_${payoutId}`));
+
+  await applySettlementSupersedeForDeposits(
+    dbi,
+    uniqueDeposits(previousDepositId),
+  );
 }
 
 /**
- * Guarded state-transition UPDATE of an EXISTING settlement link, used by the
- * human confirm/revert state machine (stripeConfirm.ts) as its optimistic-lock
- * boundary (`settlement_links` is now the sole authoritative reconciliation store;
- * the legacy mirror columns it replaced have been dropped). Advances
- * the 1:1 link (`sl_<payoutId>`) to `fields` ONLY when its CURRENT state still
- * matches `expectedStatus`, expressed in link terms:
- *   - `proposed`             → lifecycle 'proposed' AND no conflict gift
- *   - `conflict_approved`    → lifecycle 'proposed' AND a conflict gift
- *   - `confirmed_reconciled` → lifecycle 'confirmed'
- * Returns `true` when a row advanced, `false` when the prior state had drifted
- * (the caller maps that to a typed `invalid_transition` / 409). This is an UPDATE,
- * never an upsert: every confirm/revert site already has a prior link, and a guard
- * that could INSERT would defeat the optimistic lock.
+ * Guarded state transition of an existing settlement link. A successful
+ * transition recomputes both deposit anchors; a failed optimistic-lock update
+ * makes no other changes.
  */
 export async function transitionSettlementLink(
   dbi: DbLike,
@@ -141,6 +131,7 @@ export async function transitionSettlementLink(
   expectedStatus: "proposed" | "conflict_approved" | "confirmed_reconciled",
   fields: SettlementLinkFields,
 ): Promise<boolean> {
+  const previousDepositId = await currentDepositForPayout(dbi, payoutId);
   const guard =
     expectedStatus === "confirmed_reconciled"
       ? eq(settlementLinks.lifecycle, "confirmed")
@@ -153,6 +144,7 @@ export async function transitionSettlementLink(
             eq(settlementLinks.lifecycle, "proposed"),
             isNull(settlementLinks.conflictGiftId),
           );
+
   const updated = await dbi
     .update(settlementLinks)
     .set({
@@ -166,5 +158,12 @@ export async function transitionSettlementLink(
     })
     .where(and(eq(settlementLinks.payoutId, payoutId), guard))
     .returning({ id: settlementLinks.id });
-  return updated.length > 0;
+
+  if (updated.length === 0) return false;
+
+  await applySettlementSupersedeForDeposits(
+    dbi,
+    uniqueDeposits(previousDepositId, fields.depositStagedPaymentId),
+  );
+  return true;
 }

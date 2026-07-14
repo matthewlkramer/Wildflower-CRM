@@ -3,24 +3,15 @@ import { eq } from "drizzle-orm";
 import { adjustSingleAllocationOrFlag } from "./giftFinalAmount";
 import { applyGiftQbTieMany } from "./giftQbTie";
 import { applyDerivedOppFieldsMany } from "./pledgeStage";
+import { getStripeChargeGiftRelationship } from "./stripeChargeLedger";
 
-/* ────────────────────────────────────────────────────────────────────────
+/*
  * Stripe refund / chargeback propagation (INV-13).
  *
- * When a refund or dispute lands on a Stripe charge whose money is ALREADY
- * booked into a CRM gift, we propagate it to that gift — but never silently.
- * The sync worker only ever RAISES a `proposed` (see `stripeSync.ts`); a human
- * then confirms (reverse/reduce the gift) or dismisses it here.
- *
- *   full refund     → reverse: archive the linked gift (soft-delete).
- *   partial refund  → reduce the gift amount to gross − amount_refunded.
- *   chargeback      → reverse: archive the linked gift.
- *
- * On confirm, the gift is updated and any linked pledge re-derives its
- * paid-amount / status. The evidence row (stripe_staged_charges) is retained,
- * marked applied. Idempotency lives in `deriveRefundProposal`: a re-sync of the
- * same refund state never re-raises an already-handled proposal.
- * ──────────────────────────────────────────────────────────────────────── */
+ * Refunds are propagated only when the charge has a CONFIRMED counted Stripe
+ * payment application. Legacy matched_gift_id / created_gift_id pointers are
+ * deliberately ignored: payment_applications is the authoritative money tie.
+ */
 
 export type StripeRefundKind = "full_refund" | "partial_refund" | "chargeback";
 
@@ -39,24 +30,16 @@ export interface RefundProposalState {
 
 export interface RefundProposal {
   kind: StripeRefundKind;
-  // The absolute amount being reversed (2dp string): gross for a full refund /
-  // chargeback, the cumulative Stripe amount_refunded for a partial refund.
   reversedAmount: string;
 }
 
-// Cent-level tolerance for money comparisons (amounts are 2dp strings).
 const TOLERANCE = 0.005;
 
-function num(v: string | null | undefined): number {
-  const n = v != null ? Number(v) : 0;
-  return Number.isFinite(n) ? n : 0;
+function num(value: string | null | undefined): number {
+  const parsed = value != null ? Number(value) : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/**
- * Classify a charge's refund/dispute facts into a reversal kind, or null when
- * there is nothing to reverse. A dispute always reverses the whole charge
- * (chargeback) regardless of any refund amount.
- */
 export function classifyRefund(facts: RefundFacts): RefundProposal | null {
   const gross = num(facts.grossAmount);
   const refunded = num(facts.amountRefunded);
@@ -70,20 +53,12 @@ export function classifyRefund(facts: RefundFacts): RefundProposal | null {
     }
     return { kind: "partial_refund", reversedAmount: refunded.toFixed(2) };
   }
-  // `refunded` flag set but no amount (rare) — treat as a full refund.
   if (facts.refunded && gross > 0) {
     return { kind: "full_refund", reversedAmount: gross.toFixed(2) };
   }
   return null;
 }
 
-/**
- * True when the charge's live facts say the money is FULLY refunded (a plain
- * refund — a dispute classifies as chargeback and is deliberately NOT this).
- * Used by the never-booked auto-exclusion (`refunded_charge`): a fully-refunded
- * charge with no gift link is not workable money. Charges WITH a gift link
- * never use this — they take the propose-then-confirm propagation path above.
- */
 export function isFullyRefunded(facts: RefundFacts): boolean {
   return classifyRefund(facts)?.kind === "full_refund";
 }
@@ -95,34 +70,24 @@ function signature(
   return `${kind ?? ""}|${reversedAmount ?? ""}`;
 }
 
-/**
- * Decide whether to raise (or re-raise) a refund proposal given the charge's
- * current facts and existing propagation state. Returns the proposal to raise,
- * or null to leave the row as-is.
- *
- * Idempotent: once a proposal has been proposed/applied/dismissed for an exact
- * refund signature (kind + reversed amount), it is never re-raised. An
- * ESCALATION (e.g. partial $10 → partial $25 → full) changes the signature and
- * re-raises a fresh proposal so the new money can be reversed too — even past a
- * prior `applied` or `dismissed`.
- */
 export function deriveRefundProposal(
   facts: RefundFacts,
   state: RefundProposalState,
   hasLinkedGift: boolean,
 ): RefundProposal | null {
-  const c = classifyRefund(facts);
-  if (!c) return null; // no refund / dispute
-  if (!hasLinkedGift) return null; // no booked gift to propagate to
+  const proposal = classifyRefund(facts);
+  if (!proposal || !hasLinkedGift) return null;
 
   if (state.refundPropagationStatus !== "none") {
-    const currentSig = signature(
+    const current = signature(
       state.refundPropagationKind,
       state.refundProposedAmount,
     );
-    if (currentSig === signature(c.kind, c.reversedAmount)) return null;
+    if (current === signature(proposal.kind, proposal.reversedAmount)) {
+      return null;
+    }
   }
-  return c;
+  return proposal;
 }
 
 function appendAudit(existing: string | null, line: string): string {
@@ -147,12 +112,6 @@ export interface RefundConfirmResult {
   archivedGift?: boolean;
 }
 
-/**
- * Human-confirm a proposed refund/chargeback: reverse (archive) or reduce the
- * linked gift in a transaction, then mark the staged charge `applied`. Re-runs
- * the linked pledge's derivation and the gift's QuickBooks tie status after
- * commit. Guarded so only a `proposed` row can be confirmed (409 otherwise).
- */
 export async function confirmRefundPropagation(
   chargeId: string,
   userId: string,
@@ -165,7 +124,8 @@ export async function confirmRefundPropagation(
       .from(stripeStagedCharges)
       .where(eq(stripeStagedCharges.id, chargeId))
       .for("update")
-      .then((r) => r[0]);
+      .then((rows) => rows[0]);
+
     if (!locked) {
       result = { code: "not_found", chargeId };
       return;
@@ -175,11 +135,10 @@ export async function confirmRefundPropagation(
       return;
     }
 
-    const giftId =
-      locked.refundPropagationGiftId ??
-      locked.matchedGiftId ??
-      locked.createdGiftId ??
-      null;
+    const relationship = await getStripeChargeGiftRelationship(tx, chargeId, {
+      includeProposed: false,
+    });
+    const giftId = relationship?.giftId ?? null;
     if (!giftId) {
       result = { code: "no_linked_gift", chargeId };
       return;
@@ -196,7 +155,8 @@ export async function confirmRefundPropagation(
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, giftId))
       .for("update")
-      .then((r) => r[0]);
+      .then((rows) => rows[0]);
+
     if (!gift) {
       result = { code: "gift_missing", chargeId };
       return;
@@ -215,6 +175,7 @@ export async function confirmRefundPropagation(
       );
       newGiftAmount = reduced.toFixed(2);
       const oldAmount = gift.amount;
+
       await tx
         .update(giftsAndPayments)
         .set({
@@ -226,7 +187,7 @@ export async function confirmRefundPropagation(
           updatedAt: now,
         })
         .where(eq(giftsAndPayments.id, giftId));
-      // Rebalance the single allocation (or flag a multi-allocation mismatch).
+
       await adjustSingleAllocationOrFlag(
         tx,
         giftId,
@@ -235,7 +196,6 @@ export async function confirmRefundPropagation(
         "stripe",
       );
     } else {
-      // full_refund or chargeback — reverse by archiving (non-destructive).
       archivedGift = true;
       if (!gift.archivedAt) {
         await tx
@@ -256,6 +216,8 @@ export async function confirmRefundPropagation(
       .update(stripeStagedCharges)
       .set({
         refundPropagationStatus: "applied",
+        // Keep the immutable audit snapshot, but derive the relationship from the
+        // ledger on every future operation.
         refundPropagationGiftId: giftId,
         refundConfirmedByUserId: userId,
         refundConfirmedAt: now,
@@ -275,9 +237,6 @@ export async function confirmRefundPropagation(
   });
 
   if (result.code === "ok" && result.giftId) {
-    // Post-commit: a reversed/reduced payment changes the pledge's paid-amount
-    // and the gift's QuickBooks tie status. Mirror the appliers used on every
-    // other gift-amount mutation.
     await applyGiftQbTieMany(result.giftId);
     if (result.pledgeId) await applyDerivedOppFieldsMany(result.pledgeId);
   }
@@ -287,12 +246,6 @@ export async function confirmRefundPropagation(
 
 export type RefundDismissCode = "ok" | "not_found" | "not_proposed";
 
-/**
- * Human-dismiss a proposed refund/chargeback: do NOT touch the gift, mark the
- * staged charge `dismissed`. The kind + proposed amount are retained as the
- * idempotency signature so a re-sync of the same refund state won't re-raise it
- * (an escalation to a larger refund still re-raises a fresh proposal).
- */
 export async function dismissRefundPropagation(
   chargeId: string,
   userId: string,
@@ -305,7 +258,8 @@ export async function dismissRefundPropagation(
       .from(stripeStagedCharges)
       .where(eq(stripeStagedCharges.id, chargeId))
       .for("update")
-      .then((r) => r[0]);
+      .then((rows) => rows[0]);
+
     if (!locked) {
       code = "not_found";
       return;
@@ -314,6 +268,7 @@ export async function dismissRefundPropagation(
       code = "not_proposed";
       return;
     }
+
     await tx
       .update(stripeStagedCharges)
       .set({

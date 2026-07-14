@@ -1,0 +1,102 @@
+name: Reconciliation rewrite checks
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/api-server/**"
+      - "artifacts/api-spec/**"
+      - "lib/db/**"
+      - "lib/api-zod/**"
+      - "lib/integrations-anthropic-ai/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/reconciliation-rewrite.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reconciliation-rewrite-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:1
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: test-key
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared libraries
+        id: build-libs
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm build:libs 2>&1 | tee build-libs.log
+
+      - name: Typecheck API
+        id: typecheck
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm check:api 2>&1 | tee typecheck.log
+
+      - name: Check generated API contract
+        id: codegen
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm check:codegen 2>&1 | tee codegen.log
+
+      - name: Run API tests
+        id: tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm check:test-api 2>&1 | tee tests.log
+
+      - name: Upload check logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconciliation-check-logs-${{ github.run_id }}
+          path: |
+            build-libs.log
+            typecheck.log
+            codegen.log
+            tests.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Fail when a check failed
+        if: >-
+          steps.build-libs.outcome == 'failure' ||
+          steps.typecheck.outcome == 'failure' ||
+          steps.codegen.outcome == 'failure' ||
+          steps.tests.outcome == 'failure'
+        run: exit 1
