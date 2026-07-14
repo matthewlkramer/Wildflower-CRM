@@ -447,14 +447,21 @@ export function SettlementCard({
     }
   };
 
-  const handleTieChargePick = async (qbStagedPaymentId: string) => {
+  const handleTieChargePick = async (
+    qbStagedPaymentId: string,
+    opts?: { overrideExclusion?: boolean },
+  ) => {
     // Manual charge-grain tie: the picked QB row is this charge's money. The
     // endpoint's manual mode places it onto an untied charge of this payout by
     // exact amount (the dialog pre-grays near-miss amounts), all-or-nothing.
+    // A deliberate exclusion override re-includes the row in the same tx.
     try {
       const res = await chargeTiesM.mutateAsync({
         payoutId: a.anchorId,
-        data: { qbStagedPaymentIds: [qbStagedPaymentId] },
+        data: {
+          qbStagedPaymentIds: [qbStagedPaymentId],
+          ...(opts?.overrideExclusion ? { overrideExclusion: true } : {}),
+        },
       });
       setTieCharge(null);
       toast({
@@ -485,13 +492,20 @@ export function SettlementCard({
     }
   };
 
-  const handleResolvePick = async (counterpartId: string) => {
+  const handleResolvePick = async (
+    counterpartId: string,
+    opts?: { overrideExclusion?: boolean },
+  ) => {
     // The anchor is always the Stripe payout on this page, and the confirm
-    // endpoint is keyed by the payout — the pick is the QB deposit.
+    // endpoint is keyed by the payout — the pick is the QB deposit. A
+    // deliberate exclusion override re-includes the deposit in the same tx.
     try {
       await confirmM.mutateAsync({
         payoutId: a.anchorId,
-        data: { depositStagedPaymentId: counterpartId },
+        data: {
+          depositStagedPaymentId: counterpartId,
+          ...(opts?.overrideExclusion ? { overrideExclusion: true } : {}),
+        },
       });
       setResolveOpen(false);
       toast({ title: "Settlement approved." });

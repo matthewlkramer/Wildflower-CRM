@@ -3785,6 +3785,18 @@ export const ReconciliationCandidateDonorKind = {
   household: 'household',
 } as const;
 
+/**
+ * Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row's money is already claimed and overriding would double-count.
+ */
+export type ReconciliationCandidateConflictKind = typeof ReconciliationCandidateConflictKind[keyof typeof ReconciliationCandidateConflictKind] | null;
+
+
+export const ReconciliationCandidateConflictKind = {
+  excluded: 'excluded',
+  settled_elsewhere: 'settled_elsewhere',
+  tied_to_charge: 'tied_to_charge',
+} as const;
+
 export interface ReconciliationCandidate {
   nodeType: ReconciliationMatchNodeType;
   id: string;
@@ -3806,6 +3818,8 @@ export interface ReconciliationCandidate {
   alreadyLinkedGiftId?: string | null;
   /** Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can't currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409. */
   conflictReason?: string | null;
+  /** Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row's money is already claimed and overriding would double-count. */
+  conflictKind?: ReconciliationCandidateConflictKind;
 }
 
 export interface ReconciliationNode {
@@ -4214,6 +4228,8 @@ confirm an already-proposed tie.
 export interface ConfirmSettlementLinkBody {
   /** QB deposit staged-payment id to tie to this payout before confirming (resolve). Omit when a proposed link already exists. */
   depositStagedPaymentId?: string | null;
+  /** Deliberate human override for a deposit that was excluded from review: re-includes the picked deposit (clears its exclusion, pinning classification_source='manual') in the same transaction, then confirms normally. Only honored together with an explicitly picked depositStagedPaymentId — never applied to an already-proposed link. Default false: an excluded deposit is refused with a 409. */
+  overrideExclusion?: boolean;
 }
 
 /**
@@ -4226,6 +4242,8 @@ tie the selected QB staged rows to this payout's untied charges
 export interface ConfirmChargeTiesBody {
   /** QB staged_payments ids to tie to this payout's charges. Each must match a distinct untied charge by exact amount and must not already be tied/settlement-linked elsewhere. */
   qbStagedPaymentIds?: string[];
+  /** Deliberate human override for manually selected QB rows that were excluded from review: re-includes them (clears the exclusion, pinning classification_source='manual') in the same transaction before tying. Manual mode only — ignored when approving system-proposed ties. Default false: excluded rows are refused with a 409. */
+  overrideExclusion?: boolean;
 }
 
 export interface RejectChargeQbTieResult {

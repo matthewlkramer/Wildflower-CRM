@@ -134,6 +134,11 @@ export interface RecCandidate {
    *  client can gray the row and offer an unlink to free it before re-linking. */
   alreadyLinkedGiftId: string | null;
   conflictReason: string | null;
+  /** Structured discriminator behind conflictReason (qb-search pick lists):
+   *  `excluded` is human-overridable (the confirm endpoints accept
+   *  overrideExclusion to re-include in the same tx); the other kinds mean the
+   *  row's money is already claimed and overriding would double-count. */
+  conflictKind: "excluded" | "settled_elsewhere" | "tied_to_charge" | null;
 }
 
 export interface RecNode {
@@ -209,6 +214,7 @@ function candidate(init: CandidateInit): RecCandidate {
     alreadyLinkedStagedPaymentId: null,
     alreadyLinkedGiftId: null,
     conflictReason: null,
+    conflictKind: null,
     ...init,
   };
 }
@@ -1729,6 +1735,13 @@ async function searchQbStagedRows(
           ? "Already settled against another Stripe payout"
           : r.tiedToCharge
             ? "Already tied to another Stripe charge"
+            : null,
+      conflictKind: r.exclusionReason
+        ? "excluded"
+        : r.settledElsewhere
+          ? "settled_elsewhere"
+          : r.tiedToCharge
+            ? "tied_to_charge"
             : null,
     }),
   );

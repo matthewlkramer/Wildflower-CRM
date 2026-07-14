@@ -76,5 +76,5 @@
 - [Scoped validation checks](scoped-validation-checks.md) — fast per-package checks (libs/api/web/codegen/test-api/test-web/full); never run codegen alongside web OR test-api checks (regenerates the imported generated dir → false missing-import).
 - [Replit DB deletion nukes dev AND prod](replit-db-deletion-recovery.md) — deleting the built-in DB kills both branches; publish recreates empty prod schema; restore prod from dump human-run; verify with count(*) not n_live_tup.
 - [Unpickable rows are labeled, never hidden](unpickable-rows-label-not-hide.md) — user rule (also in replit.md prefs): pickers gray blocked rows WITH the reason; enforce via 409s.
-- [Recon search bands & confirm gating](reconciliation-search-and-confirm-gating.md) — text overrides the amount band (band hard-filters only when sole criterion); never pre-gate on derived status ahead of the locking confirm primitive.
+- [Recon search bands & confirm gating](reconciliation-search-and-confirm-gating.md) — text overrides the amount band; never pre-gate ahead of the locking confirm primitive; ONLY the exclusion blocker is overridable (in-tx re-include), claimed-money blockers stay hard 409.
 - [prod executeSql enum cast](prod-executesql-enum-cast.md) — prod read returns ZERO rows (only START TRANSACTION/ROLLBACK, success=true) if the SELECT list has an un-cast enum column; always ::text enums.

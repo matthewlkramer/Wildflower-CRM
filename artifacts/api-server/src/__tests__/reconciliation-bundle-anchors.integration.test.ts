@@ -957,6 +957,62 @@ describe.skipIf(!HAS_DB)("Resolve-confirm settlement tie (integration)", () => {
     expect(r.json.message).toMatch(/other revenue/i);
   });
 
+  it("overrideExclusion re-includes an EXCLUDED picked deposit in the same tx and confirms", async () => {
+    // The deliberate two-click override: the picker labels the excluded row,
+    // and a second click sends overrideExclusion. The confirm re-includes the
+    // deposit exactly like the re-include primitive (clear the exclusion, pin
+    // classification_source='manual' so the re-runnable classifier never
+    // re-excludes it) and then settles normally — all in one transaction.
+    const dep = await seedStaged({
+      entityType: "deposit",
+      amount: "96.80",
+      exclusionReason: "other_revenue",
+    });
+    const po = await seedPayout({ status: "unmatched" });
+    await seedCharge(po);
+
+    const r = await post(
+      `/api/reconciliation/settlement-links/${po}/confirm`,
+      { depositStagedPaymentId: dep, overrideExclusion: true },
+    );
+    expect(r.status).toBe(200);
+    expect(r.json.confirmed).toBe(true);
+    expect(r.json.kind).toBe("confirmed_reconciled");
+    expect(r.json.depositStagedPaymentId).toBe(dep);
+
+    const [row] = await db
+      .select()
+      .from(schema.stagedPayments)
+      .where(eqFn(schema.stagedPayments.id, dep));
+    expect(row!.exclusionReason).toBeNull();
+    expect(row!.classificationSource).toBe("manual");
+
+    const [link] = await db
+      .select()
+      .from(schema.settlementLinks)
+      .where(eqFn(schema.settlementLinks.payoutId, po));
+    expect(link!.lifecycle).toBe("confirmed");
+    expect(link!.depositStagedPaymentId).toBe(dep);
+  });
+
+  it("overrideExclusion NEVER bypasses a deposit settled against a different payout", async () => {
+    // The override is scoped to exclusions only — a confirmed tie elsewhere is
+    // claimed money, and overriding it would double-count. The flag must be
+    // inert here: same permanent 409 as without it.
+    const dep = await seedStaged({ entityType: "deposit", amount: "96.80" });
+    await seedPayout({ status: "confirmed_reconciled", matched: dep });
+    const po = await seedPayout({ status: "unmatched" });
+    await seedCharge(po);
+
+    const r = await post(
+      `/api/reconciliation/settlement-links/${po}/confirm`,
+      { depositStagedPaymentId: dep, overrideExclusion: true },
+    );
+    expect(r.status).toBe(409);
+    expect(r.json.error).toBe("deposit_unconfirmable");
+    expect(r.json.message).toMatch(/different Stripe payout/i);
+  });
+
   it("rejects picking a deposit already SETTLED against a different payout, saying so", async () => {
     // Exclusivity: a deposit backs at most one payout's settlement. A CONFIRMED
     // tie elsewhere is permanent — the message must name the conflict (not a
@@ -1049,6 +1105,58 @@ describe.skipIf(!HAS_DB)("QB pick-list search labels unpickable rows (integratio
     expect(byId.get(sChargeTied).conflictReason).toMatch(
       /tied to another Stripe charge/i,
     );
+
+    // The machine-readable kind rides alongside the human label so the UI can
+    // make ONLY the exclusion click-to-override (settled/tied stay hard-blocked).
+    expect(byId.get(sPending).conflictKind).toBeNull();
+    expect(byId.get(sBooked).conflictKind).toBeNull();
+    expect(byId.get(sExcluded).conflictKind).toBe("excluded");
+    expect(byId.get(sSettled).conflictKind).toBe("settled_elsewhere");
+    expect(byId.get(sChargeTied).conflictKind).toBe("tied_to_charge");
+  });
+});
+
+describe.skipIf(!HAS_DB)("Manual charge-tie exclusion override (integration)", () => {
+  it("409s on an excluded QB row without the flag; with it, re-includes and ties in one tx", async () => {
+    const po = await seedPayout({ status: "unmatched" });
+    const chargeId = await seedCharge(po);
+    // Amount must exactly match the charge's gross (100.00) — the assignment
+    // is exact-amount, so the override only clears the exclusion blocker.
+    const qb = await seedStaged({
+      amount: "100.00",
+      exclusionReason: "other_revenue",
+    });
+
+    // Without the flag the excluded row is rejected with the row-level issue.
+    const blocked = await post(
+      `/api/reconciliation/payouts/${po}/charge-ties/confirm`,
+      { qbStagedPaymentIds: [qb] },
+    );
+    expect(blocked.status).toBe(409);
+    expect(blocked.json.error).toBe("qb_rows_unavailable");
+
+    // With the flag the row is re-included (exclusion cleared, manual pin)
+    // and tied to the payout's charge in the same transaction.
+    const r = await post(
+      `/api/reconciliation/payouts/${po}/charge-ties/confirm`,
+      { qbStagedPaymentIds: [qb], overrideExclusion: true },
+    );
+    expect(r.status).toBe(200);
+    expect(r.json.confirmed).toBe(true);
+    expect(r.json.tied).toBe(1);
+
+    const [row] = await db
+      .select()
+      .from(schema.stagedPayments)
+      .where(eqFn(schema.stagedPayments.id, qb));
+    expect(row!.exclusionReason).toBeNull();
+    expect(row!.classificationSource).toBe("manual");
+
+    const [charge] = await db
+      .select()
+      .from(schema.stripeStagedCharges)
+      .where(eqFn(schema.stripeStagedCharges.id, chargeId));
+    expect(charge!.linkedQbStagedPaymentId).toBe(qb);
   });
 });
 

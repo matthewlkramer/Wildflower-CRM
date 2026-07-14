@@ -13,7 +13,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { decodeHtmlEntities, formatCurrency, formatDate } from "@/lib/format";
-import { ResultsList, type ResultRow } from "./ResolveTieDialog";
+import {
+  ResultsList,
+  type PickOptions,
+  type ResultRow,
+} from "./ResolveTieDialog";
 import { shortId } from "./bundle-ui";
 
 /** Major-unit string → integer cents, null when unparseable. */
@@ -50,7 +54,7 @@ export function TieChargeQbDialog({
   charge: PayoutChargeSummary;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onPick: (qbStagedPaymentId: string) => void;
+  onPick: (qbStagedPaymentId: string, opts?: PickOptions) => void;
   busy?: boolean;
 }) {
   const [q, setQ] = useState("");
@@ -111,7 +115,7 @@ function QbRowResults({
   q: string;
   charge: PayoutChargeSummary;
   busy: boolean;
-  onPick: (id: string) => void;
+  onPick: (id: string, opts?: PickOptions) => void;
 }) {
   const { data, isFetching, isError } = useSearchReconciliationQbStaged({
     q: q.trim() || undefined,
@@ -148,6 +152,11 @@ function QbRowResults({
         (amountMismatch
           ? "Amount matches neither the charge's gross nor its net — an exact match is required"
           : null),
+      // Only a clean exclusion is click-to-override: an excluded row whose
+      // amount also mismatches would still be rejected by the exact-amount
+      // assignment, so it stays hard-blocked; settled/tied-elsewhere rows are
+      // never overridable (their money is already claimed).
+      overridable: c.conflictKind === "excluded" && !amountMismatch,
     };
   });
   return (
@@ -157,6 +166,7 @@ function QbRowResults({
       isError={isError}
       busy={busy}
       onPick={onPick}
+      resetKey={q}
     />
   );
 }

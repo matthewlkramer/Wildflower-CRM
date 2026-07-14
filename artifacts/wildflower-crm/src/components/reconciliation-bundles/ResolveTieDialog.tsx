@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Search } from "lucide-react";
 import {
   useSearchReconciliationQbStaged,
@@ -26,6 +26,17 @@ export interface ResultRow {
    *  tied) — shown as a label and the row disabled, never hidden, so users can
    *  spot (and help debug) a mis-derived status. */
   blockedReason: string | null;
+  /** True only for the exclusion blocker: the row stays clickable and a
+   *  deliberate second click ties anyway (the server re-includes it in the
+   *  same transaction). Settled/tied-elsewhere blockers are never overridable
+   *  — overriding those would double-count money. */
+  overridable?: boolean;
+}
+
+export interface PickOptions {
+  /** The user deliberately picked a row that was excluded from review —
+   *  the confirm should re-include it and tie in one transaction. */
+  overrideExclusion?: boolean;
 }
 
 /**
@@ -46,7 +57,7 @@ export function ResolveTieDialog({
   anchor: BundleAnchor;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onPick: (counterpartId: string) => void;
+  onPick: (counterpartId: string, opts?: PickOptions) => void;
   busy?: boolean;
 }) {
   const [q, setQ] = useState("");
@@ -105,7 +116,7 @@ function DepositResults({
   amount: string | null;
   date: string | null;
   busy: boolean;
-  onPick: (id: string) => void;
+  onPick: (id: string, opts?: PickOptions) => void;
 }) {
   const { data, isFetching, isError } = useSearchReconciliationQbStaged({
     q: q.trim() || undefined,
@@ -123,9 +134,19 @@ function DepositResults({
     amount: c.amount ?? null,
     date: c.date ?? null,
     blockedReason: c.conflictReason ?? null,
+    // Only the exclusion blocker is click-to-override; settled/tied-elsewhere
+    // rows stay hard-blocked (their money is already claimed).
+    overridable: c.conflictKind === "excluded",
   }));
   return (
-    <ResultsList rows={rows} isFetching={isFetching} isError={isError} busy={busy} onPick={onPick} />
+    <ResultsList
+      rows={rows}
+      isFetching={isFetching}
+      isError={isError}
+      busy={busy}
+      onPick={onPick}
+      resetKey={q}
+    />
   );
 }
 
@@ -135,13 +156,25 @@ export function ResultsList({
   isError,
   busy,
   onPick,
+  resetKey,
 }: {
   rows: ResultRow[];
   isFetching: boolean;
   isError: boolean;
   busy: boolean;
-  onPick: (id: string) => void;
+  onPick: (id: string, opts?: PickOptions) => void;
+  /** Changing this (e.g. the search query) disarms any armed override row so
+   *  a stale arm never survives into a different result set. */
+  resetKey?: string;
 }) {
+  // Two-click override arm: the first click on an overridable blocked row
+  // arms it (the warning stays visible and the label asks for confirmation);
+  // the second click ties anyway with overrideExclusion. Clicking any other
+  // row disarms.
+  const [armedId, setArmedId] = useState<string | null>(null);
+  useEffect(() => {
+    setArmedId(null);
+  }, [resetKey]);
   if (isError) {
     return (
       <p className="py-6 text-center text-xs text-destructive">
@@ -164,14 +197,34 @@ export function ResultsList({
   }
   return (
     <>
-      {rows.map((r) => (
+      {rows.map((r) => {
+        const blocked = r.blockedReason != null;
+        const canOverride = blocked && r.overridable === true;
+        const armed = canOverride && armedId === r.id;
+        return (
         <Button
           key={r.id}
           type="button"
           variant="outline"
-          className="h-auto w-full justify-between gap-2 whitespace-normal px-2 py-1.5 text-left disabled:opacity-60"
-          disabled={busy || r.blockedReason != null}
-          onClick={() => onPick(r.id)}
+          className={
+            "h-auto w-full justify-between gap-2 whitespace-normal px-2 py-1.5 text-left disabled:opacity-60" +
+            (armed ? " border-amber-500 bg-amber-500/10" : "")
+          }
+          disabled={busy || (blocked && !canOverride)}
+          onClick={() => {
+            if (!blocked) {
+              setArmedId(null);
+              onPick(r.id);
+              return;
+            }
+            // Overridable (excluded) row: first click arms, second confirms.
+            if (armed) {
+              setArmedId(null);
+              onPick(r.id, { overrideExclusion: true });
+            } else {
+              setArmedId(r.id);
+            }
+          }}
           data-testid={`button-resolve-pick-${r.id}`}
         >
           <span className="flex min-w-0 flex-col">
@@ -186,6 +239,18 @@ export function ResultsList({
                 {r.blockedReason}
               </span>
             )}
+            {armed ? (
+              <span className="truncate text-xs font-medium text-amber-700">
+                Click again to tie anyway — this row will be put back into
+                review and tied.
+              </span>
+            ) : (
+              canOverride && (
+                <span className="truncate text-xs text-muted-foreground">
+                  Click to override the exclusion.
+                </span>
+              )
+            )}
           </span>
           <span className="flex shrink-0 flex-col items-end">
             <span className="text-sm font-semibold">
@@ -198,7 +263,8 @@ export function ResultsList({
             )}
           </span>
         </Button>
-      ))}
+        );
+      })}
     </>
   );
 }

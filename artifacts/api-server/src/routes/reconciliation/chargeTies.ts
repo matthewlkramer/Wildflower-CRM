@@ -16,7 +16,11 @@ import {
   type ChargeForTie,
   type QbRowForTie,
 } from "../../lib/chargeQbTie";
-import { chargeStatusSql, stagedStatusSql } from "../../lib/derivedStatus";
+import {
+  chargeStatusSql,
+  stagedStatusSql,
+  stagedStatusWhere,
+} from "../../lib/derivedStatus";
 import { sweepRefundedQbStagedPayments } from "../../lib/refundedChargeSweep";
 
 /**
@@ -153,6 +157,11 @@ router.post(
             .for("update");
           const rowById = new Map(rows.map((r) => [r.id, r]));
           const issues: TieIssue[] = [];
+          // Deliberate human override for excluded rows: the picker labels
+          // excluded rows (never hides them) and a second click asserts "this
+          // IS the payout's money". Collect them for an in-tx re-include
+          // (rows are already FOR UPDATE-locked above).
+          const overrideExcludedIds: string[] = [];
           for (const id of manualIds) {
             const row = rowById.get(id);
             if (!row) {
@@ -161,10 +170,14 @@ router.post(
                 reason: "QuickBooks row no longer exists.",
               });
             } else if (row.status === "excluded") {
-              issues.push({
-                qbStagedPaymentId: id,
-                reason: `QuickBooks row is ${row.status} — only active rows can be tied.`,
-              });
+              if (body.overrideExclusion) {
+                overrideExcludedIds.push(id);
+              } else {
+                issues.push({
+                  qbStagedPaymentId: id,
+                  reason: `QuickBooks row is ${row.status} — only active rows can be tied.`,
+                });
+              }
             }
           }
           if (issues.length > 0) {
@@ -173,6 +186,25 @@ router.post(
               message: "Some selected QuickBooks rows cannot be tied.",
               details: { issues },
             });
+          }
+          // Re-include the overridden rows exactly like the
+          // /staged-payments/:id/re-include primitive: clearing the exclusion
+          // IS the re-include (status is derived), and classification_source
+          // 'manual' pins it so the re-runnable classifier never re-excludes.
+          if (overrideExcludedIds.length > 0) {
+            await tx
+              .update(stagedPayments)
+              .set({
+                exclusionReason: null,
+                classificationSource: "manual",
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
+                  inArray(stagedPayments.id, overrideExcludedIds),
+                  stagedStatusWhere.excluded,
+                ),
+              );
           }
           const chargesForTie: ChargeForTie[] = openCharges.map((c) => ({
             id: c.id,

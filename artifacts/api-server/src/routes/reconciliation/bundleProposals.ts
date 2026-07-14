@@ -53,6 +53,7 @@ import {
   TransitionError,
 } from "../../lib/stripeConfirm";
 import { isSettlementLump } from "../../lib/settlementLump";
+import { stagedStatusWhere } from "../../lib/derivedStatus";
 import { donorOf, donorsMatch, type LinkDonor } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { applyGiftQbTieMany } from "../../lib/giftQbTie";
@@ -1044,6 +1045,7 @@ router.post(
             qbTransactionMemo: stagedPayments.qbTransactionMemo,
             rawReference: stagedPayments.rawReference,
             qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
+            exclusionReason: stagedPayments.exclusionReason,
           })
           .from(stagedPayments)
           .where(eq(stagedPayments.id, pickedDepositId))
@@ -1106,6 +1108,30 @@ router.post(
             message:
               "This QuickBooks deposit is already proposed as the match for a different Stripe payout. Confirm or reject that proposal first, or pick a different deposit.",
           });
+        }
+
+        // Deliberate human override for an excluded lump: the picker labels
+        // excluded rows (never hides them) and lets a second click assert
+        // "this IS the payout's money". Re-include it exactly like the
+        // /staged-payments/:id/re-include primitive — clear the exclusion and
+        // pin classification_source='manual' so the re-runnable classifier
+        // never re-excludes it — under the FOR UPDATE lock already held, then
+        // fall through to the normal pending confirm. Without the flag the
+        // confirm primitive still 409s (deposit_unconfirmable) as before.
+        if (body.overrideExclusion && deposit.exclusionReason != null) {
+          await tx
+            .update(stagedPayments)
+            .set({
+              exclusionReason: null,
+              classificationSource: "manual",
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(stagedPayments.id, pickedDepositId),
+                stagedStatusWhere.excluded,
+              ),
+            );
         }
 
         await upsertSettlementLink(
