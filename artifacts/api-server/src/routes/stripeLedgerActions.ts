@@ -1,7 +1,11 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { giftsAndPayments, stripeStagedCharges } from "@workspace/db/schema";
-import { eq, getTableColumns, sql } from "drizzle-orm";
+import {
+  giftsAndPayments,
+  paymentApplications,
+  stripeStagedCharges,
+} from "@workspace/db/schema";
+import { and, eq, getTableColumns, isNotNull, ne, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
 import { asyncHandler, newId, paramId } from "../lib/helpers";
@@ -24,6 +28,7 @@ import {
   stripeChargeActiveGiftIdSql,
 } from "../lib/stripeChargeLedger";
 import { removePaymentApplicationsForStripeCharge } from "../lib/paymentApplications";
+import { orphanStripeSourceChargeLedgerInTx } from "../lib/stripeSourceSwitch";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { chargeStatusSql } from "../lib/derivedStatus";
@@ -67,6 +72,7 @@ const linkHandler = asyncHandler(async (req, res) => {
   }
   const { giftId } = parsed.data;
   const rederivePledgeIds: string[] = [];
+  const retieGiftIds = new Set<string>([giftId]);
   let alreadyLinked = false;
 
   try {
@@ -119,7 +125,82 @@ const linkHandler = asyncHandler(async (req, res) => {
         });
       }
       if (relationship?.lifecycle === "proposed") {
+        // Human confirmation or retargeting replaces the non-money proposal.
         await removePaymentApplicationsForStripeCharge(tx, chargeId);
+      }
+
+      const incumbentApplication = await tx
+        .select({
+          stripeChargeId: paymentApplications.stripeChargeId,
+          lifecycle: paymentApplications.lifecycle,
+        })
+        .from(paymentApplications)
+        .where(
+          and(
+            eq(paymentApplications.giftId, giftId),
+            eq(paymentApplications.evidenceSource, "stripe"),
+            eq(paymentApplications.linkRole, "counted"),
+            sql`${paymentApplications.lifecycle} IN ('proposed', 'confirmed')`,
+            isNotNull(paymentApplications.stripeChargeId),
+            ne(paymentApplications.stripeChargeId, chargeId),
+          ),
+        )
+        .orderBy(
+          sql`CASE WHEN ${paymentApplications.lifecycle} = 'confirmed' THEN 0 ELSE 1 END`,
+          paymentApplications.updatedAt,
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+
+      if (incumbentApplication?.stripeChargeId) {
+        const incumbent = await tx
+          .select()
+          .from(stripeStagedCharges)
+          .where(eq(stripeStagedCharges.id, incumbentApplication.stripeChargeId))
+          .for("update")
+          .then((rows) => rows[0]);
+        if (!incumbent) {
+          throw new ReconcileAbort(409, {
+            error: "integrity_conflict",
+            message:
+              "The gift has a Stripe payment application whose source charge is missing. Repair the relationship before switching sources.",
+            existingStripeChargeId: incumbentApplication.stripeChargeId,
+          });
+        }
+
+        if (parsed.data.switchStripeSource !== true) {
+          const message =
+            "This gift's amount is already sourced from a different Stripe charge.";
+          throw new ReconcileAbort(409, {
+            error: "consistency_gate",
+            message,
+            details: {
+              issues: [
+                {
+                  code: "gift_already_stripe_sourced",
+                  message,
+                  details: {
+                    currentStripeCharge: {
+                      id: incumbent.id,
+                      amount: incumbent.grossAmount,
+                      payerName: incumbent.payerName,
+                      date: incumbent.dateReceived,
+                    },
+                    targetStripeChargeId: charge.id,
+                  },
+                },
+              ],
+            },
+          });
+        }
+
+        const orphaned = await orphanStripeSourceChargeLedgerInTx(tx, {
+          oldCharge: incumbent,
+          giftId,
+        });
+        for (const affectedGiftId of orphaned.affectedGiftIds) {
+          retieGiftIds.add(affectedGiftId);
+        }
       }
 
       const giftDonor = donorOf(gift);
@@ -181,7 +262,9 @@ const linkHandler = asyncHandler(async (req, res) => {
     if (rederivePledgeIds.length > 0) {
       await applyDerivedOppFieldsMany(...rederivePledgeIds);
     }
-    await applyGiftQbTieMany(giftId);
+    for (const affectedGiftId of retieGiftIds) {
+      await applyGiftQbTieMany(affectedGiftId);
+    }
   }
   res.json(await loadSafeCharge(chargeId));
 });
@@ -189,17 +272,7 @@ const linkHandler = asyncHandler(async (req, res) => {
 router.post(
   "/stripe-staged-charges/:id/link-gift",
   requireAuth,
-  (req, res, next) => {
-    if (
-      req.body != null &&
-      typeof req.body === "object" &&
-      (req.body as { switchStripeSource?: unknown }).switchStripeSource === true
-    ) {
-      next();
-      return;
-    }
-    void linkHandler(req, res, next);
-  },
+  linkHandler,
 );
 
 router.post(
