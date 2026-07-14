@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearPaymentApplicationsForGiftIds } from "./paymentApplicationsTestUtil";
+import {
+  clearPaymentApplicationsForGiftIds,
+  seedStripeApplication,
+  stripeCountedRowForCharge,
+  stripeGiftIdForCharge,
+} from "./paymentApplicationsTestUtil";
 import { chargeStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
@@ -116,7 +121,6 @@ async function seedReconciledCharge(opts: {
     dateReceived: "2026-03-15",
     payerName: `${RUN} payer`,
     matchStatus: "matched",
-    matchedGiftId: opts.matchedGiftId,
     organizationId: ORG_ID,
     rawCharge:
       opts.rawStatus === null
@@ -125,6 +129,14 @@ async function seedReconciledCharge(opts: {
             string,
             unknown
           >),
+  });
+  // The booked state lives in the ledger (the retired matched_gift_id pointer
+  // is never written) — a counted stripe row is what makes the charge
+  // revert-eligible / match_confirmed.
+  await seedStripeApplication({
+    stripeChargeId: id,
+    giftId: opts.matchedGiftId,
+    amountApplied: opts.gross,
   });
   chargeIds.push(id);
   return id;
@@ -220,8 +232,7 @@ describe.skipIf(!HAS_DB)(
       const charge = await readCharge(chargeId);
       expect(charge.status).toBe("excluded");
       expect(charge.exclusionReason).toBe("failed_charge");
-      expect(charge.matchedGiftId).toBeNull();
-      expect(charge.createdGiftId).toBeNull();
+      expect(await stripeCountedRowForCharge(chargeId)).toBeNull();
     });
 
     it("reverting a SUCCEEDED charge still returns it to pending with no exclusion reason", async () => {
@@ -334,17 +345,22 @@ describe.skipIf(!HAS_DB)(
       const id = nextId("ch");
       chargeIds.push(id);
       // A human-confirmed gift link (autoApplied false) derives match_confirmed.
+      // The link lives in the ledger, not the retired pointer columns.
       await db.insert(schema.stripeStagedCharges).values({
         ...upsertValues(id, "failed", { exclusionReason: null }),
         matchStatus: "matched",
-        matchedGiftId: giftId,
       } as UpsertValues);
+      await seedStripeApplication({
+        stripeChargeId: id,
+        giftId,
+        amountApplied: "50.00",
+      });
 
       await runUpsert(upsertValues(id, "failed"));
       const row = await readCharge(id);
       expect(row.status).toBe("match_confirmed");
       expect(row.exclusionReason).toBeNull();
-      expect(row.matchedGiftId).toBe(giftId);
+      expect(await stripeGiftIdForCharge(id)).toBe(giftId);
     });
   },
 );

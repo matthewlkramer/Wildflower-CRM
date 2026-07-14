@@ -34,6 +34,7 @@ import { donorOf, type LinkDonor } from "./quickbooksLink";
 import { isFullyRefunded } from "./stripeRefund";
 import { upsertSettlementLink } from "./settlementLink";
 import { confirmSettlementLink } from "./settlementWriter";
+import { applySettlementSupersedeMany } from "./settlementSupersede";
 import {
   seedInitialGiftAllocation,
   assertGiftHasAllocations,
@@ -207,7 +208,13 @@ export interface MintGiftInTxArgs {
 export async function mintGiftInTx(
   tx: Tx,
   args: MintGiftInTxArgs,
-): Promise<{ giftId: string; opportunityIdToRederive: string | null }> {
+): Promise<{
+  giftId: string;
+  opportunityIdToRederive: string | null;
+  /** Gifts whose ledger rows changed in the §4.3 settlement-supersede
+   *  recompute; callers must recompute their QB tie status post-commit. */
+  rederiveGiftIds: string[];
+}> {
   const {
     newGiftId,
     staged,
@@ -411,8 +418,8 @@ export async function mintGiftInTx(
     }
   }
 
-  // A selected Stripe charge is the precise GROSS source: tie it to the gift via
-  // matchedGiftId (mirrors the link path + the Stripe confirm paths) so it stays
+  // A selected Stripe charge is the precise GROSS source: the counted ledger
+  // row booked below ties it to the gift (pointer columns retired) so it stays
   // resolvable + revertible — revert un-sources the amount, never deletes the
   // human mint the QB anchor owns. Mark its payout reconciled.
   if (charge) {
@@ -420,8 +427,6 @@ export async function mintGiftInTx(
       .update(stripeStagedCharges)
       .set({
         ...donor,
-        matchedGiftId: newGiftId,
-        createdGiftId: null,
         autoApplied: false,
         matchStatus: "matched",
         matchConfirmedByUserId: userId,
@@ -528,7 +533,19 @@ export async function mintGiftInTx(
     },
   });
 
-  return { giftId: newGiftId, opportunityIdToRederive: opportunityId };
+  // §4.3 supersede: if any of the deposits just booked is confirmed-settled
+  // against a payout whose per-charge Stripe rows already cover this gift, the
+  // coarse QB row demotes immediately (and vice-versa on later facts).
+  const rederiveGiftIds = await applySettlementSupersedeMany(tx, [
+    stagedPaymentId,
+    ...(group ? group.memberIds : []),
+  ]);
+
+  return {
+    giftId: newGiftId,
+    opportunityIdToRederive: opportunityId,
+    rederiveGiftIds,
+  };
 }
 
 export interface LinkGiftInTxArgs {
@@ -600,6 +617,9 @@ export async function linkGiftInTx(
   /** The gift the payment was moved OFF of (own-application move), or null —
    *  the caller must recompute ITS QuickBooks tie status too. */
   movedFromGiftId: string | null;
+  /** Gifts whose ledger rows changed in the §4.3 settlement-supersede
+   *  recompute; callers must recompute their QB tie status post-commit. */
+  rederiveGiftIds: string[];
 }> {
   const {
     staged,
@@ -838,10 +858,10 @@ export async function linkGiftInTx(
 
   // Source switch (Task #546): the reviewer confirmed re-sourcing this gift from
   // the newly selected charge even though a DIFFERENT charge currently backs it.
-  // Orphan the old charge FIRST — the partial-unique on matched_gift_id forbids
-  // two charges pointing at one gift, and the unstamp is pointer-safe (it only
-  // fires while the gift still points at the OLD charge), so the old pointer must
-  // be cleared before the new charge is stamped below. Mirrors the single-charge
+  // Orphan the old charge FIRST — the counted ledger's per-gift UNIQUE forbids
+  // two charges settling one gift, and the unstamp only fires while the gift is
+  // still stamped from the OLD charge, so the old ledger row must be removed
+  // before the new charge is booked below. Mirrors the single-charge
   // revert (stripe.ts): drop the old charge's ledger row, unstamp the gift (a
   // no-op for the amount when it was Stripe-sourced — Stripe amount is derived),
   // then return the charge to the unmatched-money queue. We never delete the
@@ -913,17 +933,14 @@ export async function linkGiftInTx(
 
   // Mark the Stripe charge + its payout as permanent reconciled evidence.
   if (charge) {
-    // Tie the charge to the gift row-locally (mirrors the Stripe confirm paths):
-    // `matchedGiftId` is what the charge list/detail resolves the gift through
-    // (COALESCE(matchedGiftId, createdGiftId)) and what the revert flow unwinds.
-    // The partial-unique on matched_gift_id also makes a gift claimable by at
-    // most ONE charge (23505 → 409 link_conflict).
+    // The counted ledger row booked below IS the charge↔gift tie (pointer
+    // columns retired): it is what the charge list/detail resolves the gift
+    // through and what the revert flow unwinds. The ledger's per-gift UNIQUE
+    // keeps a gift claimable by at most ONE charge (23505 → 409 link_conflict).
     await tx
       .update(stripeStagedCharges)
       .set({
         ...finalDonor,
-        matchedGiftId: giftId,
-        createdGiftId: null,
         autoApplied: false,
         matchStatus: "matched",
         matchConfirmedByUserId: userId,
@@ -1033,6 +1050,13 @@ export async function linkGiftInTx(
     },
   });
 
+  // §4.3 supersede: if this deposit is confirmed-settled against a payout
+  // whose per-charge Stripe rows already cover the linked gift, the coarse QB
+  // row just booked demotes immediately.
+  const rederiveGiftIds = await applySettlementSupersedeMany(tx, [
+    stagedPaymentId,
+  ]);
+
   return {
     giftId,
     rederivePledgeIds,
@@ -1040,6 +1064,7 @@ export async function linkGiftInTx(
     // caller can recompute ITS QuickBooks tie status too — it just lost its only
     // QB evidence (likely → `missing`). Null when no move happened.
     movedFromGiftId: movedOwnApplication && oldAppliedGift ? oldAppliedGift.id : null,
+    rederiveGiftIds,
   };
 }
 
@@ -1054,9 +1079,9 @@ export async function linkGiftInTx(
  * charge minted it — the gift is the switch target.
  *
  * Callers must hold FOR UPDATE locks on both the gift and the old charge, and
- * must orphan BEFORE stamping/linking the new charge: the partial-unique on
- * matched_gift_id forbids two charges pointing at one gift, and the unstamp
- * only fires while the gift still points at the old charge. Shared by the
+ * must orphan BEFORE stamping/linking the new charge: the counted ledger's
+ * per-gift UNIQUE forbids two charges settling one gift, and the unstamp
+ * only fires while the gift is still stamped from the old charge. Shared by the
  * deposit-approve re-target commit (above) and the per-charge link-gift route
  * (stripe.ts) so the two switch paths can't drift.
  */

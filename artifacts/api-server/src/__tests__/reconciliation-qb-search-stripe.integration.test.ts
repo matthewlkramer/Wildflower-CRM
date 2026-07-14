@@ -1,4 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  clearPaymentApplicationsForChargeIds,
+  seedStripeApplication,
+} from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -147,7 +151,8 @@ beforeAll(async () => {
     dateReceived: "2099-11-15",
     payerName: PAYER,
   });
-  // Already tied to a gift — must surface grayed via alreadyLinkedGiftId.
+  // Already tied to a gift — must surface grayed via alreadyLinkedGiftId. The
+  // link is a counted stripe ledger row (pointer columns are retired).
   await db.insert(schema.stripeStagedCharges).values({
     id: CH_LINKED_ID,
     stripeAccountId: "acct_test",
@@ -155,7 +160,11 @@ beforeAll(async () => {
     netAmount: "242.50",
     dateReceived: "2099-11-15",
     payerName: PAYER,
-    matchedGiftId: GIFT_ID,
+  });
+  await seedStripeApplication({
+    stripeChargeId: CH_LINKED_ID,
+    giftId: GIFT_ID,
+    amountApplied: "250.00",
   });
   // Refunded — not linkable money, must never appear.
   await db.insert(schema.stripeStagedCharges).values({
@@ -189,6 +198,9 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  // Stripe-evidence ledger rows must go BEFORE their anchor charge (the FK is
+  // SET NULL and a nulled anchor trips the stripe-evidence CHECK).
+  await clearPaymentApplicationsForChargeIds([CH_LINKED_ID]);
   for (const id of [CH_FREE_ID, CH_LINKED_ID, CH_REFUNDED_ID, CH_FAILED_ID]) {
     await db
       .delete(schema.stripeStagedCharges)

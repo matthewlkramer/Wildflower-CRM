@@ -1,6 +1,7 @@
 import { type Request } from "express";
 import {
   giftsAndPayments,
+  paymentApplications,
   stripeStagedCharges,
   stagedPayments,
   organizations,
@@ -10,7 +11,7 @@ import {
   settlementLinks,
   giftAllocations,
 } from "@workspace/db/schema";
-import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { newId } from "./helpers";
 import { buildGiftValuesFromStripeCharge } from "./stripeGift";
 import { recordAudit } from "./audit";
@@ -27,6 +28,7 @@ import {
   type DonorXor,
 } from "./reconciliationCommit";
 import { bookStripeChargeApplication } from "./paymentApplications";
+import { applySupersedeForPayoutInTx } from "./settlementSupersede";
 import {
   seedInitialGiftAllocation,
   assertGiftHasAllocations,
@@ -61,7 +63,7 @@ import type {
 /**
  * Mint a real gift from a single Stripe charge, crediting the donor the GROSS
  * amount (fee recorded separately) and marking the charge permanent reconciled
- * EVIDENCE (createdGiftId). Mirrors POST /stripe-staged-charges/:id/create-gift,
+ * EVIDENCE (created_the_gift ledger row). Mirrors POST /stripe-staged-charges/:id/create-gift,
  * including the QuickBooks-conflict guard that refuses to double-book a payout
  * already booked as an approved QB lump.
  */
@@ -92,7 +94,7 @@ export async function createGiftFromChargeInTx(
     /** Request used for audit attribution. */
     auditReq: Request;
   },
-): Promise<{ giftId: string }> {
+): Promise<{ giftId: string; supersedeGiftIds: string[] }> {
   const { newGiftId, charge, donor, paymentIntermediaryId, userId, auditReq } =
     args;
   const opportunityId = args.opportunityId ?? null;
@@ -172,15 +174,13 @@ export async function createGiftFromChargeInTx(
   }
   await assertGiftHasAllocations(tx, newGiftId);
 
-  // The charge OWNS the mint (createdGiftId, not auto-applied → protected from
-  // casual revert). Adopt the chosen donor onto the evidence row. Guarded on
-  // still-pending to catch a concurrent resolve.
+  // The charge OWNS the mint (created_the_gift ledger row below, not
+  // auto-applied → protected from casual revert). Adopt the chosen donor onto
+  // the evidence row. Guarded on still-pending to catch a concurrent resolve.
   const updated = await tx
     .update(stripeStagedCharges)
     .set({
       ...donor,
-      createdGiftId: newGiftId,
-      matchedGiftId: null,
       autoApplied: false,
       matchStatus: "matched",
       matchConfirmedByUserId: userId,
@@ -225,7 +225,15 @@ export async function createGiftFromChargeInTx(
     },
   });
 
-  return { giftId: newGiftId };
+  // §4.3 supersede: this per-charge counted row may complete the coverage of
+  // a coarse QB deposit confirmed-settled against the charge's payout — the
+  // deposit's coarse row demotes in the same tx.
+  const supersedeGiftIds = await applySupersedeForPayoutInTx(
+    tx,
+    charge.stripePayoutId,
+  );
+
+  return { giftId: newGiftId, supersedeGiftIds };
 }
 
 /**
@@ -253,7 +261,13 @@ export async function linkChargeToGiftInTx(
     /** Request used for audit attribution. */
     auditReq: Request;
   },
-): Promise<{ giftId: string; rederivePledgeIds: string[] }> {
+): Promise<{
+  giftId: string;
+  rederivePledgeIds: string[];
+  /** Gifts whose ledger rows changed in the §4.3 settlement-supersede
+   *  recompute; callers must recompute their QB tie status post-commit. */
+  supersedeGiftIds: string[];
+}> {
   const {
     charge,
     gift,
@@ -265,20 +279,18 @@ export async function linkChargeToGiftInTx(
   } = args;
   const rederivePledgeIds: string[] = [];
 
-  // Reject if ANOTHER Stripe charge already owns this gift as evidence. The
-  // partial-unique on matched_gift_id covers a second MATCH (23505), but not the
-  // case where another charge already CREATED (auto-minted) the gift — this
-  // closes that gap with a clean 409 instead of a silent double-tie.
+  // Reject if ANOTHER Stripe charge already owns this gift as evidence
+  // (matched OR minted). The counted ledger is the sole link surface — a
+  // clean 409 instead of a silent double-tie.
   const ownedByOtherCharge = await tx
-    .select({ id: stripeStagedCharges.id })
-    .from(stripeStagedCharges)
+    .select({ id: paymentApplications.id })
+    .from(paymentApplications)
     .where(
       and(
-        ne(stripeStagedCharges.id, charge.id),
-        or(
-          eq(stripeStagedCharges.matchedGiftId, giftId),
-          eq(stripeStagedCharges.createdGiftId, giftId),
-        ),
+        eq(paymentApplications.giftId, giftId),
+        eq(paymentApplications.evidenceSource, "stripe"),
+        eq(paymentApplications.linkRole, "counted"),
+        ne(paymentApplications.stripeChargeId, charge.id),
       ),
     )
     .limit(1);
@@ -290,15 +302,14 @@ export async function linkChargeToGiftInTx(
     });
   }
 
-  // Tie the charge to the gift. Guarded on still-pending; the partial-unique on
-  // matched_gift_id also makes a gift claimable by at most ONE charge (23505 →
-  // surfaced as a link conflict by the caller).
+  // Tie the charge to the gift via the counted ledger row booked below
+  // (pointer columns retired). Guarded on still-pending; the ledger's per-gift
+  // UNIQUE keeps a gift claimable by at most ONE charge (23505 → surfaced as a
+  // link conflict by the caller).
   const updated = await tx
     .update(stripeStagedCharges)
     .set({
       ...effectiveGiftDonor,
-      matchedGiftId: giftId,
-      createdGiftId: null,
       autoApplied: false,
       matchStatus: "matched",
       matchConfirmedByUserId: userId,
@@ -380,7 +391,15 @@ export async function linkChargeToGiftInTx(
     },
   });
 
-  return { giftId, rederivePledgeIds };
+  // §4.3 supersede: this per-charge counted row may complete the coverage of
+  // a coarse QB deposit confirmed-settled against the charge's payout — the
+  // deposit's coarse row demotes in the same tx.
+  const supersedeGiftIds = await applySupersedeForPayoutInTx(
+    tx,
+    charge.stripePayoutId,
+  );
+
+  return { giftId, rederivePledgeIds, supersedeGiftIds };
 }
 
 /**

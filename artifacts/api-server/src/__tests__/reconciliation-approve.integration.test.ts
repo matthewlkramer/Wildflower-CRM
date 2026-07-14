@@ -11,9 +11,14 @@ import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
   qbCountedRowsForPayment,
+  qbDemotedRowsForPayment,
   qbSoleGiftIdForPayment,
   qbMintedGiftIdForPayment,
   qbPaymentIdForGift,
+  seedStripeApplication,
+  stripeCountedRowForCharge,
+  stripeGiftIdForCharge,
+  stripeMintedGiftIdForCharge,
 } from "./paymentApplicationsTestUtil";
 import { payoutStatusFromLink } from "../lib/settlementLink";
 import { proposeSettlementLink } from "../lib/settlementWriter";
@@ -304,6 +309,8 @@ async function seedPayout(stagedPaymentId: string): Promise<string> {
   return id;
 }
 
+// A charge's gift tie is a counted stripe `payment_applications` ledger row
+// (the pointer columns are retired and never written).
 async function seedCharge(opts: {
   payoutId: string;
   grossAmount: string;
@@ -317,8 +324,14 @@ async function seedCharge(opts: {
     grossAmount: opts.grossAmount,
     feeAmount: "3.00",
     netAmount: "97.00",
-    matchedGiftId: opts.matchedGiftId ?? null,
   });
+  if (opts.matchedGiftId) {
+    await seedStripeApplication({
+      stripeChargeId: id,
+      giftId: opts.matchedGiftId,
+      amountApplied: opts.grossAmount,
+    });
+  }
   chargeIds.push(id);
   return id;
 }
@@ -538,20 +551,26 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — link existing gift (integra
     expect(res.status).toBe(200);
     expect(res.json.ok).toBe(true);
 
-    // Core regression: the charge carries the row-local gift linkage that the
-    // Stripe list/detail resolution + revert depend on.
+    // Core regression: the charge carries the counted ledger row (the sole
+    // gift-link record) that Stripe list/detail resolution + revert depend on.
     const charge = await readCharge(chargeId);
     expect(charge.status).toBe("match_confirmed");
-    expect(charge.matchedGiftId).toBe(giftId);
-    expect(charge.createdGiftId).toBeNull();
+    expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
+    expect(await stripeMintedGiftIdForCharge(chargeId)).toBeNull();
     expect(charge.matchStatus).toBe("matched");
     expect(charge.matchConfirmedByUserId).toBe(TEST_USER_ID);
 
-    // QB staged row + payout become permanent reconciled evidence (the counted
-    // cash-application ledger row is the sole gift-link record).
+    // QB staged row + payout become permanent reconciled evidence. §4.3
+    // supersede: the charge's counted Stripe row fully re-expresses this
+    // gift's money, so the coarse QB row DEMOTES to corroborating (amount
+    // kept) — the gift is counted exactly once, at the charge grain.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(await qbSoleGiftIdForPayment(stagedId)).toBe(giftId);
+    expect(await qbSoleGiftIdForPayment(stagedId)).toBeNull();
+    const demoted = await qbDemotedRowsForPayment(stagedId);
+    expect(demoted).toHaveLength(1);
+    expect(demoted[0].giftId).toBe(giftId);
+    expect(demoted[0].amountApplied).toBe("100.00");
 
     const link = await readLink(payoutId);
     expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
@@ -602,7 +621,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — link existing gift (integra
     expect(res.json.error).toBe("stripe_charge_not_available");
 
     // The charge still belongs to the original gift; the staged row is untouched.
-    expect((await readCharge(chargeId)).matchedGiftId).toBe(otherGiftId);
+    expect(await stripeGiftIdForCharge(chargeId)).toBe(otherGiftId);
     expect((await readStaged(stagedId)).status).toBe("pending");
   }, 30_000);
 });
@@ -624,11 +643,17 @@ describe.skipIf(!HAS_DB)(
       await db
         .update(schema.stripeStagedCharges)
         .set({
-          matchedGiftId: giftId,
           matchStatus: "matched",
           matchConfirmedByUserId: TEST_USER_ID,
         })
         .where(eqFn(schema.stripeStagedCharges.id, oldChargeId));
+      // The reconcile itself is a counted stripe ledger row (pointer columns
+      // are retired).
+      await seedStripeApplication({
+        stripeChargeId: oldChargeId,
+        giftId,
+        amountApplied: "100.00",
+      });
     }
 
     it("hard-blocks without the flag, surfacing the current backing charge in the 409 details", async () => {
@@ -705,15 +730,15 @@ describe.skipIf(!HAS_DB)(
       expect(gift.finalAmountSource).toBe("stripe");
       expect(gift.finalAmountStripeChargeId).toBe(newChargeId);
 
-      // New charge carries the gift linkage.
+      // New charge carries the gift linkage (counted ledger row).
       const newCharge = await readCharge(newChargeId);
       expect(newCharge.status).toBe("match_confirmed");
-      expect(newCharge.matchedGiftId).toBe(giftId);
+      expect(await stripeGiftIdForCharge(newChargeId)).toBe(giftId);
 
       // Old charge is orphaned back to the unmatched-money queue.
       const oldCharge = await readCharge(oldChargeId);
       expect(oldCharge.status).toBe("pending");
-      expect(oldCharge.matchedGiftId).toBeNull();
+      expect(await stripeCountedRowForCharge(oldChargeId)).toBeNull();
       expect(oldCharge.matchStatus).toBe("unmatched");
     }, 30_000);
 
@@ -759,7 +784,7 @@ describe.skipIf(!HAS_DB)(
       const oldCharge = await readCharge(oldChargeId);
       expect(oldCharge.status).toBe("excluded");
       expect(oldCharge.exclusionReason).toBe("failed_charge");
-      expect(oldCharge.matchedGiftId).toBeNull();
+      expect(await stripeCountedRowForCharge(oldChargeId)).toBeNull();
     }, 30_000);
   },
 );
@@ -946,11 +971,15 @@ describe.skipIf(!HAS_DB)(
       await db
         .update(schema.stripeStagedCharges)
         .set({
-          matchedGiftId: giftId,
           matchStatus: "matched",
           matchConfirmedByUserId: TEST_USER_ID,
         })
         .where(eqFn(schema.stripeStagedCharges.id, oldChargeId));
+      await seedStripeApplication({
+        stripeChargeId: oldChargeId,
+        giftId,
+        amountApplied: "100.00",
+      });
 
       // A NEW Stripe-backed deposit targeting the same gift.
       const stagedId = await seedStaged("100.00");
@@ -983,11 +1012,16 @@ describe.skipIf(!HAS_DB)(
       expect(res.status).toBe(200);
       expect(res.json.ok).toBe(true);
 
-      // QB incumbent released; new payment linked.
+      // QB incumbent released; new payment linked. §4.3 supersede: the new
+      // charge's counted Stripe row covers the gift, so the fresh QB row lands
+      // demoted (corroborating, amount kept) — counted once, at the charge grain.
       const incumbent = await readStaged(incumbentId);
       expect(incumbent.status).toBe("pending");
       expect(await qbCountedRowsForPayment(incumbentId)).toHaveLength(0);
-      expect(await qbSoleGiftIdForPayment(stagedId)).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(stagedId)).toBeNull();
+      const demoted = await qbDemotedRowsForPayment(stagedId);
+      expect(demoted).toHaveLength(1);
+      expect(demoted[0].giftId).toBe(giftId);
 
       // Stripe source switched: gift now sourced from the new charge; old charge
       // orphaned back to the unmatched-money queue.
@@ -995,7 +1029,7 @@ describe.skipIf(!HAS_DB)(
       expect(gift.finalAmountStripeChargeId).toBe(newChargeId);
       const oldCharge = await readCharge(oldChargeId);
       expect(oldCharge.status).toBe("pending");
-      expect(oldCharge.matchedGiftId).toBeNull();
+      expect(await stripeCountedRowForCharge(oldChargeId)).toBeNull();
     }, 30_000);
   },
 );
@@ -1033,20 +1067,26 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)",
     // (derivedProcessorFee sums exactly this) — assert it at the source.
     expect((await readCharge(chargeId)).feeAmount).toBe("3.00");
 
-    // The QB anchor OWNS the mint (a counted ledger row with created_the_gift,
-    // not auto-applied); the charge is matchedGiftId-linked precise evidence;
-    // the payout is confirmed.
+    // The QB anchor OWNS the mint, but §4.3 supersede demotes its ledger row
+    // (the charge's counted Stripe row covers the minted gift): the mint
+    // ownership survives on the demoted corroborating row (created_the_gift,
+    // amount kept); the charge is the counted precise evidence; the payout is
+    // confirmed.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(await qbMintedGiftIdForPayment(stagedId)).toBe(newGiftId);
+    expect(await qbMintedGiftIdForPayment(stagedId)).toBeNull();
+    const demoted = await qbDemotedRowsForPayment(stagedId);
+    expect(demoted).toHaveLength(1);
+    expect(demoted[0].giftId).toBe(newGiftId);
+    expect(demoted[0].createdTheGift).toBe(true);
     expect(staged.autoApplied).toBe(false);
     expect(staged.matchStatus).toBe("matched");
     expect(staged.organizationId).toBe(ORG_ID);
 
     const charge = await readCharge(chargeId);
     expect(charge.status).toBe("match_confirmed");
-    expect(charge.matchedGiftId).toBe(newGiftId);
-    expect(charge.createdGiftId).toBeNull();
+    expect(await stripeGiftIdForCharge(chargeId)).toBe(newGiftId);
+    expect(await stripeMintedGiftIdForCharge(chargeId)).toBeNull();
 
     const link = await readLink(payoutId);
     expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
@@ -1157,14 +1197,19 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     expect(res.status).toBe(200);
     expect(res.json.ok).toBe(true);
 
-    // The auto-proposed row reconciles cleanly — no 409 not_approvable.
+    // The auto-proposed row reconciles cleanly — no 409 not_approvable. §4.3
+    // supersede: the charge's counted Stripe row covers the gift, so the QB
+    // row lands demoted (corroborating, amount kept).
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(await qbSoleGiftIdForPayment(stagedId)).toBe(giftId);
+    expect(await qbSoleGiftIdForPayment(stagedId)).toBeNull();
+    const demoted = await qbDemotedRowsForPayment(stagedId);
+    expect(demoted).toHaveLength(1);
+    expect(demoted[0].giftId).toBe(giftId);
 
     const charge = await readCharge(chargeId);
     expect(charge.status).toBe("match_confirmed");
-    expect(charge.matchedGiftId).toBe(giftId);
+    expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
   }, 30_000);
 
   it("rejects minting a NEW gift on an auto-proposed row that already points at a gift (gift_already_linked, no double-count)", async () => {
@@ -1345,10 +1390,10 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     expect(gift.finalAmountSource).toBe("stripe");
     expect(gift.finalAmountStripeChargeId).toBe(chargeId);
 
-    // The CHARGE owns the mint (createdGiftId, protected) and is resolved.
+    // The CHARGE owns the mint (a counted ledger row with created_the_gift,
+    // protected) and is resolved.
     const charge = await readCharge(chargeId);
-    expect(charge.createdGiftId).toBe(giftId);
-    expect(charge.matchedGiftId).toBeNull();
+    expect(await stripeMintedGiftIdForCharge(chargeId)).toBe(giftId);
     expect(charge.status).toBe("match_confirmed");
 
     // The QB lump stays untouched: settlement-only confirmed, NO gift link.
@@ -1495,10 +1540,10 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     expect(gift.finalAmountSource).toBe("stripe");
     expect(gift.finalAmountStripeChargeId).toBe(chargeId);
 
-    // The CHARGE owns the mint (createdGiftId, protected) and is resolved.
+    // The CHARGE owns the mint (a counted ledger row with created_the_gift,
+    // protected) and is resolved.
     const charge = await readCharge(chargeId);
-    expect(charge.createdGiftId).toBe(giftId);
-    expect(charge.matchedGiftId).toBeNull();
+    expect(await stripeMintedGiftIdForCharge(chargeId)).toBe(giftId);
     expect(charge.status).toBe("match_confirmed");
 
     // The QB lump stays untouched: settlement-only confirmed, NO gift link.
@@ -1758,7 +1803,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
 
     const charge = await readCharge(chargeId);
     expect(charge.status).toBe("match_confirmed");
-    expect(charge.matchedGiftId).toBe(giftId);
+    expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
     // processor_fee header column is dropped; the fee now lives on the linked charge
     // (derivedProcessorFee sums exactly this).
     expect(charge.feeAmount).toBe("3.00");
@@ -1766,7 +1811,13 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     const link = await readLink(payoutId);
     expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
 
-    expect(await qbMintedGiftIdForPayment(stagedId)).toBe(giftId);
+    // §4.3 supersede: the charge's counted Stripe row covers the minted gift,
+    // so the QB anchor's mint row lands demoted (created_the_gift survives).
+    expect(await qbMintedGiftIdForPayment(stagedId)).toBeNull();
+    const demoted = await qbDemotedRowsForPayment(stagedId);
+    expect(demoted).toHaveLength(1);
+    expect(demoted[0].giftId).toBe(giftId);
+    expect(demoted[0].createdTheGift).toBe(true);
   }, 30_000);
 
   it("create_gift IGNORES a stray opportunityId — mints for the body donor, does NOT attach to the opp or re-derive it", async () => {

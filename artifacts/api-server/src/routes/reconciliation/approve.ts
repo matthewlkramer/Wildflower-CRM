@@ -43,6 +43,7 @@ import {
   qbLedgerExistsForPayment,
   qbLedgerSoleGiftIdForPayment,
   qbLedgerMintedGiftIdForPayment,
+  chargeCountedLedgerRow,
 } from "../../lib/paymentApplications";
 import {
   chargeStatusIn,
@@ -250,6 +251,7 @@ async function mintGiftFromEvidence(
     .map((r) => r.id);
 
   const newGiftId = newId();
+  const supersedeGiftIds: string[] = [];
   try {
     await db.transaction(async (tx) => {
       // Lock order (mirrors the link path + stripeConfirm): payouts → staged →
@@ -398,7 +400,14 @@ async function mintGiftFromEvidence(
           });
         }
         // A fresh mint can only claim a still-free (derived-pending) charge.
-        if (deriveStripeChargeStatus(charge) !== "pending") {
+        // Gift-link fact = the counted ledger row (pointer columns retired).
+        if (
+          deriveStripeChargeStatus({
+            ...charge,
+            hasCountedApplication:
+              (await chargeCountedLedgerRow(tx, charge.id)) != null,
+          }) !== "pending"
+        ) {
           throw new ApproveAbort(409, {
             error: "stripe_charge_not_available",
             message:
@@ -561,7 +570,7 @@ async function mintGiftFromEvidence(
         });
       }
 
-      await mintGiftInTx(tx, {
+      const mintResult = await mintGiftInTx(tx, {
         newGiftId,
         staged,
         stagedPaymentId,
@@ -583,6 +592,7 @@ async function mintGiftFromEvidence(
         userId: user.id,
         auditReq: req,
       });
+      supersedeGiftIds.push(...mintResult.rederiveGiftIds);
     });
   } catch (e) {
     if (e instanceof ApproveAbort) {
@@ -614,7 +624,8 @@ async function mintGiftFromEvidence(
     await applyDerivedOppFieldsMany(opportunityId);
   }
   // The newly minted gift now carries QB linkage — persist its tie status.
-  await applyGiftQbTieMany(newGiftId);
+  // Supersede-affected gifts (coarse QB rows demoted/promoted) re-derive too.
+  await applyGiftQbTieMany(newGiftId, ...supersedeGiftIds);
 
   res.status(201).json({
     ok: true as const,
@@ -897,7 +908,7 @@ router.post(
         });
         return;
       }
-      // Confirmed DIRECT match (matchedGiftId set, no created/group gift) being
+      // Confirmed DIRECT match (counted 1:1 ledger row, no mint/group) being
       // pointed at a DIFFERENT gift: fall through to the transaction. The gate
       // composes payment_already_applied there, so the reviewer gets the normal
       // guarded re-target confirmation (moveOwnApplication) instead of a
@@ -921,6 +932,9 @@ router.post(
     // lost its only QB evidence in the commit, so its tie status needs
     // recomputing alongside the newly linked gift's.
     let movedFromGiftId: string | null = null;
+    // Gifts whose ledger rows changed in the §4.3 settlement-supersede
+    // recompute inside the commit — tie status recomputed post-commit.
+    const supersedeGiftIds: string[] = [];
 
     // ── Atomic apply ─────────────────────────────────────────────────────────
     // Lock order matches every other money path so they serialize without
@@ -1047,8 +1061,8 @@ router.post(
         // with no UI recovery. Detect it from the cash-application ledger
         // (excluding the TARGET gift, so re-approving the same link stays
         // idempotent). The move is offered ONLY for a plain worker auto-match:
-        // the ledger gift must AGREE with the row's own matchedGiftId, and the
-        // row must not have minted a gift (createdGiftId — guarded above), be
+        // the payment's counted ledger gift is the applied gift, and the
+        // row must not have minted a gift (guarded above), be
         // group-reconciled, or be applied to several gifts (split). Any of those
         // fall through with ownAppliedGiftId unset → the commit's hard 409 stands
         // (revert the group/split first). When movable, load + lock the old gift
@@ -1182,11 +1196,17 @@ router.post(
           // The charge must be free to claim: pending, or already confirmed to
           // THIS same gift (idempotent). Anything else (resolved elsewhere) is a
           // conflict — the charge can back only one gift.
-          const chargeDerived = deriveStripeChargeStatus(charge);
+          const chargeLedger = await chargeCountedLedgerRow(tx, charge.id);
+          const chargeDerived = deriveStripeChargeStatus({
+            ...charge,
+            hasCountedApplication: chargeLedger != null,
+          });
           const chargePending = chargeDerived === "pending";
           const chargeIdempotent =
             chargeDerived === "match_confirmed" &&
-            charge.matchedGiftId === giftId;
+            chargeLedger != null &&
+            !chargeLedger.createdTheGift &&
+            chargeLedger.giftId === giftId;
           if (!chargePending && !chargeIdempotent) {
             throw new ApproveAbort(409, {
               error: "stripe_charge_not_available",
@@ -1333,6 +1353,7 @@ router.post(
         });
         rederivePledgeIds.push(...linkResult.rederivePledgeIds);
         movedFromGiftId = linkResult.movedFromGiftId;
+        supersedeGiftIds.push(...linkResult.rederiveGiftIds);
       });
     } catch (e) {
       if (e instanceof ApproveAbort) {
@@ -1360,8 +1381,8 @@ router.post(
     await applyDerivedOppFieldsMany(...rederivePledgeIds);
     // The linked gift now carries QB linkage — persist its tie status. When the
     // payment was moved off another gift, that gift just LOST its QB evidence
-    // (likely → missing) — recompute it too.
-    await applyGiftQbTieMany(giftId, movedFromGiftId);
+    // (likely → missing) — recompute it too, plus any supersede-affected gifts.
+    await applyGiftQbTieMany(giftId, movedFromGiftId, ...supersedeGiftIds);
 
     res.json({
       ok: true as const,

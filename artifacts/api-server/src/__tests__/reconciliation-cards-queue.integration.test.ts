@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearPaymentApplicationsForStagedIds } from "./paymentApplicationsTestUtil";
+import {
+  clearPaymentApplicationsForStagedIds,
+  clearPaymentApplicationsForChargeIds,
+  seedStripeApplication,
+} from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import {
@@ -204,6 +208,9 @@ async function seedPayoutFor(
   return id;
 }
 
+// A charge's gift link is a counted stripe `payment_applications` ledger row
+// (the pointer columns are retired). `createdGiftId` models a mint
+// (created_the_gift:true); `matchedGiftId` a plain reconcile.
 async function seedCharge(opts: {
   payoutId: string;
   gross: string;
@@ -229,9 +236,16 @@ async function seedCharge(opts: {
     exclusionReason: opts.exclusionReason ?? null,
     matchStatus: opts.matchStatus ?? "unmatched",
     organizationId: opts.organizationId ?? null,
-    matchedGiftId: opts.matchedGiftId ?? null,
-    createdGiftId: opts.createdGiftId ?? null,
   });
+  const linkedGiftId = opts.matchedGiftId ?? opts.createdGiftId ?? null;
+  if (linkedGiftId) {
+    await seedStripeApplication({
+      stripeChargeId: id,
+      giftId: linkedGiftId,
+      amountApplied: opts.gross,
+      createdTheGift: !!opts.createdGiftId,
+    });
+  }
   chargeIds.push(id);
   return id;
 }
@@ -331,6 +345,9 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  // Charge-anchored ledger rows must go BEFORE their anchor charge (the FK is
+  // SET NULL and a nulled anchor trips the stripe-evidence CHECK).
+  await clearPaymentApplicationsForChargeIds(chargeIds);
   if (chargeIds.length)
     await db
       .delete(schema.stripeStagedCharges)
@@ -620,8 +637,13 @@ describe.skipIf(!HAS_DB)(
       const giftForCharge = await seedGift("180.00", "2026-03-15");
       await db
         .update(schema.stripeStagedCharges)
-        .set({ matchStatus: "matched", matchedGiftId: giftForCharge })
+        .set({ matchStatus: "matched" })
         .where(eqFn(schema.stripeStagedCharges.id, openCharge));
+      await seedStripeApplication({
+        stripeChargeId: openCharge,
+        giftId: giftForCharge,
+        amountApplied: "180.00",
+      });
 
       const after = await cardIds();
       expect(after.has(depositId)).toBe(false);

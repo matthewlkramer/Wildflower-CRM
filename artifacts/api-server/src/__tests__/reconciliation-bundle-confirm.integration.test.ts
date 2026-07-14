@@ -8,6 +8,7 @@ import {
   vi,
 } from "vitest";
 import { chargeStatusSql } from "../lib/derivedStatus";
+import { stripeMintedGiftIdForCharge } from "./paymentApplicationsTestUtil";
 import { getTableColumns } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -367,7 +368,8 @@ describe.skipIf(!HAS_DB)("Reconciliation bundle confirm (integration)", () => {
 
     const charge = await readCharge(chargeId);
     expect(charge?.status).toBe("match_confirmed");
-    expect(charge?.createdGiftId).toBe(giftId);
+    // The mint ownership lives in the ledger (pointer columns are retired).
+    expect(await stripeMintedGiftIdForCharge(chargeId)).toBe(giftId);
 
     // Idempotent replay at the committed revision returns the stored result and
     // books NOTHING further.

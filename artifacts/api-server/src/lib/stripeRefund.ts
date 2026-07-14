@@ -1,5 +1,10 @@
-import { db, giftsAndPayments, stripeStagedCharges } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import {
+  db,
+  giftsAndPayments,
+  stripeStagedCharges,
+  paymentApplications,
+} from "@workspace/db";
+import { and, eq } from "drizzle-orm";
 import { adjustSingleAllocationOrFlag } from "./giftFinalAmount";
 import { applyGiftQbTieMany } from "./giftQbTie";
 import { applyDerivedOppFieldsMany } from "./pledgeStage";
@@ -175,11 +180,21 @@ export async function confirmRefundPropagation(
       return;
     }
 
-    const giftId =
-      locked.refundPropagationGiftId ??
-      locked.matchedGiftId ??
-      locked.createdGiftId ??
-      null;
+    // Ledger fallback: the gift this charge is counted against (the legacy
+    // matched/created gift-pointer columns are retired, never read).
+    const ledgerRow = await tx
+      .select({ giftId: paymentApplications.giftId })
+      .from(paymentApplications)
+      .where(
+        and(
+          eq(paymentApplications.stripeChargeId, chargeId),
+          eq(paymentApplications.evidenceSource, "stripe"),
+          eq(paymentApplications.linkRole, "counted"),
+        ),
+      )
+      .limit(1)
+      .then((r) => r[0]);
+    const giftId = locked.refundPropagationGiftId ?? ledgerRow?.giftId ?? null;
     if (!giftId) {
       result = { code: "no_linked_gift", chargeId };
       return;

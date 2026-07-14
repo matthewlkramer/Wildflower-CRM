@@ -13,6 +13,7 @@ import {
   people,
   paymentIntermediaries,
   settlementLinks,
+  paymentApplications,
 } from "@workspace/db/schema";
 import {
   and,
@@ -65,12 +66,15 @@ import {
   qbLedgerDirectMatchExists,
   qbLedgerSoleGiftIdForPayment,
   DEFAULT_PAYMENT_ID_SQL,
+  stripeLedgerGiftIdForCharge,
+  chargeCountedLedgerRow,
 } from "../lib/paymentApplications";
 import {
   unstampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
 } from "../lib/giftFinalAmount";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
+import { applySupersedeForPayoutInTx } from "../lib/settlementSupersede";
 import { giftHeaderColumns } from "./giftsAndPayments";
 import { logger } from "../lib/logger";
 import {
@@ -225,7 +229,9 @@ function withJoins<T extends PgSelect>(q: T) {
     )
     .leftJoin(
       resolvedGift,
-      sql`${resolvedGift.id} = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})`,
+      // Ledger-resolved gift link (the legacy matched/created gift-pointer
+      // columns are retired, never read).
+      sql`${resolvedGift.id} = ${stripeLedgerGiftIdForCharge()}`,
     )
     .leftJoin(
       stripePayouts,
@@ -586,6 +592,7 @@ router.post(
     const { giftId } = parsed.data;
 
     const rederivePledgeIds: string[] = [];
+    const supersedeGiftIds: string[] = [];
     let alreadyLinked = false;
     try {
       await db.transaction(async (tx) => {
@@ -620,11 +627,18 @@ router.post(
             message: "Stripe staged charge not found.",
           });
         }
-        // Idempotent: already reconciled to THIS gift → no-op success.
-        const chargeStatus = deriveStripeChargeStatus(charge);
+        // Idempotent: already reconciled to THIS gift (matched, not minted) →
+        // no-op success. Ledger-based (pointer columns are retired).
+        const chargeLedger = await chargeCountedLedgerRow(tx, charge.id);
+        const chargeStatus = deriveStripeChargeStatus({
+          ...charge,
+          hasCountedApplication: chargeLedger != null,
+        });
         if (
           chargeStatus === "match_confirmed" &&
-          charge.matchedGiftId === giftId
+          chargeLedger != null &&
+          !chargeLedger.createdTheGift &&
+          chargeLedger.giftId === giftId
         ) {
           alreadyLinked = true;
           return;
@@ -643,25 +657,32 @@ router.post(
         // gift_already_stripe_sourced gate the deposit-approve re-target path
         // raises, so the workbench can offer one confirm-the-swap dialog for
         // both. On a confirmed switch the incumbent is orphaned back to the
-        // unmatched-money queue FIRST (the partial-unique on matched_gift_id
-        // forbids two charges on one gift, and the unstamp is pointer-safe),
+        // unmatched-money queue FIRST (the ledger's partial-unique forbids two
+        // counted charges on one gift, and the unstamp is pointer-safe),
         // then this charge is linked below. The gift is never deleted, even
-        // if the incumbent minted it — it is the switch target.
-        const incumbent =
-          (await tx
-            .select()
-            .from(stripeStagedCharges)
-            .where(
-              and(
-                ne(stripeStagedCharges.id, charge.id),
-                or(
-                  eq(stripeStagedCharges.matchedGiftId, giftId),
-                  eq(stripeStagedCharges.createdGiftId, giftId),
-                ),
-              ),
-            )
-            .for("update")
-            .then((r) => r[0])) ?? null;
+        // if the incumbent minted it — it is the switch target. Resolved via
+        // the counted ledger rows (pointer columns are retired).
+        const incumbentLedger = await tx
+          .select({ chargeId: paymentApplications.stripeChargeId })
+          .from(paymentApplications)
+          .where(
+            and(
+              eq(paymentApplications.giftId, giftId),
+              eq(paymentApplications.evidenceSource, "stripe"),
+              eq(paymentApplications.linkRole, "counted"),
+              ne(paymentApplications.stripeChargeId, charge.id),
+            ),
+          )
+          .limit(1)
+          .then((r) => r[0]);
+        const incumbent = incumbentLedger?.chargeId
+          ? ((await tx
+              .select()
+              .from(stripeStagedCharges)
+              .where(eq(stripeStagedCharges.id, incumbentLedger.chargeId))
+              .for("update")
+              .then((r) => r[0])) ?? null)
+          : null;
         if (incumbent && parsed.data.switchStripeSource !== true) {
           const message =
             "This gift's amount is already sourced from a different Stripe charge.";
@@ -729,6 +750,7 @@ router.post(
           auditReq: req,
         });
         rederivePledgeIds.push(...linkRes.rederivePledgeIds);
+        supersedeGiftIds.push(...linkRes.supersedeGiftIds);
       });
     } catch (e) {
       if (e instanceof ReconcileAbort) {
@@ -760,7 +782,7 @@ router.post(
       if (rederivePledgeIds.length) {
         await applyDerivedOppFieldsMany(...rederivePledgeIds);
       }
-      await applyGiftQbTieMany(giftId);
+      await applyGiftQbTieMany(giftId, ...supersedeGiftIds);
     }
 
     const [row] = await db
@@ -789,7 +811,13 @@ router.post(
       .where(eq(stripeStagedCharges.id, id))
       .then((r) => r[0]);
     if (!existing) return notFound(res, "stripe staged charge");
-    if (deriveStripeChargeStatus(existing) !== "pending") {
+    const existingLedger = await chargeCountedLedgerRow(db, id);
+    if (
+      deriveStripeChargeStatus({
+        ...existing,
+        hasCountedApplication: existingLedger != null,
+      }) !== "pending"
+    ) {
       res.status(409).json({
         error: "not_pending",
         message: "This staged charge has already been resolved.",
@@ -811,6 +839,7 @@ router.post(
     const INVARIANT = "__staged_invariant__";
     const QB_CONFLICT = "__qb_conflict__";
     let lockedIssues: InvariantIssue[] = [];
+    const supersedeGiftIds: string[] = [];
     try {
       await db.transaction(async (tx) => {
         const locked = await tx
@@ -819,7 +848,14 @@ router.post(
           .where(eq(stripeStagedCharges.id, id))
           .for("update")
           .then((r) => r[0]);
-        if (!locked || deriveStripeChargeStatus(locked) !== "pending") {
+        if (!locked) throw new Error(NOT_PENDING);
+        const lockedLedger = await chargeCountedLedgerRow(tx, id);
+        if (
+          deriveStripeChargeStatus({
+            ...locked,
+            hasCountedApplication: lockedLedger != null,
+          }) !== "pending"
+        ) {
           throw new Error(NOT_PENDING);
         }
 
@@ -887,10 +923,9 @@ router.post(
           .update(stripeStagedCharges)
           .set({
             // D4: this charge is now permanent EVIDENCE tied to the gift it
-            // minted — createdGiftId + the confirmation stamps derive it to
-            // `match_confirmed`.
-            createdGiftId: giftId,
-            matchedGiftId: null,
+            // minted — the counted ledger row booked below (createdTheGift:
+            // true) + the confirmation stamps derive it to `match_confirmed`.
+            // No gift-pointer write (the legacy columns are retired).
             autoApplied: false,
             matchStatus: "matched",
             matchConfirmedByUserId: user.id,
@@ -912,6 +947,12 @@ router.post(
           confirmedAt: new Date(),
           createdTheGift: true,
         });
+        // §4.3 supersede: this per-charge counted row may complete the
+        // coverage of a coarse QB deposit confirmed-settled against the
+        // charge's payout — the deposit's coarse row demotes in the same tx.
+        supersedeGiftIds.push(
+          ...(await applySupersedeForPayoutInTx(tx, locked.stripePayoutId)),
+        );
       });
     } catch (e) {
       if (e instanceof Error && e.message === NOT_PENDING) {
@@ -938,8 +979,9 @@ router.post(
     // Stripe-sourced gift (no direct QB link) ties at the payout level — persist
     // its tie status. The deriver is source-agnostic: it ties via the dual-written
     // Stripe counted payment_applications row (per-source precedence), not the
-    // legacy finalAmountSource shortcut.
-    await applyGiftQbTieMany(giftId);
+    // legacy finalAmountSource shortcut. Supersede-affected gifts (coarse QB
+    // rows demoted by this charge's booking) re-derive too.
+    await applyGiftQbTieMany(giftId, ...supersedeGiftIds);
 
     const [gift] = await db
       .select(giftHeaderColumns)
@@ -1148,6 +1190,7 @@ router.post(
     // after commit as an audit trail — the reviewer sees the QB row reappear
     // in the pending queue).
     const cascadedQbStagedIds: string[] = [];
+    const supersedeGiftIds: string[] = [];
     try {
       await db.transaction(async (tx) => {
         const locked = await tx
@@ -1159,7 +1202,13 @@ router.post(
         if (!locked) throw new Error(NOT_FOUND);
         // Revertible = the row carries a gift link of its own (auto-proposed
         // or confirmed/minted). Pending and excluded rows have nothing to undo.
-        const lockedStatus = deriveStripeChargeStatus(locked);
+        // The counted ledger row IS the gift link (pointer columns retired);
+        // capture it before the branches below delete it.
+        const lockedLedger = await chargeCountedLedgerRow(tx, id);
+        const lockedStatus = deriveStripeChargeStatus({
+          ...locked,
+          hasCountedApplication: lockedLedger != null,
+        });
         if (
           lockedStatus !== "match_proposed" &&
           lockedStatus !== "match_confirmed"
@@ -1173,12 +1222,13 @@ router.post(
           !!locked.householdId;
         const newMatchStatus = hasDonor ? "suggested" : "unmatched";
 
-        if (locked.createdGiftId) {
+        if (lockedLedger?.createdTheGift) {
+          const mintedGiftId = lockedLedger.giftId;
           // Free any QB staged rows still reconciled to this gift BEFORE
           // deleting it — the FK would SET NULL silently, stranding them as
           // reconciled-to-nothing with no revert path.
           cascadedQbStagedIds.push(
-            ...(await cascadeResetLinkedQbStagedRows(tx, locked.createdGiftId, {
+            ...(await cascadeResetLinkedQbStagedRows(tx, mintedGiftId, {
               unstampGift: false,
             })),
           );
@@ -1187,19 +1237,19 @@ router.post(
           // human allocates). The gift is gone, so there's no stamp to unwind.
           await tx
             .delete(giftAllocations)
-            .where(eq(giftAllocations.giftId, locked.createdGiftId));
-          // payment_applications.gift_id is RESTRICT too — clear any ledger
-          // rows for this gift first. Empty in Phase 1 (no writers yet).
-          await removePaymentApplicationsForGift(tx, locked.createdGiftId);
+            .where(eq(giftAllocations.giftId, mintedGiftId));
+          // payment_applications.gift_id is RESTRICT too — clear the ledger
+          // rows for this gift first (including the mint row itself).
+          await removePaymentApplicationsForGift(tx, mintedGiftId);
           await tx
             .delete(giftsAndPayments)
-            .where(eq(giftsAndPayments.id, locked.createdGiftId));
-        } else if (locked.matchedGiftId) {
+            .where(eq(giftsAndPayments.id, mintedGiftId));
+        } else if (lockedLedger) {
           // This row reconciled to an EXISTING gift — leave the gift in place but
           // undo any final-amount stamp THIS charge applied to it (strict no-op
           // unless the gift is still sourced from this exact charge), then
           // rebalance its allocations to the restored amount.
-          const giftId = locked.matchedGiftId;
+          const giftId = lockedLedger.giftId;
           // The surviving matched gift loses this Stripe evidence — recompute.
           survivingGiftId = giftId;
           // Drop this charge's ledger row by ANCHOR (leave any parallel QB row
@@ -1231,6 +1281,14 @@ router.post(
           // Approved/reconciled with no gift linkage of its own — nothing to revert.
           throw new Error(NOT_REVERTIBLE);
         }
+
+        // §4.3 supersede: this charge's counted Stripe row is gone — if its
+        // payout is confirmed-settled against a coarse QB deposit whose rows
+        // were demoted on the strength of that coverage, promote them back to
+        // counted in the same tx (the money trail must never go dark).
+        supersedeGiftIds.push(
+          ...(await applySupersedeForPayoutInTx(tx, locked.stripePayoutId)),
+        );
 
         // A failed charge (raw Stripe status 'failed') never settled — after
         // unlinking it must land in the excluded bucket, not back in the
@@ -1300,9 +1358,10 @@ router.post(
       }
       throw e;
     }
-    // A surviving (reconciled-to) gift lost its Stripe evidence — recompute tie.
-    if (survivingGiftId) {
-      await applyGiftQbTieMany(survivingGiftId);
+    // A surviving (reconciled-to) gift lost its Stripe evidence — recompute
+    // tie; supersede-promoted gifts (coarse QB rows restored) re-derive too.
+    if (survivingGiftId || supersedeGiftIds.length > 0) {
+      await applyGiftQbTieMany(survivingGiftId, ...supersedeGiftIds);
     }
     if (cascadedQbStagedIds.length > 0) {
       req.log.warn(
@@ -1799,8 +1858,17 @@ router.get(
 
 // Map a stripeConfirm discriminated result onto an HTTP response. not_found →
 // 404; every other typed transition failure (stale state, charges booked) → 409.
-function respondReconResult(res: Response, result: ConfirmRevertResult): void {
+// On success, first recompute the QB tie status of every gift whose ledger rows
+// the §4.3 settlement-supersede recompute demoted/promoted inside the
+// transition (post-commit, own connection — mirrors the other route tails).
+async function respondReconResult(
+  res: Response,
+  result: ConfirmRevertResult,
+): Promise<void> {
   if (result.ok) {
+    if (result.rederiveGiftIds.length > 0) {
+      await applyGiftQbTieMany(...result.rederiveGiftIds);
+    }
     res.json(result);
     return;
   }
@@ -1822,7 +1890,7 @@ router.post(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    respondReconResult(
+    await respondReconResult(
       res,
       await confirmPendingQbDeposit({ payoutId: paramId(req), userId: user.id }),
     );
@@ -1840,7 +1908,7 @@ router.post(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    respondReconResult(
+    await respondReconResult(
       res,
       await confirmKeepApprovedQbGift({ payoutId: paramId(req), userId: user.id }),
     );
@@ -1860,7 +1928,7 @@ router.post(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    respondReconResult(
+    await respondReconResult(
       res,
       await confirmReplaceApprovedQbGift({
         payoutId: paramId(req),
@@ -1882,7 +1950,7 @@ router.post(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    respondReconResult(
+    await respondReconResult(
       res,
       await revertPayoutQbConfirmation({
         payoutId: paramId(req),

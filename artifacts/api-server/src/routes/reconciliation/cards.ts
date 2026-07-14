@@ -16,6 +16,7 @@ import {
   qbLedgerExistsForPayment,
   qbLedgerSoleGiftIdForPayment,
   qbLedgerMintedGiftIdForPayment,
+  stripeLedgerGiftIdForCharge,
 } from "../../lib/paymentApplications";
 import { asyncHandler, notFound } from "../../lib/helpers";
 import { getViewer } from "../../lib/identityVisibility";
@@ -285,13 +286,12 @@ const sourceGroupAggExpr = sql<{
 // A row already RESOLVED to a gift (derived match_confirmed) is DONE and stays
 // out of the live queue — it only re-enters while there is still Stripe to tie
 // in (a settlement link, proposed or confirmed, on the deposit). "Resolved"
-// covers ALL resolution forms: a 1:1 match (matchedGiftId), a mint
-// (createdGiftId), a group reconcile (groupReconciledGiftId), OR a split. A
-// split deliberately carries NONE of the three id columns — its resolution
-// lives entirely in counted payment_applications ledger rows anchored to the
-// payment — so it must be detected via the ledger, otherwise a fully-split
+// covers ALL resolution forms: a 1:1 match, a mint, a group reconcile, OR a
+// split. Resolution lives entirely in counted payment_applications ledger
+// rows anchored to the payment (the legacy pointer columns are retired), so
+// it must be detected via the ledger, otherwise a fully-split
 // payment would wrongly re-enter the live "unlinked money" queue. A coarse
-// mint (createdGiftId) never re-enters: the minted gift is the single counted
+// mint (created_the_gift ledger row) never re-enters: the minted gift is the single counted
 // record for this money (design §4.3), so re-expanding it would invite a
 // double-counting gift.
 // A SETTLEMENT-only-confirmed deposit (confirmed payout↔deposit link — Plane 1
@@ -314,7 +314,7 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
         -- gift, group-reconciled, or fully split into counted ledger rows —
         -- re-enters the live queue while ANY Stripe payout (proposed or
         -- confirmed settlement link) is tied to it: the Stripe leg is still
-        -- real work. A coarse mint (createdGiftId) stays out — the minted
+        -- real work. A coarse mint (created_the_gift ledger row) stays out — the minted
         -- gift is already the single counted record for this money (design
         -- §4.3), so re-expanding it would invite a double-counting gift.
         ${stagedPayments.exclusionReason} IS NULL
@@ -343,7 +343,11 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
           SELECT 1 FROM settlement_links sl
           JOIN stripe_staged_charges c ON c.stripe_payout_id = sl.payout_id
           WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
-            AND COALESCE(c.matched_gift_id, c.created_gift_id) IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM payment_applications pa
+              WHERE pa.stripe_charge_id = c.id
+                AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+            )
             -- An excluded charge (e.g. a failed payment attempt) is terminal,
             -- not unbooked work — it must not re-admit the deposit.
             AND c.exclusion_reason IS NULL
@@ -485,12 +489,12 @@ router.get(
              FROM people pp WHERE pp.id = ${stripeStagedCharges.individualGiverPersonId})
         )`.as("charge_donor_name"),
         resolvedGiftId:
-          sql<string | null>`COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})`.as(
+          sql<string | null>`${stripeLedgerGiftIdForCharge()}`.as(
             "charge_resolved_gift_id",
           ),
         resolvedGiftName: sql<string | null>`(
           SELECT g.name FROM gifts_and_payments g
-          WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+          WHERE g.id = ${stripeLedgerGiftIdForCharge()}
         )`.as("charge_resolved_gift_name"),
         resolvedGiftDonorName: sql<string | null>`(
           SELECT COALESCE(
@@ -503,20 +507,20 @@ router.get(
                FROM people pp WHERE pp.id = g.individual_giver_person_id)
           )
           FROM gifts_and_payments g
-          WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+          WHERE g.id = ${stripeLedgerGiftIdForCharge()}
         )`.as("charge_resolved_gift_donor_name"),
         resolvedGiftAmount: sql<string | null>`(
           SELECT g.amount::text FROM gifts_and_payments g
-          WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+          WHERE g.id = ${stripeLedgerGiftIdForCharge()}
         )`.as("charge_resolved_gift_amount"),
         resolvedGiftDate: sql<string | null>`(
           SELECT g.date_received::text FROM gifts_and_payments g
-          WHERE g.id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+          WHERE g.id = ${stripeLedgerGiftIdForCharge()}
         )`.as("charge_resolved_gift_date"),
         resolvedGiftFiscalYear: sql<string | null>`(
           SELECT ga.grant_year
           FROM gift_allocations ga
-          WHERE ga.gift_id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+          WHERE ga.gift_id = ${stripeLedgerGiftIdForCharge()}
             AND ga.grant_year IS NOT NULL
           ORDER BY ga.created_at, ga.id
           LIMIT 1
@@ -542,7 +546,7 @@ router.get(
           )
           FROM gift_allocations ga
           LEFT JOIN entities e ON e.id = ga.entity_id
-          WHERE ga.gift_id = COALESCE(${stripeStagedCharges.matchedGiftId}, ${stripeStagedCharges.createdGiftId})
+          WHERE ga.gift_id = ${stripeLedgerGiftIdForCharge()}
         )`.as("charge_resolved_gift_allocations"),
         // Charge auto-proposal pool: mirrors autoGiftCount/autoGiftPick for the
         // QB anchor, but scoped to the charge's donor + known-net band so a

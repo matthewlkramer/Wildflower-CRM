@@ -5,8 +5,9 @@ import {
   stagedPayments,
   stripePayouts,
 } from "@workspace/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull, or } from "drizzle-orm";
 import { qbLedgerSoleGiftIdForPayment } from "./paymentApplications";
+import { applySettlementSupersedeMany } from "./settlementSupersede";
 import {
   deriveStagedPaymentStatus,
   stagedStatusWhere,
@@ -96,6 +97,12 @@ export type ConfirmRevertOk = {
   kind: ConfirmRevertKind;
   payoutId: string;
   stagedPaymentId: string | null;
+  /**
+   * Gifts whose ledger rows were demoted/promoted by the §4.3 settlement
+   * supersede recompute inside this transition. Callers must recompute each
+   * gift's QuickBooks tie status AFTER commit (`applyGiftQbTieMany`).
+   */
+  rederiveGiftIds: string[];
 };
 
 export type ConfirmRevertErrorCode =
@@ -309,11 +316,16 @@ export async function confirmPendingQbDepositInTx(
         "This payout is no longer proposed. Refresh and retry.",
       );
     }
+    // §4.3 supersede: the deposit's coarse counted QB rows may now be covered
+    // by this payout's per-charge counted Stripe rows — recompute in-tx so
+    // source-agnostic SUM readers never see the same dollars twice.
+    const rederiveGiftIds = await applySettlementSupersedeMany(tx, [depositId]);
     return {
       ok: true,
       kind: "confirmed_linkage_only",
       payoutId,
       stagedPaymentId: depositId,
+      rederiveGiftIds,
     };
   }
 
@@ -374,6 +386,9 @@ export async function confirmPendingQbDepositInTx(
     kind: "confirmed_reconciled",
     payoutId,
     stagedPaymentId: depositId,
+    // A pending-deposit confirm books nothing: the deposit had no counted
+    // ledger rows (checked above), so there is nothing to supersede.
+    rederiveGiftIds: [],
   };
 }
 
@@ -496,11 +511,16 @@ export async function confirmKeepApprovedQbGiftInTx(
     );
   }
 
+  // §4.3 supersede: the kept gift's coarse counted QB row may now be covered
+  // by this payout's per-charge counted Stripe rows (booked before or after
+  // this confirm in the same flow) — recompute in-tx.
+  const rederiveGiftIds = await applySettlementSupersedeMany(tx, [depositId]);
   return {
     ok: true,
     kind: "confirmed_reconciled",
     payoutId,
     stagedPaymentId: depositId,
+    rederiveGiftIds,
   };
 }
 
@@ -579,11 +599,18 @@ export function revertPayoutQbConfirmation(
             "This payout has changed. Refresh and retry.",
           );
         }
+        // §4.3 supersede: the confirmed link just went away — any QB rows the
+        // confirm demoted (covered by this payout's per-charge Stripe rows)
+        // must be promoted back to counted, in the same tx.
+        const rederiveGiftIds = await applySettlementSupersedeMany(tx, [
+          depositId,
+        ]);
         return {
           ok: true,
           kind: "reverted",
           payoutId,
           stagedPaymentId: depositId,
+          rederiveGiftIds,
         };
       }
 
@@ -604,7 +631,10 @@ export function revertPayoutQbConfirmation(
       // A linkage-only confirm (deposit already booked via its own counted
       // ledger rows when confirmed) never touched the deposit — revert must
       // not touch it either (NEVER unbook a deposit whose money lives in its
-      // own gift links). Route the link back to proposed only.
+      // own gift links). Route the link back to proposed only. Counts
+      // supersede-DEMOTED rows (corroborating WITH an amount) as booked too:
+      // the confirm may have demoted every counted row, but the money still
+      // lives here and the supersede below promotes it right back.
       const bookedIndependently =
         (await tx
           .select({ id: paymentApplications.id })
@@ -612,7 +642,13 @@ export function revertPayoutQbConfirmation(
           .where(
             and(
               eq(paymentApplications.paymentId, depositId),
-              eq(paymentApplications.linkRole, "counted"),
+              or(
+                eq(paymentApplications.linkRole, "counted"),
+                and(
+                  eq(paymentApplications.linkRole, "corroborating"),
+                  isNotNull(paymentApplications.amountApplied),
+                ),
+              ),
             ),
           )
           .limit(1)
@@ -631,11 +667,17 @@ export function revertPayoutQbConfirmation(
             "This payout has changed. Refresh and retry.",
           );
         }
+        // §4.3 supersede: the confirmed link is gone — promote any demoted
+        // QB rows back to counted so the deposit's money trail is whole again.
+        const rederiveGiftIds = await applySettlementSupersedeMany(tx, [
+          depositId,
+        ]);
         return {
           ok: true,
           kind: "reverted",
           payoutId,
           stagedPaymentId: depositId,
+          rederiveGiftIds,
         };
       }
       // The deposit's confirmed status derives SOLELY from this payout's
@@ -683,6 +725,9 @@ export function revertPayoutQbConfirmation(
         kind: "reverted",
         payoutId,
         stagedPaymentId: depositId,
+        // The deposit carried no QB ledger rows at all (bookedIndependently
+        // was false, which includes demoted rows) — nothing to supersede.
+        rederiveGiftIds: [],
       };
     }
 

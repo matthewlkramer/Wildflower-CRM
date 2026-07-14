@@ -3351,15 +3351,11 @@ export interface DonorboxReviewRow {
   individualGiverPersonId?: string | null;
   householdId?: string | null;
   matchedPaymentIntermediaryId?: string | null;
-  /** Set when linked to a PRE-EXISTING gift (no new ledger row). */
-  matchedGiftId?: string | null;
-  /** Set when a NEW gift was minted from this donation. */
-  createdGiftId?: string | null;
   readonly organizationName?: string | null;
   readonly householdName?: string | null;
   readonly individualGiverPersonName?: string | null;
   readonly intermediaryName?: string | null;
-  /** The linked/minted gift (matchedGiftId or createdGiftId), joined for display. */
+  /** The linked/minted gift (from the counted payment-applications ledger row), joined for display. */
   readonly linkedGiftId?: string | null;
   readonly linkedGiftName?: string | null;
   readonly linkedGiftAmount?: string | null;
@@ -3504,8 +3500,6 @@ export interface StripeStagedCharge {
   individualGiverPersonId?: string | null;
   householdId?: string | null;
   matchedPaymentIntermediaryId?: string | null;
-  matchedGiftId?: string | null;
-  createdGiftId?: string | null;
   approvedByUserId?: string | null;
   approvedAt?: string | null;
   rejectedByUserId?: string | null;

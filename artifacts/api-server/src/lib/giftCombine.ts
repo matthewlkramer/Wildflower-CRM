@@ -1,33 +1,29 @@
 // Ledger-aware gift COMBINE: absorb one or more "loser" gifts' reconciled
-// payment evidence onto a surviving gift so the two-plane redesign's cash
-// ledger (payment_applications) and the legacy pointer surfaces stay parity-
-// consistent after a merge.
+// payment evidence onto a surviving gift. The cash-application ledger
+// (payment_applications) is the SOLE evidence surface — the legacy
+// matched/created gift pointer columns are retired (never read or written).
 //
 // Historically the merge route hard-BLOCKED (409) whenever a loser carried ANY
-// QuickBooks / Stripe / Donorbox link. That is too blunt now that everything is
-// dual-written into the ledger: a mundane "two duplicate gifts, one has a QB
-// match" merge should just re-home that evidence onto the survivor. This helper
-// does exactly that, and 409s ONLY on the handful of link shapes the legacy
-// pointer columns genuinely cannot represent on a single gift:
+// QuickBooks / Stripe / Donorbox link. That is too blunt now that everything
+// lives in the ledger: a mundane "two duplicate gifts, one has a QB match"
+// merge should just re-home that evidence onto the survivor. This helper does
+// exactly that, and 409s ONLY on the handful of link shapes kept unmergeable
+// by design:
 //   - split_link       — a loser wired into a staged-payment SPLIT, or a
 //                         survivor split that would have to coexist with
 //                         absorbed group/direct QB evidence (split precedence
 //                         reads a single sub-amount, so it can't sum a group).
-//   - stripe_charge    — two+ distinct Stripe charges would have to point at the
-//                         one survivor (matched/created are single-valued).
+//   - stripe_charge    — two+ distinct Stripe charges would have to settle the
+//                         one survivor (kept 1:1 by policy, matching the
+//                         historical single-valued link shape).
 //   - donorbox_donation — same, for Donorbox donations.
 //
 // Everything it writes lives inside the caller's transaction; on a collision it
 // writes NOTHING and returns the collision so the route can 409 with a clean,
 // no-op rollback.
 import type { db } from "@workspace/db";
-import {
-  stripeStagedCharges,
-  donorboxDonations,
-  paymentApplications,
-  settlementLinks,
-} from "@workspace/db/schema";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { paymentApplications, settlementLinks } from "@workspace/db/schema";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -52,9 +48,9 @@ const num = (v: string | number | null | undefined): number => {
  * FIRST (before any write); on collision returns `{ collision }` having written
  * nothing so the caller can 409 and let the transaction roll back cleanly.
  *
- * On success the counted ledger, the QuickBooks staged pointers, the
- * Stripe/Donorbox pointers, and the corroborating ledger rows are all re-homed
- * onto the survivor, and each loser's dangling QB final-amount stamp is cleared.
+ * On success the counted and corroborating ledger rows are re-homed onto the
+ * survivor (the ledger is the sole evidence surface; the legacy pointer
+ * columns are retired).
  * The caller is still responsible for moving allocations, summing the survivor
  * amount, clearing self-referential match pointers, archiving the losers, and
  * recomputing derived fields / QB tie afterward.
@@ -66,10 +62,6 @@ export async function absorbGiftEvidenceIntoSurvivor(
 ): Promise<AbsorbEvidenceResult> {
   const allIds = [survivorId, ...loserIds];
   const loserSet = new Set(loserIds);
-  const refsLoser = (...ids: Array<string | null>): boolean =>
-    ids.some((id) => id != null && loserSet.has(id));
-  const refsSurvivor = (...ids: Array<string | null>): boolean =>
-    ids.some((id) => id === survivorId);
 
   // ── 1. Read every evidence surface for the whole merged set ──────────────
   // Split-shape wiring: a counted QB ledger row whose staged payment is applied
@@ -90,34 +82,6 @@ export async function absorbGiftEvidenceIntoSurvivor(
             AND pa2.evidence_source = 'quickbooks'
             AND pa2.link_role = 'counted'
         ) > 1`,
-      ),
-    );
-
-  const stripeCharges = await tx
-    .select({
-      id: stripeStagedCharges.id,
-      matchedGiftId: stripeStagedCharges.matchedGiftId,
-      createdGiftId: stripeStagedCharges.createdGiftId,
-    })
-    .from(stripeStagedCharges)
-    .where(
-      or(
-        inArray(stripeStagedCharges.matchedGiftId, allIds),
-        inArray(stripeStagedCharges.createdGiftId, allIds),
-      ),
-    );
-
-  const donorboxRows = await tx
-    .select({
-      id: donorboxDonations.id,
-      matchedGiftId: donorboxDonations.matchedGiftId,
-      createdGiftId: donorboxDonations.createdGiftId,
-    })
-    .from(donorboxDonations)
-    .where(
-      or(
-        inArray(donorboxDonations.matchedGiftId, allIds),
-        inArray(donorboxDonations.createdGiftId, allIds),
       ),
     );
 
@@ -166,12 +130,9 @@ export async function absorbGiftEvidenceIntoSurvivor(
   // ── 2. Collision detection (no writes past this point until it passes) ───
   const loserSplit = splitRows.some((r) => loserSet.has(r.giftId));
   const survivorSplit = splitRows.some((r) => r.giftId === survivorId);
-  // QB evidence is read from the counted ledger only (the legacy staged
-  // gift-link columns are @deprecated); Stripe/Donorbox still read pointers.
-  const loserQbEvidence =
-    stripeCharges.some((r) => refsLoser(r.matchedGiftId, r.createdGiftId)) ||
-    donorboxRows.some((r) => refsLoser(r.matchedGiftId, r.createdGiftId)) ||
-    ledgerRows.some((r) => loserSet.has(r.giftId));
+  // ALL evidence (QB / Stripe / Donorbox) is read from the counted ledger —
+  // the legacy pointer columns are retired.
+  const loserQbEvidence = ledgerRows.some((r) => loserSet.has(r.giftId));
   // A loser split can't be re-homed (a split sub-amount is single-valued, no
   // group shape); a survivor split can't coexist with absorbed group/direct QB
   // evidence (split precedence would mask the summed group). Either way: 409.
@@ -179,23 +140,24 @@ export async function absorbGiftEvidenceIntoSurvivor(
     return { collision: { kind: "split_link" } };
   }
 
-  // At most ONE Stripe charge / Donorbox donation can point at the survivor
-  // (matched & created are single-valued). Absorbing a loser's charge is only
-  // possible when doing so leaves the survivor with a single charge total.
-  const loserStripe = stripeCharges.filter((r) =>
-    refsLoser(r.matchedGiftId, r.createdGiftId),
+  // At most ONE Stripe charge / Donorbox donation may settle the survivor —
+  // kept 1:1 by policy (the historical link shape). Absorbing a loser's charge
+  // is only possible when it leaves the survivor with a single charge total.
+  // Counted ledger rows are the sole link surface (one per charge/donation).
+  const loserStripe = ledgerRows.filter(
+    (r) => r.evidenceSource === "stripe" && loserSet.has(r.giftId),
   );
-  const survivorStripe = stripeCharges.filter((r) =>
-    refsSurvivor(r.matchedGiftId, r.createdGiftId),
+  const survivorStripe = ledgerRows.filter(
+    (r) => r.evidenceSource === "stripe" && r.giftId === survivorId,
   );
   if (loserStripe.length >= 1 && loserStripe.length + survivorStripe.length >= 2) {
     return { collision: { kind: "stripe_charge" } };
   }
-  const loserDonorbox = donorboxRows.filter((r) =>
-    refsLoser(r.matchedGiftId, r.createdGiftId),
+  const loserDonorbox = ledgerRows.filter(
+    (r) => r.evidenceSource === "donorbox" && loserSet.has(r.giftId),
   );
-  const survivorDonorbox = donorboxRows.filter((r) =>
-    refsSurvivor(r.matchedGiftId, r.createdGiftId),
+  const survivorDonorbox = ledgerRows.filter(
+    (r) => r.evidenceSource === "donorbox" && r.giftId === survivorId,
   );
   if (
     loserDonorbox.length >= 1 &&
@@ -270,35 +232,10 @@ export async function absorbGiftEvidenceIntoSurvivor(
   // written). Several payments counted against one survivor is a perfectly
   // representable ledger shape — no group re-stamping is needed.
 
-  // ── 5. Re-point the single absorbed Stripe / Donorbox pointer ────────────
-  for (const r of loserStripe) {
-    await tx
-      .update(stripeStagedCharges)
-      .set({
-        matchedGiftId: loserSet.has(r.matchedGiftId ?? "")
-          ? survivorId
-          : r.matchedGiftId,
-        createdGiftId: loserSet.has(r.createdGiftId ?? "")
-          ? survivorId
-          : r.createdGiftId,
-        updatedAt: now,
-      })
-      .where(eq(stripeStagedCharges.id, r.id));
-  }
-  for (const r of loserDonorbox) {
-    await tx
-      .update(donorboxDonations)
-      .set({
-        matchedGiftId: loserSet.has(r.matchedGiftId ?? "")
-          ? survivorId
-          : r.matchedGiftId,
-        createdGiftId: loserSet.has(r.createdGiftId ?? "")
-          ? survivorId
-          : r.createdGiftId,
-        updatedAt: now,
-      })
-      .where(eq(donorboxDonations.id, r.id));
-  }
+  // ── 5. (retired) Stripe / Donorbox pointer re-point ──────────────────────
+  // The legacy matched/created gift pointer columns are retired (never read or
+  // written); the §3 counted-ledger consolidation above already re-homed every
+  // Stripe / Donorbox application onto the survivor.
 
   // ── 6. Re-home corroborating payment_applications (Phase-5 fold of gel) ──
   // The corroborating ledger is now the sole home for evidence↔gift links

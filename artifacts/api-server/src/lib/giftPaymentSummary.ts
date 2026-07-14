@@ -7,12 +7,23 @@
 //
 //   1. QuickBooks  — payment_applications rows (evidence_source = 'quickbooks').
 //      gross = SUM(amount_applied); QB carries no per-gift fee, so fee = 0.
-//   2. Stripe      — stripe_staged_charges linked via matched_gift_id OR
-//      created_gift_id. gross = SUM(gross_amount); fee = SUM(fee_amount).
-//   3. Donorbox    — donorbox_donations linked via matched_gift_id OR
-//      created_gift_id, EXCLUDING donation_type = 'stripe' (those donations are
-//      already counted through their backing Stripe charge — counting them here
-//      too would double-count). gross = SUM(amount); fee = SUM(processing_fee).
+//   2. Stripe      — payment_applications rows (evidence_source = 'stripe',
+//      link_role = 'counted'). gross = SUM(amount_applied) (the booked counted
+//      amount, written as the charge gross); fee = SUM(fee_amount) JOINed
+//      through the ledger anchor (stripe_charge_id).
+//   3. Donorbox    — payment_applications rows (evidence_source = 'donorbox',
+//      link_role = 'counted'), EXCLUDING donation_type = 'stripe' donations
+//      (those are already counted through their backing Stripe charge —
+//      counting them here too would double-count). gross = SUM(amount_applied);
+//      fee = SUM(processing_fee) JOINed through the anchor.
+//
+// READ CUTOVER (design §4.4): ALL THREE sources read the counted
+// cash-application ledger — the legacy Stripe/Donorbox matched_gift_id /
+// created_gift_id pointer columns are the WRITE model only and are never
+// consulted here. Counting only link_role='counted' rows is what lets the
+// §4.3 supersede rule (deposit-level QB row demoted to 'corroborating' once
+// its money books per-charge) remove the double-count from every settled
+// total automatically.
 //
 // This module is the single source the derived read-model fields AND the
 // settled-vs-entered reconciliation queue both consume, so the two can never
@@ -52,14 +63,17 @@ export function settledGrossForGift(
         AND pa.link_role = 'counted'
     ), 0)
     + COALESCE((
-      SELECT SUM(ssc.gross_amount)
-      FROM stripe_staged_charges ssc
-      WHERE ssc.matched_gift_id = ${giftIdSql} OR ssc.created_gift_id = ${giftIdSql}
+      SELECT SUM(pa.amount_applied)
+      FROM payment_applications pa
+      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe'
+        AND pa.link_role = 'counted'
     ), 0)
     + COALESCE((
-      SELECT SUM(dd.amount)
-      FROM donorbox_donations dd
-      WHERE (dd.matched_gift_id = ${giftIdSql} OR dd.created_gift_id = ${giftIdSql})
+      SELECT SUM(pa.amount_applied)
+      FROM payment_applications pa
+      JOIN donorbox_donations dd ON dd.id = pa.donorbox_donation_id
+      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox'
+        AND pa.link_role = 'counted'
         AND dd.donation_type IS DISTINCT FROM 'stripe'
     ), 0)
   )::text`;
@@ -76,13 +90,17 @@ export function totalFeesForGift(
   return sql<string>`(
     COALESCE((
       SELECT SUM(ssc.fee_amount)
-      FROM stripe_staged_charges ssc
-      WHERE ssc.matched_gift_id = ${giftIdSql} OR ssc.created_gift_id = ${giftIdSql}
+      FROM payment_applications pa
+      JOIN stripe_staged_charges ssc ON ssc.id = pa.stripe_charge_id
+      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe'
+        AND pa.link_role = 'counted'
     ), 0)
     + COALESCE((
       SELECT SUM(dd.processing_fee)
-      FROM donorbox_donations dd
-      WHERE (dd.matched_gift_id = ${giftIdSql} OR dd.created_gift_id = ${giftIdSql})
+      FROM payment_applications pa
+      JOIN donorbox_donations dd ON dd.id = pa.donorbox_donation_id
+      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox'
+        AND pa.link_role = 'counted'
         AND dd.donation_type IS DISTINCT FROM 'stripe'
     ), 0)
   )::text`;
@@ -103,12 +121,15 @@ export function hasLinkedPaymentForGift(
         AND pa.link_role = 'counted'
     )
     OR EXISTS (
-      SELECT 1 FROM stripe_staged_charges ssc
-      WHERE ssc.matched_gift_id = ${giftIdSql} OR ssc.created_gift_id = ${giftIdSql}
+      SELECT 1 FROM payment_applications pa
+      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe'
+        AND pa.link_role = 'counted'
     )
     OR EXISTS (
-      SELECT 1 FROM donorbox_donations dd
-      WHERE (dd.matched_gift_id = ${giftIdSql} OR dd.created_gift_id = ${giftIdSql})
+      SELECT 1 FROM payment_applications pa
+      JOIN donorbox_donations dd ON dd.id = pa.donorbox_donation_id
+      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox'
+        AND pa.link_role = 'counted'
         AND dd.donation_type IS DISTINCT FROM 'stripe'
     )
   )`;

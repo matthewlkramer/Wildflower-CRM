@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearPaymentApplicationsForGiftIds } from "./paymentApplicationsTestUtil";
+import {
+  clearPaymentApplicationsForGiftIds,
+  stripeCountedRowForCharge,
+  stripeGiftIdForCharge,
+} from "./paymentApplicationsTestUtil";
 import { chargeStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
@@ -108,7 +112,6 @@ async function seedCharge(opts: {
   gross: string;
   fee?: string;
   net?: string;
-  matchedGiftId?: string | null;
 }): Promise<string> {
   const id = nextId("ch");
   await db.insert(schema.stripeStagedCharges).values({
@@ -120,7 +123,6 @@ async function seedCharge(opts: {
     dateReceived: "2026-03-15",
     payerName: `${RUN} payer`,
     matchStatus: "unmatched",
-    matchedGiftId: opts.matchedGiftId ?? null,
   });
   chargeIds.push(id);
   return id;
@@ -227,8 +229,11 @@ describe.skipIf(!HAS_DB)(
 
       const charge = await readCharge(chargeId);
       expect(charge.status).toBe("match_confirmed");
-      expect(charge.matchedGiftId).toBe(giftId);
-      expect(charge.createdGiftId).toBeNull();
+      // Ledger (not the retired pointer columns) records the link: a counted
+      // stripe row anchored on the charge, NOT a mint.
+      const ledgerRow = await stripeCountedRowForCharge(chargeId);
+      expect(ledgerRow?.giftId).toBe(giftId);
+      expect(ledgerRow?.createdTheGift).toBe(false);
       expect(charge.matchStatus).toBe("matched");
       // Charge adopted the gift's donor.
       expect(charge.organizationId).toBe(ORG_ID);
@@ -260,7 +265,7 @@ describe.skipIf(!HAS_DB)(
 
       const charge = await readCharge(chargeId);
       expect(charge.status).toBe("match_confirmed");
-      expect(charge.matchedGiftId).toBe(giftId);
+      expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
     });
 
     it("404s when the gift does not exist", async () => {
@@ -314,8 +319,7 @@ describe.skipIf(!HAS_DB)(
       expect(second.json.error).toBe("not_pending");
 
       // The original link is intact.
-      const charge = await readCharge(chargeId);
-      expect(charge.matchedGiftId).toBe(giftA);
+      expect(await stripeGiftIdForCharge(chargeId)).toBe(giftA);
     });
 
     it("409s (consistency_gate / gift_already_stripe_sourced) when another charge already owns the target gift", async () => {
@@ -357,7 +361,7 @@ describe.skipIf(!HAS_DB)(
       // The original link is intact.
       const chargeARow = await readCharge(chargeA);
       expect(chargeARow.status).toBe("match_confirmed");
-      expect(chargeARow.matchedGiftId).toBe(giftId);
+      expect(await stripeGiftIdForCharge(chargeA)).toBe(giftId);
     });
 
     it("switchStripeSource=true re-sources the gift: incumbent orphaned back to pending, new charge linked", async () => {
@@ -383,15 +387,14 @@ describe.skipIf(!HAS_DB)(
       // tied to the right money later.
       const chargeARow = await readCharge(chargeA);
       expect(chargeARow.status).toBe("pending");
-      expect(chargeARow.matchedGiftId).toBeNull();
-      expect(chargeARow.createdGiftId).toBeNull();
+      expect(await stripeCountedRowForCharge(chargeA)).toBeNull();
       expect(chargeARow.matchConfirmedAt).toBeNull();
       expect(chargeARow.matchStatus).toBe("suggested");
 
       // The new charge now backs the gift.
       const chargeBRow = await readCharge(chargeB);
       expect(chargeBRow.status).toBe("match_confirmed");
-      expect(chargeBRow.matchedGiftId).toBe(giftId);
+      expect(await stripeGiftIdForCharge(chargeB)).toBe(giftId);
       expect(chargeBRow.matchStatus).toBe("matched");
 
       // The gift's Stripe provenance pointer moved to the new charge.
@@ -411,7 +414,7 @@ describe.skipIf(!HAS_DB)(
       expect(res.status).toBe(200);
       const charge = await readCharge(chargeId);
       expect(charge.status).toBe("match_confirmed");
-      expect(charge.matchedGiftId).toBe(giftId);
+      expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
     });
 
     it("400s on an invalid body (missing giftId)", async () => {

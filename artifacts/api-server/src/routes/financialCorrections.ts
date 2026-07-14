@@ -117,9 +117,9 @@ async function loadActiveGifts(): Promise<GiftRow[]> {
   const countedLinked = sql<boolean>`(
     ${qbLedgerExistsForGift()}
     OR ${g.finalAmountStripeChargeId} IS NOT NULL
-    OR EXISTS (SELECT 1 FROM ${stripeStagedCharges} sc
-      WHERE sc.matched_gift_id = "gifts_and_payments"."id"
-        OR sc.created_gift_id = "gifts_and_payments"."id")
+    OR EXISTS (SELECT 1 FROM payment_applications pa
+      WHERE pa.gift_id = "gifts_and_payments"."id"
+        AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted')
   )`;
   const rows = await db
     .select({

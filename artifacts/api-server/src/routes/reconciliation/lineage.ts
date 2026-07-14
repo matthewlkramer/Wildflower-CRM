@@ -14,6 +14,7 @@ import { eq, inArray, or, sql } from "drizzle-orm";
 import { asyncHandler, notFound } from "../../lib/helpers";
 import { payoutStatusFromLink } from "../../lib/settlementLink";
 import { chargeStatusSql } from "../../lib/derivedStatus";
+import { stripeLedgerCountedExistsForCharge } from "../../lib/paymentApplications";
 
 type LinkSource = "pulled" | "qb_confirmed" | "stripe_pulled" | "stripe_confirmed";
 
@@ -108,8 +109,8 @@ router.get(
         organizationId: stripeStagedCharges.organizationId,
         individualGiverPersonId: stripeStagedCharges.individualGiverPersonId,
         householdId: stripeStagedCharges.householdId,
-        matchedGiftId: stripeStagedCharges.matchedGiftId,
-        createdGiftId: stripeStagedCharges.createdGiftId,
+        // Ledger-derived gift link (pointer columns are retired, never read).
+        hasLedgerGift: sql<boolean>`${stripeLedgerCountedExistsForCharge()}`,
         resolvedDonorName: sql<string | null>`
           COALESCE(
             ${organizations.name},
@@ -155,7 +156,7 @@ router.get(
         donorResolved: Boolean(
           c.organizationId || c.individualGiverPersonId || c.householdId,
         ),
-        hasGift: Boolean(c.matchedGiftId || c.createdGiftId),
+        hasGift: c.hasLedgerGift === true,
         resolvedDonorName: c.resolvedDonorName,
       }));
 

@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearPaymentApplicationsForGiftIds } from "./paymentApplicationsTestUtil";
+import {
+  clearPaymentApplicationsForGiftIds,
+  seedStripeApplication,
+  stripeCountedRowForCharge,
+  stripeGiftIdForCharge,
+} from "./paymentApplicationsTestUtil";
 import { chargeStatusSql, stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
@@ -343,8 +348,13 @@ describe.skipIf(!HAS_DB)(
       await db.insert(schema.stripeStagedCharges).values({
         ...upsertValues(id),
         matchStatus: "matched",
-        matchedGiftId: giftId,
       } as UpsertValues);
+      // The gift link lives in the ledger, not the retired pointer columns.
+      await seedStripeApplication({
+        stripeChargeId: id,
+        giftId,
+        amountApplied: "259.11",
+      });
 
       await runUpsert(
         upsertValues(id, { refunded: true, amountRefunded: "259.11" }),
@@ -352,7 +362,7 @@ describe.skipIf(!HAS_DB)(
       const row = await readCharge(id);
       expect(row.status).toBe("match_confirmed");
       expect(row.exclusionReason).toBeNull();
-      expect(row.matchedGiftId).toBe(giftId);
+      expect(await stripeGiftIdForCharge(id)).toBe(giftId);
     });
   },
 );
@@ -476,8 +486,12 @@ describe.skipIf(!HAS_DB)(
       await db.insert(schema.stripeStagedCharges).values({
         ...upsertValues(id, { refunded: true, amountRefunded: "259.11" }),
         matchStatus: "matched",
-        matchedGiftId: giftId,
       } as UpsertValues);
+      await seedStripeApplication({
+        stripeChargeId: id,
+        giftId,
+        amountApplied: "259.11",
+      });
 
       const res = await apiPost(`/api/stripe-staged-charges/${id}/revert`);
       expect(res.status).toBe(200);
@@ -485,7 +499,7 @@ describe.skipIf(!HAS_DB)(
       const charge = await readCharge(id);
       expect(charge.status).toBe("excluded");
       expect(charge.exclusionReason).toBe("refunded_charge");
-      expect(charge.matchedGiftId).toBeNull();
+      expect(await stripeCountedRowForCharge(id)).toBeNull();
     });
 
     it("reverting a PARTIALLY-refunded charge returns it to pending", async () => {
@@ -495,8 +509,12 @@ describe.skipIf(!HAS_DB)(
       await db.insert(schema.stripeStagedCharges).values({
         ...upsertValues(id, { refunded: true, amountRefunded: "50.00" }),
         matchStatus: "matched",
-        matchedGiftId: giftId,
       } as UpsertValues);
+      await seedStripeApplication({
+        stripeChargeId: id,
+        giftId,
+        amountApplied: "259.11",
+      });
 
       const res = await apiPost(`/api/stripe-staged-charges/${id}/revert`);
       expect(res.status).toBe(200);

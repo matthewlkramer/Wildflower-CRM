@@ -195,10 +195,9 @@ async function proposeStripeChargeForGift(opts: {
   if (!hasText && !hasAmount) return null;
 
   const conds: SQL[] = [
-    // DERIVED pending: no exclusion, no gift link (lib/derivedStatus.ts).
+    // DERIVED pending: no exclusion AND no counted ledger row (the ledger IS
+    // the gift link now — lib/derivedStatus.ts), so no extra pointer guards.
     chargeStatusWhere.pending,
-    sql`${stripeStagedCharges.matchedGiftId} IS NULL`,
-    sql`${stripeStagedCharges.createdGiftId} IS NULL`,
     eq(stripeStagedCharges.refunded, false),
     eq(stripeStagedCharges.disputed, false),
   ];
@@ -341,8 +340,6 @@ function stripeProposalExistsSql(name: SQL, amount: SQL, date: SQL): SQL {
     AND EXISTS (
       SELECT 1 FROM ${stripeStagedCharges}
       WHERE ${chargeStatusWhere.pending}
-        AND ${stripeStagedCharges.matchedGiftId} IS NULL
-        AND ${stripeStagedCharges.createdGiftId} IS NULL
         AND ${stripeStagedCharges.refunded} = false
         AND ${stripeStagedCharges.disputed} = false
         AND (NOT ${hasText} OR (${stripeChargeSearchWhereExpr(namePattern)}))

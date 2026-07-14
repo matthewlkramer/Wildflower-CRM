@@ -10,7 +10,7 @@ import {
   settlementLinks,
   paymentApplications,
 } from "@workspace/db/schema";
-import { and, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { payoutStatusFromLink, type SettlementLinkFields } from "./settlementLink";
 import { scoreStripeCharge } from "./stripeMatch";
@@ -21,7 +21,10 @@ import {
   type MatchMethod,
 } from "./quickbooksMatch";
 import { chargeStatusSql, stagedStatusSql } from "./derivedStatus";
-import { qbLedgerSoleGiftIdForPayment } from "./paymentApplications";
+import {
+  qbLedgerSoleGiftIdForPayment,
+  stripeLedgerGiftIdForCharge,
+} from "./paymentApplications";
 import { amountWithinFeeBand } from "./reconciliationGate";
 import { maskName, type Viewer } from "./identityVisibility";
 
@@ -1154,20 +1157,24 @@ async function loadFacts(
       if (r.gid && r.sid && !bundleStagedIds.includes(r.sid))
         linkedByStaged.set(r.gid, r.sid);
     }
+    // Ledger read (pointer columns retired): a counted stripe application IS
+    // the charge↔gift link.
     const chargeLinks = await conn
       .select({
-        gid: sql<string>`coalesce(${stripeStagedCharges.createdGiftId}, ${stripeStagedCharges.matchedGiftId})`,
-        cid: stripeStagedCharges.id,
+        gid: paymentApplications.giftId,
+        cid: paymentApplications.stripeChargeId,
       })
-      .from(stripeStagedCharges)
+      .from(paymentApplications)
       .where(
-        or(
-          inArray(stripeStagedCharges.createdGiftId, [...giftIds]),
-          inArray(stripeStagedCharges.matchedGiftId, [...giftIds]),
+        and(
+          inArray(paymentApplications.giftId, [...giftIds]),
+          eq(paymentApplications.evidenceSource, "stripe"),
+          eq(paymentApplications.linkRole, "counted"),
+          isNotNull(paymentApplications.stripeChargeId),
         ),
       );
     for (const r of chargeLinks) {
-      if (r.gid && !bundleChargeIds.includes(r.cid))
+      if (r.gid && r.cid && !bundleChargeIds.includes(r.cid))
         linkedByCharge.set(r.gid, r.cid);
     }
 
@@ -1261,11 +1268,11 @@ async function scoreCharge(c: {
   statementDescriptor: string | null;
   status: string;
   exclusionReason: StagedPaymentExclusionReason | null;
-  matchedGiftId: string | null;
-  createdGiftId: string | null;
+  ledgerGiftId: string | null;
 }): Promise<ScoredSourceRow> {
-  // The gift-link columns ARE the booking facts (status is derived from them).
-  const committedGiftId = c.createdGiftId ?? c.matchedGiftId ?? null;
+  // The counted ledger row IS the booking fact (status is derived from it);
+  // the legacy pointer columns are retired.
+  const committedGiftId = c.ledgerGiftId ?? null;
   const match = committedGiftId
     ? {
         donor: { organizationId: null, individualGiverPersonId: null, householdId: null },
@@ -1405,8 +1412,8 @@ export async function loadBundleBase(opts: {
         statementDescriptor: stripeStagedCharges.statementDescriptor,
         status: chargeStatusSql,
         exclusionReason: stripeStagedCharges.exclusionReason,
-        matchedGiftId: stripeStagedCharges.matchedGiftId,
-        createdGiftId: stripeStagedCharges.createdGiftId,
+        // Ledger-resolved owning gift (pointer columns retired, never read).
+        ledgerGiftId: stripeLedgerGiftIdForCharge(),
       })
       .from(stripeStagedCharges)
       .where(eq(stripeStagedCharges.stripePayoutId, payout.id))
@@ -1434,7 +1441,7 @@ export async function loadBundleBase(opts: {
         id: c.id,
         amount: c.grossAmount,
         status: c.status,
-        gift: c.createdGiftId ?? c.matchedGiftId,
+        gift: c.ledgerGiftId,
       })),
     });
   } else {

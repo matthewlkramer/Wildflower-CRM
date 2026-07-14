@@ -50,12 +50,12 @@ import { fundableProjects } from "./fundableProjects";
  * Status is fully DERIVED from facts (no stored status column), in precedence
  * order (see api-server lib/derivedStatus.ts): excluded ⇐ exclusionReason
  * NOT NULL; match_proposed ⇐ autoApplied AND matchConfirmedAt IS NULL AND a
- * matched/created gift link; match_confirmed ⇐ a matched/created gift link;
+ * counted ledger gift link; match_confirmed ⇐ a counted ledger gift link;
  * else pending.
  *
- * Reconciliation (mutually exclusive, same rule as staged_payments):
- *   matchedGiftId — linked to a PRE-EXISTING gift (no new ledger row).
- *   createdGiftId — a NEW gift minted from this charge.
+ * Gift linkage lives in the payment_applications ledger (counted stripe rows;
+ * created_the_gift marks a mint). The legacy matchedGiftId / createdGiftId
+ * pointer columns are RETIRED — never read or written.
  */
 export const stripeStagedCharges = pgTable(
   "stripe_staged_charges",
@@ -157,10 +157,16 @@ export const stripeStagedCharges = pgTable(
       "matched_payment_intermediary_id",
     ).references(() => paymentIntermediaries.id, { onDelete: "set null" }),
 
+    /**
+     * @deprecated RETIRED pointer (physical column kept; never read/written).
+     * The charge↔gift link is the counted `payment_applications` ledger row
+     * (`stripe_charge_id` anchor); a mint is `created_the_gift = true`.
+     */
     matchedGiftId: text("matched_gift_id").references(
       () => giftsAndPayments.id,
       { onDelete: "set null" },
     ),
+    /** @deprecated RETIRED pointer — see matchedGiftId. */
     createdGiftId: text("created_gift_id").references(
       () => giftsAndPayments.id,
       { onDelete: "set null" },
@@ -259,7 +265,8 @@ export const stripeStagedCharges = pgTable(
     index("stripe_staged_charges_refund_propagation_idx")
       .on(t.refundPropagationStatus)
       .where(sql`${t.refundPropagationStatus} = 'proposed'`),
-    // One-to-one staged↔gift linkage (same guard as staged_payments).
+    // Legacy 1:1 guards on the RETIRED pointer columns (kept physical so the
+    // Publish diff stays quiet; the ledger's own uniques are authoritative).
     uniqueIndex("stripe_staged_charges_matched_gift_id_uq")
       .on(t.matchedGiftId)
       .where(sql`${t.matchedGiftId} IS NOT NULL`),

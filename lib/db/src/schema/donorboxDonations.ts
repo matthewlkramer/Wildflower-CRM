@@ -53,9 +53,9 @@ import { stripeStagedCharges } from "./stripeStagedCharges";
  * preserves all review state (status / donor match / gift linkage), mirroring
  * the Stripe staged-charge upsert.
  *
- * Reconciliation link (mutually exclusive, same rule as staged_payments):
- *   matchedGiftId — linked to a PRE-EXISTING gift (no new ledger row).
- *   createdGiftId — a NEW gift minted from this donation.
+ * Gift linkage lives in the payment_applications ledger (counted donorbox
+ * rows; created_the_gift marks a mint). The legacy matchedGiftId /
+ * createdGiftId pointer columns are RETIRED — never read or written.
  */
 export const donorboxDonations = pgTable(
   "donorbox_donations",
@@ -120,8 +120,8 @@ export const donorboxDonations = pgTable(
 
     // ── Review state (non-Stripe new-money worklist; mirrors staged rows) ─
     //   pending    — awaiting review (default; only meaningful for non-Stripe).
-    //   approved   — minted a NEW gift (createdGiftId set).
-    //   reconciled — linked to a PRE-EXISTING gift (matchedGiftId set).
+    //   approved   — minted a NEW gift (ledger row with created_the_gift).
+    //   reconciled — linked to a PRE-EXISTING gift (counted ledger row).
     //   excluded   — dismissed as not-new-money (exclusionReason set).
     status: stagedPaymentStatusEnum("status").notNull().default("pending"),
     exclusionReason: donorboxExclusionReasonEnum("exclusion_reason"),
@@ -155,10 +155,16 @@ export const donorboxDonations = pgTable(
       "matched_payment_intermediary_id",
     ).references(() => paymentIntermediaries.id, { onDelete: "set null" }),
 
+    /**
+     * @deprecated RETIRED pointer (physical column kept; never read/written).
+     * The donation↔gift link is the counted `payment_applications` ledger row
+     * (`donorbox_donation_id` anchor); a mint is `created_the_gift = true`.
+     */
     matchedGiftId: text("matched_gift_id").references(
       () => giftsAndPayments.id,
       { onDelete: "set null" },
     ),
+    /** @deprecated RETIRED pointer — see matchedGiftId. */
     createdGiftId: text("created_gift_id").references(
       () => giftsAndPayments.id,
       { onDelete: "set null" },
@@ -224,7 +230,8 @@ export const donorboxDonations = pgTable(
     index("donorbox_donations_linked_stripe_charge_id_idx").on(
       t.linkedStripeChargeId,
     ),
-    // One-to-one donation↔gift linkage (same guard as staged rows).
+    // Legacy 1:1 guards on the RETIRED pointer columns (kept physical so the
+    // Publish diff stays quiet; the ledger's own uniques are authoritative).
     uniqueIndex("donorbox_donations_matched_gift_id_uq")
       .on(t.matchedGiftId)
       .where(sql`${t.matchedGiftId} IS NOT NULL`),

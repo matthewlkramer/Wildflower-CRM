@@ -81,8 +81,12 @@ function stripeWhere(queue: AnchorQueue): SQL {
               SELECT 1 FROM stripe_staged_charges c
               WHERE c.stripe_payout_id = sp.id
                 AND c.exclusion_reason IS NULL
-                AND c.matched_gift_id IS NULL
-                AND c.created_gift_id IS NULL
+                -- pending = no counted ledger row (pointer columns retired)
+                AND NOT EXISTS (
+                  SELECT 1 FROM payment_applications pa
+                  WHERE pa.stripe_charge_id = c.id
+                    AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+                )
             )
             -- A proposed charge-grain QB tie is actionable work here even when
             -- every charge is already gift-booked (reconciled): the human still
@@ -292,9 +296,17 @@ router.get(
                    (CASE
               WHEN cc.exclusion_reason IS NOT NULL THEN 'excluded'
               WHEN cc.auto_applied = true AND cc.match_confirmed_at IS NULL
-                   AND (cc.matched_gift_id IS NOT NULL OR cc.created_gift_id IS NOT NULL)
+                   AND EXISTS (
+                     SELECT 1 FROM payment_applications pa
+                     WHERE pa.stripe_charge_id = cc.id
+                       AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+                   )
                 THEN 'match_proposed'
-              WHEN cc.matched_gift_id IS NOT NULL OR cc.created_gift_id IS NOT NULL
+              WHEN EXISTS (
+                     SELECT 1 FROM payment_applications pa
+                     WHERE pa.stripe_charge_id = cc.id
+                       AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+                   )
                 THEN 'match_confirmed'
               ELSE 'pending'
             END) AS status,

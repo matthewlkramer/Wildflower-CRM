@@ -19,7 +19,6 @@ import {
   eq,
   ilike,
   isNull,
-  isNotNull,
   ne,
   or,
   sql,
@@ -55,7 +54,11 @@ import {
 } from "../lib/donorJoinSelect";
 import { getViewer } from "../lib/identityVisibility";
 import { buildGiftValuesFromDonorbox } from "../lib/donorboxGift";
-import { bookDonorboxDonationApplication } from "../lib/paymentApplications";
+import {
+  bookDonorboxDonationApplication,
+  donorboxLedgerGiftIdForDonation,
+  donorboxLedgerCountedExistsForDonation,
+} from "../lib/paymentApplications";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { giftHeaderColumns } from "./giftsAndPayments";
 
@@ -219,8 +222,6 @@ const reviewSelect = {
   individualGiverPersonId: donorboxDonations.individualGiverPersonId,
   householdId: donorboxDonations.householdId,
   matchedPaymentIntermediaryId: donorboxDonations.matchedPaymentIntermediaryId,
-  matchedGiftId: donorboxDonations.matchedGiftId,
-  createdGiftId: donorboxDonations.createdGiftId,
   createdAt: donorboxDonations.createdAt,
   updatedAt: donorboxDonations.updatedAt,
   // Shared donor display names + anonymous-masking helpers (stripped by
@@ -252,8 +253,10 @@ function reviewJoins<T extends PgSelect>(q: T) {
       ),
     )
     .leftJoin(
+      // Ledger read (pointer columns retired): the counted donorbox
+      // application links the donation to its gift.
       linkedGift,
-      sql`${linkedGift.id} = COALESCE(${donorboxDonations.matchedGiftId}, ${donorboxDonations.createdGiftId})`,
+      sql`${linkedGift.id} = ${donorboxLedgerGiftIdForDonation()}`,
     );
 }
 
@@ -437,8 +440,6 @@ router.post(
             organizationId: gift.organizationId,
             individualGiverPersonId: gift.individualGiverPersonId,
             householdId: gift.householdId,
-            matchedGiftId: giftId,
-            createdGiftId: null,
             status: "reconciled",
             matchStatus: "matched",
             matchMethod: "manual",
@@ -476,7 +477,7 @@ router.post(
         });
         return;
       }
-      // Unique partial index on matched_gift_id — that gift is already linked.
+      // Per-anchor/per-gift UNIQUE on the counted ledger — already linked.
       if (e instanceof Error && /23505|unique/i.test(e.message)) {
         res.status(409).json({
           error: "gift_already_linked",
@@ -576,13 +577,20 @@ router.post(
           .where(eq(donorboxDonations.id, id))
           .for("update")
           .then((r) => r[0]);
+        const alreadyBooked = await tx
+          .execute<{ booked: boolean }>(
+            sql`SELECT ${donorboxLedgerCountedExistsForDonation(
+              sql`${id}`,
+            )} AS booked`,
+          )
+          .then((r) => r.rows[0]?.booked === true);
         if (
           !locked ||
           locked.status !== "pending" ||
           locked.donationType === "stripe" ||
           locked.stripeChargeId != null ||
-          locked.matchedGiftId != null ||
-          locked.createdGiftId != null
+          // Gift-link fact = the counted ledger row (pointer columns retired).
+          alreadyBooked
         ) {
           throw new Error(NOT_PENDING);
         }
@@ -630,8 +638,6 @@ router.post(
           .update(donorboxDonations)
           .set({
             status: "approved",
-            createdGiftId: giftId,
-            matchedGiftId: null,
             organizationId: lockedDonor.organizationId,
             individualGiverPersonId: lockedDonor.individualGiverPersonId,
             householdId: lockedDonor.householdId,
@@ -769,10 +775,8 @@ async function findDonorboxDuplicates(d: {
         and(
           eq(donorboxDonations.paypalTransactionId, d.paypalTransactionId),
           ne(donorboxDonations.id, d.id),
-          or(
-            isNotNull(donorboxDonations.createdGiftId),
-            isNotNull(donorboxDonations.matchedGiftId),
-          ),
+          // Booked = has a counted ledger row (pointer columns retired).
+          sql`${donorboxLedgerCountedExistsForDonation()}`,
         ),
       )
       .limit(10);

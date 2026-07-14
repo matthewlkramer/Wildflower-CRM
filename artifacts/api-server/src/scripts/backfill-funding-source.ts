@@ -55,13 +55,14 @@ async function main(): Promise<void> {
         (
           sp.exclusion_reason = 'processor_payout'
           -- A Stripe charge evidences a gift this payment is counted against
-          -- in the QB cash-application ledger (the legacy staged gift-link
-          -- columns are @deprecated and no longer written).
+          -- in the QB cash-application ledger (all gift links live in the
+          -- ledger; the legacy pointer columns are retired).
           OR EXISTS (
             SELECT 1 FROM payment_applications pa
-            JOIN stripe_staged_charges sc
-              ON sc.matched_gift_id = pa.gift_id
-              OR sc.created_gift_id = pa.gift_id
+            JOIN payment_applications spa
+              ON spa.gift_id = pa.gift_id
+              AND spa.evidence_source = 'stripe'
+              AND spa.link_role = 'counted'
             WHERE pa.payment_id = sp.id
               AND pa.evidence_source = 'quickbooks'
               AND pa.link_role = 'counted'

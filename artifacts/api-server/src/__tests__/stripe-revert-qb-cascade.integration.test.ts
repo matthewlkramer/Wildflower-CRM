@@ -10,6 +10,7 @@ import {
 import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
+  seedStripeApplication,
 } from "./paymentApplicationsTestUtil";
 import { chargeStatusSql, stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
@@ -138,12 +139,18 @@ async function seedReconciledCharge(
     dateReceived: "2026-03-15",
     payerName: `${RUN} payer`,
     matchStatus: "matched",
-    matchedGiftId,
     organizationId: ORG_ID,
     rawCharge: { id, object: "charge", status: "succeeded" } as Record<
       string,
       unknown
     >,
+  });
+  // The gift link lives in the ledger (retired pointer columns are never
+  // written) — a counted stripe row makes the charge revert-eligible.
+  await seedStripeApplication({
+    stripeChargeId: id,
+    giftId: matchedGiftId,
+    amountApplied: gross,
   });
   chargeIds.push(id);
   return id;

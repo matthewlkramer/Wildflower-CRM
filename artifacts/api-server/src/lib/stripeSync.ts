@@ -19,6 +19,8 @@ import {
   bookStripeChargeApplication,
   PaymentOverApplicationError,
   qbLedgerExistsForGift,
+  stripeLedgerGiftIdForCharge,
+  chargeIdOwningGiftExcludingCharge,
 } from "./paymentApplications";
 
 function isUniqueViolation(e: unknown): boolean {
@@ -227,8 +229,7 @@ async function propagateRefundsForPayout(
     const row = await db
       .select({
         id: stripeStagedCharges.id,
-        matchedGiftId: stripeStagedCharges.matchedGiftId,
-        createdGiftId: stripeStagedCharges.createdGiftId,
+        ledgerGiftId: stripeLedgerGiftIdForCharge(),
         refundPropagationGiftId: stripeStagedCharges.refundPropagationGiftId,
         refundPropagationStatus: stripeStagedCharges.refundPropagationStatus,
         refundPropagationKind: stripeStagedCharges.refundPropagationKind,
@@ -251,11 +252,7 @@ async function propagateRefundsForPayout(
     }
     const facts = extractChargeFacts(charge);
 
-    const giftId =
-      row.matchedGiftId ??
-      row.createdGiftId ??
-      row.refundPropagationGiftId ??
-      null;
+    const giftId = row.ledgerGiftId ?? row.refundPropagationGiftId ?? null;
 
     const proposal = deriveRefundProposal(
       {
@@ -418,10 +415,11 @@ async function stripeAutoApply(
       const upd = await tx
         .update(stripeStagedCharges)
         .set({
-          // matchedGiftId + autoApplied (with matchConfirmedAt still NULL) is
-          // exactly what derives the row to `match_proposed` — no status write.
+          // The counted ledger row booked below + autoApplied (with
+          // matchConfirmedAt still NULL) is exactly what derives the row to
+          // `match_proposed` — no status write, no gift-pointer write (the
+          // legacy matched/created gift columns are retired).
           matchStatus: "matched",
-          matchedGiftId: giftId,
           autoApplied: true,
           updatedAt: new Date(),
         })
@@ -429,14 +427,10 @@ async function stripeAutoApply(
           and(
             eq(stripeStagedCharges.id, chargeId),
             chargeStatusWhere.pending,
-            // Ledger-based QB ownership guard (legacy staged gift-link columns
-            // are @deprecated and no longer written).
+            // Ledger-based ownership guards (legacy gift-pointer columns on
+            // staged payments AND charges are @deprecated, never read/written).
             sql`NOT ${qbLedgerExistsForGift(sql`${giftId}`)}`,
-            sql`NOT EXISTS (
-            SELECT 1 FROM stripe_staged_charges sc2
-            WHERE (sc2.matched_gift_id = ${giftId} OR sc2.created_gift_id = ${giftId})
-              AND sc2.id <> ${chargeId}
-          )`,
+            sql`${chargeIdOwningGiftExcludingCharge(sql`${giftId}`, sql`${chargeId}`)} IS NULL`,
           ),
         )
         .returning({

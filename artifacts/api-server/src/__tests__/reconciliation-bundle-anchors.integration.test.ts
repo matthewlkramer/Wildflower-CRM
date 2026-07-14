@@ -18,6 +18,7 @@ import { stagedStatusSql } from "../lib/derivedStatus";
 import {
   qbMintedGiftIdForPayment,
   qbSoleGiftIdForPayment,
+  seedStripeApplication,
 } from "./paymentApplicationsTestUtil";
 
 /**
@@ -223,10 +224,17 @@ async function seedCharge(
     payerName: `Zztest Anchor Charge ${RUN}`,
     payerEmail: `${RUN}-charge@example.invalid`,
     // Status is DERIVED from facts: an exclusion_reason reads `excluded`, a
-    // gift link reads `match_confirmed`, otherwise `pending`.
+    // counted stripe ledger row reads `match_confirmed`, otherwise `pending`
+    // (the pointer columns are retired and never written).
     exclusionReason: (opts.exclusionReason ?? null) as never,
-    matchedGiftId: opts.matchedGiftId ?? null,
   });
+  if (opts.matchedGiftId) {
+    await seedStripeApplication({
+      stripeChargeId: id,
+      giftId: opts.matchedGiftId,
+      amountApplied: "100.00",
+    });
+  }
   chargeIds.push(id);
   return id;
 }

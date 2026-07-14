@@ -1,4 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  clearPaymentApplicationsForChargeIds,
+  seedStripeApplication,
+} from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -198,7 +202,12 @@ beforeAll(async () => {
     dateReceived: ANCHOR_DATE,
     payerName: `Zztest Owning Charge ${RUN}`,
     payerEmail: `${RUN}-charge-b@example.invalid`,
-    matchedGiftId: GIFT_CH_ID,
+  });
+  // The ownership link is a counted stripe ledger row (pointer cols retired).
+  await seedStripeApplication({
+    stripeChargeId: CHARGE_B_ID,
+    giftId: GIFT_CH_ID,
+    amountApplied: "100.00",
   });
 
   const { default: app } = await import("../app");
@@ -213,10 +222,12 @@ afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   // payment_applications FKs (gift + staged payment) are ON DELETE RESTRICT, so
-  // the ledger row must go before its anchors.
+  // the ledger row must go before its anchors. Stripe-evidence rows must also
+  // go before their anchor charge (SET NULL trips the stripe-evidence CHECK).
   await db
     .delete(schema.paymentApplications)
     .where(eqFn(schema.paymentApplications.id, PAYAPP_ID));
+  await clearPaymentApplicationsForChargeIds([CHARGE_ID, CHARGE_B_ID]);
   for (const id of [CHARGE_ID, CHARGE_B_ID]) {
     await db
       .delete(schema.stripeStagedCharges)

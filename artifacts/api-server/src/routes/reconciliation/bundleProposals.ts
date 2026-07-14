@@ -580,16 +580,18 @@ router.post(
         const tie = proposal.tie;
         if (tie && tie.action === "confirm_tie" && tie.payoutId) {
           if (tie.status === "proposed") {
-            await confirmPendingQbDepositInTx(tx, {
+            const tieRes = await confirmPendingQbDepositInTx(tx, {
               payoutId: tie.payoutId,
               userId,
             });
+            giftTieIds.push(...tieRes.rederiveGiftIds);
             tieConfirmed = true;
           } else if (tie.status === "conflict_approved") {
-            await confirmKeepApprovedQbGiftInTx(tx, {
+            const tieRes = await confirmKeepApprovedQbGiftInTx(tx, {
               payoutId: tie.payoutId,
               userId,
             });
+            giftTieIds.push(...tieRes.rederiveGiftIds);
             tieConfirmed = true;
           }
         }
@@ -666,7 +668,7 @@ router.post(
                   message: `Stripe charge for row ${row.rowKey} no longer exists.`,
                 });
               }
-              await createGiftFromChargeInTx(tx, {
+              const chargeMintRes = await createGiftFromChargeInTx(tx, {
                 newGiftId,
                 charge,
                 donor: donorXor,
@@ -674,6 +676,7 @@ router.post(
                 userId,
                 auditReq: req,
               });
+              giftTieIds.push(...chargeMintRes.supersedeGiftIds);
             } else if (row.stagedPaymentId) {
               const staged = await lockStaged(tx, row.stagedPaymentId);
               if (!staged) {
@@ -699,6 +702,7 @@ router.post(
                 auditReq: req,
               });
               pledgeRederiveIds.push(mintRes.opportunityIdToRederive);
+              giftTieIds.push(...mintRes.rederiveGiftIds);
             } else {
               throw new ReconcileAbort(409, {
                 error: "no_source",
@@ -772,6 +776,7 @@ router.post(
               auditReq: req,
             });
             pledgeRederiveIds.push(...linkRes.rederivePledgeIds);
+            giftTieIds.push(...linkRes.supersedeGiftIds);
           } else if (row.stagedPaymentId) {
             const staged = await lockStaged(tx, row.stagedPaymentId);
             if (!staged) {
@@ -794,6 +799,7 @@ router.post(
               auditReq: req,
             });
             pledgeRederiveIds.push(...linkRes.rederivePledgeIds);
+            giftTieIds.push(...linkRes.rederiveGiftIds);
           } else {
             throw new ReconcileAbort(409, {
               error: "no_source",
@@ -949,6 +955,9 @@ router.post(
     const payoutId = params.payoutId;
     const pickedDepositId = body.depositStagedPaymentId ?? null;
 
+    // Gifts whose ledger rows changed in the §4.3 settlement-supersede
+    // recompute inside the commit — tie status recomputed post-commit.
+    const supersedeGiftIds: string[] = [];
     try {
       const result = await db.transaction(async (tx) => {
         // Lock the payout so the link read + path decision stay consistent with
@@ -993,6 +1002,7 @@ router.post(
               payoutId,
               userId,
             });
+            supersedeGiftIds.push(...r.rederiveGiftIds);
             return {
               confirmed: true,
               kind: "conflict_kept" as const,
@@ -1001,6 +1011,7 @@ router.post(
             };
           }
           const r = await confirmPendingQbDepositInTx(tx, { payoutId, userId });
+          supersedeGiftIds.push(...r.rederiveGiftIds);
           return {
             confirmed: true,
             kind:
@@ -1088,6 +1099,7 @@ router.post(
           proposeSettlementLink(pickedDepositId, null),
         );
         const r = await confirmPendingQbDepositInTx(tx, { payoutId, userId });
+        supersedeGiftIds.push(...r.rederiveGiftIds);
         return {
           confirmed: true,
           kind: "confirmed_reconciled" as const,
@@ -1095,6 +1107,11 @@ router.post(
           depositStagedPaymentId: r.stagedPaymentId,
         };
       });
+      // Supersede-affected gifts changed counted evidence — recompute their QB
+      // tie status post-commit (own connection, mirrors the other route tails).
+      if (supersedeGiftIds.length > 0) {
+        await applyGiftQbTieMany(...supersedeGiftIds);
+      }
       res.json(result);
     } catch (e) {
       if (e instanceof ReconcileAbort) {

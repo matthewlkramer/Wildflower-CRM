@@ -675,15 +675,15 @@ export function qbLedgerPaymentIdForGiftExcludingPayment(
 
 /**
  * One Stripe charge id (other than the excluded one) that already owns the gift
- * as permanent reconciled EVIDENCE — either it created the gift (auto-mint,
- * `created_gift_id`) or it is matched to it (`matched_gift_id`) — or null.
+ * as permanent reconciled EVIDENCE — a counted `evidence_source='stripe'` ledger
+ * row (matched or minted; the legacy pointer columns are retired) — or null.
  *
  * The Stripe-charge-anchor analogue of `qbLedgerPaymentIdForGiftExcludingPayment`.
  * When a Stripe charge is the search anchor, a gift's QuickBooks cash-application
  * is EXPECTED (the same money reaches the ledger at the deposit/payout level —
  * QB and Stripe are parallel evidence for one gift) and must NOT disable the
  * match. Only ANOTHER charge already owning the gift is a genuine double-book,
- * so this looks at `stripe_staged_charges`, never the QB ledger. Mirrors the
+ * so this filters `evidence_source='stripe'`, never the QB rows. Mirrors the
  * settlement-bundle proposal's charge-links "linked elsewhere" guard. Same
  * bare-column footgun rule for the correlation — pass a pre-qualified gift id.
  */
@@ -692,9 +692,11 @@ export function chargeIdOwningGiftExcludingCharge(
   excludeChargeIdSql: SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT c.id FROM stripe_staged_charges c
-    WHERE (c.matched_gift_id = ${giftIdSql} OR c.created_gift_id = ${giftIdSql})
-      AND c.id <> ${excludeChargeIdSql}
+    SELECT pa.stripe_charge_id FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql}
+      AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+      AND pa.stripe_charge_id IS NOT NULL
+      AND pa.stripe_charge_id <> ${excludeChargeIdSql}
     LIMIT 1
   )`;
 }
@@ -811,5 +813,118 @@ export function qbLedgerDirectMatchExists(
       SELECT 1 FROM unit_group_members ugm
       WHERE ugm.evidence_source = 'quickbooks' AND ugm.source_id = ${paymentIdSql}
     )
+  )`;
+}
+
+// ─── Anchor-side read-cutover helpers (Stripe charges / Donorbox donations) ──
+//
+// Ledger replacements for the retired stripe_staged_charges and
+// donorbox_donations gift-pointer columns (matched_gift_id / created_gift_id —
+// @deprecated, never read, never set). Given the ANCHOR row, resolve its
+// linked/minted gift from the counted cash-application rows instead. Same
+// bare-column footgun rule — the DEFAULTs target un-aliased
+// `.from(stripeStagedCharges)` / `.from(donorboxDonations)` queries; aliased or
+// raw-SQL callers pass their own pre-qualified id expression.
+export const DEFAULT_CHARGE_ID_SQL: SQL = sql.raw('"stripe_staged_charges"."id"');
+export const DEFAULT_DONATION_ID_SQL: SQL = sql.raw('"donorbox_donations"."id"');
+
+/**
+ * The gift this Stripe charge is counted against (matched OR minted), or null.
+ * Ledger replacement for `COALESCE(matched_gift_id, created_gift_id)`. The
+ * partial unique on (stripe_charge_id, gift_id) plus the one-gift-per-charge
+ * booking paths keep this at most one row in practice; LIMIT 1 guards the
+ * scalar shape regardless.
+ */
+export function stripeLedgerGiftIdForCharge(
+  chargeIdSql: SQL = DEFAULT_CHARGE_ID_SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT pa.gift_id FROM payment_applications pa
+    WHERE pa.stripe_charge_id = ${chargeIdSql}
+      AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+    LIMIT 1
+  )`;
+}
+
+/**
+ * The gift this Stripe charge MINTED (create-gift / bundle mint), or null.
+ * Ledger replacement for the legacy `created_gift_id` column: the counted
+ * stripe row with created_the_gift = true.
+ */
+export function stripeLedgerMintedGiftIdForCharge(
+  chargeIdSql: SQL = DEFAULT_CHARGE_ID_SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT pa.gift_id FROM payment_applications pa
+    WHERE pa.stripe_charge_id = ${chargeIdSql}
+      AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+      AND pa.created_the_gift = true
+    LIMIT 1
+  )`;
+}
+
+/**
+ * The counted Stripe cash-application ledger row anchored on a charge, or
+ * null. Read cutover: this — not the retired matched_gift_id /
+ * created_gift_id pointer columns — is what links a charge to its gift.
+ * `createdTheGift` distinguishes a mint (revert deletes the gift) from a
+ * match to an existing gift (revert keeps it). Accepts `db` or a `tx`.
+ */
+export async function chargeCountedLedgerRow(
+  q: Pick<Tx, "select">,
+  chargeId: string,
+): Promise<{ giftId: string; createdTheGift: boolean } | null> {
+  const row = await q
+    .select({
+      giftId: paymentApplications.giftId,
+      createdTheGift: paymentApplications.createdTheGift,
+    })
+    .from(paymentApplications)
+    .where(
+      and(
+        eq(paymentApplications.stripeChargeId, chargeId),
+        eq(paymentApplications.evidenceSource, "stripe"),
+        eq(paymentApplications.linkRole, "counted"),
+      ),
+    )
+    .limit(1)
+    .then((r) => r[0]);
+  return row ?? null;
+}
+
+/** EXISTS a counted Stripe cash-application ledger row anchored on the charge. */
+export function stripeLedgerCountedExistsForCharge(
+  chargeIdSql: SQL = DEFAULT_CHARGE_ID_SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.stripe_charge_id = ${chargeIdSql}
+      AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+  )`;
+}
+
+/**
+ * The gift this Donorbox donation is counted against (matched OR minted), or
+ * null. Ledger replacement for `COALESCE(matched_gift_id, created_gift_id)`.
+ */
+export function donorboxLedgerGiftIdForDonation(
+  donationIdSql: SQL = DEFAULT_DONATION_ID_SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT pa.gift_id FROM payment_applications pa
+    WHERE pa.donorbox_donation_id = ${donationIdSql}
+      AND pa.evidence_source = 'donorbox' AND pa.link_role = 'counted'
+    LIMIT 1
+  )`;
+}
+
+/** EXISTS a counted Donorbox cash-application ledger row anchored on the donation. */
+export function donorboxLedgerCountedExistsForDonation(
+  donationIdSql: SQL = DEFAULT_DONATION_ID_SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.donorbox_donation_id = ${donationIdSql}
+      AND pa.evidence_source = 'donorbox' AND pa.link_role = 'counted'
   )`;
 }

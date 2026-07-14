@@ -73,6 +73,7 @@ import {
   DEFAULT_GIFT_ID_SQL,
   chargeIdOwningGiftExcludingCharge,
   qbLedgerSoleGiftIdForPayment,
+  stripeLedgerGiftIdForCharge,
 } from "./paymentApplications";
 import { payoutStatusFromLink } from "./settlementLink";
 import {
@@ -1561,9 +1562,17 @@ export async function searchPayouts(
                  (CASE
               WHEN cc.exclusion_reason IS NOT NULL THEN 'excluded'
               WHEN cc.auto_applied = true AND cc.match_confirmed_at IS NULL
-                   AND (cc.matched_gift_id IS NOT NULL OR cc.created_gift_id IS NOT NULL)
+                   AND EXISTS (
+                     SELECT 1 FROM payment_applications pa
+                     WHERE pa.stripe_charge_id = cc.id
+                       AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+                   )
                 THEN 'match_proposed'
-              WHEN cc.matched_gift_id IS NOT NULL OR cc.created_gift_id IS NOT NULL
+              WHEN EXISTS (
+                     SELECT 1 FROM payment_applications pa
+                     WHERE pa.stripe_charge_id = cc.id
+                       AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+                   )
                 THEN 'match_confirmed'
               ELSE 'pending'
             END) AS status,
@@ -1745,8 +1754,8 @@ async function searchStripeChargeRows(
       statementDescriptor: stripeStagedCharges.statementDescriptor,
       grossAmount: stripeStagedCharges.grossAmount,
       dateReceived: stripeStagedCharges.dateReceived,
-      matchedGiftId: stripeStagedCharges.matchedGiftId,
-      createdGiftId: stripeStagedCharges.createdGiftId,
+      // Ledger-resolved owning gift (pointer columns are retired, never read).
+      ledgerGiftId: stripeLedgerGiftIdForCharge(),
     })
     .from(stripeStagedCharges)
     .where(and(...conds))
@@ -1774,7 +1783,7 @@ async function searchStripeChargeRows(
       // A charge already tied to a gift (matched or created) can't be
       // re-linked without double-counting — surface the owning gift so the
       // picker grays the row and offers the per-charge revert as an unlink.
-      alreadyLinkedGiftId: r.matchedGiftId ?? r.createdGiftId ?? null,
+      alreadyLinkedGiftId: r.ledgerGiftId ?? null,
     });
   });
 }

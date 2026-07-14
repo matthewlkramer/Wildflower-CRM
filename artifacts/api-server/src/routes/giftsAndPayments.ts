@@ -151,6 +151,8 @@ import { absorbGiftEvidenceIntoSurvivor } from "../lib/giftCombine";
 import {
   qbLedgerExistsForGift,
   qbLedgerPaymentIdForGift,
+  stripeLedgerGiftIdForCharge,
+  stripeLedgerMintedGiftIdForCharge,
 } from "../lib/paymentApplications";
 import { isReimbursablePlaceholderGift } from "../lib/reimbursablePlaceholder";
 import { isFlaggedForResearch } from "../lib/flaggedForResearch";
@@ -426,12 +428,9 @@ async function buildGiftDetail(id: string, viewer: Viewer) {
       stripeStagedCharges,
       eq(stripeStagedCharges.id, donorboxDonations.stripeChargeId),
     )
-    .where(
-      or(
-        eq(stripeStagedCharges.matchedGiftId, id),
-        eq(stripeStagedCharges.createdGiftId, id),
-      ),
-    )
+    // Ledger read (pointer columns retired): the counted stripe application
+    // links the charge to this gift.
+    .where(sql`${stripeLedgerGiftIdForCharge()} = ${id}`)
     .limit(1)
     .then((r) => r[0] ?? null);
 
@@ -2112,13 +2111,14 @@ router.get(
       .then((r) => r[0]);
     if (!gift) return notFound(res, "gift");
 
-    // A gift is at most one charge's created_gift_id and at most one charge's
-    // matched_gift_id (unique partial indexes). Prefer the "created" row — this
-    // gift was minted from that charge — over a "matched" linkage.
+    // A gift has at most one counted Stripe ledger row (per-anchor UNIQUE), so
+    // this resolves at most one charge. `created_the_gift` distinguishes a mint
+    // ("created") from a link to an existing gift ("matched").
     const row = await db
       .select({
         chargeId: stripeStagedCharges.id,
-        chargeCreatedGiftId: stripeStagedCharges.createdGiftId,
+        // Mint provenance from the ledger (pointer columns retired).
+        chargeMintedThisGift: sql<boolean>`${stripeLedgerMintedGiftIdForCharge()} = ${id}`,
         chargeGross: stripeStagedCharges.grossAmount,
         chargeFee: stripeStagedCharges.feeAmount,
         chargeNet: stripeStagedCharges.netAmount,
@@ -2164,14 +2164,9 @@ router.get(
         stagedPayments,
         eq(stagedPayments.id, settlementLinks.depositStagedPaymentId),
       )
-      .where(
-        or(
-          eq(stripeStagedCharges.createdGiftId, id),
-          eq(stripeStagedCharges.matchedGiftId, id),
-        ),
-      )
+      .where(sql`${stripeLedgerGiftIdForCharge()} = ${id}`)
       .orderBy(
-        sql`CASE WHEN ${stripeStagedCharges.createdGiftId} = ${id} THEN 0 ELSE 1 END`,
+        sql`CASE WHEN ${stripeLedgerMintedGiftIdForCharge()} = ${id} THEN 0 ELSE 1 END`,
       )
       .limit(1)
       .then((r) => r[0]);
@@ -2181,7 +2176,7 @@ router.get(
       charge: row?.chargeId
         ? {
             id: row.chargeId,
-            linkage: row.chargeCreatedGiftId === id ? "created" : "matched",
+            linkage: row.chargeMintedThisGift === true ? "created" : "matched",
             grossAmount: row.chargeGross,
             feeAmount: row.chargeFee,
             netAmount: row.chargeNet,

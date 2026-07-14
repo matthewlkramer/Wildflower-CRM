@@ -19,21 +19,21 @@ import {
  *                     non-donation noise (auto or manual) — out of the money
  *                     flow entirely.
  *   match_proposed  ⇐ auto_applied AND match_confirmed_at IS NULL AND a
- *                     gift link (QB: a counted payment_applications row;
- *                     Stripe/Donorbox: matched/created gift columns). The
- *                     system applied a high-confidence match that a human has
- *                     not yet reviewed.
+ *                     counted payment_applications row anchored on this row
+ *                     (QB and Stripe alike — the ledger is the SOLE gift-link
+ *                     record). The system applied a high-confidence match that
+ *                     a human has not yet reviewed.
  *   match_confirmed ⇐ the money is booked to a CRM gift, evidenced by ANY of:
  *                       - a counted payment_applications ledger row anchored
- *                         on this row (QB — the SOLE gift-link record; covers
- *                         direct links, mints, group members, and splits; the
- *                         legacy staged gift-link columns are @deprecated,
- *                         never read, never written)
+ *                         on this row (the SOLE gift-link record for QB staged
+ *                         payments AND Stripe charges; covers direct links,
+ *                         mints, group members, and splits; ALL legacy gift-
+ *                         pointer columns — staged_payments AND
+ *                         stripe_staged_charges matched/created — are
+ *                         @deprecated, never read, never written)
  *                       - a CONFIRMED settlement link naming this row as the
  *                         QB deposit lump (QB only — the deposit is settled
  *                         against a Stripe payout, its money booked per-charge)
- *                       - matched_gift_id / created_gift_id (Stripe charges
- *                         and Donorbox donations only)
  *   pending         ⇐ none of the above — open work awaiting review.
  *
  * `match_proposed` is checked BEFORE `match_confirmed` because a proposed row
@@ -122,16 +122,21 @@ export function stagedStatusIn(statuses: readonly DerivedStatus[]): SQL<boolean>
 
 /* ── stripe_staged_charges ─────────────────────────────────────────────── */
 
+/** EXISTS: a counted Stripe cash-application ledger row anchored on this charge. */
+export const chargeCountedApplicationExists: SQL<boolean> = sql`EXISTS (
+  SELECT 1 FROM ${paymentApplications}
+  WHERE ${paymentApplications.stripeChargeId} = ${stripeStagedCharges.id}
+    AND ${paymentApplications.evidenceSource} = 'stripe'
+    AND ${paymentApplications.linkRole} = 'counted'
+)`;
+
 const chargeProposedCondition: SQL<boolean> = sql`(
   ${stripeStagedCharges.autoApplied} = true
   AND ${stripeStagedCharges.matchConfirmedAt} IS NULL
-  AND (${stripeStagedCharges.matchedGiftId} IS NOT NULL OR ${stripeStagedCharges.createdGiftId} IS NOT NULL)
+  AND ${chargeCountedApplicationExists}
 )`;
 
-const chargeConfirmedEvidence: SQL<boolean> = sql`(
-  ${stripeStagedCharges.matchedGiftId} IS NOT NULL
-  OR ${stripeStagedCharges.createdGiftId} IS NOT NULL
-)`;
+const chargeConfirmedEvidence: SQL<boolean> = chargeCountedApplicationExists;
 
 /** SELECTable CASE expression emitting the derived status for a Stripe charge. */
 export const chargeStatusSql: SQL<DerivedStatus> = sql`CASE
@@ -155,8 +160,7 @@ export const chargeStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
   )`,
   pending: sql`(
     ${stripeStagedCharges.exclusionReason} IS NULL
-    AND ${stripeStagedCharges.matchedGiftId} IS NULL
-    AND ${stripeStagedCharges.createdGiftId} IS NULL
+    AND NOT ${chargeCountedApplicationExists}
   )`,
 };
 
@@ -198,17 +202,22 @@ export interface ChargeStatusFacts {
   exclusionReason: string | null;
   autoApplied: boolean;
   matchConfirmedAt: Date | string | null;
-  matchedGiftId: string | null;
-  createdGiftId: string | null;
+  /**
+   * EXISTS: a counted Stripe cash-application ledger row anchored on this
+   * charge. The SOLE gift-link fact (read cutover) — the legacy
+   * matched_gift_id / created_gift_id columns are no longer consulted. Callers
+   * pass what they know about the ledger at echo time (link/mint echoes →
+   * true; revert → false).
+   */
+  hasCountedApplication: boolean;
 }
 
 export function deriveStripeChargeStatus(f: ChargeStatusFacts): DerivedStatus {
   if (f.exclusionReason != null) return "excluded";
-  const linkedOrMinted = f.matchedGiftId != null || f.createdGiftId != null;
-  if (f.autoApplied && f.matchConfirmedAt == null && linkedOrMinted) {
+  if (f.autoApplied && f.matchConfirmedAt == null && f.hasCountedApplication) {
     return "match_proposed";
   }
-  if (linkedOrMinted) return "match_confirmed";
+  if (f.hasCountedApplication) return "match_confirmed";
   return "pending";
 }
 
