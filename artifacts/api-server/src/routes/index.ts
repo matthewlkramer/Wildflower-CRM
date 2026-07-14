@@ -48,6 +48,7 @@ import quickbooksRouter from "./quickbooks";
 import quickbooksRulesRouter from "./quickbooksRules";
 import revenueCodingRouter from "./revenueCoding";
 import revenueExtractorRouter from "./revenueExtractor";
+import stripeLedgerReadsRouter from "./stripeLedgerReads";
 import stripeRouter from "./stripe";
 import donorboxRouter from "./donorbox";
 import grantLeadsRouter from "./grantLeads";
@@ -64,15 +65,8 @@ const router: IRouter = Router();
 
 router.use(healthRouter);
 // emailTrackingRouter mounts here (NOT at the bottom) on purpose. Several
-// sub-routers below — usersRouter, regionsRouter, schoolsRouter, etc. —
-// apply `router.use(requireAuth)` at module top, and Express runs that
-// middleware for every request that walks through the sub-router whether
-// or not one of its internal routes matches. Anything mounted after those
-// routers is unreachable when unauthenticated. The Magio extension calls
-// POST /email-tracking, GET /email-tracking/search|status, and the pixel
-// endpoint anonymously from mail.google.com, so this router must be
-// reachable before any auth-gated sub-router fires. Per-route requireAuth
-// is still applied inside emailTrackingRouter for the CRM-facing reads.
+// sub-routers below apply module-level auth middleware. The browser extension's
+// anonymous tracking endpoints must be reachable before those routers run.
 router.use(emailTrackingRouter);
 router.use(usersRouter);
 router.use(regionsRouter);
@@ -121,6 +115,10 @@ router.use(quickbooksRouter);
 router.use(quickbooksRulesRouter);
 router.use(revenueCodingRouter);
 router.use(revenueExtractorRouter);
+// These GET routes intentionally mount before the legacy Stripe action router.
+// They are ledger-authoritative and prevent stale gift pointers from affecting
+// charge queue membership or display while action writers are retired in slices.
+router.use(stripeLedgerReadsRouter);
 router.use(stripeRouter);
 router.use(donorboxRouter);
 router.use(grantLeadsRouter);
