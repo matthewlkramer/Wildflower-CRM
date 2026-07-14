@@ -1952,9 +1952,14 @@ describe.skipIf(!HAS_DB)("Reconciliation search — scoped + cross-filtering (in
   }, 30_000);
 
   it("gift search (donor-scoped) includes an active org gift in the amount band and EXCLUDES an archived one", async () => {
-    const activeGiftId = await seedGift("100.00");
-    const archivedGiftId = await seedArchivedGift("100.00");
-    const stagedId = await seedStaged("100.00");
+    // Distinctive amount: this file seeds/mints 100+ gifts at exactly 100.00
+    // for the same per-run org, and the search orders by ABS(amount - anchor)
+    // with arbitrary tie order — at the default limit=25 the seeded gift can
+    // nondeterministically fall out of the page. A unique amount makes the
+    // two seeded gifts the only distance-0 candidates (deterministic top-2).
+    const activeGiftId = await seedGift("103.17");
+    const archivedGiftId = await seedArchivedGift("103.17");
+    const stagedId = await seedStaged("103.17");
 
     const res = await apiGet(
       `/api/reconciliation/search/gift?stagedPaymentId=${stagedId}&donorId=${ORG_ID}`,
