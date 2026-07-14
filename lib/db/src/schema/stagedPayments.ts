@@ -78,9 +78,9 @@ import { entities } from "./entities";
  * ledger: a counted row with `created_the_gift = false` links the payment to a
  * PRE-EXISTING gift; `created_the_gift = true` records that a NEW gift was
  * minted from it. Unlinking is only allowed for non-mint links (unlinking a
- * minted gift would orphan it). The legacy gift-link columns below
- * (matchedGiftId / createdGiftId / groupReconciledGiftId) are @deprecated —
- * never read, never written.
+ * minted gift would orphan it). The legacy gift-link columns
+ * (matchedGiftId / createdGiftId / groupReconciledGiftId) were dropped
+ * (migration 0126).
  */
 export const stagedPayments = pgTable(
   "staged_payments",
@@ -231,41 +231,12 @@ export const stagedPayments = pgTable(
       "matched_payment_intermediary_id",
     ).references(() => paymentIntermediaries.id, { onDelete: "set null" }),
 
-    /**
-     * @deprecated NEVER READ, NEVER WRITTEN. The counted `payment_applications`
-     * ledger is the SOLE gift-link record (link to an existing gift = a counted
-     * ledger row with `created_the_gift = false`). Legacy values were
-     * backfilled into the ledger (migration 0120); the column is kept physical
-     * only until the reviewed drop migration ships. Do not reintroduce reads
-     * or writes.
-     */
-    matchedGiftId: text("matched_gift_id").references(
-      () => giftsAndPayments.id,
-      { onDelete: "set null" },
-    ),
-    /**
-     * @deprecated NEVER READ, NEVER WRITTEN. Mint-ownership ("a NEW gift was
-     * minted from this staged payment") lives on the ledger row's
-     * `created_the_gift` flag. Backfilled by migration 0120; kept physical
-     * only until the reviewed drop migration ships.
-     */
-    createdGiftId: text("created_gift_id").references(
-      () => giftsAndPayments.id,
-      { onDelete: "set null" },
-    ),
-
-    /**
-     * @deprecated NEVER READ, NEVER WRITTEN. Group reconciliation books one
-     * counted `payment_applications` row PER member and durable
-     * `unit_groups`/`unit_group_members` membership — there is no
-     * representative/member pointer asymmetry anymore. Backfilled by
-     * migration 0120; kept physical only until the reviewed drop migration
-     * ships.
-     */
-    groupReconciledGiftId: text("group_reconciled_gift_id").references(
-      () => giftsAndPayments.id,
-      { onDelete: "set null" },
-    ),
+    // The legacy gift-pointer columns (matched_gift_id / created_gift_id /
+    // group_reconciled_gift_id) were DROPPED (migration 0126) after the ledger
+    // cutover: the counted `payment_applications` ledger is the SOLE gift-link
+    // record (mint-ownership = `created_the_gift`; group reconciliation = one
+    // counted row per member + `unit_groups` membership). Do not reintroduce
+    // gift-pointer columns here.
 
     // "Same physical gift" grouping is now a first-class polymorphic association
     // in `unit_groups` / `unit_group_members` (docs/reconciliation-design.md
@@ -394,9 +365,6 @@ export const stagedPayments = pgTable(
     // Look up the candidate members of a bank deposit (manual deposit-grouping)
     // and the members of an already-grouped reconciliation.
     index("staged_payments_qb_deposit_id_idx").on(t.qbDepositId),
-    index("staged_payments_group_reconciled_gift_id_idx").on(
-      t.groupReconciledGiftId,
-    ),
     index("staged_payments_date_received_idx").on(t.dateReceived),
     index("staged_payments_amount_idx").on(t.amount),
     index("staged_payments_organization_id_idx").on(t.organizationId),
@@ -406,17 +374,6 @@ export const stagedPayments = pgTable(
     index("staged_payments_household_id_idx").on(t.householdId),
     index("staged_payments_entity_id_idx").on(t.entityId),
     index("staged_payments_funding_source_idx").on(t.fundingSource),
-    // One-to-one staged↔gift linkage: at most one staged row may reconcile to
-    // (matchedGiftId) or mint (createdGiftId) any given gift. Partial-unique so
-    // the many NULLs (unresolved rows) don't collide, and so this also serves
-    // as the lookup index. Backstops the route/worker NOT EXISTS guards against
-    // write-skew under concurrent reconciles.
-    uniqueIndex("staged_payments_matched_gift_id_uq")
-      .on(t.matchedGiftId)
-      .where(sql`${t.matchedGiftId} IS NOT NULL`),
-    uniqueIndex("staged_payments_created_gift_id_uq")
-      .on(t.createdGiftId)
-      .where(sql`${t.createdGiftId} IS NOT NULL`),
   ],
 );
 

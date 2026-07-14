@@ -1118,7 +1118,7 @@ async function cascadeResetLinkedQbStagedRows(
     .where(
       and(
         // A DIRECT 1:1 counted ledger match to this gift IS the linked state
-        // (ledger replacement for the @deprecated matched_gift_id shape —
+        // (ledger replacement for the dropped matched_gift_id shape —
         // non-mint, non-group). The sole-gift check additionally excludes
         // split payments (a split fans out to other gifts; resetting it here
         // would wipe the other legs' applications too — legacy splits carried
@@ -1315,11 +1315,9 @@ router.post(
         const [row] = await tx
           .update(stripeStagedCharges)
           .set({
-            // Derived: exclusion_reason set → excluded; cleared (with the gift
-            // links nulled below) → pending.
+            // Derived: exclusion_reason set → excluded; cleared → pending (the
+            // gift link is the counted ledger row, deleted below).
             exclusionReason: revertExclusion,
-            matchedGiftId: null,
-            createdGiftId: null,
             autoApplied: false,
             matchStatus: newMatchStatus,
             matchConfirmedAt: null,

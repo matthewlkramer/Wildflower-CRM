@@ -426,16 +426,6 @@ afterAll(async () => {
         finalAmountQbStagedPaymentId: null,
       })
       .where(inArrayFn(schema.giftsAndPayments.id, allGiftIds));
-  // Release staged → gift pointers so gifts can be deleted.
-  if (stagedIds.length)
-    await db
-      .update(schema.stagedPayments)
-      .set({
-        matchedGiftId: null,
-        createdGiftId: null,
-        groupReconciledGiftId: null,
-      })
-      .where(inArrayFn(schema.stagedPayments.id, stagedIds));
   if (allGiftIds.length)
     await db
       .delete(schema.giftAllocations)

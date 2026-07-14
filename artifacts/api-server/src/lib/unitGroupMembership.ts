@@ -10,12 +10,12 @@
 // `evidence_source = 'quickbooks'`. A `source_id` here is a `staged_payments.id`.
 //
 // SINGLE-SOURCE INVARIANT: `unit_groups`/`unit_group_members` is the SOLE
-// group store. The legacy gift-link pointers (representative
-// `matched_gift_id`, others' `group_reconciled_gift_id`) are @deprecated and
-// no longer written — group-reconcile now writes durable membership rows
+// group store. The legacy gift-link pointer columns (representative
+// `matched_gift_id`, others' `group_reconciled_gift_id`) were DROPPED
+// (migration 0126) — group-reconcile writes durable membership rows
 // (both the source-group route and the ad hoc group-reconcile path) plus
-// counted `payment_applications` rows. Routing every group read through this
-// one module keeps the eventual physical column drop a single-file audit.
+// counted `payment_applications` rows. Every group read routes through this
+// one module.
 
 // `db` is imported type-only ONLY to derive the transaction type — importing
 // this helper carries no runtime DB coupling; every function takes the caller's

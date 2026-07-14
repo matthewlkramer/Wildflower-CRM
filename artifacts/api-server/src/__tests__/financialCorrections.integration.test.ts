@@ -350,18 +350,6 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
       expect(g.qb).toBeNull();
       expect(g.stripe).toBeNull();
     }
-    // ...and the QB staged source row is never edited.
-    const [staged] = await db
-      .select({
-        matched: schema.stagedPayments.matchedGiftId,
-        created: schema.stagedPayments.createdGiftId,
-        group: schema.stagedPayments.groupReconciledGiftId,
-      })
-      .from(schema.stagedPayments)
-      .where(eqFn(schema.stagedPayments.id, STAGED_E));
-    expect(staged.matched).toBeNull();
-    expect(staged.created).toBeNull();
-    expect(staged.group).toBeNull();
   }, 30_000);
 
   it("corroborating links stay out of the settled read model (link_role='counted' guard)", async () => {

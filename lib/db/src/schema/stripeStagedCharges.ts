@@ -55,7 +55,7 @@ import { fundableProjects } from "./fundableProjects";
  *
  * Gift linkage lives in the payment_applications ledger (counted stripe rows;
  * created_the_gift marks a mint). The legacy matchedGiftId / createdGiftId
- * pointer columns are RETIRED — never read or written.
+ * pointer columns were DROPPED (migration 0126).
  */
 export const stripeStagedCharges = pgTable(
   "stripe_staged_charges",
@@ -157,20 +157,10 @@ export const stripeStagedCharges = pgTable(
       "matched_payment_intermediary_id",
     ).references(() => paymentIntermediaries.id, { onDelete: "set null" }),
 
-    /**
-     * @deprecated RETIRED pointer (physical column kept; never read/written).
-     * The charge↔gift link is the counted `payment_applications` ledger row
-     * (`stripe_charge_id` anchor); a mint is `created_the_gift = true`.
-     */
-    matchedGiftId: text("matched_gift_id").references(
-      () => giftsAndPayments.id,
-      { onDelete: "set null" },
-    ),
-    /** @deprecated RETIRED pointer — see matchedGiftId. */
-    createdGiftId: text("created_gift_id").references(
-      () => giftsAndPayments.id,
-      { onDelete: "set null" },
-    ),
+    // The legacy gift-pointer columns (matched_gift_id / created_gift_id) were
+    // DROPPED (migration 0126): the charge↔gift link is the counted
+    // `payment_applications` ledger row (`stripe_charge_id` anchor); a mint is
+    // `created_the_gift = true`. Do not reintroduce gift-pointer columns here.
 
     // ── Refund / chargeback propagation (INV-13, propose-then-confirm) ───
     // When a refund or dispute lands on a charge whose money is already booked
@@ -265,14 +255,6 @@ export const stripeStagedCharges = pgTable(
     index("stripe_staged_charges_refund_propagation_idx")
       .on(t.refundPropagationStatus)
       .where(sql`${t.refundPropagationStatus} = 'proposed'`),
-    // Legacy 1:1 guards on the RETIRED pointer columns (kept physical so the
-    // Publish diff stays quiet; the ledger's own uniques are authoritative).
-    uniqueIndex("stripe_staged_charges_matched_gift_id_uq")
-      .on(t.matchedGiftId)
-      .where(sql`${t.matchedGiftId} IS NOT NULL`),
-    uniqueIndex("stripe_staged_charges_created_gift_id_uq")
-      .on(t.createdGiftId)
-      .where(sql`${t.createdGiftId} IS NOT NULL`),
   ],
 );
 

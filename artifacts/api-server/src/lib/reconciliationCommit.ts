@@ -381,7 +381,7 @@ export async function mintGiftInTx(
   // payment_applications ledger row (booked by the caller's applier) plus the
   // unit_group_members membership, so the whole physical gift resolves as one
   // unit and no slice can be re-reconciled into a second gift. The legacy
-  // group_reconciled_gift_id column is @deprecated and no longer written.
+  // group_reconciled_gift_id column was dropped (migration 0126).
   // Members were locked + re-checked approvable by the caller.
   if (group) {
     const otherIds = group.memberIds.filter((id) => id !== stagedPaymentId);
@@ -1133,9 +1133,8 @@ export async function orphanStripeSourceChargeInTx(
     .update(stripeStagedCharges)
     .set({
       // Status is DERIVED: an exclusion reason ⇒ excluded, cleared links ⇒ pending.
+      // (The gift link itself is the counted ledger row, deleted by the caller.)
       exclusionReason: orphanExclusion,
-      matchedGiftId: null,
-      createdGiftId: null,
       autoApplied: false,
       matchStatus: oldHasDonor ? "suggested" : "unmatched",
       matchConfirmedAt: null,

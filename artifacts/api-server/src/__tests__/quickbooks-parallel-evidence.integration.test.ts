@@ -99,7 +99,8 @@ beforeAll(async () => {
   seededGiftIds.push(qbGiftId);
   seededStagedIds.push(stagedId);
 
-  // A gift already booked from Stripe (owned by a stripe_staged_charges row).
+  // A gift already booked from Stripe (owned by a stripe_staged_charges row
+  // via its counted ledger row — the sole gift-link source).
   await db.insert(schema.giftsAndPayments).values({
     id: chargeGiftId,
     amount: CHARGE_GIFT_AMOUNT,
@@ -110,7 +111,14 @@ beforeAll(async () => {
   await db.insert(schema.stripeStagedCharges).values({
     id: chargeId,
     stripeAccountId: RUN,
-    matchedGiftId: chargeGiftId,
+    grossAmount: CHARGE_GIFT_AMOUNT,
+  });
+  await db.insert(schema.paymentApplications).values({
+    id: `${chargeId}_pa`,
+    stripeChargeId: chargeId,
+    giftId: chargeGiftId,
+    amountApplied: CHARGE_GIFT_AMOUNT,
+    evidenceSource: "stripe",
   });
   seededGiftIds.push(chargeGiftId);
   seededChargeIds.push(chargeId);
@@ -127,6 +135,11 @@ afterAll(async () => {
       .where(inArrayFn(schema.stagedPayments.id, seededStagedIds));
   }
   if (seededChargeIds.length) {
+    await db
+      .delete(schema.paymentApplications)
+      .where(
+        inArrayFn(schema.paymentApplications.stripeChargeId, seededChargeIds),
+      );
     await db
       .delete(schema.stripeStagedCharges)
       .where(inArrayFn(schema.stripeStagedCharges.id, seededChargeIds));

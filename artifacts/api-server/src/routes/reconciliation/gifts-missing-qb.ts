@@ -422,7 +422,8 @@ router.get(
 
     // A gift is settled through a non-QB processor when it has a COUNTED Stripe or
     // Donorbox cash-application ledger row (T003 cutover — the authoritative link
-    // signal, replacing the legacy final-amount pointer + staged_charges.matched_gift_id
+    // signal; the legacy final-amount pointer + staged_charges gift-pointer
+    // columns were dropped (migration 0126), replacing the old staged_charges.matched_gift_id
     // reads). Such money lands in QuickBooks at the PAYOUT level, not per gift, so the
     // gift never gets a per-gift QB ledger link — it is effectively reconciled, NOT a
     // "missing QB record". Excluding it keeps this worklist an exact mirror of

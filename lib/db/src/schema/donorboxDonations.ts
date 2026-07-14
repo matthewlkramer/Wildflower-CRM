@@ -55,7 +55,7 @@ import { stripeStagedCharges } from "./stripeStagedCharges";
  *
  * Gift linkage lives in the payment_applications ledger (counted donorbox
  * rows; created_the_gift marks a mint). The legacy matchedGiftId /
- * createdGiftId pointer columns are RETIRED — never read or written.
+ * createdGiftId pointer columns were DROPPED (migration 0126).
  */
 export const donorboxDonations = pgTable(
   "donorbox_donations",
@@ -155,20 +155,10 @@ export const donorboxDonations = pgTable(
       "matched_payment_intermediary_id",
     ).references(() => paymentIntermediaries.id, { onDelete: "set null" }),
 
-    /**
-     * @deprecated RETIRED pointer (physical column kept; never read/written).
-     * The donation↔gift link is the counted `payment_applications` ledger row
-     * (`donorbox_donation_id` anchor); a mint is `created_the_gift = true`.
-     */
-    matchedGiftId: text("matched_gift_id").references(
-      () => giftsAndPayments.id,
-      { onDelete: "set null" },
-    ),
-    /** @deprecated RETIRED pointer — see matchedGiftId. */
-    createdGiftId: text("created_gift_id").references(
-      () => giftsAndPayments.id,
-      { onDelete: "set null" },
-    ),
+    // The legacy gift-pointer columns (matched_gift_id / created_gift_id) were
+    // DROPPED (migration 0126): the donation↔gift link is the counted
+    // `payment_applications` ledger row (`donorbox_donation_id` anchor); a mint
+    // is `created_the_gift = true`. Do not reintroduce gift-pointer columns.
 
     // ── Cross-processor link (human-confirmed, additive) ────────────────
     // Reviewer-confirmed ties to the SAME money recorded elsewhere, so the
@@ -230,14 +220,6 @@ export const donorboxDonations = pgTable(
     index("donorbox_donations_linked_stripe_charge_id_idx").on(
       t.linkedStripeChargeId,
     ),
-    // Legacy 1:1 guards on the RETIRED pointer columns (kept physical so the
-    // Publish diff stays quiet; the ledger's own uniques are authoritative).
-    uniqueIndex("donorbox_donations_matched_gift_id_uq")
-      .on(t.matchedGiftId)
-      .where(sql`${t.matchedGiftId} IS NOT NULL`),
-    uniqueIndex("donorbox_donations_created_gift_id_uq")
-      .on(t.createdGiftId)
-      .where(sql`${t.createdGiftId} IS NOT NULL`),
   ],
 );
 

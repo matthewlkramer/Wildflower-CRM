@@ -212,7 +212,7 @@ export interface ChargeStatusFacts {
   /**
    * EXISTS: a counted Stripe cash-application ledger row anchored on this
    * charge. The SOLE gift-link fact (read cutover) — the legacy
-   * matched_gift_id / created_gift_id columns are no longer consulted. Callers
+   * matched_gift_id / created_gift_id columns were dropped (0126). Callers
    * pass what they know about the ledger at echo time (link/mint echoes →
    * true; revert → false).
    */

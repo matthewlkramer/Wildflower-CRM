@@ -1,7 +1,10 @@
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { giftMatchAmountBounds, INGEST_GIFT_WINDOW_DAYS } from "./giftMatch";
-import { qbLedgerExistsForGift } from "./paymentApplications";
+import {
+  qbLedgerExistsForGift,
+  stripeLedgerExistsForGift,
+} from "./paymentApplications";
 
 /**
  * Scored matcher for QuickBooks staged payments. Resolves a staged payment to
@@ -276,12 +279,9 @@ async function giftsInWindow(
   const dateClause = dateReceived
     ? sql`AND (date_received IS NULL OR ABS(date_received - ${dateReceived}::date) <= ${INGEST_GIFT_WINDOW_DAYS})`
     : sql``;
-  const notOwnedByCharge = sql`AND NOT EXISTS (
-          SELECT 1 FROM stripe_staged_charges sc
-          WHERE sc.matched_gift_id = g.id OR sc.created_gift_id = g.id
-        )`;
-  // Ledger-based ownership (legacy staged gift-link columns are @deprecated and
-  // no longer written). Deliberately also covers group-reconciled and
+  const notOwnedByCharge = sql`AND NOT ${stripeLedgerExistsForGift(sql.raw("g.id"))}`;
+  // Ledger-based ownership (the legacy staged gift-link columns were dropped —
+  // migration 0126). Deliberately also covers group-reconciled and
   // split-created gifts — any QB-applied gift stops being offered as a free
   // candidate (see the linked-elsewhere note in paymentApplications.ts).
   const notOwnedByStaged = sql`AND NOT ${qbLedgerExistsForGift(sql.raw("g.id"))}`;

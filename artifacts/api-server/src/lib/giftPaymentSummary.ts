@@ -19,8 +19,8 @@
 //
 // READ CUTOVER (design §4.4): ALL THREE sources read the counted
 // cash-application ledger — the legacy Stripe/Donorbox matched_gift_id /
-// created_gift_id pointer columns are the WRITE model only and are never
-// consulted here. Counting only link_role='counted' rows is what lets the
+// created_gift_id pointer columns were DROPPED (migration 0126).
+// Counting only link_role='counted' rows is what lets the
 // §4.3 supersede rule (deposit-level QB row demoted to 'corroborating' once
 // its money books per-charge) remove the double-count from every settled
 // total automatically.

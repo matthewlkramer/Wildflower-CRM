@@ -1434,7 +1434,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     expect(await qbCountedRowsForPayment(stagedId)).toHaveLength(0);
     const charge = await readCharge(foreignChargeId);
     expect(charge.status).toBe("pending");
-    expect(charge.createdGiftId).toBeNull();
   }, 30_000);
 
   it("charge-anchored escape hatch does NOT open for a SPLIT-resolved row (counted ledger rows, no gift links) — 409, no mint", async () => {
@@ -1468,15 +1467,12 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     expect(res.status).toBe(409);
     expect(res.json.error).toBe("not_approvable");
 
-    // Nothing minted: staged keeps NO gift links; the charge stays pending.
+    // Nothing minted: staged stays split-resolved (its counted ledger rows
+    // are the split bookings, no mint appeared); the charge stays pending.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.matchedGiftId).toBeNull();
-    expect(staged.createdGiftId).toBeNull();
-    expect(staged.groupReconciledGiftId).toBeNull();
     const charge = await readCharge(chargeId);
     expect(charge.status).toBe("pending");
-    expect(charge.createdGiftId).toBeNull();
   }, 30_000);
 
   it("still dead-ends a settlement-only confirmed row on the MINT path when NO charge is selected (not_approvable, guidance message)", async () => {
@@ -1498,8 +1494,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // Untouched — no gift link appeared.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.matchedGiftId).toBeNull();
-    expect(staged.createdGiftId).toBeNull();
+    expect(await qbCountedRowsForPayment(stagedId)).toHaveLength(0);
   }, 30_000);
 
   it("charge-anchored escape hatch: records a payment on a pledge from a settlement-only confirmed deposit when a pending charge IS selected (201; charge owns the mint, QB lump untouched)", async () => {
@@ -1549,9 +1544,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // The QB lump stays untouched: settlement-only confirmed, NO gift link.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.matchedGiftId).toBeNull();
-    expect(staged.createdGiftId).toBeNull();
-    expect(staged.groupReconciledGiftId).toBeNull();
+    expect(await qbCountedRowsForPayment(stagedId)).toHaveLength(0);
 
     // Fully-paid pledge derives cash_in post-commit (invariant #3).
     const opp = await readOpp(oppId);
@@ -1583,10 +1576,9 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // Nothing mutated on either side.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
-    expect(staged.createdGiftId).toBeNull();
+    expect(await qbCountedRowsForPayment(stagedId)).toHaveLength(0);
     const charge = await readCharge(foreignChargeId);
     expect(charge.status).toBe("pending");
-    expect(charge.createdGiftId).toBeNull();
   }, 30_000);
 });
 

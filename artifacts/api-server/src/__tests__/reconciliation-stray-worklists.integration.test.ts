@@ -185,8 +185,6 @@ async function seedCharge(opts: {
   grossAmount?: string;
   netAmount?: string | null;
   dateReceived?: string | null;
-  matchedGiftId?: string | null;
-  createdGiftId?: string | null;
   refunded?: boolean;
   disputed?: boolean;
 } = {}): Promise<string> {
@@ -198,8 +196,6 @@ async function seedCharge(opts: {
     netAmount: opts.netAmount ?? null,
     dateReceived: opts.dateReceived ?? null,
     payerName: opts.label ? `${MARKER} ${opts.label}` : null,
-    matchedGiftId: opts.matchedGiftId ?? null,
-    createdGiftId: opts.createdGiftId ?? null,
     refunded: opts.refunded ?? false,
     disputed: opts.disputed ?? false,
   });
@@ -399,7 +395,7 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
     const giftQbLinked = await seedGift({ organizationId: org });
     await seedStaged({ label: "zz-lm-matched", matchedGiftId: giftQbLinked });
     const giftStripeSettled = await seedGift({ organizationId: org });
-    const charge = await seedCharge({ matchedGiftId: giftStripeSettled });
+    const charge = await seedCharge();
     await seedStripeLedgerRow(giftStripeSettled, charge);
 
     const res = await apiGet(
@@ -514,16 +510,15 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
     });
     await seedAllocation(giftAch, ENTITY_ID);
 
-    // A legacy stripe_staged_charges link alone does NOT settle a gift: the
-    // authoritative "settled through a non-QB processor" signal is a COUNTED
-    // Stripe row in the payment_applications ledger (T003 read cutover). A gift
-    // whose only Stripe tie is the legacy charge table (no ledger row) is still
+    // A staged Stripe charge alone does NOT settle a gift: the authoritative
+    // "settled through a non-QB processor" signal is a COUNTED Stripe row in
+    // the payment_applications ledger. A gift with no ledger row is still
     // genuinely missing a QB record, so it must STILL surface on this worklist.
     const giftStripeChargeOnly = await seedGift({
       organizationId: org,
       paymentMethod: "check",
     });
-    await seedCharge({ matchedGiftId: giftStripeChargeOnly });
+    await seedCharge();
 
     // entityId — only the entity-allocated gift, scoped DB-wide by the unique id.
     const byEntity = await listGifts(`entityId=${ENTITY_ID}&limit=200`);

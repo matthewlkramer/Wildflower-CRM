@@ -130,35 +130,20 @@ export const queueExpr = sql<string>`
 // The verbatim raw QB JSON (qbRaw / qbRawLine) is stored for audit but excluded
 // from every list/detail response — it is large and never needed by the UI, so
 // the shared staged projection (consumed by the QuickBooks queue + reconciliation
-// cards) strips it. The @deprecated legacy gift-link columns (matchedGiftId /
-// createdGiftId / groupReconciledGiftId — never read, never written; the
-// counted payment_applications ledger is the sole gift-link source) are
-// scrubbed here too so stale values never leak into a response.
+// cards) strips it. (The legacy gift-link columns were dropped — migration
+// 0126; the counted payment_applications ledger is the sole gift-link source.)
 const {
   qbRaw: _qbRaw,
   qbRawLine: _qbRawLine,
-  matchedGiftId: _matchedGiftId,
-  createdGiftId: _createdGiftId,
-  groupReconciledGiftId: _groupReconciledGiftId,
   ...stagedColumns
 } = getTableColumns(stagedPayments);
 
 // Staged-row projection for the mutation endpoints that echo the freshly-updated
 // row directly (match / unmatch / revert + the actions.ts staged actions). Unlike
 // `stagedSelect` (the joined list/card projection) it KEEPS qbRaw/qbRawLine — the
-// historical raw-return shape of those endpoints. The @deprecated legacy
-// gift-link columns are scrubbed like everywhere else.
-const {
-  matchedGiftId: _mgId,
-  createdGiftId: _cgId,
-  groupReconciledGiftId: _grgId,
-  ...stagedReturnColumns
-} = getTableColumns(stagedPayments);
-export { stagedReturnColumns };
-export type StagedReturnRow = Omit<
-  typeof stagedPayments.$inferSelect,
-  "matchedGiftId" | "createdGiftId" | "groupReconciledGiftId"
->;
+// historical raw-return shape of those endpoints.
+export const stagedReturnColumns = getTableColumns(stagedPayments);
+export type StagedReturnRow = typeof stagedPayments.$inferSelect;
 
 // Attach the derived status to a raw staged row echoed by a mutation endpoint.
 // The counted-ledger EXISTS arm is the SOLE gift-link fact (read cutover), so

@@ -717,7 +717,7 @@ export const quickbooksPayerTypeEnum = pgEnum("quickbooks_payer_type", [
 
 // Lifecycle of a staged QuickBooks payment in the review queue.
 //   pending  — awaiting fundraiser review (default)
-//   approved — turned into a gifts_and_payments row (createdGiftId set)
+//   approved — turned into a gifts_and_payments row (counted ledger row minted)
 //   rejected — explicitly discarded; kept so re-sync won't re-stage it
 //   excluded — auto-filtered noise (zero/loan/membership); kept + auditable,
 //              hidden from the default queue, re-includable to pending. Cannot
