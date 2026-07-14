@@ -97,6 +97,19 @@ export const paymentApplications = pgTable(
       .where(
         sql`${t.donorboxDonationId} IS NOT NULL AND ${t.linkRole} = 'counted'`,
       ),
+    // Stripe charges and Donorbox donations are non-splittable processor units.
+    // They may have only one active counted owner across proposed + confirmed
+    // lifecycles, regardless of gift. Exempt rows remain historical only.
+    uniqueIndex("payment_applications_stripe_charge_active_owner_uq")
+      .on(t.stripeChargeId)
+      .where(
+        sql`${t.stripeChargeId} IS NOT NULL AND ${t.linkRole} = 'counted' AND ${t.lifecycle} IN ('proposed', 'confirmed')`,
+      ),
+    uniqueIndex("payment_applications_donorbox_donation_active_owner_uq")
+      .on(t.donorboxDonationId)
+      .where(
+        sql`${t.donorboxDonationId} IS NOT NULL AND ${t.linkRole} = 'counted' AND ${t.lifecycle} IN ('proposed', 'confirmed')`,
+      ),
     uniqueIndex("payment_applications_payment_id_gift_id_corroborating_uq")
       .on(t.paymentId, t.giftId)
       .where(sql`${t.paymentId} IS NOT NULL AND ${t.linkRole} = 'corroborating'`),
