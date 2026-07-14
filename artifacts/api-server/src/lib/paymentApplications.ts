@@ -1,5 +1,7 @@
-// `db` is used only to derive the transaction type. Every function takes the
-// caller's transaction; this module never touches the db singleton at runtime.
+// `db` is used ONLY to derive the transaction type — keep it type-only so
+// importing this helper (into the merge / revert routes) carries no runtime DB
+// coupling. Every function takes the caller's `tx`; nothing here touches the
+// `db` singleton at runtime.
 import type { db } from "@workspace/db";
 import {
   paymentApplications,
@@ -20,42 +22,52 @@ export type PaymentApplicationMatchMethod =
   | "system"
   | "system_confirmed"
   | "human";
-export type PaymentApplicationLinkRole = "counted" | "corroborating";
-export type PaymentApplicationLifecycle = "proposed" | "confirmed" | "exempt";
 
-/** Only confirmed, counted rows enter settled totals and book-once math. */
-export function applicationCountsTowardMoney(args: {
-  linkRole: PaymentApplicationLinkRole;
-  lifecycle: PaymentApplicationLifecycle;
-}): boolean {
-  return args.linkRole === "counted" && args.lifecycle === "confirmed";
-}
-
-/** Default headroom above a payment's amount: float-noise only. */
+/** Default headroom above a payment's amount: just enough to absorb float
+ * noise. Split callers (gross per-gift sub-amounts sum slightly above the net
+ * deposit) pass a wider fee-band tolerance explicitly. */
 const BOOK_ONCE_EPSILON = 0.005;
 
 export interface BookOnceCheckArgs {
+  /** The anchoring payment's own amount (the cap) as a numeric string. */
   paymentAmount: string | null;
+  /** SUM(amount_applied) already booked against this payment for OTHER gifts. */
   otherAppliedSum: string | number | null;
+  /** The amount about to be applied to THIS gift. */
   newAmount: string | number | null;
-  /** Absolute dollar headroom above the payment amount. */
+  /**
+   * Absolute dollar headroom above the payment amount. A processor payout's
+   * GROSS per-gift sub-amounts can sum slightly above the NET deposit, so split
+   * callers pass a fee-band tolerance; the default only absorbs float noise.
+   */
   tolerance?: number;
 }
 
 export interface BookOnceResult {
   ok: boolean;
+  /** Total that would be booked against the payment (other + new). */
   total: number;
+  /** Allowed cap (paymentAmount + tolerance); null when the amount is unknown. */
   cap: number | null;
+  /** Amount over the cap (0 when ok or cap unknown). */
   overage: number;
 }
 
-const toNum = (value: string | number | null | undefined): number => {
-  if (value == null || value === "") return 0;
-  const parsed = Number(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
+const toNum = (v: string | number | null | undefined): number => {
+  if (v == null || v === "") return 0;
+  const n = Number(v);
+  return Number.isNaN(n) ? 0 : n;
 };
 
-/** Pure book-once guard; the DB wrapper adds locking and a live SUM. */
+/**
+ * PURE book-once guard: a single QB payment may never be applied to gifts for
+ * more than the payment is worth (plus a caller-supplied fee-band tolerance).
+ * DB-free, so it is exhaustively unit-testable; `applyPaymentApplication` wraps
+ * it with the tx row lock + live SUM read.
+ *
+ * An unknown payment amount can't prove an over-application, so it passes
+ * (mirrors the giftQbTie "can't prove a mismatch ⇒ tied" stance).
+ */
 export function checkBookOnce(args: BookOnceCheckArgs): BookOnceResult {
   const tolerance = args.tolerance ?? BOOK_ONCE_EPSILON;
   const total = toNum(args.otherAppliedSum) + toNum(args.newAmount);
@@ -69,6 +81,8 @@ export function checkBookOnce(args: BookOnceCheckArgs): BookOnceResult {
   return { ok: overage <= 0, total, cap, overage: overage > 0 ? overage : 0 };
 }
 
+/** Thrown by applyPaymentApplication when the live SUM would over-apply a
+ * payment beyond its value + tolerance. */
 export class PaymentOverApplicationError extends Error {
   constructor(
     public readonly paymentId: string,
@@ -84,24 +98,51 @@ export class PaymentOverApplicationError extends Error {
 }
 
 export interface ApplyPaymentApplicationArgs {
-  /** Required for QuickBooks evidence; omitted for Stripe and Donorbox. */
+  /**
+   * The QuickBooks staged_payment anchor. Required when
+   * `evidenceSource === "quickbooks"`; null/omitted for stripe/donorbox rows
+   * (which anchor on `stripeChargeId` / `donorboxDonationId` instead).
+   */
   paymentId?: string | null;
   giftId: string;
+  /**
+   * Optional NARROWING pointer to the specific gift_allocation a reviewer chose
+   * when linking. NULL/undefined = the application is recorded against the whole
+   * gift header (the default). Never affects the book-once / tie math (those stay
+   * per-gift); it only records which allocation the human intended.
+   */
   giftAllocationId?: string | null;
-  /** Counted applications require a positive numeric string. */
+  /** Numeric string ( > 0 ). */
   amountApplied: string;
   evidenceSource: PaymentApplicationEvidenceSource;
   stripeChargeId?: string | null;
   donorboxDonationId?: string | null;
   matchMethod?: PaymentApplicationMatchMethod;
-  linkRole?: PaymentApplicationLinkRole;
-  lifecycle?: PaymentApplicationLifecycle;
   confirmedByUserId?: string | null;
   confirmedAt?: Date | null;
   note?: string | null;
   createdTheGift?: boolean;
-  /** Fee-band headroom for gross-vs-net splits. */
+  /** Fee-band headroom for gross-vs-net splits; defaults to float epsilon. */
   tolerance?: number;
+}
+
+/**
+ * The resolved anchor for a ledger row: which processor row it hangs off, its
+ * cap amount (for the book-once guard), and the ledger column that stores the
+ * anchor id (used for both the live per-anchor SUM and the ON CONFLICT target).
+ */
+interface ResolvedAnchor {
+  id: string;
+  cap: string | null;
+  /** payment_applications column that carries this anchor's id. */
+  ledgerColumn:
+    | typeof paymentApplications.paymentId
+    | typeof paymentApplications.stripeChargeId
+    | typeof paymentApplications.donorboxDonationId;
+  /** ON CONFLICT arbiter (matches the per-anchor partial/plain UNIQUE). */
+  conflictTarget: [SQLColumn, typeof paymentApplications.giftId];
+  /** Partial-index predicate; omitted for the plain quickbooks UNIQUE. */
+  conflictTargetWhere?: SQL;
 }
 
 type SQLColumn =
@@ -109,16 +150,14 @@ type SQLColumn =
   | typeof paymentApplications.stripeChargeId
   | typeof paymentApplications.donorboxDonationId;
 
-type AnchorKind = PaymentApplicationEvidenceSource;
-
-interface ResolvedAnchor {
-  kind: AnchorKind;
-  id: string;
-  cap: string | null;
-  ledgerColumn: SQLColumn;
-  conflictTarget: [SQLColumn, typeof paymentApplications.giftId];
-}
-
+/**
+ * Resolve + lock the anchor for `args`, reading its cap amount FOR UPDATE so
+ * concurrent applications of the SAME anchor serialize. The anchor is chosen by
+ * `evidenceSource`: quickbooks → staged_payments (cap = amount), stripe →
+ * stripe_staged_charges (cap = gross_amount), donorbox → donorbox_donations
+ * (cap = amount). Throws when the required anchor id is missing or the row does
+ * not exist.
+ */
 async function resolveAndLockAnchor(
   tx: Tx,
   args: ApplyPaymentApplicationArgs,
@@ -135,21 +174,22 @@ async function resolveAndLockAnchor(
         .from(stagedPayments)
         .where(eq(stagedPayments.id, args.paymentId))
         .for("update")
-        .then((rows) => rows[0]);
+        .then((r) => r[0]);
       if (!row) {
         throw new Error(
           `applyPaymentApplication: staged payment ${args.paymentId} not found`,
         );
       }
       return {
-        kind: "quickbooks",
         id: args.paymentId,
         cap: row.amount,
         ledgerColumn: paymentApplications.paymentId,
+        // Partial UNIQUE arbiter — must match the counted book-once index predicate.
         conflictTarget: [
           paymentApplications.paymentId,
           paymentApplications.giftId,
         ],
+        conflictTargetWhere: sql`${paymentApplications.linkRole} = 'counted'`,
       };
     }
     case "stripe": {
@@ -163,14 +203,13 @@ async function resolveAndLockAnchor(
         .from(stripeStagedCharges)
         .where(eq(stripeStagedCharges.id, args.stripeChargeId))
         .for("update")
-        .then((rows) => rows[0]);
+        .then((r) => r[0]);
       if (!row) {
         throw new Error(
           `applyPaymentApplication: stripe charge ${args.stripeChargeId} not found`,
         );
       }
       return {
-        kind: "stripe",
         id: args.stripeChargeId,
         cap: row.amount,
         ledgerColumn: paymentApplications.stripeChargeId,
@@ -178,6 +217,7 @@ async function resolveAndLockAnchor(
           paymentApplications.stripeChargeId,
           paymentApplications.giftId,
         ],
+        conflictTargetWhere: sql`${paymentApplications.stripeChargeId} IS NOT NULL AND ${paymentApplications.linkRole} = 'counted'`,
       };
     }
     case "donorbox": {
@@ -191,14 +231,13 @@ async function resolveAndLockAnchor(
         .from(donorboxDonations)
         .where(eq(donorboxDonations.id, args.donorboxDonationId))
         .for("update")
-        .then((rows) => rows[0]);
+        .then((r) => r[0]);
       if (!row) {
         throw new Error(
           `applyPaymentApplication: donorbox donation ${args.donorboxDonationId} not found`,
         );
       }
       return {
-        kind: "donorbox",
         id: args.donorboxDonationId,
         cap: row.amount,
         ledgerColumn: paymentApplications.donorboxDonationId,
@@ -206,76 +245,61 @@ async function resolveAndLockAnchor(
           paymentApplications.donorboxDonationId,
           paymentApplications.giftId,
         ],
+        conflictTargetWhere: sql`${paymentApplications.donorboxDonationId} IS NOT NULL AND ${paymentApplications.linkRole} = 'counted'`,
       };
     }
   }
 }
 
-function conflictTargetWhere(
-  anchor: ResolvedAnchor,
-  linkRole: PaymentApplicationLinkRole,
-): SQL {
-  if (linkRole === "corroborating" && anchor.kind === "donorbox") {
-    throw new Error(
-      "applyPaymentApplication: donorbox corroborating applications are not supported by the current schema",
-    );
-  }
-
-  if (anchor.kind === "quickbooks") {
-    return linkRole === "counted"
-      ? sql`${paymentApplications.linkRole} = 'counted'`
-      : sql`${paymentApplications.paymentId} IS NOT NULL AND ${paymentApplications.linkRole} = 'corroborating'`;
-  }
-
-  if (anchor.kind === "stripe") {
-    return linkRole === "counted"
-      ? sql`${paymentApplications.stripeChargeId} IS NOT NULL AND ${paymentApplications.linkRole} = 'counted'`
-      : sql`${paymentApplications.stripeChargeId} IS NOT NULL AND ${paymentApplications.linkRole} = 'corroborating'`;
-  }
-
-  return sql`${paymentApplications.donorboxDonationId} IS NOT NULL AND ${paymentApplications.linkRole} = 'counted'`;
-}
-
 /**
- * Idempotently writes one unit↔gift application.
+ * Idempotently book a unit↔gift cash-application ledger row (one per
+ * anchor↔gift pair). Caller MUST hold an open transaction.
  *
- * Proposed and exempt rows are deliberately excluded from book-once and settled
- * money. Promotion to confirmed is the moment the capacity guard is applied.
+ *  1. Resolves + locks the anchor FOR UPDATE (staged_payment for quickbooks,
+ *     stripe_staged_charge for stripe, donorbox_donation for donorbox) so
+ *     concurrent applications of the same anchor serialize.
+ *  2. Reads the live SUM(amount_applied) already booked to OTHER gifts against
+ *     THIS anchor (counted rows only).
+ *  3. Runs the pure book-once guard; throws PaymentOverApplicationError on
+ *     over-application.
+ *  4. Upserts the (anchor_id, gift_id) row via the per-anchor UNIQUE key —
+ *     re-runs replace the amount instead of duplicating.
  */
 export async function applyPaymentApplication(
   tx: Tx,
   args: ApplyPaymentApplicationArgs,
 ): Promise<void> {
+  // 1. Resolve + lock the anchor (serializes concurrent applications of it).
   const anchor = await resolveAndLockAnchor(tx, args);
-  const linkRole = args.linkRole ?? "counted";
-  const lifecycle = args.lifecycle ?? "confirmed";
 
-  if (applicationCountsTowardMoney({ linkRole, lifecycle })) {
-    const sumRows = await tx
-      .select({
-        sum: sql<string>`coalesce(sum(${paymentApplications.amountApplied}), 0)`,
-      })
-      .from(paymentApplications)
-      .where(
-        and(
-          eq(anchor.ledgerColumn, anchor.id),
-          ne(paymentApplications.giftId, args.giftId),
-          eq(paymentApplications.linkRole, "counted"),
-          eq(paymentApplications.lifecycle, "confirmed"),
-        ),
-      );
+  // 2. Live SUM already booked to OTHER gifts against THIS anchor (counted).
+  const sumRows = await tx
+    .select({
+      sum: sql<string>`coalesce(sum(${paymentApplications.amountApplied}), 0)`,
+    })
+    .from(paymentApplications)
+    .where(
+      and(
+        eq(anchor.ledgerColumn, anchor.id),
+        ne(paymentApplications.giftId, args.giftId),
+        eq(paymentApplications.linkRole, "counted"),
+      ),
+    );
+  const otherSum = sumRows[0]?.sum ?? "0";
 
-    const result = checkBookOnce({
-      paymentAmount: anchor.cap,
-      otherAppliedSum: sumRows[0]?.sum ?? "0",
-      newAmount: args.amountApplied,
-      tolerance: args.tolerance,
-    });
-    if (!result.ok) throw new PaymentOverApplicationError(anchor.id, result);
-  }
+  // 3. Pure book-once guard.
+  const result = checkBookOnce({
+    paymentAmount: anchor.cap,
+    otherAppliedSum: otherSum,
+    newAmount: args.amountApplied,
+    tolerance: args.tolerance,
+  });
+  if (!result.ok) throw new PaymentOverApplicationError(anchor.id, result);
 
+  // 4. Idempotent upsert (the per-anchor UNIQUE pair is the book-once key).
+  //    link_role / lifecycle keep their column defaults (counted / confirmed)
+  //    for every current caller, so they are intentionally not written here.
   const now = new Date();
-  const isConfirmed = lifecycle === "confirmed";
   const values = {
     paymentId: args.paymentId ?? null,
     giftId: args.giftId,
@@ -285,26 +309,27 @@ export async function applyPaymentApplication(
     stripeChargeId: args.stripeChargeId ?? null,
     donorboxDonationId: args.donorboxDonationId ?? null,
     matchMethod: args.matchMethod ?? ("system" as const),
-    linkRole,
-    lifecycle,
-    confirmedByUserId: isConfirmed ? (args.confirmedByUserId ?? null) : null,
-    confirmedAt: isConfirmed ? (args.confirmedAt ?? null) : null,
+    confirmedByUserId: args.confirmedByUserId ?? null,
+    confirmedAt: args.confirmedAt ?? null,
     note: args.note ?? null,
     createdTheGift: args.createdTheGift ?? false,
     updatedAt: now,
   };
-
   await tx
     .insert(paymentApplications)
     .values({ id: newId(), ...values })
     .onConflictDoUpdate({
       target: anchor.conflictTarget,
-      targetWhere: conflictTargetWhere(anchor, linkRole),
+      targetWhere: anchor.conflictTargetWhere,
       set: values,
     });
 }
 
-/** Remove every ledger row for a gift about to be hard-deleted. */
+/**
+ * Remove every ledger row for a gift about to be hard-deleted (gift_id is
+ * RESTRICT, so the rows must go first). Returns the affected payment ids.
+ * Caller holds the transaction.
+ */
 export async function removePaymentApplicationsForGift(
   tx: Tx,
   giftId: string,
@@ -313,12 +338,18 @@ export async function removePaymentApplicationsForGift(
     .delete(paymentApplications)
     .where(eq(paymentApplications.giftId, giftId))
     .returning({ paymentId: paymentApplications.paymentId });
+  // payment_id is null for stripe/donorbox rows; callers use these ids only to
+  // recompute the QB tie, so drop the non-QB anchors.
   return removed
-    .map((row) => row.paymentId)
-    .filter((paymentId): paymentId is string => paymentId !== null);
+    .map((r) => r.paymentId)
+    .filter((p): p is string => p !== null);
 }
 
-/** Remove every ledger row anchored to a staged QuickBooks payment. */
+/**
+ * Remove every ledger row anchored to a staged payment being reverted to
+ * pending. Returns the affected gift ids (recompute their tie). Caller holds
+ * the transaction.
+ */
 export async function removePaymentApplicationsForPayment(
   tx: Tx,
   paymentId: string,
@@ -327,10 +358,16 @@ export async function removePaymentApplicationsForPayment(
     .delete(paymentApplications)
     .where(eq(paymentApplications.paymentId, paymentId))
     .returning({ giftId: paymentApplications.giftId });
-  return removed.map((row) => row.giftId);
+  return removed.map((r) => r.giftId);
 }
 
-/** Remove every ledger row anchored to a Stripe charge. */
+/**
+ * Remove every ledger row anchored to a Stripe charge (across ALL gifts).
+ * Returns the affected gift ids (recompute their tie). Caller holds the
+ * transaction. Used to make a charge→gift tie idempotent + re-tie-safe:
+ * delete-by-anchor, then re-apply (a charge settles at most one gift, so a
+ * stale row for a previously-tied gift must not linger and double-count).
+ */
 export async function removePaymentApplicationsForStripeCharge(
   tx: Tx,
   stripeChargeId: string,
@@ -339,10 +376,14 @@ export async function removePaymentApplicationsForStripeCharge(
     .delete(paymentApplications)
     .where(eq(paymentApplications.stripeChargeId, stripeChargeId))
     .returning({ giftId: paymentApplications.giftId });
-  return removed.map((row) => row.giftId);
+  return removed.map((r) => r.giftId);
 }
 
-/** Remove every ledger row anchored to a Donorbox donation. */
+/**
+ * Remove every ledger row anchored to a Donorbox donation (across ALL gifts).
+ * Returns the affected gift ids. Caller holds the transaction. Same
+ * delete-by-anchor-then-apply idempotency contract as the Stripe helper.
+ */
 export async function removePaymentApplicationsForDonorboxDonation(
   tx: Tx,
   donorboxDonationId: string,
@@ -351,10 +392,18 @@ export async function removePaymentApplicationsForDonorboxDonation(
     .delete(paymentApplications)
     .where(eq(paymentApplications.donorboxDonationId, donorboxDonationId))
     .returning({ giftId: paymentApplications.giftId });
-  return removed.map((row) => row.giftId);
+  return removed.map((r) => r.giftId);
 }
 
-/** Book or propose a Stripe charge application. */
+/**
+ * Book a Stripe charge → gift cash-application ledger row (evidence_source =
+ * 'stripe', amount = the charge GROSS). Delete-by-anchor first so a re-tie to a
+ * different gift can't leave a stale, double-counting row (the workbench
+ * charge-branch update has no status guard, so an auto-applied `system` row for
+ * an old gift could otherwise collide with the fresh human tie). A non-positive
+ * gross is a clean no-op (mirrors the QB `amount > 0` guard). Caller holds the
+ * transaction.
+ */
 export async function bookStripeChargeApplication(
   tx: Tx,
   args: {
@@ -362,7 +411,6 @@ export async function bookStripeChargeApplication(
     grossAmount: string | null;
     giftId: string;
     matchMethod: PaymentApplicationMatchMethod;
-    lifecycle?: PaymentApplicationLifecycle;
     confirmedByUserId?: string | null;
     confirmedAt?: Date | null;
     createdTheGift: boolean;
@@ -376,33 +424,19 @@ export async function bookStripeChargeApplication(
     giftId: args.giftId,
     amountApplied: args.grossAmount,
     matchMethod: args.matchMethod,
-    lifecycle: args.lifecycle ?? "confirmed",
     confirmedByUserId: args.confirmedByUserId ?? null,
     confirmedAt: args.confirmedAt ?? null,
     createdTheGift: args.createdTheGift,
   });
 }
 
-/** Write a system proposal for a Stripe charge without funding the gift. */
-export async function proposeStripeChargeApplication(
-  tx: Tx,
-  args: {
-    stripeChargeId: string;
-    grossAmount: string | null;
-    giftId: string;
-  },
-): Promise<void> {
-  await bookStripeChargeApplication(tx, {
-    ...args,
-    matchMethod: "system",
-    lifecycle: "proposed",
-    confirmedByUserId: null,
-    confirmedAt: null,
-    createdTheGift: false,
-  });
-}
-
-/** Book a confirmed non-Stripe Donorbox donation application. */
+/**
+ * Book a Donorbox donation → gift cash-application ledger row (evidence_source
+ * = 'donorbox', amount = the donation amount). Same delete-by-anchor-then-apply
+ * idempotency + non-positive-amount no-op as the Stripe helper. Donorbox never
+ * auto-applies, so the caller always passes a human match method. Caller holds
+ * the transaction.
+ */
 export async function bookDonorboxDonationApplication(
   tx: Tx,
   args: {
@@ -425,7 +459,6 @@ export async function bookDonorboxDonationApplication(
     giftId: args.giftId,
     amountApplied: args.amount,
     matchMethod: "human",
-    lifecycle: "confirmed",
     confirmedByUserId: args.confirmedByUserId ?? null,
     confirmedAt: args.confirmedAt ?? null,
     createdTheGift: args.createdTheGift,
@@ -433,10 +466,14 @@ export async function bookDonorboxDonationApplication(
 }
 
 /**
- * Confirm system-proposed applications for one QuickBooks payment.
- *
- * Promotion is guarded against all already-confirmed counted applications. A
- * proposed row therefore consumes no capacity until this function succeeds.
+ * Human confirmation of an auto-applied (`system`) match: promote every
+ * `system` ledger row anchored to this payment to `system_confirmed` and stamp
+ * who/when. No amount or link change, so no book-once re-check is needed. Rows
+ * already `human` or `system_confirmed` are deliberately left untouched (a
+ * confirm only graduates auto-applied rows). A payment with no `system` rows —
+ * e.g. confirming a pending donor match that never minted a gift — is a clean
+ * no-op. Returns the affected gift ids (recompute their tie). Caller holds the
+ * transaction.
  */
 export async function confirmPaymentApplicationsForPayment(
   tx: Tx,
@@ -444,37 +481,9 @@ export async function confirmPaymentApplicationsForPayment(
   confirmedByUserId: string | null,
   confirmedAt: Date,
 ): Promise<string[]> {
-  const staged = await tx
-    .select({ amount: stagedPayments.amount })
-    .from(stagedPayments)
-    .where(eq(stagedPayments.id, paymentId))
-    .for("update")
-    .then((rows) => rows[0]);
-  if (!staged) {
-    throw new Error(
-      `confirmPaymentApplicationsForPayment: staged payment ${paymentId} not found`,
-    );
-  }
-
-  const [sums] = await tx
-    .select({
-      confirmed: sql<string>`coalesce(sum(${paymentApplications.amountApplied}) filter (where ${paymentApplications.linkRole} = 'counted' and ${paymentApplications.lifecycle} = 'confirmed'), 0)`,
-      proposed: sql<string>`coalesce(sum(${paymentApplications.amountApplied}) filter (where ${paymentApplications.linkRole} = 'counted' and ${paymentApplications.lifecycle} = 'proposed' and ${paymentApplications.matchMethod} = 'system'), 0)`,
-    })
-    .from(paymentApplications)
-    .where(eq(paymentApplications.paymentId, paymentId));
-
-  const result = checkBookOnce({
-    paymentAmount: staged.amount,
-    otherAppliedSum: sums?.confirmed ?? "0",
-    newAmount: sums?.proposed ?? "0",
-  });
-  if (!result.ok) throw new PaymentOverApplicationError(paymentId, result);
-
   const updated = await tx
     .update(paymentApplications)
     .set({
-      lifecycle: "confirmed",
       matchMethod: "system_confirmed",
       confirmedByUserId: confirmedByUserId ?? null,
       confirmedAt,
@@ -487,6 +496,247 @@ export async function confirmPaymentApplicationsForPayment(
       ),
     )
     .returning({ giftId: paymentApplications.giftId });
+  return updated.map((r) => r.giftId);
+}
 
-  return [...new Set(updated.map((row) => row.giftId))];
+// ─── Read helpers — the authoritative QuickBooks cash-application ledger ─────
+//
+// These build correlated-subquery SQL chunks that read a gift's QuickBooks ledger
+// rows (evidence_source = 'quickbooks'). They are the single source the T003 read
+// cutover flips every QB-link / QB-amount surface onto.
+//
+// LINK-ROLE FILTER: every reader also constrains `link_role = 'counted'`. Today
+// this is a no-op — the applier and every backfill leave `link_role` at its
+// 'counted' default, so all rows qualify. It is here to fence off the future
+// Phase-5 corroborating fold: when non-counting evidence rows (e.g. a Stripe
+// charge corroborating a QB-settled gift) start landing with `link_role =
+// 'corroborating'`, these QB-tie/link readers must keep counting the settling
+// row ONCE and never double-count the corroborating one.
+//
+// CRITICAL CORRELATION RULE: the gift-id correlation is passed in as a *literal*
+// SQL expression, never as an interpolated drizzle Column. Interpolating a Column
+// (`${giftsAndPayments.id}`) into a `sql` template renders the BARE, UNQUALIFIED
+// name (`"id"`), which inside a correlated subquery silently binds to the INNER
+// table's own `id` (inner scope wins, no ambiguity error) and returns wrong
+// results. See `.agents/memory/drizzle-sql-template-bare-column.md`. By taking a
+// pre-qualified expression we keep the correlation explicit and always correct.
+//
+// The default targets an UN-ALIASED `.from(giftsAndPayments)` query: drizzle names
+// such a relation by its table name and qualifies columns as
+// `"gifts_and_payments"."id"`, so the default correlates correctly there. Raw-SQL
+// or aliased callers pass their own alias, e.g. `sql.raw("g.id")`.
+export const DEFAULT_GIFT_ID_SQL: SQL = sql.raw('"gifts_and_payments"."id"');
+
+/** EXISTS a QuickBooks cash-application ledger row for the gift. */
+export function qbLedgerExistsForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+  )`;
+}
+
+/** SUM(amount_applied) of the gift's QuickBooks ledger rows, as text ('0' none). */
+export function qbLedgerSumForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<string> {
+  return sql<string>`(
+    SELECT COALESCE(SUM(pa.amount_applied), 0)::text
+    FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+  )`;
+}
+
+// ─── Per-source counted readers (source-agnostic gift-tie derivation) ────────
+//
+// Identical in shape to the QuickBooks readers above, one per non-QB evidence
+// source, each constrained to `link_role = 'counted'`. `applyGiftQbTieMany`
+// combines the three by PER-SOURCE PRECEDENCE (QB sum wins, else Stripe, else
+// Donorbox) — deliberately NOT a cross-source SUM. A gift settled by BOTH a
+// coarse QB deposit line AND its per-charge Stripe rows carries a counted row of
+// EACH source (migration 0086 does not, and must not, dedupe across sources);
+// summing them would double-count the gift (~2× ⇒ false amount_mismatch, §4.3).
+// Precedence counts exactly one source. The pure all-source SUM is deferred to
+// Phase 4, when settlement_links reclassifies the coarse QB row to
+// link_role='corroborating'. Same bare-column footgun rule — pass a
+// pre-qualified gift-id expression.
+
+/** EXISTS a Stripe counted cash-application ledger row for the gift. */
+export function stripeLedgerExistsForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+  )`;
+}
+
+/** SUM(amount_applied) of the gift's Stripe counted ledger rows, as text. */
+export function stripeLedgerSumForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<string> {
+  return sql<string>`(
+    SELECT COALESCE(SUM(pa.amount_applied), 0)::text
+    FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+  )`;
+}
+
+/** EXISTS a Donorbox counted cash-application ledger row for the gift. */
+export function donorboxLedgerExistsForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox' AND pa.link_role = 'counted'
+  )`;
+}
+
+/** SUM(amount_applied) of the gift's Donorbox counted ledger rows, as text. */
+export function donorboxLedgerSumForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<string> {
+  return sql<string>`(
+    SELECT COALESCE(SUM(pa.amount_applied), 0)::text
+    FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox' AND pa.link_role = 'counted'
+  )`;
+}
+
+/**
+ * One staged-payment id linked to the gift via the QuickBooks ledger (LIMIT 1),
+ * or null. Preserves the meaning of the legacy `quickbooks_staged_payment_id`
+ * surface (a staged_payments.id reconciled to / that created the gift), now
+ * sourced from the ledger's anchoring `payment_id`.
+ */
+export function qbLedgerPaymentIdForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT pa.payment_id FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+    LIMIT 1
+  )`;
+}
+
+// ─── Payment-excluding variants (reconciliation "linked-elsewhere" guards) ───
+//
+// The candidate/proposal queries ask a subtly different question than the
+// gift-detail surfaces above: "is this gift QB-linked to some staged payment
+// OTHER than the one I am currently resolving?" These model that by excluding the
+// current payment id. Both correlations are passed as PRE-QUALIFIED SQL exprs —
+// the same bare-column footgun rule as the helpers above
+// (`.agents/memory/drizzle-sql-template-bare-column.md`). The excluded payment id
+// is whatever the caller already uses for the outer staged row (a qualified
+// column like `"staged_payments"."id"`, or a bound string param).
+//
+// NOTE the deliberate behavior change vs. the legacy guards: the ledger row set
+// INCLUDES group-reconciled applications, which the legacy direct+split guards
+// omitted. A group-reconciled gift is already QB-applied, so it correctly stops
+// being offered as a free/unlinked candidate. The reconciliation-guards parity
+// gate proves the ledger never DROPS a payment the legacy guard counted and that
+// every added linker is a group-reconciled one.
+
+/**
+ * EXISTS a QuickBooks ledger row tying the gift to a staged payment OTHER than
+ * the excluded one. Ledger replacement for the legacy "linked to another staged
+ * payment (matched/created/split)" guard.
+ */
+export function qbLedgerExistsForGiftExcludingPayment(
+  giftIdSql: SQL,
+  excludePaymentIdSql: SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql}
+      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+      AND pa.payment_id <> ${excludePaymentIdSql}
+  )`;
+}
+
+/**
+ * One staged-payment id (other than the excluded one) tied to the gift via the
+ * QuickBooks ledger, or null. Ledger replacement for the legacy
+ * `alreadyLinkedStagedPaymentId` candidate-gift surface.
+ */
+export function qbLedgerPaymentIdForGiftExcludingPayment(
+  giftIdSql: SQL,
+  excludePaymentIdSql: SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT pa.payment_id FROM payment_applications pa
+    WHERE pa.gift_id = ${giftIdSql}
+      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+      AND pa.payment_id <> ${excludePaymentIdSql}
+    LIMIT 1
+  )`;
+}
+
+/**
+ * One Stripe charge id (other than the excluded one) that already owns the gift
+ * as permanent reconciled EVIDENCE — either it created the gift (auto-mint,
+ * `created_gift_id`) or it is matched to it (`matched_gift_id`) — or null.
+ *
+ * The Stripe-charge-anchor analogue of `qbLedgerPaymentIdForGiftExcludingPayment`.
+ * When a Stripe charge is the search anchor, a gift's QuickBooks cash-application
+ * is EXPECTED (the same money reaches the ledger at the deposit/payout level —
+ * QB and Stripe are parallel evidence for one gift) and must NOT disable the
+ * match. Only ANOTHER charge already owning the gift is a genuine double-book,
+ * so this looks at `stripe_staged_charges`, never the QB ledger. Mirrors the
+ * settlement-bundle proposal's charge-links "linked elsewhere" guard. Same
+ * bare-column footgun rule for the correlation — pass a pre-qualified gift id.
+ */
+export function chargeIdOwningGiftExcludingCharge(
+  giftIdSql: SQL,
+  excludeChargeIdSql: SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT c.id FROM stripe_staged_charges c
+    WHERE (c.matched_gift_id = ${giftIdSql} OR c.created_gift_id = ${giftIdSql})
+      AND c.id <> ${excludeChargeIdSql}
+    LIMIT 1
+  )`;
+}
+
+// ─── Payment-side helper — "is this staged payment already applied?" ─────────
+//
+// The inverse of the gift-side helpers: given a staged QuickBooks payment, is it
+// already applied to a CRM gift? Used by the unlinked-staged worklists (e.g.
+// financialCorrections.loadUnlinkedQbStaged) that previously asked it as
+// "matched/created/group all null AND no split". Same bare-column footgun rule —
+// the default targets an UN-ALIASED `.from(stagedPayments)` query (drizzle
+// qualifies as `"staged_payments"."id"`); aliased/raw callers pass their own
+// qualified expression. See `.agents/memory/drizzle-sql-template-bare-column.md`.
+export const DEFAULT_PAYMENT_ID_SQL: SQL = sql.raw('"staged_payments"."id"');
+
+/**
+ * One gift id (other than the excluded one) the staged payment is already
+ * applied to via the QuickBooks ledger, or null. The payment-side inverse of
+ * `qbLedgerPaymentIdForGiftExcludingPayment`: given the ANCHOR payment of a
+ * re-target, find the gift its money is presently counted against — the very
+ * row that would trip `applyPaymentApplication`'s book-once guard. Both args
+ * are bound params at every call site (no bare-column footgun).
+ */
+export function qbLedgerGiftIdForPaymentExcludingGift(
+  paymentIdSql: SQL,
+  excludeGiftIdSql: SQL,
+): SQL<string | null> {
+  return sql<string | null>`(
+    SELECT pa.gift_id FROM payment_applications pa
+    WHERE pa.payment_id = ${paymentIdSql}
+      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+      AND pa.gift_id <> ${excludeGiftIdSql}
+    LIMIT 1
+  )`;
+}
+
+/** EXISTS a QuickBooks cash-application ledger row anchored to the staged payment. */
+export function qbLedgerExistsForPayment(
+  paymentIdSql: SQL = DEFAULT_PAYMENT_ID_SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.payment_id = ${paymentIdSql} AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+  )`;
 }
