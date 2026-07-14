@@ -116,6 +116,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { DerivedRow } from "@/components/derived-row";
 
@@ -162,6 +170,9 @@ function OppView({
   const [writeOffOpen, setWriteOffOpen] = useState(false);
   const [flagResearchOpen, setFlagResearchOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  // Non-null while the "mark dormant/lost" close-date prompt is open.
+  const [closingLossType, setClosingLossType] = useState<OpportunityLossType | null>(null);
+  const [closeDateValue, setCloseDateValue] = useState("");
 
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(opp.name ?? "");
@@ -510,19 +521,91 @@ function OppView({
         onOpenChange={setArchiveOpen}
         confirmTestId="button-confirm-archive-opp"
       />
+      {/*
+        Close-date prompt: newly marking a row dormant/lost requires an
+        actualCompletionDate (API rejects the close transition without one).
+        Defaults to today but stays editable — no more silent defaulting.
+      */}
+      <Dialog
+        open={closingLossType !== null}
+        onOpenChange={(open) => {
+          if (!open) setClosingLossType(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              Mark as {closingLossType === "dormant" ? "dormant" : "lost"}?
+            </DialogTitle>
+            <DialogDescription>
+              Closing this {entityLabel.toLowerCase()} requires an actual
+              completion date.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <label
+              htmlFor="close-date-input"
+              className="text-sm font-medium"
+            >
+              Actual completion date
+            </label>
+            <Input
+              id="close-date-input"
+              type="date"
+              value={closeDateValue}
+              onChange={(e) => setCloseDateValue(e.target.value)}
+              data-testid="input-close-date"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setClosingLossType(null)}
+              data-testid="button-cancel-close-date"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!closeDateValue || update.isPending}
+              onClick={async () => {
+                if (!closingLossType || !closeDateValue) return;
+                await patch({
+                  lossType: closingLossType,
+                  actualCompletionDate: closeDateValue,
+                });
+                setClosingLossType(null);
+              }}
+              data-testid="button-confirm-close-date"
+            >
+              {update.isPending
+                ? "Saving…"
+                : closingLossType === "dormant"
+                  ? "Mark as dormant"
+                  : "Mark as lost"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 
   // `status` is fully calculated server-side; the only thing the user can
-  // set is the lossType override (dormant/lost). Convenience: when marking
-  // a single opp dormant/lost with no completion date yet, default to today
-  // so the user doesn't have to set it manually. (The bulk-edit path
-  // intentionally does NOT do this.)
+  // set is the lossType override (dormant/lost). Newly closing a row (the
+  // API rejects a close transition without a completion date) prompts for
+  // the actual completion date — defaulted to today, but visible and
+  // editable so the user confirms rather than getting a silent default.
+  // Rows that already carry a date (or are being re-closed) skip the prompt.
   const saveLossType = (next: OpportunityLossType | null) => {
-    const body: UpdateOpportunityOrPledgeBody = { lossType: next };
-    if (next && !opp.actualCompletionDate) {
-      body.actualCompletionDate = new Date().toISOString().slice(0, 10);
+    // Prompt only on a true close TRANSITION (mirrors the API rule):
+    // already-closed rows — lossType set, or legacy stage 'complete' —
+    // and rows that already carry a date save directly.
+    const alreadyClosed = !!opp.lossType || opp.stage === "complete";
+    if (next && !opp.actualCompletionDate && !alreadyClosed) {
+      setCloseDateValue(new Date().toISOString().slice(0, 10));
+      setClosingLossType(next);
+      return Promise.resolve();
     }
+    const body: UpdateOpportunityOrPledgeBody = { lossType: next };
     return patch(body);
   };
 

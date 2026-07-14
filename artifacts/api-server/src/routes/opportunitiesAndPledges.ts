@@ -96,6 +96,8 @@ import {
   WriteOffPledgeBody,
   MintGiftFromOpportunityBody,
   validateOppInvariants,
+  validateOppCloseTransition,
+  legacyCategoryToLoanOrGrant,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { copyPledgeAllocationsToGift } from "../lib/reconciliationCommit";
@@ -450,20 +452,37 @@ router.post(
         "intendedUsage",
         "fundableProjectId",
       ],
-      // Donor xor is preserved (no donor fields in this patch). The
-      // closed_requires_completion_date CHECK was dropped from the DB
-      // schema (see opportunitiesAndPledges.ts) so won/lost no longer
-      // requires actualCompletionDate. We still run the donor-xor
-      // invariant against the merged post-update state.
+      // Donor xor is preserved (no donor fields in this patch) but is still
+      // validated against the merged post-update state. The old
+      // closed_requires_completion_date DB CHECK stays dropped (legacy closed
+      // rows lack dates); its replacement is the per-row close-TRANSITION
+      // check below — a row NEWLY closed by this bulk patch (lossType set, or
+      // stage → complete) must end up with an actualCompletionDate, while
+      // already-closed rows pass untouched.
       validateRow: (existing, patch) => {
-        const merged = { ...existing, ...patch } as Record<string, unknown>;
-        const issues = validateOppInvariants({
-          organizationId: merged.organizationId as string | null | undefined,
-          individualGiverPersonId: merged.individualGiverPersonId as string | null | undefined,
-          householdId: merged.householdId as string | null | undefined,
-          status: merged.status as string | null | undefined,
-          actualCompletionDate: merged.actualCompletionDate as string | Date | null | undefined,
-        });
+        const ex = existing as Record<string, unknown>;
+        const merged = { ...ex, ...patch } as Record<string, unknown>;
+        const issues = [
+          ...validateOppInvariants({
+            organizationId: merged.organizationId as string | null | undefined,
+            individualGiverPersonId: merged.individualGiverPersonId as string | null | undefined,
+            householdId: merged.householdId as string | null | undefined,
+            status: merged.status as string | null | undefined,
+            actualCompletionDate: merged.actualCompletionDate as string | Date | null | undefined,
+          }),
+          ...validateOppCloseTransition(
+            {
+              lossType: ex.lossType as string | null | undefined,
+              stage: ex.stage as string | null | undefined,
+              actualCompletionDate: ex.actualCompletionDate as string | Date | null | undefined,
+            },
+            patch as {
+              lossType?: string | null;
+              stage?: string | null;
+              actualCompletionDate?: string | Date | null;
+            },
+          ),
+        ];
         return issues.length ? issues.map((i) => i.message).join("; ") : null;
       },
       // After a successful bulk write, recompute derived fields per row
@@ -1004,6 +1023,13 @@ router.patch(
       actualCompletionDate: merged.actualCompletionDate,
     });
     if (issues.length) return respondInvariantFailure(res, issues);
+
+    // Close-transition rule: a PATCH that NEWLY closes this row (sets lossType
+    // dormant/lost, or stage → complete) must leave it with an
+    // actualCompletionDate. Already-closed rows (incl. legacy no-date rows)
+    // are never blocked — the rule fires only on the transition itself.
+    const closeIssues = validateOppCloseTransition(existing, body);
+    if (closeIssues.length) return respondInvariantFailure(res, closeIssues);
 
     // Freeze guard: block edits to a pledge whose governing FY is audit-closed,
     // and block moving actual_completion_date into a closed FY.

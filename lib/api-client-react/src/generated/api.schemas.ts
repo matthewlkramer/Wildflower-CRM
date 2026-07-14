@@ -348,6 +348,10 @@ export const OpportunityStatus = {
 calculated funnel. Null while open/pledge/cash_in; set to 'dormant'
 (paused) or 'lost' (declined/withdrawn). The only user-settable half
 of the old status overload — when set, `status` mirrors it.
+NEWLY setting this (closing the row) requires an actualCompletionDate
+(pre-existing on the row or supplied in the same request) → 400
+otherwise. Rows that are already closed (incl. legacy no-date rows)
+stay freely editable — the rule fires only on the close transition.
 
  */
 export type OpportunityLossType = typeof OpportunityLossType[keyof typeof OpportunityLossType];
@@ -7506,7 +7510,7 @@ export interface BulkUpdateOpportunitiesPatch {
   stage?: OpportunityStage | null;
   type?: OpportunityType | null;
   writtenPledge?: boolean | null;
-  /** Optional close date when bulk-setting lossType to lost (or stage to cash_in). Left null is allowed to support historical cleanup workflows. */
+  /** Close date applied to each row. REQUIRED (in the patch or already on the row) for any row this bulk patch NEWLY closes (lossType set, or stage → complete) — such rows fail per-row validation without it. Rows already closed (incl. legacy no-date rows) are exempt. */
   actualCompletionDate?: string | null;
   /** Projected close date on each opportunity. */
   projectedCloseDate?: string | null;

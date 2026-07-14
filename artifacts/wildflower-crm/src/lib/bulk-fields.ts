@@ -252,7 +252,11 @@ export const OPPORTUNITIES_BULK_FIELDS: ReadonlyArray<BulkField> = [
   {
     // `status` is fully calculated server-side; the only settable override
     // is `lossType` (clear it via — None — to return the row to the
-    // calculated funnel).
+    // calculated funnel). Setting it CLOSES rows, and the API requires an
+    // actualCompletionDate on any row newly closed — so picking a value
+    // auto-enables the date field below (defaulted to today, editable) and
+    // the date is required at submit. Rows already closed are exempt
+    // server-side.
     kind: "enum",
     key: "lossType",
     label: "Loss type",
@@ -261,6 +265,7 @@ export const OPPORTUNITIES_BULK_FIELDS: ReadonlyArray<BulkField> = [
       { value: "lost", label: "Lost", destructive: true },
       { value: "dormant", label: "Dormant", destructive: true },
     ],
+    requiresDate: { key: "actualCompletionDate", label: "Actual completion date" },
   },
   {
     kind: "enum",

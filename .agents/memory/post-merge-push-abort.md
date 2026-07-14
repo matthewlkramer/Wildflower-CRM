@@ -43,6 +43,16 @@ the column auto-removes its dependent index + FK; drop the now-unused enum too
 (active_or_defunct/type/parent_org_id) + `organization_type` enum were retired
 this way (dev applied; prod pending human psql apply).
 
+**Upstream-intended drops are the exception:** when the drop comes IN from a
+rebase onto main (upstream deliberately retired the table/columns and main's own
+dev DB already dropped them), do NOT re-declare the columns — converge instead.
+Capture the full pending statement list (`drizzle-kit push --verbose </dev/null`
+prints all statements then auto-aborts), verify there are no renames and note
+which statements are additive vs. destructive, then apply. If nothing additive
+was skipped and the destructive set is exactly upstream's retirement, a reviewed
+`push --force` is acceptable (the never-force rule targets RENAME prompts and
+un-reviewed drops of live data, not converging on upstream's own schema).
+
 **Publish note:** Publish diffs dev-DB vs prod-DB (not schema-vs-DB). As long as
 both DBs carry the same columns, Publish proposes no drop — the data-loss warnings
 in post-merge logs are dev-push-only and do not surface at Publish.

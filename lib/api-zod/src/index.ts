@@ -16,9 +16,12 @@ import {
  * These mirror DB CHECK constraints so the API can return 400 instead of 500:
  *   - donor_xor: exactly one of funderId / individualGiverPersonId / householdId
  *
- * (Previously also enforced `closed_requires_completion_date` — that DB CHECK
- * and the matching invariant were dropped to support data-cleanup workflows
- * where historical opps are bulk-marked won/lost without a known close date.)
+ * (The old `closed_requires_completion_date` DB CHECK was dropped to support
+ * data-cleanup workflows where historical opps are bulk-marked won/lost without
+ * a known close date — 244 legacy closed rows have no date and must stay
+ * editable. The rule lives on as an API-level TRANSITION check instead:
+ * `validateOppCloseTransition` below fires only when a request NEWLY closes a
+ * row, never on edits to already-closed rows.)
  *
  * For PATCH routes, callers must validate the MERGED post-update state
  * (`{ ...existingRow, ...body }`), not the body alone — a partial PATCH can
@@ -66,6 +69,71 @@ export function validateOppInvariants(
   return issues;
 }
 
+// ── Close-transition rule (API-level replacement for the dropped
+// `closed_requires_completion_date` DB CHECK) ────────────────────────────────
+// Closing an opportunity = setting `lossType` (dormant/lost) or moving `stage`
+// to 'complete'. A request that NEWLY closes a row must leave it with an
+// actualCompletionDate (pre-existing on the row or supplied in the same
+// request). Already-closed rows (incl. the 244 legacy no-date rows) are never
+// blocked: renames, re-closes (dormant↔lost), and reopens all pass.
+
+export const CLOSE_REQUIRES_COMPLETION_DATE_MESSAGE =
+  "Closing an opportunity requires an actual completion date — provide actualCompletionDate in the same request (or set it on the record first).";
+
+export interface OppCloseTransitionState {
+  lossType?: string | null;
+  stage?: string | null;
+  actualCompletionDate?: string | Date | null;
+}
+
+function isClosed(s: OppCloseTransitionState): boolean {
+  return (
+    s.lossType === "dormant" ||
+    s.lossType === "lost" ||
+    s.stage === "complete"
+  );
+}
+
+function hasDate(d: string | Date | null | undefined): boolean {
+  if (d == null) return false;
+  return !(typeof d === "string" && d.trim() === "");
+}
+
+/**
+ * Validate a close TRANSITION. `existing` is the current row state (pass `{}`
+ * for CREATE — nothing exists yet, so any closing value in the body is a new
+ * close). `patch` is the request body; a field left out of the patch
+ * (undefined) means "unchanged".
+ */
+export function validateOppCloseTransition(
+  existing: OppCloseTransitionState,
+  patch: OppCloseTransitionState,
+): InvariantIssue[] {
+  // The request must itself set a closing value — merged-state closes caused
+  // purely by pre-existing fields are not a transition.
+  const requestCloses =
+    patch.lossType === "dormant" ||
+    patch.lossType === "lost" ||
+    patch.stage === "complete";
+  if (!requestCloses) return [];
+  // Already-closed rows are grandfathered: edits (incl. switching
+  // dormant↔lost on a legacy no-date row) never force a date.
+  if (isClosed(existing)) return [];
+  const mergedDate =
+    patch.actualCompletionDate !== undefined
+      ? patch.actualCompletionDate
+      : existing.actualCompletionDate;
+  if (!hasDate(mergedDate)) {
+    return [
+      {
+        path: "actualCompletionDate",
+        message: CLOSE_REQUIRES_COMPLETION_DATE_MESSAGE,
+      },
+    ];
+  }
+  return [];
+}
+
 export function validateGiftInvariants(state: DonorState): InvariantIssue[] {
   const issues: InvariantIssue[] = [];
   if (donorCount(state) !== 1) {
@@ -97,6 +165,8 @@ export const CreateOpportunityOrPledgeBodyRefined =
   CreateOpportunityOrPledgeBody.superRefine(
     (b: z.infer<typeof CreateOpportunityOrPledgeBody>, ctx) => {
       issuesToZodCtx(validateOppInvariants(b), ctx);
+      // A row created already-closed must carry its completion date up front.
+      issuesToZodCtx(validateOppCloseTransition({}, b), ctx);
     },
   );
 

@@ -153,7 +153,12 @@ in older notes is stale.
     `match_id` self-references the original opp a matching-gift row matches. `owner_user_id`,
     `primary_contact_person_id` (frozen historical attribution), `copper_pledge_id`.
   - The old `closed_requires_completion_date` CHECK has been **dropped** (it blocked
-    bulk historical cleanup). NOTE: I THINK WE SHOULD REINSTATE THIS.
+    bulk historical cleanup — ~244 legacy closed rows have no date and must stay
+    editable). The rule now lives at the **API layer as a close-transition check**
+    (`validateOppCloseTransition` in `@workspace/api-zod`, wired into create /
+    PATCH / bulk-update): a request that *newly* closes a row (`loss_type` set, or
+    `stage` → `complete`) must leave it with an `actual_completion_date`; edits to
+    already-closed rows are never blocked. Do not reinstate the DB CHECK.
 
 - `pledge_allocations` — line items within an opportunity/pledge. All per-row scope
   (entity, fiscal year `grant_year`, `region_ids text[]`, `intended_usage`,

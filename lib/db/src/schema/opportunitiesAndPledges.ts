@@ -252,6 +252,12 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   // support data-cleanup workflows where the user is marking historical
   // opps as won/lost in bulk and a real close date isn't always known
   // (and inventing one — e.g. today — would be worse than null).
+  // The rule is now enforced at the API layer as a TRANSITION check
+  // (`validateOppCloseTransition` in @workspace/api-zod): a request that
+  // NEWLY closes a row (lossType set, or stage → complete) must supply/have
+  // an actualCompletionDate, while the ~244 legacy closed rows without dates
+  // stay fully editable. Do NOT reinstate the blind CHECK — it would reject
+  // any edit to those legacy rows.
 ]);
 
 export type OpportunityOrPledge = typeof opportunitiesAndPledges.$inferSelect;

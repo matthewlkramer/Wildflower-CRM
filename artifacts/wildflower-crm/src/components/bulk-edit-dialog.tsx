@@ -219,6 +219,13 @@ export type BulkField =
       label: string;
       nullable?: boolean;
       options: ReadonlyArray<{ value: string; label: string; destructive?: boolean }>;
+      /**
+       * When set, picking a non-clear value auto-enables the referenced
+       * date field (defaulted to today) and requires it in the assembled
+       * patch — used for close transitions (lossType/stage) where the API
+       * rejects rows newly closed without an actualCompletionDate.
+       */
+      requiresDate?: { key: string; label: string };
     }
   | {
       // Intended-usage enum coupled with a fundable-project picker that
@@ -543,6 +550,21 @@ export function BulkEditDialog({
     if (Object.keys(patch).length === 0) {
       return { error: "Tick at least one field to update." };
     }
+
+    // Close-transition guard: an enum with `requiresDate` (e.g. lossType)
+    // set to a real value needs its companion date in the same patch —
+    // rows being newly closed would otherwise fail per-row validation.
+    for (const f of fields) {
+      if (f.kind !== "enum" || !f.requiresDate) continue;
+      const v = patch[f.key];
+      if (v === undefined || v === null) continue;
+      const dateVal = patch[f.requiresDate.key];
+      if (dateVal === undefined || dateVal === null || dateVal === "") {
+        return {
+          error: `${f.requiresDate.label} is required when setting ${f.label} — records being newly closed need a completion date.`,
+        };
+      }
+    }
     return { patch, reasons };
   }
 
@@ -651,7 +673,21 @@ export function BulkEditDialog({
         control = (
           <Select
             value={d.value || undefined}
-            onValueChange={(v) => patchDraft(f.key, { value: v })}
+            onValueChange={(v) => {
+              patchDraft(f.key, { value: v });
+              // Closing values require a completion date on newly-closed
+              // rows — pre-fill the companion date field with today so the
+              // user sees (and can adjust) it instead of a per-row 400.
+              if (f.requiresDate && v !== NULL_SENTINEL) {
+                const dd = drafts[f.requiresDate.key];
+                if (!dd?.enabled || !dd.value || dd.value === NULL_SENTINEL) {
+                  patchDraft(f.requiresDate.key, {
+                    enabled: true,
+                    value: new Date().toISOString().slice(0, 10),
+                  });
+                }
+              }
+            }}
             disabled={!d.enabled}
           >
             <SelectTrigger
