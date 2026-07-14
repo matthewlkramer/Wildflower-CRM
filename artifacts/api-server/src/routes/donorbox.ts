@@ -10,16 +10,16 @@ import {
   paymentIntermediaries,
   giftsAndPayments,
   stagedPayments,
+  paymentApplications,
 } from "@workspace/db/schema";
 import {
   and,
-  asc,
   count,
   desc,
   eq,
+  getTableColumns,
   ilike,
   isNull,
-  isNotNull,
   ne,
   or,
   sql,
@@ -38,7 +38,15 @@ import {
   assertGiftHasAllocations,
 } from "../lib/giftAllocationSeed";
 import { getAppUser } from "../lib/appRequest";
-import { donorboxEmittedStatus } from "../lib/derivedStatus";
+import {
+  donorboxStatusSql,
+  donorboxStatusWhere,
+  type DerivedStatus,
+} from "../lib/derivedStatus";
+import {
+  donorboxDonationActiveGiftIdSql,
+  getDonorboxDonationGiftRelationship,
+} from "../lib/donorboxDonationLedger";
 import { logger } from "../lib/logger";
 import { syncDonorbox } from "../lib/donorboxSync";
 import { isDonorboxConfigured } from "../lib/donorboxClient";
@@ -59,12 +67,6 @@ import { bookDonorboxDonationApplication } from "../lib/paymentApplications";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { giftHeaderColumns } from "./giftsAndPayments";
 
-/**
- * Donorbox sync controls + (later) the new-money review queue and enrichment
- * surfaces. Donorbox is a pull-only source: Stripe-type donations enrich the
- * existing Stripe-sourced records (never mint), and non-Stripe donations become
- * human-reviewed new-money candidates. Sync triggers are admin-gated.
- */
 const router: IRouter = Router();
 router.use(requireAuth);
 
@@ -77,10 +79,6 @@ function requireAdmin(req: Request, res: Response): boolean {
   return true;
 }
 
-// ─── POST /donorbox/sync ───────────────────────────────────────────────────
-// On-demand pull. `fullResync: true` ignores the watermark and re-walks the full
-// history, refreshing read-only facts even on already-resolved rows (review
-// state is always preserved).
 router.post(
   "/donorbox/sync",
   asyncHandler(async (req, res) => {
@@ -97,19 +95,17 @@ router.post(
       typeof req.body === "object" &&
       (req.body as { fullResync?: unknown }).fullResync === true;
     try {
-      const summary = await syncDonorbox({ fullResync });
-      res.json(summary);
-    } catch (e) {
-      logger.error({ err: e }, "Donorbox manual sync failed");
+      res.json(await syncDonorbox({ fullResync }));
+    } catch (error) {
+      logger.error({ err: error }, "Donorbox manual sync failed");
       res.status(502).json({
         error: "sync_failed",
-        message: e instanceof Error ? e.message : "Donorbox sync failed",
+        message: error instanceof Error ? error.message : "Donorbox sync failed",
       });
     }
   }),
 );
 
-// ─── GET /donorbox/sync-status ─────────────────────────────────────────────
 router.get(
   "/donorbox/sync-status",
   asyncHandler(async (req, res) => {
@@ -118,7 +114,7 @@ router.get(
       .select()
       .from(donorboxSyncState)
       .where(eq(donorboxSyncState.id, DONORBOX_SYNC_STATE_ID))
-      .then((r) => r[0] ?? null);
+      .then((rows) => rows[0] ?? null);
     res.json({
       configured: isDonorboxConfigured(),
       donationCursor: state?.donationCursor ?? null,
@@ -132,15 +128,6 @@ router.get(
   }),
 );
 
-// ─── New-money review queue (non-Stripe Donorbox donations) ────────────────
-//
-// Only non-Stripe Donorbox donations are "new money": Stripe-type donations are
-// already pulled by the Stripe sync (minting here would double-count), so they
-// only ENRICH the existing Stripe record and never appear in this worklist.
-// `donation_type IS DISTINCT FROM 'stripe'` (NULL counts as non-Stripe) AND
-// `stripe_charge_id IS NULL` is the new-money predicate (the stripeChargeId
-// guard is belt-and-suspenders so an enrichment-capable row can never surface
-// here).
 const newMoneyWhere = and(
   sql`${donorboxDonations.donationType} IS DISTINCT FROM 'stripe'`,
   isNull(donorboxDonations.stripeChargeId),
@@ -151,29 +138,26 @@ type ReviewQueue = "needs_review" | "done" | "excluded";
 function reviewQueueWhere(queue: ReviewQueue) {
   switch (queue) {
     case "done":
-      // Settled: linked to a pre-existing gift (reconciled) or minted a new one
-      // (approved).
-      return or(
-        eq(donorboxDonations.status, "approved"),
-        eq(donorboxDonations.status, "reconciled"),
-      );
+      return donorboxStatusWhere.match_confirmed;
     case "excluded":
-      return eq(donorboxDonations.status, "excluded");
+      return donorboxStatusWhere.excluded;
     case "needs_review":
     default:
-      return eq(donorboxDonations.status, "pending");
+      return or(
+        donorboxStatusWhere.pending,
+        donorboxStatusWhere.match_proposed,
+      );
   }
 }
 
-function queueForStatus(status: string): ReviewQueue {
+function queueForStatus(status: DerivedStatus): ReviewQueue {
   if (status === "excluded") return "excluded";
-  if (status === "approved" || status === "reconciled") return "done";
+  if (status === "match_confirmed") return "done";
   return "needs_review";
 }
 
-// Escape LIKE/ILIKE wildcards so "%"/"_" search for those literal characters.
-function escapeLike(s: string): string {
-  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
 function reviewSearchWhere(term: string) {
@@ -187,44 +171,15 @@ function reviewSearchWhere(term: string) {
   );
 }
 
-// One-to-one gift link (matched OR created) joined for display.
 const linkedGift = alias(giftsAndPayments, "donorbox_linked_gift");
+const activeGiftId = donorboxDonationActiveGiftIdSql(
+  sql`${donorboxDonations.id}`,
+);
+const { raw: _raw, ...donationColumns } = getTableColumns(donorboxDonations);
 
 const reviewSelect = {
-  id: donorboxDonations.id,
-  donationType: donorboxDonations.donationType,
-  paypalTransactionId: donorboxDonations.paypalTransactionId,
-  amount: donorboxDonations.amount,
-  amountRefunded: donorboxDonations.amountRefunded,
-  processingFee: donorboxDonations.processingFee,
-  currency: donorboxDonations.currency,
-  donationStatus: donorboxDonations.donationStatus,
-  refunded: donorboxDonations.refunded,
-  recurring: donorboxDonations.recurring,
-  donatedAt: donorboxDonations.donatedAt,
-  dateReceived: donorboxDonations.dateReceived,
-  campaignName: donorboxDonations.campaignName,
-  designation: donorboxDonations.designation,
-  comment: donorboxDonations.comment,
-  anonymous: donorboxDonations.anonymous,
-  donorName: donorboxDonations.donorName,
-  donorEmail: donorboxDonations.donorEmail,
-  donorEmployer: donorboxDonations.donorEmployer,
-  status: donorboxDonations.status,
-  exclusionReason: donorboxDonations.exclusionReason,
-  matchStatus: donorboxDonations.matchStatus,
-  matchScore: donorboxDonations.matchScore,
-  matchMethod: donorboxDonations.matchMethod,
-  organizationId: donorboxDonations.organizationId,
-  individualGiverPersonId: donorboxDonations.individualGiverPersonId,
-  householdId: donorboxDonations.householdId,
-  matchedPaymentIntermediaryId: donorboxDonations.matchedPaymentIntermediaryId,
-  matchedGiftId: donorboxDonations.matchedGiftId,
-  createdGiftId: donorboxDonations.createdGiftId,
-  createdAt: donorboxDonations.createdAt,
-  updatedAt: donorboxDonations.updatedAt,
-  // Shared donor display names + anonymous-masking helpers (stripped by
-  // maskDonorDisplayFields before res.json).
+  ...donationColumns,
+  status: donorboxStatusSql,
   ...donorDisplayColumns,
   intermediaryName: paymentIntermediaries.name,
   linkedGiftId: linkedGift.id,
@@ -233,8 +188,8 @@ const reviewSelect = {
   linkedGiftDate: linkedGift.dateReceived,
 };
 
-function reviewJoins<T extends PgSelect>(q: T) {
-  return q
+function reviewJoins<T extends PgSelect>(query: T) {
+  return query
     .leftJoin(
       organizations,
       eq(organizations.id, donorboxDonations.organizationId),
@@ -251,40 +206,29 @@ function reviewJoins<T extends PgSelect>(q: T) {
         donorboxDonations.matchedPaymentIntermediaryId,
       ),
     )
-    .leftJoin(
-      linkedGift,
-      sql`${linkedGift.id} = COALESCE(${donorboxDonations.matchedGiftId}, ${donorboxDonations.createdGiftId})`,
-    );
+    .leftJoin(linkedGift, sql`${linkedGift.id} = ${activeGiftId}`);
 }
 
-// Re-read one review row (with display joins, masked) — used as the action
-// response so the client gets the same shape the list returns.
 async function loadReviewRow(id: string, req: Request) {
-  const viewer = getViewer(req);
   const rows = await reviewJoins(
     db.select(reviewSelect).from(donorboxDonations).$dynamic(),
   ).where(eq(donorboxDonations.id, id));
   const row = rows[0];
   if (!row) return null;
   return {
-    ...maskDonorDisplayFields(row, viewer),
+    ...maskDonorDisplayFields(row, getViewer(req)),
     queue: queueForStatus(row.status),
-    // Donorbox keeps its STORED lifecycle column, but the API speaks the
-    // shared derived vocabulary at the edge (approved/reconciled →
-    // match_confirmed, rejected → excluded).
-    status: donorboxEmittedStatus(row.status),
   };
 }
 
 function respondInvariant(res: Response, issues: InvariantIssue[]): void {
   res.status(400).json({
     error: "validation_error",
-    message: issues.map((i) => i.message).join("; "),
+    message: issues.map((issue) => issue.message).join("; "),
     issues,
   });
 }
 
-// ─── GET /donorbox/review ──────────────────────────────────────────────────
 router.get(
   "/donorbox/review",
   asyncHandler(async (req, res) => {
@@ -302,7 +246,6 @@ router.get(
       limit: req.query.limit ? Number(req.query.limit) : undefined,
       page: req.query.page ? Number(req.query.page) : undefined,
     });
-
     const where = and(
       newMoneyWhere,
       reviewQueueWhere(queue),
@@ -322,27 +265,23 @@ router.get(
         .select({ value: count() })
         .from(donorboxDonations)
         .where(where)
-        .then((r) => r[0]),
+        .then((result) => result[0]),
     ]);
 
     res.json({
       data: rows.map((row) => ({
         ...maskDonorDisplayFields(row, viewer),
         queue: queueForStatus(row.status),
-        // Stored lifecycle → shared derived vocabulary at the API edge.
-        status: donorboxEmittedStatus(row.status),
       })),
       pagination: { page, limit, total: totalRow?.value ?? 0 },
     });
   }),
 );
 
-// Guard: the row must be a pending, non-Stripe new-money candidate. Returns a
-// sent-response flag so the caller can early-return.
 function rejectIfNotPendingNewMoney(
   res: Response,
   row: {
-    status: string;
+    status: DerivedStatus;
     donationType: string | null;
     stripeChargeId: string | null;
   },
@@ -365,10 +304,27 @@ function rejectIfNotPendingNewMoney(
   return false;
 }
 
-// ─── POST /donorbox/donations/:id/link-gift ────────────────────────────────
-// Link a non-Stripe donation to an EXISTING gift as evidence (no new ledger
-// row). Adopts the linked gift's donor (the human's explicit match overrides
-// the auto-suggested donor), mirroring the QuickBooks/Stripe reconcile model.
+async function giftHasAnotherActiveDonorboxOwner(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  giftId: string,
+  donationId: string,
+): Promise<boolean> {
+  return tx
+    .select({ id: paymentApplications.id })
+    .from(paymentApplications)
+    .where(
+      and(
+        eq(paymentApplications.giftId, giftId),
+        eq(paymentApplications.evidenceSource, "donorbox"),
+        eq(paymentApplications.linkRole, "counted"),
+        sql`${paymentApplications.lifecycle} IN ('proposed', 'confirmed')`,
+        ne(paymentApplications.donorboxDonationId, donationId),
+      ),
+    )
+    .limit(1)
+    .then((rows) => rows.length > 0);
+}
+
 router.post(
   "/donorbox/donations/:id/link-gift",
   asyncHandler(async (req, res) => {
@@ -391,13 +347,13 @@ router.post(
 
     const existing = await db
       .select({
-        status: donorboxDonations.status,
+        status: donorboxStatusSql,
         donationType: donorboxDonations.donationType,
         stripeChargeId: donorboxDonations.stripeChargeId,
       })
       .from(donorboxDonations)
       .where(eq(donorboxDonations.id, id))
-      .then((r) => r[0]);
+      .then((rows) => rows[0]);
     if (!existing) return notFound(res, "donorbox donation");
     if (rejectIfNotPendingNewMoney(res, existing)) return;
 
@@ -410,65 +366,70 @@ router.post(
       })
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, giftId))
-      .then((r) => r[0]);
+      .then((rows) => rows[0]);
     if (!gift) return notFound(res, "gift");
 
     const NOT_PENDING = "__donorbox_link_not_pending__";
+    const GIFT_LINKED = "__donorbox_gift_already_linked__";
     try {
       await db.transaction(async (tx) => {
-        // Lock the donation row so concurrent linkers serialize; read its amount
-        // for the ledger booking.
         const locked = await tx
           .select({
-            status: donorboxDonations.status,
+            id: donorboxDonations.id,
             amount: donorboxDonations.amount,
+            donationType: donorboxDonations.donationType,
+            stripeChargeId: donorboxDonations.stripeChargeId,
+            exclusionReason: donorboxDonations.exclusionReason,
           })
           .from(donorboxDonations)
           .where(eq(donorboxDonations.id, id))
           .for("update")
-          .then((r) => r[0]);
-        if (!locked || locked.status !== "pending") {
+          .then((rows) => rows[0]);
+        const relationship = locked
+          ? await getDonorboxDonationGiftRelationship(tx, id, {
+              includeProposed: true,
+            })
+          : null;
+        if (
+          !locked ||
+          locked.donationType === "stripe" ||
+          locked.stripeChargeId != null ||
+          locked.exclusionReason != null ||
+          relationship != null
+        ) {
           throw new Error(NOT_PENDING);
         }
-        const [row] = await tx
+        if (await giftHasAnotherActiveDonorboxOwner(tx, giftId, id)) {
+          throw new Error(GIFT_LINKED);
+        }
+
+        const now = new Date();
+        await tx
           .update(donorboxDonations)
           .set({
-            // Adopt the linked gift's donor (explicit human match wins).
             organizationId: gift.organizationId,
             individualGiverPersonId: gift.individualGiverPersonId,
             householdId: gift.householdId,
-            matchedGiftId: giftId,
-            createdGiftId: null,
-            status: "reconciled",
             matchStatus: "matched",
             matchMethod: "manual",
             matchConfirmedByUserId: user.id,
-            matchConfirmedAt: new Date(),
+            matchConfirmedAt: now,
             approvedByUserId: user.id,
-            approvedAt: new Date(),
-            updatedAt: new Date(),
+            approvedAt: now,
+            updatedAt: now,
           })
-          .where(
-            and(
-              eq(donorboxDonations.id, id),
-              eq(donorboxDonations.status, "pending"),
-            ),
-          )
-          .returning({ id: donorboxDonations.id });
-        if (!row) throw new Error(NOT_PENDING);
-        // Dual-write (Phase 2): book the donation → gift ledger row. Donorbox
-        // links are always human; delete-by-anchor keeps re-links idempotent.
+          .where(eq(donorboxDonations.id, id));
         await bookDonorboxDonationApplication(tx, {
           donorboxDonationId: id,
           amount: locked.amount,
           giftId,
           confirmedByUserId: user.id,
-          confirmedAt: new Date(),
+          confirmedAt: now,
           createdTheGift: false,
         });
       });
-    } catch (e) {
-      if (e instanceof Error && e.message === NOT_PENDING) {
+    } catch (error) {
+      if (error instanceof Error && error.message === NOT_PENDING) {
         res.status(409).json({
           error: "not_pending",
           message:
@@ -476,23 +437,21 @@ router.post(
         });
         return;
       }
-      // Unique partial index on matched_gift_id — that gift is already linked.
-      if (e instanceof Error && /23505|unique/i.test(e.message)) {
+      if (error instanceof Error && error.message === GIFT_LINKED) {
         res.status(409).json({
           error: "gift_already_linked",
           message: "That gift is already linked to another Donorbox donation.",
         });
         return;
       }
-      throw e;
+      throw error;
     }
 
+    await applyGiftQbTieMany(giftId);
     res.json(await loadReviewRow(id, req));
   }),
 );
 
-// ─── POST /donorbox/donations/:id/create-gift ──────────────────────────────
-// Mint a NEW gift from a non-Stripe donation (Donor XOR), with a dedupe guard.
 router.post(
   "/donorbox/donations/:id/create-gift",
   asyncHandler(async (req, res) => {
@@ -514,15 +473,24 @@ router.post(
     const body = parsed.data;
 
     const existing = await db
-      .select()
+      .select({
+        ...getTableColumns(donorboxDonations),
+        derivedStatus: donorboxStatusSql,
+      })
       .from(donorboxDonations)
       .where(eq(donorboxDonations.id, id))
-      .then((r) => r[0]);
+      .then((rows) => rows[0]);
     if (!existing) return notFound(res, "donorbox donation");
-    if (rejectIfNotPendingNewMoney(res, existing)) return;
+    if (
+      rejectIfNotPendingNewMoney(res, {
+        status: existing.derivedStatus,
+        donationType: existing.donationType,
+        stripeChargeId: existing.stripeChargeId,
+      })
+    ) {
+      return;
+    }
 
-    // Donor: the reviewer's explicit pick (any FK in the body) wins; otherwise
-    // fall back to the seeded suggestion already on the row.
     const bodyHasDonor =
       body.organizationId != null ||
       body.individualGiverPersonId != null ||
@@ -543,9 +511,6 @@ router.post(
 
     const intermediaryId =
       body.paymentIntermediaryId ?? existing.matchedPaymentIntermediaryId;
-
-    // Dedupe guard: surface possible duplicates so the reviewer can link/exclude
-    // instead of double-booking. Override with force=true.
     if (!body.force) {
       const candidates = await findDonorboxDuplicates({
         id: existing.id,
@@ -575,19 +540,22 @@ router.post(
           .from(donorboxDonations)
           .where(eq(donorboxDonations.id, id))
           .for("update")
-          .then((r) => r[0]);
+          .then((rows) => rows[0]);
+        const relationship = locked
+          ? await getDonorboxDonationGiftRelationship(tx, id, {
+              includeProposed: true,
+            })
+          : null;
         if (
           !locked ||
-          locked.status !== "pending" ||
           locked.donationType === "stripe" ||
           locked.stripeChargeId != null ||
-          locked.matchedGiftId != null ||
-          locked.createdGiftId != null
+          locked.exclusionReason != null ||
+          relationship != null
         ) {
           throw new Error(NOT_PENDING);
         }
-        // Re-validate against the FRESH (post-lock) donor: prefer the body pick,
-        // else the row's current donor (a concurrent edit may have changed it).
+
         const lockedDonor = bodyHasDonor
           ? donor
           : {
@@ -600,6 +568,7 @@ router.post(
           lockedIssues = issues;
           throw new Error(INVARIANT);
         }
+
         await tx.insert(giftsAndPayments).values(
           buildGiftValuesFromDonorbox(
             giftId,
@@ -618,20 +587,17 @@ router.post(
             user.id,
           ),
         );
-        // Every gift needs at least one allocation (the sole home of money
-        // scope). Seed a default full-amount line; fundraiser refines scope later.
         await seedInitialGiftAllocation(tx, {
           giftId,
           amount: locked.amount,
           dateReceived: locked.dateReceived,
         });
         await assertGiftHasAllocations(tx, giftId);
+
+        const now = new Date();
         await tx
           .update(donorboxDonations)
           .set({
-            status: "approved",
-            createdGiftId: giftId,
-            matchedGiftId: null,
             organizationId: lockedDonor.organizationId,
             individualGiverPersonId: lockedDonor.individualGiverPersonId,
             householdId: lockedDonor.householdId,
@@ -639,41 +605,36 @@ router.post(
             matchStatus: "matched",
             matchMethod: "manual",
             matchConfirmedByUserId: user.id,
-            matchConfirmedAt: new Date(),
+            matchConfirmedAt: now,
             approvedByUserId: user.id,
-            approvedAt: new Date(),
-            updatedAt: new Date(),
+            approvedAt: now,
+            updatedAt: now,
           })
           .where(eq(donorboxDonations.id, id));
-        // Dual-write (Phase 2): this donation MINTED the gift
-        // (createdTheGift:true). Book the donation → gift ledger row.
         await bookDonorboxDonationApplication(tx, {
           donorboxDonationId: id,
           amount: locked.amount,
           giftId,
           confirmedByUserId: user.id,
-          confirmedAt: new Date(),
+          confirmedAt: now,
           createdTheGift: true,
         });
       });
-    } catch (e) {
-      if (e instanceof Error && e.message === NOT_PENDING) {
+    } catch (error) {
+      if (error instanceof Error && error.message === NOT_PENDING) {
         res.status(409).json({
           error: "not_pending",
           message: "This Donorbox donation has already been resolved.",
         });
         return;
       }
-      if (e instanceof Error && e.message === INVARIANT) {
+      if (error instanceof Error && error.message === INVARIANT) {
         return respondInvariant(res, lockedIssues);
       }
-      throw e;
+      throw error;
     }
 
-    // Donorbox is not a QuickBooks/Stripe money source — a plain CRM gift ties
-    // to 'missing' until reconciled, surfacing it in the QB-tie worklist.
     await applyGiftQbTieMany(giftId);
-
     const [gift] = await db
       .select(giftHeaderColumns)
       .from(giftsAndPayments)
@@ -691,17 +652,14 @@ interface DonorboxDuplicate {
   reason: string | null;
 }
 
-// Conservative dedupe: exact amount + date against active gifts and staged
-// QuickBooks payments, plus any sibling Donorbox row with the same PayPal txn id
-// that already booked a gift. Display-only — the reviewer decides.
-async function findDonorboxDuplicates(d: {
+async function findDonorboxDuplicates(donation: {
   id: string;
   amount: string | null;
   dateReceived: string | null;
   paypalTransactionId: string | null;
 }): Promise<DonorboxDuplicate[]> {
-  const out: DonorboxDuplicate[] = [];
-  if (d.amount != null && d.dateReceived != null) {
+  const duplicates: DonorboxDuplicate[] = [];
+  if (donation.amount != null && donation.dateReceived != null) {
     const [gifts, staged] = await Promise.all([
       db
         .select({
@@ -713,8 +671,8 @@ async function findDonorboxDuplicates(d: {
         .from(giftsAndPayments)
         .where(
           and(
-            eq(giftsAndPayments.amount, d.amount),
-            eq(giftsAndPayments.dateReceived, d.dateReceived),
+            eq(giftsAndPayments.amount, donation.amount),
+            eq(giftsAndPayments.dateReceived, donation.dateReceived),
             isNull(giftsAndPayments.archivedAt),
           ),
         )
@@ -729,34 +687,35 @@ async function findDonorboxDuplicates(d: {
         .from(stagedPayments)
         .where(
           and(
-            eq(stagedPayments.amount, d.amount),
-            eq(stagedPayments.dateReceived, d.dateReceived),
+            eq(stagedPayments.amount, donation.amount),
+            eq(stagedPayments.dateReceived, donation.dateReceived),
           ),
         )
         .limit(10),
     ]);
-    for (const g of gifts) {
-      out.push({
+    for (const gift of gifts) {
+      duplicates.push({
         kind: "gift",
-        id: g.id,
-        name: g.name,
-        amount: g.amount,
-        dateReceived: g.dateReceived,
+        id: gift.id,
+        name: gift.name,
+        amount: gift.amount,
+        dateReceived: gift.dateReceived,
         reason: "Same amount & date as an existing gift",
       });
     }
-    for (const s of staged) {
-      out.push({
+    for (const payment of staged) {
+      duplicates.push({
         kind: "staged_payment",
-        id: s.id,
-        name: s.name,
-        amount: s.amount,
-        dateReceived: s.dateReceived,
+        id: payment.id,
+        name: payment.name,
+        amount: payment.amount,
+        dateReceived: payment.dateReceived,
         reason: "Same amount & date as a QuickBooks staged payment",
       });
     }
   }
-  if (d.paypalTransactionId) {
+
+  if (donation.paypalTransactionId) {
     const siblings = await db
       .select({
         id: donorboxDonations.id,
@@ -767,32 +726,35 @@ async function findDonorboxDuplicates(d: {
       .from(donorboxDonations)
       .where(
         and(
-          eq(donorboxDonations.paypalTransactionId, d.paypalTransactionId),
-          ne(donorboxDonations.id, d.id),
-          or(
-            isNotNull(donorboxDonations.createdGiftId),
-            isNotNull(donorboxDonations.matchedGiftId),
+          eq(
+            donorboxDonations.paypalTransactionId,
+            donation.paypalTransactionId,
           ),
+          ne(donorboxDonations.id, donation.id),
+          sql`EXISTS (
+            SELECT 1 FROM payment_applications pa
+            WHERE pa.donorbox_donation_id = ${donorboxDonations.id}
+              AND pa.evidence_source = 'donorbox'
+              AND pa.link_role = 'counted'
+              AND pa.lifecycle = 'confirmed'
+          )`,
         ),
       )
       .limit(10);
-    for (const s of siblings) {
-      out.push({
+    for (const sibling of siblings) {
+      duplicates.push({
         kind: "donorbox",
-        id: s.id,
-        name: s.name,
-        amount: s.amount,
-        dateReceived: s.dateReceived,
+        id: sibling.id,
+        name: sibling.name,
+        amount: sibling.amount,
+        dateReceived: sibling.dateReceived,
         reason: "Same PayPal transaction already booked a gift",
       });
     }
   }
-  return out;
+  return duplicates;
 }
 
-// ─── POST /donorbox/donations/:id/exclude ──────────────────────────────────
-// File a non-Stripe candidate out of the new-money worklist (pending → excluded,
-// or reclassify an already-excluded row).
 router.post(
   "/donorbox/donations/:id/exclude",
   asyncHandler(async (req, res) => {
@@ -811,61 +773,62 @@ router.post(
       });
       return;
     }
-    const { exclusionReason } = parsed.data;
 
-    const existing = await db
-      .select({
-        status: donorboxDonations.status,
-        donationType: donorboxDonations.donationType,
-        stripeChargeId: donorboxDonations.stripeChargeId,
-      })
-      .from(donorboxDonations)
-      .where(eq(donorboxDonations.id, id))
-      .then((r) => r[0]);
-    if (!existing) return notFound(res, "donorbox donation");
-    if (existing.donationType === "stripe" || existing.stripeChargeId != null) {
-      res.status(409).json({
-        error: "not_new_money",
-        message:
-          "Stripe-type Donorbox donations are enrichment-only and cannot be excluded.",
-      });
-      return;
-    }
-    if (existing.status !== "pending" && existing.status !== "excluded") {
-      res.status(409).json({
-        error: "not_excludable",
-        message:
-          "Only a pending or already-excluded Donorbox donation can be excluded.",
-      });
-      return;
-    }
+    const NOT_EXCLUDABLE = "__donorbox_not_excludable__";
+    const NOT_NEW_MONEY = "__donorbox_not_new_money__";
+    try {
+      await db.transaction(async (tx) => {
+        const locked = await tx
+          .select({
+            donationType: donorboxDonations.donationType,
+            stripeChargeId: donorboxDonations.stripeChargeId,
+            exclusionReason: donorboxDonations.exclusionReason,
+          })
+          .from(donorboxDonations)
+          .where(eq(donorboxDonations.id, id))
+          .for("update")
+          .then((rows) => rows[0]);
+        if (!locked) throw new Error(NOT_EXCLUDABLE);
+        if (locked.donationType === "stripe" || locked.stripeChargeId != null) {
+          throw new Error(NOT_NEW_MONEY);
+        }
+        const relationship = await getDonorboxDonationGiftRelationship(tx, id, {
+          includeProposed: true,
+        });
+        if (relationship != null) throw new Error(NOT_EXCLUDABLE);
 
-    const [row] = await db
-      .update(donorboxDonations)
-      .set({ status: "excluded", exclusionReason, updatedAt: new Date() })
-      .where(
-        and(
-          eq(donorboxDonations.id, id),
-          or(
-            eq(donorboxDonations.status, "pending"),
-            eq(donorboxDonations.status, "excluded"),
-          ),
-        ),
-      )
-      .returning({ id: donorboxDonations.id });
-    if (!row) {
-      res.status(409).json({
-        error: "not_excludable",
-        message: "This Donorbox donation can no longer be excluded. Refresh.",
+        await tx
+          .update(donorboxDonations)
+          .set({
+            status: "excluded",
+            exclusionReason: parsed.data.exclusionReason,
+            updatedAt: new Date(),
+          })
+          .where(eq(donorboxDonations.id, id));
       });
-      return;
+    } catch (error) {
+      if (error instanceof Error && error.message === NOT_NEW_MONEY) {
+        res.status(409).json({
+          error: "not_new_money",
+          message:
+            "Stripe-type Donorbox donations are enrichment-only and cannot be excluded.",
+        });
+        return;
+      }
+      if (error instanceof Error && error.message === NOT_EXCLUDABLE) {
+        res.status(409).json({
+          error: "not_excludable",
+          message:
+            "Only a Donorbox donation without an active gift application can be excluded.",
+        });
+        return;
+      }
+      throw error;
     }
     res.json(await loadReviewRow(id, req));
   }),
 );
 
-// ─── POST /donorbox/donations/:id/re-include ───────────────────────────────
-// Move an excluded candidate back to pending.
 router.post(
   "/donorbox/donations/:id/re-include",
   asyncHandler(async (req, res) => {
@@ -875,34 +838,26 @@ router.post(
       return;
     }
     const id = paramId(req);
-    const existing = await db
-      .select({ status: donorboxDonations.status })
-      .from(donorboxDonations)
-      .where(eq(donorboxDonations.id, id))
-      .then((r) => r[0]);
-    if (!existing) return notFound(res, "donorbox donation");
-    if (existing.status !== "excluded") {
-      res.status(409).json({
-        error: "not_excluded",
-        message: "Only excluded Donorbox donations can be re-included.",
-      });
-      return;
-    }
     const [row] = await db
       .update(donorboxDonations)
       .set({ status: "pending", exclusionReason: null, updatedAt: new Date() })
       .where(
         and(
           eq(donorboxDonations.id, id),
-          eq(donorboxDonations.status, "excluded"),
+          donorboxStatusWhere.excluded,
         ),
       )
       .returning({ id: donorboxDonations.id });
     if (!row) {
+      const exists = await db
+        .select({ id: donorboxDonations.id })
+        .from(donorboxDonations)
+        .where(eq(donorboxDonations.id, id))
+        .then((rows) => rows[0]);
+      if (!exists) return notFound(res, "donorbox donation");
       res.status(409).json({
         error: "not_excluded",
-        message:
-          "This Donorbox donation is no longer excluded. Refresh and retry.",
+        message: "Only excluded Donorbox donations can be re-included.",
       });
       return;
     }
