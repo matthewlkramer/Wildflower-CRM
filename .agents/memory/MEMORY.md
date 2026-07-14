@@ -75,5 +75,6 @@
 - [Deprecated-column drop audit](deprecated-column-drop-audit.md) — a "pure drop" grep must cover .col dot-access, col: object-key writes, AND table alias() reads (resolvedGift.col); trust full typecheck over grep + stale @deprecated comments.
 - [Scoped validation checks](scoped-validation-checks.md) — fast per-package checks (libs/api/web/codegen/test-api/test-web/full); never run codegen alongside web OR test-api checks (regenerates the imported generated dir → false missing-import).
 - [Replit DB deletion nukes dev AND prod](replit-db-deletion-recovery.md) — deleting the built-in DB kills both branches; publish recreates empty prod schema; restore prod from dump human-run; verify with count(*) not n_live_tup.
+- [Unpickable rows are labeled, never hidden](unpickable-rows-label-not-hide.md) — user rule (also in replit.md prefs): pickers gray blocked rows WITH the reason; enforce via 409s.
 - [Recon search bands & confirm gating](reconciliation-search-and-confirm-gating.md) — text overrides the amount band (band hard-filters only when sole criterion); never pre-gate on derived status ahead of the locking confirm primitive.
 - [prod executeSql enum cast](prod-executesql-enum-cast.md) — prod read returns ZERO rows (only START TRANSACTION/ROLLBACK, success=true) if the SELECT list has an un-cast enum column; always ::text enums.

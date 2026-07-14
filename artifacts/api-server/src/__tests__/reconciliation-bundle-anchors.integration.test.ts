@@ -936,6 +936,116 @@ describe.skipIf(!HAS_DB)("Resolve-confirm settlement tie (integration)", () => {
     );
     expect(r.status).toBe(409);
     expect(r.json.error).toBe("deposit_unconfirmable");
+    // The toast surfaces this message verbatim — it must name the ACTUAL
+    // blocker (an unreviewed auto-proposed match), not a generic "resolved
+    // elsewhere" that leaves the reviewer guessing.
+    expect(r.json.message).toMatch(/auto-proposed/i);
+  });
+
+  it("rejects an EXCLUDED picked deposit, naming the exclusion and its reason", async () => {
+    // An excluded row was deliberately taken out of review — it can never back
+    // a settlement. The 409 must say exactly that (and echo the humanized
+    // exclusion reason) so the reviewer knows to un-exclude first, not retry.
+    const dep = await seedStaged({
+      entityType: "deposit",
+      amount: "96.80",
+      exclusionReason: "other_revenue",
+    });
+    const po = await seedPayout({ status: "unmatched" });
+    await seedCharge(po);
+
+    const r = await post(
+      `/api/reconciliation/settlement-links/${po}/confirm`,
+      { depositStagedPaymentId: dep },
+    );
+    expect(r.status).toBe(409);
+    expect(r.json.error).toBe("deposit_unconfirmable");
+    expect(r.json.message).toMatch(/excluded/i);
+    expect(r.json.message).toMatch(/other revenue/i);
+  });
+
+  it("rejects picking a deposit already SETTLED against a different payout, saying so", async () => {
+    // Exclusivity: a deposit backs at most one payout's settlement. A CONFIRMED
+    // tie elsewhere is permanent — the message must name the conflict (not a
+    // transient "refresh and retry") and the code must stay
+    // deposit_unconfirmable so the UI renders the permanent-failure toast.
+    const dep = await seedStaged({ entityType: "deposit", amount: "96.80" });
+    await seedPayout({ status: "confirmed_reconciled", matched: dep });
+    const po = await seedPayout({ status: "unmatched" });
+    await seedCharge(po);
+
+    const r = await post(
+      `/api/reconciliation/settlement-links/${po}/confirm`,
+      { depositStagedPaymentId: dep },
+    );
+    expect(r.status).toBe(409);
+    expect(r.json.error).toBe("deposit_unconfirmable");
+    expect(r.json.message).toMatch(/different Stripe payout/i);
+  });
+
+  it("rejects picking a deposit PROPOSED to a different payout as a resolvable tie", async () => {
+    // A merely-PROPOSED tie elsewhere is resolvable (reject that proposal),
+    // so the code stays deposit_already_tied and the message says which action
+    // unblocks it — not the permanent settled-elsewhere wording.
+    const dep = await seedStaged({ entityType: "deposit", amount: "96.80" });
+    await seedPayout({ status: "proposed", proposed: dep });
+    const po = await seedPayout({ status: "unmatched" });
+    await seedCharge(po);
+
+    const r = await post(
+      `/api/reconciliation/settlement-links/${po}/confirm`,
+      { depositStagedPaymentId: dep },
+    );
+    expect(r.status).toBe(409);
+    expect(r.json.error).toBe("deposit_already_tied");
+    expect(r.json.message).toMatch(/proposed as the match/i);
+  });
+});
+
+describe.skipIf(!HAS_DB)("QB pick-list search labels unpickable rows (integration)", () => {
+  it("returns excluded and already-settled deposits WITH a blocking label, never hidden", async () => {
+    // Product rule: unpickable rows are LABELED, not hidden — a silently
+    // missing row hides a mis-derived status from the user, while a labeled
+    // row lets them spot (and report) the actual blocker. Enforcement stays
+    // on the action endpoints (specific 409s).
+    const payer = `Zztest QbPick ${RUN}`;
+    const sPending = await seedStaged({ payerName: payer });
+    const sBooked = await seedStaged({
+      payerName: payer,
+      matchedGiftId: await seedGift(),
+    });
+    const sExcluded = await seedStaged({
+      payerName: payer,
+      exclusionReason: "other_revenue",
+    });
+    const sSettled = await seedStaged({ payerName: payer });
+    await seedPayout({ status: "confirmed_reconciled", matched: sSettled });
+
+    const r = await getJson(
+      `/api/reconciliation/qb-search?q=${encodeURIComponent(payer)}&limit=100`,
+    );
+    expect(r.status).toBe(200);
+    const rows = r.json.data as any[];
+    const byId = new Map(rows.map((c) => [c.id, c]));
+
+    // ALL four rows come back — nothing is filtered out.
+    expect(byId.has(sPending)).toBe(true);
+    expect(byId.has(sBooked)).toBe(true);
+    expect(byId.has(sExcluded)).toBe(true);
+    expect(byId.has(sSettled)).toBe(true);
+
+    // Pickable rows carry NO blocking label.
+    expect(byId.get(sPending).conflictReason).toBeNull();
+    expect(byId.get(sBooked).conflictReason).toBeNull();
+    // The booked row still advertises its owning gift so the picker can gray it.
+    expect(byId.get(sBooked).alreadyLinkedGiftId).toBeTruthy();
+
+    // Blocked rows say exactly WHY they can't be picked.
+    expect(byId.get(sExcluded).conflictReason).toMatch(/excluded/i);
+    expect(byId.get(sExcluded).conflictReason).toMatch(/other revenue/i);
+    expect(byId.get(sSettled).conflictReason).toMatch(
+      /settled against another Stripe payout/i,
+    );
   });
 });
 

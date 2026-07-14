@@ -22,6 +22,10 @@ interface ResultRow {
   secondary: string | null;
   amount: string | null;
   date: string | null;
+  /** Set when the row can't be picked (excluded / already settled) — shown as
+   *  a label and the row disabled, never hidden, so users can spot (and help
+   *  debug) a mis-derived status. */
+  blockedReason: string | null;
 }
 
 /**
@@ -118,6 +122,7 @@ function DepositResults({
     secondary: c.sublabel ?? null,
     amount: c.amount ?? null,
     date: c.date ?? null,
+    blockedReason: c.conflictReason ?? null,
   }));
   return (
     <ResultsList rows={rows} isFetching={isFetching} isError={isError} busy={busy} onPick={onPick} />
@@ -164,8 +169,8 @@ function ResultsList({
           key={r.id}
           type="button"
           variant="outline"
-          className="h-auto w-full justify-between gap-2 whitespace-normal px-2 py-1.5 text-left"
-          disabled={busy}
+          className="h-auto w-full justify-between gap-2 whitespace-normal px-2 py-1.5 text-left disabled:opacity-60"
+          disabled={busy || r.blockedReason != null}
           onClick={() => onPick(r.id)}
           data-testid={`button-resolve-pick-${r.id}`}
         >
@@ -174,6 +179,11 @@ function ResultsList({
             {r.secondary && (
               <span className="truncate text-xs text-muted-foreground">
                 {r.secondary}
+              </span>
+            )}
+            {r.blockedReason && (
+              <span className="truncate text-xs text-amber-600">
+                {r.blockedReason}
               </span>
             )}
           </span>

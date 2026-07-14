@@ -330,12 +330,30 @@ export async function confirmPendingQbDepositInTx(
   }
 
   if (depositStatus !== "pending") {
-    // excluded, an unreviewed auto-match (match_proposed), or already settled
-    // against another payout: the row was PERMANENTLY resolved (or claimed)
-    // elsewhere. Refreshing can never make this confirmable.
+    // The row was PERMANENTLY resolved (or claimed) elsewhere — refreshing can
+    // never make this confirmable. Say exactly WHICH terminal state blocks the
+    // confirm: the card toast surfaces this message verbatim, and a generic
+    // "resolved elsewhere" left reviewers guessing at the actual blocker.
+    if (depositStatus === "excluded") {
+      const reason = deposit.exclusionReason
+        ? ` (${String(deposit.exclusionReason).replace(/_/g, " ")})`
+        : "";
+      throw new TransitionError(
+        "deposit_unconfirmable",
+        `This QuickBooks payment was excluded from review${reason}, so it can't back a settlement. If it was excluded by mistake, un-exclude it in Finance Reconciliation first, then retry.`,
+      );
+    }
+    if (depositStatus === "match_proposed") {
+      throw new TransitionError(
+        "deposit_unconfirmable",
+        "This QuickBooks deposit has an auto-proposed gift match still awaiting review. Confirm or reject that match in Finance Reconciliation first, then retry the settlement.",
+      );
+    }
+    // Remaining arm: match_confirmed via ANOTHER payout's confirmed settlement
+    // link (settledElsewhere) — its money is already settled once.
     throw new TransitionError(
       "deposit_unconfirmable",
-      "The proposed QuickBooks deposit was already resolved elsewhere (excluded, matched, split, or reconciled), so this settlement can't be approved. Reject the proposal or pick a different deposit.",
+      "This QuickBooks deposit is already reconciled against a different Stripe payout, so it can't back this settlement too. Pick a different deposit.",
     );
   }
 

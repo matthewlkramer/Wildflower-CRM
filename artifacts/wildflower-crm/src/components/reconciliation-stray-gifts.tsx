@@ -1150,7 +1150,11 @@ function PaymentLinkDialog({
                 {candidates.map((c) => {
                   // This payment is already tied to another gift — gray it and
                   // offer an unlink instead of a second (double-counting) link.
-                  const blocked = c.alreadyLinkedGiftId != null;
+                  // A server-labeled conflictReason (excluded / already
+                  // settled) also blocks: labeled, never hidden, so the user
+                  // can spot a mis-derived status.
+                  const blocked =
+                    c.alreadyLinkedGiftId != null || c.conflictReason != null;
                   const isStripe = c.nodeType === "stripe";
                   // The whole row links (not just the small button) — but only
                   // for linkable rows; unlink stays behind its explicit button.
@@ -1191,11 +1195,11 @@ function PaymentLinkDialog({
                         </div>
                         {blocked && (
                           <div className="mt-0.5 truncate text-xs text-amber-600">
-                            Already linked to another gift
+                            {c.conflictReason ?? "Already linked to another gift"}
                           </div>
                         )}
                       </div>
-                      {blocked ? (
+                      {c.alreadyLinkedGiftId != null ? (
                         <Button
                           size="sm"
                           variant="outline"
@@ -1211,6 +1215,17 @@ function PaymentLinkDialog({
                           ) : (
                             "Unlink"
                           )}
+                        </Button>
+                      ) : blocked ? (
+                        // conflictReason-blocked (excluded / already settled):
+                        // no unlink to offer — the label above says why.
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled
+                          data-testid={`payment-link-pick-${c.id}`}
+                        >
+                          Link
                         </Button>
                       ) : (
                         <Button

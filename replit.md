@@ -55,6 +55,9 @@ These recur across the whole app — keep them true whenever you change things:
   `$PROD_DATABASE_URL` variable (NOT `$DATABASE_URL`) and the full repo-root-relative
   path to the `.sql` file (e.g. `lib/db/migrations/<file>.sql`), so they can be
   copy-pasted and run from the project root.
+- In pickers/search lists, never hide unpickable rows — show them grayed out WITH
+  the blocking reason labeled, so the user can spot and help debug a mis-derived
+  status. Enforcement stays on the action endpoints (specific 409s).
 
 ## Stack
 

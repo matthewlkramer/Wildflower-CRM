@@ -1083,17 +1083,28 @@ router.post(
               "The chosen deposit belongs to a payment group and can't be settled directly.",
           });
         }
-        // Exclusivity: a deposit may back only one payout's settlement.
+        // Exclusivity: a deposit may back only one payout's settlement. Say
+        // WHICH kind of tie blocks the pick — a CONFIRMED link is permanent
+        // (retrying can never help; code deposit_unconfirmable so the UI
+        // renders the destructive toast), while a PROPOSED link is resolvable
+        // by rejecting the other proposal.
         const otherLink = await tx
-          .select({ id: settlementLinks.id })
+          .select({ lifecycle: settlementLinks.lifecycle })
           .from(settlementLinks)
           .where(eq(settlementLinks.depositStagedPaymentId, pickedDepositId))
           .then((r) => r[0]);
+        if (otherLink?.lifecycle === "confirmed") {
+          throw new ReconcileAbort(409, {
+            error: "deposit_unconfirmable",
+            message:
+              "This QuickBooks deposit is already reconciled against a different Stripe payout, so it can't back this settlement too. Pick a different deposit.",
+          });
+        }
         if (otherLink) {
           throw new ReconcileAbort(409, {
             error: "deposit_already_tied",
             message:
-              "The chosen deposit is already tied to another payout. Refresh and retry.",
+              "This QuickBooks deposit is already proposed as the match for a different Stripe payout. Confirm or reject that proposal first, or pick a different deposit.",
           });
         }
 

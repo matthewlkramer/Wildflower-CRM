@@ -61,7 +61,12 @@ import {
   giftMatchAmountBoundsKnownNet,
 } from "./giftMatch";
 import { stripeChargeSearchWhere } from "./stripeChargeSearch";
-import { chargeStatusWhere, stagedStatusSql } from "./derivedStatus";
+import {
+  chargeStatusWhere,
+  stagedConfirmedSettlementLinkExists,
+  stagedStatusSql,
+  stagedStatusWhere,
+} from "./derivedStatus";
 import { groupMemberIdsFor } from "./unitGroupMembership";
 import {
   giftCandidateJoins,
@@ -1637,6 +1642,11 @@ async function searchQbStagedRows(
   amt: number,
   hasAmount: boolean,
 ): Promise<RecCandidate[]> {
+  // Unpickable rows (excluded / already settled) are NOT filtered out — they
+  // return WITH a conflictReason label so the picker can gray them and the
+  // user can see (and debug) WHY a row is blocked. A silently-missing row
+  // hides mis-derived statuses; the action endpoints still enforce the block
+  // server-side with a specific 409.
   const conds: SQL[] = [];
   if (hasText) {
     const w = stagedSearchWhere(q);
@@ -1688,6 +1698,11 @@ async function searchQbStagedRows(
       // picker can gray the row and offer an unlink. Splits resolve to NULL
       // (same as the legacy gift-link columns, which are no longer written).
       linkedGiftId: qbLedgerSoleGiftIdForPayment(),
+      // Blocking facts for the conflictReason label (never used to filter):
+      // an exclusion takes the row out of review; a confirmed settlement link
+      // means its money is already accounted for against another payout.
+      exclusionReason: stagedPayments.exclusionReason,
+      settledElsewhere: sql<boolean>`${stagedConfirmedSettlementLinkExists}`,
     })
     .from(stagedPayments)
     .where(and(...conds))
@@ -1704,6 +1719,11 @@ async function searchQbStagedRows(
       date: r.dateReceived,
       source: "manual",
       alreadyLinkedGiftId: r.linkedGiftId ?? null,
+      conflictReason: r.exclusionReason
+        ? `Excluded from review (${String(r.exclusionReason).replace(/_/g, " ")})`
+        : r.settledElsewhere
+          ? "Already settled against another Stripe payout"
+          : null,
     }),
   );
 }
