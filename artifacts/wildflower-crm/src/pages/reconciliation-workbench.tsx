@@ -1197,20 +1197,29 @@ export default function ReconciliationWorkbench() {
 
   /**
    * Bulk "Approve":
-   *  - A genuine MULTI-charge payout card (stripeChargeCount > 1) can't use the
-   *    deposit-keyed tray, so it links its one charge to its proposed/resolved
-   *    gift immediately. Charges with no gift yet are skipped and reported.
-   *  - Everything else (QB deposits AND single-charge payout cards) stages a
-   *    confirm in the tray for review, then Apply to CRM.
-   * This mirrors the single-card confirm path, which only takes the link route
-   * when the payout actually holds several charges.
+   *  - A per-charge card that can't approve through the deposit links its
+   *    charge to its proposed/resolved gift immediately. That's a genuine
+   *    MULTI-charge payout card (stripeChargeCount > 1) — the deposit-keyed
+   *    tray can't book one charge of many — AND a per-charge card whose
+   *    deposit is ALREADY confirmed (settlement-only re-admission): staging
+   *    that one 409s at Apply ("deposit already reconciled"), a permanent
+   *    dead-end the reviewer can't see past. Charges with no gift yet are
+   *    skipped and reported.
+   *  - Everything else (QB deposits AND unconfirmed single-charge payout
+   *    cards) stages a confirm in the tray for review, then Apply to CRM.
+   * This mirrors the single-card confirm path (tryLinkMultiChargeCard), which
+   * takes the per-charge link route for exactly these two card shapes.
    */
   const bulkApproveSelected = useCallback(async () => {
-    const isMultiChargeCard = (c: ReconciliationCard) =>
-      !!c.stripeChargeId && (c.stripeChargeCount ?? 1) > 1;
-    const multiChargeCards = selectedReviewCards.filter(isMultiChargeCard);
+    const isChargeLinkCard = (c: ReconciliationCard) =>
+      !!c.stripeChargeId &&
+      // card.status is the DEPOSIT's derived status even on a per-charge card,
+      // so "match_confirmed" here means the deposit itself is already closed —
+      // only the per-charge link can book this money.
+      ((c.stripeChargeCount ?? 1) > 1 || c.status === "match_confirmed");
+    const multiChargeCards = selectedReviewCards.filter(isChargeLinkCard);
     const trayCards = selectedReviewCards.filter(
-      (c) => !isMultiChargeCard(c) && !stagedIds.has(c.stagedPaymentId),
+      (c) => !isChargeLinkCard(c) && !stagedIds.has(c.stagedPaymentId),
     );
     if (multiChargeCards.length === 0 && trayCards.length === 0) {
       toast({
@@ -1226,7 +1235,21 @@ export default function ReconciliationWorkbench() {
     let chargeOk = 0;
     let chargeNoGift = 0;
     let chargeFailed = 0;
+    let chargeRetarget = 0;
     for (const c of multiChargeCards) {
+      // A confirmed deposit already resolved to gift A whose card PROPOSES a
+      // different gift B is a re-target of booked money — bulk must not link
+      // the charge to B blind (that would count the same physical money on
+      // two gifts). The single-card confirm dialog owns that guarded move.
+      if (
+        c.status === "match_confirmed" &&
+        c.proposedGiftId != null &&
+        c.resolvedGiftId != null &&
+        c.proposedGiftId !== c.resolvedGiftId
+      ) {
+        chargeRetarget += 1;
+        continue;
+      }
       const giftId = c.proposedGiftId ?? c.resolvedGiftId ?? null;
       if (!giftId) {
         chargeNoGift += 1;
@@ -1259,7 +1282,9 @@ export default function ReconciliationWorkbench() {
         description:
           chargeNoGift > 0
             ? `${chargeNoGift} Stripe ${chargeNoGift === 1 ? "charge needs" : "charges need"} a gift picked first — open each card to link it.`
-            : "The selected cards couldn't be approved (they may have changed state).",
+            : chargeRetarget > 0
+              ? `${chargeRetarget} ${chargeRetarget === 1 ? "card proposes" : "cards propose"} moving already-booked money to a different gift — open ${chargeRetarget === 1 ? "that card" : "each card"} to confirm the move.`
+              : "The selected cards couldn't be approved (they may have changed state).",
       });
       return;
     }
@@ -1276,6 +1301,10 @@ export default function ReconciliationWorkbench() {
     if (chargeFailed > 0)
       followUps.push(
         `${chargeFailed} Stripe ${chargeFailed === 1 ? "charge" : "charges"} couldn't be linked (changed state).`,
+      );
+    if (chargeRetarget > 0)
+      followUps.push(
+        `${chargeRetarget} ${chargeRetarget === 1 ? "card proposes" : "cards propose"} moving already-booked money to a different gift — open ${chargeRetarget === 1 ? "that card" : "each card"} to confirm the move.`,
       );
     toast({
       title: `Approve — ${parts.join(", ")}`,
