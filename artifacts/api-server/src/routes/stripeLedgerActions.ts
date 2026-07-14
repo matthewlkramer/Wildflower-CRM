@@ -8,9 +8,16 @@ import {
 import { and, eq, getTableColumns, isNotNull, ne, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
-import { asyncHandler, newId, paramId } from "../lib/helpers";
 import {
+  asyncHandler,
+  newId,
+  notFound,
+  paramId,
+} from "../lib/helpers";
+import {
+  ExcludeStagedPaymentBody,
   LinkStripeChargeToGiftBody,
+  ResolveStagedPaymentBody,
   validateGiftInvariants,
 } from "@workspace/api-zod";
 import {
@@ -29,9 +36,17 @@ import {
 } from "../lib/stripeChargeLedger";
 import { removePaymentApplicationsForStripeCharge } from "../lib/paymentApplications";
 import { orphanStripeSourceChargeLedgerInTx } from "../lib/stripeSourceSwitch";
+import {
+  revertStripeChargeInTx,
+  StripeChargeRevertError,
+} from "../lib/stripeChargeRevert";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
-import { chargeStatusSql } from "../lib/derivedStatus";
+import {
+  chargeStatusIn,
+  chargeStatusSql,
+  chargeStatusWhere,
+} from "../lib/derivedStatus";
 import { giftHeaderColumns } from "./giftsAndPayments";
 
 const router: IRouter = Router();
@@ -53,6 +68,77 @@ async function loadSafeCharge(chargeId: string) {
     .where(eq(stripeStagedCharges.id, chargeId))
     .then((rows) => rows[0] ?? null);
 }
+
+router.post(
+  "/stripe-staged-charges/:id/resolve",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const chargeId = paramId(req);
+    const parsed = ResolveStagedPaymentBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    const donor = {
+      organizationId: parsed.data.organizationId ?? null,
+      individualGiverPersonId: parsed.data.individualGiverPersonId ?? null,
+      householdId: parsed.data.householdId ?? null,
+    };
+    const issues = validateGiftInvariants(donor);
+    if (issues.length > 0) {
+      res.status(400).json({
+        error: "validation_error",
+        message: issues.map((issue) => issue.message).join("; "),
+        issues,
+      });
+      return;
+    }
+
+    const [updated] = await db
+      .update(stripeStagedCharges)
+      .set({
+        ...donor,
+        matchStatus: "matched",
+        matchMethod: "manual",
+        matchedPaymentIntermediaryId:
+          parsed.data.paymentIntermediaryId ?? null,
+        matchConfirmedByUserId: user.id,
+        matchConfirmedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(stripeStagedCharges.id, chargeId),
+          chargeStatusWhere.pending,
+        ),
+      )
+      .returning({ id: stripeStagedCharges.id });
+    if (!updated) {
+      const exists = await db
+        .select({ id: stripeStagedCharges.id })
+        .from(stripeStagedCharges)
+        .where(eq(stripeStagedCharges.id, chargeId))
+        .then((rows) => rows[0]);
+      if (!exists) return notFound(res, "stripe staged charge");
+      res.status(409).json({
+        error: "not_pending",
+        message: "Only a pending staged charge can be resolved.",
+      });
+      return;
+    }
+    res.json(await loadSafeCharge(chargeId));
+  }),
+);
 
 const linkHandler = asyncHandler(async (req, res) => {
   const user = getAppUser(req);
@@ -125,7 +211,6 @@ const linkHandler = asyncHandler(async (req, res) => {
         });
       }
       if (relationship?.lifecycle === "proposed") {
-        // Human confirmation or retargeting replaces the non-money proposal.
         await removePaymentApplicationsForStripeCharge(tx, chargeId);
       }
 
@@ -356,6 +441,133 @@ router.post(
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, giftId));
     res.status(201).json({ gift, stagedPaymentId: chargeId });
+  }),
+);
+
+router.post(
+  "/stripe-staged-charges/:id/exclude",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const chargeId = paramId(req);
+    const parsed = ExcludeStagedPaymentBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    const [updated] = await db
+      .update(stripeStagedCharges)
+      .set({
+        exclusionReason: parsed.data.exclusionReason,
+        classificationSource: "manual",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(stripeStagedCharges.id, chargeId),
+          chargeStatusIn(["pending", "excluded"]),
+        ),
+      )
+      .returning({ id: stripeStagedCharges.id });
+    if (!updated) {
+      const exists = await db
+        .select({ id: stripeStagedCharges.id })
+        .from(stripeStagedCharges)
+        .where(eq(stripeStagedCharges.id, chargeId))
+        .then((rows) => rows[0]);
+      if (!exists) return notFound(res, "stripe staged charge");
+      res.status(409).json({
+        error: "not_excludable",
+        message: "Only a pending or excluded charge can be classified.",
+      });
+      return;
+    }
+    res.json(await loadSafeCharge(chargeId));
+  }),
+);
+
+router.post(
+  "/stripe-staged-charges/:id/re-include",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const chargeId = paramId(req);
+    const [updated] = await db
+      .update(stripeStagedCharges)
+      .set({
+        exclusionReason: null,
+        classificationSource: "manual",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(stripeStagedCharges.id, chargeId),
+          chargeStatusWhere.excluded,
+        ),
+      )
+      .returning({ id: stripeStagedCharges.id });
+    if (!updated) {
+      const exists = await db
+        .select({ id: stripeStagedCharges.id })
+        .from(stripeStagedCharges)
+        .where(eq(stripeStagedCharges.id, chargeId))
+        .then((rows) => rows[0]);
+      if (!exists) return notFound(res, "stripe staged charge");
+      res.status(409).json({
+        error: "not_excluded",
+        message: "Only an excluded charge can be re-included.",
+      });
+      return;
+    }
+    res.json(await loadSafeCharge(chargeId));
+  }),
+);
+
+router.post(
+  "/stripe-staged-charges/:id/revert",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const chargeId = paramId(req);
+    let result;
+    try {
+      result = await db.transaction((tx) =>
+        revertStripeChargeInTx(tx, chargeId),
+      );
+    } catch (error) {
+      if (error instanceof StripeChargeRevertError) {
+        if (error.code === "not_found") {
+          return notFound(res, "stripe staged charge");
+        }
+        res.status(409).json({ error: error.code, message: error.message });
+        return;
+      }
+      throw error;
+    }
+
+    for (const giftId of result.affectedGiftIds) {
+      if (giftId !== result.deletedGiftId) {
+        await applyGiftQbTieMany(giftId);
+      }
+    }
+    if (result.cascadedQbStagedIds.length > 0) {
+      req.log.warn(
+        {
+          stripeChargeId: chargeId,
+          cascadedQbStagedIds: result.cascadedQbStagedIds,
+        },
+        "Stripe revert cascade-reset QuickBooks staged payment(s) to pending",
+      );
+    }
+    void user;
+    res.json(await loadSafeCharge(chargeId));
   }),
 );
 
