@@ -6,6 +6,8 @@ on:
       - "artifacts/api-server/**"
       - "artifacts/api-spec/**"
       - "lib/db/**"
+      - "lib/api-zod/**"
+      - "lib/integrations-anthropic-ai/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -22,7 +24,11 @@ concurrency:
 jobs:
   api:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:1
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: test-key
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -41,6 +47,14 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build shared libraries
+        id: build-libs
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm build:libs 2>&1 | tee build-libs.log
 
       - name: Typecheck API
         id: typecheck
@@ -72,6 +86,7 @@ jobs:
         with:
           name: reconciliation-check-logs-${{ github.run_id }}
           path: |
+            build-libs.log
             typecheck.log
             codegen.log
             tests.log
@@ -80,6 +95,7 @@ jobs:
 
       - name: Fail when a check failed
         if: >-
+          steps.build-libs.outcome == 'failure' ||
           steps.typecheck.outcome == 'failure' ||
           steps.codegen.outcome == 'failure' ||
           steps.tests.outcome == 'failure'
