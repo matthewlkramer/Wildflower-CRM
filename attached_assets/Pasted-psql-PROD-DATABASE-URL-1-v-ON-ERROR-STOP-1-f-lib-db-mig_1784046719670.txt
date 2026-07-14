@@ -1,0 +1,25 @@
+psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:25: NOTICE:  index "staged_payments_matched_gift_id_uq" does not exist, skipping
+DROP INDEX
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:26: NOTICE:  index "staged_payments_created_gift_id_uq" does not exist, skipping
+DROP INDEX
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:27: NOTICE:  index "staged_payments_group_reconciled_gift_id_idx" does not exist, skipping
+DROP INDEX
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:28: NOTICE:  index "stripe_staged_charges_matched_gift_id_uq" does not exist, skipping
+DROP INDEX
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:29: NOTICE:  index "stripe_staged_charges_created_gift_id_uq" does not exist, skipping
+DROP INDEX
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:30: NOTICE:  index "donorbox_donations_matched_gift_id_uq" does not exist, skipping
+DROP INDEX
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:31: NOTICE:  index "donorbox_donations_created_gift_id_uq" does not exist, skipping
+DROP INDEX
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:36: NOTICE:  column "matched_gift_id" of relation "staged_payments" does not exist, skipping
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:36: NOTICE:  column "created_gift_id" of relation "staged_payments" does not exist, skipping
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:36: NOTICE:  column "group_reconciled_gift_id" of relation "staged_payments" does not exist, skipping
+ALTER TABLE
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:40: NOTICE:  column "matched_gift_id" of relation "stripe_staged_charges" does not exist, skipping
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:40: NOTICE:  column "created_gift_id" of relation "stripe_staged_charges" does not exist, skipping
+ALTER TABLE
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:44: NOTICE:  column "matched_gift_id" of relation "donorbox_donations" does not exist, skipping
+psql:lib/db/migrations/0126_drop_legacy_staged_gift_pointer_columns.sql:44: NOTICE:  column "created_gift_id" of relation "donorbox_donations" does not exist, skipping
+ALTER TABLE
