@@ -21,7 +21,7 @@ legacy link has a counted quickbooks ledger row**, then a parity gate DO block
 the legacy columns stay physical, frozen at their pre-cutover values, until a
 much-later drop migration.
 
-## Ordering — apply AFTER Publish, AFTER 0118/0119
+## Ordering — apply AFTER Publish, AFTER 0118/0119, AFTER 0122
 
 1. **Publish first.** The new build ships the read-flip and stops all legacy
    writes; 0120 only closes the data gap. (Schema-wise 0120 needs nothing new,
@@ -29,6 +29,13 @@ much-later drop migration.
    flipped" story consistent, and prod must not run the OLD build against a
    ledger the new build assumes is complete for longer than necessary.)
 2. Apply 0118 and 0119 first if not yet applied (0120 assumes their state).
+3. **Apply 0122 first** (`0122_clear_kirby_deposit_stale_link.sql`). A
+   2026-07-14 ~01:20 UI session under the pre-cutover build left one stale
+   deposit-level `matched_gift_id` on `staged_payments`
+   `e5RPVWzQ79CD_jEBqrre1`. If 0120 runs before it is cleared, source A
+   converts that junk pointer into a counted deposit→gift ledger row, which
+   double-counts the gift once its Stripe charge is relinked per-charge. After
+   0122, the `matched` census line below should report 0 for that row.
 
 ## How to apply (from the project root)
 

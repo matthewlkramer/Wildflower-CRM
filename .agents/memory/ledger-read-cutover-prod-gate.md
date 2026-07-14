@@ -38,6 +38,22 @@ dual-write) whenever it seeds a legacy link. Keep at least one *ledger-only*
 assertion (a row linked ONLY via the ledger must read as linked) as the regression
 guard that proves reads consult the ledger, not the legacy columns.
 
+## Publish-window junk pointers (audit before the parity backfill)
+
+The window between the design cutover and the actual Publish is dangerous in a
+different direction: users acting in the **old build's UI** keep writing legacy
+pointer columns, and some of those writes are junk under the new model (e.g. a
+deposit-level gift link on a row that is settlement-only per-charge in the target
+design). The parity backfill cannot tell junk from real — it faithfully converts
+every legacy pointer into a counted ledger row, which can double-count once the
+proper per-charge/fine-grained link is (re)made.
+
+**How to apply:** before running the parity backfill on prod, census the legacy
+links written during the publish window (by `updated_at`) and inspect each one:
+is it a link the new model would have written? Clear stale ones with a small
+guarded migration ordered BEFORE the parity file (guard on exact id + exact stale
+value + no counted ledger row, so it no-ops if parity already ran).
+
 ## Go-live ordering (parity gate vs derived-persisted recompute)
 
 When the same release also recomputes a **derived-persisted** rollup that is sourced
