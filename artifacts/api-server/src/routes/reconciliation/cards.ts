@@ -484,9 +484,10 @@ router.get(
           (SELECT o.name FROM organizations o WHERE o.id = ${stripeStagedCharges.organizationId}),
           (SELECT h.name FROM households h WHERE h.id = ${stripeStagedCharges.householdId}),
           (SELECT COALESCE(
+                    CASE WHEN NULLIF(TRIM(pp.nickname), '') IS NOT NULL
+                         THEN NULLIF(TRIM(CONCAT_WS(' ', pp.nickname, pp.last_name)), '') END,
                     NULLIF(TRIM(pp.full_name), ''),
-                    NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), ''),
-                    NULLIF(TRIM(pp.nickname), '')
+                    NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), '')
                   )
              FROM people pp WHERE pp.id = ${stripeStagedCharges.individualGiverPersonId})
         )`.as("charge_donor_name"),
@@ -503,9 +504,10 @@ router.get(
             (SELECT o.name FROM organizations o WHERE o.id = g.organization_id),
             (SELECT h.name FROM households h WHERE h.id = g.household_id),
             (SELECT COALESCE(
+                      CASE WHEN NULLIF(TRIM(pp.nickname), '') IS NOT NULL
+                           THEN NULLIF(TRIM(CONCAT_WS(' ', pp.nickname, pp.last_name)), '') END,
                       NULLIF(TRIM(pp.full_name), ''),
-                      NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), ''),
-                      NULLIF(TRIM(pp.nickname), '')
+                      NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), '')
                     )
                FROM people pp WHERE pp.id = g.individual_giver_person_id)
           )
@@ -625,9 +627,10 @@ router.get(
               (SELECT o.name FROM organizations o WHERE o.id = g.organization_id),
               (SELECT h.name FROM households h WHERE h.id = g.household_id),
               (SELECT COALESCE(
+                        CASE WHEN NULLIF(TRIM(pp.nickname), '') IS NOT NULL
+                             THEN NULLIF(TRIM(CONCAT_WS(' ', pp.nickname, pp.last_name)), '') END,
                         NULLIF(TRIM(pp.full_name), ''),
-                        NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), ''),
-                        NULLIF(TRIM(pp.nickname), '')
+                        NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), '')
                       )
                  FROM people pp WHERE pp.id = g.individual_giver_person_id)
             )

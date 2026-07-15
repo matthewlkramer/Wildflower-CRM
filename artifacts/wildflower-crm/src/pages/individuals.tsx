@@ -642,7 +642,7 @@ export default function Individuals() {
       { key: "firstName", label: "First name" },
       { key: "lastName", label: "Last name" },
       { key: "fullName", label: "Full name" },
-      { key: "nickname", label: "Nickname" },
+      { key: "nickname", label: "Preferred name" },
       { key: "pronouns", label: "Pronouns" },
       { key: "capacityRating", label: "Capacity", display: (v) => formatCapacity(v as string | null) },
       { key: "connectionStatus", label: "Connection", display: (v) => formatEnum(v as string | null) },

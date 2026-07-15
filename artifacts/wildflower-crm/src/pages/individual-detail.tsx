@@ -169,7 +169,7 @@ function nameDraftFrom(p: PersonDetail): NameDraft {
 const NAME_FIELDS = [
   { key: "prefix", label: "Prefix", width: "w-20" },
   { key: "firstName", label: "First", width: "w-36" },
-  { key: "nickname", label: "Nickname", width: "w-32" },
+  { key: "nickname", label: "Preferred name", width: "w-32" },
   { key: "middleName", label: "Middle", width: "w-28" },
   { key: "lastName", label: "Last", width: "w-40" },
   { key: "suffix", label: "Suffix", width: "w-20" },

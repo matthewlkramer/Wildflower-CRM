@@ -124,9 +124,10 @@ const orgsListSelect = {
   ),
   primaryContactPersonName: sql<string | null>`(
     SELECT COALESCE(
+      CASE WHEN NULLIF(TRIM(p.nickname), '') IS NOT NULL
+           THEN NULLIF(TRIM(CONCAT_WS(' ', p.nickname, p.last_name)), '') END,
       NULLIF(TRIM(p.full_name), ''),
-      NULLIF(TRIM(CONCAT_WS(' ', p.first_name, p.last_name)), ''),
-      NULLIF(TRIM(p.nickname), '')
+      NULLIF(TRIM(CONCAT_WS(' ', p.first_name, p.last_name)), '')
     )
     FROM people_entity_roles per
     JOIN people p ON p.id = per.person_id

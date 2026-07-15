@@ -172,11 +172,13 @@ const peopleCurrentFoundationRoleExists = sql`EXISTS (
 // "First Last" name), instead of the old last_name,first_name order — which
 // looked unsorted next to the displayed name and disagreed with the
 // click-to-sort "Name" order. Uses the same fallback chain as
-// personDisplayName (full name → first+last → nickname → "Person <id>").
+// personDisplayName (preferred(nickname)+last → full name → first+last →
+// "Person <id>").
 const peopleDisplayNameOrder = sql`lower(coalesce(
+  case when nullif(btrim("people"."nickname"), '') is not null
+       then nullif(btrim(concat_ws(' ', "people"."nickname", "people"."last_name")), '') end,
   nullif(btrim("people"."full_name"), ''),
   nullif(btrim(concat_ws(' ', "people"."first_name", "people"."last_name")), ''),
-  nullif(btrim("people"."nickname"), ''),
   'Person ' || "people"."id"
 ))`;
 

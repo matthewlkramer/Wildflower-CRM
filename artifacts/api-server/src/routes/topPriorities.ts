@@ -60,9 +60,10 @@ const orgAffiliatedPeopleExpr = sql`(
       JSON_BUILD_OBJECT(
         'personId',    p.id,
         'personName',  COALESCE(
+                         CASE WHEN NULLIF(TRIM(p.nickname), '') IS NOT NULL
+                              THEN NULLIF(TRIM(CONCAT_WS(' ', p.nickname, p.last_name)), '') END,
                          NULLIF(TRIM(p.full_name), ''),
                          NULLIF(TRIM(CONCAT_WS(' ', p.first_name, p.last_name)), ''),
-                         NULLIF(TRIM(p.nickname), ''),
                          p.id
                        ),
         'anonymous',   p.anonymous,

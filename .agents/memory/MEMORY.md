@@ -79,5 +79,5 @@
 - [Recon search bands & confirm gating](reconciliation-search-and-confirm-gating.md) — text overrides the amount band; never pre-gate ahead of the locking confirm primitive; overridable blockers = exclusion (in-tx re-include) + amount-mismatch (pinned chargeId only); claimed-money blockers stay hard 409.
 - [prod executeSql enum cast](prod-executesql-enum-cast.md) — prod read returns ZERO rows (only START TRANSACTION/ROLLBACK, success=true) if the SELECT list has an un-cast enum column; always ::text enums.
 - [Orval zod boolean query params](orval-zod-coerce-boolean.md) — generated validators use zod.coerce.boolean(): "?flag=false" parses TRUE; design booleans as opt-in presence flags.
-- [Canonical person display-name SQL](person-name-display-sql.md) — every display site uses the shared full→first+last→nickname helper; never hand-roll partial COALESCE; ILIKE match predicates exempt.
+- [Canonical person display-name SQL](person-name-display-sql.md) — chain is preferred(nickname)+last → full → first+last, one shared helper; UI label "Preferred name", field stays nickname; ILIKE exempt.
 - [dupspec test-data pollution](dupspec-test-data-pollution.md) — killed vitest runs leave dupspec_* seeds whose REUSED phone constants crowd the dup queue past its cap → 2 phone-signal tests fail; purge LIKE 'dupspec%'.
