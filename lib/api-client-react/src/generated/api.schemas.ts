@@ -5095,6 +5095,287 @@ export interface BundleAnchorListResponse {
 }
 
 /**
+ * A lens is a saved filter over the cluster list — linkage-only in this phase
+(record-adequacy lenses like "missing key info" are additive later).
+all_open: any cluster with unresolved work (everything except completed and
+purely-excluded clusters). needs_donor_or_gift: some evidence row still lacks
+a confirmed CRM gift/donor (pending or match_proposed). needs_accounting:
+money with no accounting side — a crm_only gift, or a payout with no settled
+deposit (settlement link missing or still proposed). conflicts: a proposed
+settlement tie collided with an already-approved gift. refunds: a charge
+carries a proposed refund/chargeback propagation awaiting a human decision.
+excluded: every evidence row in the cluster is excluded. completed: all
+linkage work done (evidence confirmed into gifts; payout settled).
+A cluster carries EVERY lens it belongs to in `lenses` so dots and rail
+counts agree.
+
+ */
+export type WorkbenchLens = typeof WorkbenchLens[keyof typeof WorkbenchLens];
+
+
+export const WorkbenchLens = {
+  all_open: 'all_open',
+  needs_donor_or_gift: 'needs_donor_or_gift',
+  needs_accounting: 'needs_accounting',
+  conflicts: 'conflicts',
+  refunds: 'refunds',
+  excluded: 'excluded',
+  completed: 'completed',
+} as const;
+
+/**
+ * Which anchor the cluster is built around: a Stripe payout bundle, a standalone QuickBooks staged payment/deposit, or a CRM gift with no processor/accounting evidence.
+ */
+export type WorkbenchClusterKind = typeof WorkbenchClusterKind[keyof typeof WorkbenchClusterKind];
+
+
+export const WorkbenchClusterKind = {
+  stripe_payout: 'stripe_payout',
+  qb_standalone: 'qb_standalone',
+  crm_only: 'crm_only',
+} as const;
+
+/**
+ * Derived per-record linkage status (shared vocabulary for QB staged rows and Stripe charges): pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation.
+ */
+export type WorkbenchRecordStatus = typeof WorkbenchRecordStatus[keyof typeof WorkbenchRecordStatus];
+
+
+export const WorkbenchRecordStatus = {
+  pending: 'pending',
+  match_proposed: 'match_proposed',
+  match_confirmed: 'match_confirmed',
+  excluded: 'excluded',
+} as const;
+
+/**
+ * Server-derived calm rollup for the cluster's STATUS column. Precedence:
+conflict > refund > unresolved (nothing resolved yet) / partial (some
+resolved) > excluded (all evidence excluded) > complete. unlinked is the
+crm_only kind's open state (gift exists, no accounting evidence yet).
+
+ */
+export type WorkbenchClusterStatus = typeof WorkbenchClusterStatus[keyof typeof WorkbenchClusterStatus];
+
+
+export const WorkbenchClusterStatus = {
+  complete: 'complete',
+  partial: 'partial',
+  unresolved: 'unresolved',
+  conflict: 'conflict',
+  refund: 'refund',
+  excluded: 'excluded',
+  unlinked: 'unlinked',
+} as const;
+
+export type WorkbenchClusterGiftDonorKind = typeof WorkbenchClusterGiftDonorKind[keyof typeof WorkbenchClusterGiftDonorKind] | null;
+
+
+export const WorkbenchClusterGiftDonorKind = {
+  organization: 'organization',
+  person: 'person',
+  household: 'household',
+} as const;
+
+/**
+ * One CRM gift card in the cluster's donor-and-purpose facet. Carries actionable ids so later phases can wire actions without a contract change.
+ */
+export interface WorkbenchClusterGift {
+  /** gifts_and_payments.id */
+  giftId: string;
+  /** Gift name (NOT anonymous-masked today — matches app-wide behavior). */
+  name?: string | null;
+  /** Donor display name, anonymous-masked for the viewer. */
+  donorName?: string | null;
+  donorKind?: WorkbenchClusterGiftDonorKind;
+  /** The donor record's id (organization / person / household per donorKind). */
+  donorId?: string | null;
+  /** Gift amount, major units. */
+  amount?: string | null;
+  dateReceived?: string | null;
+  /** The gift's persisted QB tie status (exempt/tied/amount_mismatch/missing). */
+  quickbooksTie?: GiftQuickbooksTie | null;
+  /** True when a counted Donorbox ledger row backs this gift (renders the DB badge). */
+  donorbox?: boolean;
+  /** stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters. */
+  linkedChargeIds?: string[];
+  /** staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only. */
+  linkedStagedPaymentIds?: string[];
+}
+
+/**
+ * The kind of proposed reversal; null when refundProposed is false.
+ */
+export type WorkbenchClusterChargeRefundKind = typeof WorkbenchClusterChargeRefundKind[keyof typeof WorkbenchClusterChargeRefundKind] | null;
+
+
+export const WorkbenchClusterChargeRefundKind = {
+  full_refund: 'full_refund',
+  partial_refund: 'partial_refund',
+  chargeback: 'chargeback',
+} as const;
+
+/**
+ * One Stripe charge in the cluster's payment-evidence facet.
+ */
+export interface WorkbenchClusterCharge {
+  /** stripe_staged_charges.id (ch_...). */
+  chargeId: string;
+  /** Raw processor payer name (external Stripe evidence, not a CRM name — never anonymous-masked, matching the bundle workbench). */
+  payerName?: string | null;
+  /** Charge gross amount, major units. */
+  amount?: string | null;
+  /** Processor fee, major units. */
+  feeAmount?: string | null;
+  /** Net (gross − fee), major units. */
+  netAmount?: string | null;
+  chargeDate?: string | null;
+  status: WorkbenchRecordStatus;
+  /** The gift this charge's counted ledger row feeds, if any. */
+  linkedGiftId?: string | null;
+  /** True when a refund/chargeback propagation proposal awaits a human decision (drives the refunds lens). */
+  refundProposed?: boolean;
+  /** The kind of proposed reversal; null when refundProposed is false. */
+  refundKind?: WorkbenchClusterChargeRefundKind;
+}
+
+/**
+ * How the row participates: anchor = the qb_standalone cluster's own row; deposit = the payout's settlement-linked deposit lump; fee = a processor-fee row linked via a charge; charge_tie = a per-charge QB tie; group_member = a fellow member of the anchor's unit group.
+ */
+export type WorkbenchClusterQbRecordRole = typeof WorkbenchClusterQbRecordRole[keyof typeof WorkbenchClusterQbRecordRole];
+
+
+export const WorkbenchClusterQbRecordRole = {
+  anchor: 'anchor',
+  deposit: 'deposit',
+  fee: 'fee',
+  charge_tie: 'charge_tie',
+  group_member: 'group_member',
+} as const;
+
+/**
+ * One QuickBooks staged row in the cluster's bank-and-accounting facet.
+ */
+export interface WorkbenchClusterQbRecord {
+  /** staged_payments.id */
+  stagedPaymentId: string;
+  /** How the row participates: anchor = the qb_standalone cluster's own row; deposit = the payout's settlement-linked deposit lump; fee = a processor-fee row linked via a charge; charge_tie = a per-charge QB tie; group_member = a fellow member of the anchor's unit group. */
+  role: WorkbenchClusterQbRecordRole;
+  /** Human-readable doc/payment reference. */
+  reference?: string | null;
+  /** Deposit line / memo description. */
+  lineDescription?: string | null;
+  /** Transaction-level memo (PrivateNote). */
+  memo?: string | null;
+  /** Staged amount, major units. */
+  amount?: string | null;
+  dateReceived?: string | null;
+  status: WorkbenchRecordStatus;
+  /** For fee / charge_tie roles: the stripe_staged_charges id the link runs through. */
+  linkedChargeId?: string | null;
+}
+
+/**
+ * proposed = awaiting human confirm (a needs_accounting/conflict signal); confirmed = settled.
+ */
+export type WorkbenchClusterSettlementLifecycle = typeof WorkbenchClusterSettlementLifecycle[keyof typeof WorkbenchClusterSettlementLifecycle];
+
+
+export const WorkbenchClusterSettlementLifecycle = {
+  proposed: 'proposed',
+  confirmed: 'confirmed',
+} as const;
+
+/**
+ * The payout↔deposit settlement tie facts for a stripe_payout cluster.
+ */
+export interface WorkbenchClusterSettlement {
+  /** proposed = awaiting human confirm (a needs_accounting/conflict signal); confirmed = settled. */
+  lifecycle: WorkbenchClusterSettlementLifecycle;
+  /** The QB deposit lump named by the link. */
+  depositStagedPaymentId?: string | null;
+  /** The already-approved gift a proposed tie collided with (drives the conflicts lens). */
+  conflictGiftId?: string | null;
+}
+
+/**
+ * Unit-group rollup when the qb_standalone anchor is a group representative.
+ */
+export interface WorkbenchClusterGroup {
+  /** Total rows in the unit group (including the representative). */
+  memberCount: number;
+  /** Group total, major units. */
+  totalAmount?: string | null;
+}
+
+/**
+ * One reconciliation cluster row. A single flat shape for all three kinds —
+`kind` discriminates; kind-inapplicable fields are null/empty (house style,
+mirrors BundleAnchor). Money fields are null when unknowable for the kind
+(e.g. no fee data for QB-only money).
+
+ */
+export interface WorkbenchCluster {
+  /** Stable synthetic key: '<kind>:<anchorId>'. */
+  id: string;
+  kind: WorkbenchClusterKind;
+  /** stripe_payouts.id (po_...), staged_payments.id, or gifts_and_payments.id per kind. */
+  anchorId: string;
+  /** Anchor date: payout arrival, QB date received, or gift date received. */
+  date?: string | null;
+  /** Display line for the row header: payer / donor / gift name, anonymous-masked. */
+  title?: string | null;
+  /** Charge-sum gross for a payout, major units. */
+  grossTotal?: string | null;
+  /** Processor-fee total for a payout, major units. */
+  feeTotal?: string | null;
+  /** Net total (gross − fees) for a payout; the staged amount for QB money; the gift amount for crm_only. */
+  netTotal?: string | null;
+  /** What hit the bank: the raw Stripe payout amount, or the settlement-linked/standalone QB deposit amount. */
+  bankAmount?: string | null;
+  /** netTotal − bankAmount when both sides exist (the money-math gap line); null when either side is unknown. */
+  gapAmount?: string | null;
+  /** Evidence rows confirmed into gifts (excluded rows don't count toward the denominator). Null for crm_only. */
+  resolvedCount?: number | null;
+  /** Non-excluded evidence rows in the cluster. Null for crm_only. */
+  totalCount?: number | null;
+  /** TRUE total charges behind a payout (charges[] is capped, mirrors bundle-anchors). */
+  chargeCount?: number | null;
+  status: WorkbenchClusterStatus;
+  /** Server-composed one-line diagnostic under the status word (e.g. '3 of 4 complete · $99.10 unresolved'). */
+  statusDetail?: string | null;
+  /** Every lens this cluster belongs to (drives dots; agrees with lensCounts by construction). */
+  lenses: WorkbenchLens[];
+  gifts: WorkbenchClusterGift[];
+  /** Capped and ordered by amount desc; chargeCount carries the true total. Empty outside stripe_payout. */
+  charges: WorkbenchClusterCharge[];
+  qbRecords: WorkbenchClusterQbRecord[];
+  /** Null for non-payout kinds and for orphan payouts with no settlement link yet. */
+  settlement?: WorkbenchClusterSettlement | null;
+  /** Present only when the qb_standalone anchor represents a unit group. */
+  group?: WorkbenchClusterGroup | null;
+}
+
+/**
+ * Cluster counts per lens over the WHOLE universe (not the page), computed in the same request so the rail always agrees with the rows.
+ */
+export interface WorkbenchLensCounts {
+  all_open: number;
+  needs_donor_or_gift: number;
+  needs_accounting: number;
+  conflicts: number;
+  refunds: number;
+  excluded: number;
+  completed: number;
+}
+
+export interface WorkbenchClusterListResponse {
+  data: WorkbenchCluster[];
+  lensCounts: WorkbenchLensCounts;
+  pagination: Pagination;
+}
+
+/**
  * Switch the donor proposal mode.
  */
 export type BundleRowOverrideDonorKind = typeof BundleRowOverrideDonorKind[keyof typeof BundleRowOverrideDonorKind] | null;
@@ -9467,6 +9748,26 @@ queue?: BundleAnchorQueue;
  * Restrict to one anchor source. Omit to list both.
  */
 source?: BundleAnchorType;
+/**
+ * @minimum 1
+ * @maximum 10000
+ */
+limit?: LimitParameter;
+/**
+ * @minimum 1
+ */
+page?: PageParameter;
+};
+
+export type ListWorkbenchClustersParams = {
+/**
+ * Which lens to list (default all_open).
+ */
+lens?: WorkbenchLens;
+/**
+ * Free-text over payer/donor/gift names, QB memo/reference and charge/payout ids.
+ */
+q?: string;
 /**
  * @minimum 1
  * @maximum 10000

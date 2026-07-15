@@ -1904,6 +1904,18 @@ export default function ReconciliationWorkbench() {
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              <Button
+                asChild
+                variant="outline"
+                title="Read-only preview of the unified cluster view — every piece of money work as one row with its CRM, transaction and accounting facets."
+              >
+                <Link
+                  href="/reconciliation/clusters"
+                  data-testid="link-cluster-view"
+                >
+                  Cluster view (preview)
+                </Link>
+              </Button>
               {isAdmin && (
                 <Button
                   variant="outline"

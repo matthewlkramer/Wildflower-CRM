@@ -36,6 +36,7 @@ import CodingFormImport from "@/pages/coding-form-import";
 import FundableProjects from "@/pages/fundable-projects";
 import Settings from "@/pages/settings";
 import ReconciliationWorkbench from "@/pages/reconciliation-workbench";
+import ReconciliationClusters from "@/pages/reconciliation-clusters";
 import EmailIntelligence from "@/pages/email-intelligence";
 import GrantLeads from "@/pages/grant-leads";
 import EmailTracking from "@/pages/email-tracking";
@@ -224,6 +225,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/donorbox-review"><Redirect to="/reconciliation-workbench?queue=bundle" /></Route>
           <Route path="/reconciliation"><Redirect to="/reconciliation-workbench" /></Route>
           <Route path="/reconciliation-workbench"><ProtectedRoute component={ReconciliationWorkbench} /></Route>
+          <Route path="/reconciliation/clusters"><ProtectedRoute component={ReconciliationClusters} /></Route>
           <Route path="/moves"><ProtectedRoute component={Moves} /></Route>
           <Route path="/interactions"><ProtectedRoute component={Interactions} /></Route>
           <Route path="/projections"><ProtectedRoute component={Projections} /></Route>

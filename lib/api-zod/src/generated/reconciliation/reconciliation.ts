@@ -926,6 +926,125 @@ export const ListReconciliationBundleAnchorsResponse = zod.object({
 })
 
 /**
+ * One paginated list of reconciliation CLUSTERS — each row is a self-contained
+unit of money work carrying all three facets (CRM gifts, transaction evidence,
+bank & accounting records), the money math (gross − fees = net = bank, gap) and
+a server-derived rollup status, so the workbench never re-derives state.
+Exactly three cluster kinds partition the universe (money-safety mirrors the
+bundle-anchor omission rules — a QB deposit settlement-linked to a payout,
+grouped into a unit group, or tied to a charge reconciles THROUGH that cluster
+and is never listed as its own row):
+  • stripe_payout — a payout with its charges, per-charge gift links,
+    settlement-linked QB deposit and linked processor-fee QB rows.
+  • qb_standalone — a QB staged payment/deposit with no payout, group or
+    charge/fee tie (checks, ACH, wires, direct gifts); a unit-group
+    representative row carries its group rollup.
+  • crm_only — an on-books gift with NO counted QuickBooks or Stripe ledger
+    row (a Donorbox-only tie does not disqualify — it renders as a badge);
+    exempt/off-books gifts and reimbursable placeholders are omitted.
+A gift legitimately paid by BOTH a Stripe charge and an independent QB row can
+appear in two clusters (parallel evidence); both read completed.
+`lensCounts` is computed over the same universe in the same request so the
+rail counts always agree with the rows. Donor/gift names are anonymous-masked
+for the viewer. Read-only; actions ship separately.
+
+ * @summary The unified cluster list for the reconciliation workbench — every piece of money work as ONE row with its CRM, transaction and accounting facets.
+ */
+export const listWorkbenchClustersQueryLimitDefault = 50;
+export const listWorkbenchClustersQueryLimitMax = 10000;
+
+export const listWorkbenchClustersQueryPageDefault = 1;
+
+
+
+export const ListWorkbenchClustersQueryParams = zod.object({
+  "lens": zod.enum(['all_open', 'needs_donor_or_gift', 'needs_accounting', 'conflicts', 'refunds', 'excluded', 'completed']).optional().describe('Which lens to list (default all_open).'),
+  "q": zod.coerce.string().optional().describe('Free-text over payer\/donor\/gift names, QB memo\/reference and charge\/payout ids.'),
+  "limit": zod.coerce.number().min(1).max(listWorkbenchClustersQueryLimitMax).default(listWorkbenchClustersQueryLimitDefault),
+  "page": zod.coerce.number().min(1).default(listWorkbenchClustersQueryPageDefault)
+})
+
+export const ListWorkbenchClustersResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string().describe('Stable synthetic key: \'<kind>:<anchorId>\'.'),
+  "kind": zod.enum(['stripe_payout', 'qb_standalone', 'crm_only']).describe('Which anchor the cluster is built around: a Stripe payout bundle, a standalone QuickBooks staged payment\/deposit, or a CRM gift with no processor\/accounting evidence.'),
+  "anchorId": zod.string().describe('stripe_payouts.id (po_...), staged_payments.id, or gifts_and_payments.id per kind.'),
+  "date": zod.string().date().nullish().describe('Anchor date: payout arrival, QB date received, or gift date received.'),
+  "title": zod.string().nullish().describe('Display line for the row header: payer \/ donor \/ gift name, anonymous-masked.'),
+  "grossTotal": zod.string().nullish().describe('Charge-sum gross for a payout, major units.'),
+  "feeTotal": zod.string().nullish().describe('Processor-fee total for a payout, major units.'),
+  "netTotal": zod.string().nullish().describe('Net total (gross − fees) for a payout; the staged amount for QB money; the gift amount for crm_only.'),
+  "bankAmount": zod.string().nullish().describe('What hit the bank: the raw Stripe payout amount, or the settlement-linked\/standalone QB deposit amount.'),
+  "gapAmount": zod.string().nullish().describe('netTotal − bankAmount when both sides exist (the money-math gap line); null when either side is unknown.'),
+  "resolvedCount": zod.number().nullish().describe('Evidence rows confirmed into gifts (excluded rows don\'t count toward the denominator). Null for crm_only.'),
+  "totalCount": zod.number().nullish().describe('Non-excluded evidence rows in the cluster. Null for crm_only.'),
+  "chargeCount": zod.number().nullish().describe('TRUE total charges behind a payout (charges[] is capped, mirrors bundle-anchors).'),
+  "status": zod.enum(['complete', 'partial', 'unresolved', 'conflict', 'refund', 'excluded', 'unlinked']).describe('Server-derived calm rollup for the cluster\'s STATUS column. Precedence:\nconflict > refund > unresolved (nothing resolved yet) \/ partial (some\nresolved) > excluded (all evidence excluded) > complete. unlinked is the\ncrm_only kind\'s open state (gift exists, no accounting evidence yet).\n'),
+  "statusDetail": zod.string().nullish().describe('Server-composed one-line diagnostic under the status word (e.g. \'3 of 4 complete · $99.10 unresolved\').'),
+  "lenses": zod.array(zod.enum(['all_open', 'needs_donor_or_gift', 'needs_accounting', 'conflicts', 'refunds', 'excluded', 'completed']).describe('A lens is a saved filter over the cluster list — linkage-only in this phase\n(record-adequacy lenses like \"missing key info\" are additive later).\nall_open: any cluster with unresolved work (everything except completed and\npurely-excluded clusters). needs_donor_or_gift: some evidence row still lacks\na confirmed CRM gift\/donor (pending or match_proposed). needs_accounting:\nmoney with no accounting side — a crm_only gift, or a payout with no settled\ndeposit (settlement link missing or still proposed). conflicts: a proposed\nsettlement tie collided with an already-approved gift. refunds: a charge\ncarries a proposed refund\/chargeback propagation awaiting a human decision.\nexcluded: every evidence row in the cluster is excluded. completed: all\nlinkage work done (evidence confirmed into gifts; payout settled).\nA cluster carries EVERY lens it belongs to in `lenses` so dots and rail\ncounts agree.\n')).describe('Every lens this cluster belongs to (drives dots; agrees with lensCounts by construction).'),
+  "gifts": zod.array(zod.object({
+  "giftId": zod.string().describe('gifts_and_payments.id'),
+  "name": zod.string().nullish().describe('Gift name (NOT anonymous-masked today — matches app-wide behavior).'),
+  "donorName": zod.string().nullish().describe('Donor display name, anonymous-masked for the viewer.'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "donorId": zod.string().nullish().describe('The donor record\'s id (organization \/ person \/ household per donorKind).'),
+  "amount": zod.string().nullish().describe('Gift amount, major units.'),
+  "dateReceived": zod.string().date().nullish(),
+  "quickbooksTie": zod.enum(['exempt', 'tied', 'amount_mismatch', 'missing']).describe('Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.').nullish().describe('The gift\'s persisted QB tie status (exempt\/tied\/amount_mismatch\/missing).'),
+  "donorbox": zod.boolean().optional().describe('True when a counted Donorbox ledger row backs this gift (renders the DB badge).'),
+  "linkedChargeIds": zod.array(zod.string()).optional().describe('stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters.'),
+  "linkedStagedPaymentIds": zod.array(zod.string()).optional().describe('staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only.')
+}).describe('One CRM gift card in the cluster\'s donor-and-purpose facet. Carries actionable ids so later phases can wire actions without a contract change.')),
+  "charges": zod.array(zod.object({
+  "chargeId": zod.string().describe('stripe_staged_charges.id (ch_...).'),
+  "payerName": zod.string().nullish().describe('Raw processor payer name (external Stripe evidence, not a CRM name — never anonymous-masked, matching the bundle workbench).'),
+  "amount": zod.string().nullish().describe('Charge gross amount, major units.'),
+  "feeAmount": zod.string().nullish().describe('Processor fee, major units.'),
+  "netAmount": zod.string().nullish().describe('Net (gross − fee), major units.'),
+  "chargeDate": zod.string().date().nullish(),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('Derived per-record linkage status (shared vocabulary for QB staged rows and Stripe charges): pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation.'),
+  "linkedGiftId": zod.string().nullish().describe('The gift this charge\'s counted ledger row feeds, if any.'),
+  "refundProposed": zod.boolean().optional().describe('True when a refund\/chargeback propagation proposal awaits a human decision (drives the refunds lens).'),
+  "refundKind": zod.enum(['full_refund', 'partial_refund', 'chargeback']).nullish().describe('The kind of proposed reversal; null when refundProposed is false.')
+}).describe('One Stripe charge in the cluster\'s payment-evidence facet.')).describe('Capped and ordered by amount desc; chargeCount carries the true total. Empty outside stripe_payout.'),
+  "qbRecords": zod.array(zod.object({
+  "stagedPaymentId": zod.string().describe('staged_payments.id'),
+  "role": zod.enum(['anchor', 'deposit', 'fee', 'charge_tie', 'group_member']).describe('How the row participates: anchor = the qb_standalone cluster\'s own row; deposit = the payout\'s settlement-linked deposit lump; fee = a processor-fee row linked via a charge; charge_tie = a per-charge QB tie; group_member = a fellow member of the anchor\'s unit group.'),
+  "reference": zod.string().nullish().describe('Human-readable doc\/payment reference.'),
+  "lineDescription": zod.string().nullish().describe('Deposit line \/ memo description.'),
+  "memo": zod.string().nullish().describe('Transaction-level memo (PrivateNote).'),
+  "amount": zod.string().nullish().describe('Staged amount, major units.'),
+  "dateReceived": zod.string().date().nullish(),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('Derived per-record linkage status (shared vocabulary for QB staged rows and Stripe charges): pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation.'),
+  "linkedChargeId": zod.string().nullish().describe('For fee \/ charge_tie roles: the stripe_staged_charges id the link runs through.')
+}).describe('One QuickBooks staged row in the cluster\'s bank-and-accounting facet.')),
+  "settlement": zod.object({
+  "lifecycle": zod.enum(['proposed', 'confirmed']).describe('proposed = awaiting human confirm (a needs_accounting\/conflict signal); confirmed = settled.'),
+  "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit lump named by the link.'),
+  "conflictGiftId": zod.string().nullish().describe('The already-approved gift a proposed tie collided with (drives the conflicts lens).')
+}).describe('The payout↔deposit settlement tie facts for a stripe_payout cluster.').nullish().describe('Null for non-payout kinds and for orphan payouts with no settlement link yet.'),
+  "group": zod.object({
+  "memberCount": zod.number().describe('Total rows in the unit group (including the representative).'),
+  "totalAmount": zod.string().nullish().describe('Group total, major units.')
+}).describe('Unit-group rollup when the qb_standalone anchor is a group representative.').nullish().describe('Present only when the qb_standalone anchor represents a unit group.')
+}).describe('One reconciliation cluster row. A single flat shape for all three kinds —\n`kind` discriminates; kind-inapplicable fields are null\/empty (house style,\nmirrors BundleAnchor). Money fields are null when unknowable for the kind\n(e.g. no fee data for QB-only money).\n')),
+  "lensCounts": zod.object({
+  "all_open": zod.number(),
+  "needs_donor_or_gift": zod.number(),
+  "needs_accounting": zod.number(),
+  "conflicts": zod.number(),
+  "refunds": zod.number(),
+  "excluded": zod.number(),
+  "completed": zod.number()
+}).describe('Cluster counts per lens over the WHOLE universe (not the page), computed in the same request so the rail always agrees with the rows.'),
+  "pagination": zod.object({
+  "page": zod.number(),
+  "limit": zod.number(),
+  "total": zod.number()
+})
+})
+
+/**
  * Returns the COMPLETE proposed end-state for a settlement anchor — one
 Stripe payout and/or one QB deposit plus all its charges — as a persisted
 draft: the payout↔deposit tie plus, per charge/line, the proposed donor

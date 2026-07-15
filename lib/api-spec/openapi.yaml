@@ -4523,6 +4523,41 @@ paths:
         - { $ref: "#/components/parameters/Page" }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BundleAnchorListResponse" } } } }
+  /reconciliation/workbench-clusters:
+    get:
+      operationId: listWorkbenchClusters
+      tags: [reconciliation]
+      summary: The unified cluster list for the reconciliation workbench — every piece of money work as ONE row with its CRM, transaction and accounting facets.
+      description: |
+        One paginated list of reconciliation CLUSTERS — each row is a self-contained
+        unit of money work carrying all three facets (CRM gifts, transaction evidence,
+        bank & accounting records), the money math (gross − fees = net = bank, gap) and
+        a server-derived rollup status, so the workbench never re-derives state.
+        Exactly three cluster kinds partition the universe (money-safety mirrors the
+        bundle-anchor omission rules — a QB deposit settlement-linked to a payout,
+        grouped into a unit group, or tied to a charge reconciles THROUGH that cluster
+        and is never listed as its own row):
+          • stripe_payout — a payout with its charges, per-charge gift links,
+            settlement-linked QB deposit and linked processor-fee QB rows.
+          • qb_standalone — a QB staged payment/deposit with no payout, group or
+            charge/fee tie (checks, ACH, wires, direct gifts); a unit-group
+            representative row carries its group rollup.
+          • crm_only — an on-books gift with NO counted QuickBooks or Stripe ledger
+            row (a Donorbox-only tie does not disqualify — it renders as a badge);
+            exempt/off-books gifts and reimbursable placeholders are omitted.
+        A gift legitimately paid by BOTH a Stripe charge and an independent QB row can
+        appear in two clusters (parallel evidence); both read completed.
+        `lensCounts` is computed over the same universe in the same request so the
+        rail counts always agree with the rows. Donor/gift names are anonymous-masked
+        for the viewer. Read-only; actions ship separately.
+      parameters:
+        - { name: lens, in: query, schema: { $ref: "#/components/schemas/WorkbenchLens" }, description: "Which lens to list (default all_open)." }
+        - { name: q, in: query, schema: { type: string }, description: "Free-text over payer/donor/gift names, QB memo/reference and charge/payout ids." }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/WorkbenchClusterListResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /reconciliation/bundle-proposals:
     post:
       operationId: assembleReconciliationBundle
@@ -8246,6 +8281,151 @@ components:
       required: [data, pagination]
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/BundleAnchor" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    WorkbenchLens:
+      type: string
+      enum: [all_open, needs_donor_or_gift, needs_accounting, conflicts, refunds, excluded, completed]
+      description: |
+        A lens is a saved filter over the cluster list — linkage-only in this phase
+        (record-adequacy lenses like "missing key info" are additive later).
+        all_open: any cluster with unresolved work (everything except completed and
+        purely-excluded clusters). needs_donor_or_gift: some evidence row still lacks
+        a confirmed CRM gift/donor (pending or match_proposed). needs_accounting:
+        money with no accounting side — a crm_only gift, or a payout with no settled
+        deposit (settlement link missing or still proposed). conflicts: a proposed
+        settlement tie collided with an already-approved gift. refunds: a charge
+        carries a proposed refund/chargeback propagation awaiting a human decision.
+        excluded: every evidence row in the cluster is excluded. completed: all
+        linkage work done (evidence confirmed into gifts; payout settled).
+        A cluster carries EVERY lens it belongs to in `lenses` so dots and rail
+        counts agree.
+    WorkbenchClusterKind:
+      type: string
+      enum: [stripe_payout, qb_standalone, crm_only]
+      description: "Which anchor the cluster is built around: a Stripe payout bundle, a standalone QuickBooks staged payment/deposit, or a CRM gift with no processor/accounting evidence."
+    WorkbenchRecordStatus:
+      type: string
+      enum: [pending, match_proposed, match_confirmed, excluded]
+      description: "Derived per-record linkage status (shared vocabulary for QB staged rows and Stripe charges): pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation."
+    WorkbenchClusterStatus:
+      type: string
+      enum: [complete, partial, unresolved, conflict, refund, excluded, unlinked]
+      description: |
+        Server-derived calm rollup for the cluster's STATUS column. Precedence:
+        conflict > refund > unresolved (nothing resolved yet) / partial (some
+        resolved) > excluded (all evidence excluded) > complete. unlinked is the
+        crm_only kind's open state (gift exists, no accounting evidence yet).
+    WorkbenchClusterGift:
+      type: object
+      required: [giftId]
+      description: "One CRM gift card in the cluster's donor-and-purpose facet. Carries actionable ids so later phases can wire actions without a contract change."
+      properties:
+        giftId:        { type: string, description: "gifts_and_payments.id" }
+        name:          { type: string, nullable: true, description: "Gift name (NOT anonymous-masked today — matches app-wide behavior)." }
+        donorName:     { type: string, nullable: true, description: "Donor display name, anonymous-masked for the viewer." }
+        donorKind:     { type: string, enum: [organization, person, household], nullable: true }
+        donorId:       { type: string, nullable: true, description: "The donor record's id (organization / person / household per donorKind)." }
+        amount:        { type: string, nullable: true, description: "Gift amount, major units." }
+        dateReceived:  { type: string, format: date, nullable: true }
+        quickbooksTie: { allOf: [ { $ref: "#/components/schemas/GiftQuickbooksTie" } ], nullable: true, description: "The gift's persisted QB tie status (exempt/tied/amount_mismatch/missing)." }
+        donorbox:      { type: boolean, description: "True when a counted Donorbox ledger row backs this gift (renders the DB badge)." }
+        linkedChargeIds: { type: array, items: { type: string }, description: "stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters." }
+        linkedStagedPaymentIds: { type: array, items: { type: string }, description: "staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only." }
+    WorkbenchClusterCharge:
+      type: object
+      required: [chargeId, status]
+      description: "One Stripe charge in the cluster's payment-evidence facet."
+      properties:
+        chargeId:       { type: string, description: "stripe_staged_charges.id (ch_...)." }
+        payerName:      { type: string, nullable: true, description: "Raw processor payer name (external Stripe evidence, not a CRM name — never anonymous-masked, matching the bundle workbench)." }
+        amount:         { type: string, nullable: true, description: "Charge gross amount, major units." }
+        feeAmount:      { type: string, nullable: true, description: "Processor fee, major units." }
+        netAmount:      { type: string, nullable: true, description: "Net (gross − fee), major units." }
+        chargeDate:     { type: string, format: date, nullable: true }
+        status:         { $ref: "#/components/schemas/WorkbenchRecordStatus" }
+        linkedGiftId:   { type: string, nullable: true, description: "The gift this charge's counted ledger row feeds, if any." }
+        refundProposed: { type: boolean, description: "True when a refund/chargeback propagation proposal awaits a human decision (drives the refunds lens)." }
+        refundKind:     { type: string, enum: [full_refund, partial_refund, chargeback], nullable: true, description: "The kind of proposed reversal; null when refundProposed is false." }
+    WorkbenchClusterQbRecord:
+      type: object
+      required: [stagedPaymentId, role, status]
+      description: "One QuickBooks staged row in the cluster's bank-and-accounting facet."
+      properties:
+        stagedPaymentId: { type: string, description: "staged_payments.id" }
+        role:
+          type: string
+          enum: [anchor, deposit, fee, charge_tie, group_member]
+          description: "How the row participates: anchor = the qb_standalone cluster's own row; deposit = the payout's settlement-linked deposit lump; fee = a processor-fee row linked via a charge; charge_tie = a per-charge QB tie; group_member = a fellow member of the anchor's unit group."
+        reference:       { type: string, nullable: true, description: "Human-readable doc/payment reference." }
+        lineDescription: { type: string, nullable: true, description: "Deposit line / memo description." }
+        memo:            { type: string, nullable: true, description: "Transaction-level memo (PrivateNote)." }
+        amount:          { type: string, nullable: true, description: "Staged amount, major units." }
+        dateReceived:    { type: string, format: date, nullable: true }
+        status:          { $ref: "#/components/schemas/WorkbenchRecordStatus" }
+        linkedChargeId:  { type: string, nullable: true, description: "For fee / charge_tie roles: the stripe_staged_charges id the link runs through." }
+    WorkbenchClusterSettlement:
+      type: object
+      required: [lifecycle]
+      description: "The payout↔deposit settlement tie facts for a stripe_payout cluster."
+      properties:
+        lifecycle:               { type: string, enum: [proposed, confirmed], description: "proposed = awaiting human confirm (a needs_accounting/conflict signal); confirmed = settled." }
+        depositStagedPaymentId:  { type: string, nullable: true, description: "The QB deposit lump named by the link." }
+        conflictGiftId:          { type: string, nullable: true, description: "The already-approved gift a proposed tie collided with (drives the conflicts lens)." }
+    WorkbenchClusterGroup:
+      type: object
+      required: [memberCount]
+      description: "Unit-group rollup when the qb_standalone anchor is a group representative."
+      properties:
+        memberCount: { type: integer, description: "Total rows in the unit group (including the representative)." }
+        totalAmount: { type: string, nullable: true, description: "Group total, major units." }
+    WorkbenchCluster:
+      type: object
+      required: [id, kind, anchorId, status, lenses, gifts, charges, qbRecords]
+      description: |
+        One reconciliation cluster row. A single flat shape for all three kinds —
+        `kind` discriminates; kind-inapplicable fields are null/empty (house style,
+        mirrors BundleAnchor). Money fields are null when unknowable for the kind
+        (e.g. no fee data for QB-only money).
+      properties:
+        id:            { type: string, description: "Stable synthetic key: '<kind>:<anchorId>'." }
+        kind:          { $ref: "#/components/schemas/WorkbenchClusterKind" }
+        anchorId:      { type: string, description: "stripe_payouts.id (po_...), staged_payments.id, or gifts_and_payments.id per kind." }
+        date:          { type: string, format: date, nullable: true, description: "Anchor date: payout arrival, QB date received, or gift date received." }
+        title:         { type: string, nullable: true, description: "Display line for the row header: payer / donor / gift name, anonymous-masked." }
+        grossTotal:    { type: string, nullable: true, description: "Charge-sum gross for a payout, major units." }
+        feeTotal:      { type: string, nullable: true, description: "Processor-fee total for a payout, major units." }
+        netTotal:      { type: string, nullable: true, description: "Net total (gross − fees) for a payout; the staged amount for QB money; the gift amount for crm_only." }
+        bankAmount:    { type: string, nullable: true, description: "What hit the bank: the raw Stripe payout amount, or the settlement-linked/standalone QB deposit amount." }
+        gapAmount:     { type: string, nullable: true, description: "netTotal − bankAmount when both sides exist (the money-math gap line); null when either side is unknown." }
+        resolvedCount: { type: integer, nullable: true, description: "Evidence rows confirmed into gifts (excluded rows don't count toward the denominator). Null for crm_only." }
+        totalCount:    { type: integer, nullable: true, description: "Non-excluded evidence rows in the cluster. Null for crm_only." }
+        chargeCount:   { type: integer, nullable: true, description: "TRUE total charges behind a payout (charges[] is capped, mirrors bundle-anchors)." }
+        status:        { $ref: "#/components/schemas/WorkbenchClusterStatus" }
+        statusDetail:  { type: string, nullable: true, description: "Server-composed one-line diagnostic under the status word (e.g. '3 of 4 complete · $99.10 unresolved')." }
+        lenses:        { type: array, items: { $ref: "#/components/schemas/WorkbenchLens" }, description: "Every lens this cluster belongs to (drives dots; agrees with lensCounts by construction)." }
+        gifts:         { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterGift" } }
+        charges:       { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterCharge" }, description: "Capped and ordered by amount desc; chargeCount carries the true total. Empty outside stripe_payout." }
+        qbRecords:     { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterQbRecord" } }
+        settlement:    { allOf: [ { $ref: "#/components/schemas/WorkbenchClusterSettlement" } ], nullable: true, description: "Null for non-payout kinds and for orphan payouts with no settlement link yet." }
+        group:         { allOf: [ { $ref: "#/components/schemas/WorkbenchClusterGroup" } ], nullable: true, description: "Present only when the qb_standalone anchor represents a unit group." }
+    WorkbenchLensCounts:
+      type: object
+      required: [all_open, needs_donor_or_gift, needs_accounting, conflicts, refunds, excluded, completed]
+      description: "Cluster counts per lens over the WHOLE universe (not the page), computed in the same request so the rail always agrees with the rows."
+      properties:
+        all_open:            { type: integer }
+        needs_donor_or_gift: { type: integer }
+        needs_accounting:    { type: integer }
+        conflicts:           { type: integer }
+        refunds:             { type: integer }
+        excluded:            { type: integer }
+        completed:           { type: integer }
+    WorkbenchClusterListResponse:
+      type: object
+      required: [data, lensCounts, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/WorkbenchCluster" } }
+        lensCounts: { $ref: "#/components/schemas/WorkbenchLensCounts" }
         pagination: { $ref: "#/components/schemas/Pagination" }
     BundleRowOverride:
       type: object

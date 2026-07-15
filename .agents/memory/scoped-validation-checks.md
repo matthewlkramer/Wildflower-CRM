@@ -51,3 +51,14 @@ generated output, not real type errors.
 then re-run the failed checks (they'll pass unchanged). An `EADDRINUSE:8080` on
 the api-server workflow in the same storm is an orphaned server process — just
 restart the workflow (it usually clears itself).
+
+## The api-server DEV workflow build hits the same race
+
+The api-server workflow runs `pnpm run build && pnpm run start` (esbuild bundles
+api-zod), so restarting it while the `codegen` validation workflow is mid-clean
+fails the build with esbuild `Could not resolve "./generated"` in
+`lib/api-zod/src/index.ts` — the server then serves nothing (proxy 502, e2e
+"unable"). The validation storm can restart `codegen` MORE THAN ONCE, so a retry
+can lose the race twice in a row. **How to apply:** after any validation storm,
+confirm the codegen workflow is FINISHED before restarting the api-server
+workflow, then verify with a curl through `localhost:80` (401 = up).

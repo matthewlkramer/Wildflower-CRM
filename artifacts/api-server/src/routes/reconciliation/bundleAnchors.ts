@@ -46,7 +46,7 @@ type AnchorSource = "stripe_payout" | "qb_staged_payment";
 // donation, not a deposit lump), but every charge is either confirmed-tied to
 // its own QB row (`linked_qb_staged_payment_id`) or terminal. Such a payout is
 // SETTLED — it shows as Matched, not Missing deposit.
-const fullyChargeTied = sql`(
+export const fullyChargeTied = sql`(
   NOT EXISTS (SELECT 1 FROM settlement_links sl WHERE sl.payout_id = sp.id)
   AND EXISTS (
     SELECT 1 FROM stripe_staged_charges c

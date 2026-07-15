@@ -37,6 +37,7 @@ import type {
   ListIncompleteGiftsParams,
   ListReconciliationBundleAnchorsParams,
   ListReconciliationCardsParams,
+  ListWorkbenchClustersParams,
   NotFoundResponse,
   PayoutSearchList,
   ReconciliationApproveResult,
@@ -52,7 +53,8 @@ import type {
   SearchReconciliationNodeParams,
   SearchReconciliationPayoutsParams,
   SearchReconciliationQbStagedParams,
-  SettlementLineage
+  SettlementLineage,
+  WorkbenchClusterListResponse
 } from '../api.schemas';
 
 import { customFetch } from '../../custom-fetch';
@@ -1482,6 +1484,109 @@ export function useListReconciliationBundleAnchors<TData = Awaited<ReturnType<ty
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListReconciliationBundleAnchorsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * One paginated list of reconciliation CLUSTERS — each row is a self-contained
+unit of money work carrying all three facets (CRM gifts, transaction evidence,
+bank & accounting records), the money math (gross − fees = net = bank, gap) and
+a server-derived rollup status, so the workbench never re-derives state.
+Exactly three cluster kinds partition the universe (money-safety mirrors the
+bundle-anchor omission rules — a QB deposit settlement-linked to a payout,
+grouped into a unit group, or tied to a charge reconciles THROUGH that cluster
+and is never listed as its own row):
+  • stripe_payout — a payout with its charges, per-charge gift links,
+    settlement-linked QB deposit and linked processor-fee QB rows.
+  • qb_standalone — a QB staged payment/deposit with no payout, group or
+    charge/fee tie (checks, ACH, wires, direct gifts); a unit-group
+    representative row carries its group rollup.
+  • crm_only — an on-books gift with NO counted QuickBooks or Stripe ledger
+    row (a Donorbox-only tie does not disqualify — it renders as a badge);
+    exempt/off-books gifts and reimbursable placeholders are omitted.
+A gift legitimately paid by BOTH a Stripe charge and an independent QB row can
+appear in two clusters (parallel evidence); both read completed.
+`lensCounts` is computed over the same universe in the same request so the
+rail counts always agree with the rows. Donor/gift names are anonymous-masked
+for the viewer. Read-only; actions ship separately.
+
+ * @summary The unified cluster list for the reconciliation workbench — every piece of money work as ONE row with its CRM, transaction and accounting facets.
+ */
+export const getListWorkbenchClustersUrl = (params?: ListWorkbenchClustersParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reconciliation/workbench-clusters?${stringifiedParams}` : `/api/reconciliation/workbench-clusters`
+}
+
+export const listWorkbenchClusters = async (params?: ListWorkbenchClustersParams, options?: RequestInit): Promise<WorkbenchClusterListResponse> => {
+  
+  return customFetch<WorkbenchClusterListResponse>(getListWorkbenchClustersUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getListWorkbenchClustersQueryKey = (params?: ListWorkbenchClustersParams,) => {
+    return [
+    `/api/reconciliation/workbench-clusters`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getListWorkbenchClustersQueryOptions = <TData = Awaited<ReturnType<typeof listWorkbenchClusters>>, TError = ErrorType<BadRequestResponse>>(params?: ListWorkbenchClustersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchClusters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWorkbenchClustersQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWorkbenchClusters>>> = ({ signal }) => listWorkbenchClusters(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchClusters>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWorkbenchClustersQueryResult = NonNullable<Awaited<ReturnType<typeof listWorkbenchClusters>>>
+export type ListWorkbenchClustersQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary The unified cluster list for the reconciliation workbench — every piece of money work as ONE row with its CRM, transaction and accounting facets.
+ */
+
+export function useListWorkbenchClusters<TData = Awaited<ReturnType<typeof listWorkbenchClusters>>, TError = ErrorType<BadRequestResponse>>(
+ params?: ListWorkbenchClustersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchClusters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWorkbenchClustersQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
