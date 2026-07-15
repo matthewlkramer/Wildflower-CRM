@@ -229,9 +229,9 @@ describe("canonicalWinProbability", () => {
     expect(canonicalWinProbability("open", "probable_renewal")).toBe("0.7500");
     expect(canonicalWinProbability("open", "verbal_confirmation")).toBe("0.9000");
   });
-  it("returns null when neither matches", () => {
-    expect(canonicalWinProbability(null, null)).toBeNull();
-    expect(canonicalWinProbability("open", null)).toBeNull();
+  it("never returns null — an unstaged open row weights 0 like a cold lead", () => {
+    expect(canonicalWinProbability(null, null)).toBe("0.0000");
+    expect(canonicalWinProbability("open", null)).toBe("0.0000");
   });
 
   it("win probability tracks the derived status end-to-end", () => {

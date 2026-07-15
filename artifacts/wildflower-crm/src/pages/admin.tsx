@@ -13,6 +13,8 @@ import {
   useAdminGetSchoolSyncStatus,
   useAdminRunSchoolSync,
   getAdminGetSchoolSyncStatusQueryKey,
+  useAdminGetDerivationHealth,
+  getAdminGetDerivationHealthQueryKey,
   useGetCalendarMeetingFilters,
   useUpdateCalendarMeetingFilters,
   useGetInternalEmailDomains,
@@ -199,6 +201,7 @@ export default function Admin() {
             <SchoolSyncSection />
             <QuickbooksConnectSection returnTo="/admin" />
             <StripeSyncSection />
+            <DerivationHealthSection />
           </TabsContent>
         )}
 
@@ -546,6 +549,147 @@ function SchoolSyncSection() {
           title="Runs the Airtable → schools sync immediately."
         >
           {run.isPending ? "Syncing…" : "Sync now"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Admin: derivation health (report-only drift check) ──────────────────────
+// Re-derives every persisted-derived field (opportunity status / stage /
+// written pledge / paid / win probability, gift QuickBooks tie status) through
+// the same functions the write paths use, and lists any row where the stored
+// value no longer matches. Report-only: it never changes data.
+const DRIFT_FIELD_LABELS: Record<string, string> = {
+  status: "Status",
+  stage: "Stage",
+  written_pledge: "Written pledge",
+  paid: "Paid amount",
+  win_probability: "Win probability",
+  quickbooks_tie_status: "QuickBooks tie",
+};
+
+function DerivationHealthSection() {
+  const q = useAdminGetDerivationHealth({
+    query: {
+      queryKey: getAdminGetDerivationHealthQueryKey(),
+      // The check re-reads everything; don't hammer it on tab switches.
+      staleTime: 5 * 60_000,
+    },
+  });
+
+  // 403 for non-admins: hide the whole card (same convention as the other
+  // admin-only sections).
+  const errStatus = (q.error as unknown as { status?: number } | null)?.status;
+  if (errStatus === 403) return null;
+
+  const r = q.data;
+
+  return (
+    <Card data-testid="admin-derivation-health-section">
+      <CardHeader>
+        <CardTitle>Derived-data health</CardTitle>
+        <CardDescription>
+          Recomputes every calculated field (opportunity status, stage, written
+          pledge, paid amount, win probability, and gift QuickBooks tie) from
+          its inputs and flags rows where the stored value disagrees. This is a
+          report only — nothing is changed. Drift usually means a write path
+          skipped its recalculation step. The same check also runs nightly and
+          logs its result.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {q.isLoading ? (
+          <p className="text-sm text-muted-foreground">Checking…</p>
+        ) : q.isError ? (
+          <div
+            className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            data-testid="derivation-health-error"
+          >
+            Health check failed to run
+            {q.error instanceof Error ? ` — ${q.error.message}` : ""}.
+          </div>
+        ) : r ? (
+          <>
+            {r.driftCount === 0 ? (
+              <div
+                className="rounded-md border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-800"
+                data-testid="derivation-health-clean"
+              >
+                ✓ No drift — all stored derived fields match their calculation.
+              </div>
+            ) : (
+              <div
+                className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm text-amber-800"
+                data-testid="derivation-health-drift"
+              >
+                ⚠ {r.driftCount} field{r.driftCount === 1 ? "" : "s"} out of
+                sync across{" "}
+                {Object.entries(r.byField)
+                  .map(([f, n]) => `${DRIFT_FIELD_LABELS[f] ?? f}: ${n}`)
+                  .join(" · ")}
+              </div>
+            )}
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+              <div>
+                <dt className="text-muted-foreground">Checked</dt>
+                <dd className="font-medium" data-testid="derivation-health-checked">
+                  {r.checkedOpportunities} opportunities · {r.checkedGifts} gifts
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Ran</dt>
+                <dd className="font-medium" data-testid="derivation-health-ran-at">
+                  {fmtTime(r.ranAt)} ({r.durationMs}ms)
+                </dd>
+              </div>
+            </dl>
+            {r.drift.length > 0 && (
+              <div
+                className="max-h-80 overflow-y-auto rounded-md border"
+                data-testid="derivation-health-rows"
+              >
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-muted/80 backdrop-blur">
+                    <tr className="text-left">
+                      <th className="px-3 py-2 font-medium">Record</th>
+                      <th className="px-3 py-2 font-medium">Field</th>
+                      <th className="px-3 py-2 font-medium">Stored</th>
+                      <th className="px-3 py-2 font-medium">Should be</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.drift.map((d, i) => (
+                      <tr key={`${d.table}-${d.id}-${d.field}-${i}`} className="border-t">
+                        <td className="max-w-64 truncate px-3 py-1.5" title={`${d.table} ${d.id}`}>
+                          {d.name || d.id}
+                        </td>
+                        <td className="px-3 py-1.5">{DRIFT_FIELD_LABELS[d.field] ?? d.field}</td>
+                        <td className="px-3 py-1.5 font-mono text-xs">{d.stored ?? "—"}</td>
+                        <td className="px-3 py-1.5 font-mono text-xs">{d.derived ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {r.truncated && (
+              <p className="text-xs text-muted-foreground">
+                Showing the first {r.drift.length} of {r.driftCount} — run the
+                CLI report for the full list.
+              </p>
+            )}
+          </>
+        ) : null}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={q.isFetching}
+          onClick={() => void q.refetch()}
+          data-testid="derivation-health-rerun"
+          title="Re-runs the read-only drift check now."
+        >
+          {q.isFetching ? "Checking…" : "Re-run check"}
         </Button>
       </CardContent>
     </Card>

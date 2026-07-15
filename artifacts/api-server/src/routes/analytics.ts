@@ -21,16 +21,11 @@ import {
 import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound } from "../lib/helpers";
+import { personDisplayNameSql as personNameSqlFor } from "../lib/personNameSql";
 
-// Person display name matches the rest of the API: COALESCE(full_name,
-// trim(first||' '||last)). Kept inline (not extracted) because callers
-// pick different parent-table columns alongside it.
-const personDisplayNameSql = sql<string | null>`
-  COALESCE(
-    NULLIF(TRIM(${people.fullName}), ''),
-    NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-  )
-`;
+// Person display name — the canonical chain shared with the rest of the
+// API (see lib/personNameSql.ts).
+const personDisplayNameSql = personNameSqlFor(people);
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -158,7 +153,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
       // Win-probability is per-opp; the derivation sets it to 0.90 for an unpaid
       // written pledge (0.75 if conditional). Carried through so the weighted
       // commitment line discounts pledges instead of counting them at 100%.
-      winProb: sql<string>`COALESCE(MAX(${opportunitiesAndPledges.winProbability}), 0.9)`.as("pledged_win_prob"),
+      winProb: sql<string>`MAX(${opportunitiesAndPledges.winProbability})`.as("pledged_win_prob"),
     })
     .from(pledgeAllocations)
     .innerJoin(
@@ -211,7 +206,7 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
       .select({
         category: oppCategorySql,
         ask: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
-        weighted: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1)), 0)::text`,
+        weighted: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount} * ${opportunitiesAndPledges.winProbability}), 0)::text`,
       })
       .from(pledgeAllocations)
       .innerJoin(
@@ -573,7 +568,7 @@ router.get(
         .select({
           allocationId: pledgeAllocations.id,
           subAmount: sql<string>`${pledgeAllocations.subAmount}::text`,
-          weightedAmount: sql<string>`(${pledgeAllocations.subAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1))::text`,
+          weightedAmount: sql<string>`(${pledgeAllocations.subAmount} * ${opportunitiesAndPledges.winProbability})::text`,
           category: oppCategorySql,
           allocationStatus: sql<string | null>`${pledgeAllocations.status}::text`,
           entityId: pledgeAllocations.entityId,
@@ -709,7 +704,7 @@ router.get(
       .select({
         oppId: sql<string>`${pledgeAllocations.pledgeOrOpportunityId}`.as("pledged_opp_id"),
         pledged: sql<string>`SUM(${pledgeAllocations.subAmount})`.as("pledged"),
-        winProb: sql<string>`COALESCE(MAX(${opportunitiesAndPledges.winProbability}), 0.9)`.as("pledged_win_prob"),
+        winProb: sql<string>`MAX(${opportunitiesAndPledges.winProbability})`.as("pledged_win_prob"),
       })
       .from(pledgeAllocations)
       .innerJoin(
@@ -821,7 +816,7 @@ router.get(
         .select({
           allocationId: pledgeAllocations.id,
           subAmount: sql<string>`${pledgeAllocations.subAmount}::text`,
-          weightedAmount: sql<string>`(${pledgeAllocations.subAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1))::text`,
+          weightedAmount: sql<string>`(${pledgeAllocations.subAmount} * ${opportunitiesAndPledges.winProbability})::text`,
           entityId: pledgeAllocations.entityId,
           intendedUsage: sql<string | null>`${pledgeAllocations.intendedUsage}::text`,
           fundableProjectId: pledgeAllocations.fundableProjectId,
@@ -1029,7 +1024,7 @@ router.get(
         category: oppCategorySql,
         allocationCount: count(),
         totalSubAmount: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
-        expected: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount} * COALESCE(${opportunitiesAndPledges.winProbability}, 1)), 0)::text`,
+        expected: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount} * ${opportunitiesAndPledges.winProbability}), 0)::text`,
       })
       .from(pledgeAllocations)
       .innerJoin(

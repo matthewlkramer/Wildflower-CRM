@@ -27,6 +27,7 @@ import {
   GIFT_MATCH_WINDOW_DAYS,
 } from "../../lib/giftMatch";
 import { deriveEvidenceLanes } from "../../lib/reconciliationLanes";
+import { deriveCardVerdict } from "../../lib/reconciliationGate";
 import {
   chargeStatusSql,
   stagedStatusWhere,
@@ -484,7 +485,8 @@ router.get(
           (SELECT h.name FROM households h WHERE h.id = ${stripeStagedCharges.householdId}),
           (SELECT COALESCE(
                     NULLIF(TRIM(pp.full_name), ''),
-                    NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), '')
+                    NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), ''),
+                    NULLIF(TRIM(pp.nickname), '')
                   )
              FROM people pp WHERE pp.id = ${stripeStagedCharges.individualGiverPersonId})
         )`.as("charge_donor_name"),
@@ -502,7 +504,8 @@ router.get(
             (SELECT h.name FROM households h WHERE h.id = g.household_id),
             (SELECT COALESCE(
                       NULLIF(TRIM(pp.full_name), ''),
-                      NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), '')
+                      NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), ''),
+                      NULLIF(TRIM(pp.nickname), '')
                     )
                FROM people pp WHERE pp.id = g.individual_giver_person_id)
           )
@@ -623,7 +626,8 @@ router.get(
               (SELECT h.name FROM households h WHERE h.id = g.household_id),
               (SELECT COALESCE(
                         NULLIF(TRIM(pp.full_name), ''),
-                        NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), '')
+                        NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), ''),
+                        NULLIF(TRIM(pp.nickname), '')
                       )
                  FROM people pp WHERE pp.id = g.individual_giver_person_id)
             )
@@ -808,7 +812,7 @@ router.get(
         ? row.chargeMatchConfirmedAt != null
         : row.matchConfirmedAt != null;
 
-      return {
+      const card = {
         stagedPaymentId: row.id,
         stripeChargeId: isCharge ? row.chargeId : null,
         status: row.status,
@@ -939,6 +943,12 @@ router.get(
             ? row.updatedAt.toISOString()
             : (row.updatedAt ?? null),
       };
+      // Server-authoritative verdict (3-state status + settled bucketing),
+      // derived from the assembled card so it uses exactly the amounts the
+      // client sees — and the approve gate's own fee band, so the review
+      // column can never disagree with what the gate would accept.
+      const verdict = deriveCardVerdict(card);
+      return { ...card, cardStatus: verdict.status, settled: verdict.settled };
     });
 
     const page = Math.floor(offset / limit) + 1;

@@ -82,6 +82,7 @@ import {
   stripeLedgerGiftIdForCharge,
 } from "./paymentApplications";
 import { payoutStatusFromLink } from "./settlementLink";
+import { personDisplayNameSql } from "./personNameSql";
 import {
   ANON_LABEL,
   canSeeIdentity,
@@ -219,12 +220,9 @@ function candidate(init: CandidateInit): RecCandidate {
   };
 }
 
-// COALESCE(full_name, "first last") — nicer person display than raw full_name.
-const personNameSql = sql<string | null>`
-  COALESCE(
-    NULLIF(TRIM(${people.fullName}), ''),
-    NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-  )`;
+// Canonical person display chain (full → first+last → nickname); see
+// lib/personNameSql.ts.
+const personNameSql = personDisplayNameSql(people);
 
 function methodToSource(m: MatchMethod | null): RecCandidateSource {
   const s = (m ?? "") as string;

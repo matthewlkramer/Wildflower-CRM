@@ -36,12 +36,9 @@ const donorJoinSelect = {
   // anonymous/owner helpers, masked + stripped in maskOppDonorRow.
   primaryContactAnonymous: primaryContact.anonymous,
   primaryContactOwnerUserId: primaryContact.ownerUserId,
-  primaryContactPersonName: sql<string | null>`
-    COALESCE(
-      NULLIF(TRIM(${primaryContact.fullName}), ''),
-      NULLIF(TRIM(CONCAT_WS(' ', ${primaryContact.firstName}, ${primaryContact.lastName})), '')
-    )
-  `.as("primary_contact_person_name"),
+  primaryContactPersonName: personDisplayNameSql(primaryContact).as(
+    "primary_contact_person_name",
+  ),
   // FY ends Jun 30 in America/Chicago, so Jul-Dec roll forward. We
   // shift the date by 6 months and read the year off — gives the same
   // answer as a CASE on EXTRACT(MONTH) but in fewer ops. Apostrophe-
@@ -128,6 +125,7 @@ import {
 import { reimbursablePledgeExistsSql } from "../lib/reimbursablePlaceholder";
 import { isFlaggedForResearch } from "../lib/flaggedForResearch";
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
+import { personDisplayNameSql } from "../lib/personNameSql";
 import {
   donorDisplayColumns,
   maskDonorDisplayFields,
@@ -206,10 +204,7 @@ router.get(
           ilike(opportunitiesAndPledges.name, term),
           ilike(organizations.name, term),
           ilike(households.name, term),
-          sql`COALESCE(
-            NULLIF(TRIM(${people.fullName}), ''),
-            NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-          ) ILIKE ${term}`,
+          sql`(${personDisplayNameSql(people)}) ILIKE ${term}`,
         )!,
       );
     }
@@ -341,7 +336,12 @@ router.get(
         : q.worklist === "partially_paid"
           ? [sql`${opportunitiesAndPledges.projectedCloseDate} ASC NULLS LAST`]
           : null;
-    const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
+    // Opt-in per-stage SUM(ask_amount) over the FULL filtered set (not just
+    // this page) so the pipeline board's column totals stay correct when the
+    // row set exceeds the page limit. Reuses the same joins as the count
+    // query (search may reference the donor tables).
+    const wantStageTotals = q.includeStageAskTotals === true;
+    const [rows, [{ value: total } = { value: 0 }], stageTotalRows] = await Promise.all([
       db
         .select(donorJoinSelect)
         .from(opportunitiesAndPledges)
@@ -360,10 +360,32 @@ router.get(
         .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
         .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
         .where(where),
+      wantStageTotals
+        ? db
+            .select({
+              stage: opportunitiesAndPledges.stage,
+              total: sql<string | null>`SUM(${opportunitiesAndPledges.askAmount})`,
+            })
+            .from(opportunitiesAndPledges)
+            .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
+            .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
+            .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
+            .where(where)
+            .groupBy(opportunitiesAndPledges.stage)
+        : Promise.resolve([] as { stage: string | null; total: string | null }[]),
     ]);
     const viewer = getViewer(req);
     const data = rows.map((r) => maskOppDonorRow(r, viewer));
-    res.json({ data, pagination: { page, limit, total: Number(total) } });
+    const stageAskTotals = Object.fromEntries(
+      stageTotalRows.flatMap((r) =>
+        r.stage != null && r.total != null ? [[r.stage, r.total] as const] : [],
+      ),
+    );
+    res.json({
+      data,
+      pagination: { page, limit, total: Number(total) },
+      ...(wantStageTotals ? { stageAskTotals } : {}),
+    });
   }),
 );
 

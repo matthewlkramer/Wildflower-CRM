@@ -1,5 +1,6 @@
 import {
   StagedPaymentFundingSource,
+  type ReconciliationCardCardStatus,
   type ReconciliationEdgeState,
   type ReconciliationCandidateSource,
   type ReconciliationCandidate,
@@ -60,87 +61,20 @@ export function laneBadges(
 }
 
 /**
- * A reconciliation match's status — collapsed to three states so a reviewer
- * doesn't have to juggle a taxonomy:
- *   - none     — the matcher hasn't found anything yet.
- *   - proposal — the matcher thinks it has a match (a candidate gift or donor)
- *                that a human still has to confirm.
- *   - matched  — the money is tied to a resolved CRM gift (a human set the match
- *                or approved the matcher's proposal).
+ * Badge for the server-derived 3-state card verdict (`card.cardStatus`). The
+ * verdict itself — matched / proposal / none, plus the separate `settled`
+ * bucketing flag — is computed server-side (deriveCardVerdict, using the
+ * approve gate's own fee band) and shipped on every card; the client only
+ * renders it.
  */
-export type ReconCardStatusKey = "none" | "proposal" | "matched";
-
-export interface ReconCardStatus {
-  key: ReconCardStatusKey;
-  label: string;
-  variant: BadgeVariant;
-}
-
-function toAmount(v: string | null | undefined): number | null {
-  if (v == null || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
-/**
- * The single human "Status:" line a reconciliation card leads with. There are
- * only three states by design — the reviewer shouldn't have to juggle a
- * taxonomy of "awaiting / partial / multiple":
- *
- *  - matched  — the money is tied to a resolved CRM gift (a human set the match
- *               or approved the matcher's proposal).
- *  - proposal — the matcher has a candidate (a proposed gift, a determined /
- *               ambiguous gift edge, or a proposed donor to create a gift for)
- *               that a human still has to confirm.
- *  - none     — no gift or donor candidate yet.
- */
-export function deriveCardStatus(card: {
-  resolvedGiftId?: string | null;
-  proposedGiftId?: string | null;
-  proposedDonorId?: string | null;
-  proposedDonorName?: string | null;
-  giftState?: ReconciliationEdgeState;
-}): ReconCardStatus {
-  if (card.resolvedGiftId) {
-    return { key: "matched", label: "Matched", variant: "default" };
-  }
-
-  if (
-    card.proposedGiftId ||
-    card.giftState === "determined" ||
-    card.giftState === "ambiguous" ||
-    card.proposedDonorId ||
-    card.proposedDonorName
-  ) {
-    return { key: "proposal", label: "Proposed match", variant: "secondary" };
-  }
-
-  return { key: "none", label: "No match yet", variant: "outline" };
-}
-
-/**
- * Whether a card's gift link is fully SETTLED — a resolved gift whose amount
- * matches the deposit within the auto-match fee band (10% + $1, using the group
- * total for grouped cards). This is a BUCKETING signal only (it decides whether
- * a resolved card can drop out of the review column), kept deliberately separate
- * from the user-facing 3-state status: an amount-divergent resolved gift still
- * reads as "Matched" but stays in review so the rest of the money can be tied to
- * it.
- */
-export function isSettledGiftLink(card: {
-  resolvedGiftId?: string | null;
-  resolvedGiftAmount?: string | null;
-  amount?: string | null;
-  sourceGroupTotalAmount?: string | null;
-}): boolean {
-  if (!card.resolvedGiftId) return false;
-  const dep = toAmount(card.sourceGroupTotalAmount ?? card.amount);
-  const gift = toAmount(card.resolvedGiftAmount);
-  if (dep == null || gift == null) return true;
-  if (gift > dep * 1.1 + 1) return false;
-  if (dep > gift * 1.1 + 1) return false;
-  return true;
-}
+export const CARD_STATUS_BADGE: Record<
+  ReconciliationCardCardStatus,
+  { label: string; variant: BadgeVariant }
+> = {
+  matched: { label: "Matched", variant: "default" },
+  proposal: { label: "Proposed match", variant: "secondary" },
+  none: { label: "No match yet", variant: "outline" },
+};
 
 /** Edge-state → badge label + variant for the node summaries. */
 export const EDGE_STATE_BADGE: Record<

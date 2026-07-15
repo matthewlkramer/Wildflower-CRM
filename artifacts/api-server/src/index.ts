@@ -10,6 +10,7 @@ import { startFlodeskSyncScheduler } from "./lib/flodeskSyncScheduler";
 import { startSchoolSyncScheduler } from "./lib/schoolSyncScheduler";
 import { startTaskSuggestionScheduler } from "./lib/taskSuggestionScheduler";
 import { startEmailIntelRecoveryScheduler } from "./lib/emailIntelRecoveryScheduler";
+import { startDerivationHealthScheduler } from "./lib/derivationHealthScheduler";
 import { runTaskSuggestionBackfillIfDue } from "./lib/taskSuggestionBackfill";
 import { backfillIntelForUser } from "./lib/gmailBackfill";
 import { analyzePendingForUser } from "./lib/analyzePending";
@@ -44,6 +45,7 @@ app.listen(port, (err) => {
   startSchoolSyncScheduler();
   startTaskSuggestionScheduler();
   startEmailIntelRecoveryScheduler();
+  startDerivationHealthScheduler();
 
   // One-time upfront task-suggestion backfill: ensures every non-low-priority
   // person + organization has a cached next-step suggestion. Triggered by

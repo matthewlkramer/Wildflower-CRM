@@ -239,6 +239,73 @@ export function amountWithinFeeBand(
   return g >= e - HALF_CENT && g <= e * FEE_BAND_MULTIPLIER + FEE_BAND_ADDEND;
 }
 
+/** The workbench card's server-authoritative 3-state match verdict. */
+export type CardStatusVerdict = "none" | "proposal" | "matched";
+
+export interface CardVerdict {
+  /** 3-state "Status:" line: matched (resolved gift) > proposal (candidate
+   *  gift/donor awaiting a human) > none. */
+  status: CardStatusVerdict;
+  /** Bucketing verdict: a resolved gift whose amount agrees with the card's
+   *  evidence within the approve gate's fee band drops out of the review
+   *  column. Amount-divergent resolved gifts stay visible (still "matched")
+   *  so the rest of the money can be tied to them. */
+  settled: boolean;
+}
+
+/**
+ * Derive the card's verdict (status + settled) server-side so the workbench
+ * renders it instead of re-deriving settlement math client-side. Pure, and
+ * uses the SAME authoritative fee band as the approve gate
+ * (amountWithinFeeBand), so the review-column bucketing can never disagree
+ * with what the gate would accept.
+ *
+ * Evidence precedence mirrors the gate: a source group reconciles for its
+ * members' combined total (never with a per-charge net); Stripe GROSS wins
+ * when a charge backs the money (with the net opening the [net, gross]
+ * window); otherwise the QB amount. Unknown amounts (either side null) count
+ * as settled — same convention as deriveGiftQbTie (unknown ⇒ no discrepancy
+ * to hold the card in review for).
+ */
+export function deriveCardVerdict(card: {
+  resolvedGiftId?: string | null;
+  proposedGiftId?: string | null;
+  proposedDonorId?: string | null;
+  proposedDonorName?: string | null;
+  giftState?: string | null;
+  resolvedGiftAmount?: string | null;
+  amount?: string | null;
+  sourceGroupTotalAmount?: string | null;
+  stripeGrossAmount?: string | null;
+  stripeNetAmount?: string | null;
+}): CardVerdict {
+  const status: CardStatusVerdict = card.resolvedGiftId
+    ? "matched"
+    : card.proposedGiftId ||
+        card.giftState === "determined" ||
+        card.giftState === "ambiguous" ||
+        card.proposedDonorId ||
+        card.proposedDonorName
+      ? "proposal"
+      : "none";
+
+  let settled = false;
+  if (card.resolvedGiftId) {
+    const isGroup = card.sourceGroupTotalAmount != null;
+    const evidence = isGroup
+      ? card.sourceGroupTotalAmount
+      : (card.stripeGrossAmount ?? card.amount ?? null);
+    const evidenceNet = isGroup ? null : (card.stripeNetAmount ?? null);
+    const gift = card.resolvedGiftAmount ?? null;
+    settled =
+      evidence == null || gift == null
+        ? true
+        : amountWithinFeeBand(evidence, gift, evidenceNet);
+  }
+
+  return { status, settled };
+}
+
 function donorCount(d: LinkDonor): number {
   return [d.organizationId, d.individualGiverPersonId, d.householdId].filter(
     (v) => v != null,

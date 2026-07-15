@@ -15,6 +15,7 @@ import { asyncHandler, notFound } from "../../lib/helpers";
 import { payoutStatusFromLink } from "../../lib/settlementLink";
 import { chargeStatusSql } from "../../lib/derivedStatus";
 import { stripeLedgerCountedExistsForCharge } from "../../lib/paymentApplications";
+import { personDisplayNameSql } from "../../lib/personNameSql";
 
 type LinkSource = "pulled" | "qb_confirmed" | "stripe_pulled" | "stripe_confirmed";
 
@@ -115,8 +116,7 @@ router.get(
           COALESCE(
             ${organizations.name},
             ${households.name},
-            NULLIF(TRIM(${people.fullName}), ''),
-            NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
+            ${personDisplayNameSql(people)}
           )
         `,
       })

@@ -73,6 +73,10 @@ export default function Pipeline() {
     // open (in-flight) and pledge (committed but not yet fully paid).
     // Dormant, lost, and cash_in (already booked) are excluded.
     status: ["open", "pledge"],
+    // Server-side per-stage SUM(ask_amount) over the FULL filtered set, so
+    // column totals stay correct even when rows are truncated by the page
+    // limit (the client can only sum the rows it received).
+    includeStageAskTotals: true,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(types.length > 0 ? { type: [...types].sort() as OpportunityType[] } : {}),
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
@@ -228,6 +232,11 @@ export default function Pipeline() {
                 key={stage}
                 stage={stage}
                 opps={byStage.get(stage) ?? []}
+                askTotal={
+                  data?.stageAskTotals?.[stage] != null
+                    ? Number(data.stageAskTotals[stage])
+                    : null
+                }
                 loading={isLoading}
                 draggingId={activeId}
                 userNames={userNames}
@@ -246,18 +255,23 @@ export default function Pipeline() {
 function StageColumn({
   stage,
   opps,
+  askTotal,
   loading,
   draggingId,
   userNames,
 }: {
   stage: OpportunityStage;
   opps: OpportunityOrPledge[];
+  /** Server-side SUM(ask_amount) over ALL filtered rows in this stage (not
+   *  just the fetched page); null while loading or if the server omitted it. */
+  askTotal: number | null;
   loading: boolean;
   draggingId: string | null;
   userNames: Map<string, string>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage, disabled: stage === "complete" });
-  const totalAsk = opps.reduce((sum, o) => sum + Number(o.askAmount ?? 0), 0);
+  const totalAsk =
+    askTotal ?? opps.reduce((sum, o) => sum + Number(o.askAmount ?? 0), 0);
 
   return (
     <div

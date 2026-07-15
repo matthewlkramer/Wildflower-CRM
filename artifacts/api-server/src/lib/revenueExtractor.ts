@@ -37,6 +37,7 @@ import { maskName, type Viewer } from "./identityVisibility";
 import { loadEntityCodingRules } from "./revenueCoding";
 import { derivedProcessorFeeForGift } from "./giftPaymentSummary";
 import { qbLedgerSoleGiftIdForPayment } from "./paymentApplications";
+import { personDisplayNameSql } from "./personNameSql";
 
 // ── Revenue Extractor report (Task #607) ─────────────────────────────────────
 //
@@ -154,12 +155,7 @@ export async function buildRevenueExtractorReport(
       organizationAnonymous: organizations.anonymous,
       organizationOwnerUserId: organizations.ownerUserId,
       organizationEntityType: organizations.entityType,
-      individualGiverPersonName: sql<string | null>`
-        COALESCE(
-          NULLIF(TRIM(${people.fullName}), ''),
-          NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-        )
-      `,
+      individualGiverPersonName: personDisplayNameSql(people),
       individualGiverAnonymous: people.anonymous,
       individualGiverOwnerUserId: people.ownerUserId,
       householdName: households.name,

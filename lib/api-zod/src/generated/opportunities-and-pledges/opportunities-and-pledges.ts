@@ -33,6 +33,7 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   "ownerUserId": zod.array(zod.coerce.string()).optional(),
   "entityId": zod.array(zod.coerce.string()).optional().describe('Filter to opportunities that have at least one pledge_allocation\nwith `entity_id` in the given set. Comma-separated form supported.\n'),
   "fiscalYear": zod.array(zod.coerce.string()).optional().describe('Filter to opportunities that have at least one pledge_allocation\nwith `grant_year` in the given set (e.g. `fy2026`). Multi-value:\nrepeat the param or comma-separate. Omit to include all fiscal\nyears.\n'),
+  "includeStageAskTotals": zod.coerce.boolean().optional().describe('When true, the response includes `stageAskTotals` — SUM(ask_amount)\nper stage over ALL rows matching the filters, not just the\nreturned page. Used by the pipeline board so column totals stay\ncorrect when the result set exceeds the page limit.\n'),
   "limit": zod.coerce.number().min(1).max(listOpportunitiesAndPledgesQueryLimitMax).default(listOpportunitiesAndPledgesQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listOpportunitiesAndPledgesQueryPageDefault)
 })
@@ -94,7 +95,8 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
   "page": zod.number(),
   "limit": zod.number(),
   "total": zod.number()
-})
+}),
+  "stageAskTotals": zod.record(zod.string(), zod.string()).optional().describe('SUM(ask_amount) per stage over ALL rows matching the current\nfilters (not just the returned page), keyed by stage value.\nNumeric string per stage; stages with no matching rows are\nomitted. Only present when `includeStageAskTotals=true` — lets\nthe pipeline board show true column totals even when the row\nset is truncated by pagination.\n')
 })
 
 export const CreateOpportunityOrPledgeBody = zod.object({

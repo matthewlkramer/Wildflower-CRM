@@ -125,7 +125,8 @@ const orgsListSelect = {
   primaryContactPersonName: sql<string | null>`(
     SELECT COALESCE(
       NULLIF(TRIM(p.full_name), ''),
-      NULLIF(TRIM(CONCAT_WS(' ', p.first_name, p.last_name)), '')
+      NULLIF(TRIM(CONCAT_WS(' ', p.first_name, p.last_name)), ''),
+      NULLIF(TRIM(p.nickname), '')
     )
     FROM people_entity_roles per
     JOIN people p ON p.id = per.person_id

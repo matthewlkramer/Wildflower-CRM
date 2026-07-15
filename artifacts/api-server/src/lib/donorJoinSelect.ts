@@ -1,6 +1,6 @@
 import { organizations, people, households } from "@workspace/db/schema";
-import { sql } from "drizzle-orm";
 import { maskName, type Viewer } from "./identityVisibility";
+import { personDisplayNameSql } from "./personNameSql";
 
 // Shared "donor join" projection for the two money headers
 // (opportunities_and_pledges and gifts_and_payments). Both carry the Donor XOR
@@ -16,12 +16,9 @@ import { maskName, type Viewer } from "./identityVisibility";
 export const donorDisplayColumns = {
   organizationName: organizations.name,
   householdName: households.name,
-  individualGiverPersonName: sql<string | null>`
-    COALESCE(
-      NULLIF(TRIM(${people.fullName}), ''),
-      NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-    )
-  `.as("individual_giver_person_name"),
+  individualGiverPersonName: personDisplayNameSql(people).as(
+    "individual_giver_person_name",
+  ),
   // Denormalized priority tier so the donor cell can render a star (priority
   // === 'top') without an extra fetch. NULL when that donor slot isn't set.
   organizationPriority: organizations.priority,

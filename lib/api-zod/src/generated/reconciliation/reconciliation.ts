@@ -122,6 +122,8 @@ export const ListReconciliationCardsResponse = zod.object({
   "codingFlags": zod.array(zod.string()).nullish().describe('Coding flags surfaced for human review (e.g. location_default, payer_type_assumed).'),
   "deferredRevenue": zod.enum(['yes', 'no', 'na']).nullish(),
   "deferredRevenueReason": zod.string().nullish(),
+  "cardStatus": zod.enum(['none', 'proposal', 'matched']).describe('Server-authoritative 3-state match verdict for the card\'s \'Status:\' line: matched = money tied to a resolved CRM gift; proposal = the matcher has a candidate gift\/donor a human still has to confirm; none = no candidate yet. Derived server-side (deriveCardVerdict) so the UI never re-derives it.'),
+  "settled": zod.boolean().describe('Server-authoritative bucketing verdict: true when the card\'s gift link is fully settled — a resolved gift whose amount agrees with the evidence (group total for a group card, Stripe gross\/net window when a charge backs the money, else the QB amount) within the approve gate\'s fee band (amountWithinFeeBand). Settled cards drop out of the review column; an amount-divergent resolved gift stays visible (still \'matched\') so the rest of the money can be tied to it. Unknown amounts count as settled.'),
   "createdAt": zod.string().datetime({}).nullish(),
   "updatedAt": zod.string().datetime({}).nullish()
 }).describe('List item for the unified reconciler — one per QB staged payment (the anchor), OR one per manual \'same physical gift\' source group (collapsed; stagedPaymentId is the representative member). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card.')),

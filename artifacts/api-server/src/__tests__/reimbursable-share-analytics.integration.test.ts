@@ -109,6 +109,11 @@ async function seedOpenPledgeAlloc(subAmount: string, share: Share): Promise<str
     grantYear: FY_ID,
     reimbursementType: share,
   });
+  // The raw insert leaves win_probability NULL (bypasses the API create
+  // path). Run the derivation, which null-heals the weight to the canonical
+  // stage value (in_conversation → 0.2000) — the same guarantee every real
+  // write path has.
+  await applyDerivedOppFields(oppId);
   seededOppIds.push(oppId);
   return oppId;
 }
@@ -213,8 +218,10 @@ describe.skipIf(!HAS_DB)("reimbursable share — goal analytics exclusion", () =
 
     const body = await getBreakdown();
     expect(body.revenue.openPipeline.totalAsk).toBe("3000.00");
-    // winProbability null ⇒ weight 1, so weighted matches ask.
-    expect(body.revenue.openPipeline.totalWeighted).toBe("3000.00");
+    // Derivation stamps the canonical stage weight (in_conversation → 0.20);
+    // weighted = 3000 × 0.20. (NULL weights no longer exist — analytics has
+    // no COALESCE fallback.)
+    expect(body.revenue.openPipeline.totalWeighted).toBe("600.00");
 
     const rowOppIds = body.revenue.openPipeline.rows.map(
       (r: { opportunityId: string }) => r.opportunityId,

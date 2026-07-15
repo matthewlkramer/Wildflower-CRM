@@ -34,6 +34,7 @@ import {
   qbLedgerExistsForPayment,
 } from "../../lib/paymentApplications";
 import { reimbursablePledgeExistsSql } from "../../lib/reimbursablePlaceholder";
+import { personDisplayNameSql } from "../../lib/personNameSql";
 
 const router: IRouter = Router();
 
@@ -66,12 +67,9 @@ const PAYMENT_METHODS = new Set([
   "daf_bill_com",
 ]);
 
-// COALESCE(full_name, "first last") — nicer person display than raw full_name.
-const personNameSql = sql<string | null>`
-  COALESCE(
-    NULLIF(TRIM(${people.fullName}), ''),
-    NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-  )`;
+// Canonical person display chain (full → first+last → nickname); see
+// lib/personNameSql.ts.
+const personNameSql = personDisplayNameSql(people);
 
 interface ProposedPayment {
   source: "quickbooks" | "stripe";

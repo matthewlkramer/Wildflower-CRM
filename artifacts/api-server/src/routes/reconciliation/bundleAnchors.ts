@@ -377,7 +377,8 @@ router.get(
               (SELECT h.name FROM households h WHERE h.id = g.household_id),
               (SELECT COALESCE(
                         NULLIF(TRIM(pp.full_name), ''),
-                        NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), '')
+                        NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), ''),
+                        NULLIF(TRIM(pp.nickname), '')
                       )
                  FROM people pp WHERE pp.id = g.individual_giver_person_id)
             ),

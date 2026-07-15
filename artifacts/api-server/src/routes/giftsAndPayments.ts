@@ -164,6 +164,7 @@ import {
 import { deriveGiftLanes } from "../lib/reconciliationLanes";
 import { stagedStatusSql } from "../lib/derivedStatus";
 import { inArray } from "drizzle-orm";
+import { personDisplayNameSql } from "../lib/personNameSql";
 
 const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "quickbooksTie"] as const;
 
@@ -200,10 +201,7 @@ router.get(
           ilike(giftsAndPayments.name, term),
           ilike(organizations.name, term),
           ilike(households.name, term),
-          sql`COALESCE(
-            NULLIF(TRIM(${people.fullName}), ''),
-            NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-          ) ILIKE ${term}`,
+          sql`(${personDisplayNameSql(people)}) ILIKE ${term}`,
           // Linked payment intermediary name (correlated EXISTS — no join).
           sql`EXISTS (
             SELECT 1 FROM payment_intermediaries pi
@@ -2278,10 +2276,7 @@ router.get(
     } else if (gift.individualGiverPersonId) {
       const name = await db
         .select({
-          name: sql<string | null>`COALESCE(
-            NULLIF(TRIM(${people.fullName}), ''),
-            NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-          )`,
+          name: personDisplayNameSql(people),
         })
         .from(people)
         .where(eq(people.id, gift.individualGiverPersonId))

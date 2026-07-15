@@ -13,6 +13,7 @@ import { requireAuth } from "../middlewares/requireAuth";
 import { activeOnlyUnlessAdmin } from "../lib/archive";
 import { getViewer, maskName, canSeeIdentity, ANON_LABEL } from "../lib/identityVisibility";
 import { donorDisplayColumns, maskDonorDisplayFields } from "../lib/donorJoinSelect";
+import { personDisplayNameSql } from "../lib/personNameSql";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -73,10 +74,7 @@ router.get(
       WHEN ${col} ILIKE ${like} THEN 1
       ELSE 0 END)::float + COALESCE(similarity(${col}, ${q}), 0)`;
 
-    const personName = sql<string>`COALESCE(
-      NULLIF(TRIM(${people.fullName}), ''),
-      NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-    )`;
+    const personName = sql<string>`${personDisplayNameSql(people)}`;
     const personScore = scoreOf(personName);
     const orgName = sql<string>`${organizations.name}`;
     const orgScore = scoreOf(orgName);

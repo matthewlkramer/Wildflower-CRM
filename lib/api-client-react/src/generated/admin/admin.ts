@@ -31,6 +31,7 @@ import type {
   BadRequestResponse,
   CreateEntityCodingRuleBody,
   CreateQuickbooksRuleBody,
+  DerivationHealthReport,
   EmailIntelFeedbackList,
   EmailIntelPrompt,
   EmailIntelPromptConsole,
@@ -696,6 +697,80 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(getAdminResyncGoogleUserMutationOptions(options));
     }
     /**
+ * @summary Re-derive every persisted-derived field and report rows where stored ≠ derived (admin-only, report-only — never writes).
+ */
+export const getAdminGetDerivationHealthUrl = () => {
+
+
+  
+
+  return `/api/admin/derivation-health`
+}
+
+export const adminGetDerivationHealth = async ( options?: RequestInit): Promise<DerivationHealthReport> => {
+  
+  return customFetch<DerivationHealthReport>(getAdminGetDerivationHealthUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getAdminGetDerivationHealthQueryKey = () => {
+    return [
+    `/api/admin/derivation-health`
+    ] as const;
+    }
+
+    
+export const getAdminGetDerivationHealthQueryOptions = <TData = Awaited<ReturnType<typeof adminGetDerivationHealth>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetDerivationHealth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetDerivationHealthQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetDerivationHealth>>> = ({ signal }) => adminGetDerivationHealth({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetDerivationHealth>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetDerivationHealthQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetDerivationHealth>>>
+export type AdminGetDerivationHealthQueryError = ErrorType<void>
+
+
+/**
+ * @summary Re-derive every persisted-derived field and report rows where stored ≠ derived (admin-only, report-only — never writes).
+ */
+
+export function useAdminGetDerivationHealth<TData = Awaited<ReturnType<typeof adminGetDerivationHealth>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetDerivationHealth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetDerivationHealthQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
  * @summary Last Airtable → schools sync run state (admin-only).
  */
 export const getAdminGetSchoolSyncStatusUrl = () => {

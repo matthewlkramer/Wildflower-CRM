@@ -720,7 +720,10 @@ function OppView({
   const targetRaw = opp.awardedAmount ?? opp.askAmount ?? null;
   const targetAmount = targetRaw == null ? null : toNum(targetRaw);
   const allocationsSum = allocations.reduce((s, a) => s + toNum(a.subAmount), 0);
-  const paymentsSum = payments.reduce((s, p) => s + toNum(p.amount), 0);
+  // Server-derived paid rollup (excludes archived payments) — the nested
+  // `payments` array includes archived rows for admins, so a client-side sum
+  // would overcount. Keep the pill in lockstep with the list/pledge math.
+  const paymentsSum = toNum(opp.paidAmount);
 
   // Status badge (calculated server-side) and fiscal-year pill shown next to
   // the "Opportunity" type badge in the header.

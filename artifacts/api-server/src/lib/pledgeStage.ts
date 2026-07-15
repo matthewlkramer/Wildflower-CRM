@@ -67,20 +67,13 @@ export interface ConditionalRollup {
 }
 
 /**
- * Derive the header-level conditional rollup from an opportunity's pledge
- * allocations (Task #449 — grant conditions moved off the opportunity header
- * onto the allocations). Drives win-probability weighting.
+ * Pure rollup of allocation-level grant conditions to the opportunity header.
+ * Shared by the per-row DB reader below AND the bulk derivation health check,
+ * so there is exactly one rollup implementation.
  */
-export async function deriveConditionalRollup(
-  opportunityId: string,
-): Promise<ConditionalRollup> {
-  const allocs = await db
-    .select({
-      conditional: pledgeAllocations.conditional,
-      conditionsMet: pledgeAllocations.conditionsMet,
-    })
-    .from(pledgeAllocations)
-    .where(eq(pledgeAllocations.pledgeOrOpportunityId, opportunityId));
+export function rollupConditional(
+  allocs: Array<{ conditional: string | null; conditionsMet: string | null }>,
+): ConditionalRollup {
   if (allocs.length === 0) return { conditional: null, conditionsMet: "yes" };
   const conditionalAllocs = allocs.filter((a) => isConditionalPledge(a.conditional));
   if (conditionalAllocs.length === 0) {
@@ -97,13 +90,34 @@ export async function deriveConditionalRollup(
 }
 
 /**
+ * Derive the header-level conditional rollup from an opportunity's pledge
+ * allocations (Task #449 — grant conditions moved off the opportunity header
+ * onto the allocations). Drives win-probability weighting.
+ */
+export async function deriveConditionalRollup(
+  opportunityId: string,
+): Promise<ConditionalRollup> {
+  const allocs = await db
+    .select({
+      conditional: pledgeAllocations.conditional,
+      conditionsMet: pledgeAllocations.conditionsMet,
+    })
+    .from(pledgeAllocations)
+    .where(eq(pledgeAllocations.pledgeOrOpportunityId, opportunityId));
+  return rollupConditional(allocs);
+}
+
+/**
  * Canonical default win-probability (0–1, as a numeric string) for a given
  * (status, stage, conditional). Status drives the terminal categories:
  *   lost / dormant            → 0.0000
  *   cash_in                   → 1.0000
  *   pledge (unpaid written)   → 0.9000, or 0.7500 when conditional
- *   open (or null)            → by stage
- * Returns null if nothing matches (e.g. open with no stage).
+ *   open (or null)            → by stage; no stage → 0.0000 (an unstaged ask
+ *                               carries no funnel signal — weight it like a
+ *                               cold lead, never NULL)
+ * Never returns null: every (status, stage) combination has a canonical
+ * weight, so derivation can always persist a non-NULL win_probability.
  */
 export function canonicalWinProbability(
   status: string | null | undefined,
@@ -120,7 +134,11 @@ export function canonicalWinProbability(
   if (stage && stage in STAGE_WIN_PROBABILITY) {
     return STAGE_WIN_PROBABILITY[stage]!;
   }
-  return null;
+  // Open (or not-yet-derived) row with no funnel stage. Every stage enum value
+  // is in the map, so this is the only remaining path — weight it 0 like a
+  // cold lead instead of returning NULL (analytics used to silently count
+  // these at 100%).
+  return "0.0000";
 }
 
 export interface DeriveInput {
@@ -260,9 +278,14 @@ export async function applyDerivedOppFields(
   // allocation edit re-stamps win_probability even if status is unchanged).
   const canonicalWp = canonicalWinProbability(status, stage, rollup.conditional);
   const winProbabilityChanged =
-    status === "pledge" &&
-    canonicalWp !== null &&
-    canonicalWp !== row.winProbability;
+    (status === "pledge" &&
+      canonicalWp !== null &&
+      canonicalWp !== row.winProbability) ||
+    // Null-heal: a row must never carry a NULL weight (the analytics rollups
+    // no longer COALESCE around one). NULL is not a legitimate hand-set
+    // override, so stamping the canonical value here never clobbers a user
+    // choice — open rows with a stored value stay untouched.
+    (row.winProbability == null && canonicalWp !== null);
   if (
     statusOrStageChanged ||
     writtenPledge !== row.writtenPledge ||

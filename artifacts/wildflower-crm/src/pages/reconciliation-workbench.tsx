@@ -130,8 +130,7 @@ import { useIsAdmin } from "@/hooks/use-is-admin";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import {
   laneBadges,
-  deriveCardStatus,
-  isSettledGiftLink,
+  CARD_STATUS_BADGE,
   extractGateIssues,
   extractStripeSourceConflict,
   extractQbLinkConflict,
@@ -644,11 +643,12 @@ export default function ReconciliationWorkbench() {
     const review: ReconciliationCard[] = [];
     const qbo: ReconciliationCard[] = [];
     for (const c of filtered) {
-      // Cards whose gift link is already settled (a resolved gift whose amount
-      // matches within the fee band) drop out of the review surface — they
-      // belong in the Matched column. A resolved gift whose amount still
-      // diverges stays visible so the rest of the money can be tied to it.
-      if (isSettledGiftLink(c)) continue;
+      // Cards whose gift link is already settled (server verdict: a resolved
+      // gift whose amount matches within the approve gate's fee band) drop out
+      // of the review surface — they belong in the Matched column. A resolved
+      // gift whose amount still diverges stays visible so the rest of the
+      // money can be tied to it.
+      if (c.settled) continue;
       if (c.proposedGiftId || c.proposedDonorId || c.resolvedGiftId)
         review.push(c);
       else qbo.push(c);
@@ -2708,7 +2708,7 @@ function ReconCard({
   const hasGift = Boolean(card.resolvedGiftId || card.proposedGiftId);
   const hasDonor = Boolean(card.proposedDonorId || card.proposedDonorName);
   const linkedGiftName = card.resolvedGiftName ?? card.proposedGiftName;
-  const status = deriveCardStatus(card);
+  const status = CARD_STATUS_BADGE[card.cardStatus];
   // Header id: the human "No." (qbDocNumber) if present, else the stable QB id.
   const qbIdText = card.qbDocNumber ?? card.qbEntityId;
   // The QB raw reference (DocNumber / PaymentRefNum / deposit memo) is worth
@@ -2738,14 +2738,13 @@ function ReconCard({
     !!giftDonorName &&
     qbPayerName.trim().toLowerCase() !== giftDonorName.trim().toLowerCase();
   // For a grouped card, the gift reconciles for the members' COMBINED total —
-  // show whether they add up to the gift (same fee-band tolerance as the gate).
-  const groupTotalNum = num(card.sourceGroupTotalAmount);
+  // show whether they add up to the gift. The verdict is the server's `settled`
+  // flag (the approve gate's own fee band on the group total); the badge only
+  // renders when both amounts are known, and a group's resolvedGiftAmount is
+  // only set when a gift is actually resolved, so `settled` is exactly the
+  // group-total-vs-gift comparison here.
   const giftAmountNum = num(card.resolvedGiftAmount);
-  const groupMatchesGift =
-    groupTotalNum != null &&
-    giftAmountNum != null &&
-    giftAmountNum >= groupTotalNum - 0.01 &&
-    giftAmountNum <= groupTotalNum * 1.1 + 1;
+  const groupMatchesGift = card.settled;
   const crmRecordLane = lanes.find((b) => b.key === "crmRecord");
   // A per-charge card: one card for ONE Stripe charge (not the whole QB deposit).
   // Its matching unit is the single charge → its own CRM gift, so deposit-level

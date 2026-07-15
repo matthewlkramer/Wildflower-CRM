@@ -45,6 +45,7 @@ import {
 } from "../../lib/paymentApplications";
 import { giftMatchAmountBounds } from "../../lib/giftMatch";
 import { groupMemberIdsFor } from "../../lib/unitGroupMembership";
+import { personDisplayNameSql } from "../../lib/personNameSql";
 import {
   stagedStatusSql,
   stagedStatusWhere,
@@ -167,12 +168,9 @@ export const stagedSelect = {
   queue: queueExpr,
   organizationName: organizations.name,
   householdName: households.name,
-  individualGiverPersonName: sql<string | null>`
-    COALESCE(
-      NULLIF(TRIM(${people.fullName}), ''),
-      NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-    )
-  `.as("individual_giver_person_name"),
+  individualGiverPersonName: personDisplayNameSql(people).as(
+    "individual_giver_person_name",
+  ),
   intermediaryName: paymentIntermediaries.name,
   entityName: entities.name,
   resolvedGiftId: resolvedGift.id,

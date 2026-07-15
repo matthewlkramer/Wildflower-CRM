@@ -79,9 +79,12 @@ export default function Dashboard() {
     const cm = m[selectedTrack];
     const catParam = `&category=${trackSlug}`;
 
-    const received = Number(cm.received) || 0;
-    const committed = Number(cm.committedWeighted) || 0;
-    const openWeighted = Number(cm.openPipelineWeighted) || 0;
+    // Server guarantees non-null numeric strings for these rollups (win
+    // probability is NOT NULL as of migration 0128), so parse directly —
+    // a `|| 0` here would silently mask a server regression as $0.
+    const received = Number(cm.received);
+    const committed = Number(cm.committedWeighted);
+    const openWeighted = Number(cm.openPipelineWeighted);
     const projection = received + committed + openWeighted;
     const goalNum = cm.goal != null && Number(cm.goal) > 0 ? Number(cm.goal) : null;
     const segValue: Record<string, number> = { received, committed, openWeighted };

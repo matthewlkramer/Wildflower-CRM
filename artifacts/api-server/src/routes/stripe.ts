@@ -111,6 +111,7 @@ import {
   donorboxEnrichmentSelect,
   donorboxEnrichmentOrNull,
 } from "../lib/donorboxEnrichment";
+import { personDisplayNameSql } from "../lib/personNameSql";
 
 /**
  * Review queue for incoming Stripe charges plus the manual sync / rematch
@@ -184,12 +185,9 @@ const stagedSelect = {
   queue: queueExpr,
   organizationName: organizations.name,
   householdName: households.name,
-  individualGiverPersonName: sql<string | null>`
-    COALESCE(
-      NULLIF(TRIM(${people.fullName}), ''),
-      NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-    )
-  `.as("individual_giver_person_name"),
+  individualGiverPersonName: personDisplayNameSql(people).as(
+    "individual_giver_person_name",
+  ),
   intermediaryName: paymentIntermediaries.name,
   resolvedGiftId: resolvedGift.id,
   resolvedGiftName: resolvedGift.name,
@@ -1793,8 +1791,7 @@ const reconSelect = {
     COALESCE(
       ${conflictOrg.name},
       ${conflictHousehold.name},
-      NULLIF(TRIM(${conflictPerson.fullName}), ''),
-      NULLIF(TRIM(CONCAT_WS(' ', ${conflictPerson.firstName}, ${conflictPerson.lastName})), '')
+      ${personDisplayNameSql(conflictPerson)}
     )
   `.as("conflict_gift_donor_name"),
 };

@@ -2,12 +2,11 @@ import { peopleEntityRoles, people, emails } from "@workspace/db/schema";
 import { eq, getTableColumns, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { maskName, type Viewer } from "./identityVisibility";
+import { personDisplayNameSql } from "./personNameSql";
 
 // Shared SELECT shape for people_entity_roles that joins the related
-// person row to expose a display name. The COALESCE mirrors the
-// pattern used in funders/people primary-contact subqueries:
-// prefer full_name, fall back to first+last, NULL if neither has
-// non-whitespace content.
+// person row to expose a display name (the canonical chain — see
+// lib/personNameSql.ts).
 //
 // personEmail: correlated subquery picking the preferred email for
 // the linked person (is_preferred DESC), falling back to any email
@@ -15,10 +14,7 @@ import { maskName, type Viewer } from "./identityVisibility";
 // person has no emails.
 export const peopleEntityRolesSelect = {
   ...getTableColumns(peopleEntityRoles),
-  personName: sql<string | null>`COALESCE(
-    NULLIF(TRIM(${people.fullName}), ''),
-    NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-  )`.as("person_name"),
+  personName: personDisplayNameSql(people).as("person_name"),
   personEmail: sql<string | null>`(
     SELECT ${emails.email}
     FROM ${emails}

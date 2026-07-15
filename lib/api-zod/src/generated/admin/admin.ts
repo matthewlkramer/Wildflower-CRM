@@ -236,6 +236,27 @@ export const AdminResyncGoogleUserParams = zod.object({
 export const AdminResyncGoogleUserResponse = zod.record(zod.string(), zod.unknown())
 
 /**
+ * @summary Re-derive every persisted-derived field and report rows where stored ≠ derived (admin-only, report-only — never writes).
+ */
+export const AdminGetDerivationHealthResponse = zod.object({
+  "ranAt": zod.string().datetime({}),
+  "durationMs": zod.number(),
+  "checkedOpportunities": zod.number(),
+  "checkedGifts": zod.number(),
+  "driftCount": zod.number().describe('Total drifting fields found (uncapped)'),
+  "byField": zod.record(zod.string(), zod.number()).describe('Per-field drift totals (uncapped)'),
+  "drift": zod.array(zod.object({
+  "table": zod.enum(['opportunities_and_pledges', 'gifts_and_payments']),
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "field": zod.string().describe('Which persisted-derived column drifted: status, stage, written_pledge, paid, win_probability, or quickbooks_tie_status'),
+  "stored": zod.string().nullish().describe('Value currently persisted on the row'),
+  "derived": zod.string().nullish().describe('Value the derivation computes from the row\'s inputs')
+})).describe('Detail rows, capped at 200'),
+  "truncated": zod.boolean().describe('True when driftCount exceeded the detail-row cap')
+})
+
+/**
  * @summary Last Airtable → schools sync run state (admin-only).
  */
 export const AdminGetSchoolSyncStatusResponse = zod.object({

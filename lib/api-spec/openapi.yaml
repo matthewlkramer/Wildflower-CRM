@@ -1405,6 +1405,15 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
+        - name: includeStageAskTotals
+          in: query
+          required: false
+          description: |
+            When true, the response includes `stageAskTotals` — SUM(ask_amount)
+            per stage over ALL rows matching the filters, not just the
+            returned page. Used by the pipeline board so column totals stay
+            correct when the result set exceeds the page limit.
+          schema: { type: boolean }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -2238,6 +2247,16 @@ paths:
           content: { application/json: { schema: { type: object, additionalProperties: true } } }
         "403": { description: Admin required }
         "409": { description: User has no active Google grant }
+
+  # ─── Admin: derivation health (report-only drift check) ───────────────────
+  /admin/derivation-health:
+    get:
+      operationId: adminGetDerivationHealth
+      tags: [admin]
+      summary: Re-derive every persisted-derived field and report rows where stored ≠ derived (admin-only, report-only — never writes).
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DerivationHealthReport" } } } }
+        "403": { description: Admin required }
 
   # ─── Admin: Airtable → schools sync health + manual trigger ───────────────
   /admin/school-sync:
@@ -6051,6 +6070,16 @@ components:
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/OpportunityOrPledge" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+        stageAskTotals:
+          type: object
+          description: |
+            SUM(ask_amount) per stage over ALL rows matching the current
+            filters (not just the returned page), keyed by stage value.
+            Numeric string per stage; stages with no matching rows are
+            omitted. Only present when `includeStageAskTotals=true` — lets
+            the pipeline board show true column totals even when the row
+            set is truncated by pagination.
+          additionalProperties: { type: string }
     CreateOpportunityOrPledgeBody:
       type: object
       properties:
@@ -7527,7 +7556,7 @@ components:
         timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
     ReconciliationCard:
       type: object
-      required: [stagedPaymentId, status, queue, hasStripeEvidence, ready, isSourceGroup]
+      required: [stagedPaymentId, status, queue, hasStripeEvidence, ready, isSourceGroup, cardStatus, settled]
       description: "List item for the unified reconciler — one per QB staged payment (the anchor), OR one per manual 'same physical gift' source group (collapsed; stagedPaymentId is the representative member). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card."
       properties:
         stagedPaymentId: { type: string }
@@ -7610,6 +7639,8 @@ components:
         codingFlags:             { type: array, items: { type: string }, nullable: true, description: "Coding flags surfaced for human review (e.g. location_default, payer_type_assumed)." }
         deferredRevenue:         { allOf: [ { $ref: "#/components/schemas/DeferredRevenue" } ], nullable: true }
         deferredRevenueReason:   { type: string, nullable: true }
+        cardStatus:         { type: string, enum: [none, proposal, matched], description: "Server-authoritative 3-state match verdict for the card's 'Status:' line: matched = money tied to a resolved CRM gift; proposal = the matcher has a candidate gift/donor a human still has to confirm; none = no candidate yet. Derived server-side (deriveCardVerdict) so the UI never re-derives it." }
+        settled:            { type: boolean, description: "Server-authoritative bucketing verdict: true when the card's gift link is fully settled — a resolved gift whose amount agrees with the evidence (group total for a group card, Stripe gross/net window when a charge backs the money, else the QB amount) within the approve gate's fee band (amountWithinFeeBand). Settled cards drop out of the review column; an amount-divergent resolved gift stays visible (still 'matched') so the rest of the money can be tied to it. Unknown amounts count as settled." }
         createdAt:          { type: string, format: date-time, nullable: true }
         updatedAt:          { type: string, format: date-time, nullable: true }
     ReconciliationCardList:
@@ -9102,6 +9133,36 @@ components:
         grantedAt:    { type: string, format: date-time, nullable: true }
         revokedAt:    { type: string, format: date-time, nullable: true }
         lastError:    { type: string, nullable: true }
+
+    # ─── Derivation health check (report-only) ────────────────────────────────
+    DerivationDriftRow:
+      type: object
+      required: [table, id, field]
+      properties:
+        table:   { type: string, enum: [opportunities_and_pledges, gifts_and_payments] }
+        id:      { type: string }
+        name:    { type: string, nullable: true }
+        field:   { type: string, description: "Which persisted-derived column drifted: status, stage, written_pledge, paid, win_probability, or quickbooks_tie_status" }
+        stored:  { type: string, nullable: true, description: "Value currently persisted on the row" }
+        derived: { type: string, nullable: true, description: "Value the derivation computes from the row's inputs" }
+    DerivationHealthReport:
+      type: object
+      required: [ranAt, durationMs, checkedOpportunities, checkedGifts, driftCount, byField, drift, truncated]
+      properties:
+        ranAt:                { type: string, format: date-time }
+        durationMs:           { type: integer }
+        checkedOpportunities: { type: integer }
+        checkedGifts:         { type: integer }
+        driftCount:           { type: integer, description: "Total drifting fields found (uncapped)" }
+        byField:
+          type: object
+          additionalProperties: { type: integer }
+          description: "Per-field drift totals (uncapped)"
+        drift:
+          type: array
+          items: { $ref: "#/components/schemas/DerivationDriftRow" }
+          description: "Detail rows, capped at 200"
+        truncated: { type: boolean, description: "True when driftCount exceeded the detail-row cap" }
 
     # ─── Airtable → schools sync status (admin) ──────────────────────────────
     SchoolSyncStatus:

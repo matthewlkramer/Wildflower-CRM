@@ -31,6 +31,7 @@ import {
   giftHasReportingTaskExpr,
   type BookableGiftAllocationInput,
 } from "../../lib/bookableGift";
+import { personDisplayNameSql } from "../../lib/personNameSql";
 
 const router: IRouter = Router();
 
@@ -40,12 +41,9 @@ function clampInt(v: unknown, def: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.trunc(n)));
 }
 
-// COALESCE(full_name, "first last") — nicer person display than raw full_name.
-const personNameSql = sql<string | null>`
-  COALESCE(
-    NULLIF(TRIM(${people.fullName}), ''),
-    NULLIF(TRIM(CONCAT_WS(' ', ${people.firstName}, ${people.lastName})), '')
-  )`;
+// Canonical person display chain (full → first+last → nickname); see
+// lib/personNameSql.ts.
+const personNameSql = personDisplayNameSql(people);
 
 // ─── GET /reconciliation/incomplete-gifts ───────────────────────────────────
 // The bookable-gift SOP worklist (Task #585). ONE ROW PER gift that fails the

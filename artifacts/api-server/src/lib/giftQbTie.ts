@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
 import { giftsAndPayments } from "@workspace/db/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray, isNull, sql } from "drizzle-orm";
 import { amountWithinFeeBand } from "./reconciliationGate";
 import {
   qbLedgerExistsForGift,
@@ -77,6 +77,8 @@ export function deriveGiftQbTie(input: GiftQbTieInput): GiftQbTie {
 
 interface TieRow {
   id: string;
+  name: string | null;
+  stored: GiftQbTie | null;
   giftAmount: string | null;
   offBooks: boolean;
   qbSum: string | null;
@@ -85,6 +87,83 @@ interface TieRow {
   hasStripe: boolean;
   donorboxSum: string | null;
   hasDonorbox: boolean;
+}
+
+/** One gift's stored vs freshly-derived tie status (shared by the applier and
+ * the derivation health check so there is exactly ONE query + derivation
+ * path — never two mirrored implementations that can drift apart). */
+export interface GiftQbTieComputation {
+  id: string;
+  name: string | null;
+  stored: GiftQbTie | null;
+  derived: GiftQbTie;
+}
+
+/**
+ * READ-ONLY bulk derivation of `quickbooks_tie_status`.
+ *
+ *  - `giftIds` given   → exactly those gifts (applier semantics; archived
+ *                        included, same as before — an archive path may still
+ *                        need its tie recomputed).
+ *  - `giftIds` omitted → every NON-archived gift (health-check semantics;
+ *                        archived gifts are logically deleted and their tie
+ *                        status is inert, so drift there is not a finding).
+ */
+export async function computeGiftQbTieMany(
+  giftIds?: string[],
+): Promise<GiftQbTieComputation[]> {
+  if (giftIds && giftIds.length === 0) return [];
+
+  // Gather, per gift, the off-books exemption inputs plus the counted
+  // cash-application figures from the ledger — SUM(amount_applied) + existence,
+  // ONE per evidence source (QB / Stripe / Donorbox). The ledger correlations
+  // live in the shared helpers, which take a literal, pre-qualified gift-id
+  // expression so they never hit the drizzle bare-column footgun (see
+  // paymentApplications.ts). The off-books expression is top-level (single FROM
+  // table), so column interpolation is safe there.
+  const rows = (await db
+    .select({
+      id: giftsAndPayments.id,
+      name: giftsAndPayments.name,
+      stored: giftsAndPayments.quickbooksTieStatus,
+      giftAmount: giftsAndPayments.amount,
+      offBooks: giftIsOffBooksExpr(),
+      qbSum: qbLedgerSumForGift(),
+      hasQb: qbLedgerExistsForGift(),
+      stripeSum: stripeLedgerSumForGift(),
+      hasStripe: stripeLedgerExistsForGift(),
+      donorboxSum: donorboxLedgerSumForGift(),
+      hasDonorbox: donorboxLedgerExistsForGift(),
+    })
+    .from(giftsAndPayments)
+    .where(
+      giftIds
+        ? inArray(giftsAndPayments.id, giftIds)
+        : isNull(giftsAndPayments.archivedAt),
+    )) as TieRow[];
+
+  return rows.map((r) => {
+    // PER-SOURCE PRECEDENCE (not a cross-source SUM): QB sum wins, else Stripe,
+    // else Donorbox. A gift settled by both a coarse QB deposit line and its
+    // per-charge Stripe rows carries a counted row of EACH source; summing them
+    // would double-count (§4.3). Precedence counts exactly one source. Presence
+    // is any counted row of any source.
+    const hasLink = r.hasQb || r.hasStripe || r.hasDonorbox;
+    const linkAmount = r.hasQb
+      ? r.qbSum
+      : r.hasStripe
+        ? r.stripeSum
+        : r.hasDonorbox
+          ? r.donorboxSum
+          : null;
+    const derived = deriveGiftQbTie({
+      offBooks: r.offBooks,
+      giftAmount: r.giftAmount,
+      hasLink,
+      linkAmount,
+    });
+    return { id: r.id, name: r.name, stored: r.stored, derived };
+  });
 }
 
 /**
@@ -100,52 +179,12 @@ export async function applyGiftQbTieMany(
   const giftIds = [...new Set(ids.filter((x): x is string => !!x))];
   if (giftIds.length === 0) return;
 
-  // Gather, per gift, the off-books exemption inputs plus the counted
-  // cash-application figures from the ledger — SUM(amount_applied) + existence,
-  // ONE per evidence source (QB / Stripe / Donorbox). The ledger correlations
-  // live in the shared helpers, which take a literal, pre-qualified gift-id
-  // expression so they never hit the drizzle bare-column footgun (see
-  // paymentApplications.ts). The off-books expression is top-level (single FROM
-  // table), so column interpolation is safe there.
-  const rows = (await db
-    .select({
-      id: giftsAndPayments.id,
-      giftAmount: giftsAndPayments.amount,
-      offBooks: giftIsOffBooksExpr(),
-      qbSum: qbLedgerSumForGift(),
-      hasQb: qbLedgerExistsForGift(),
-      stripeSum: stripeLedgerSumForGift(),
-      hasStripe: stripeLedgerExistsForGift(),
-      donorboxSum: donorboxLedgerSumForGift(),
-      hasDonorbox: donorboxLedgerExistsForGift(),
-    })
-    .from(giftsAndPayments)
-    .where(inArray(giftsAndPayments.id, giftIds))) as TieRow[];
-
+  const rows = await computeGiftQbTieMany(giftIds);
   for (const r of rows) {
-    // PER-SOURCE PRECEDENCE (not a cross-source SUM): QB sum wins, else Stripe,
-    // else Donorbox. A gift settled by both a coarse QB deposit line and its
-    // per-charge Stripe rows carries a counted row of EACH source; summing them
-    // would double-count (§4.3). Precedence counts exactly one source. Presence
-    // is any counted row of any source.
-    const hasLink = r.hasQb || r.hasStripe || r.hasDonorbox;
-    const linkAmount = r.hasQb
-      ? r.qbSum
-      : r.hasStripe
-        ? r.stripeSum
-        : r.hasDonorbox
-          ? r.donorboxSum
-          : null;
-    const status = deriveGiftQbTie({
-      offBooks: r.offBooks,
-      giftAmount: r.giftAmount,
-      hasLink,
-      linkAmount,
-    });
-
+    if (r.stored === r.derived) continue; // idempotent — only write real changes
     await db
       .update(giftsAndPayments)
-      .set({ quickbooksTieStatus: status })
+      .set({ quickbooksTieStatus: r.derived })
       .where(eq(giftsAndPayments.id, r.id));
   }
 }

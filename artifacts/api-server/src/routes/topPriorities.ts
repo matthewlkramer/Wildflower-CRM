@@ -62,6 +62,7 @@ const orgAffiliatedPeopleExpr = sql`(
         'personName',  COALESCE(
                          NULLIF(TRIM(p.full_name), ''),
                          NULLIF(TRIM(CONCAT_WS(' ', p.first_name, p.last_name)), ''),
+                         NULLIF(TRIM(p.nickname), ''),
                          p.id
                        ),
         'anonymous',   p.anonymous,

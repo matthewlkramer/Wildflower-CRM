@@ -2049,9 +2049,28 @@ export type OpportunityOrPledgeDetail = OpportunityOrPledge & {
   readonly flaggedForResearch?: boolean;
 };
 
+/**
+ * SUM(ask_amount) per stage over ALL rows matching the current
+filters (not just the returned page), keyed by stage value.
+Numeric string per stage; stages with no matching rows are
+omitted. Only present when `includeStageAskTotals=true` — lets
+the pipeline board show true column totals even when the row
+set is truncated by pagination.
+
+ */
+export type OpportunityOrPledgeListStageAskTotals = {[key: string]: string};
+
 export interface OpportunityOrPledgeList {
   data: OpportunityOrPledge[];
   pagination: Pagination;
+  /** SUM(ask_amount) per stage over ALL rows matching the current
+filters (not just the returned page), keyed by stage value.
+Numeric string per stage; stages with no matching rows are
+omitted. Only present when `includeStageAskTotals=true` — lets
+the pipeline board show true column totals even when the row
+set is truncated by pagination.
+ */
+  stageAskTotals?: OpportunityOrPledgeListStageAskTotals;
 }
 
 export interface CreateOpportunityOrPledgeBody {
@@ -4021,6 +4040,18 @@ export const ReconciliationCardProposedDonorKind = {
 } as const;
 
 /**
+ * Server-authoritative 3-state match verdict for the card's 'Status:' line: matched = money tied to a resolved CRM gift; proposal = the matcher has a candidate gift/donor a human still has to confirm; none = no candidate yet. Derived server-side (deriveCardVerdict) so the UI never re-derives it.
+ */
+export type ReconciliationCardCardStatus = typeof ReconciliationCardCardStatus[keyof typeof ReconciliationCardCardStatus];
+
+
+export const ReconciliationCardCardStatus = {
+  none: 'none',
+  proposal: 'proposal',
+  matched: 'matched',
+} as const;
+
+/**
  * One member of a manual 'same physical gift' source group, summarized for the group card.
  */
 export interface ReconciliationCardGroupMember {
@@ -4133,6 +4164,10 @@ export interface ReconciliationCard {
   codingFlags?: string[] | null;
   deferredRevenue?: DeferredRevenue | null;
   deferredRevenueReason?: string | null;
+  /** Server-authoritative 3-state match verdict for the card's 'Status:' line: matched = money tied to a resolved CRM gift; proposal = the matcher has a candidate gift/donor a human still has to confirm; none = no candidate yet. Derived server-side (deriveCardVerdict) so the UI never re-derives it. */
+  cardStatus: ReconciliationCardCardStatus;
+  /** Server-authoritative bucketing verdict: true when the card's gift link is fully settled — a resolved gift whose amount agrees with the evidence (group total for a group card, Stripe gross/net window when a charge backs the money, else the QB amount) within the approve gate's fee band (amountWithinFeeBand). Settled cards drop out of the review column; an amount-divergent resolved gift stays visible (still 'matched') so the rest of the money can be tied to it. Unknown amounts count as settled. */
+  settled: boolean;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -6249,6 +6284,46 @@ export interface GoogleOauthStatus {
   grantedAt?: string | null;
   revokedAt?: string | null;
   lastError?: string | null;
+}
+
+export type DerivationDriftRowTable = typeof DerivationDriftRowTable[keyof typeof DerivationDriftRowTable];
+
+
+export const DerivationDriftRowTable = {
+  opportunities_and_pledges: 'opportunities_and_pledges',
+  gifts_and_payments: 'gifts_and_payments',
+} as const;
+
+export interface DerivationDriftRow {
+  table: DerivationDriftRowTable;
+  id: string;
+  name?: string | null;
+  /** Which persisted-derived column drifted: status, stage, written_pledge, paid, win_probability, or quickbooks_tie_status */
+  field: string;
+  /** Value currently persisted on the row */
+  stored?: string | null;
+  /** Value the derivation computes from the row's inputs */
+  derived?: string | null;
+}
+
+/**
+ * Per-field drift totals (uncapped)
+ */
+export type DerivationHealthReportByField = {[key: string]: number};
+
+export interface DerivationHealthReport {
+  ranAt: string;
+  durationMs: number;
+  checkedOpportunities: number;
+  checkedGifts: number;
+  /** Total drifting fields found (uncapped) */
+  driftCount: number;
+  /** Per-field drift totals (uncapped) */
+  byField: DerivationHealthReportByField;
+  /** Detail rows, capped at 200 */
+  drift: DerivationDriftRow[];
+  /** True when driftCount exceeded the detail-row cap */
+  truncated: boolean;
 }
 
 /**
@@ -8438,6 +8513,14 @@ years.
 
  */
 fiscalYear?: string[];
+/**
+ * When true, the response includes `stageAskTotals` — SUM(ask_amount)
+per stage over ALL rows matching the filters, not just the
+returned page. Used by the pipeline board so column totals stay
+correct when the result set exceeds the page limit.
+
+ */
+includeStageAskTotals?: boolean;
 /**
  * @minimum 1
  * @maximum 10000
