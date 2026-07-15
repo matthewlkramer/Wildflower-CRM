@@ -284,6 +284,9 @@ interface LensCountsRow {
 interface ChargeJson {
   chargeId: string;
   payerName: string | null;
+  cardBrand: string | null;
+  description: string | null;
+  statementDescriptor: string | null;
   amount: string | null;
   feeAmount: string | null;
   netAmount: string | null;
@@ -529,6 +532,9 @@ router.get(
           SELECT json_agg(json_build_object(
               'chargeId', c.id,
               'payerName', c.payer_name,
+              'cardBrand', c.card_brand,
+              'description', c.description,
+              'statementDescriptor', c.statement_descriptor,
               'amount', c.amount,
               'feeAmount', c.fee_amount,
               'netAmount', c.net_amount,
@@ -541,6 +547,9 @@ router.get(
           FROM (
             SELECT cc.id,
                    COALESCE(cc.payer_name, cc.description) AS payer_name,
+                   cc.card_brand,
+                   cc.description,
+                   cc.statement_descriptor,
                    cc.gross_amount::text AS amount,
                    cc.gross_amount AS gross_num,
                    cc.fee_amount::text AS fee_amount,

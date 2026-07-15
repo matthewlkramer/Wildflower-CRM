@@ -998,6 +998,9 @@ export const ListWorkbenchClustersResponse = zod.object({
   "charges": zod.array(zod.object({
   "chargeId": zod.string().describe('stripe_staged_charges.id (ch_...).'),
   "payerName": zod.string().nullish().describe('Raw processor payer name (external Stripe evidence, not a CRM name — never anonymous-masked, matching the bundle workbench).'),
+  "cardBrand": zod.string().nullish().describe('Card brand from the charge\'s payment method (e.g. visa, mastercard); null for non-card charges.'),
+  "description": zod.string().nullish().describe('Stripe charge.description — frequently carries the real donor name \/ memo.'),
+  "statementDescriptor": zod.string().nullish().describe('The statement descriptor the payer saw on their card statement.'),
   "amount": zod.string().nullish().describe('Charge gross amount, major units.'),
   "feeAmount": zod.string().nullish().describe('Processor fee, major units.'),
   "netAmount": zod.string().nullish().describe('Net (gross − fee), major units.'),

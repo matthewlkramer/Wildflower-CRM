@@ -8371,6 +8371,9 @@ components:
       properties:
         chargeId:       { type: string, description: "stripe_staged_charges.id (ch_...)." }
         payerName:      { type: string, nullable: true, description: "Raw processor payer name (external Stripe evidence, not a CRM name — never anonymous-masked, matching the bundle workbench)." }
+        cardBrand:      { type: string, nullable: true, description: "Card brand from the charge's payment method (e.g. visa, mastercard); null for non-card charges." }
+        description:    { type: string, nullable: true, description: "Stripe charge.description — frequently carries the real donor name / memo." }
+        statementDescriptor: { type: string, nullable: true, description: "The statement descriptor the payer saw on their card statement." }
         amount:         { type: string, nullable: true, description: "Charge gross amount, major units." }
         feeAmount:      { type: string, nullable: true, description: "Processor fee, major units." }
         netAmount:      { type: string, nullable: true, description: "Net (gross − fee), major units." }

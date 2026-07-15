@@ -5235,6 +5235,12 @@ export interface WorkbenchClusterCharge {
   chargeId: string;
   /** Raw processor payer name (external Stripe evidence, not a CRM name — never anonymous-masked, matching the bundle workbench). */
   payerName?: string | null;
+  /** Card brand from the charge's payment method (e.g. visa, mastercard); null for non-card charges. */
+  cardBrand?: string | null;
+  /** Stripe charge.description — frequently carries the real donor name / memo. */
+  description?: string | null;
+  /** The statement descriptor the payer saw on their card statement. */
+  statementDescriptor?: string | null;
   /** Charge gross amount, major units. */
   amount?: string | null;
   /** Processor fee, major units. */
