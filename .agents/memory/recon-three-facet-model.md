@@ -25,13 +25,19 @@ ADEQUACY (is the linked record complete — grant letter, campaign attribution,
 check image, entity coding?). UI must never conflate them; a reviewer must see
 "no record" vs "record missing key info" at a glance.
 
-**Worklist layout** — rows are MONEY UNITS, not anchored on any facet (owner
-iterated to this explicitly): the QB record is just one component slot —
-usually the first present — and its coding inadequacy shows INSIDE its chip.
-An unsynced Stripe charge is simply a unit with an empty accounting slot; a
-check renders ONE QB record spanning transaction+accounting with per-role
-adequacy. Two ALWAYS-glanceable collapsed side lanes remain: stray
-transactions and stray who/why records.
+**Worklist layout (latest iteration: PEER model, no unit object)** — owner
+iterated QB-anchored → money-unit rows → pure peers: only the three record
+kinds + LINKS (with amounts) exist; a row is a CLUSTER of linked records and
+the "unit" is just the name for a cluster, derived not stored. Consequences
+the owner ratified by asking for this: strays = clusters of one, inline in
+the same list (side lanes become LENSES/filters); exclusion is a property of
+the accounting record itself, not a container; each chip carries its own
+amount+date+identity, and coding inadequacy shows INSIDE the owning record's
+chip. A check renders ONE QB record spanning transaction+accounting with
+per-role adequacy. Every-dollar-once survives without the object: each facet
+plane sums independently, links assert correspondences. Open design point:
+display grain for big clusters (deposit w/ 4 charges) — one row w/
+sub-structure vs. split by transaction.
 
 **Drag semantics** — who/why→who/why offers "group as allocations of one
 commitment" OR "mark as double entry"; who/why→transaction links durably until
