@@ -8,7 +8,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 
 // Page imports
-import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 import Individuals from "@/pages/individuals";
 import IndividualDetail from "@/pages/individual-detail";
@@ -120,7 +119,7 @@ function HomeRedirect() {
         <Redirect to="/dashboard" />
       </Show>
       <Show when="signed-out">
-        <Home />
+        <Redirect to="/sign-in" />
       </Show>
     </>
   );
@@ -128,7 +127,7 @@ function HomeRedirect() {
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   // EntityFilterProvider lives inside the signed-in tree so the entities
-  // list query (which requires auth) doesn't fire on the marketing page.
+  // list query (which requires auth) doesn't fire while signed out.
   return (
     <>
       <Show when="signed-in">
