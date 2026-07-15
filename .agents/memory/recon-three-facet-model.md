@@ -89,9 +89,17 @@ Two more lenses (owner): "QB record needs correction" (linking revealed the
 QB record itself is wrong, e.g. QB payer name ≠ real payer) and "Excluded ·
 QB says donation" (excluded as not-a-donation but QB coded it 4010) — both
 are the bookkeeper's punch list since the CRM never writes back to QB.
-Owner questioned the v2 card-per-cluster look (loves the rail); a v2b hybrid
-was mocked: Grain C continuous table + v2 header BANDS (columns aligned
-across clusters, less chrome) — layout decision pending owner pick.
+Owner questioned the v2 card-per-cluster look (loves the rail) AND rejected
+v2b's cross-cutting header bands: they make QB payments the main axis and
+lose 9c's core strength — the CLUSTER is the row and a CRM gift/pledge with
+no QB money yet is a first-class row with "+ link" slots, never an orphan
+under a QB header. Direction: 9c body is the base; fold in the rail, inline
+money math (one line: gross − fees = net = bank · gap, replaces the metrics
+chip band), one status per grain, explicit primary actions. Owner also
+rejected the chip pile on the right of v2/v2b ("tons of badges") — calmer
+treatment mocked in v3: ONE colored dot + short word per grain, muted plain
+text underneath for diagnostic/rollup; Money/Attribution facts live in the
+inline math line, not stacked badges.
 
 **Drag semantics** — who/why→who/why offers "group as allocations of one
 commitment" OR "mark as double entry"; who/why→transaction links durably until

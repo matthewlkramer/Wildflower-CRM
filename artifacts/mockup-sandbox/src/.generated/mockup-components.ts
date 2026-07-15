@@ -18,6 +18,7 @@ export const modules: ModuleMap = {
   "./components/mockups/recon-scenarios/UnitDossier.tsx": () => import("../components/mockups/recon-scenarios/UnitDossier.tsx"),
   "./components/mockups/recon-scenarios/WorkbenchHybrid.tsx": () => import("../components/mockups/recon-scenarios/WorkbenchHybrid.tsx"),
   "./components/mockups/recon-scenarios/WorkbenchV2.tsx": () => import("../components/mockups/recon-scenarios/WorkbenchV2.tsx"),
+  "./components/mockups/recon-scenarios/WorkbenchV3.tsx": () => import("../components/mockups/recon-scenarios/WorkbenchV3.tsx"),
   "./components/mockups/reconciliation-cards/Pipeline.tsx": () => import("../components/mockups/reconciliation-cards/Pipeline.tsx"),
   "./components/mockups/reconciliation-cards/StatusRows.tsx": () => import("../components/mockups/reconciliation-cards/StatusRows.tsx"),
   "./components/mockups/reconciliation-cards/TwoLanes.tsx": () => import("../components/mockups/reconciliation-cards/TwoLanes.tsx"),

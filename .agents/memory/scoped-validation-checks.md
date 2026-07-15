@@ -38,3 +38,16 @@ validation failure is the race — safe to complete with a skip reason.
 `test-api` includes DB-backed HTTP integration tests. A stale dev DB surfaces as
 `column X does not exist` (e.g. `g.grant_year`) — that is cross-env schema drift
 (see cross-env-db-schema-drift.md), not a code bug in the check.
+
+## Recovery when codegen overlapped anyway
+
+If codegen runs concurrently with other checks (e.g. checkpoint validation fires
+all workflows at once), orval can die mid-clean and leave a
+`lib/api-client-react/src/generated/<tag>` subdir EMPTY. Every downstream check
+then fails with `Cannot find module './generated'` — that cascade is corrupt
+generated output, not real type errors.
+
+**Recovery:** re-run `pnpm --filter @workspace/api-spec run codegen` alone first,
+then re-run the failed checks (they'll pass unchanged). An `EADDRINUSE:8080` on
+the api-server workflow in the same storm is an orphaned server process — just
+restart the workflow (it usually clears itself).
