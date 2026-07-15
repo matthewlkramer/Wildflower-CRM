@@ -44,20 +44,23 @@ one decision; list inflates, cluster doneness lives in the spanning chip's
 margin); (C) adaptive — browse at cluster grain, expand to per-transaction
 sub-rows, status rolls up (both counts honest; costs a second UI level).
 Simple 1:1:1 clusters and strays render identically in all three grains.
-**Owner RATIFIED grain C** with refinements: summary-row cells speak in
-sentences per facet ("3 gifts totalling $X cover 3 of 4 charges in this
-Stripe bundle" / "bundle of N charges paid out in one transaction on DATE" /
-"QB deposit covering full Stripe payout"); many-to-many is the norm — a
-payout bundle's accounting side usually holds TWO QB records (net deposit +
-processor-fee payment); QB deposits and QB payments both land in staged
-payments and are interchangeable for this form; third column renamed
-"Accounting & bank rec" (QB is populated from bank deposits); mini cards
-lead with matching-useful info (date, purpose, donor/indiv/hh name); who/why
-cards carry a Donorbox badge (matched to Donorbox record) + coding-form
-badge, with actions: search Donorbox, search coding form, upload grant
-letter; sub-rows indent under the summary row; EVERY card states its own
-standalone completeness ("Missing grant letter", "Missing class coding") —
-separate from linkage.
+**Owner RATIFIED grain C** with refinements: summary-row cells compact but
+COMPLETE per facet (amounts, counts, dates — sentences not required);
+many-to-many is the norm — a payout bundle's accounting side usually holds
+TWO QB records: a GROSS payment + a processor fee (negative) that SUM TO NET,
+the amount the bank deposit was for (so the bundle balance rule is
+gifts = gross, gross + fee = net deposit — NOT gift-vs-deposit equality);
+QB deposits and QB payments both land in staged payments and are
+interchangeable for this form; third column renamed "Accounting & bank rec"
+(QB is populated from bank deposits); mini cards lead with matching-useful
+info (date, purpose, donor/indiv/hh name); who/why cards carry THREE badges:
+Donorbox-matched, coding-form attached, grant-letter attached; every card
+(all three facets) has a "⋯" dropdown action menu — search Donorbox, search
+coding forms, upload grant letter, unlink from cluster, split, group with
+another record, replace intermediary with donor, exclude from workbench —
+NOT inline per-action buttons; sub-rows indent under the summary row; EVERY
+card states its own standalone completeness ("Missing grant letter",
+"Missing class coding") — separate from linkage.
 
 **Drag semantics** — who/why→who/why offers "group as allocations of one
 commitment" OR "mark as double entry"; who/why→transaction links durably until
