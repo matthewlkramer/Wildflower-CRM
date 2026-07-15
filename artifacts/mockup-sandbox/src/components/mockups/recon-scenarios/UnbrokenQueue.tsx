@@ -65,7 +65,7 @@ const MAIN_DATA: MainQueueItem[] = [
     accounting: {
       linked: true,
       adequate: true,
-      label: "QBD-99120"
+      label: "4010 Grants · Class: National"
     },
     isExpanded: true // The exemplar
   },
@@ -89,8 +89,10 @@ const MAIN_DATA: MainQueueItem[] = [
       label: "CHK-8812"
     },
     accounting: {
-      linked: false,
-      adequate: false
+      linked: true,
+      adequate: false,
+      label: "1499 Uncategorized",
+      inadequacyReason: "Needs account + class coding"
     }
   },
   {
@@ -113,7 +115,7 @@ const MAIN_DATA: MainQueueItem[] = [
     accounting: {
       linked: true,
       adequate: false,
-      label: "QBD-101",
+      label: "4020 Donations",
       inadequacyReason: "Missing class code"
     }
   },
@@ -128,7 +130,7 @@ const MAIN_DATA: MainQueueItem[] = [
     exclusionReason: "Non-donation: Operating revenue",
     whoWhy: { linked: false, adequate: false },
     transaction: { linked: false, adequate: false },
-    accounting: { linked: true, adequate: true, label: "QBD-044" }
+    accounting: { linked: true, adequate: true, label: "6120 Bank fees (non-donation)" }
   }
 ];
 
@@ -172,6 +174,32 @@ const FacetCell = ({ facet }: { facet: FacetState }) => {
         <span className="text-xs font-medium text-amber-800">{facet.label}</span>
       </div>
       <span className="text-[10px] leading-tight text-amber-700/80 font-medium">{facet.inadequacyReason}</span>
+    </div>
+  );
+};
+
+// Accounting is NOT a separate linked record for a QB-anchored row — the row IS
+// the accounting record. This cell shows the row's own coding status (account,
+// class, entity), so it renders as an attribute of the row, not a record chip.
+const AccountingCell = ({ facet }: { facet: FacetState }) => {
+  if (facet.adequate) {
+    return (
+      <div className="flex flex-col justify-center h-full py-1">
+        <div className="flex items-center gap-1.5">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+          <span className="text-xs font-medium text-slate-700">{facet.label}</span>
+        </div>
+        <span className="text-[10px] text-slate-400 mt-0.5 pl-5">This row's coding</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col justify-center h-full py-1">
+      <div className="flex items-center gap-1.5">
+        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+        <span className="text-xs font-medium text-slate-700">{facet.label}</span>
+      </div>
+      <span className="text-[10px] leading-tight text-amber-700 font-medium mt-0.5 pl-5">{facet.inadequacyReason}</span>
     </div>
   );
 };
@@ -229,7 +257,7 @@ export function UnbrokenQueue() {
                     <TableHead className="w-[240px] text-xs font-semibold text-slate-600">QB Record (Money Landed)</TableHead>
                     <TableHead className="w-[200px] text-xs font-semibold text-slate-600">WHO & WHY (CRM)</TableHead>
                     <TableHead className="w-[200px] text-xs font-semibold text-slate-600">TRANSACTION (Proof)</TableHead>
-                    <TableHead className="w-[200px] text-xs font-semibold text-slate-600">ACCOUNTING (Code)</TableHead>
+                    <TableHead className="w-[200px] text-xs font-semibold text-slate-600">ACCOUNTING (This row's coding)</TableHead>
                     <TableHead className="text-right text-xs font-semibold text-slate-600">Status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -254,7 +282,7 @@ export function UnbrokenQueue() {
                         </TableCell>
                         <TableCell className="align-top py-3"><FacetCell facet={item.whoWhy} /></TableCell>
                         <TableCell className="align-top py-3"><FacetCell facet={item.transaction} /></TableCell>
-                        <TableCell className="align-top py-3"><FacetCell facet={item.accounting} /></TableCell>
+                        <TableCell className="align-top py-3"><AccountingCell facet={item.accounting} /></TableCell>
                         <TableCell className="align-top py-3 text-right">
                           <StatusBadge status={item.status} />
                         </TableCell>
