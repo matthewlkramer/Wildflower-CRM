@@ -62,6 +62,30 @@ NOT inline per-action buttons; sub-rows indent under the summary row; EVERY
 card states its own standalone completeness ("Missing grant letter",
 "Missing class coding") — separate from linkage.
 
+**Workbench v2 synthesis (owner spec, mocked)** — columns renamed DONOR &
+PURPOSE / PAYMENT EVIDENCE / BANK & ACCOUNTING. Right rail: lenses (All
+unresolved, Needs donor or gift, Needs accounting, Settlement gaps,
+Conflicts, Refunds, Excluded, Completed) + recent changes with one-click
+Undo. Cluster header must ALWAYS answer: what money event / how much / is it
+balanced / decisions remaining — metrics strip Gross·Fees·Bank·Gap·n/m
+resolved, never inferred from child rows. TWO independent header indicators:
+Money (BALANCED/MISMATCH) and Attribution (n/m complete) — "balanced but
+incomplete" ≠ "complete but mismatched". ONE status per grain: cluster
+statuses READY/PARTIAL/CONFLICT/BALANCED/EXCLUDED as a rollup WITH detail
+("PARTIAL · 3 of 4 complete · $99.10 unresolved"); transaction statuses
+READY TO APPROVE/NEEDS DONOR/NEEDS GIFT/NEEDS ACCOUNTING/AMOUNT
+MISMATCH/CONFLICT/DONE. Every unresolved row shows ONE explicit primary
+action naming the missing decision (Choose donor / Choose gift / Approve
+match / Tie to deposit / Resolve conflict / Review refund) — never a generic
+"Resolve"; secondary actions (Exclude, Flag for research, Move to another
+gift, Split, View source) in the ⋯ menu. Compact diagnostic under every
+unresolved status ("No donor identified", "Gift amount differs by $X").
+Selecting a cluster/child opens a focus view: cluster dossier (totals,
+completeness math, included/missing charges, fee accounting, settlement
+link, conflicts, repair actions) + persistent child inspector (donor&gift,
+processor txn, QBO relationship, gross/fee/net/refund, match rationale,
+ledger applications, source lineage, audit history, actions).
+
 **Drag semantics** — who/why→who/why offers "group as allocations of one
 commitment" OR "mark as double entry"; who/why→transaction links durably until
 explicit delink, after which searches treat the pair as ONE object with two
