@@ -77,6 +77,7 @@
 - [Replit DB deletion nukes dev AND prod](replit-db-deletion-recovery.md) — deleting the built-in DB kills both branches; publish recreates empty prod schema; restore prod from dump human-run; verify with count(*) not n_live_tup.
 - [Unpickable rows are labeled, never hidden](unpickable-rows-label-not-hide.md) — user rule (also in replit.md prefs): pickers gray blocked rows WITH the reason; enforce via 409s.
 - [Recon search bands & confirm gating](reconciliation-search-and-confirm-gating.md) — text overrides the amount band; never pre-gate ahead of the locking confirm primitive; overridable blockers = exclusion (in-tx re-include) + amount-mismatch (pinned chargeId only); claimed-money blockers stay hard 409.
+- [Recon three-facet model](recon-three-facet-model.md) — owner-ratified vocabulary who/why|transaction|accounting (CRM gift ≠ who/why); linkage vs adequacy are separate signals; stray lanes + drag-to-link semantics.
 - [prod executeSql enum cast](prod-executesql-enum-cast.md) — prod read returns ZERO rows (only START TRANSACTION/ROLLBACK, success=true) if the SELECT list has an un-cast enum column; always ::text enums.
 - [Orval zod boolean query params](orval-zod-coerce-boolean.md) — generated validators use zod.coerce.boolean(): "?flag=false" parses TRUE; design booleans as opt-in presence flags.
 - [Canonical person display-name SQL](person-name-display-sql.md) — chain is preferred(nickname)+last → full → first+last, one shared helper; UI label "Preferred name", field stays nickname; ILIKE exempt.
