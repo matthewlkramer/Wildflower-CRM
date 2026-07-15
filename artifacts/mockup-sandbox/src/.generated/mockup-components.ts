@@ -16,6 +16,7 @@ export const modules: ModuleMap = {
   "./components/mockups/recon-scenarios/PayoutBreakdown.tsx": () => import("../components/mockups/recon-scenarios/PayoutBreakdown.tsx"),
   "./components/mockups/recon-scenarios/UnbrokenQueue.tsx": () => import("../components/mockups/recon-scenarios/UnbrokenQueue.tsx"),
   "./components/mockups/recon-scenarios/UnitDossier.tsx": () => import("../components/mockups/recon-scenarios/UnitDossier.tsx"),
+  "./components/mockups/recon-scenarios/WorkbenchHybrid.tsx": () => import("../components/mockups/recon-scenarios/WorkbenchHybrid.tsx"),
   "./components/mockups/recon-scenarios/WorkbenchV2.tsx": () => import("../components/mockups/recon-scenarios/WorkbenchV2.tsx"),
   "./components/mockups/reconciliation-cards/Pipeline.tsx": () => import("../components/mockups/reconciliation-cards/Pipeline.tsx"),
   "./components/mockups/reconciliation-cards/StatusRows.tsx": () => import("../components/mockups/reconciliation-cards/StatusRows.tsx"),

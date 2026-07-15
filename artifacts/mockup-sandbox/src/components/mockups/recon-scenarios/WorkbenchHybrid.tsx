@@ -4,22 +4,13 @@ import {
   ClipboardList, FileText, ChevronDown, ChevronRight,
 } from "lucide-react";
 
-// WORKBENCH V2 — ratified Grain C + owner's synthesis:
-// - Right rail: lenses (All unresolved / Needs donor or gift / Needs accounting /
-//   Settlement gaps / Conflicts / Refunds / Excluded / Completed) + recent
-//   changes with one-click Undo.
-// - Cluster header always answers: what money event, how much, is it balanced,
-//   how many decisions remain. Metrics strip: Gross · Fees · Bank · Gap · n/m
-//   resolved. Never inferred from child rows.
-// - TWO independent header indicators: Money (BALANCED/MISMATCH) and
-//   Attribution (n/m complete) — "balanced but incomplete" vs "complete but
-//   mismatched" are different conditions.
-// - Columns: DONOR & PURPOSE · PAYMENT EVIDENCE · BANK & ACCOUNTING.
-// - ONE status per grain. Cluster status is a rollup WITH detail
-//   ("PARTIAL · 3 of 4 complete · $99.10 unresolved"), child rows carry the
-//   transaction statuses. Diagnostic line under every unresolved status.
-// - Every unresolved row shows ONE explicit primary action (the specific
-//   missing decision); secondary actions live in the ⋯ menu.
+// WORKBENCH V2b — HYBRID: the ratified Grain C continuous table body
+// (columns stay aligned across every cluster, minimal chrome, fast vertical
+// scanning) + the v2 cluster header as a full-width BAND row instead of a
+// separate card. Same rail, same statuses, same primary actions as v2.
+// The question this mockup answers: do we need cards at all, or does the
+// header band inside one continuous table carry the same information with
+// better scannability?
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
@@ -60,13 +51,6 @@ const Kebab = () => (
   </button>
 );
 
-const Metric = ({ label, value, warn }: { label: string; value: string; warn?: boolean }) => (
-  <div className="flex flex-col">
-    <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">{label}</span>
-    <span className={`text-[11px] font-semibold tabular-nums ${warn ? "text-red-600" : "text-slate-800"}`}>{value}</span>
-  </div>
-);
-
 const MoneyBadge = ({ ok, label }: { ok: boolean; label: string }) => (
   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${ok ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"}`}>
     {ok ? <CheckCircle2 className="w-2.5 h-2.5" /> : <AlertTriangle className="w-2.5 h-2.5" />} Money: {label}
@@ -78,6 +62,8 @@ const AttribBadge = ({ done, total }: { done: number; total: number }) => (
   </span>
 );
 
+const GRID = "grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_150px_130px] gap-3 px-4";
+
 interface ChildRow {
   donor: React.ReactNode;
   evidence: React.ReactNode;
@@ -87,17 +73,9 @@ interface ChildRow {
   action?: string;
 }
 
-const ColHeads = () => (
-  <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_150px_130px] gap-3 px-4 py-1.5 border-b border-slate-100 bg-slate-50/60">
-    {["DONOR & PURPOSE", "PAYMENT EVIDENCE", "BANK & ACCOUNTING", "STATUS", "ACTION"].map(h => (
-      <span key={h} className={`text-[8px] font-bold uppercase tracking-wider text-slate-400 ${h === "ACTION" ? "text-right" : ""}`}>{h}</span>
-    ))}
-  </div>
-);
-
 const Row = ({ r }: { r: ChildRow }) => (
-  <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_150px_130px] gap-3 px-4 py-2 border-b border-slate-50 items-start hover:bg-slate-50/70">
-    <div className="text-[11px] leading-snug">{r.donor}</div>
+  <div className={`${GRID} py-2 border-b border-slate-50 items-start hover:bg-slate-50/70`}>
+    <div className="text-[11px] leading-snug pl-4">{r.donor}</div>
     <div className="text-[11px] leading-snug">{r.evidence}</div>
     <div className="text-[11px] leading-snug">{r.bank}</div>
     <div className="flex flex-col gap-0.5">
@@ -124,45 +102,61 @@ const Muted = ({ top, sub }: { top: string; sub?: string }) => (
   </div>
 );
 
-export function WorkbenchV2() {
+const Band = ({ open, title, refLine, metrics, moneyOk, moneyLabel, attribDone, attribTotal, rollup, rollupTone }: {
+  open: boolean; title: string; refLine: string;
+  metrics: [string, string, boolean?][];
+  moneyOk: boolean; moneyLabel: string; attribDone: number; attribTotal: number;
+  rollup: string; rollupTone: "blue" | "red";
+}) => (
+  <div className="px-4 py-2 bg-slate-100/90 border-y border-slate-200">
+    <div className="flex items-center gap-2 flex-wrap">
+      {open ? <ChevronDown className="w-4 h-4 text-blue-500" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+      <span className="text-xs font-bold tracking-wide text-slate-800 uppercase">{title}</span>
+      <span className="text-[10px] text-slate-400 font-medium">{refLine}</span>
+      <span className="ml-auto flex items-center gap-1.5">
+        <MoneyBadge ok={moneyOk} label={moneyLabel} />
+        <AttribBadge done={attribDone} total={attribTotal} />
+      </span>
+    </div>
+    <div className="mt-1 flex items-center gap-5">
+      {metrics.map(([label, value, warn]) => (
+        <span key={label} className="text-[10px]">
+          <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400 mr-1">{label}</span>
+          <span className={`font-semibold tabular-nums ${warn ? "text-red-600" : "text-slate-800"}`}>{value}</span>
+        </span>
+      ))}
+      <span className={`ml-auto inline-flex px-2.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider ${rollupTone === "blue" ? "bg-blue-100 text-blue-800" : "bg-red-100 text-red-700"}`}>
+        {rollup}
+      </span>
+    </div>
+  </div>
+);
+
+export function WorkbenchHybrid() {
   return (
     <div className="flex flex-col h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
       <header className="px-6 py-3 bg-white border-b border-slate-200 shrink-0 flex items-center gap-3 shadow-sm">
         <div className="w-8 h-8 bg-slate-900 rounded flex items-center justify-center"><Layers className="w-4 h-4 text-white" /></div>
         <div>
-          <h1 className="text-base font-semibold leading-tight">Reconciliation Workbench — v2</h1>
-          <p className="text-xs text-slate-500 font-medium">Lens rail + honest cluster headers + one status per grain + explicit next actions</p>
+          <h1 className="text-base font-semibold leading-tight">Reconciliation Workbench — v2b (continuous table)</h1>
+          <p className="text-xs text-slate-500 font-medium">Grain C table body + v2 header bands — columns stay aligned across clusters, less chrome</p>
         </div>
       </header>
 
       <div className="flex-1 flex min-h-0">
-        {/* MAIN WORKLIST */}
-        <main className="flex-1 overflow-y-auto p-4 space-y-4 min-w-0">
-
-          {/* CLUSTER 1 — balanced but incomplete */}
-          <section className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-4 pt-3 pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2 flex-wrap">
-                <ChevronDown className="w-4 h-4 text-blue-500" />
-                <span className="text-xs font-bold tracking-wide text-slate-800 uppercase">Stripe payout · Dec 27, 2024</span>
-                <span className="text-[10px] text-slate-400 font-medium">QBO deposit 31716 · Black Wildflowers Fund</span>
-                <span className="ml-auto flex items-center gap-1.5">
-                  <MoneyBadge ok label="Balanced" />
-                  <AttribBadge done={3} total={4} />
-                </span>
-              </div>
-              <div className="mt-2 flex items-center gap-6">
-                <Metric label="Gross" value={fmt(838.18)} />
-                <Metric label="Fees" value={fmt(14.08)} />
-                <Metric label="Bank" value={fmt(824.10)} />
-                <Metric label="Gap" value={fmt(0)} />
-                <Metric label="Resolved" value="3 / 4" />
-                <span className="ml-auto inline-flex px-2.5 py-1 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold uppercase tracking-wider">
-                  Partial · 3 of 4 complete · {fmt(99.10)} unresolved
-                </span>
-              </div>
+        <main className="flex-1 overflow-y-auto p-4 min-w-0">
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+            <div className={`${GRID} py-1.5 border-b border-slate-100 bg-slate-50/60 sticky top-0 z-10`}>
+              {["DONOR & PURPOSE", "PAYMENT EVIDENCE", "BANK & ACCOUNTING", "STATUS", "ACTION"].map(h => (
+                <span key={h} className={`text-[8px] font-bold uppercase tracking-wider text-slate-400 ${h === "ACTION" ? "text-right" : ""}`}>{h}</span>
+              ))}
             </div>
-            <ColHeads />
+
+            {/* CLUSTER 1 — balanced but incomplete */}
+            <Band open title="Stripe payout · Dec 27, 2024" refLine="QBO deposit 31716 · Black Wildflowers Fund"
+              metrics={[["Gross", fmt(838.18)], ["Fees", fmt(14.08)], ["Bank", fmt(824.10)], ["Gap", fmt(0)], ["Resolved", "3 / 4"]]}
+              moneyOk moneyLabel="Balanced" attribDone={3} attribTotal={4}
+              rollup={`Partial · 3 of 4 complete · ${fmt(99.10)} unresolved`} rollupTone="blue" />
             <Row r={{
               donor: <Donor name="Rivera Family Fund · $500.00" sub="Dec 22 · Teacher stipends — Minnesota" badges={<><DbBadge /><CodingBadge /><LetterBadge /></>} />,
               evidence: <Muted top="Stripe ch_9Rvra · $500.00" sub="Dec 22 · Visa ···4242 · recurring" />,
@@ -172,9 +166,9 @@ export function WorkbenchV2() {
             <Row r={{
               donor: <Donor name="Chen Household · $200.00" sub="Dec 23 · Annual fund" badges={<DbBadge />} />,
               evidence: <Muted top="Stripe ch_7Chen · $200.00" sub="Dec 23 · Amex ···1005 · one-time" />,
-              bank: <Muted top="↳ via payout bundle" sub="settles into deposit 31716" />,
+              bank: <Muted top="↳ via payout bundle" sub="QB payer shows 'PayPal Giving' — corrected in CRM, QB fix pending" />,
               status: "DONE",
-              diagnostic: "Coding form still missing (non-blocking)",
+              diagnostic: "QB record needs correction (payer name)",
             }} />
             <Row r={{
               donor: <Donor name="Anna Okafor · $25.00" sub="Dec 24 · GivingTuesday follow-up" badges={<CodingBadge />} />,
@@ -191,32 +185,12 @@ export function WorkbenchV2() {
               diagnostic: "No donor identified",
               action: "Choose donor",
             }} />
-          </section>
 
-          {/* CLUSTER 2 — ready to approve */}
-          <section className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-4 pt-3 pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2 flex-wrap">
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-                <span className="text-xs font-bold tracking-wide text-slate-800 uppercase">Wire transfer · Dec 20, 2024</span>
-                <span className="text-[10px] text-slate-400 font-medium">QBO deposit 31702 · First Horizon → WF operating</span>
-                <span className="ml-auto flex items-center gap-1.5">
-                  <MoneyBadge ok label="Balanced" />
-                  <AttribBadge done={1} total={1} />
-                </span>
-              </div>
-              <div className="mt-2 flex items-center gap-6">
-                <Metric label="Gross" value={fmt(150000)} />
-                <Metric label="Fees" value={fmt(0)} />
-                <Metric label="Bank" value={fmt(150000)} />
-                <Metric label="Gap" value={fmt(0)} />
-                <Metric label="Resolved" value="1 / 1" />
-                <span className="ml-auto inline-flex px-2.5 py-1 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold uppercase tracking-wider">
-                  Ready · all links made · awaiting approval
-                </span>
-              </div>
-            </div>
-            <ColHeads />
+            {/* CLUSTER 2 — ready to approve */}
+            <Band open={false} title="Wire transfer · Dec 20, 2024" refLine="QBO deposit 31702 · First Horizon → WF operating"
+              metrics={[["Gross", fmt(150000)], ["Fees", fmt(0)], ["Bank", fmt(150000)], ["Gap", fmt(0)], ["Resolved", "1 / 1"]]}
+              moneyOk moneyLabel="Balanced" attribDone={1} attribTotal={1}
+              rollup="Ready · all links made · awaiting approval" rollupTone="blue" />
             <Row r={{
               donor: <Donor name="Meadow Fund Commitment · $150,000.00" sub="FY27 general support · Meadow Fund" badges={<CodingBadge />} />,
               evidence: <Muted top="Wire TR-991 · $150,000.00" sub="Dec 20 · First Horizon" />,
@@ -225,32 +199,12 @@ export function WorkbenchV2() {
               diagnostic: "Grant letter still missing (non-blocking)",
               action: "Approve match",
             }} />
-          </section>
 
-          {/* CLUSTER 3 — complete but mismatched */}
-          <section className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-4 pt-3 pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2 flex-wrap">
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-                <span className="text-xs font-bold tracking-wide text-slate-800 uppercase">Check deposit · Dec 18, 2024</span>
-                <span className="text-[10px] text-slate-400 font-medium">QBO deposit 31688 · Prairie Sky Fund check #4471</span>
-                <span className="ml-auto flex items-center gap-1.5">
-                  <MoneyBadge ok={false} label="Mismatch" />
-                  <AttribBadge done={1} total={1} />
-                </span>
-              </div>
-              <div className="mt-2 flex items-center gap-6">
-                <Metric label="Gross" value={fmt(5000)} />
-                <Metric label="Fees" value={fmt(0)} />
-                <Metric label="Bank" value={fmt(4986.92)} />
-                <Metric label="Gap" value={fmt(13.08)} warn />
-                <Metric label="Resolved" value="1 / 1" />
-                <span className="ml-auto inline-flex px-2.5 py-1 rounded-md bg-red-100 text-red-700 text-[10px] font-bold uppercase tracking-wider">
-                  Conflict · amounts differ by {fmt(13.08)}
-                </span>
-              </div>
-            </div>
-            <ColHeads />
+            {/* CLUSTER 3 — complete but mismatched */}
+            <Band open={false} title="Check deposit · Dec 18, 2024" refLine="QBO deposit 31688 · Prairie Sky Fund check #4471"
+              metrics={[["Gross", fmt(5000)], ["Fees", fmt(0)], ["Bank", fmt(4986.92)], ["Gap", fmt(13.08), true], ["Resolved", "1 / 1"]]}
+              moneyOk={false} moneyLabel="Mismatch" attribDone={1} attribTotal={1}
+              rollup={`Conflict · amounts differ by ${fmt(13.08)}`} rollupTone="red" />
             <Row r={{
               donor: <Donor name="Prairie Sky Fund · $5,000.00" sub="Capital campaign pledge payment" badges={<><CodingBadge /><LetterBadge /></>} />,
               evidence: <Muted top="Check #4471 · $5,000.00" sub="Dec 15 · scanned image on file" />,
@@ -259,10 +213,24 @@ export function WorkbenchV2() {
               diagnostic: `Gift amount differs by ${fmt(13.08)}`,
               action: "Resolve conflict",
             }} />
-          </section>
+
+            {/* CLUSTER 4 — excluded but QB disagrees */}
+            <Band open={false} title="ACH deposit · Dec 12, 2024" refLine="QBO deposit 31654 · coded 4010 Grants"
+              metrics={[["Gross", fmt(1200)], ["Fees", fmt(0)], ["Bank", fmt(1200)], ["Gap", fmt(0)], ["Resolved", "—"]]}
+              moneyOk moneyLabel="Balanced" attribDone={0} attribTotal={0}
+              rollup="Excluded · QB says donation" rollupTone="red" />
+            <Row r={{
+              donor: <span className="text-slate-400 italic">Not a donation — facility rental reimbursement</span>,
+              evidence: <Muted top="ACH · $1,200.00" sub="Dec 12 · Minnesota Wildflower PTO" />,
+              bank: <Muted top="QBO deposit 31654 · $1,200.00" sub="coded 4010 Grants · Class: Minnesota" />,
+              status: "NEEDS ACCOUNTING",
+              diagnostic: "Excluded from workbench, but QB codes it as a donation — QB recode needed",
+              action: "Flag QB recode",
+            }} />
+          </div>
         </main>
 
-        {/* RIGHT RAIL — lenses + recent changes */}
+        {/* RIGHT RAIL */}
         <aside className="w-72 shrink-0 bg-white border-l border-slate-200 overflow-y-auto">
           <div className="p-3 border-b border-slate-100">
             <h2 className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-2">Lenses</h2>
@@ -285,6 +253,9 @@ export function WorkbenchV2() {
                 </button>
               ))}
             </nav>
+            <p className="text-[9px] text-slate-400 mt-2 leading-snug">
+              The two QB lenses are the bookkeeper's punch list — the CRM never writes back to QuickBooks, so "QB is wrong" items queue here until a human fixes QB.
+            </p>
           </div>
           <div className="p-3">
             <h2 className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-2">Recent changes</h2>
@@ -309,7 +280,7 @@ export function WorkbenchV2() {
           </div>
           <div className="p-3 border-t border-slate-100 text-[9px] text-slate-400 leading-relaxed">
             <AlertCircle className="w-3 h-3 inline mr-1" />
-            Cluster headers answer: what event, how much, balanced?, decisions left. Money and Attribution are independent — "balanced but incomplete" ≠ "complete but mismatched".
+            Same information as v2 — but one continuous surface: header bands replace cards, so columns align across every cluster.
           </div>
         </aside>
       </div>

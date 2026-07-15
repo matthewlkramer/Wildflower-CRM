@@ -85,6 +85,13 @@ completeness math, included/missing charges, fee accounting, settlement
 link, conflicts, repair actions) + persistent child inspector (donor&gift,
 processor txn, QBO relationship, gross/fee/net/refund, match rationale,
 ledger applications, source lineage, audit history, actions).
+Two more lenses (owner): "QB record needs correction" (linking revealed the
+QB record itself is wrong, e.g. QB payer name ≠ real payer) and "Excluded ·
+QB says donation" (excluded as not-a-donation but QB coded it 4010) — both
+are the bookkeeper's punch list since the CRM never writes back to QB.
+Owner questioned the v2 card-per-cluster look (loves the rail); a v2b hybrid
+was mocked: Grain C continuous table + v2 header BANDS (columns aligned
+across clusters, less chrome) — layout decision pending owner pick.
 
 **Drag semantics** — who/why→who/why offers "group as allocations of one
 commitment" OR "mark as double entry"; who/why→transaction links durably until
