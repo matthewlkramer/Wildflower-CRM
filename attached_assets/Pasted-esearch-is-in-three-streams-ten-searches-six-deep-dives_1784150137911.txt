@@ -1,0 +1,33 @@
+esearch is in — three streams, ten searches, six deep dives. Here's what's actually out there, filtered for what fits this CRM.
+
+1. Freshest UI direction (what "modern" reads as in 2026)
+The patterns actually shipping in the most-admired products (Linear, Notion, Stripe, Attio, Vercel):
+
+Calm design / progressive disclosure. Default views show only what the immediate task needs; power features exist but stay hidden until invoked. "Feels like Linear" is the compliment everyone chases — whitespace as a functional tool, typography doing the hierarchy work instead of icons and borders.
+AI as invisible infrastructure, not a badge. The "✨ AI" branding is now considered dated. Winners embed intelligence inline — auto-classification on save, contextual suggestions in the field you're editing — rather than a separate AI panel. We're actually well-positioned here: email intelligence, next-step suggestions, and donor auto-matching already follow the review-queue model; the trend says surface them more inline and brand them less.
+Keyboard-first + command palette. Cmd-K as the universal entry point for navigation and actions, not just search.
+Data-dense, but with one narrative. The anti-pattern everyone calls out is the raw log/wall-of-fields. The fix is "progressive summarization": a derived current-status line at the top, full detail one click below.
+2. How QB-challengers do reconciliation (Puzzle, Digits, Ramp, Mercury + AI recon platforms)
+This stream converged on a remarkably consistent playbook:
+
+Continuous reconciliation, not month-end. Transactions reconcile as they arrive; the UI is a daily inbox, not a periodic project. Puzzle's whole pitch vs QB is "no month-end panic."
+Two-layer matching with confidence scores. Deterministic rules clear 60–70% automatically; fuzzy/AI matching proposes the rest with a visible confidence level. High-confidence matches are one-click-confirm (or auto-confirm above a threshold); only genuine exceptions demand human attention.
+The inbox pattern (Ramp is the reference). One badge-counted inbox with an explicit state machine — items only enter the queue when they're actually actionable (cleared + complete); everything else stays out. Four states: all / needs-review / flagged / done. The insight: ruthlessly filter what's allowed to claim attention.
+Exceptions never block the pipeline. Unmatched items route to review while everything else flows through.
+Relevance to us: this validates the direction of the ratified reconciliation redesign (two clear reports replacing six queues). The gaps worth stealing: (a) we don't show match confidence on donor/gift auto-matches — a score with one-click confirm for high-confidence rows would cut review time substantially; (b) an entry gate so rows only appear in the workbench when truly actionable, with a badge count; (c) "percent auto-cleared" as a visible health metric.
+
+3. How Salesforce-challengers show customer records (Attio, Twenty, Folk)
+Attio's record-page anatomy is the current benchmark: a highlights strip (up to 6 key attributes as widgets at the top — the KPI strip for a person), action buttons, then a unified timeline of every email, meeting, note, task, and file, always current because email/calendar are synced. Views are infinite and personal-until-saved.
+Twenty/Folk go Notion-flavored: inline-editable everything, no edit-mode round trips, minimal chrome, records as flexible documents rather than forms.
+The explicit anti-pattern is Salesforce itself: dense static field sections, tab-partitioned everything, 200-entry raw activity logs that "contain complete history but communicate no narrative."
+Progressive summarization on records: current relationship status derived from recent interactions shown at top; the raw log is available but not the default.
+Relevance to us: we already have the hard part (Gmail/Calendar sync feeding a real timeline — that's Attio's moat feature). What we lack is the highlights strip — lifetime giving, last gift, open pipeline, connection status, owner, next task as scannable widgets at the top of donor records — and a derived "where this relationship stands" line above the activity feed (we have the AI plumbing for it). Inline editing we partially have; making it universal is the Twenty/Folk move.
+
+My prioritized shortlist, highest value-to-effort for this app:
+
+Donor-record highlights strip (Attio pattern) — biggest visible win, pure frontend over data we already compute.
+Match-confidence + one-click confirm in reconciliation — folds naturally into the two-reports redesign rather than being separate work.
+Relationship-status summary line on donor records — leverages existing email-intelligence plumbing.
+Cmd-K command palette — cheap, instantly modernizes feel.
+Broader calm-design pass (progressive disclosure on dense detail pages) — worthwhile but diffuse; best done opportunistically.
+If you tell me which of these to pursue, I can mock up options on the canvas first (e.g. two or three highlights-strip layouts side by side) before touching the real app — that's the lowest-risk way to converge on a direction.
