@@ -53,7 +53,7 @@ export type LinkedRecordsScope =
   | { householdId: string }
   | { individualGiverPersonId: string };
 
-function buildBaseParams(scope: LinkedRecordsScope) {
+export function buildBaseParams(scope: LinkedRecordsScope) {
   if ("organizationId" in scope) return { organizationId: scope.organizationId };
   if ("householdId" in scope) return { householdId: scope.householdId };
   return { individualGiverPersonId: scope.individualGiverPersonId };

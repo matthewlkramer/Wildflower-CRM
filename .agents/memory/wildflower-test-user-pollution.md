@@ -31,3 +31,9 @@ param: `all` vs `real`; `real` = NOT EXISTS a test resolver, NULL resolvers
 kept). Any change to the predicate must update BOTH places or the feed/cleanup
 drift. The `prompts/generate` endpoint still samples test feedback (not yet
 filtered) — a known related gap.
+
+**Archived test user blocks the next e2e run:** `cleanup:test-users` ARCHIVES
+(not deletes) the Test Dev/Admin rows. A later `testClerkAuth` sign-in with the
+same email then gets API-wide `403 user_archived` (list pages show "0 total").
+Fix before the run: `UPDATE users SET archived_at = NULL WHERE email ILIKE
+'testdev@wildflowerschools.org'`; re-run cleanup after.

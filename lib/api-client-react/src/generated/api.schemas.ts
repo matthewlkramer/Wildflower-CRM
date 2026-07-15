@@ -1264,6 +1264,8 @@ export interface Organization {
   readonly lifetimeGiving?: string | null;
   /** Count of opportunities_and_pledges where organization_id matches and status='open'. */
   readonly openOpportunityCount?: number | null;
+  /** Most recent date_received across the organization's non-archived gifts. */
+  readonly mostRecentGiftDate?: string | null;
   /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
   archivedAt?: string | null;
   createdAt: string;
@@ -1359,6 +1361,16 @@ export type OrganizationDetail = Organization & ({
 export interface OrganizationList {
   data: Organization[];
   pagination: Pagination;
+}
+
+/**
+ * On-demand AI snapshot of where a donor relationship stands. Never persisted — regenerated from recent CRM activity each time it's requested.
+
+ */
+export interface RelationshipSummary {
+  /** 2–4 sentence plain-text state of the relationship. '(no summary available)' when the model call fails or there is no activity to summarize. */
+  summary: string;
+  generatedAt: string;
 }
 
 export interface CreateOrganizationBody {

@@ -82,6 +82,7 @@ export const ListOrganizationsResponse = zod.object({
   "primaryContactPersonName": zod.string().nullish(),
   "lifetimeGiving": zod.string().nullish().describe('Sum of gifts.amount where organization_id matches. Decimal as string.'),
   "openOpportunityCount": zod.number().nullish().describe('Count of opportunities_and_pledges where organization_id matches and status=\'open\'.'),
+  "mostRecentGiftDate": zod.string().date().nullish().describe('Most recent date_received across the organization\'s non-archived gifts.'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -177,6 +178,7 @@ export const GetOrganizationResponse = zod.object({
   "primaryContactPersonName": zod.string().nullish(),
   "lifetimeGiving": zod.string().nullish().describe('Sum of gifts.amount where organization_id matches. Decimal as string.'),
   "openOpportunityCount": zod.number().nullish().describe('Count of opportunities_and_pledges where organization_id matches and status=\'open\'.'),
+  "mostRecentGiftDate": zod.string().date().nullish().describe('Most recent date_received across the organization\'s non-archived gifts.'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -336,10 +338,24 @@ export const UpdateOrganizationResponse = zod.object({
   "primaryContactPersonName": zod.string().nullish(),
   "lifetimeGiving": zod.string().nullish().describe('Sum of gifts.amount where organization_id matches. Decimal as string.'),
   "openOpportunityCount": zod.number().nullish().describe('Count of opportunities_and_pledges where organization_id matches and status=\'open\'.'),
+  "mostRecentGiftDate": zod.string().date().nullish().describe('Most recent date_received across the organization\'s non-archived gifts.'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })
+
+/**
+ * AI-generated "where this relationship stands" snapshot, computed on demand from the organization's recent CRM activity (never persisted).
+
+ */
+export const GetOrganizationRelationshipSummaryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetOrganizationRelationshipSummaryResponse = zod.object({
+  "summary": zod.string().describe('2–4 sentence plain-text state of the relationship. \'(no summary available)\' when the model call fails or there is no activity to summarize.'),
+  "generatedAt": zod.string().datetime({})
+}).describe('On-demand AI snapshot of where a donor relationship stands. Never persisted — regenerated from recent CRM activity each time it\'s requested.\n')
 
 export const bulkUpdateOrganizationsBodyIdsMax = 1000;
 
@@ -459,6 +475,7 @@ export const ArchiveOrganizationResponse = zod.object({
   "primaryContactPersonName": zod.string().nullish(),
   "lifetimeGiving": zod.string().nullish().describe('Sum of gifts.amount where organization_id matches. Decimal as string.'),
   "openOpportunityCount": zod.number().nullish().describe('Count of opportunities_and_pledges where organization_id matches and status=\'open\'.'),
+  "mostRecentGiftDate": zod.string().date().nullish().describe('Most recent date_received across the organization\'s non-archived gifts.'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -510,6 +527,7 @@ export const UnarchiveOrganizationResponse = zod.object({
   "primaryContactPersonName": zod.string().nullish(),
   "lifetimeGiving": zod.string().nullish().describe('Sum of gifts.amount where organization_id matches. Decimal as string.'),
   "openOpportunityCount": zod.number().nullish().describe('Count of opportunities_and_pledges where organization_id matches and status=\'open\'.'),
+  "mostRecentGiftDate": zod.string().date().nullish().describe('Most recent date_received across the organization\'s non-archived gifts.'),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})

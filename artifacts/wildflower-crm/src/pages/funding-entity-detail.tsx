@@ -27,10 +27,21 @@ import { canSeeIdentity, canManageIdentity, displayOrganizationName, ANONYMOUS_L
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { PinnedMediaCard } from "@/components/media-mentions-panel";
 import { TasksPanel } from "@/components/tasks-panel";
+import { GivingPipelineCard } from "@/components/giving-pipeline-card";
+import { OrganizationRelationshipSummaryCard } from "@/components/relationship-summary-card";
 import {
-  LinkedGiftsCard,
-  LinkedOpportunitiesCard,
-} from "@/components/linked-records";
+  AttributeBadges,
+  AttributeBadgeSelect,
+} from "@/components/attribute-badges";
+import { ContactIconRow } from "@/components/contact-icon-row";
+import {
+  Facebook,
+  Globe,
+  Instagram,
+  Link2,
+  Linkedin,
+  Mail,
+} from "lucide-react";
 import {
   AddOrganizationPersonRoleDialog,
   AddOrganizationRelationDialog,
@@ -67,7 +78,6 @@ import {
   formatCurrency,
   formatDate,
   formatEnum,
-  formatEnthusiasm,
   formatCapacity,
   formatCrunchbaseHandle,
   formatFacebookHandle,
@@ -366,45 +376,20 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       ),
     },
     {
-      label: "Connection",
-      value: (
-        <InlineEditSelect
-          label="Connection status"
-          testIdBase="organization-connection"
-          value={org.connectionStatus ?? null}
-          options={CONNECTION_STATUS_OPTIONS}
-          display={formatEnum(org.connectionStatus)}
-          onSave={(next) => patch({ connectionStatus: next })}
-        />
-      ),
-    },
-    {
-      label: "Enthusiasm",
-      value: (
-        <InlineEditSelect
-          label="Enthusiasm"
-          testIdBase="organization-enthusiasm"
-          value={org.enthusiasm ?? null}
-          options={ENTHUSIASM_OPTIONS}
-          display={formatEnthusiasm(org.enthusiasm)}
-          onSave={(next) => patch({ enthusiasm: next })}
-        />
-      ),
-    },
-    {
-      label: "Owner",
-      value: (
-        <InlineEditUserPicker
-          testIdBase="organization-owner"
-          value={org.ownerUserId ?? null}
-          display={ownerDisplay}
-          onSave={(next) => patch({ ownerUserId: next })}
-        />
-      ),
-    },
-    {
       label: "Lifetime giving",
       value: formatCurrency(org.lifetimeGiving),
+    },
+    {
+      label: "Last gift",
+      value: formatDate(org.mostRecentGiftDate),
+    },
+    {
+      label: "Open opps",
+      value: String(org.openOpportunityCount ?? 0),
+    },
+    {
+      label: "Last contacted",
+      value: formatDate(org.lastContacted),
     },
   ];
 
@@ -463,27 +448,124 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       highlights={highlights}
       left={
         <>
-          <FieldCard title="Details">
+          <FieldCard title="Identity & engagement">
             <div className="space-y-4">
+              <AttributeBadges>
+                <AttributeBadgeSelect
+                  label="Active status"
+                  chipLabel="Status"
+                  testIdBase="organization-active-status"
+                  value={org.activeStatus ?? null}
+                  options={ACTIVE_STATUS_OPTIONS}
+                  getVariant={(v) => (v === "active" ? "default" : "secondary")}
+                  onSave={(next) => patch({ activeStatus: next })}
+                />
+                <AttributeBadgeSelect
+                  label="Connection status"
+                  chipLabel="Connection"
+                  testIdBase="organization-connection"
+                  value={org.connectionStatus ?? null}
+                  options={CONNECTION_STATUS_OPTIONS}
+                  onSave={(next) => patch({ connectionStatus: next })}
+                />
+                <AttributeBadgeSelect
+                  label="Enthusiasm"
+                  testIdBase="organization-enthusiasm"
+                  value={org.enthusiasm ?? null}
+                  options={ENTHUSIASM_OPTIONS}
+                  onSave={(next) => patch({ enthusiasm: next })}
+                />
+                <AttributeBadgeSelect
+                  label="Strategic alignment"
+                  chipLabel="Alignment"
+                  testIdBase="organization-alignment"
+                  value={org.strategicAlignment ?? null}
+                  options={ALIGNMENT_OPTIONS}
+                  onSave={(next) => patch({ strategicAlignment: next })}
+                />
+              </AttributeBadges>
               <div className="space-y-1">
-                <Row label="Active">
-                  <InlineEditSelect
-                    label="Active status"
-                    testIdBase="organization-active-status"
-                    value={org.activeStatus ?? null}
-                    options={ACTIVE_STATUS_OPTIONS}
-                    display={
-                      org.activeStatus ? (
-                        <Badge variant={org.activeStatus === "active" ? "default" : "outline"}>
-                          {formatEnum(org.activeStatus)}
-                        </Badge>
-                      ) : (
-                        "—"
-                      )
-                    }
-                    onSave={(next) => patch({ activeStatus: next })}
+                <Row label="Owner">
+                  <InlineEditUserPicker
+                    testIdBase="organization-owner"
+                    value={org.ownerUserId ?? null}
+                    display={ownerDisplay}
+                    onSave={(next) => patch({ ownerUserId: next })}
                   />
                 </Row>
+                <Row label="Makes grants">
+                  <InlineEditBoolean
+                    label="Makes grants"
+                    testIdBase="organization-issues-grants"
+                    value={org.issuesGrants}
+                    allowNull={false}
+                    display={org.issuesGrants ? "Yes" : "No"}
+                    onSave={(next) => patch({ issuesGrants: next ?? false })}
+                  />
+                </Row>
+                {canManageIdentity(org, viewer) && (
+                  <Row label="Anonymous">
+                    <InlineEditBoolean
+                      label="Anonymous"
+                      testIdBase="organization-anonymous"
+                      value={org.anonymous}
+                      allowNull={false}
+                      display={org.anonymous ? "Yes" : "No"}
+                      onSave={(next) => patch({ anonymous: next ?? false })}
+                    />
+                  </Row>
+                )}
+              </div>
+              <Separator />
+              {/* Quick-access links only — the underlying fields stay editable
+                  in the Web card below. */}
+              <ContactIconRow
+                testIdBase="organization"
+                items={[
+                  org.website && {
+                    icon: Globe,
+                    label: "Website",
+                    value: org.website,
+                    href: org.website,
+                  },
+                  org.orgEmail && {
+                    icon: Mail,
+                    label: "Email",
+                    value: org.orgEmail,
+                    href: `mailto:${org.orgEmail}`,
+                  },
+                  org.linkedin && {
+                    icon: Linkedin,
+                    label: "LinkedIn",
+                    value: formatLinkedinHandle(org.linkedin),
+                    href: org.linkedin,
+                  },
+                  org.crunchbase && {
+                    icon: Link2,
+                    label: "Crunchbase",
+                    value: formatCrunchbaseHandle(org.crunchbase),
+                    href: org.crunchbase,
+                  },
+                  org.facebook && {
+                    icon: Facebook,
+                    label: "Facebook",
+                    value: formatFacebookHandle(org.facebook),
+                    href: org.facebook,
+                  },
+                  org.instagram && {
+                    icon: Instagram,
+                    label: "Instagram",
+                    value: formatInstagramHandle(org.instagram),
+                    href: org.instagram,
+                  },
+                ]}
+              />
+            </div>
+          </FieldCard>
+
+          <FieldCard title="More details" defaultOpen={false}>
+            <div className="space-y-4">
+              <div className="space-y-1">
                 <Row label="Employees">
                   <InlineEditSelect
                     label="Number of employees"
@@ -505,16 +587,6 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                     onSave={(next) => patch({ totalAssets: next })}
                   />
                 </Row>
-                <Row label="Makes grants">
-                  <InlineEditBoolean
-                    label="Makes grants"
-                    testIdBase="organization-issues-grants"
-                    value={org.issuesGrants}
-                    allowNull={false}
-                    display={org.issuesGrants ? "Yes" : "No"}
-                    onSave={(next) => patch({ issuesGrants: next ?? false })}
-                  />
-                </Row>
                 <Row label="Makes PRIs">
                   <InlineEditBoolean
                     label="Makes PRIs"
@@ -530,28 +602,6 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                     onSave={(next) => patch({ makesPris: next })}
                   />
                 </Row>
-                <Row label="Strategic alignment">
-                  <InlineEditSelect
-                    label="Strategic alignment"
-                    testIdBase="organization-alignment"
-                    value={org.strategicAlignment ?? null}
-                    options={ALIGNMENT_OPTIONS}
-                    display={formatEnum(org.strategicAlignment)}
-                    onSave={(next) => patch({ strategicAlignment: next })}
-                  />
-                </Row>
-                {canManageIdentity(org, viewer) && (
-                  <Row label="Anonymous">
-                    <InlineEditBoolean
-                      label="Anonymous"
-                      testIdBase="organization-anonymous"
-                      value={org.anonymous}
-                      allowNull={false}
-                      display={org.anonymous ? "Yes" : "No"}
-                      onSave={(next) => patch({ anonymous: next ?? false })}
-                    />
-                  </Row>
-                )}
               </div>
               <Separator />
               <div className="space-y-4">
@@ -844,6 +894,7 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
             : {};
           return (
             <>
+              <OrganizationRelationshipSummaryCard organizationId={org.id} />
               <TasksPanel organizationId={org.id} defaultLinks={funderDefaultLinks} />
               <UnifiedActivityFeed
                 organizationId={org.id}
@@ -857,13 +908,7 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       right={
         <>
           <PinnedMediaCard organizationId={org.id} />
-          <LinkedOpportunitiesCard
-            scope={{ organizationId: org.id }}
-            title="Open opportunities"
-            pledgeView="opportunities"
-            status="open"
-            emptyLabel="No open opportunities."
-          />
+          <GivingPipelineCard scope={{ organizationId: org.id }} />
 
           <RelatedCard
             title="People"
@@ -913,15 +958,6 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
           <RelatedOrganizationsCard org={org} />
 
           <GivesThroughCard donor={{ organizationId: org.id }} />
-
-          <LinkedOpportunitiesCard
-            scope={{ organizationId: org.id }}
-            title="Pledges"
-            pledgeView="pledges"
-            emptyLabel="No pledges from this organization."
-          />
-
-          <LinkedGiftsCard scope={{ organizationId: org.id }} />
         </>
       }
     />

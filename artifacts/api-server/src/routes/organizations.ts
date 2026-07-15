@@ -49,6 +49,7 @@ import { auditCreate, auditUpdate } from "../lib/audit";
 import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
 import { isFlaggedForResearch } from "../lib/flaggedForResearch";
+import { generateRelationshipSummary } from "../lib/relationshipSummary";
 
 const ORGANIZATIONS_ARRAY_PARAMS = [
   "entityType",
@@ -112,6 +113,14 @@ const orgsOpenOppCountExpr = sql`(
     WHERE organization_id = ${ORGS_ID} AND status = 'open'
 )`;
 
+// Most recent gift date (non-archived gifts only — note the older
+// orgsLifetimeGivingExpr above predates archive-awareness and still counts
+// archived rows; left as-is deliberately, see the detail-page redesign task).
+const orgsMostRecentGiftExpr = sql`(
+  SELECT MAX(date_received) FROM gifts_and_payments
+    WHERE organization_id = ${ORGS_ID} AND archived_at IS NULL
+)`;
+
 // Shared column set used by every org response projection (list/detail spread
 // and `.returning()` on POST/PATCH). The retired `otherNames` column has been
 // physically dropped (migration 0107), so no scrubbing is needed.
@@ -160,6 +169,9 @@ const orgsListSelect = {
   ),
   openOpportunityCount: sql<number>`${orgsOpenOppCountExpr}`.as(
     "open_opportunity_count",
+  ),
+  mostRecentGiftDate: sql<string | null>`${orgsMostRecentGiftExpr}`.as(
+    "most_recent_gift_date",
   ),
 };
 
@@ -349,6 +361,19 @@ router.get(
       paymentIntermediary,
       flaggedForResearch,
     });
+  }),
+);
+
+// AI "where this relationship stands" snapshot — computed on view from the
+// task-intelligence signal bundle, never persisted. Model failures degrade
+// to a placeholder summary inside the lib (route never 500s for AI issues).
+router.get(
+  "/organizations/:id/relationship-summary",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const result = await generateRelationshipSummary({ organizationId: id });
+    if (!result) return notFound(res, "organization");
+    res.json(result);
   }),
 );
 

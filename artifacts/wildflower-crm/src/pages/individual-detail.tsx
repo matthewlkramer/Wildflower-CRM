@@ -28,7 +28,19 @@ import {
   type EntityRoleType,
   type PersonSuppressionWindow,
 } from "@workspace/api-client-react";
-import { Archive, Check, Pencil, Trash2, X } from "lucide-react";
+import {
+  Archive,
+  Check,
+  Facebook,
+  Globe,
+  Instagram,
+  Linkedin,
+  Pencil,
+  Trash2,
+  Twitter,
+  Video,
+  X,
+} from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import {
@@ -40,10 +52,13 @@ import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { PinnedMediaCard } from "@/components/media-mentions-panel";
 import { GivesThroughCard } from "@/components/gives-through-card";
 import { TasksPanel } from "@/components/tasks-panel";
+import { GivingPipelineCard } from "@/components/giving-pipeline-card";
+import { PersonRelationshipSummaryCard } from "@/components/relationship-summary-card";
 import {
-  LinkedGiftsCard,
-  LinkedOpportunitiesCard,
-} from "@/components/linked-records";
+  AttributeBadges,
+  AttributeBadgeSelect,
+} from "@/components/attribute-badges";
+import { ContactIconRow } from "@/components/contact-icon-row";
 import {
   AddPersonOrgRoleDialog,
   AddPersonToHouseholdDialog,
@@ -87,7 +102,6 @@ import {
   formatCurrency,
   formatDate,
   formatEnum,
-  formatEnthusiasm,
   formatOrganizationNameShort,
   formatFacebookHandle,
   formatInstagramHandle,
@@ -440,45 +454,20 @@ function PersonView({ person }: { person: PersonDetail }) {
       ),
     },
     {
-      label: "Connection",
-      value: (
-        <InlineEditSelect
-          label="Connection status"
-          testIdBase="person-connection"
-          value={person.connectionStatus ?? null}
-          options={CONNECTION_STATUS_OPTIONS}
-          display={formatEnum(person.connectionStatus)}
-          onSave={(next) => patch({ connectionStatus: next })}
-        />
-      ),
-    },
-    {
-      label: "Enthusiasm",
-      value: (
-        <InlineEditSelect
-          label="Enthusiasm"
-          testIdBase="person-enthusiasm"
-          value={person.enthusiasm ?? null}
-          options={ENTHUSIASM_OPTIONS}
-          display={formatEnthusiasm(person.enthusiasm)}
-          onSave={(next) => patch({ enthusiasm: next })}
-        />
-      ),
-    },
-    {
       label: "Lifetime giving",
       value: formatCurrency(person.lifetimeGiving),
     },
     {
-      label: "Owner",
-      value: (
-        <InlineEditUserPicker
-          testIdBase="person-owner-header"
-          value={person.ownerUserId ?? null}
-          display={ownerDisplay}
-          onSave={(next) => patch({ ownerUserId: next })}
-        />
-      ),
+      label: "Last gift",
+      value: formatDate(person.mostRecentGiftDate),
+    },
+    {
+      label: "Open opps",
+      value: String(person.openOpportunityCount ?? 0),
+    },
+    {
+      label: "Last contacted",
+      value: formatDate(person.lastContacted),
     },
   ];
 
@@ -517,7 +506,33 @@ function PersonView({ person }: { person: PersonDetail }) {
       left={
         <>
           <FieldCard title="Basics">
+            <div className="space-y-4">
+              <AttributeBadges>
+                <AttributeBadgeSelect
+                  label="Connection status"
+                  chipLabel="Connection"
+                  testIdBase="person-connection"
+                  value={person.connectionStatus ?? null}
+                  options={CONNECTION_STATUS_OPTIONS}
+                  onSave={(next) => patch({ connectionStatus: next })}
+                />
+                <AttributeBadgeSelect
+                  label="Enthusiasm"
+                  testIdBase="person-enthusiasm"
+                  value={person.enthusiasm ?? null}
+                  options={ENTHUSIASM_OPTIONS}
+                  onSave={(next) => patch({ enthusiasm: next })}
+                />
+              </AttributeBadges>
             <div className="space-y-1">
+              <Row label="Owner">
+                <InlineEditUserPicker
+                  testIdBase="person-owner-header"
+                  value={person.ownerUserId ?? null}
+                  display={ownerDisplay}
+                  onSave={(next) => patch({ ownerUserId: next })}
+                />
+              </Row>
               <Row label="Pronouns">
                 <InlineEditSelect label="Pronouns" testIdBase="person-pronouns"
                   value={person.pronouns ?? null} options={PRONOUNS_OPTIONS}
@@ -581,6 +596,50 @@ function PersonView({ person }: { person: PersonDetail }) {
                   onSave={(next) => patch({ netWorth: next })}
                 />
               </Row>
+            </div>
+              {/* Quick-access links only — the underlying fields stay editable
+                  in the Web card below. */}
+              <ContactIconRow
+                testIdBase="person"
+                items={[
+                  person.website && {
+                    icon: Globe,
+                    label: "Website",
+                    value: person.website,
+                    href: person.website,
+                  },
+                  person.linkedin && {
+                    icon: Linkedin,
+                    label: "LinkedIn",
+                    value: formatLinkedinHandle(person.linkedin),
+                    href: person.linkedin,
+                  },
+                  person.x && {
+                    icon: Twitter,
+                    label: "X",
+                    value: formatXHandle(person.x),
+                    href: person.x,
+                  },
+                  person.facebook && {
+                    icon: Facebook,
+                    label: "Facebook",
+                    value: formatFacebookHandle(person.facebook),
+                    href: person.facebook,
+                  },
+                  person.instagram && {
+                    icon: Instagram,
+                    label: "Instagram",
+                    value: formatInstagramHandle(person.instagram),
+                    href: person.instagram,
+                  },
+                  person.meetingLink && {
+                    icon: Video,
+                    label: "Meeting link",
+                    value: person.meetingLink,
+                    href: person.meetingLink,
+                  },
+                ]}
+              />
             </div>
           </FieldCard>
 
@@ -855,6 +914,7 @@ function PersonView({ person }: { person: PersonDetail }) {
             : {};
           return (
             <>
+              <PersonRelationshipSummaryCard personId={person.id} />
               <TasksPanel personId={person.id} defaultLinks={personDefaultLinks} />
               <UnifiedActivityFeed
                 personId={person.id}
@@ -868,13 +928,7 @@ function PersonView({ person }: { person: PersonDetail }) {
       right={
         <>
           <PinnedMediaCard personId={person.id} />
-          <LinkedOpportunitiesCard
-            scope={{ individualGiverPersonId: person.id }}
-            title="Open opportunities"
-            pledgeView="opportunities"
-            status="open"
-            emptyLabel="No open opportunities."
-          />
+          <GivingPipelineCard scope={{ individualGiverPersonId: person.id }} />
 
           <HouseholdCard person={person} />
 
@@ -883,15 +937,6 @@ function PersonView({ person }: { person: PersonDetail }) {
           <OrganizationsCard roles={roles} personId={person.id} />
 
           <GivesThroughCard donor={{ individualGiverPersonId: person.id }} />
-
-          <LinkedOpportunitiesCard
-            scope={{ individualGiverPersonId: person.id }}
-            title="Pledges"
-            pledgeView="pledges"
-            emptyLabel="No pledges from this individual."
-          />
-
-          <LinkedGiftsCard scope={{ individualGiverPersonId: person.id }} />
 
           <SuppressionWindowsCard personId={person.id} />
         </>

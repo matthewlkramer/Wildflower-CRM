@@ -33,6 +33,7 @@ import type {
   Person,
   PersonDetail,
   PersonList,
+  RelationshipSummary,
   UpdatePersonBody
 } from '../api.schemas';
 
@@ -320,7 +321,79 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUpdatePersonMutationOptions(options));
     }
-    export const getBulkUpdatePeopleUrl = () => {
+    /**
+ * AI-generated "where this relationship stands" snapshot, computed on demand from the person's recent CRM activity (never persisted).
+
+ */
+export const getGetPersonRelationshipSummaryUrl = (id: string,) => {
+
+
+  
+
+  return `/api/people/${id}/relationship-summary`
+}
+
+export const getPersonRelationshipSummary = async (id: string, options?: RequestInit): Promise<RelationshipSummary> => {
+  
+  return customFetch<RelationshipSummary>(getGetPersonRelationshipSummaryUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetPersonRelationshipSummaryQueryKey = (id: string,) => {
+    return [
+    `/api/people/${id}/relationship-summary`
+    ] as const;
+    }
+
+    
+export const getGetPersonRelationshipSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPersonRelationshipSummaryQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPersonRelationshipSummary>>> = ({ signal }) => getPersonRelationshipSummary(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPersonRelationshipSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getPersonRelationshipSummary>>>
+export type GetPersonRelationshipSummaryQueryError = ErrorType<NotFoundResponse>
+
+
+
+export function useGetPersonRelationshipSummary<TData = Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPersonRelationshipSummaryQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+export const getBulkUpdatePeopleUrl = () => {
 
 
   

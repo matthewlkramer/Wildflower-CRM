@@ -954,6 +954,17 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Organization" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /organizations/{id}/relationship-summary:
+    get:
+      operationId: getOrganizationRelationshipSummary
+      tags: [organizations]
+      description: >
+        AI-generated "where this relationship stands" snapshot, computed on
+        demand from the organization's recent CRM activity (never persisted).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RelationshipSummary" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Payment intermediaries ────────────────────────────────────────────────
   /payment-intermediaries:
@@ -1134,6 +1145,17 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Person" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /people/{id}/relationship-summary:
+    get:
+      operationId: getPersonRelationshipSummary
+      tags: [people]
+      description: >
+        AI-generated "where this relationship stands" snapshot, computed on
+        demand from the person's recent CRM activity (never persisted).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RelationshipSummary" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── People-entity-roles ───────────────────────────────────────────────────
@@ -5431,6 +5453,7 @@ components:
         primaryContactPersonName: { type: string, nullable: true, readOnly: true }
         lifetimeGiving:           { type: string, nullable: true, readOnly: true, description: "Sum of gifts.amount where organization_id matches. Decimal as string." }
         openOpportunityCount:     { type: integer, nullable: true, readOnly: true, description: "Count of opportunities_and_pledges where organization_id matches and status='open'." }
+        mostRecentGiftDate:       { type: string, format: date, nullable: true, readOnly: true, description: "Most recent date_received across the organization's non-archived gifts." }
         archivedAt:            { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:             { type: string, format: date-time }
         updatedAt:             { type: string, format: date-time }
@@ -5451,6 +5474,16 @@ components:
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/Organization" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+    RelationshipSummary:
+      type: object
+      required: [summary, generatedAt]
+      description: >
+        On-demand AI snapshot of where a donor relationship stands. Never
+        persisted — regenerated from recent CRM activity each time it's
+        requested.
+      properties:
+        summary:     { type: string, description: "2–4 sentence plain-text state of the relationship. '(no summary available)' when the model call fails or there is no activity to summarize." }
+        generatedAt: { type: string, format: date-time }
     CreateOrganizationBody:
       type: object
       required: [name]

@@ -33,6 +33,7 @@ import type {
   Organization,
   OrganizationDetail,
   OrganizationList,
+  RelationshipSummary,
   UpdateOrganizationBody
 } from '../api.schemas';
 
@@ -320,7 +321,79 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUpdateOrganizationMutationOptions(options));
     }
-    export const getBulkUpdateOrganizationsUrl = () => {
+    /**
+ * AI-generated "where this relationship stands" snapshot, computed on demand from the organization's recent CRM activity (never persisted).
+
+ */
+export const getGetOrganizationRelationshipSummaryUrl = (id: string,) => {
+
+
+  
+
+  return `/api/organizations/${id}/relationship-summary`
+}
+
+export const getOrganizationRelationshipSummary = async (id: string, options?: RequestInit): Promise<RelationshipSummary> => {
+  
+  return customFetch<RelationshipSummary>(getGetOrganizationRelationshipSummaryUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetOrganizationRelationshipSummaryQueryKey = (id: string,) => {
+    return [
+    `/api/organizations/${id}/relationship-summary`
+    ] as const;
+    }
+
+    
+export const getGetOrganizationRelationshipSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOrganizationRelationshipSummaryQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>> = ({ signal }) => getOrganizationRelationshipSummary(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetOrganizationRelationshipSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>>
+export type GetOrganizationRelationshipSummaryQueryError = ErrorType<NotFoundResponse>
+
+
+
+export function useGetOrganizationRelationshipSummary<TData = Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetOrganizationRelationshipSummaryQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+export const getBulkUpdateOrganizationsUrl = () => {
 
 
   

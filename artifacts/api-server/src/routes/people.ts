@@ -21,6 +21,7 @@ import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRole
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
 import { isFlaggedForResearch } from "../lib/flaggedForResearch";
 import { syncPersonToFlodeskInBackground } from "../lib/flodeskSync";
+import { generateRelationshipSummary } from "../lib/relationshipSummary";
 
 // JSON object shape carried by the active/past organization-name aggregates so
 // the consumer can mask anonymous org names server-side (see maskOrgNameList).
@@ -365,6 +366,19 @@ router.get(
       addresses: addressRows,
       flaggedForResearch,
     });
+  }),
+);
+
+// AI "where this relationship stands" snapshot — computed on view from the
+// task-intelligence signal bundle, never persisted. Model failures degrade
+// to a placeholder summary inside the lib (route never 500s for AI issues).
+router.get(
+  "/people/:id/relationship-summary",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const result = await generateRelationshipSummary({ personId: id });
+    if (!result) return notFound(res, "person");
+    res.json(result);
   }),
 );
 
