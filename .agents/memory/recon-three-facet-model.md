@@ -36,8 +36,14 @@ amount+date+identity, and coding inadequacy shows INSIDE the owning record's
 chip. A check renders ONE QB record spanning transaction+accounting with
 per-role adequacy. Every-dollar-once survives without the object: each facet
 plane sums independently, links assert correspondences. Open design point:
-display grain for big clusters (deposit w/ 4 charges) — one row w/
-sub-structure vs. split by transaction.
+display grain for big clusters (deposit w/ 4 charges) — three candidates
+mocked side-by-side: (A) one row per cluster, cells hold stacked record sets
+(list = money events; per-donor work buried, rows can be "¾ done");
+(B) one row per transaction, shared records span rows via rowSpan (one row =
+one decision; list inflates, cluster doneness lives in the spanning chip's
+margin); (C) adaptive — browse at cluster grain, expand to per-transaction
+sub-rows, status rolls up (both counts honest; costs a second UI level).
+Simple 1:1:1 clusters and strays render identically in all three grains.
 
 **Drag semantics** — who/why→who/why offers "group as allocations of one
 commitment" OR "mark as double entry"; who/why→transaction links durably until
