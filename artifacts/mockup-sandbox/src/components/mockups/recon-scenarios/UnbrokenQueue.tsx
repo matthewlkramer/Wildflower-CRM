@@ -14,128 +14,142 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 
 type Status = "unreconciled" | "partial" | "linked" | "excluded";
 
-// LINKAGE vs ADEQUACY
-// State: 
-// - unlinked (missing)
-// - linked_adequate (green)
-// - linked_inadequate (amber with reason)
+// Each row is a UNIT OF MONEY — not anchored on any one system's record.
+// The three facets are peer component SLOTS; the QB record is just the
+// component that usually arrives first (money landing in QB mints most rows).
+// Adequacy problems (e.g. coding gaps) live INSIDE the owning component's chip.
+// LINKAGE = is the slot filled at all; ADEQUACY = is the filled component complete.
 
-type FacetState = {
-  linked: boolean;
-  adequate: boolean;
-  label?: string; // what is it? e.g. "G-9021", "CHK-4091"
-  inadequacyReason?: string; // e.g. "Missing grant letter", "No entity attribution"
+type ComponentState = {
+  present: boolean;
+  adequate?: boolean;
+  ref?: string;      // record identity, e.g. "DEP-8821 · QB Deposit"
+  detail?: string;   // adequate supporting detail, e.g. coding
+  problem?: string;  // inadequacy reason, shown INSIDE the chip
+  hint?: string;     // why an empty slot is empty
 };
 
 interface MainQueueItem {
   id: string;
-  source: string;
-  reference: string;
   date: string;
   amount: number;
   status: Status;
   description: string;
   exclusionReason?: string;
-  whoWhy: FacetState;
-  transaction: FacetState;
-  accounting: FacetState;
+  whoWhy: ComponentState;
+  transaction?: ComponentState;
+  accounting?: ComponentState;
+  // A check: ONE QB record fills both the transaction and accounting roles,
+  // each role carrying its own adequacy.
+  qbSpan?: {
+    ref: string;
+    txn: { adequate: boolean; note: string };
+    acct: { adequate: boolean; note: string };
+  };
   isExpanded?: boolean;
 }
 
 const MAIN_DATA: MainQueueItem[] = [
   {
     id: "item-1",
-    source: "QuickBooks Deposit",
-    reference: "DEP-8821",
     date: "Oct 15, 2026",
     amount: 150000.00,
     status: "partial",
     description: "Wire Transfer - Meadow Fund",
     whoWhy: {
-      linked: true,
+      present: true,
       adequate: true,
-      label: "Meadow Fund Commitment"
+      ref: "Meadow Fund Commitment",
+      detail: "Grant letter on file"
     },
     transaction: {
-      linked: true,
+      present: true,
       adequate: false,
-      label: "Wire TR-991",
-      inadequacyReason: "Missing originating bank confirmation"
+      ref: "Wire TR-991",
+      problem: "Missing originating bank confirmation"
     },
     accounting: {
-      linked: true,
+      present: true,
       adequate: true,
-      label: "4010 Grants · Class: National"
+      ref: "DEP-8821 · QB Deposit",
+      detail: "4010 Grants · Class: National"
     },
     isExpanded: true // The exemplar
   },
   {
     id: "item-2",
-    source: "QuickBooks Deposit",
-    reference: "DEP-3392",
     date: "Oct 12, 2026",
     amount: 25000.00,
     status: "partial",
     description: "Check deposit",
     whoWhy: {
-      linked: true,
+      present: true,
       adequate: false,
-      label: "Third Coast Foundation",
-      inadequacyReason: "Missing grant letter"
+      ref: "Third Coast Foundation",
+      problem: "Missing grant letter"
     },
-    transaction: {
-      linked: true,
-      adequate: true,
-      label: "CHK-8812"
-    },
-    accounting: {
-      linked: true,
-      adequate: false,
-      label: "1499 Uncategorized",
-      inadequacyReason: "Needs account + class coding"
+    qbSpan: {
+      ref: "CHK-8812 · QB Check",
+      txn: { adequate: true, note: "Check image on file" },
+      acct: { adequate: false, note: "Needs account + class coding" }
     }
   },
   {
     id: "item-3",
-    source: "QuickBooks Deposit",
-    reference: "DEP-3410",
     date: "Oct 10, 2026",
     amount: 824.10,
     status: "unreconciled",
-    description: "Stripe Payout",
+    description: "Stripe payout (4 charges)",
     whoWhy: {
-      linked: false,
-      adequate: false
+      present: false
     },
     transaction: {
-      linked: true,
+      present: true,
       adequate: true,
-      label: "po_1Qxyz98"
+      ref: "po_1Qxyz98 · Stripe Payout",
+      detail: "4 charges itemized"
     },
     accounting: {
-      linked: true,
+      present: true,
       adequate: false,
-      label: "4020 Donations",
-      inadequacyReason: "Missing class code"
+      ref: "DEP-3410 · QB Deposit",
+      problem: "Missing class code"
     }
   },
   {
     id: "item-4",
-    source: "QuickBooks Deposit",
-    reference: "DEP-3388",
+    date: "Oct 18, 2026",
+    amount: 250.00,
+    status: "unreconciled",
+    description: "Stripe charge — payout not settled",
+    whoWhy: {
+      present: false
+    },
+    transaction: {
+      present: true,
+      adequate: true,
+      ref: "ch_3Mxyz · Stripe Charge",
+      detail: "Card receipt attached"
+    },
+    accounting: {
+      present: false,
+      hint: "No QB record yet — payout not synced"
+    }
+  },
+  {
+    id: "item-5",
     date: "Oct 05, 2026",
     amount: 45.00,
     status: "excluded",
     description: "Bank fee reversal",
     exclusionReason: "Non-donation: Operating revenue",
-    whoWhy: { linked: false, adequate: false },
-    transaction: { linked: false, adequate: false },
-    accounting: { linked: true, adequate: true, label: "6120 Bank fees (non-donation)" }
+    whoWhy: { present: false, hint: "Not needed" },
+    transaction: { present: false, hint: "Not needed" },
+    accounting: { present: true, adequate: true, ref: "DEP-3388 · QB Deposit", detail: "6120 Bank fees" }
   }
 ];
 
 const STRAY_TRANSACTIONS = [
-  { id: "st-1", ref: "ch_3Mxyz", date: "Oct 18, 2026", amount: 250.00, desc: "Stripe Charge - Unknown" },
   { id: "st-2", ref: "CHK-1002", date: "Oct 19, 2026", amount: 5000.00, desc: "Check image upload" }
 ];
 
@@ -147,62 +161,69 @@ const STRAY_WHOWHY = [
 const formatCurrency = (n: number) => 
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 
-const FacetCell = ({ facet }: { facet: FacetState }) => {
-  if (!facet.linked) {
+// A component SLOT of a money unit. Empty slots are dashed placeholders (with
+// a reason when useful); filled slots carry the record's identity AND its own
+// adequacy — so e.g. a coding gap shows INSIDE the QB record's chip.
+const ComponentChip = ({ c }: { c: ComponentState }) => {
+  if (!c.present) {
     return (
-      <div className="flex flex-col items-center justify-center h-10 w-full rounded border border-dashed border-slate-200 bg-slate-50/50">
-        <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Unlinked</span>
+      <div className="flex flex-col items-center justify-center min-h-12 w-full rounded border border-dashed border-slate-200 bg-slate-50/50 px-2 py-1.5">
+        <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Empty slot</span>
+        {c.hint && <span className="text-[9px] text-slate-400 mt-0.5 text-center leading-tight">{c.hint}</span>}
       </div>
     );
   }
 
-  if (facet.adequate) {
+  if (c.adequate) {
     return (
-      <div className="flex flex-col items-start justify-center p-2 h-full w-full rounded border border-emerald-200 bg-emerald-50">
-        <div className="flex items-center gap-1.5">
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-          <span className="text-xs font-medium text-emerald-800">{facet.label}</span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col items-start justify-center p-2 h-full w-full rounded border border-amber-200 bg-amber-50">
-      <div className="flex items-center gap-1.5 mb-1">
-        <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-        <span className="text-xs font-medium text-amber-800">{facet.label}</span>
-      </div>
-      <span className="text-[10px] leading-tight text-amber-700/80 font-medium">{facet.inadequacyReason}</span>
-    </div>
-  );
-};
-
-// Accounting is NOT a separate linked record for a QB-anchored row — the row IS
-// the accounting record. This cell shows the row's own coding status (account,
-// class, entity), so it renders as an attribute of the row, not a record chip.
-const AccountingCell = ({ facet }: { facet: FacetState }) => {
-  if (facet.adequate) {
-    return (
-      <div className="flex flex-col justify-center h-full py-1">
+      <div className="p-2 w-full rounded border border-emerald-200 bg-emerald-50">
         <div className="flex items-center gap-1.5">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          <span className="text-xs font-medium text-slate-700">{facet.label}</span>
+          <span className="text-xs font-medium text-emerald-900">{c.ref}</span>
         </div>
-        <span className="text-[10px] text-slate-400 mt-0.5 pl-5">This row's coding</span>
+        {c.detail && <div className="text-[10px] text-emerald-700/80 mt-0.5 pl-5 leading-tight">{c.detail}</div>}
       </div>
     );
   }
+
   return (
-    <div className="flex flex-col justify-center h-full py-1">
+    <div className="p-2 w-full rounded border border-amber-200 bg-amber-50">
       <div className="flex items-center gap-1.5">
         <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-        <span className="text-xs font-medium text-slate-700">{facet.label}</span>
+        <span className="text-xs font-medium text-amber-900">{c.ref}</span>
       </div>
-      <span className="text-[10px] leading-tight text-amber-700 font-medium mt-0.5 pl-5">{facet.inadequacyReason}</span>
+      <span className="block text-[10px] leading-tight text-amber-700 font-medium mt-0.5 pl-5">{c.problem}</span>
     </div>
   );
 };
+
+// A check: ONE QB record filling BOTH the transaction and accounting slots,
+// each role with its own adequacy signal.
+const QbSpanChip = ({ span }: { span: NonNullable<MainQueueItem["qbSpan"]> }) => (
+  <div className="p-2 w-full rounded border border-slate-300 bg-white">
+    <div className="flex items-center gap-1.5 mb-1.5">
+      <FileCheck className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+      <span className="text-xs font-semibold text-slate-800">{span.ref}</span>
+      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-auto">One record, two roles</span>
+    </div>
+    <div className="grid grid-cols-2 gap-1.5">
+      <div className={`rounded border px-1.5 py-1 ${span.txn.adequate ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+        <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Transaction</div>
+        <div className={`text-[10px] leading-tight font-medium flex items-center gap-1 mt-0.5 ${span.txn.adequate ? 'text-emerald-700' : 'text-amber-700'}`}>
+          {span.txn.adequate ? <CheckCircle2 className="w-3 h-3 shrink-0" /> : <AlertCircle className="w-3 h-3 shrink-0" />}
+          {span.txn.note}
+        </div>
+      </div>
+      <div className={`rounded border px-1.5 py-1 ${span.acct.adequate ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+        <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Accounting</div>
+        <div className={`text-[10px] leading-tight font-medium flex items-center gap-1 mt-0.5 ${span.acct.adequate ? 'text-emerald-700' : 'text-amber-700'}`}>
+          {span.acct.adequate ? <CheckCircle2 className="w-3 h-3 shrink-0" /> : <AlertCircle className="w-3 h-3 shrink-0" />}
+          {span.acct.note}
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 const StatusBadge = ({ status }: { status: Status }) => {
   const base = "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider";
@@ -237,13 +258,16 @@ export function UnbrokenQueue() {
         {/* MAIN WORKLIST */}
         <div className="flex-1 flex flex-col min-w-0 bg-white">
           <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-            <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-              QuickBooks Payments <Badge variant="secondary" className="bg-slate-200 text-slate-700">12 Pending</Badge>
-            </h2>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                Money Units <Badge variant="secondary" className="bg-slate-200 text-slate-700">12 Pending</Badge>
+              </h2>
+              <p className="text-[11px] text-slate-500 mt-0.5">Each row is a unit of money — no facet is the anchor; the QB record is just one of its components.</p>
+            </div>
             <div className="flex items-center gap-2">
               <div className="relative w-64">
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <Input placeholder="Search QB deposits..." className="pl-8 h-8 text-xs bg-white" />
+                <Input placeholder="Search money units..." className="pl-8 h-8 text-xs bg-white" />
               </div>
               <Button variant="outline" size="sm" className="h-8 text-xs"><Filter className="w-3.5 h-3.5 mr-1.5"/> Filter</Button>
             </div>
@@ -254,10 +278,10 @@ export function UnbrokenQueue() {
               <Table>
                 <TableHeader className="bg-slate-50 border-b border-slate-200">
                   <TableRow className="hover:bg-slate-50">
-                    <TableHead className="w-[240px] text-xs font-semibold text-slate-600">QB Record (Money Landed)</TableHead>
-                    <TableHead className="w-[200px] text-xs font-semibold text-slate-600">WHO & WHY (CRM)</TableHead>
-                    <TableHead className="w-[200px] text-xs font-semibold text-slate-600">TRANSACTION (Proof)</TableHead>
-                    <TableHead className="w-[200px] text-xs font-semibold text-slate-600">ACCOUNTING (This row's coding)</TableHead>
+                    <TableHead className="w-[180px] text-xs font-semibold text-slate-600">Money Unit</TableHead>
+                    <TableHead className="w-[210px] text-xs font-semibold text-slate-600">WHO & WHY (CRM)</TableHead>
+                    <TableHead className="w-[210px] text-xs font-semibold text-slate-600">TRANSACTION (Proof)</TableHead>
+                    <TableHead className="w-[210px] text-xs font-semibold text-slate-600">ACCOUNTING (QB record + coding)</TableHead>
                     <TableHead className="text-right text-xs font-semibold text-slate-600">Status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -270,7 +294,7 @@ export function UnbrokenQueue() {
                             {item.isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />}
                             <div>
                               <div className="font-semibold text-sm text-slate-900">{formatCurrency(item.amount)}</div>
-                              <div className="text-xs text-slate-500 font-mono mt-0.5">{item.reference} • {item.date}</div>
+                              <div className="text-xs text-slate-500 font-mono mt-0.5">{item.date}</div>
                               <div className="text-xs text-slate-600 mt-1">{item.description}</div>
                               {item.exclusionReason && (
                                 <div className="mt-1.5 inline-flex items-center gap-1 bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">
@@ -280,9 +304,15 @@ export function UnbrokenQueue() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="align-top py-3"><FacetCell facet={item.whoWhy} /></TableCell>
-                        <TableCell className="align-top py-3"><FacetCell facet={item.transaction} /></TableCell>
-                        <TableCell className="align-top py-3"><AccountingCell facet={item.accounting} /></TableCell>
+                        <TableCell className="align-top py-3"><ComponentChip c={item.whoWhy} /></TableCell>
+                        {item.qbSpan ? (
+                          <TableCell colSpan={2} className="align-top py-3"><QbSpanChip span={item.qbSpan} /></TableCell>
+                        ) : (
+                          <>
+                            <TableCell className="align-top py-3"><ComponentChip c={item.transaction ?? { present: false }} /></TableCell>
+                            <TableCell className="align-top py-3"><ComponentChip c={item.accounting ?? { present: false }} /></TableCell>
+                          </>
+                        )}
                         <TableCell className="align-top py-3 text-right">
                           <StatusBadge status={item.status} />
                         </TableCell>
@@ -370,7 +400,7 @@ export function UnbrokenQueue() {
                   <CreditCard className="w-3.5 h-3.5" />
                 </div>
                 <h3 className="text-sm font-semibold text-slate-800">Stray Transactions</h3>
-                <Badge variant="secondary" className="ml-1 text-[10px] h-5 bg-indigo-50 text-indigo-700 border-indigo-200">8</Badge>
+                <Badge variant="secondary" className="ml-1 text-[10px] h-5 bg-indigo-50 text-indigo-700 border-indigo-200">7</Badge>
               </div>
               <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${strayTxOpen ? '' : '-rotate-90'}`} />
             </CollapsibleTrigger>

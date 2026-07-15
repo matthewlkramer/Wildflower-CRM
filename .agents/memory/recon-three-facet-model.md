@@ -25,9 +25,13 @@ ADEQUACY (is the linked record complete — grant letter, campaign attribution,
 check image, entity coding?). UI must never conflate them; a reviewer must see
 "no record" vs "record missing key info" at a glance.
 
-**Worklist layout** — primary list = QB payments (money landed), with two
-ALWAYS-glanceable collapsed side lanes: stray transactions and stray who/why
-records.
+**Worklist layout** — rows are MONEY UNITS, not anchored on any facet (owner
+iterated to this explicitly): the QB record is just one component slot —
+usually the first present — and its coding inadequacy shows INSIDE its chip.
+An unsynced Stripe charge is simply a unit with an empty accounting slot; a
+check renders ONE QB record spanning transaction+accounting with per-role
+adequacy. Two ALWAYS-glanceable collapsed side lanes remain: stray
+transactions and stray who/why records.
 
 **Drag semantics** — who/why→who/why offers "group as allocations of one
 commitment" OR "mark as double entry"; who/why→transaction links durably until
