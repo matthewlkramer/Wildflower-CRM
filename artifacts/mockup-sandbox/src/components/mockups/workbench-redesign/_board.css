@@ -1,0 +1,22 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --board-bg: #f8fafc;
+  --col-bg: #f1f5f9;
+  --card-bg: #ffffff;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
+  
+  --accent-blue: #2563eb;
+  --accent-green: #16a34a;
+  --accent-amber: #d97706;
+  --accent-purple: #9333ea;
+}
+
+.wb-font-sans {
+  font-family: 'Inter', sans-serif;
+}
+.wb-font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}

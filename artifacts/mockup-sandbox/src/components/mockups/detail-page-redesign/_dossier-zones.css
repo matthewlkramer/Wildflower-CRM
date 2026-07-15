@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@300;400;700&display=swap');
+
+.dossier-zones {
+  --dz-bg: 240 10% 98%;
+  --dz-surface: 0 0% 100%;
+  --dz-border: 240 10% 90%;
+  --dz-text: 240 10% 10%;
+  --dz-text-muted: 240 5% 40%;
+  --dz-accent: 210 50% 40%;
+  --dz-accent-light: 210 50% 95%;
+  --dz-danger: 0 70% 50%;
+  --dz-danger-light: 0 70% 95%;
+  --dz-warning: 35 90% 50%;
+  --dz-warning-light: 35 90% 95%;
+  
+  font-family: 'Inter', sans-serif;
+  background-color: hsl(var(--dz-bg));
+  color: hsl(var(--dz-text));
+  min-height: 100vh;
+}
+
+.dossier-header-title {
+  font-family: 'Merriweather', serif;
+}
+
+.dossier-dl {
+  display: grid;
+  grid-template-columns: minmax(max-content, 120px) 1fr;
+  gap: 0.5rem 1rem;
+  align-items: baseline;
+}
+
+.dossier-dt {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(var(--dz-text-muted));
+}
+
+.dossier-dd {
+  font-size: 0.875rem;
+  color: hsl(var(--dz-text));
+  margin: 0;
+}
+
+.dossier-zone-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: hsl(var(--dz-surface) / 0.95);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid hsl(var(--dz-border));
+}
