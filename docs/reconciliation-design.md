@@ -547,8 +547,10 @@ Phase 1 (this document); Phases 2–7 were sequenced as follow-on tasks.
 >     processor **fees** from `stripe_staged_charges` / `donorbox_donations` because
 >     fees are not modelled in the ledger. This is intentional and permanent.
 > - **Phase 6 (two-report UI): RETIRED — won't build (2026-07).** The two-report
->   collapse was never built and is formally closed as won't-do; the six-queue
->   workbench is the accepted end state (see §4.5 and Decision 4).
+>   collapse was never built and is formally closed as won't-do. The accepted UI
+>   design is now the **cluster view** (`reconciliation-clusters.tsx`) — one unified
+>   row per cluster carrying all three facets, with lens-based filtering. It
+>   supersedes the old six-queue workbench (`reconciliation-workbench.tsx`).
 > - **Phase 7 (deprecate → drop): partial.** Dropped so far: `gift_evidence_links`
 >   (0091), the `stripe_payouts` recon mirror (0093), `gift_allocations.counts_toward_goal`
 >   (0094), and `staged_payments.source_group_id` + its index (0104 — superseded by
@@ -663,12 +665,13 @@ Phase 1 (this document); Phases 2–7 were sequenced as follow-on tasks.
 
 6. ~~**Collapse the UI to two three-column reports** (Decision 4 / §4.5).~~
    **RETIRED — won't build (2026-07).** The two-report collapse was never built and
-   is formally closed as won't-do; the six-queue workbench is the accepted end
-   state (see §4.5 and the superseded Decision 4). The original step — re-group
-   the existing components under a Settlement report and a Gift report, retire the
-   cards / bundles / six-queue derivations, turn "needs review" / "excluded" into
-   filters, and surface the §4.6 cleanup actions in the Gift report — is kept
-   above only as a record of the considered design.
+   is formally closed as won't-do. The accepted UI design is the **cluster view**
+   (`reconciliation-clusters.tsx`) — one unified row per cluster carrying all three
+   facets (CRM gift, transaction evidence, bank/accounting record), with lens-based
+   filtering. It supersedes the old six-queue workbench (`reconciliation-workbench.tsx`).
+   The original step — re-group under a Settlement report and a Gift report, retire
+   the cards / bundles / six-queue derivations — is kept here only as a record of the
+   considered-but-rejected design.
 
 7. **Deprecate, then (much later, human-gated) drop legacy.** Mark the retired
    pointer columns, `staged_payment_splits` (dropped in 0115),

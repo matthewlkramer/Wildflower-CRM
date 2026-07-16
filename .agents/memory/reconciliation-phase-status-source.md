@@ -21,13 +21,25 @@ migrations and the schema header comments, not the doc prose:
 - Header comments in `lib/db/src/schema/settlementLinks.ts` and
   `paymentApplications.ts` state which plane/phase is authoritative.
 As of mid-2026: the unit↔gift ledger plane and the Plane-1 `settlement_links` plane
-have shipped (read-flips + the legacy 7-value enum / pointer / `gift_evidence_links`
+have shipped in full (read-flips + the legacy 7-value enum / pointer /
+`gift_evidence_links` / `staged_payments.source_group_id` / `staged_payment_splits`
 drops). `giftPaymentSummary` still reads processor **fees** from the Stripe/Donorbox
-tables **by design** (fees are not modelled in the ledger) — not an unfinished
-holdout. The two-report UI collapse (design "Phase 6") was formally RETIRED as
-won't-build in 2026-07 — the six-queue workbench is the accepted end state (the
-design doc's §4.5 / Decision 4 / §7 now say so). The only remaining tail is the
-deprecate-then-drop cleanup (`staged_payments.source_group_id`, dead enum values).
+tables **by design** (fees are not modelled in the ledger) — not an unfinished holdout.
+
+**Current UI design: the cluster view.** The two-report UI collapse (design "Phase 6")
+was formally RETIRED as won't-build in 2026-07 and was never built. The current
+accepted design is the **cluster view** (`artifacts/wildflower-crm/src/pages/
+reconciliation-clusters.tsx`) — one unified row ("cluster") per piece of money work,
+carrying all three facets (CRM gift, transaction evidence, bank/accounting record),
+with lens-based filtering. The old six-queue workbench (`reconciliation-workbench.tsx`)
+is being superseded by it. The design doc's §4.5 / Decision 4 / §7 still say
+"six-queue workbench is the accepted end state" — those annotations are stale; trust
+the live code.
+
+The remaining cleanup tail is the `@deprecated`-but-still-live `gifts_and_payments`
+columns (`quickbooks_tie_status`, `final_amount_source`, `final_amount_*` provenance
+pointers) and the dead enum values (`processor_payout`, `confirmed_excluded`) still read
+by revert paths — not safe to drop until those read paths are ported.
 
 **Drop-readiness caution (verify, don't trust the label):** a schema `@deprecated`
 comment is NOT proof a column is drop-ready. Several `gifts_and_payments` columns
