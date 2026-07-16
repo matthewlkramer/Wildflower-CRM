@@ -51,6 +51,7 @@ These recur across the whole app — keep them true whenever you change things:
 ## User preferences
 
 - Precise and hands-on; wants to understand tradeoffs and consequences before acting.
+- Spend the time to keep memory files up to date, archiving approaches as they go stale.
 - When giving prod data-migration `psql` commands to run by hand, always use the
   `$PROD_DATABASE_URL` variable (NOT `$DATABASE_URL`) and the full repo-root-relative
   path to the `.sql` file (e.g. `lib/db/migrations/<file>.sql`), so they can be
