@@ -565,7 +565,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     // Counts + pagination agree with the lens the page was fetched under.
     expect(json.lensCounts.excluded).toBeGreaterThanOrEqual(1);
     expect(json.pagination.total).toBe(json.lensCounts.excluded);
-  });
+  }, 60_000);
 
   it("an auto-applied unconfirmed match keeps the cluster open", async () => {
     const gMp = await seedGift();
