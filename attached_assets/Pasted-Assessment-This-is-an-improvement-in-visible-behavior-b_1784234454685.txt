@@ -1,0 +1,293 @@
+Assessment
+
+This is an improvement in visible behavior, but not yet the architectural correction you asked for.
+
+Of the three changes:
+
+QB payer name: sound, low-risk improvement.
+Deposit-grain gift recognition: identifies a real missing concept, but implements it with an overly broad Boolean shortcut.
+Candidate donor: a clear patch that puts a record-level fact at the wrong grain and can display incorrect information.
+
+The subsequent commit making payment_applications authoritative for Stripe gift links is a genuine architectural improvement, but it does not correct these cluster-projection problems.
+
+1. Candidate donor is the most problematic change
+
+The donor is stored on an individual Stripe charge, but the new API selects one donor for the entire payout, specifically the donor from the largest identified charge:
+
+SELECT DISTINCT ON (cc.stripe_payout_id)
+...
+ORDER BY cc.stripe_payout_id, cc.gross_amount DESC
+
+The code even describes this as “the charge with the largest gross amount wins.”
+
+That is not a valid reconciliation rule. Charge size has no relationship to whether its donor represents the whole payout.
+
+Consider a payout with:
+
+Charge	Amount	Identified donor
+Charge A	$500	Rivera Family Fund
+Charge B	$200	Chen Household
+Charge C	$25	Anna Okafor
+Charge D	$99	No donor
+
+The API returns Rivera as the payout’s candidateDonor. The UI then renders that same cluster-level donor note on every unmatched child charge, because each child reads cluster.candidateDonor, not its own donor.
+
+That can make Charge D appear to have Rivera identified even though it does not.
+
+There is another failure mode: the server only returns candidateDonor when the cluster has no gifts at all:
+
+gifts.length === 0
+  ? payoutCandidateDonors.get(...)
+  : null
+
+So in a partially reconciled payout—one gift linked and another charge merely donor-identified—the identified donor disappears again.
+
+Correct model
+
+Donor attribution belongs on the evidence node:
+
+WorkbenchClusterCharge {
+  ...
+  attributedDonor: {
+    donorKind;
+    donorId;
+    donorName;
+    provenance;
+  } | null;
+}
+
+Likewise for each QBO staged record:
+
+WorkbenchClusterQbRecord {
+  ...
+  attributedDonor: ...;
+}
+
+A cluster summary could then say:
+
+3 of 4 donors identified
+
+But it should never choose one donor to represent a multi-donor payout.
+
+Also, this is not really a “candidate donor” after the user explicitly identifies it. It is an attributed donor or identified donor. “Candidate” implies an unconfirmed proposal.
+
+Recommendation: replace this implementation rather than extend it.
+
+2. Deposit-grain recognition finds the right concept but uses the wrong test
+
+The design itself supports a coarse deposit-grain gift. The ratified architecture says that when no per-charge Stripe units are counted, a coarse deposit gift may remain the counted representation; when per-charge units exist, the coarse representation must be superseded so the money counts once.
+
+So the agent was right that the cluster projection needs to understand deposit-grain coverage.
+
+The problem is how it determines that coverage:
+
+EXISTS (
+  SELECT 1
+  FROM settlement_links
+  JOIN payment_applications
+    ON payment_applications.payment_id =
+       settlement_links.deposit_staged_payment_id
+   AND payment_applications.link_role = 'counted'
+  WHERE settlement_links.payout_id = sp.id
+    AND settlement_links.lifecycle = 'confirmed'
+)
+
+Any counted application on the settlement-linked deposit makes depositGrainGiftExists true.
+
+Once true, the code:
+
+Declares that the payout has no open charge work.
+Sets resolved_count equal to every non-excluded charge.
+Suppresses donor/gift actions for every charge.
+Labels every charge “Covered.”
+
+That is too much meaning to derive from EXISTS.
+
+Cases it can hide incorrectly
+Partial deposit application
+Payout gross:                    $1,000
+Counted application on deposit:    $200
+
+The current query treats all payout charges as covered.
+
+Multiple deposit applications
+
+A deposit may have several counted applications. The cluster needs to show which gifts collectively cover it and whether the full intended amount is represented—not merely that at least one row exists.
+
+Transitional conflict
+
+If both a counted deposit application and counted per-charge applications exist because supersession failed or has not run, the query marks everything covered rather than surfacing a book-once conflict.
+
+Wrong-grain or stale application
+
+A counted row exists, but its amount or gift relationship may not establish that one gift covers the complete payout bundle.
+
+Correct model
+
+The server should derive an explicit coverage result:
+
+coverage: {
+  mode: "none" | "charge" | "deposit" | "mixed" | "conflict";
+
+  chargeCoverage: Array<{
+    chargeId;
+    giftId;
+    amountApplied;
+  }>;
+
+  depositCoverage: Array<{
+    paymentApplicationId;
+    giftId;
+    amountApplied;
+  }>;
+
+  coveredChargeIds: string[];
+  uncoveredChargeIds: string[];
+
+  creditedAmount: string;
+  expectedAmount: string;
+  complete: boolean;
+}
+
+The exact amount comparison should use the same canonical money and fee rules as the ledger services. It should not invent another local “coverage” formula inside workbenchClusters.ts.
+
+A deposit-grain cluster should be complete only when:
+
+The payout↔deposit settlement is confirmed.
+The counted deposit application represents the intended payout money under the canonical gross/net rules.
+There are no unresolved competing counted charge applications.
+There is no outstanding conflict, refund, or amount gap.
+The gift attribution is complete at the chosen coverage grain.
+
+Then the UI can honestly say:
+
+1 deposit-level gift covers this 4-charge payout
+
+The current depositGrainGift Boolean is a transitional patch, not a sufficient domain model.
+
+3. “Done” remains unresolved
+
+The original row-status problem was not actually fixed for ordinary charge-level matches.
+
+The current frontend still says:
+
+if (c.linkedGiftId) {
+  if (c.status === "match_confirmed") {
+    return { word: "Done" };
+  }
+}
+
+So a charge is still labeled Done based only on its gift application, even when:
+
+Accounting settlement is missing.
+The payout has a gap.
+A refund is outstanding elsewhere in the cluster.
+The QBO relationship is unresolved.
+
+That is exactly the earlier grain problem.
+
+The child status should say something narrower:
+
+Gift booked
+Gift linked
+Donor identified
+Covered by bundle gift
+Excluded
+Refund proposed
+
+Only the cluster should say Complete, after all relevant dimensions are complete.
+
+4. QB payer name is a reasonable change
+
+Adding payerName to the QBO record DTO is useful. It provides source information that was already present but unavailable to this view.
+
+However, the UI still constructs the headline as:
+
+lineDescription
+else reference
+else memo
+
+and then appends payer name, date, role, and reference into one unlabeled subtitle.
+
+This does not fully solve the Erica Cantoni/Jacqui Miller problem. It may now produce something like:
+
+Erica Cantoni
+QB record · 3/16/23 · Jacqui Miller · QB reference: ...
+
+The user still cannot tell whether Erica is:
+
+The imported payer
+The line description
+A transaction memo
+A CRM-attributed donor
+An inferred match
+Better presentation
+
+Use labeled fields when the source fields disagree:
+
+QBO line: Erica Cantoni
+Imported payer: Jacqui Miller
+Transaction reference: …
+Memo: …
+CRM donor: Not identified
+
+When all fields agree, the card may collapse them into a concise display. When they conflict, the discrepancy is itself important reconciliation evidence and should be explicit.
+
+5. No regression tests accompanied the fix
+
+The cluster-fix commit changed:
+
+Server projection
+UI rendering
+OpenAPI
+Generated clients and validators
+
+but did not change the cluster integration test or add any new test file.
+
+That is particularly concerning because the new logic changes:
+
+Queue membership
+Completed counts
+Child resolution counts
+Donor display
+Whether actions are offered or suppressed
+
+At minimum, it needs fixtures for:
+
+One identified charge donor with no gift.
+Two different identified donors in the same payout.
+One charge with a gift and another with an identified donor only.
+A complete deposit-grain application.
+A partial deposit application.
+Deposit and charge applications coexisting improperly.
+Several gifts applied at the deposit grain.
+A deposit-grain gift with an outstanding refund.
+A gift-linked charge whose payout has no accounting settlement.
+Conflicting QBO payer, line-description, reference, and memo fields.
+6. Most of the original issues remain open
+
+This commit only addresses three areas. It does not address:
+
+The general child-row Done semantics.
+The Erica/Jacqui source-field contradiction.
+The negative $1,041 refund payout and its original-charge lineage.
+Missing settlement_links for payouts recognized by older sync/workbench logic.
+The Avedis relationship parity issue.
+The off-books Bush Foundation gift leaking into the cluster universe.
+Searchable, sufficiently detailed QBO cards beyond adding payer name.
+
+That is acceptable as an incremental commit only if it is described as incomplete. It should not be treated as the root architectural repair.
+
+Recommended disposition
+Keep
+payerName in the QBO DTO.
+The recognition that deposit-level applications are a valid coverage mode.
+The UI language distinguishing bundle-level coverage from direct charge linkage.
+The later conversion of Stripe gift-link reads to payment_applications.
+Replace
+Top-level candidateDonor.
+“Largest charge wins.”
+Top-level Boolean depositGrainGift.
+EXISTS ⇒ all charges resolved.
+Child-level Done.
+Reusing one cluster donor on every child row.

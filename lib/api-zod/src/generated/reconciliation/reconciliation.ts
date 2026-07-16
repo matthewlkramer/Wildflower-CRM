@@ -1010,7 +1010,12 @@ export const ListWorkbenchClustersResponse = zod.object({
   "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('Derived per-record linkage status (shared vocabulary for QB staged rows and Stripe charges): pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation.'),
   "linkedGiftId": zod.string().nullish().describe('The gift this charge\'s counted ledger row feeds, if any.'),
   "refundProposed": zod.boolean().optional().describe('True when a refund\/chargeback propagation proposal awaits a human decision (drives the refunds lens).'),
-  "refundKind": zod.enum(['full_refund', 'partial_refund', 'chargeback']).nullish().describe('The kind of proposed reversal; null when refundProposed is false.')
+  "refundKind": zod.enum(['full_refund', 'partial_refund', 'chargeback']).nullish().describe('The kind of proposed reversal; null when refundProposed is false.'),
+  "attributedDonor": zod.object({
+  "donorKind": zod.enum(['organization', 'person', 'household']),
+  "donorId": zod.string(),
+  "donorName": zod.string().nullish()
+}).nullish().describe('Donor identified on this specific charge via the Identify action. Null when no donor has been identified on this charge.')
 }).describe('One Stripe charge in the cluster\'s payment-evidence facet.')).describe('Capped and ordered by amount desc; chargeCount carries the true total. Empty outside stripe_payout.'),
   "qbRecords": zod.array(zod.object({
   "stagedPaymentId": zod.string().describe('staged_payments.id'),
@@ -1022,8 +1027,14 @@ export const ListWorkbenchClustersResponse = zod.object({
   "dateReceived": zod.string().date().nullish(),
   "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('Derived per-record linkage status (shared vocabulary for QB staged rows and Stripe charges): pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation.'),
   "linkedChargeId": zod.string().nullish().describe('For fee \/ charge_tie roles: the stripe_staged_charges id the link runs through.'),
+  "payerName": zod.string().nullish().describe('QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee \/ charge_tie \/ group_member.'),
   "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']).nullish().describe('The QuickBooks transaction type this staged row came from — drives the \'View in QuickBooks\' deep link.'),
-  "qbEntityId": zod.string().nullish().describe('The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link).')
+  "qbEntityId": zod.string().nullish().describe('The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link).'),
+  "attributedDonor": zod.object({
+  "donorKind": zod.enum(['organization', 'person', 'household']),
+  "donorId": zod.string(),
+  "donorName": zod.string().nullish()
+}).nullish().describe('Donor identified on this specific QB row via the Identify action. Present for anchor\/deposit roles when a donor has been identified; null otherwise.')
 }).describe('One QuickBooks staged row in the cluster\'s bank-and-accounting facet.')),
   "settlement": zod.object({
   "lifecycle": zod.enum(['proposed', 'confirmed']).describe('proposed = awaiting human confirm (a needs_accounting\/conflict signal); confirmed = settled.'),
@@ -1033,7 +1044,25 @@ export const ListWorkbenchClustersResponse = zod.object({
   "group": zod.object({
   "memberCount": zod.number().describe('Total rows in the unit group (including the representative).'),
   "totalAmount": zod.string().nullish().describe('Group total, major units.')
-}).describe('Unit-group rollup when the qb_standalone anchor is a group representative.').nullish().describe('Present only when the qb_standalone anchor represents a unit group.')
+}).describe('Unit-group rollup when the qb_standalone anchor is a group representative.').nullish().describe('Present only when the qb_standalone anchor represents a unit group.'),
+  "coverage": zod.object({
+  "mode": zod.enum(['none', 'charge', 'deposit', 'mixed']).describe('none = no counted PAs anywhere; charge = only per-charge PAs; deposit = only deposit-level PAs (against the settlement-linked QB deposit); mixed = both grains have PAs (incomplete — one should supersede the other).'),
+  "chargeCoverage": zod.array(zod.object({
+  "chargeId": zod.string(),
+  "giftId": zod.string(),
+  "amountApplied": zod.string().nullish().describe('amount_applied from the PA row, major units.')
+})).describe('Counted PA rows anchored to individual Stripe charges.'),
+  "depositCoverage": zod.array(zod.object({
+  "paymentApplicationId": zod.string(),
+  "giftId": zod.string(),
+  "amountApplied": zod.string().nullish().describe('amount_applied from the PA row, major units.')
+})).describe('Counted PA rows anchored to the settlement-linked QB deposit lump.'),
+  "coveredChargeIds": zod.array(zod.string()).describe('Charge ids with at least one counted charge-grain PA.'),
+  "uncoveredChargeIds": zod.array(zod.string()).describe('Non-excluded charge ids with no counted charge-grain PA.'),
+  "creditedAmount": zod.string().describe('Sum of all counted PA amount_applied values (charge + deposit grains), major units.'),
+  "expectedAmount": zod.string().describe('The expected total: payout gross_total for charge-grain; deposit amount for deposit-grain, major units.'),
+  "complete": zod.boolean().describe('True when the grains are consistent, credited >= expected, and uncoveredChargeIds is empty.')
+}).describe('Per-payout coverage: which grains have counted payment_application rows and whether\ntogether they fully account for the expected money. Null for qb_standalone and crm_only kinds.\n').nullish().describe('Coverage derivation for stripe_payout clusters: which grains have counted PA rows and whether they fully account for the payout. Null for qb_standalone and crm_only kinds.')
 }).describe('One reconciliation cluster row. A single flat shape for all three kinds —\n`kind` discriminates; kind-inapplicable fields are null\/empty (house style,\nmirrors BundleAnchor). Money fields are null when unknowable for the kind\n(e.g. no fee data for QB-only money).\n')),
   "lensCounts": zod.object({
   "all_open": zod.number(),

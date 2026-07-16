@@ -278,11 +278,10 @@ function buildUniverse(q: string | null): SQL {
       ${sql.raw(payoutRefund)} AS f_refund,
       false AS f_qb_says_donation,
       ${sql.raw(payoutAllExcluded)} AS f_excluded,
-      (${payoutSettled}
+      (${sql.raw(payoutHasNonExcluded)}
         AND NOT ${sql.raw(payoutAnyOpenCharge)}
         AND NOT ${sql.raw(payoutConflict)}
-        AND NOT ${sql.raw(payoutRefund)}
-        AND NOT ${sql.raw(payoutAllExcluded)}) AS f_completed
+        AND NOT ${sql.raw(payoutRefund)}) AS f_completed
     FROM stripe_payouts sp
     ${stripeSearch}`;
 
@@ -367,6 +366,11 @@ interface ChargeJson {
   linkedGiftId: string | null;
   refundProposed: boolean;
   refundKind: string | null;
+  attributedDonor: {
+    donorKind: "organization" | "person" | "household";
+    donorId: string;
+    donorName: string | null;
+  } | null;
 }
 
 interface QbRecordJson {
@@ -382,6 +386,11 @@ interface QbRecordJson {
   payerName?: string | null;
   qbEntityType: string | null;
   qbEntityId: string | null;
+  attributedDonor?: {
+    donorKind: "organization" | "person" | "household";
+    donorId: string;
+    donorName: string | null;
+  } | null;
 }
 
 interface PayoutRow {
@@ -399,7 +408,6 @@ interface PayoutRow {
   settled: boolean;
   total_count: number;
   resolved_count: number;
-  deposit_grain_gift: boolean;
   charges: ChargeJson[];
   linked_qb_rows: QbRecordJson[];
   dep_id: string | null;
@@ -411,6 +419,9 @@ interface PayoutRow {
   dep_status: string | null;
   dep_qb_entity_type: string | null;
   dep_qb_entity_id: string | null;
+  dep_attributed_donor_kind: "organization" | "person" | "household" | null;
+  dep_attributed_donor_id: string | null;
+  dep_attributed_donor_name: string | null;
 }
 
 interface GiftRowBase {
@@ -455,16 +466,9 @@ interface QbAnchorRow {
   group_members: QbRecordJson[];
   member_ids: string[] | null;
   folded_fees: QbRecordJson[];
-  candidate_donor_kind: "organization" | "person" | "household" | null;
-  candidate_donor_id: string | null;
-  candidate_donor_name: string | null;
-}
-
-interface PayoutCandidateDonorRow {
-  payout_id: string;
-  donor_kind: "organization" | "person" | "household";
-  donor_id: string;
-  donor_name: string | null;
+  attributed_donor_kind: "organization" | "person" | "household" | null;
+  attributed_donor_id: string | null;
+  attributed_donor_name: string | null;
 }
 
 interface CrmGiftRow extends GiftRowBase {
@@ -485,6 +489,87 @@ interface GiftOut {
   codingForm: boolean;
   linkedChargeIds: string[];
   linkedStagedPaymentIds: string[];
+}
+
+interface CoverageRow {
+  grain: "charge" | "deposit";
+  payout_id: string;
+  pa_id: string;
+  gift_id: string;
+  charge_id: string | null;
+  amount_applied: string | null;
+}
+
+interface CoverageOut {
+  mode: "none" | "charge" | "deposit" | "mixed";
+  chargeCoverage: Array<{ chargeId: string; giftId: string; amountApplied: string | null }>;
+  depositCoverage: Array<{
+    paymentApplicationId: string;
+    giftId: string;
+    amountApplied: string | null;
+  }>;
+  coveredChargeIds: string[];
+  uncoveredChargeIds: string[];
+  creditedAmount: string;
+  expectedAmount: string;
+  complete: boolean;
+}
+
+function buildCoverage(
+  rows: CoverageRow[],
+  charges: ChargeJson[],
+  grossTotal: string | null,
+  depAmount: string | null,
+): CoverageOut {
+  const chargeRows = rows.filter((r) => r.grain === "charge");
+  const depositRows = rows.filter((r) => r.grain === "deposit");
+  const hasCharge = chargeRows.length > 0;
+  const hasDeposit = depositRows.length > 0;
+  const mode: CoverageOut["mode"] =
+    !hasCharge && !hasDeposit
+      ? "none"
+      : hasCharge && !hasDeposit
+        ? "charge"
+        : !hasCharge && hasDeposit
+          ? "deposit"
+          : "mixed";
+  const coveredChargeIds = [
+    ...new Set(chargeRows.map((r) => r.charge_id!).filter(Boolean)),
+  ];
+  const coveredSet = new Set(coveredChargeIds);
+  const nonExcluded = charges.filter((c) => c.status !== "excluded");
+  const uncoveredChargeIds = nonExcluded
+    .map((c) => c.chargeId)
+    .filter((id) => !coveredSet.has(id));
+  const creditedSum = rows.reduce((acc, r) => acc + (Number(r.amount_applied) || 0), 0);
+  const creditedAmount = creditedSum.toFixed(2);
+  const expectedRaw = mode === "deposit" ? depAmount : grossTotal;
+  const expectedAmount = expectedRaw ?? "0.00";
+  let complete = false;
+  if (mode === "charge") {
+    complete = uncoveredChargeIds.length === 0 && nonExcluded.length > 0;
+  } else if (mode === "deposit") {
+    const expected = Number(expectedAmount);
+    complete = expected > 0 && Number.isFinite(expected) && creditedSum >= expected - 0.005;
+  }
+  return {
+    mode,
+    chargeCoverage: chargeRows.map((r) => ({
+      chargeId: r.charge_id!,
+      giftId: r.gift_id,
+      amountApplied: r.amount_applied,
+    })),
+    depositCoverage: depositRows.map((r) => ({
+      paymentApplicationId: r.pa_id,
+      giftId: r.gift_id,
+      amountApplied: r.amount_applied,
+    })),
+    coveredChargeIds,
+    uncoveredChargeIds,
+    creditedAmount,
+    expectedAmount,
+    complete,
+  };
 }
 
 /* ── JS assembly helpers ───────────────────────────────────────────────── */
@@ -630,13 +715,8 @@ router.get(
         ${payoutSettled} AS settled,
         (SELECT count(*)::int FROM stripe_staged_charges tc
           WHERE tc.stripe_payout_id = sp.id AND tc.exclusion_reason IS NULL) AS total_count,
-        CASE WHEN ${sql.raw(depositGrainGiftExists)}
-          THEN (SELECT count(*)::int FROM stripe_staged_charges tc2
-            WHERE tc2.stripe_payout_id = sp.id AND tc2.exclusion_reason IS NULL)
-          ELSE (SELECT count(*)::int FROM stripe_staged_charges vc
-            WHERE vc.stripe_payout_id = sp.id AND ${sql.raw(chargeConfirmedText("vc"))})
-        END AS resolved_count,
-        ${sql.raw(depositGrainGiftExists)} AS deposit_grain_gift,
+        (SELECT count(*)::int FROM stripe_staged_charges vc
+          WHERE vc.stripe_payout_id = sp.id AND ${sql.raw(chargeConfirmedText("vc"))}) AS resolved_count,
         COALESCE((
           SELECT json_agg(json_build_object(
               'chargeId', c.id,
@@ -651,7 +731,8 @@ router.get(
               'status', c.status,
               'linkedGiftId', c.linked_gift_id,
               'refundProposed', c.refund_proposed,
-              'refundKind', c.refund_kind
+              'refundKind', c.refund_kind,
+              'attributedDonor', c.attributed_donor
             ) ORDER BY c.gross_num DESC NULLS LAST)
           FROM (
             SELECT cc.id,
@@ -671,7 +752,22 @@ router.get(
                      LIMIT 1) AS linked_gift_id,
                    (cc.refund_propagation_status = 'proposed') AS refund_proposed,
                    (CASE WHEN cc.refund_propagation_status = 'proposed'
-                         THEN cc.refund_propagation_kind END)::text AS refund_kind
+                         THEN cc.refund_propagation_kind END)::text AS refund_kind,
+                   CASE WHEN cc.organization_id IS NOT NULL
+                          OR cc.individual_giver_person_id IS NOT NULL
+                          OR cc.household_id IS NOT NULL
+                     THEN json_build_object(
+                       'donorKind', CASE WHEN cc.organization_id IS NOT NULL THEN 'organization'
+                                         WHEN cc.individual_giver_person_id IS NOT NULL THEN 'person'
+                                         ELSE 'household' END,
+                       'donorId', COALESCE(cc.organization_id, cc.individual_giver_person_id, cc.household_id),
+                       'donorName', COALESCE(
+                         (SELECT o.name FROM organizations o WHERE o.id = cc.organization_id),
+                         (SELECT h.name FROM households h WHERE h.id = cc.household_id),
+                         (SELECT ${sql.raw(personNameExpr("p"))} FROM people p WHERE p.id = cc.individual_giver_person_id)
+                       )
+                     )
+                     ELSE NULL END AS attributed_donor
             FROM stripe_staged_charges cc
             WHERE cc.stripe_payout_id = sp.id
             ORDER BY cc.gross_amount DESC NULLS LAST
@@ -744,7 +840,12 @@ router.get(
         ad.date_received::text AS dep_date,
         ${sql.raw(qbStatusCaseText("ad"))} AS dep_status,
         ad.qb_entity_type::text AS dep_qb_entity_type,
-        ad.qb_entity_id AS dep_qb_entity_id
+        ad.qb_entity_id AS dep_qb_entity_id,
+        CASE WHEN ad.organization_id IS NOT NULL THEN 'organization'::text
+             WHEN ad.individual_giver_person_id IS NOT NULL THEN 'person'::text
+             WHEN ad.household_id IS NOT NULL THEN 'household'::text END AS dep_attributed_donor_kind,
+        COALESCE(ad.organization_id, ad.individual_giver_person_id, ad.household_id) AS dep_attributed_donor_id,
+        COALESCE(o_dep.name, h_dep.name, ${sql.raw(personNameExpr("p_dep"))}) AS dep_attributed_donor_name
       FROM stripe_payouts sp
       LEFT JOIN LATERAL (
         SELECT sl0.lifecycle, sl0.deposit_staged_payment_id, sl0.conflict_gift_id
@@ -754,6 +855,9 @@ router.get(
         LIMIT 1
       ) sl ON true
       LEFT JOIN staged_payments ad ON ad.id = sl.deposit_staged_payment_id
+      LEFT JOIN organizations o_dep ON o_dep.id = ad.organization_id
+      LEFT JOIN people p_dep ON p_dep.id = ad.individual_giver_person_id
+      LEFT JOIN households h_dep ON h_dep.id = ad.household_id
       WHERE sp.id IN (${inList(payoutIds)})`)
           .then((r) => r.rows as unknown as PayoutRow[])
       : Promise.resolve([]);
@@ -941,40 +1045,43 @@ router.get(
           .then((r) => r.rows as unknown as CrmGiftRow[])
       : Promise.resolve([]);
 
-    // Candidate donors: evidence rows (charges / QB staged rows) that have
-    // been identified (donor FKs stamped via the Identify action) but have
-    // no gift yet. For payouts, the charge with the largest gross amount wins
-    // when multiple charges are identified.
-    const payoutCandidateDonorP: Promise<Map<string, PayoutCandidateDonorRow>> =
-      payoutIds.length
-        ? db
-            .execute(sql`
-        SELECT DISTINCT ON (cc.stripe_payout_id)
-          cc.stripe_payout_id AS payout_id,
-          CASE WHEN cc.organization_id IS NOT NULL THEN 'organization'
-               WHEN cc.individual_giver_person_id IS NOT NULL THEN 'person'
-               WHEN cc.household_id IS NOT NULL THEN 'household' END AS donor_kind,
-          COALESCE(cc.organization_id, cc.individual_giver_person_id, cc.household_id) AS donor_id,
-          COALESCE(o_c.name, h_c.name, ${sql.raw(personNameExpr("p_c"))}) AS donor_name
-        FROM stripe_staged_charges cc
-        LEFT JOIN organizations o_c ON o_c.id = cc.organization_id
-        LEFT JOIN people p_c ON p_c.id = cc.individual_giver_person_id
-        LEFT JOIN households h_c ON h_c.id = cc.household_id
-        WHERE cc.stripe_payout_id IN (${inList(payoutIds)})
-          AND (cc.organization_id IS NOT NULL
-               OR cc.individual_giver_person_id IS NOT NULL
-               OR cc.household_id IS NOT NULL)
-        ORDER BY cc.stripe_payout_id, cc.gross_amount DESC NULLS LAST`)
-            .then((r) => {
-              const m = new Map<string, PayoutCandidateDonorRow>();
-              for (const row of r.rows as unknown as PayoutCandidateDonorRow[]) {
-                m.set(row.payout_id, row);
-              }
-              return m;
-            })
-        : Promise.resolve(new Map<string, PayoutCandidateDonorRow>());
+    // Coverage: per-payout counted PA rows for both grains (charge-grain and
+    // deposit-grain). Used to compute the explicit coverage object replacing the
+    // old depositGrainGift shortcut and the cluster-level candidateDonor.
+    const payoutCoverageP: Promise<CoverageRow[]> = payoutIds.length
+      ? db
+          .execute(sql`
+      SELECT
+        'charge'::text AS grain,
+        cc.stripe_payout_id AS payout_id,
+        pa.id AS pa_id,
+        pa.gift_id,
+        pa.stripe_charge_id AS charge_id,
+        pa.amount_applied::text AS amount_applied
+      FROM payment_applications pa
+      JOIN stripe_staged_charges cc ON cc.id = pa.stripe_charge_id
+      WHERE cc.stripe_payout_id IN (${inList(payoutIds)})
+        AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
 
-    const [payoutRows, payoutGifts, qbRows, qbGifts, depositGifts, crmGifts, payoutCandidateDonors] =
+      UNION ALL
+
+      SELECT
+        'deposit'::text AS grain,
+        sl.payout_id,
+        pa.id AS pa_id,
+        pa.gift_id,
+        NULL AS charge_id,
+        pa.amount_applied::text AS amount_applied
+      FROM payment_applications pa
+      JOIN settlement_links sl ON pa.payment_id = sl.deposit_staged_payment_id
+      WHERE sl.payout_id IN (${inList(payoutIds)})
+        AND sl.lifecycle = 'confirmed'
+        AND pa.evidence_source = 'quickbooks'
+        AND pa.link_role = 'counted'`)
+          .then((r) => r.rows as unknown as CoverageRow[])
+      : Promise.resolve([]);
+
+    const [payoutRows, payoutGifts, qbRows, qbGifts, depositGifts, crmGifts, coverageRows] =
       await Promise.all([
         payoutRowsP,
         payoutGiftsP,
@@ -982,8 +1089,19 @@ router.get(
         qbGiftsP,
         depositGiftsP,
         crmGiftsP,
-        payoutCandidateDonorP,
+        payoutCoverageP,
       ]);
+
+    // Group coverage rows by payout id for O(1) lookup during assembly.
+    const coverageByPayout = new Map<string, CoverageRow[]>();
+    for (const row of coverageRows) {
+      let list = coverageByPayout.get(row.payout_id);
+      if (!list) {
+        list = [];
+        coverageByPayout.set(row.payout_id, list);
+      }
+      list.push(row);
+    }
 
     /* ── index hydration by anchor id ── */
 
@@ -1097,13 +1215,20 @@ router.get(
         }
         const resolved = h?.resolved_count ?? 0;
         const total = h?.total_count ?? 0;
-        // Status detail: vary by settlement path for accurate diagnostics.
+        const coverage = buildCoverage(
+          coverageByPayout.get(r.anchor_id) ?? [],
+          h?.charges ?? [],
+          h?.gross_total ?? null,
+          h?.dep_amount ?? null,
+        );
+        // Status detail: vary by coverage grain and settlement path for accurate diagnostics.
         let statusDetail: string;
         const refundSuffix = r.f_refund ? " · refund awaiting review" : "";
-        if (h?.deposit_grain_gift) {
-          // One gift booked against the settlement-linked QB deposit lump
-          // (deposit-grain / coarse §4.3); individual charges need no PAs.
-          statusDetail = `deposit-grain gift covers all ${total} charge${total === 1 ? "" : "s"}${refundSuffix}`;
+        if (coverage.mode === "deposit") {
+          // Deposit-grain (coarse §4.3) booking: one gift covers the whole lump.
+          statusDetail = coverage.complete
+            ? `deposit-grain gift covers all ${total} charge${total === 1 ? "" : "s"}${refundSuffix}`
+            : `deposit-grain gift covers ${coverage.creditedAmount} of ${coverage.expectedAmount} expected${refundSuffix}`;
         } else if (h?.settled && h.sl_lifecycle == null) {
           // fullyChargeTied: settled via per-charge QB ties, no deposit link.
           statusDetail = `${resolved} of ${total} charge-grain ${resolved === 1 ? "tie" : "ties"} confirmed${refundSuffix}`;
@@ -1116,8 +1241,13 @@ router.get(
           if (r.f_refund) parts.push("refund awaiting review");
           statusDetail = parts.join(" · ");
         }
-        const rawCandidateDonor =
-          gifts.length === 0 ? (payoutCandidateDonors.get(r.anchor_id) ?? null) : null;
+        const depAttributedDonor = h?.dep_attributed_donor_id
+          ? {
+              donorKind: h.dep_attributed_donor_kind!,
+              donorId: h.dep_attributed_donor_id,
+              donorName: h.dep_attributed_donor_name ?? null,
+            }
+          : null;
         return {
           ...base,
           date: h?.date ?? r.anchor_date,
@@ -1134,7 +1264,9 @@ router.get(
           statusDetail,
           gifts,
           charges: h?.charges ?? [],
-          qbRecords,
+          qbRecords: qbRecords.map((rec) =>
+            rec.role === "deposit" ? { ...rec, attributedDonor: depAttributedDonor } : rec,
+          ),
           settlement: h?.sl_lifecycle
             ? {
                 lifecycle: h.sl_lifecycle,
@@ -1143,14 +1275,7 @@ router.get(
               }
             : null,
           group: null,
-          depositGrainGift: h?.deposit_grain_gift ?? false,
-          candidateDonor: rawCandidateDonor
-            ? {
-                donorKind: rawCandidateDonor.donor_kind,
-                donorId: rawCandidateDonor.donor_id,
-                donorName: rawCandidateDonor.donor_name,
-              }
-            : null,
+          coverage,
         };
       }
 
@@ -1158,7 +1283,14 @@ router.get(
         const h = qbById.get(r.anchor_id);
         const gifts = [...(qbGiftsByAnchor.get(r.anchor_id)?.values() ?? [])];
         const foldedFees = h?.folded_fees ?? [];
-        const qbRecords: QbRecordJson[] = h
+        const anchorAttributedDonor = h?.attributed_donor_id
+          ? {
+              donorKind: h.attributed_donor_kind as "organization" | "person" | "household",
+              donorId: h.attributed_donor_id,
+              donorName: h.attributed_donor_name ?? null,
+            }
+          : null;
+        const qbRecordsWithDonor: QbRecordJson[] = h
           ? [
               {
                 stagedPaymentId: h.id,
@@ -1173,6 +1305,7 @@ router.get(
                 payerName: h.payer_name,
                 qbEntityType: h.qb_entity_type,
                 qbEntityId: h.qb_entity_id,
+                attributedDonor: anchorAttributedDonor,
               },
               ...h.group_members,
               ...foldedFees,
@@ -1180,7 +1313,7 @@ router.get(
           : [];
         // Folded fee lines are accounting plumbing, not donor work — they
         // never count toward the matched/total progress of the cluster.
-        const countable = qbRecords.filter((x) => x.role !== "fee");
+        const countable = qbRecordsWithDonor.filter((x) => x.role !== "fee");
         const total = countable.filter((x) => x.status !== "excluded").length;
         const resolved = countable.filter((x) => x.status === "match_confirmed").length;
         const isGroup = h?.group_id != null;
@@ -1191,14 +1324,6 @@ router.get(
         const feeSum = foldedFees.reduce((acc, f) => acc + (Number(f.amount) || 0), 0);
         const grossNum = h?.amount != null ? Number(h.amount) : null;
         const hasFees = foldedFees.length > 0 && grossNum != null && Number.isFinite(grossNum);
-        const qbCandidateDonor =
-          gifts.length === 0 && h?.candidate_donor_id
-            ? {
-                donorKind: h.candidate_donor_kind as "organization" | "person" | "household",
-                donorId: h.candidate_donor_id,
-                donorName: h.candidate_donor_name,
-              }
-            : null;
         return {
           ...base,
           date: h?.date ?? r.anchor_date,
@@ -1219,7 +1344,7 @@ router.get(
           statusDetail,
           gifts,
           charges: [],
-          qbRecords,
+          qbRecords: qbRecordsWithDonor,
           settlement: null,
           group: isGroup
             ? {
@@ -1227,8 +1352,7 @@ router.get(
                 totalAmount: h?.group_total ?? null,
               }
             : null,
-          depositGrainGift: null,
-          candidateDonor: qbCandidateDonor,
+          coverage: null,
         };
       }
 
@@ -1260,8 +1384,7 @@ router.get(
         qbRecords: [],
         settlement: null,
         group: null,
-        depositGrainGift: null,
-        candidateDonor: null,
+        coverage: null,
       };
     });
 

@@ -8404,6 +8404,16 @@ components:
         linkedGiftId:   { type: string, nullable: true, description: "The gift this charge's counted ledger row feeds, if any." }
         refundProposed: { type: boolean, description: "True when a refund/chargeback propagation proposal awaits a human decision (drives the refunds lens)." }
         refundKind:     { type: string, enum: [full_refund, partial_refund, chargeback], nullable: true, description: "The kind of proposed reversal; null when refundProposed is false." }
+        attributedDonor:
+          nullable: true
+          description: "Donor identified on this specific charge via the Identify action. Null when no donor has been identified on this charge."
+          allOf:
+            - type: object
+              required: [donorKind, donorId]
+              properties:
+                donorKind: { type: string, enum: [organization, person, household] }
+                donorId:   { type: string }
+                donorName: { type: string, nullable: true }
     WorkbenchClusterQbRecord:
       type: object
       required: [stagedPaymentId, role, status]
@@ -8428,6 +8438,16 @@ components:
           nullable: true
           description: "The QuickBooks transaction type this staged row came from — drives the 'View in QuickBooks' deep link."
         qbEntityId:      { type: string, nullable: true, description: "The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link)." }
+        attributedDonor:
+          nullable: true
+          description: "Donor identified on this specific QB row via the Identify action. Present for anchor/deposit roles when a donor has been identified; null otherwise."
+          allOf:
+            - type: object
+              required: [donorKind, donorId]
+              properties:
+                donorKind: { type: string, enum: [organization, person, household] }
+                donorId:   { type: string }
+                donorName: { type: string, nullable: true }
     WorkbenchClusterSettlement:
       type: object
       required: [lifecycle]
@@ -8443,6 +8463,42 @@ components:
       properties:
         memberCount: { type: integer, description: "Total rows in the unit group (including the representative)." }
         totalAmount: { type: string, nullable: true, description: "Group total, major units." }
+    WorkbenchClusterCoverage:
+      type: object
+      required: [mode, chargeCoverage, depositCoverage, coveredChargeIds, uncoveredChargeIds, creditedAmount, expectedAmount, complete]
+      description: |
+        Per-payout coverage: which grains have counted payment_application rows and whether
+        together they fully account for the expected money. Null for qb_standalone and crm_only kinds.
+      properties:
+        mode:
+          type: string
+          enum: [none, charge, deposit, mixed]
+          description: "none = no counted PAs anywhere; charge = only per-charge PAs; deposit = only deposit-level PAs (against the settlement-linked QB deposit); mixed = both grains have PAs (incomplete — one should supersede the other)."
+        chargeCoverage:
+          type: array
+          description: "Counted PA rows anchored to individual Stripe charges."
+          items:
+            type: object
+            required: [chargeId, giftId]
+            properties:
+              chargeId:      { type: string }
+              giftId:        { type: string }
+              amountApplied: { type: string, nullable: true, description: "amount_applied from the PA row, major units." }
+        depositCoverage:
+          type: array
+          description: "Counted PA rows anchored to the settlement-linked QB deposit lump."
+          items:
+            type: object
+            required: [paymentApplicationId, giftId]
+            properties:
+              paymentApplicationId: { type: string }
+              giftId:               { type: string }
+              amountApplied:        { type: string, nullable: true, description: "amount_applied from the PA row, major units." }
+        coveredChargeIds:   { type: array, items: { type: string }, description: "Charge ids with at least one counted charge-grain PA." }
+        uncoveredChargeIds: { type: array, items: { type: string }, description: "Non-excluded charge ids with no counted charge-grain PA." }
+        creditedAmount: { type: string, description: "Sum of all counted PA amount_applied values (charge + deposit grains), major units." }
+        expectedAmount: { type: string, description: "The expected total: payout gross_total for charge-grain; deposit amount for deposit-grain, major units." }
+        complete:       { type: boolean, description: "True when the grains are consistent, credited >= expected, and uncoveredChargeIds is empty." }
     WorkbenchCluster:
       type: object
       required: [id, kind, anchorId, status, lenses, gifts, charges, qbRecords]
@@ -8473,17 +8529,10 @@ components:
         qbRecords:     { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterQbRecord" } }
         settlement:    { allOf: [ { $ref: "#/components/schemas/WorkbenchClusterSettlement" } ], nullable: true, description: "Null for non-payout kinds and for orphan payouts with no settlement link yet." }
         group:         { allOf: [ { $ref: "#/components/schemas/WorkbenchClusterGroup" } ], nullable: true, description: "Present only when the qb_standalone anchor represents a unit group." }
-        depositGrainGift: { type: boolean, nullable: true, description: "True when one gift is booked against the settlement-linked QB deposit lump (deposit-grain / coarse §4.3 booking). When true, resolvedCount equals totalCount even though no individual charge has its own payment_application. Null / absent for non-payout kinds." }
-        candidateDonor:
+        coverage:
+          allOf: [ { $ref: "#/components/schemas/WorkbenchClusterCoverage" } ]
           nullable: true
-          description: "Donor identified on an evidence row (via the Identify action) when no gift has been minted yet. Null when gifts is non-empty or no evidence row carries an identified donor."
-          allOf:
-            - type: object
-              required: [donorKind, donorId]
-              properties:
-                donorKind: { type: string, enum: [organization, person, household] }
-                donorId:   { type: string }
-                donorName: { type: string, nullable: true }
+          description: "Coverage derivation for stripe_payout clusters: which grains have counted PA rows and whether they fully account for the payout. Null for qb_standalone and crm_only kinds."
     WorkbenchLensCounts:
       type: object
       required: [all_open, needs_donor_or_gift, needs_accounting, settlement_gaps, conflicts, refunds, excluded_qb_says_donation, excluded, completed]

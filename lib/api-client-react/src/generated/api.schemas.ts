@@ -5235,6 +5235,15 @@ export const WorkbenchClusterChargeRefundKind = {
 } as const;
 
 /**
+ * Donor identified on this specific charge via the Identify action. Null when no donor has been identified on this charge.
+ */
+export type WorkbenchClusterChargeAttributedDonor = ({
+  donorKind: 'organization' | 'person' | 'household';
+  donorId: string;
+  donorName?: string | null;
+}) | null;
+
+/**
  * One Stripe charge in the cluster's payment-evidence facet.
  */
 export interface WorkbenchClusterCharge {
@@ -5262,6 +5271,8 @@ export interface WorkbenchClusterCharge {
   refundProposed?: boolean;
   /** The kind of proposed reversal; null when refundProposed is false. */
   refundKind?: WorkbenchClusterChargeRefundKind;
+  /** Donor identified on this specific charge via the Identify action. Null when no donor has been identified on this charge. */
+  attributedDonor?: WorkbenchClusterChargeAttributedDonor;
 }
 
 /**
@@ -5291,6 +5302,15 @@ export const WorkbenchClusterQbRecordQbEntityType = {
 } as const;
 
 /**
+ * Donor identified on this specific QB row via the Identify action. Present for anchor/deposit roles when a donor has been identified; null otherwise.
+ */
+export type WorkbenchClusterQbRecordAttributedDonor = ({
+  donorKind: 'organization' | 'person' | 'household';
+  donorId: string;
+  donorName?: string | null;
+}) | null;
+
+/**
  * One QuickBooks staged row in the cluster's bank-and-accounting facet.
  */
 export interface WorkbenchClusterQbRecord {
@@ -5316,6 +5336,8 @@ export interface WorkbenchClusterQbRecord {
   qbEntityType?: WorkbenchClusterQbRecordQbEntityType;
   /** The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link). */
   qbEntityId?: string | null;
+  /** Donor identified on this specific QB row via the Identify action. Present for anchor/deposit roles when a donor has been identified; null otherwise. */
+  attributedDonor?: WorkbenchClusterQbRecordAttributedDonor;
 }
 
 /**
@@ -5352,13 +5374,55 @@ export interface WorkbenchClusterGroup {
 }
 
 /**
- * Donor identified on an evidence row (via the Identify action) when no gift has been minted yet. Null when gifts is non-empty or no evidence row carries an identified donor.
+ * none = no counted PAs anywhere; charge = only per-charge PAs; deposit = only deposit-level PAs (against the settlement-linked QB deposit); mixed = both grains have PAs (incomplete — one should supersede the other).
  */
-export type WorkbenchClusterCandidateDonor = ({
-  donorKind: 'organization' | 'person' | 'household';
-  donorId: string;
-  donorName?: string | null;
-}) | null;
+export type WorkbenchClusterCoverageMode = typeof WorkbenchClusterCoverageMode[keyof typeof WorkbenchClusterCoverageMode];
+
+
+export const WorkbenchClusterCoverageMode = {
+  none: 'none',
+  charge: 'charge',
+  deposit: 'deposit',
+  mixed: 'mixed',
+} as const;
+
+export type WorkbenchClusterCoverageChargeCoverageItem = {
+  chargeId: string;
+  giftId: string;
+  /** amount_applied from the PA row, major units. */
+  amountApplied?: string | null;
+};
+
+export type WorkbenchClusterCoverageDepositCoverageItem = {
+  paymentApplicationId: string;
+  giftId: string;
+  /** amount_applied from the PA row, major units. */
+  amountApplied?: string | null;
+};
+
+/**
+ * Per-payout coverage: which grains have counted payment_application rows and whether
+together they fully account for the expected money. Null for qb_standalone and crm_only kinds.
+
+ */
+export interface WorkbenchClusterCoverage {
+  /** none = no counted PAs anywhere; charge = only per-charge PAs; deposit = only deposit-level PAs (against the settlement-linked QB deposit); mixed = both grains have PAs (incomplete — one should supersede the other). */
+  mode: WorkbenchClusterCoverageMode;
+  /** Counted PA rows anchored to individual Stripe charges. */
+  chargeCoverage: WorkbenchClusterCoverageChargeCoverageItem[];
+  /** Counted PA rows anchored to the settlement-linked QB deposit lump. */
+  depositCoverage: WorkbenchClusterCoverageDepositCoverageItem[];
+  /** Charge ids with at least one counted charge-grain PA. */
+  coveredChargeIds: string[];
+  /** Non-excluded charge ids with no counted charge-grain PA. */
+  uncoveredChargeIds: string[];
+  /** Sum of all counted PA amount_applied values (charge + deposit grains), major units. */
+  creditedAmount: string;
+  /** The expected total: payout gross_total for charge-grain; deposit amount for deposit-grain, major units. */
+  expectedAmount: string;
+  /** True when the grains are consistent, credited >= expected, and uncoveredChargeIds is empty. */
+  complete: boolean;
+}
 
 /**
  * One reconciliation cluster row. A single flat shape for all three kinds —
@@ -5406,10 +5470,8 @@ export interface WorkbenchCluster {
   settlement?: WorkbenchClusterSettlement | null;
   /** Present only when the qb_standalone anchor represents a unit group. */
   group?: WorkbenchClusterGroup | null;
-  /** True when one gift is booked against the settlement-linked QB deposit lump (deposit-grain / coarse §4.3 booking). When true, resolvedCount equals totalCount even though no individual charge has its own payment_application. Null / absent for non-payout kinds. */
-  depositGrainGift?: boolean | null;
-  /** Donor identified on an evidence row (via the Identify action) when no gift has been minted yet. Null when gifts is non-empty or no evidence row carries an identified donor. */
-  candidateDonor?: WorkbenchClusterCandidateDonor;
+  /** Coverage derivation for stripe_payout clusters: which grains have counted PA rows and whether they fully account for the payout. Null for qb_standalone and crm_only kinds. */
+  coverage?: WorkbenchClusterCoverage | null;
 }
 
 /**

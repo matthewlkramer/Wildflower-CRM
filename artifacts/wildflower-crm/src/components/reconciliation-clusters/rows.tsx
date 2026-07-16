@@ -37,8 +37,8 @@ import {
   type Tone,
 } from "./primitives";
 
-/** Derived from WorkbenchCluster — orval doesn't re-export nested subtypes through the tag barrel. */
-type CandidateDonor = NonNullable<WorkbenchCluster["candidateDonor"]>;
+/** Derived from generated types — orval doesn't re-export nested subtypes through the tag barrel. */
+type AttributedDonor = NonNullable<WorkbenchClusterCharge["attributedDonor"]>;
 
 // ─── Cluster rows: one row per piece of money work, three facet columns ─────
 
@@ -105,7 +105,7 @@ function donorHref(gift: WorkbenchClusterGift): string | null {
   }
 }
 
-function candidateDonorHref(cd: CandidateDonor): string | null {
+function attributedDonorHref(cd: AttributedDonor): string | null {
   if (!cd) return null;
   switch (cd.donorKind) {
     case "organization": return `/organizations/${cd.donorId}`;
@@ -115,15 +115,15 @@ function candidateDonorHref(cd: CandidateDonor): string | null {
   }
 }
 
-/** Shown when a donor has been identified on an evidence row but no gift has been minted yet. */
+/** Shown when a donor has been identified on a specific evidence row (charge or QB row). */
 function IdentifiedDonorNote({
-  candidateDonor,
+  attributedDonor,
 }: {
-  candidateDonor: CandidateDonor;
+  attributedDonor: AttributedDonor;
 }) {
-  if (!candidateDonor) return null;
-  const href = candidateDonorHref(candidateDonor);
-  const name = candidateDonor.donorName ?? "(unnamed)";
+  if (!attributedDonor) return null;
+  const href = attributedDonorHref(attributedDonor);
+  const name = attributedDonor.donorName ?? "(unnamed)";
   return (
     <div className="text-[11px] text-muted-foreground pb-1 pl-0.5">
       Identified:{" "}
@@ -610,7 +610,7 @@ function RowKebab({ clusterId }: { clusterId: string }) {
 
 function chargeStatus(
   c: WorkbenchClusterCharge,
-  depositGrainGift?: boolean | null,
+  coverage: WorkbenchCluster["coverage"],
 ): {
   tone: Tone;
   word: string;
@@ -626,10 +626,11 @@ function chargeStatus(
     };
   }
   if (c.linkedGiftId) {
-    if (c.status === "match_confirmed") return { tone: "green", word: "Done" };
+    // Per-charge a linked gift is "Gift booked"; only the cluster level says "Complete".
+    if (c.status === "match_confirmed") return { tone: "green", word: "Gift booked" };
     return { tone: "blue", word: "Linked", detail: "awaiting confirm" };
   }
-  if (depositGrainGift) {
+  if (coverage?.mode === "deposit" && coverage.complete) {
     return { tone: "green", word: "Covered", detail: "deposit-grain gift" };
   }
   return {
@@ -731,7 +732,7 @@ function PayoutBundleRow({
     const gift = charge.linkedGiftId
       ? giftById.get(charge.linkedGiftId)
       : cluster.gifts[0];
-    const status = chargeStatus(charge, cluster.depositGrainGift);
+    const status = chargeStatus(charge, cluster.coverage);
     const anchor: AnchorRef = {
       kind: "charge",
       id: charge.chargeId,
@@ -748,14 +749,14 @@ function PayoutBundleRow({
             <GiftCard gift={gift} actions={actions} />
           ) : charge.status === "excluded" ? (
             <ExcludedCard />
-          ) : cluster.depositGrainGift ? (
+          ) : cluster.coverage?.mode === "deposit" && cluster.coverage.complete ? (
             <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">
               covered by the deposit-grain gift above
             </div>
           ) : (
             <>
-              {cluster.candidateDonor ? (
-                <IdentifiedDonorNote candidateDonor={cluster.candidateDonor} />
+              {charge.attributedDonor ? (
+                <IdentifiedDonorNote attributedDonor={charge.attributedDonor} />
               ) : null}
               <DonorActions
                 disabled={actions.busy}
@@ -896,7 +897,7 @@ function PayoutBundleRow({
             const gift = charge.linkedGiftId
               ? giftById.get(charge.linkedGiftId)
               : undefined;
-            const status = chargeStatus(charge, cluster.depositGrainGift);
+            const status = chargeStatus(charge, cluster.coverage);
             const tie = cluster.qbRecords.find(
               (r) =>
                 r.linkedChargeId === charge.chargeId && r.role === "charge_tie",
@@ -918,14 +919,14 @@ function PayoutBundleRow({
                     <GiftCard gift={gift} actions={actions} />
                   ) : charge.status === "excluded" ? (
                     <ExcludedCard />
-                  ) : cluster.depositGrainGift ? (
+                  ) : cluster.coverage?.mode === "deposit" && cluster.coverage.complete ? (
                     <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">
                       covered by the deposit-grain gift above
                     </div>
                   ) : (
                     <>
-                      {cluster.candidateDonor ? (
-                        <IdentifiedDonorNote candidateDonor={cluster.candidateDonor} />
+                      {charge.attributedDonor ? (
+                        <IdentifiedDonorNote attributedDonor={charge.attributedDonor} />
                       ) : null}
                       <DonorActions
                         disabled={actions.busy}
@@ -1059,8 +1060,12 @@ function QbStandaloneRow({
           </div>
         ) : stagedAnchor ? (
           <>
-            {cluster.candidateDonor ? (
-              <IdentifiedDonorNote candidateDonor={cluster.candidateDonor} />
+            {cluster.qbRecords.find((r) => r.role === "anchor")?.attributedDonor ? (
+              <IdentifiedDonorNote
+                attributedDonor={
+                  cluster.qbRecords.find((r) => r.role === "anchor")!.attributedDonor!
+                }
+              />
             ) : null}
             <DonorActions
               disabled={actions.busy}

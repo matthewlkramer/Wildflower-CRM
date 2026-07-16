@@ -187,14 +187,18 @@ async function seedCharge(
     linkedFeeQbStagedPaymentId?: string | null;
     refundProposed?: boolean;
     payerName?: string;
+    grossAmount?: string;
+    /** Set an identified donor FK on the charge (simulates the Identify action). */
+    organizationId?: string;
   } = {},
 ): Promise<string> {
   const id = nextId("ch");
+  const gross = opts.grossAmount ?? "100.00";
   await db.insert(schema.stripeStagedCharges).values({
     id,
     stripeAccountId: ACCOUNT_ID,
     stripePayoutId: payoutId,
-    grossAmount: "100.00",
+    grossAmount: gross,
     feeAmount: "3.20",
     netAmount: "96.80",
     dateReceived: futureDate(),
@@ -205,15 +209,38 @@ async function seedCharge(
     linkedFeeQbStagedPaymentId: opts.linkedFeeQbStagedPaymentId ?? null,
     refundPropagationStatus: (opts.refundProposed ? "proposed" : "none") as never,
     refundPropagationKind: (opts.refundProposed ? "full_refund" : null) as never,
+    organizationId: opts.organizationId ?? null,
   });
   if (opts.matchedGiftId) {
     await seedStripeApplication({
       stripeChargeId: id,
       giftId: opts.matchedGiftId,
-      amountApplied: "100.00",
+      amountApplied: gross,
     });
   }
   chargeIds.push(id);
+  return id;
+}
+
+/**
+ * Seed a counted QB payment_application against a deposit staged_payment.
+ * Simulates a deposit-grain gift booking (coarse §4.3 link).
+ */
+async function seedDepositApplication(opts: {
+  depositId: string;
+  giftId: string;
+  amountApplied: string;
+}): Promise<string> {
+  const id = nextId("pa");
+  await db.insert(schema.paymentApplications).values({
+    id,
+    paymentId: opts.depositId,
+    giftId: opts.giftId,
+    amountApplied: opts.amountApplied,
+    evidenceSource: "quickbooks",
+    matchMethod: "system",
+    createdTheGift: false,
+  });
   return id;
 }
 
@@ -742,5 +769,167 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     // A charge-payer search surfaces the whole payout cluster.
     const { map: byCharge } = await listClusters("all_open", "Unrelated Charge Payer");
     expect(byCharge.has(`stripe_payout:${pOther}`)).toBe(true);
+  });
+
+  describe("per-charge attributedDonor and cluster coverage object", () => {
+    it("each charge carries its own attributedDonor; no cluster-level candidateDonor", async () => {
+      const payout = await seedPayout();
+      const chWithDonor = await seedCharge(payout, { organizationId: ORG_ID });
+      const chNoDonor = await seedCharge(payout, {});
+
+      const { map } = await listClusters("all_open");
+      const row = map.get(`stripe_payout:${payout}`);
+      expect(row).toBeTruthy();
+
+      // No cluster-level candidateDonor.
+      expect(row.candidateDonor).toBeUndefined();
+
+      // The identified charge shows attributedDonor with the org.
+      const identified = row.charges.find((c: any) => c.chargeId === chWithDonor);
+      expect(identified).toBeTruthy();
+      expect(identified.attributedDonor).toBeTruthy();
+      expect(identified.attributedDonor.donorKind).toBe("organization");
+      expect(identified.attributedDonor.donorId).toBe(ORG_ID);
+      expect(identified.attributedDonor.donorName).toBe(ORG_NAME);
+
+      // The unidentified charge has null attributedDonor.
+      const unidentified = row.charges.find((c: any) => c.chargeId === chNoDonor);
+      expect(unidentified).toBeTruthy();
+      expect(unidentified.attributedDonor).toBeNull();
+    });
+
+    it("coverage mode=none when no PAs exist", async () => {
+      const payout = await seedPayout();
+      await seedCharge(payout, {});
+
+      const { map } = await listClusters("all_open");
+      const row = map.get(`stripe_payout:${payout}`);
+      expect(row).toBeTruthy();
+      expect(row.coverage).toBeTruthy();
+      expect(row.coverage.mode).toBe("none");
+      expect(row.coverage.complete).toBe(false);
+      expect(row.coverage.chargeCoverage).toEqual([]);
+      expect(row.coverage.depositCoverage).toEqual([]);
+      expect(row.coverage.coveredChargeIds).toEqual([]);
+      expect(row.coverage.uncoveredChargeIds.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("coverage mode=charge + complete when all charges have counted PAs", async () => {
+      const g1 = await seedGift({ amount: "50.00" });
+      const g2 = await seedGift({ amount: "50.00" });
+      const payout = await seedPayout({ netTotal: "93.60" });
+      const ch1 = await seedCharge(payout, { matchedGiftId: g1, grossAmount: "50.00" });
+      const ch2 = await seedCharge(payout, { matchedGiftId: g2, grossAmount: "50.00" });
+
+      const { map } = await listClusters("completed");
+      const row = map.get(`stripe_payout:${payout}`);
+      expect(row).toBeTruthy();
+      expect(row.coverage).toBeTruthy();
+      expect(row.coverage.mode).toBe("charge");
+      expect(row.coverage.complete).toBe(true);
+      const coveredIds: string[] = row.coverage.coveredChargeIds;
+      expect(coveredIds).toContain(ch1);
+      expect(coveredIds).toContain(ch2);
+      expect(row.coverage.uncoveredChargeIds).toEqual([]);
+      expect(row.coverage.chargeCoverage.length).toBe(2);
+      expect(row.coverage.depositCoverage).toEqual([]);
+      // No cluster-level depositGrainGift field (removed).
+      expect(row.depositGrainGift).toBeUndefined();
+    });
+
+    it("coverage mode=charge + partial when only some charges have counted PAs", async () => {
+      const g1 = await seedGift({ amount: "100.00" });
+      const payout = await seedPayout();
+      const ch1 = await seedCharge(payout, { matchedGiftId: g1 });
+      const ch2 = await seedCharge(payout, {});
+
+      const { map } = await listClusters("all_open");
+      const row = map.get(`stripe_payout:${payout}`);
+      expect(row).toBeTruthy();
+      expect(row.coverage.mode).toBe("charge");
+      expect(row.coverage.complete).toBe(false);
+      expect(row.coverage.coveredChargeIds).toContain(ch1);
+      expect(row.coverage.uncoveredChargeIds).toContain(ch2);
+    });
+
+    it("coverage mode=deposit + complete when deposit PA covers the full deposit amount", async () => {
+      const dep = await seedStaged({ entityType: "deposit", amount: "100.00" });
+      const gDep = await seedGift({ amount: "100.00" });
+      const payout = await seedPayout({ settledDeposit: dep, amount: "100.00", netTotal: "100.00" });
+      await seedCharge(payout, {});
+      await seedDepositApplication({ depositId: dep, giftId: gDep, amountApplied: "100.00" });
+
+      // This payout is effectively complete via deposit-grain; slim universe marks it completed.
+      const { map: completed } = await listClusters("completed");
+      const row = completed.get(`stripe_payout:${payout}`);
+      expect(row).toBeTruthy();
+      expect(row.coverage).toBeTruthy();
+      expect(row.coverage.mode).toBe("deposit");
+      expect(row.coverage.complete).toBe(true);
+      expect(row.coverage.depositCoverage.length).toBe(1);
+      expect(row.coverage.depositCoverage[0].giftId).toBe(gDep);
+      expect(row.coverage.chargeCoverage).toEqual([]);
+    });
+
+    it("coverage mode=deposit + incomplete when deposit PA < expected amount", async () => {
+      const dep = await seedStaged({ entityType: "deposit", amount: "100.00" });
+      const gDep = await seedGift({ amount: "50.00" });
+      const payout = await seedPayout({ settledDeposit: dep, amount: "100.00", netTotal: "100.00" });
+      await seedCharge(payout, {});
+      await seedDepositApplication({ depositId: dep, giftId: gDep, amountApplied: "50.00" });
+
+      const { map } = await listClusters("all_open");
+      const row = map.get(`stripe_payout:${payout}`);
+      // May or may not appear in all_open depending on slim f_completed heuristic —
+      // what matters is that coverage.complete = false regardless of lens.
+      const { map: completed } = await listClusters("completed");
+      const rowAny = row ?? completed.get(`stripe_payout:${payout}`);
+      expect(rowAny).toBeTruthy();
+      expect(rowAny.coverage.mode).toBe("deposit");
+      expect(rowAny.coverage.complete).toBe(false);
+      expect(Number(rowAny.coverage.creditedAmount)).toBeLessThan(Number(rowAny.coverage.expectedAmount));
+    });
+
+    it("coverage mode=mixed when both charge PA and deposit PA exist", async () => {
+      const dep = await seedStaged({ entityType: "deposit", amount: "100.00" });
+      const gCharge = await seedGift({ amount: "100.00" });
+      const gDep = await seedGift({ amount: "100.00" });
+      const payout = await seedPayout({ settledDeposit: dep, amount: "100.00", netTotal: "100.00" });
+      const ch = await seedCharge(payout, { matchedGiftId: gCharge });
+      await seedDepositApplication({ depositId: dep, giftId: gDep, amountApplied: "100.00" });
+
+      // Fetch from whichever lens the cluster lands in.
+      const lens1 = await listClusters("completed");
+      const lens2 = await listClusters("all_open");
+      const rowAny =
+        lens1.map.get(`stripe_payout:${payout}`) ??
+        lens2.map.get(`stripe_payout:${payout}`);
+      expect(rowAny).toBeTruthy();
+      expect(rowAny.coverage.mode).toBe("mixed");
+      expect(rowAny.coverage.complete).toBe(false);
+      expect(rowAny.coverage.chargeCoverage.length).toBeGreaterThanOrEqual(1);
+      expect(rowAny.coverage.depositCoverage.length).toBeGreaterThanOrEqual(1);
+      expect(rowAny.coverage.coveredChargeIds).toContain(ch);
+    });
+
+    it("per-charge Done semantics: charge with linked gift shows Gift booked, not Done", async () => {
+      // This test verifies the cluster response shape; UI rendering is tested separately.
+      // The charge's linkedGiftId is set, but coverage.complete is false (1 of 2 covered).
+      const g1 = await seedGift({ amount: "100.00" });
+      const payout = await seedPayout();
+      const ch1 = await seedCharge(payout, { matchedGiftId: g1 });
+      await seedCharge(payout, {}); // uncovered
+
+      const { map } = await listClusters("all_open");
+      const row = map.get(`stripe_payout:${payout}`);
+      expect(row).toBeTruthy();
+      const linked = row.charges.find((c: any) => c.chargeId === ch1);
+      expect(linked).toBeTruthy();
+      expect(linked.linkedGiftId).toBe(g1);
+      // Coverage is partial — the cluster is NOT complete.
+      expect(row.coverage.complete).toBe(false);
+      expect(row.coverage.mode).toBe("charge");
+      // The UI is expected to show "Gift booked" not "Done" here (per chargeStatus logic).
+    });
   });
 });
