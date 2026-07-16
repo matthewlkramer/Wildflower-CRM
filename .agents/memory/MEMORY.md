@@ -1,7 +1,8 @@
 - [user_query widget doesn't render](interactive-prompts-dont-render.md) — this user can't see interactive prompts; ALWAYS ask clarifying questions in plain-text chat, never via user_query.
 - [Canonical architecture docs](architecture-canon.md) — read replit.md + lib/db/SCHEMA.md first (kept-current intent + invariants); schema code is the final truth.
 - [Email & calendar sync](email-calendar-sync.md) — grouped index: Gmail/Calendar sync, open tracking, email intelligence (AI proposals), Flodesk, email-address dedup; read before touching any email/calendar feature.
-- [Money sync & reconciliation](money-sync-reconciliation.md) — grouped index: QuickBooks/Stripe/Donorbox ingest + the reconciliation ledger/workbench; read before touching any money-sync or reconciliation feature.
+- [Money sync & reconciliation](money-sync-reconciliation.md) — current-state index: QB/Stripe/Donorbox ingest, three link tables (payment_applications/settlement_links/source_links), derived status, workbench; read before touching any money-sync or reconciliation feature.
+- [Legacy reconciliation — pointer era](legacy-reconciliation/index.md) — retired pointer-era entries (matched/created/group_reconciled_gift_id QB cols DROPPED 0126); read for regression context only, never as current instructions.
 - [wildflower-crm detail routes](wildflower-crm-routes.md) — organizations live at /organizations (was /funding-entities); pledge detail inherits opportunity.
 - [funders→organizations consolidation](funders-organizations-consolidation.md) — funders+organizations merged; issuesGrants flag distinguishes grant-makers; DonorType "funder"→"organization"; the stale one-time Airtable importer was retired/deleted (2026-07).
 - [wildflower-crm activity feed scoping](wildflower-activity-feed-scoping.md) — keep notes/tasks scope separate from donor-relationship scope; API list filters AND together.

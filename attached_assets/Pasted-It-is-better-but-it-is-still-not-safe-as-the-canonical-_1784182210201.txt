@@ -1,0 +1,206 @@
+It is better, but it is still not safe as the canonical active memory. The new top-level rules are clearer, yet the same index continues to teach several retired implementations as though they are current.
+
+## What improved
+
+These additions are directionally right:
+
+* Derived status now points to one alias-parameterized implementation.
+* Evidence-to-evidence pointers are explicitly frozen.
+* The planned `source_links` replacement is named.
+* The legacy gift-pointer columns are explicitly declared dropped.
+* `payment_applications` is identified as the gift-link authority.
+
+Those rules describe the architecture you want.
+
+## The major remaining problem
+
+The index then links to and summarizes old rules that directly contradict those declarations. An agent will not reliably know which instruction wins.
+
+### Retired gift-pointer rules still presented as current
+
+These should be removed from the active index or rewritten:
+
+* **QB staged↔gift linkage & resolution races**
+  Says there are distinct matched/created gift columns.
+* **QuickBooks payment grouping**
+  Says the representative gets `matched_gift_id` and others get `group_reconciled`.
+* **Reconciler approvable + 3 gift-link cols**
+* **Reconciler approve gift ownership**
+  Uses `createdGiftId` and `matchedGiftId`.
+* **Reconciliation “resolved” has 4 forms**
+* **Confirmed staged-row relink**
+  Mentions legacy pointer fallback.
+* **Stripe charge evidence linkage**
+  Requires row-local `matchedGiftId`.
+* **Failed Stripe charges auto-excluded**
+  Describes `ledger == matchedGiftId`.
+* **Reconciliation already-linked pickers**
+  Uses `COALESCE(matched/created/groupReconciled)`.
+* **Raw-SQL PA insert guards**
+  Requires `matched_gift_id=target`.
+* **unit_groups is the sole grouping store**
+  Still says `group_reconciled_gift_id` is separate.
+
+These are not merely old implementation details. They tell future agents to read or write columns that the same document says no longer exist.
+
+The “any older bullet … describes the retired pointer model” disclaimer is insufficient. Obsolete operational instructions should not remain in the active index.
+
+## Other important contradictions
+
+### 1. “One ledger” versus `source_links`
+
+The document says:
+
+> two-plane/one-ledger simplification
+
+but also plans a `source_links` ledger.
+
+The target terminology should now be explicit:
+
+```text
+Ledger 1: source_links
+Financial evidence ↔ financial evidence
+
+Ledger 2: payment_applications
+Money unit → CRM gift
+```
+
+Calling it “one ledger” will perpetuate confusion.
+
+### 2. `settlement_links` versus `source_links`
+
+The index simultaneously says:
+
+* `settlement_links` is the sole payout↔deposit store.
+* Evidence claim pointers will be replaced by `source_links`.
+
+The ADR must decide one of these:
+
+* `settlement_links` becomes one relationship type inside `source_links`; or
+* `settlement_links` remains a specialized source-link table, while `source_links` handles every other type.
+
+“Fold it in or use a sibling” is not precise enough. Without a firm choice, you may create two overlapping source-link authorities.
+
+### 3. Corroborating application semantics
+
+The index says corroborating `payment_applications` rows are audit-only and have `amount NULL`.
+
+But the recent supersession behavior apparently demotes a counted QBO row to corroborating while retaining its amount for reversible promotion.
+
+Those are two different meanings:
+
+```text
+corrections annotation:
+corroborating, amount NULL
+
+superseded money representation:
+corroborating, amount non-null
+```
+
+The active rule must state both explicitly, or preferably move non-money corroboration out of `payment_applications`.
+
+### 4. Stored versus derived status language
+
+Several entries still use phrases such as:
+
+* `status='pending'`
+* Mark a charge `reconciled`
+* Settlement confirm “stamps deposit reconciled”
+* `rejected` charges
+* `approved` rows
+
+Yet the canonical rule says status is derived and `rejected` was removed.
+
+Some of those may refer to underlying facts or Donorbox’s stored lifecycle, but the index does not distinguish them. Each rule should identify whether it means:
+
+* A derived API status
+* A stored source fact
+* A settlement-link lifecycle
+* A proposal lifecycle
+* A legacy field
+
+## Recommended restructuring
+
+### 1. Make the active index much smaller
+
+The active architecture section should contain approximately 15–25 rules:
+
+```text
+Current authority
+Current invariants
+Current mutation services
+Current derived-status rules
+Current transitional debt
+Current migration state
+```
+
+### 2. Move retired rules out of the active index
+
+Create:
+
+```text
+.agents/memory/legacy-reconciliation/
+```
+
+Move pointer-era documents there and do not link them from the default active index.
+
+Incident knowledge can remain available under:
+
+```text
+.agents/memory/incidents/
+```
+
+but should be framed as history and regression context, not current instructions.
+
+### 3. Rewrite rather than disclaim stale summaries
+
+For example, replace:
+
+> Reconciler approvable + 3 gift-link cols
+
+with:
+
+> Reconciler approvability is derived from exclusion, proposal, counted application, confirmed settlement, and booked charge-tie facts. No gift-pointer columns exist.
+
+Replace:
+
+> Stripe evidence linkage must also set matchedGiftId
+
+with:
+
+> Stripe charge-to-gift ownership is represented only by its counted `payment_applications` row.
+
+Replace:
+
+> Settlement-only confirm stamps deposit reconciled
+
+with:
+
+> A confirmed settlement link makes the deposit’s derived status `match_confirmed`; it does not write a stored deposit status.
+
+### 4. Add a memory lint test
+
+Fail CI if the active memory index contains retired identifiers outside an explicitly marked historical section:
+
+```text
+matched_gift_id
+created_gift_id
+group_reconciled_gift_id
+matchedGiftId
+createdGiftId
+groupReconciledGiftId
+COALESCE(matched/created
+status='pending'
+```
+
+Historical files may contain them, but the active architecture index should not.
+
+## My assessment
+
+This revision captures the correct target architecture at the top, but the rest of the file still functions as an undifferentiated archive of every reconciliation generation.
+
+I would describe it as:
+
+> A good historical index, but not yet a reliable current-state specification.
+
+The next edit should remove or relocate every pointer-era rule, clarify the two-ledger target, and resolve whether `settlement_links` is part of or parallel to `source_links`.
