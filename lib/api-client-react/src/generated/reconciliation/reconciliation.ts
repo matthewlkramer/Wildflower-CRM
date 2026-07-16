@@ -54,7 +54,8 @@ import type {
   SearchReconciliationPayoutsParams,
   SearchReconciliationQbStagedParams,
   SettlementLineage,
-  WorkbenchClusterListResponse
+  WorkbenchClusterListResponse,
+  WorkbenchRecentChangesResponse
 } from '../api.schemas';
 
 import { customFetch } from '../../custom-fetch';
@@ -1587,6 +1588,92 @@ export function useListWorkbenchClusters<TData = Awaited<ReturnType<typeof listW
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListWorkbenchClustersQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * The most recent human reconciliation queue actions (exclude / re-include /
+resolve / reconcile / mint / link / revert / refund decisions), newest
+first, hydrated from the audit log's reconciliation-domain entries. Each
+entry carries a human-readable summary, the actor, and — when the action
+has a safe single-call inverse — an `undo` pointer naming which existing
+revert/re-include endpoint undoes it and on which row. `undo` is recorded
+at action time and NOT re-validated here; the target endpoint still
+enforces its own guards and returns 409 if state has moved on. Entries
+with `undo: null` are shown with a disabled Undo (the reason is in the
+summary's nature: reverts, refunds and manual mints have no safe inverse).
+Read-only; not admin-gated (the workbench itself is team-wide).
+
+ * @summary The workbench's recent-changes rail — the last human reconciliation actions with their undo pointers.
+ */
+export const getListWorkbenchRecentChangesUrl = () => {
+
+
+  
+
+  return `/api/reconciliation/workbench-recent-changes`
+}
+
+export const listWorkbenchRecentChanges = async ( options?: RequestInit): Promise<WorkbenchRecentChangesResponse> => {
+  
+  return customFetch<WorkbenchRecentChangesResponse>(getListWorkbenchRecentChangesUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getListWorkbenchRecentChangesQueryKey = () => {
+    return [
+    `/api/reconciliation/workbench-recent-changes`
+    ] as const;
+    }
+
+    
+export const getListWorkbenchRecentChangesQueryOptions = <TData = Awaited<ReturnType<typeof listWorkbenchRecentChanges>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchRecentChanges>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWorkbenchRecentChangesQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWorkbenchRecentChanges>>> = ({ signal }) => listWorkbenchRecentChanges({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchRecentChanges>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWorkbenchRecentChangesQueryResult = NonNullable<Awaited<ReturnType<typeof listWorkbenchRecentChanges>>>
+export type ListWorkbenchRecentChangesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary The workbench's recent-changes rail — the last human reconciliation actions with their undo pointers.
+ */
+
+export function useListWorkbenchRecentChanges<TData = Awaited<ReturnType<typeof listWorkbenchRecentChanges>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchRecentChanges>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWorkbenchRecentChangesQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

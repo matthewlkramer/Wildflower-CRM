@@ -3,6 +3,11 @@ import { asyncHandler, notFound, paramId } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { RevertStagedPaymentMatchesBody } from "@workspace/api-zod";
 import { revertOneStagedPayment } from "./shared";
+import {
+  reconAudit,
+  fmtMoney,
+  payerLabel,
+} from "../../lib/reconciliationAudit";
 
 const router: IRouter = Router();
 
@@ -30,6 +35,15 @@ router.post(
       return;
     }
     void user;
+    // The revert IS the undo — re-doing the original action is a fresh
+    // decision made from the queue, so no undo pointer.
+    await reconAudit(req, {
+      action: "update",
+      entityType: "staged_payment",
+      entityId: id,
+      summary: `Reverted the QuickBooks payment from ${payerLabel(outcome.row?.payerName)} (${fmtMoney(outcome.row?.amount)}) back to the queue`,
+      undo: null,
+    });
     res.json(outcome.row);
   }),
 );

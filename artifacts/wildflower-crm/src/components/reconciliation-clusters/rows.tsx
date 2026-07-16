@@ -1,3 +1,4 @@
+import { type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Check,
@@ -23,11 +24,13 @@ import {
 import { formatCurrency, formatDateShort } from "@/lib/format";
 import type { EvidencePreview } from "./dialogs";
 import {
+  CodingBadge,
   DbBadge,
   DonorActions,
   ExcludedCard,
   FacetCard,
   GRID,
+  LetterBadge,
   LinkSlot,
   StatusCell,
   SummaryCard,
@@ -105,6 +108,8 @@ export interface MenuItem {
   label: string;
   onClick?: () => void;
   href?: string;
+  /** Opens in a new tab (Stripe / QuickBooks deep links). */
+  externalHref?: string;
   /** Grayed out WITH the blocking reason labeled — never hidden. */
   disabledReason?: string;
   destructive?: boolean;
@@ -134,7 +139,9 @@ function CardMenu({ items, testId }: { items: MenuItem[]; testId: string }) {
             onClick={(e) => {
               e.stopPropagation();
               if (it.disabledReason) return;
-              if (it.href) navigate(it.href);
+              if (it.externalHref)
+                window.open(it.externalHref, "_blank", "noopener");
+              else if (it.href) navigate(it.href);
               else it.onClick?.();
             }}
           >
@@ -200,6 +207,11 @@ function GiftCard({
           label: "Unlink from this match",
           disabledReason: "Not linked to evidence in this row",
         },
+    {
+      label: "Move to another cluster",
+      disabledReason:
+        "Clusters follow the evidence ties — unlink here, then link from the other row",
+    },
   ];
   return (
     <FacetCard
@@ -228,7 +240,13 @@ function GiftCard({
             ? "No QB record tied yet"
             : null
       }
-      badges={gift.donorbox ? <DbBadge /> : null}
+      badges={
+        <>
+          {gift.donorbox ? <DbBadge /> : null}
+          {gift.codingForm ? <CodingBadge /> : null}
+          {gift.grantLetter ? <LetterBadge /> : null}
+        </>
+      }
       menu={
         <CardMenu items={menu} testId={`button-gift-menu-${gift.giftId}`} />
       }
@@ -261,7 +279,12 @@ function ChargeCard({
   const label = chargeLabel(charge);
   const anchor: AnchorRef = { kind: "charge", id: charge.chargeId, label };
   const excluded = charge.status === "excluded";
-  const menu: MenuItem[] = [];
+  const menu: MenuItem[] = [
+    {
+      label: "View in Stripe",
+      externalHref: `https://dashboard.stripe.com/payments/${charge.chargeId}`,
+    },
+  ];
   if (charge.refundProposed) {
     const kind = charge.refundKind === "chargeback" ? "chargeback" : "refund";
     menu.push(
@@ -298,11 +321,28 @@ function ChargeCard({
       onClick: () => actions.openExclude(anchor),
     });
   }
+  menu.push(
+    {
+      label: "Move to another cluster",
+      disabledReason:
+        "Charges belong to their Stripe payout — the cluster is fixed",
+    },
+    {
+      label: "Flag for research",
+      disabledReason: "Only QuickBooks records can be flagged for research",
+    },
+  );
   const subBits = [
     charge.chargeDate ? formatDateShort(charge.chargeDate) : null,
     charge.cardBrand,
     charge.description ?? charge.statementDescriptor,
   ].filter(Boolean);
+  // Per-charge money math — fees fold into the same row as the money they
+  // belong to, so gross − fee = net reconciles at the line level.
+  const feeMath =
+    charge.feeAmount != null && charge.netAmount != null
+      ? `${fmt(charge.amount)} gross − ${fmt(charge.feeAmount)} fee = ${fmt(charge.netAmount)} net`
+      : null;
   return (
     <FacetCard
       tone={
@@ -310,7 +350,16 @@ function ChargeCard({
       }
       amount={fmt(charge.amount)}
       name={`${label} · Stripe`}
-      sub={subBits.join(" · ")}
+      sub={
+        feeMath ? (
+          <>
+            {subBits.join(" · ")}
+            <span className="block tabular-nums">{feeMath}</span>
+          </>
+        ) : (
+          subBits.join(" · ")
+        )
+      }
       gap={
         charge.refundProposed
           ? `${charge.refundKind === "chargeback" ? "Chargeback" : "Refund"} proposed`
@@ -331,8 +380,38 @@ function ChargeCard({
   );
 }
 
+/**
+ * Card title for a QB record. Prefer the LINE-level description: for deposit
+ * lines the reference is transaction-scoped (often a lump like "various
+ * donors" or a stale payer), while line_description names the actual money on
+ * THIS line. When the reference disagrees with the line, it still shows as a
+ * labeled secondary line (see qbReferenceNote) so the discrepancy is visible.
+ */
 function qbLabel(r: WorkbenchClusterQbRecord): string {
-  return r.reference ?? r.lineDescription ?? r.memo ?? r.stagedPaymentId;
+  return r.lineDescription ?? r.reference ?? r.memo ?? r.stagedPaymentId;
+}
+
+/** The transaction-level reference, when it adds info beyond the title. */
+function qbReferenceNote(r: WorkbenchClusterQbRecord): string | null {
+  const label = qbLabel(r);
+  if (r.reference && r.reference !== label) return `QB reference: ${r.reference}`;
+  if (r.memo && r.memo !== label) return r.memo;
+  return null;
+}
+
+/** QuickBooks Online transaction-page slug per staged qb_entity_type. */
+const QB_TXN_PAGE: Record<string, string> = {
+  sales_receipt: "salesreceipt",
+  payment: "recvpayment",
+  deposit: "deposit",
+};
+
+/** Deep link to the QBO transaction this staged row came from, when known. */
+function qbHref(r: WorkbenchClusterQbRecord): string | null {
+  if (!r.qbEntityType || !r.qbEntityId) return null;
+  const page = QB_TXN_PAGE[r.qbEntityType];
+  if (!page) return null;
+  return `https://app.qbo.intuit.com/app/${page}?txnId=${encodeURIComponent(r.qbEntityId)}`;
 }
 
 function QbCard({
@@ -352,7 +431,15 @@ function QbCard({
   // them belongs to the payout flows in the queue workbench, so those rows
   // only offer flag-for-research here.
   const actionable = record.role === "anchor" || record.role === "group_member";
-  const menu: MenuItem[] = [];
+  const href = qbHref(record);
+  const menu: MenuItem[] = [
+    href
+      ? { label: "View in QuickBooks", externalHref: href }
+      : {
+          label: "View in QuickBooks",
+          disabledReason: "No QuickBooks transaction id on this row",
+        },
+  ];
   if (actionable) {
     if (record.status === "excluded") {
       menu.push({
@@ -376,14 +463,21 @@ function QbCard({
       });
     }
   }
-  menu.push({
-    label: "Flag for research",
-    onClick: () => actions.openFlag(record.stagedPaymentId, label),
-  });
+  menu.push(
+    {
+      label: "Flag for research",
+      onClick: () => actions.openFlag(record.stagedPaymentId, label),
+    },
+    {
+      label: "Flag QB recode",
+      disabledReason:
+        "Not available yet — use Flag for research and note the recode",
+    },
+  );
   const subBits = [
     QB_ROLE_LABEL[record.role],
     record.dateReceived ? formatDateShort(record.dateReceived) : null,
-    record.reference ? (record.lineDescription ?? record.memo) : null,
+    qbReferenceNote(record),
   ].filter(Boolean);
   return (
     <FacetCard
@@ -412,6 +506,25 @@ function QbCard({
 
 function RowKebab({ clusterId }: { clusterId: string }) {
   const [, navigate] = useLocation();
+  const items: MenuItem[] = [
+    {
+      label: "View in queue workbench",
+      onClick: () => navigate("/reconciliation-workbench"),
+    },
+    {
+      label: "Approve all matches in cluster",
+      disabledReason: "Not available yet — confirm each match on its card",
+    },
+    {
+      label: "Split this cluster",
+      disabledReason:
+        "Cluster boundaries follow the payout and deposit ties — they can't be split by hand",
+    },
+    {
+      label: "View change history",
+      disabledReason: "Not available yet",
+    },
+  ];
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -424,16 +537,28 @@ function RowKebab({ clusterId }: { clusterId: string }) {
           <MoreHorizontal className="w-3.5 h-3.5 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuItem
-          className="text-xs"
-          onClick={(e) => {
-            e.stopPropagation();
-            navigate("/reconciliation-workbench");
-          }}
-        >
-          View in queue workbench
-        </DropdownMenuItem>
+      <DropdownMenuContent align="end" className="w-64">
+        {items.map((it) => (
+          <DropdownMenuItem
+            key={it.label}
+            disabled={!!it.disabledReason}
+            className="text-xs"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (it.disabledReason) return;
+              it.onClick?.();
+            }}
+          >
+            <span className="flex flex-col">
+              {it.label}
+              {it.disabledReason ? (
+                <span className="text-[10px] text-muted-foreground">
+                  {it.disabledReason}
+                </span>
+              ) : null}
+            </span>
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -468,7 +593,38 @@ function chargeStatus(c: WorkbenchClusterCharge): {
 
 // ── The three row shapes ─────────────────────────────────────────────────────
 
-function StatusForCluster({ cluster }: { cluster: WorkbenchCluster }) {
+/** Small inline next-step button under the status word. */
+function StatusAction({
+  label,
+  onClick,
+  testId,
+}: {
+  label: string;
+  onClick: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      className="text-[10px] font-semibold text-primary hover:underline underline-offset-2"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      data-testid={testId}
+    >
+      {label} →
+    </button>
+  );
+}
+
+function StatusForCluster({
+  cluster,
+  action,
+}: {
+  cluster: WorkbenchCluster;
+  action?: ReactNode;
+}) {
   const meta = CLUSTER_STATUS[cluster.status];
   return (
     <StatusCell
@@ -480,6 +636,7 @@ function StatusForCluster({ cluster }: { cluster: WorkbenchCluster }) {
           ? `${cluster.resolvedCount} of ${cluster.totalCount} linked`
           : null)
       }
+      action={action}
       testId={`status-cluster-${cluster.id}`}
     />
   );
@@ -497,6 +654,7 @@ function PayoutBundleRow({
   onToggle: () => void;
   actions: ClusterActions;
 }) {
+  const [, navigate] = useLocation();
   const giftById = new Map(cluster.gifts.map((g) => [g.giftId, g]));
   const pairedGiftIds = new Set(
     cluster.charges
@@ -517,6 +675,72 @@ function PayoutBundleRow({
   const qbLines: string[] = [];
   if (deposit) qbLines.push(`${qbLabel(deposit)} · ${fmt(deposit.amount)}`);
   for (const f of fees) qbLines.push(`${qbLabel(f)} · −${fmt(f.amount)}`);
+
+  // Single-charge payout: no summary/detail duplication — render ONE flat
+  // row (donor | charge | bank cards | status), like any other cluster.
+  if (chargeTotal === 1 && cluster.charges.length === 1) {
+    const charge = cluster.charges[0];
+    const gift = charge.linkedGiftId
+      ? giftById.get(charge.linkedGiftId)
+      : cluster.gifts[0];
+    const status = chargeStatus(charge);
+    const anchor: AnchorRef = {
+      kind: "charge",
+      id: charge.chargeId,
+      label: chargeLabel(charge),
+    };
+    return (
+      <div
+        className={`${GRID} py-2.5 border-b hover:bg-muted/40`}
+        data-testid={`cluster-row-${cluster.id}`}
+      >
+        <ChevronRight className="w-4 h-4 text-transparent mt-1.5" />
+        <div className="space-y-1.5">
+          {gift ? (
+            <GiftCard gift={gift} actions={actions} />
+          ) : charge.status === "excluded" ? (
+            <ExcludedCard />
+          ) : (
+            <DonorActions
+              disabled={actions.busy}
+              onLink={() => actions.openLinkGift(anchor)}
+              onCreate={() =>
+                actions.openCreateGift(anchor, chargePreview(charge))
+              }
+              onIdentify={() =>
+                actions.openIdentify(anchor, chargePreview(charge))
+              }
+              testIdBase={`donor-slot-${charge.chargeId}`}
+            />
+          )}
+        </div>
+        <ChargeCard charge={charge} actions={actions} />
+        <div className="space-y-1.5">
+          {cluster.qbRecords.length > 0 ? (
+            cluster.qbRecords.map((r) => (
+              <QbCard
+                key={`${r.role}-${r.stagedPaymentId}`}
+                record={r}
+                actions={actions}
+              />
+            ))
+          ) : (
+            <SummaryCard
+              lines={["No QB deposit linked yet"]}
+              gap="settlement link missing"
+            />
+          )}
+        </div>
+        <StatusCell
+          tone={status.tone}
+          word={status.word}
+          detail={status.detail}
+          testId={`status-cluster-${cluster.id}`}
+        />
+        <RowKebab clusterId={cluster.id} />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -568,7 +792,26 @@ function PayoutBundleRow({
             gap="settlement link missing"
           />
         )}
-        <StatusForCluster cluster={cluster} />
+        <StatusForCluster
+          cluster={cluster}
+          action={
+            cluster.status === "conflict" ? (
+              <StatusAction
+                label="Resolve in queue workbench"
+                onClick={() => navigate("/reconciliation-workbench")}
+                testId={`button-resolve-conflict-${cluster.id}`}
+              />
+            ) : !expanded &&
+              cluster.status !== "complete" &&
+              cluster.status !== "excluded" ? (
+              <StatusAction
+                label="Expand to resolve"
+                onClick={onToggle}
+                testId={`button-expand-resolve-${cluster.id}`}
+              />
+            ) : null
+          }
+        />
         <RowKebab clusterId={cluster.id} />
       </div>
 

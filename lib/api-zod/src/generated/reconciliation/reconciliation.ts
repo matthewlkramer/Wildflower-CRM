@@ -958,7 +958,7 @@ export const listWorkbenchClustersQueryPageDefault = 1;
 
 
 export const ListWorkbenchClustersQueryParams = zod.object({
-  "lens": zod.enum(['all_open', 'needs_donor_or_gift', 'needs_accounting', 'conflicts', 'refunds', 'excluded', 'completed']).optional().describe('Which lens to list (default all_open).'),
+  "lens": zod.enum(['all_open', 'needs_donor_or_gift', 'needs_accounting', 'settlement_gaps', 'conflicts', 'refunds', 'excluded_qb_says_donation', 'excluded', 'completed']).optional().describe('Which lens to list (default all_open).'),
   "q": zod.coerce.string().optional().describe('Free-text over payer\/donor\/gift names, QB memo\/reference and charge\/payout ids.'),
   "limit": zod.coerce.number().min(1).max(listWorkbenchClustersQueryLimitMax).default(listWorkbenchClustersQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listWorkbenchClustersQueryPageDefault)
@@ -981,7 +981,7 @@ export const ListWorkbenchClustersResponse = zod.object({
   "chargeCount": zod.number().nullish().describe('TRUE total charges behind a payout (charges[] is capped, mirrors bundle-anchors).'),
   "status": zod.enum(['complete', 'partial', 'unresolved', 'conflict', 'refund', 'excluded', 'unlinked']).describe('Server-derived calm rollup for the cluster\'s STATUS column. Precedence:\nconflict > refund > unresolved (nothing resolved yet) \/ partial (some\nresolved) > excluded (all evidence excluded) > complete. unlinked is the\ncrm_only kind\'s open state (gift exists, no accounting evidence yet).\n'),
   "statusDetail": zod.string().nullish().describe('Server-composed one-line diagnostic under the status word (e.g. \'3 of 4 complete · $99.10 unresolved\').'),
-  "lenses": zod.array(zod.enum(['all_open', 'needs_donor_or_gift', 'needs_accounting', 'conflicts', 'refunds', 'excluded', 'completed']).describe('A lens is a saved filter over the cluster list — linkage-only in this phase\n(record-adequacy lenses like \"missing key info\" are additive later).\nall_open: any cluster with unresolved work (everything except completed and\npurely-excluded clusters). needs_donor_or_gift: some evidence row still lacks\na confirmed CRM gift\/donor (pending or match_proposed). needs_accounting:\nmoney with no accounting side — a crm_only gift, or a payout with no settled\ndeposit (settlement link missing or still proposed). conflicts: a proposed\nsettlement tie collided with an already-approved gift. refunds: a charge\ncarries a proposed refund\/chargeback propagation awaiting a human decision.\nexcluded: every evidence row in the cluster is excluded. completed: all\nlinkage work done (evidence confirmed into gifts; payout settled).\nA cluster carries EVERY lens it belongs to in `lenses` so dots and rail\ncounts agree.\n')).describe('Every lens this cluster belongs to (drives dots; agrees with lensCounts by construction).'),
+  "lenses": zod.array(zod.enum(['all_open', 'needs_donor_or_gift', 'needs_accounting', 'settlement_gaps', 'conflicts', 'refunds', 'excluded_qb_says_donation', 'excluded', 'completed']).describe('A lens is a saved filter over the cluster list — linkage-only in this phase\n(record-adequacy lenses like \"missing key info\" are additive later).\nall_open: any cluster with unresolved work (everything except completed and\npurely-excluded clusters). needs_donor_or_gift: some evidence row still lacks\na confirmed CRM gift\/donor (pending or match_proposed). needs_accounting:\nmoney with no accounting side — a crm_only gift, or a payout with no settled\ndeposit (settlement link missing or still proposed). settlement_gaps: a\npayout whose Stripe-reported net (gross − fees) disagrees with the amount\nthat actually arrived at the bank — the money doesn\'t add up regardless of\nlinkage state. conflicts: a proposed settlement tie collided with an\nalready-approved gift. refunds: a charge carries a proposed\nrefund\/chargeback propagation awaiting a human decision.\nexcluded_qb_says_donation: an excluded QB cluster whose line coding carries\na donation marker (a Donation item or a 4000\/4100-series donation income\naccount) — likely wrongly excluded, surfaced for review.\nexcluded: every evidence row in the cluster is excluded. completed: all\nlinkage work done (evidence confirmed into gifts; payout settled).\nA cluster carries EVERY lens it belongs to in `lenses` so dots and rail\ncounts agree.\n')).describe('Every lens this cluster belongs to (drives dots; agrees with lensCounts by construction).'),
   "gifts": zod.array(zod.object({
   "giftId": zod.string().describe('gifts_and_payments.id'),
   "name": zod.string().nullish().describe('Gift name (NOT anonymous-masked today — matches app-wide behavior).'),
@@ -992,6 +992,8 @@ export const ListWorkbenchClustersResponse = zod.object({
   "dateReceived": zod.string().date().nullish(),
   "quickbooksTie": zod.enum(['exempt', 'tied', 'amount_mismatch', 'missing']).describe('Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.').nullish().describe('The gift\'s persisted QB tie status (exempt\/tied\/amount_mismatch\/missing).'),
   "donorbox": zod.boolean().optional().describe('True when a counted Donorbox ledger row backs this gift (renders the DB badge).'),
+  "grantLetter": zod.boolean().optional().describe('True when a grant\/award letter file is attached — the gift\'s own upload or its linked pledge\'s letter (renders the letter badge).'),
+  "codingForm": zod.boolean().optional().describe('True when any imported Donation Revenue Coding Form attribute is stamped on the gift (renders the coding badge).'),
   "linkedChargeIds": zod.array(zod.string()).optional().describe('stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters.'),
   "linkedStagedPaymentIds": zod.array(zod.string()).optional().describe('staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only.')
 }).describe('One CRM gift card in the cluster\'s donor-and-purpose facet. Carries actionable ids so later phases can wire actions without a contract change.')),
@@ -1019,7 +1021,9 @@ export const ListWorkbenchClustersResponse = zod.object({
   "amount": zod.string().nullish().describe('Staged amount, major units.'),
   "dateReceived": zod.string().date().nullish(),
   "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('Derived per-record linkage status (shared vocabulary for QB staged rows and Stripe charges): pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation.'),
-  "linkedChargeId": zod.string().nullish().describe('For fee \/ charge_tie roles: the stripe_staged_charges id the link runs through.')
+  "linkedChargeId": zod.string().nullish().describe('For fee \/ charge_tie roles: the stripe_staged_charges id the link runs through.'),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']).nullish().describe('The QuickBooks transaction type this staged row came from — drives the \'View in QuickBooks\' deep link.'),
+  "qbEntityId": zod.string().nullish().describe('The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link).')
 }).describe('One QuickBooks staged row in the cluster\'s bank-and-accounting facet.')),
   "settlement": zod.object({
   "lifecycle": zod.enum(['proposed', 'confirmed']).describe('proposed = awaiting human confirm (a needs_accounting\/conflict signal); confirmed = settled.'),
@@ -1035,8 +1039,10 @@ export const ListWorkbenchClustersResponse = zod.object({
   "all_open": zod.number(),
   "needs_donor_or_gift": zod.number(),
   "needs_accounting": zod.number(),
+  "settlement_gaps": zod.number(),
   "conflicts": zod.number(),
   "refunds": zod.number(),
+  "excluded_qb_says_donation": zod.number(),
   "excluded": zod.number(),
   "completed": zod.number()
 }).describe('Cluster counts per lens over the WHOLE universe (not the page), computed in the same request so the rail always agrees with the rows.'),
@@ -1045,6 +1051,34 @@ export const ListWorkbenchClustersResponse = zod.object({
   "limit": zod.number(),
   "total": zod.number()
 })
+})
+
+/**
+ * The most recent human reconciliation queue actions (exclude / re-include /
+resolve / reconcile / mint / link / revert / refund decisions), newest
+first, hydrated from the audit log's reconciliation-domain entries. Each
+entry carries a human-readable summary, the actor, and — when the action
+has a safe single-call inverse — an `undo` pointer naming which existing
+revert/re-include endpoint undoes it and on which row. `undo` is recorded
+at action time and NOT re-validated here; the target endpoint still
+enforces its own guards and returns 409 if state has moved on. Entries
+with `undo: null` are shown with a disabled Undo (the reason is in the
+summary's nature: reverts, refunds and manual mints have no safe inverse).
+Read-only; not admin-gated (the workbench itself is team-wide).
+
+ * @summary The workbench's recent-changes rail — the last human reconciliation actions with their undo pointers.
+ */
+export const ListWorkbenchRecentChangesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string().describe('Audit-log row id.'),
+  "at": zod.string().datetime({}),
+  "actorName": zod.string().nullish().describe('Display name of the user who acted; null for system-recorded entries.'),
+  "summary": zod.string().describe('Human-readable one-line description of the action.'),
+  "undo": zod.object({
+  "kind": zod.enum(['revert_staged_payment', 'reinclude_staged_payment', 'revert_stripe_charge', 'reinclude_stripe_charge']),
+  "targetId": zod.string().describe('The staged payment \/ staged charge id the undo mutation targets.')
+}).describe('Pointer to the EXISTING endpoint that safely undoes this action: which revert\/re-include mutation to dispatch and on which staged row\/charge. Recorded at action time, not re-validated at read time.').nullish().describe('Null when the action has no safe single-call inverse (reverts, refunds, manual mints, re-includes, donor resolves).')
+}))
 })
 
 /**

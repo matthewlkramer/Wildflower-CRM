@@ -136,14 +136,17 @@ async function seedPayout(
     settledDeposit?: string;
     proposedDeposit?: string;
     conflictGiftId?: string;
+    /** Bank-arrival amount; defaults to 100.00 (≠ netTotal ⇒ a settlement gap). */
+    amount?: string;
+    netTotal?: string | null;
   } = {},
 ): Promise<string> {
   const id = nextId("po");
   await db.insert(schema.stripePayouts).values({
     id,
     stripeAccountId: ACCOUNT_ID,
-    amount: "100.00",
-    netTotal: "96.80",
+    amount: opts.amount ?? "100.00",
+    netTotal: opts.netTotal === undefined ? "96.80" : opts.netTotal,
     grossTotal: "100.00",
     feeTotal: "3.20",
     arrivalDate: futureDate(),
@@ -223,6 +226,14 @@ async function seedStaged(
     matchedGiftId?: string | null;
     autoApplied?: boolean;
     entityType?: "payment" | "deposit";
+    /** Wildflower entity attribution (e.g. a fiscally sponsored entity id). */
+    entityId?: string | null;
+    /** Deposit-line identity: share qbEntityId across lines of one deposit. */
+    qbEntityId?: string;
+    qbLineId?: string;
+    /** QB line coding — drives the "QB says donation" marker check. */
+    lineAccountNames?: string[];
+    lineItemNames?: string[];
   } = {},
 ): Promise<string> {
   const id = nextId("sp");
@@ -230,13 +241,16 @@ async function seedStaged(
     id,
     realmId: REALM_ID,
     qbEntityType: opts.entityType ?? "payment",
-    qbEntityId: id,
-    qbLineId: "",
+    qbEntityId: opts.qbEntityId ?? id,
+    qbLineId: opts.qbLineId ?? "",
     amount: opts.amount ?? "75.00",
     dateReceived: futureDate(),
     payerName: opts.payerName ?? `Zztest Cluster Payer ${RUN}`,
     exclusionReason: (opts.exclusionReason ?? null) as never,
     autoApplied: opts.autoApplied ?? false,
+    entityId: opts.entityId ?? null,
+    lineAccountNames: opts.lineAccountNames ?? null,
+    lineItemNames: opts.lineItemNames ?? null,
   });
   stagedIds.push(id);
   if (opts.matchedGiftId) {
@@ -548,6 +562,171 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     expect(row).toBeTruthy();
     expect(row.gifts[0]?.donorbox).toBe(true);
     expect(row.status).toBe("unlinked");
+  });
+
+  it("folds processor fee lines into their donation line's cluster", async () => {
+    // Interleaved deposit (the dominant prod pattern): donation, its fee,
+    // another donation, its fee — 1→2, 3→4.
+    const depA = nextId("depA");
+    const dA1 = await seedStaged({
+      entityType: "deposit", qbEntityId: depA, qbLineId: "1", amount: "100.00",
+    });
+    const fA1 = await seedStaged({
+      entityType: "deposit", qbEntityId: depA, qbLineId: "2", amount: "-5.00",
+    });
+    const dA2 = await seedStaged({
+      entityType: "deposit", qbEntityId: depA, qbLineId: "3", amount: "50.00",
+    });
+    const fA2 = await seedStaged({
+      entityType: "deposit", qbEntityId: depA, qbLineId: "4", amount: "-2.00",
+    });
+
+    const { map: open } = await listClusters("all_open");
+
+    // Fee lines never anchor their own cluster, in ANY lens.
+    for (const lens of ["all_open", "needs_donor_or_gift", "excluded", "completed"]) {
+      const { map } = await listClusters(lens);
+      expect(map.has(`qb_standalone:${fA1}`)).toBe(false);
+      expect(map.has(`qb_standalone:${fA2}`)).toBe(false);
+    }
+
+    // Each donation line carries ITS fee: gross − fee = net, per line.
+    const c1 = open.get(`qb_standalone:${dA1}`);
+    expect(c1).toBeTruthy();
+    const fees1 = c1.qbRecords.filter((r: any) => r.role === "fee");
+    expect(fees1.map((r: any) => r.stagedPaymentId)).toEqual([fA1]);
+    expect(c1.grossTotal).toBe("100.00");
+    expect(c1.feeTotal).toBe("5.00");
+    expect(c1.netTotal).toBe("95.00");
+    // The folded fee is plumbing — it must not inflate the progress counts.
+    expect(c1.totalCount).toBe(1);
+
+    const c2 = open.get(`qb_standalone:${dA2}`);
+    expect(c2).toBeTruthy();
+    expect(c2.qbRecords.filter((r: any) => r.role === "fee")
+      .map((r: any) => r.stagedPaymentId)).toEqual([fA2]);
+    expect(c2.netTotal).toBe("48.00");
+  });
+
+  it("attaches a trailing lump fee to the nearest preceding donation line", async () => {
+    const depB = nextId("depB");
+    const dB1 = await seedStaged({
+      entityType: "deposit", qbEntityId: depB, qbLineId: "1", amount: "25.00",
+    });
+    const dB2 = await seedStaged({
+      entityType: "deposit", qbEntityId: depB, qbLineId: "2", amount: "75.00",
+    });
+    const fB = await seedStaged({
+      entityType: "deposit", qbEntityId: depB, qbLineId: "3", amount: "-13.00",
+    });
+
+    const { map: open } = await listClusters("all_open");
+    expect(open.has(`qb_standalone:${fB}`)).toBe(false);
+
+    // Lump fee lands on the LAST preceding donation line, not the first.
+    const c1 = open.get(`qb_standalone:${dB1}`);
+    expect(c1).toBeTruthy();
+    expect(c1.qbRecords.some((r: any) => r.role === "fee")).toBe(false);
+    expect(c1.grossTotal).toBeNull();
+    expect(c1.netTotal).toBe("25.00");
+
+    const c2 = open.get(`qb_standalone:${dB2}`);
+    expect(c2).toBeTruthy();
+    expect(c2.qbRecords.filter((r: any) => r.role === "fee")
+      .map((r: any) => r.stagedPaymentId)).toEqual([fB]);
+    expect(c2.netTotal).toBe("62.00");
+  });
+
+  it("keeps an orphaned negative line (no positive sibling) visible", async () => {
+    const depC = nextId("depC");
+    const orphan = await seedStaged({
+      entityType: "deposit", qbEntityId: depC, qbLineId: "1", amount: "-49.00",
+    });
+    const { map: open } = await listClusters("all_open");
+    const row = open.get(`qb_standalone:${orphan}`);
+    expect(row).toBeTruthy();
+    expect(row.qbRecords.filter((r: any) => r.role === "fee")).toEqual([]);
+  });
+
+  it("parks fiscally-sponsored money without a gift OUT of the cluster list", async () => {
+    // Pending + parked entity + no gift → reconciles in its own worklist,
+    // not here (mirrors the queue workbench split).
+    const sParked = await seedStaged({ entityId: "embracing_equity" });
+    // Same entity WITH a gift link → normal money, reconciles here.
+    const gSponsored = await seedGift();
+    const sSponsoredDone = await seedStaged({
+      entityId: "embracing_equity",
+      matchedGiftId: gSponsored,
+    });
+
+    for (const lens of ["all_open", "needs_donor_or_gift", "excluded", "completed"]) {
+      const { map } = await listClusters(lens);
+      expect(map.has(`qb_standalone:${sParked}`)).toBe(false);
+    }
+    const { map: completed } = await listClusters("completed");
+    expect(completed.has(`qb_standalone:${sSponsoredDone}`)).toBe(true);
+  });
+
+  it("flags payouts whose net disagrees with the bank amount as settlement gaps", async () => {
+    // Default seed: amount 100.00 vs netTotal 96.80 ⇒ a gap by construction.
+    const pGap = await seedPayout();
+    await seedCharge(pGap, {});
+    // Net matches the bank arrival exactly ⇒ no gap.
+    const pClean = await seedPayout({ amount: "96.80" });
+    await seedCharge(pClean, {});
+    // No net reported at all ⇒ no gap computable ⇒ not flagged (mirrors gapOf).
+    const pNoNet = await seedPayout({ netTotal: null });
+    await seedCharge(pNoNet, {});
+
+    const { map: gaps, json } = await listClusters("settlement_gaps");
+    const g = gaps.get(`stripe_payout:${pGap}`);
+    expect(g).toBeTruthy();
+    expect(g.lenses).toContain("settlement_gaps");
+    expect(g.gapAmount).toBe("-3.20");
+    expect(gaps.has(`stripe_payout:${pClean}`)).toBe(false);
+    expect(gaps.has(`stripe_payout:${pNoNet}`)).toBe(false);
+    expect(json.pagination.total).toBe(json.lensCounts.settlement_gaps);
+
+    // QB and CRM clusters never carry the gap lens.
+    for (const row of gaps.values()) expect(row.kind).toBe("stripe_payout");
+  });
+
+  it("surfaces excluded QB rows whose coding says donation", async () => {
+    // Excluded but coded to a 4000-series donation account → flagged.
+    const sByAccount = await seedStaged({
+      exclusionReason: "other",
+      lineAccountNames: ["4000 Unrestricted Donations"],
+    });
+    // Excluded with a Donation item name → flagged.
+    const sByItem = await seedStaged({
+      exclusionReason: "other",
+      lineItemNames: ["Donation - General Fund"],
+    });
+    // Excluded with non-donation coding → excluded only.
+    const sPlain = await seedStaged({
+      exclusionReason: "other",
+      lineAccountNames: ["4020 Services - Earned Income"],
+    });
+    // NOT excluded, donation-coded → open work, never in this lens.
+    const sOpen = await seedStaged({
+      lineAccountNames: ["4000 Unrestricted Donations"],
+    });
+
+    const { map: says, json } = await listClusters("excluded_qb_says_donation");
+    const a = says.get(`qb_standalone:${sByAccount}`);
+    expect(a).toBeTruthy();
+    expect(a.lenses).toContain("excluded_qb_says_donation");
+    expect(a.lenses).toContain("excluded"); // still excluded — the lens is a subset
+    expect(says.has(`qb_standalone:${sByItem}`)).toBe(true);
+    expect(says.has(`qb_standalone:${sPlain}`)).toBe(false);
+    expect(says.has(`qb_standalone:${sOpen}`)).toBe(false);
+    expect(json.lensCounts.excluded_qb_says_donation).toBeGreaterThanOrEqual(2);
+    expect(json.pagination.total).toBe(json.lensCounts.excluded_qb_says_donation);
+
+    // The subset relationship holds in counts too.
+    expect(json.lensCounts.excluded).toBeGreaterThanOrEqual(
+      json.lensCounts.excluded_qb_says_donation,
+    );
   });
 
   it("search narrows all three halves", async () => {

@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { sql, type SQL } from "drizzle-orm";
 import { asyncHandler, parsePagination } from "../../lib/helpers";
 import { getViewer, maskName, type Viewer } from "../../lib/identityVisibility";
-import { escapeLike } from "../quickbooks/shared";
+import { escapeLike, parkedFiscallyExpr } from "../quickbooks/shared";
 import { reimbursablePledgeExistsSql } from "../../lib/reimbursablePlaceholder";
 import { fullyChargeTied } from "./bundleAnchors";
 
@@ -31,8 +31,10 @@ const LENSES = [
   "all_open",
   "needs_donor_or_gift",
   "needs_accounting",
+  "settlement_gaps",
   "conflicts",
   "refunds",
+  "excluded_qb_says_donation",
   "excluded",
   "completed",
 ] as const;
@@ -43,8 +45,10 @@ const LENS_PREDICATE: Record<Lens, string> = {
   all_open: "(NOT f_completed AND NOT f_excluded)",
   needs_donor_or_gift: "f_needs_gift",
   needs_accounting: "f_needs_acct",
+  settlement_gaps: "f_gap",
   conflicts: "f_conflict",
   refunds: "f_refund",
+  excluded_qb_says_donation: "f_qb_says_donation",
   excluded: "f_excluded",
   completed: "f_completed",
 };
@@ -114,6 +118,18 @@ const donorboxBacked = `EXISTS (
   WHERE pa_d.gift_id = g.id AND pa_d.evidence_source = 'donorbox' AND pa_d.link_role = 'counted'
 )`;
 
+/** Grant-letter badge: the gift's own upload OR its linked pledge's letter. */
+const giftGrantLetter = `(g.grant_letter_url IS NOT NULL OR EXISTS (
+  SELECT 1 FROM opportunities_and_pledges opp_gl
+  WHERE opp_gl.id = g.opportunity_id AND opp_gl.grant_letter_url IS NOT NULL
+))`;
+
+/** Coding-form badge: any imported Donation Revenue Coding Form attribute stamped on the gift. */
+const giftCodingForm = `(g.coding_form_circle IS NOT NULL
+  OR g.coding_form_series IS NOT NULL
+  OR g.coding_form_additional_notes IS NOT NULL
+  OR g.coding_form_memo IS NOT NULL)`;
+
 /* ── slim universe (lens flags only) ───────────────────────────────────── */
 
 // stripe_payout half — per-payout rollup predicates.
@@ -138,10 +154,55 @@ const payoutSettled: SQL = sql`(EXISTS (
   SELECT 1 FROM settlement_links sl_s
   WHERE sl_s.payout_id = sp.id AND sl_s.lifecycle = 'confirmed'
 ) OR ${fullyChargeTied})`;
+// Settlement gap: Stripe's reported net (gross − fees) disagrees with the
+// amount that actually arrived at the bank. Lockstep twin of gapOf() in the
+// hydration (which coalesces a NULL net_total to the bank amount ⇒ no gap),
+// so the lens flag and the rendered gapAmount always agree.
+const payoutGap = `(sp.net_total IS NOT NULL AND sp.amount IS NOT NULL
+  AND ABS(sp.net_total - sp.amount) >= 0.005)`;
+
+// A negative deposit line with a positive sibling line in the SAME QB deposit
+// is a processor fee that FOLDS into its sibling's cluster (ratified rule:
+// fees always live on the row of the money they belong to, so gross − fee =
+// net reconciles at the line level). Such lines never anchor a cluster of
+// their own. Truly orphaned negatives (no positive sibling) stay visible.
+const feeFoldedExpr = (a: string) => `(
+  ${a}.amount < 0 AND ${a}.qb_entity_type = 'deposit' AND EXISTS (
+    SELECT 1 FROM staged_payments pos_f
+    WHERE pos_f.realm_id = ${a}.realm_id
+      AND pos_f.qb_entity_type = ${a}.qb_entity_type
+      AND pos_f.qb_entity_id = ${a}.qb_entity_id
+      AND pos_f.id <> ${a}.id
+      AND pos_f.amount > 0
+  ))`;
+
+// Deposit-line ordinal for fee→donation pairing. Prod line ids are numeric
+// ("1".."12"); non-numeric/legacy ids degrade to 0 (pairing then falls back
+// to the first positive line) instead of crashing the cast.
+const lineNumExpr = (a: string) =>
+  `COALESCE(NULLIF(regexp_replace(${a}.qb_line_id, '[^0-9]', '', 'g'), '')::bigint, 0)`;
+
+// The positive sibling line a folded fee attaches to: the nearest PRECEDING
+// positive line (QB books fees directly after the donation line they belong
+// to — prod pattern 1→2, 3→4, …), else the first positive line (covers a
+// trailing lump fee for the whole deposit).
+const feePairedAnchorExpr = (fee: string) => `(
+  SELECT pos_p.id FROM staged_payments pos_p
+  WHERE pos_p.realm_id = ${fee}.realm_id
+    AND pos_p.qb_entity_type = ${fee}.qb_entity_type
+    AND pos_p.qb_entity_id = ${fee}.qb_entity_id
+    AND pos_p.amount > 0
+  ORDER BY
+    CASE WHEN ${lineNumExpr("pos_p")} <= ${lineNumExpr(fee)} THEN 0 ELSE 1 END,
+    CASE WHEN ${lineNumExpr("pos_p")} <= ${lineNumExpr(fee)}
+         THEN -${lineNumExpr("pos_p")} ELSE ${lineNumExpr("pos_p")} END
+  LIMIT 1)`;
 
 // qb_standalone half — eligibility mirrors the bundle-anchor omission rules
 // (a settlement-linked deposit, a charge-tied or fee row reconciles THROUGH
 // its payout cluster; grouped rows reconcile through their representative).
+// Parked fiscally-sponsored rows (sponsored-entity money with no gift yet)
+// mirror the queue workbench: they reconcile in their own worklist, not here.
 const qbEligible = `
   NOT EXISTS (SELECT 1 FROM settlement_links sl_e WHERE sl_e.deposit_staged_payment_id = s.id)
   AND NOT EXISTS (
@@ -155,7 +216,9 @@ const qbEligible = `
         SELECT MIN(ugm2.source_id) FROM unit_group_members ugm2
         WHERE ugm2.group_id = ugm.group_id AND ugm2.evidence_source = 'quickbooks'
       )
-  )`;
+  )
+  AND NOT ${parkedFiscallyExpr("s")}
+  AND NOT ${feeFoldedExpr("s")}`;
 const qbSiblingOpen = `EXISTS (
   SELECT 1 FROM unit_group_members ugm
   JOIN unit_group_members ugm2 ON ugm2.group_id = ugm.group_id AND ugm2.evidence_source = 'quickbooks'
@@ -172,6 +235,18 @@ const qbSiblingNonExcluded = `EXISTS (
 )`;
 const qbNeedsGift = `(${qbOpen("s")} OR ${qbSiblingOpen})`;
 const qbAllExcluded = `(s.exclusion_reason IS NOT NULL AND NOT ${qbSiblingNonExcluded})`;
+// QB line coding carries a DONATION marker — the same markers as the
+// donation-first guard in quickbooksExclusionRules.ts (a Donation item or a
+// 4000/4100-series donation income account). Lockstep: any change to
+// DONATION_ACCOUNT_CODE_PREFIXES / DONATION_ITEM_SUBSTRINGS must mirror here.
+const qbSaysDonation = (a: string) => `(
+  EXISTS (SELECT 1 FROM unnest(COALESCE(${a}.line_account_names, ARRAY[]::text[])) AS dn_a(nm)
+          WHERE btrim(dn_a.nm) ILIKE '4000%' OR btrim(dn_a.nm) ILIKE '4100%')
+  OR EXISTS (SELECT 1 FROM unnest(COALESCE(${a}.line_item_names, ARRAY[]::text[])) AS dn_i(nm)
+          WHERE dn_i.nm ILIKE '%donation%')
+)`;
+// Excluded, but the coding says donation ⇒ likely wrongly excluded.
+const qbExcludedSaysDonation = `(${qbAllExcluded} AND ${qbSaysDonation("s")})`;
 
 // crm_only half — an on-books gift with no counted QB/Stripe ledger row.
 // Donorbox-only gifts stay (badge); exempt/off-books and reimbursable
@@ -211,8 +286,10 @@ function buildUniverse(q: string | null): SQL {
       sp.arrival_date::text AS anchor_date,
       ${sql.raw(payoutAnyOpenCharge)} AS f_needs_gift,
       (NOT ${payoutSettled} AND NOT ${sql.raw(payoutAllExcluded)}) AS f_needs_acct,
+      ${sql.raw(payoutGap)} AS f_gap,
       ${sql.raw(payoutConflict)} AS f_conflict,
       ${sql.raw(payoutRefund)} AS f_refund,
+      false AS f_qb_says_donation,
       ${sql.raw(payoutAllExcluded)} AS f_excluded,
       (${payoutSettled}
         AND NOT ${sql.raw(payoutAnyOpenCharge)}
@@ -229,8 +306,10 @@ function buildUniverse(q: string | null): SQL {
       s.date_received::text AS anchor_date,
       ${sql.raw(qbNeedsGift)} AS f_needs_gift,
       false AS f_needs_acct,
+      false AS f_gap,
       false AS f_conflict,
       false AS f_refund,
+      ${sql.raw(qbExcludedSaysDonation)} AS f_qb_says_donation,
       ${sql.raw(qbAllExcluded)} AS f_excluded,
       (NOT ${sql.raw(qbNeedsGift)} AND NOT ${sql.raw(qbAllExcluded)}) AS f_completed
     FROM staged_payments s
@@ -244,8 +323,10 @@ function buildUniverse(q: string | null): SQL {
       g.date_received::text AS anchor_date,
       false AS f_needs_gift,
       true AS f_needs_acct,
+      false AS f_gap,
       false AS f_conflict,
       false AS f_refund,
+      false AS f_qb_says_donation,
       false AS f_excluded,
       false AS f_completed
     FROM gifts_and_payments g
@@ -265,8 +346,10 @@ interface SlimRow {
   anchor_date: string | null;
   f_needs_gift: boolean;
   f_needs_acct: boolean;
+  f_gap: boolean;
   f_conflict: boolean;
   f_refund: boolean;
+  f_qb_says_donation: boolean;
   f_excluded: boolean;
   f_completed: boolean;
 }
@@ -275,8 +358,10 @@ interface LensCountsRow {
   all_open: number;
   needs_donor_or_gift: number;
   needs_accounting: number;
+  settlement_gaps: number;
   conflicts: number;
   refunds: number;
+  excluded_qb_says_donation: number;
   excluded: number;
   completed: number;
 }
@@ -307,6 +392,8 @@ interface QbRecordJson {
   dateReceived: string | null;
   status: string;
   linkedChargeId: string | null;
+  qbEntityType: string | null;
+  qbEntityId: string | null;
 }
 
 interface PayoutRow {
@@ -333,6 +420,8 @@ interface PayoutRow {
   dep_amount: string | null;
   dep_date: string | null;
   dep_status: string | null;
+  dep_qb_entity_type: string | null;
+  dep_qb_entity_id: string | null;
 }
 
 interface GiftRowBase {
@@ -347,6 +436,8 @@ interface GiftRowBase {
   donor_anonymous: boolean;
   donor_owner_user_id: string | null;
   donorbox: boolean;
+  grant_letter: boolean;
+  coding_form: boolean;
 }
 
 interface PayoutGiftRow extends GiftRowBase {
@@ -367,11 +458,14 @@ interface QbAnchorRow {
   line_description: string | null;
   qb_transaction_memo: string | null;
   status: string;
+  qb_entity_type: string | null;
+  qb_entity_id: string | null;
   group_id: string | null;
   group_member_count: number | null;
   group_total: string | null;
   group_members: QbRecordJson[];
   member_ids: string[] | null;
+  folded_fees: QbRecordJson[];
 }
 
 interface CrmGiftRow extends GiftRowBase {
@@ -388,6 +482,8 @@ interface GiftOut {
   dateReceived: string | null;
   quickbooksTie: string | null;
   donorbox: boolean;
+  grantLetter: boolean;
+  codingForm: boolean;
   linkedChargeIds: string[];
   linkedStagedPaymentIds: string[];
 }
@@ -399,8 +495,10 @@ function lensesOf(r: SlimRow): Lens[] {
   if (!r.f_completed && !r.f_excluded) out.push("all_open");
   if (r.f_needs_gift) out.push("needs_donor_or_gift");
   if (r.f_needs_acct) out.push("needs_accounting");
+  if (r.f_gap) out.push("settlement_gaps");
   if (r.f_conflict) out.push("conflicts");
   if (r.f_refund) out.push("refunds");
+  if (r.f_qb_says_donation) out.push("excluded_qb_says_donation");
   if (r.f_excluded) out.push("excluded");
   if (r.f_completed) out.push("completed");
   return out;
@@ -430,6 +528,8 @@ function giftOut(g: GiftRowBase, viewer: Viewer): GiftOut {
     dateReceived: g.date_received,
     quickbooksTie: g.quickbooks_tie,
     donorbox: g.donorbox,
+    grantLetter: g.grant_letter,
+    codingForm: g.coding_form,
     linkedChargeIds: [],
     linkedStagedPaymentIds: [],
   };
@@ -475,14 +575,17 @@ router.get(
           count(*) FILTER (WHERE NOT f_completed AND NOT f_excluded)::int AS all_open,
           count(*) FILTER (WHERE f_needs_gift)::int AS needs_donor_or_gift,
           count(*) FILTER (WHERE f_needs_acct)::int AS needs_accounting,
+          count(*) FILTER (WHERE f_gap)::int AS settlement_gaps,
           count(*) FILTER (WHERE f_conflict)::int AS conflicts,
           count(*) FILTER (WHERE f_refund)::int AS refunds,
+          count(*) FILTER (WHERE f_qb_says_donation)::int AS excluded_qb_says_donation,
           count(*) FILTER (WHERE f_excluded)::int AS excluded,
           count(*) FILTER (WHERE f_completed)::int AS completed
         FROM ( ${universe} ) u`),
       db.execute(sql`
         SELECT kind, anchor_id, anchor_date,
-               f_needs_gift, f_needs_acct, f_conflict, f_refund, f_excluded, f_completed
+               f_needs_gift, f_needs_acct, f_gap, f_conflict, f_refund,
+               f_qb_says_donation, f_excluded, f_completed
         FROM ( ${universe} ) u
         WHERE ${sql.raw(LENS_PREDICATE[lens])}
         ORDER BY anchor_date DESC NULLS LAST, anchor_id DESC
@@ -493,8 +596,10 @@ router.get(
       all_open: 0,
       needs_donor_or_gift: 0,
       needs_accounting: 0,
+      settlement_gaps: 0,
       conflicts: 0,
       refunds: 0,
+      excluded_qb_says_donation: 0,
       excluded: 0,
       completed: 0,
     }) as unknown as LensCountsRow;
@@ -579,13 +684,16 @@ router.get(
               'amount', f.amount,
               'dateReceived', f.date_received,
               'status', f.status,
-              'linkedChargeId', f.charge_id
+              'linkedChargeId', f.charge_id,
+              'qbEntityType', f.qb_entity_type,
+              'qbEntityId', f.qb_entity_id
             ))
           FROM (
             SELECT fq.id, 'fee'::text AS role, fq.raw_reference, fq.line_description,
                    fq.qb_transaction_memo, fq.amount::text AS amount,
                    fq.date_received::text AS date_received,
-                   ${sql.raw(qbStatusCase("fq"))} AS status, fc.id AS charge_id
+                   ${sql.raw(qbStatusCase("fq"))} AS status, fc.id AS charge_id,
+                   fq.qb_entity_type::text AS qb_entity_type, fq.qb_entity_id
             FROM stripe_staged_charges fc
             JOIN staged_payments fq ON fq.id = fc.linked_fee_qb_staged_payment_id
             WHERE fc.stripe_payout_id = sp.id
@@ -593,10 +701,31 @@ router.get(
             SELECT tq.id, 'charge_tie'::text, tq.raw_reference, tq.line_description,
                    tq.qb_transaction_memo, tq.amount::text,
                    tq.date_received::text,
-                   ${sql.raw(qbStatusCase("tq"))}, tc2.id
+                   ${sql.raw(qbStatusCase("tq"))}, tc2.id,
+                   tq.qb_entity_type::text, tq.qb_entity_id
             FROM stripe_staged_charges tc2
             JOIN staged_payments tq ON tq.id = tc2.linked_qb_staged_payment_id
             WHERE tc2.stripe_payout_id = sp.id
+            UNION ALL
+            SELECT nf2.id, 'fee'::text, nf2.raw_reference, nf2.line_description,
+                   nf2.qb_transaction_memo, nf2.amount::text,
+                   nf2.date_received::text,
+                   ${sql.raw(qbStatusCase("nf2"))}, NULL,
+                   nf2.qb_entity_type::text, nf2.qb_entity_id
+            FROM settlement_links sl_f
+            JOIN staged_payments dep0 ON dep0.id = sl_f.deposit_staged_payment_id
+            JOIN staged_payments nf2 ON nf2.realm_id = dep0.realm_id
+              AND nf2.qb_entity_type = dep0.qb_entity_type
+              AND nf2.qb_entity_id = dep0.qb_entity_id
+              AND nf2.id <> dep0.id
+              AND nf2.qb_entity_type = 'deposit'
+              AND nf2.amount < 0
+            WHERE sl_f.payout_id = sp.id
+              AND NOT EXISTS (
+                SELECT 1 FROM stripe_staged_charges xfc
+                WHERE xfc.linked_fee_qb_staged_payment_id = nf2.id
+                   OR xfc.linked_qb_staged_payment_id = nf2.id
+              )
           ) f
         ), '[]'::json) AS linked_qb_rows,
         ad.id AS dep_id,
@@ -605,7 +734,9 @@ router.get(
         ad.qb_transaction_memo AS dep_memo,
         ad.amount::text AS dep_amount,
         ad.date_received::text AS dep_date,
-        ${sql.raw(qbStatusCase("ad"))} AS dep_status
+        ${sql.raw(qbStatusCase("ad"))} AS dep_status,
+        ad.qb_entity_type::text AS dep_qb_entity_type,
+        ad.qb_entity_id AS dep_qb_entity_id
       FROM stripe_payouts sp
       LEFT JOIN LATERAL (
         SELECT sl0.lifecycle, sl0.deposit_staged_payment_id, sl0.conflict_gift_id
@@ -631,7 +762,9 @@ router.get(
         g.date_received::text AS date_received,
         g.quickbooks_tie_status::text AS quickbooks_tie,
         ${sql.raw(donorFields)},
-        ${sql.raw(donorboxBacked)} AS donorbox
+        ${sql.raw(donorboxBacked)} AS donorbox,
+        ${sql.raw(giftGrantLetter)} AS grant_letter,
+        ${sql.raw(giftCodingForm)} AS coding_form
       FROM stripe_staged_charges cc
       JOIN payment_applications pa_j ON pa_j.stripe_charge_id = cc.id
         AND pa_j.evidence_source = 'stripe' AND pa_j.link_role = 'counted'
@@ -653,6 +786,8 @@ router.get(
         s.line_description,
         s.qb_transaction_memo,
         ${sql.raw(qbStatusCase("s"))} AS status,
+        s.qb_entity_type::text AS qb_entity_type,
+        s.qb_entity_id,
         ugm.group_id AS group_id,
         (SELECT count(*)::int FROM unit_group_members gm
           WHERE gm.group_id = ugm.group_id AND gm.evidence_source = 'quickbooks') AS group_member_count,
@@ -669,7 +804,9 @@ router.get(
               'amount', m.amount::text,
               'dateReceived', m.date_received::text,
               'status', ${sql.raw(qbStatusCase("m"))},
-              'linkedChargeId', NULL
+              'linkedChargeId', NULL,
+              'qbEntityType', m.qb_entity_type::text,
+              'qbEntityId', m.qb_entity_id
             ))
           FROM unit_group_members gm
           JOIN staged_payments m ON m.id = gm.source_id
@@ -677,7 +814,30 @@ router.get(
             AND m.id <> s.id
         ), '[]'::json) AS group_members,
         (SELECT array_agg(gm.source_id) FROM unit_group_members gm
-          WHERE gm.group_id = ugm.group_id AND gm.evidence_source = 'quickbooks') AS member_ids
+          WHERE gm.group_id = ugm.group_id AND gm.evidence_source = 'quickbooks') AS member_ids,
+        COALESCE((
+          SELECT json_agg(json_build_object(
+              'stagedPaymentId', nf.id,
+              'role', 'fee',
+              'reference', nf.raw_reference,
+              'lineDescription', nf.line_description,
+              'memo', nf.qb_transaction_memo,
+              'amount', nf.amount::text,
+              'dateReceived', nf.date_received::text,
+              'status', ${sql.raw(qbStatusCase("nf"))},
+              'linkedChargeId', NULL,
+              'qbEntityType', nf.qb_entity_type::text,
+              'qbEntityId', nf.qb_entity_id
+            ) ORDER BY ${sql.raw(lineNumExpr("nf"))})
+          FROM staged_payments nf
+          WHERE s.amount > 0
+            AND nf.realm_id = s.realm_id
+            AND nf.qb_entity_type = s.qb_entity_type
+            AND nf.qb_entity_id = s.qb_entity_id
+            AND nf.qb_entity_type = 'deposit'
+            AND nf.amount < 0
+            AND ${sql.raw(feePairedAnchorExpr("nf"))} = s.id
+        ), '[]'::json) AS folded_fees
       FROM staged_payments s
       LEFT JOIN unit_group_members ugm
         ON ugm.evidence_source = 'quickbooks' AND ugm.source_id = s.id
@@ -702,7 +862,9 @@ router.get(
         g.date_received::text AS date_received,
         g.quickbooks_tie_status::text AS quickbooks_tie,
         ${sql.raw(donorFields)},
-        ${sql.raw(donorboxBacked)} AS donorbox
+        ${sql.raw(donorboxBacked)} AS donorbox,
+        ${sql.raw(giftGrantLetter)} AS grant_letter,
+        ${sql.raw(giftCodingForm)} AS coding_form
       FROM payment_applications pa_j
       JOIN gifts_and_payments g ON g.id = pa_j.gift_id
       ${sql.raw(donorJoins)}
@@ -722,7 +884,9 @@ router.get(
         g.date_received::text AS date_received,
         g.quickbooks_tie_status::text AS quickbooks_tie,
         ${sql.raw(donorFields)},
-        ${sql.raw(donorboxBacked)} AS donorbox
+        ${sql.raw(donorboxBacked)} AS donorbox,
+        ${sql.raw(giftGrantLetter)} AS grant_letter,
+        ${sql.raw(giftCodingForm)} AS coding_form
       FROM gifts_and_payments g
       ${sql.raw(donorJoins)}
       WHERE g.id IN (${inList(crmIds)})`)
@@ -810,6 +974,8 @@ router.get(
             dateReceived: h.dep_date,
             status: h.dep_status ?? "pending",
             linkedChargeId: null,
+            qbEntityType: h.dep_qb_entity_type,
+            qbEntityId: h.dep_qb_entity_id,
           });
         }
         const seen = new Set<string>();
@@ -858,6 +1024,7 @@ router.get(
       if (r.kind === "qb_standalone") {
         const h = qbById.get(r.anchor_id);
         const gifts = [...(qbGiftsByAnchor.get(r.anchor_id)?.values() ?? [])];
+        const foldedFees = h?.folded_fees ?? [];
         const qbRecords: QbRecordJson[] = h
           ? [
               {
@@ -870,23 +1037,37 @@ router.get(
                 dateReceived: h.date,
                 status: h.status,
                 linkedChargeId: null,
+                qbEntityType: h.qb_entity_type,
+                qbEntityId: h.qb_entity_id,
               },
               ...h.group_members,
+              ...foldedFees,
             ]
           : [];
-        const total = qbRecords.filter((x) => x.status !== "excluded").length;
-        const resolved = qbRecords.filter((x) => x.status === "match_confirmed").length;
+        // Folded fee lines are accounting plumbing, not donor work — they
+        // never count toward the matched/total progress of the cluster.
+        const countable = qbRecords.filter((x) => x.role !== "fee");
+        const total = countable.filter((x) => x.status !== "excluded").length;
+        const resolved = countable.filter((x) => x.status === "match_confirmed").length;
         const isGroup = h?.group_id != null;
         const statusDetail = isGroup
           ? `${resolved} of ${total} group rows matched`
           : (QB_STATUS_DETAIL[h?.status ?? "pending"] ?? null);
+        // gross − fee = net for a donation line with folded processor fees.
+        const feeSum = foldedFees.reduce((acc, f) => acc + (Number(f.amount) || 0), 0);
+        const grossNum = h?.amount != null ? Number(h.amount) : null;
+        const hasFees = foldedFees.length > 0 && grossNum != null && Number.isFinite(grossNum);
         return {
           ...base,
           date: h?.date ?? r.anchor_date,
           title: h?.payer_name ?? h?.raw_reference ?? null,
-          grossTotal: null,
-          feeTotal: null,
-          netTotal: isGroup ? (h?.group_total ?? null) : (h?.amount ?? null),
+          grossTotal: hasFees ? (h?.amount ?? null) : null,
+          feeTotal: hasFees ? (-feeSum).toFixed(2) : null,
+          netTotal: isGroup
+            ? (h?.group_total ?? null)
+            : hasFees
+              ? (grossNum + feeSum).toFixed(2)
+              : (h?.amount ?? null),
           bankAmount: h?.amount ?? null,
           gapAmount: null,
           resolvedCount: resolved,
@@ -944,8 +1125,10 @@ router.get(
         all_open: lensCounts.all_open ?? 0,
         needs_donor_or_gift: lensCounts.needs_donor_or_gift ?? 0,
         needs_accounting: lensCounts.needs_accounting ?? 0,
+        settlement_gaps: lensCounts.settlement_gaps ?? 0,
         conflicts: lensCounts.conflicts ?? 0,
         refunds: lensCounts.refunds ?? 0,
+        excluded_qb_says_donation: lensCounts.excluded_qb_says_donation ?? 0,
         excluded: lensCounts.excluded ?? 0,
         completed: lensCounts.completed ?? 0,
       },

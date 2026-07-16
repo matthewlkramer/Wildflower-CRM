@@ -45,6 +45,11 @@ import {
 } from "../../lib/derivedStatus";
 import { giftHeaderColumns } from "../giftsAndPayments";
 import { isGroupMember } from "../../lib/unitGroupMembership";
+import {
+  reconAudit,
+  fmtMoney,
+  payerLabel,
+} from "../../lib/reconciliationAudit";
 
 const router: IRouter = Router();
 
@@ -114,6 +119,15 @@ router.post(
       return;
     }
     // Donor-only resolve on a pending row: no counted ledger row exists.
+    // No safe single-call undo: there is no "un-resolve" endpoint (revert
+    // requires a gift link), so the rail shows this entry without an Undo.
+    await reconAudit(req, {
+      action: "update",
+      entityType: "staged_payment",
+      entityId: id,
+      summary: `Set the donor on the QuickBooks payment from ${payerLabel(row.payerName)} (${fmtMoney(row.amount)})`,
+      undo: null,
+    });
     res.json(stagedRowWithStatus(row, false));
   }),
 );
@@ -283,6 +297,16 @@ router.post(
       .select(giftHeaderColumns)
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, giftId));
+    // No safe undo: a MANUALLY minted gift is not revertible via the staged
+    // revert (shared.ts would orphan a fundraiser-created ledger row).
+    await reconAudit(req, {
+      action: "create",
+      entityType: "staged_payment",
+      entityId: id,
+      summary: `Created gift "${gift?.name ?? giftId}" from the QuickBooks payment from ${payerLabel(existing.payerName)} (${fmtMoney(existing.amount)})`,
+      undo: null,
+      extra: { giftId },
+    });
     res.status(201).json({ gift, stagedPaymentId: id });
   }),
 );
@@ -326,6 +350,14 @@ router.post(
       return;
     }
     // Excluded → pending: an excluded row never carries counted ledger rows.
+    // No safe undo: re-excluding needs a reason the rail can't supply.
+    await reconAudit(req, {
+      action: "update",
+      entityType: "staged_payment",
+      entityId: id,
+      summary: `Re-included the QuickBooks record from ${payerLabel(row.payerName)} (${fmtMoney(row.amount)}) back into the queue`,
+      undo: null,
+    });
     res.json(stagedRowWithStatus(row, false));
   }),
 );
@@ -388,6 +420,14 @@ router.post(
       return;
     }
     // Excludable only from pending/excluded — neither carries counted rows.
+    await reconAudit(req, {
+      action: "update",
+      entityType: "staged_payment",
+      entityId: id,
+      summary: `Excluded the QuickBooks record from ${payerLabel(row.payerName)} (${fmtMoney(row.amount)}) — ${exclusionReason.replace(/_/g, " ")}`,
+      undo: { kind: "reinclude_staged_payment", targetId: id },
+      extra: { exclusionReason },
+    });
     res.json(stagedRowWithStatus(row, false));
   }),
 );

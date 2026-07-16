@@ -4580,6 +4580,25 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/WorkbenchClusterListResponse" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /reconciliation/workbench-recent-changes:
+    get:
+      operationId: listWorkbenchRecentChanges
+      tags: [reconciliation]
+      summary: The workbench's recent-changes rail — the last human reconciliation actions with their undo pointers.
+      description: |
+        The most recent human reconciliation queue actions (exclude / re-include /
+        resolve / reconcile / mint / link / revert / refund decisions), newest
+        first, hydrated from the audit log's reconciliation-domain entries. Each
+        entry carries a human-readable summary, the actor, and — when the action
+        has a safe single-call inverse — an `undo` pointer naming which existing
+        revert/re-include endpoint undoes it and on which row. `undo` is recorded
+        at action time and NOT re-validated here; the target endpoint still
+        enforces its own guards and returns 409 if state has moved on. Entries
+        with `undo: null` are shown with a disabled Undo (the reason is in the
+        summary's nature: reverts, refunds and manual mints have no safe inverse).
+        Read-only; not admin-gated (the workbench itself is team-wide).
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/WorkbenchRecentChangesResponse" } } } }
   /reconciliation/bundle-proposals:
     post:
       operationId: assembleReconciliationBundle
@@ -8317,7 +8336,7 @@ components:
         pagination: { $ref: "#/components/schemas/Pagination" }
     WorkbenchLens:
       type: string
-      enum: [all_open, needs_donor_or_gift, needs_accounting, conflicts, refunds, excluded, completed]
+      enum: [all_open, needs_donor_or_gift, needs_accounting, settlement_gaps, conflicts, refunds, excluded_qb_says_donation, excluded, completed]
       description: |
         A lens is a saved filter over the cluster list — linkage-only in this phase
         (record-adequacy lenses like "missing key info" are additive later).
@@ -8325,9 +8344,15 @@ components:
         purely-excluded clusters). needs_donor_or_gift: some evidence row still lacks
         a confirmed CRM gift/donor (pending or match_proposed). needs_accounting:
         money with no accounting side — a crm_only gift, or a payout with no settled
-        deposit (settlement link missing or still proposed). conflicts: a proposed
-        settlement tie collided with an already-approved gift. refunds: a charge
-        carries a proposed refund/chargeback propagation awaiting a human decision.
+        deposit (settlement link missing or still proposed). settlement_gaps: a
+        payout whose Stripe-reported net (gross − fees) disagrees with the amount
+        that actually arrived at the bank — the money doesn't add up regardless of
+        linkage state. conflicts: a proposed settlement tie collided with an
+        already-approved gift. refunds: a charge carries a proposed
+        refund/chargeback propagation awaiting a human decision.
+        excluded_qb_says_donation: an excluded QB cluster whose line coding carries
+        a donation marker (a Donation item or a 4000/4100-series donation income
+        account) — likely wrongly excluded, surfaced for review.
         excluded: every evidence row in the cluster is excluded. completed: all
         linkage work done (evidence confirmed into gifts; payout settled).
         A cluster carries EVERY lens it belongs to in `lenses` so dots and rail
@@ -8362,6 +8387,8 @@ components:
         dateReceived:  { type: string, format: date, nullable: true }
         quickbooksTie: { allOf: [ { $ref: "#/components/schemas/GiftQuickbooksTie" } ], nullable: true, description: "The gift's persisted QB tie status (exempt/tied/amount_mismatch/missing)." }
         donorbox:      { type: boolean, description: "True when a counted Donorbox ledger row backs this gift (renders the DB badge)." }
+        grantLetter:   { type: boolean, description: "True when a grant/award letter file is attached — the gift's own upload or its linked pledge's letter (renders the letter badge)." }
+        codingForm:    { type: boolean, description: "True when any imported Donation Revenue Coding Form attribute is stamped on the gift (renders the coding badge)." }
         linkedChargeIds: { type: array, items: { type: string }, description: "stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters." }
         linkedStagedPaymentIds: { type: array, items: { type: string }, description: "staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only." }
     WorkbenchClusterCharge:
@@ -8399,6 +8426,12 @@ components:
         dateReceived:    { type: string, format: date, nullable: true }
         status:          { $ref: "#/components/schemas/WorkbenchRecordStatus" }
         linkedChargeId:  { type: string, nullable: true, description: "For fee / charge_tie roles: the stripe_staged_charges id the link runs through." }
+        qbEntityType:
+          type: string
+          enum: [sales_receipt, payment, deposit]
+          nullable: true
+          description: "The QuickBooks transaction type this staged row came from — drives the 'View in QuickBooks' deep link."
+        qbEntityId:      { type: string, nullable: true, description: "The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link)." }
     WorkbenchClusterSettlement:
       type: object
       required: [lifecycle]
@@ -8446,16 +8479,18 @@ components:
         group:         { allOf: [ { $ref: "#/components/schemas/WorkbenchClusterGroup" } ], nullable: true, description: "Present only when the qb_standalone anchor represents a unit group." }
     WorkbenchLensCounts:
       type: object
-      required: [all_open, needs_donor_or_gift, needs_accounting, conflicts, refunds, excluded, completed]
+      required: [all_open, needs_donor_or_gift, needs_accounting, settlement_gaps, conflicts, refunds, excluded_qb_says_donation, excluded, completed]
       description: "Cluster counts per lens over the WHOLE universe (not the page), computed in the same request so the rail always agrees with the rows."
       properties:
-        all_open:            { type: integer }
-        needs_donor_or_gift: { type: integer }
-        needs_accounting:    { type: integer }
-        conflicts:           { type: integer }
-        refunds:             { type: integer }
-        excluded:            { type: integer }
-        completed:           { type: integer }
+        all_open:                  { type: integer }
+        needs_donor_or_gift:       { type: integer }
+        needs_accounting:          { type: integer }
+        settlement_gaps:           { type: integer }
+        conflicts:                 { type: integer }
+        refunds:                   { type: integer }
+        excluded_qb_says_donation: { type: integer }
+        excluded:                  { type: integer }
+        completed:                 { type: integer }
     WorkbenchClusterListResponse:
       type: object
       required: [data, lensCounts, pagination]
@@ -8463,6 +8498,29 @@ components:
         data:       { type: array, items: { $ref: "#/components/schemas/WorkbenchCluster" } }
         lensCounts: { $ref: "#/components/schemas/WorkbenchLensCounts" }
         pagination: { $ref: "#/components/schemas/Pagination" }
+    WorkbenchRecentChangeUndo:
+      type: object
+      required: [kind, targetId]
+      description: "Pointer to the EXISTING endpoint that safely undoes this action: which revert/re-include mutation to dispatch and on which staged row/charge. Recorded at action time, not re-validated at read time."
+      properties:
+        kind:
+          type: string
+          enum: [revert_staged_payment, reinclude_staged_payment, revert_stripe_charge, reinclude_stripe_charge]
+        targetId: { type: string, description: "The staged payment / staged charge id the undo mutation targets." }
+    WorkbenchRecentChange:
+      type: object
+      required: [id, at, summary]
+      properties:
+        id:        { type: string, description: "Audit-log row id." }
+        at:        { type: string, format: date-time }
+        actorName: { type: string, nullable: true, description: "Display name of the user who acted; null for system-recorded entries." }
+        summary:   { type: string, description: "Human-readable one-line description of the action." }
+        undo:      { allOf: [ { $ref: "#/components/schemas/WorkbenchRecentChangeUndo" } ], nullable: true, description: "Null when the action has no safe single-call inverse (reverts, refunds, manual mints, re-includes, donor resolves)." }
+    WorkbenchRecentChangesResponse:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/WorkbenchRecentChange" } }
     BundleRowOverride:
       type: object
       required: [rowKey]

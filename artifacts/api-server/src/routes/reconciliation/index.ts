@@ -11,6 +11,7 @@ import bundleProposalsRouter from "./bundleProposals";
 import bundleAnchorsRouter from "./bundleAnchors";
 import chargeTiesRouter from "./chargeTies";
 import workbenchClustersRouter from "./workbenchClusters";
+import recentChangesRouter from "./recentChanges";
 
 /**
  * Unified "complete-match" reconciler. One card per money event, anchored on a
@@ -37,5 +38,6 @@ router.use(bundleProposalsRouter);
 router.use(bundleAnchorsRouter);
 router.use(chargeTiesRouter);
 router.use(workbenchClustersRouter);
+router.use(recentChangesRouter);
 
 export default router;

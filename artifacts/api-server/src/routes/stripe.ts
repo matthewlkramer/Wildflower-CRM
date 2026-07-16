@@ -75,6 +75,11 @@ import {
 } from "../lib/giftFinalAmount";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { applySupersedeForPayoutInTx } from "../lib/settlementSupersede";
+import {
+  reconAudit,
+  fmtMoney,
+  payerLabel,
+} from "../lib/reconciliationAudit";
 import { giftHeaderColumns } from "./giftsAndPayments";
 import { logger } from "../lib/logger";
 import {
@@ -552,6 +557,15 @@ router.post(
       });
       return;
     }
+    // Donor-only resolve on a still-pending charge — no un-resolve endpoint
+    // exists (revert requires a gift link), so no safe undo.
+    await reconAudit(req, {
+      action: "update",
+      entityType: "stripe_staged_charge",
+      entityId: id,
+      summary: `Set the donor on the Stripe charge from ${payerLabel(row.payerName)} (${fmtMoney(row.grossAmount)})`,
+      undo: null,
+    });
     res.json(row);
   }),
 );
@@ -787,6 +801,22 @@ router.post(
       .select()
       .from(stripeStagedCharges)
       .where(eq(stripeStagedCharges.id, id));
+    // Reconciled to an EXISTING gift — the Stripe revert safely unlinks it
+    // (gift left intact). Skipped for the idempotent already-linked no-op.
+    if (!alreadyLinked) {
+      const [linkedGift] = await db
+        .select({ name: giftsAndPayments.name })
+        .from(giftsAndPayments)
+        .where(eq(giftsAndPayments.id, giftId));
+      await reconAudit(req, {
+        action: "update",
+        entityType: "stripe_staged_charge",
+        entityId: id,
+        summary: `Linked the Stripe charge from ${payerLabel(row?.payerName)} (${fmtMoney(row?.grossAmount)}) to gift "${linkedGift?.name ?? giftId}"`,
+        undo: { kind: "revert_stripe_charge", targetId: id },
+        extra: { giftId },
+      });
+    }
     res.json(row);
   }),
 );
@@ -985,6 +1015,16 @@ router.post(
       .select(giftHeaderColumns)
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, giftId));
+    // A charge-minted gift IS revertible: the Stripe revert deletes the minted
+    // gift (allocations + ledger rows cleared in-tx) and re-pends the charge.
+    await reconAudit(req, {
+      action: "create",
+      entityType: "stripe_staged_charge",
+      entityId: id,
+      summary: `Created gift "${gift?.name ?? giftId}" from the Stripe charge from ${payerLabel(existing.payerName)} (${fmtMoney(existing.grossAmount)})`,
+      undo: { kind: "revert_stripe_charge", targetId: id },
+      extra: { giftId },
+    });
     res.status(201).json({ gift, stagedPaymentId: id });
   }),
 );
@@ -1044,6 +1084,14 @@ router.post(
       });
       return;
     }
+    await reconAudit(req, {
+      action: "update",
+      entityType: "stripe_staged_charge",
+      entityId: id,
+      summary: `Excluded the Stripe charge from ${payerLabel(row.payerName)} (${fmtMoney(row.grossAmount)}) — ${exclusionReason.replace(/_/g, " ")}`,
+      undo: { kind: "reinclude_stripe_charge", targetId: id },
+      extra: { exclusionReason },
+    });
     res.json(row);
   }),
 );
@@ -1090,6 +1138,14 @@ router.post(
       });
       return;
     }
+    // No safe undo: re-excluding needs a reason the rail can't supply.
+    await reconAudit(req, {
+      action: "update",
+      entityType: "stripe_staged_charge",
+      entityId: id,
+      summary: `Re-included the Stripe charge from ${payerLabel(row.payerName)} (${fmtMoney(row.grossAmount)}) back into the queue`,
+      undo: null,
+    });
     res.json(row);
   }),
 );
@@ -1190,7 +1246,9 @@ router.post(
     const cascadedQbStagedIds: string[] = [];
     const supersedeGiftIds: string[] = [];
     try {
-      await db.transaction(async (tx) => {
+      // Returned (not assigned inside the closure) so TS control-flow keeps
+      // the row type on `reverted` for the audit summary below.
+      reverted = await db.transaction(async (tx) => {
         const locked = await tx
           .select()
           .from(stripeStagedCharges)
@@ -1338,7 +1396,7 @@ router.post(
           })
           .where(eq(stripeStagedCharges.id, id))
           .returning();
-        reverted = row ?? null;
+        return row ?? null;
       });
     } catch (e) {
       if (e instanceof Error && e.message === NOT_FOUND) {
@@ -1366,6 +1424,15 @@ router.post(
       );
     }
     void user;
+    // The revert IS the undo — re-doing the original action is a fresh
+    // decision made from the queue, so no undo pointer.
+    await reconAudit(req, {
+      action: "update",
+      entityType: "stripe_staged_charge",
+      entityId: id,
+      summary: `Reverted the Stripe charge from ${payerLabel(reverted?.payerName)} (${fmtMoney(reverted?.grossAmount)}) back to the queue`,
+      undo: null,
+    });
     res.json(reverted);
   }),
 );
@@ -1405,6 +1472,22 @@ router.post(
         break;
     }
 
+    // Refund application archives/reduces the linked gift — a money change
+    // with no single-call inverse, so no undo pointer.
+    const [confirmedCharge] = await db
+      .select({
+        payerName: stripeStagedCharges.payerName,
+        grossAmount: stripeStagedCharges.grossAmount,
+      })
+      .from(stripeStagedCharges)
+      .where(eq(stripeStagedCharges.id, id));
+    await reconAudit(req, {
+      action: "update",
+      entityType: "stripe_staged_charge",
+      entityId: id,
+      summary: `Applied the refund on the Stripe charge from ${payerLabel(confirmedCharge?.payerName)} (${fmtMoney(confirmedCharge?.grossAmount)}) to its linked gift`,
+      undo: null,
+    });
     const row = await withJoins(
       db.select(stagedSelect).from(stripeStagedCharges).$dynamic(),
     )
@@ -1440,6 +1523,22 @@ router.post(
       return;
     }
 
+    // Dismissal only marks the proposal — the gift was never touched, and the
+    // retained signature intentionally stops a re-raise; no undo.
+    const [dismissedCharge] = await db
+      .select({
+        payerName: stripeStagedCharges.payerName,
+        grossAmount: stripeStagedCharges.grossAmount,
+      })
+      .from(stripeStagedCharges)
+      .where(eq(stripeStagedCharges.id, id));
+    await reconAudit(req, {
+      action: "update",
+      entityType: "stripe_staged_charge",
+      entityId: id,
+      summary: `Dismissed the proposed refund on the Stripe charge from ${payerLabel(dismissedCharge?.payerName)} (${fmtMoney(dismissedCharge?.grossAmount)})`,
+      undo: null,
+    });
     const row = await withJoins(
       db.select(stagedSelect).from(stripeStagedCharges).$dynamic(),
     )

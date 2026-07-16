@@ -113,6 +113,20 @@ export const hasNoGiftLink = sql`(NOT ${qbLedgerExistsForPayment()})`;
 // a gift is NOT parked — it reconciles normally in the main flow (entity set).
 export const isParkedFiscallyRow = sql`(${isFiscallySponsoredRow} AND ${hasNoGiftLink})`;
 
+// Alias-parameterized raw twin of isParkedFiscallyRow, for queries that read
+// staged_payments through an alias (the drizzle table fragments above render
+// unqualified/base-table-qualified there — e.g. the workbench-clusters slim
+// UNION). Entity ids are code constants, safe to inline. KEEP IN LOCKSTEP with
+// isParkedFiscallyRow: same entity list, same no-counted-QB-ledger-row test.
+export const parkedFiscallyExpr = (a: string): string =>
+  `(${a}.entity_id IS NOT NULL
+    AND ${a}.entity_id IN (${FISCALLY_SPONSORED_ENTITY_IDS.map((id) => `'${id}'`).join(", ")})
+    AND NOT EXISTS (
+      SELECT 1 FROM payment_applications pa_fs
+      WHERE pa_fs.payment_id = ${a}.id
+        AND pa_fs.evidence_source = 'quickbooks' AND pa_fs.link_role = 'counted'
+    ))`;
+
 // Derived queue bucket for a staged row (kept in sync with the where-clauses
 // in queueWhere below). Buckets are a pure re-labeling of the derived status
 // (lib/derivedStatus.ts): excluded → excluded, match_proposed → auto_matched,

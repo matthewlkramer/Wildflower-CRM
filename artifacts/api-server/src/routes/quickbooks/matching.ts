@@ -56,6 +56,11 @@ import {
   isGroupMember,
   groupMemberIdsFor,
 } from "../../lib/unitGroupMembership";
+import {
+  reconAudit,
+  fmtMoney,
+  payerLabel,
+} from "../../lib/reconciliationAudit";
 
 const router: IRouter = Router();
 
@@ -288,6 +293,15 @@ router.post(
     // The gift now carries QB linkage — persist its tie status.
     await applyGiftQbTieMany(giftId);
 
+    // Direct match to an existing gift — the staged revert safely undoes it.
+    await reconAudit(req, {
+      action: "update",
+      entityType: "staged_payment",
+      entityId: id,
+      summary: `Matched the QuickBooks payment from ${payerLabel(existing.payerName)} (${fmtMoney(existing.amount)}) to gift "${gift.name ?? giftId}"`,
+      undo: { kind: "revert_staged_payment", targetId: id },
+      extra: { giftId },
+    });
     res.json({ gift, stagedPaymentId: id });
   }),
 );

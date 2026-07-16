@@ -5113,9 +5113,15 @@ all_open: any cluster with unresolved work (everything except completed and
 purely-excluded clusters). needs_donor_or_gift: some evidence row still lacks
 a confirmed CRM gift/donor (pending or match_proposed). needs_accounting:
 money with no accounting side — a crm_only gift, or a payout with no settled
-deposit (settlement link missing or still proposed). conflicts: a proposed
-settlement tie collided with an already-approved gift. refunds: a charge
-carries a proposed refund/chargeback propagation awaiting a human decision.
+deposit (settlement link missing or still proposed). settlement_gaps: a
+payout whose Stripe-reported net (gross − fees) disagrees with the amount
+that actually arrived at the bank — the money doesn't add up regardless of
+linkage state. conflicts: a proposed settlement tie collided with an
+already-approved gift. refunds: a charge carries a proposed
+refund/chargeback propagation awaiting a human decision.
+excluded_qb_says_donation: an excluded QB cluster whose line coding carries
+a donation marker (a Donation item or a 4000/4100-series donation income
+account) — likely wrongly excluded, surfaced for review.
 excluded: every evidence row in the cluster is excluded. completed: all
 linkage work done (evidence confirmed into gifts; payout settled).
 A cluster carries EVERY lens it belongs to in `lenses` so dots and rail
@@ -5129,8 +5135,10 @@ export const WorkbenchLens = {
   all_open: 'all_open',
   needs_donor_or_gift: 'needs_donor_or_gift',
   needs_accounting: 'needs_accounting',
+  settlement_gaps: 'settlement_gaps',
   conflicts: 'conflicts',
   refunds: 'refunds',
+  excluded_qb_says_donation: 'excluded_qb_says_donation',
   excluded: 'excluded',
   completed: 'completed',
 } as const;
@@ -5209,6 +5217,10 @@ export interface WorkbenchClusterGift {
   quickbooksTie?: GiftQuickbooksTie | null;
   /** True when a counted Donorbox ledger row backs this gift (renders the DB badge). */
   donorbox?: boolean;
+  /** True when a grant/award letter file is attached — the gift's own upload or its linked pledge's letter (renders the letter badge). */
+  grantLetter?: boolean;
+  /** True when any imported Donation Revenue Coding Form attribute is stamped on the gift (renders the coding badge). */
+  codingForm?: boolean;
   /** stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters. */
   linkedChargeIds?: string[];
   /** staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only. */
@@ -5272,6 +5284,18 @@ export const WorkbenchClusterQbRecordRole = {
 } as const;
 
 /**
+ * The QuickBooks transaction type this staged row came from — drives the 'View in QuickBooks' deep link.
+ */
+export type WorkbenchClusterQbRecordQbEntityType = typeof WorkbenchClusterQbRecordQbEntityType[keyof typeof WorkbenchClusterQbRecordQbEntityType] | null;
+
+
+export const WorkbenchClusterQbRecordQbEntityType = {
+  sales_receipt: 'sales_receipt',
+  payment: 'payment',
+  deposit: 'deposit',
+} as const;
+
+/**
  * One QuickBooks staged row in the cluster's bank-and-accounting facet.
  */
 export interface WorkbenchClusterQbRecord {
@@ -5291,6 +5315,10 @@ export interface WorkbenchClusterQbRecord {
   status: WorkbenchRecordStatus;
   /** For fee / charge_tie roles: the stripe_staged_charges id the link runs through. */
   linkedChargeId?: string | null;
+  /** The QuickBooks transaction type this staged row came from — drives the 'View in QuickBooks' deep link. */
+  qbEntityType?: WorkbenchClusterQbRecordQbEntityType;
+  /** The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link). */
+  qbEntityId?: string | null;
 }
 
 /**
@@ -5381,8 +5409,10 @@ export interface WorkbenchLensCounts {
   all_open: number;
   needs_donor_or_gift: number;
   needs_accounting: number;
+  settlement_gaps: number;
   conflicts: number;
   refunds: number;
+  excluded_qb_says_donation: number;
   excluded: number;
   completed: number;
 }
@@ -5391,6 +5421,41 @@ export interface WorkbenchClusterListResponse {
   data: WorkbenchCluster[];
   lensCounts: WorkbenchLensCounts;
   pagination: Pagination;
+}
+
+export type WorkbenchRecentChangeUndoKind = typeof WorkbenchRecentChangeUndoKind[keyof typeof WorkbenchRecentChangeUndoKind];
+
+
+export const WorkbenchRecentChangeUndoKind = {
+  revert_staged_payment: 'revert_staged_payment',
+  reinclude_staged_payment: 'reinclude_staged_payment',
+  revert_stripe_charge: 'revert_stripe_charge',
+  reinclude_stripe_charge: 'reinclude_stripe_charge',
+} as const;
+
+/**
+ * Pointer to the EXISTING endpoint that safely undoes this action: which revert/re-include mutation to dispatch and on which staged row/charge. Recorded at action time, not re-validated at read time.
+ */
+export interface WorkbenchRecentChangeUndo {
+  kind: WorkbenchRecentChangeUndoKind;
+  /** The staged payment / staged charge id the undo mutation targets. */
+  targetId: string;
+}
+
+export interface WorkbenchRecentChange {
+  /** Audit-log row id. */
+  id: string;
+  at: string;
+  /** Display name of the user who acted; null for system-recorded entries. */
+  actorName?: string | null;
+  /** Human-readable one-line description of the action. */
+  summary: string;
+  /** Null when the action has no safe single-call inverse (reverts, refunds, manual mints, re-includes, donor resolves). */
+  undo?: WorkbenchRecentChangeUndo | null;
+}
+
+export interface WorkbenchRecentChangesResponse {
+  items: WorkbenchRecentChange[];
 }
 
 /**

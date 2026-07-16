@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getListWorkbenchClustersQueryKey,
+  getListWorkbenchRecentChangesQueryKey,
   useConfirmStripeRefundPropagation,
   useCreateGiftFromStagedPayment,
   useCreateGiftFromStripeStagedCharge,
@@ -11,6 +12,7 @@ import {
   useExcludeStripeStagedCharge,
   useLinkStripeChargeToGift,
   useListWorkbenchClusters,
+  useListWorkbenchRecentChanges,
   useReIncludeStagedPayment,
   useReIncludeStripeStagedCharge,
   useReconcileStagedPayment,
@@ -21,6 +23,7 @@ import {
   type GiftOrPayment,
   type StagedPaymentExclusionReason,
   type WorkbenchLens,
+  type WorkbenchRecentChange,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -63,11 +66,13 @@ import { AlertCircle, ArrowLeft, ChevronLeft, ChevronRight, Search } from "lucid
 const PAGE_SIZE = 25;
 
 const LENSES: { id: WorkbenchLens; label: string }[] = [
-  { id: "all_open", label: "All open" },
-  { id: "needs_donor_or_gift", label: "Needs donor / gift" },
-  { id: "needs_accounting", label: "Needs accounting" },
+  { id: "all_open", label: "All unresolved" },
+  { id: "needs_donor_or_gift", label: "Missing donor" },
+  { id: "needs_accounting", label: "Missing accounting record" },
+  { id: "settlement_gaps", label: "Settlement gaps" },
   { id: "conflicts", label: "Conflicts" },
   { id: "refunds", label: "Refunds" },
+  { id: "excluded_qb_says_donation", label: "Excluded · QB says donation" },
   { id: "excluded", label: "Excluded" },
   { id: "completed", label: "Completed" },
 ];
@@ -83,6 +88,18 @@ function errMessage(err: unknown): string {
     if (typeof msg === "string" && msg) return msg;
   }
   return "Something went wrong.";
+}
+
+// Compact timestamp for the recent-changes rail ("Jul 16, 2:05 PM").
+function formatWhen(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 /** All 3 donor FKs, null-others — keeps the Donor XOR merged-state check happy. */
@@ -159,6 +176,8 @@ export default function ReconciliationClustersPage() {
   );
 
   const { data, isLoading, isError } = useListWorkbenchClusters(params);
+  const { data: recentData, isLoading: recentLoading } =
+    useListWorkbenchRecentChanges();
 
   const clusters = data?.data ?? [];
   const counts = data?.lensCounts;
@@ -206,6 +225,9 @@ export default function ReconciliationClustersPage() {
     void queryClient.invalidateQueries({ queryKey: ["/api/staged-payments"] });
     void queryClient.invalidateQueries({
       queryKey: ["/api/stripe-staged-charges"],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: getListWorkbenchRecentChangesQueryKey(),
     });
   }, [queryClient]);
 
@@ -388,6 +410,39 @@ export default function ReconciliationClustersPage() {
         description: errMessage(err),
         variant: "destructive",
       });
+    }
+  };
+
+  // Undo dispatch: the rail entry names which EXISTING revert/re-include
+  // endpoint reverses it and on which row. The server recorded the pointer at
+  // action time; the target endpoint still enforces its own guards, so a stale
+  // pointer (state moved on) comes back as a clean 409 toast.
+  const handleUndo = async (change: WorkbenchRecentChange) => {
+    const undo = change.undo;
+    if (!undo) return;
+    try {
+      if (undo.kind === "revert_staged_payment") {
+        await revertStagedM.mutateAsync({ id: undo.targetId });
+      } else if (undo.kind === "reinclude_staged_payment") {
+        await reIncludeStagedM.mutateAsync({ id: undo.targetId });
+      } else if (undo.kind === "revert_stripe_charge") {
+        await revertChargeM.mutateAsync({ id: undo.targetId });
+      } else {
+        await reIncludeChargeM.mutateAsync({ id: undo.targetId });
+      }
+      toast({
+        title: "Undone",
+        description: "The action was reversed; the row is back in its queue.",
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't undo",
+        description: errMessage(err),
+        variant: "destructive",
+      });
+    } finally {
+      // Refresh even on a 409 so a stale Undo pointer self-heals off the rail.
+      invalidate();
     }
   };
 
@@ -596,6 +651,57 @@ export default function ReconciliationClustersPage() {
                 );
               })}
             </nav>
+          </div>
+          <div
+            className="rounded-lg border bg-card p-3"
+            data-testid="recent-changes-rail"
+          >
+            <h2 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+              Recent changes
+            </h2>
+            {recentLoading ? (
+              <p className="text-[11px] text-muted-foreground">Loading…</p>
+            ) : !recentData?.items.length ? (
+              <p className="text-[11px] text-muted-foreground">
+                No reconciliation actions recorded yet.
+              </p>
+            ) : (
+              <ul className="space-y-2 max-h-80 overflow-y-auto pr-0.5">
+                {recentData.items.map((c) => (
+                  <li
+                    key={c.id}
+                    className="text-[11px] leading-snug"
+                    data-testid={`recent-change-${c.id}`}
+                  >
+                    <p className="text-foreground">{c.summary}</p>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <span className="text-muted-foreground truncate">
+                        {c.actorName ?? "System"} · {formatWhen(c.at)}
+                      </span>
+                      {c.undo ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 px-1.5 text-[10px] shrink-0"
+                          disabled={busy}
+                          onClick={() => void handleUndo(c)}
+                          data-testid={`button-undo-${c.id}`}
+                        >
+                          Undo
+                        </Button>
+                      ) : (
+                        <span
+                          className="text-[10px] text-muted-foreground/50 shrink-0 cursor-not-allowed"
+                          title="No one-click undo — this kind of action can't be safely reversed in a single step."
+                        >
+                          No undo
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <div className="rounded-lg border bg-card p-3 text-[11px] text-muted-foreground leading-relaxed">
             <AlertCircle className="w-3 h-3 inline mr-1" />

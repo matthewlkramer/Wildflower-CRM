@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Link2, Plus, Search } from "lucide-react";
+import { ClipboardList, FileText, Link2, Plus, Search } from "lucide-react";
 
 // ─── Shared visual primitives for the cluster workbench (V4 layout) ──────────
 // Column grid: chevron | donor & purpose | payment evidence | bank & accounting
@@ -196,6 +196,30 @@ export function DbBadge() {
       className="inline-flex items-center justify-center w-4 h-4 rounded-sm bg-teal-600 text-white text-[7px] font-bold shrink-0"
     >
       DB
+    </span>
+  );
+}
+
+/** Slate clipboard chip — a Donation Revenue Coding Form is stamped on the gift. */
+export function CodingBadge() {
+  return (
+    <span
+      title="Coding form attached"
+      className="inline-flex items-center justify-center w-4 h-4 rounded-sm bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0"
+    >
+      <ClipboardList className="w-2.5 h-2.5" />
+    </span>
+  );
+}
+
+/** Indigo file chip — a grant/award letter is attached (gift or its pledge). */
+export function LetterBadge() {
+  return (
+    <span
+      title="Grant letter attached"
+      className="inline-flex items-center justify-center w-4 h-4 rounded-sm bg-indigo-100 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 shrink-0"
+    >
+      <FileText className="w-2.5 h-2.5" />
     </span>
   );
 }
