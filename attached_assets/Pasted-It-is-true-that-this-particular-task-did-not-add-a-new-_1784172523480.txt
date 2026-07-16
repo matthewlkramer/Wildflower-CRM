@@ -1,0 +1,196 @@
+It is true that this particular task did not add a new column named match_id or a stored charge status. But your larger concern is valid: the system already has several overlapping ways to express that records match, and this task appears to add another behavioral layer on top of them.
+
+What is now representing a match?
+
+For a Stripe charge and a QuickBooks record, the system may use:
+
+stripe_staged_charges.linked_qb_staged_payment_id
+stripe_staged_charges.proposed_qb_staged_payment_id
+A payout-level settlement_link
+A counted Stripe payment_applications row
+A counted or corroborating QuickBooks payment_applications row
+A charge_tie_supersede:<qbId> marker embedded in a note
+Derived-status SQL that interprets those facts
+Persisted gifts.quickbooks_tie_status
+
+Even if some are called “evidence,” “provenance,” or “derived state,” they influence application behavior. That means they are part of the operational matching model.
+
+The most concerning sentence
+
+“This task reads that pointer but didn’t extend the pointer model.”
+
+That means the new ledger behavior still depends on a legacy pointer that the target architecture intends to retire.
+
+So the implementation is not yet:
+
+Everything is performed through the two ledgers.
+
+It is closer to:
+
+The financial consequence is written through the ledger, but the relationship that tells the system to perform that write is still stored in a separate pointer.
+
+That is exactly how parallel representations persist.
+
+Charge-tie supersession versus settlement supersession
+
+There now appear to be two supersession mechanisms:
+
+Settlement-grain supersession
+Stripe payout ↔ QBO deposit
+
+The charge applications cover the gift, so the coarse QBO deposit application becomes corroborating.
+
+Charge-grain supersession
+Stripe charge ↔ individual QBO row
+
+The charge application is counted and the linked QBO application becomes corroborating.
+
+These may both be reasonable cases, but they are distinct matching paths. The system needs explicit rules for situations such as:
+
+A charge tied to a QBO line inside a payout that is also settlement-linked to a deposit.
+A QBO row covered by both charge-level and payout-level relationships.
+A charge tie removed while the payout settlement remains confirmed.
+A payout settlement removed while charge-level ties remain.
+Two charge ties attempting to supersede the same QBO row.
+A charge tied to one QBO row while its payout is tied to a different deposit.
+
+Without a single ownership rule, the two supersession engines can disagree about whether the QBO application should be counted or corroborating.
+
+The note marker is state
+
+This part is also concerning:
+
+charge_tie_supersede:<qbId> inside the PA row’s note lets revert find its own copies.
+
+If application logic depends on parsing that note, it is effectively a match identifier—just stored in an unstructured text field.
+
+That creates several risks:
+
+Notes may be edited.
+The marker format may change.
+Two mechanisms may append overlapping markers.
+Queries cannot enforce referential integrity.
+A revert may fail to identify the row it owns.
+A human-readable audit field becomes executable application state.
+
+That provenance should be structured, for example:
+
+superseded_by_source_link_id
+supersession_kind
+
+or represented in an audit/link table. It should not be discovered by parsing note.
+
+The proposed pointer is a separate matching system
+
+proposed_qb_staged_payment_id means the source row itself carries workflow state about a possible relationship.
+
+That is a proposal system outside the ledgers.
+
+If the desired architecture is two ledgers, a proposal should be either:
+
+A proposed row in the source-link ledger, or
+A row in one normalized proposal table.
+
+It should not be a source-specific proposed pointer on the Stripe charge.
+
+Derived status is not actually centralized
+
+The response admits the derivation exists in four separate SQL implementations.
+
+That means there is no effective single source of truth, even if only one source file is called derivedStatus.ts.
+
+Duplicated derived logic can produce the same operational symptoms as duplicated stored state:
+
+One queue says resolved.
+Another says pending.
+One picker allows a row.
+Another suppresses it.
+One endpoint returns a match.
+Another returns a conflict.
+
+The fact that a recent refunded-charge regression arose from those copies is direct evidence that this is already causing failures.
+
+quickbooks_tie_status is another duplicate
+
+The system derives the tie from ledger facts and then persists it on the gift.
+
+That may be defensible as a cached projection, but only if it is managed centrally. The repeated instruction to recompute it after every related write shows that it currently behaves as another authoritative state that can drift.
+
+So the statement “statuses remain derived” needs qualification:
+
+Staged and charge workbench status may be derived.
+Gift QuickBooks tie status is derived and persisted.
+Proposed source links are stored separately.
+Confirmation timestamps and pointers also participate in derivation.
+My conclusion
+
+You have not necessarily created a new database column for matching in this task. But you have continued a model in which matching is expressed through several overlapping mechanisms.
+
+The architectural concern is real:
+
+The ledgers record the financial result, while separate fields still determine relationship, proposal, confirmation, and revert ownership.
+
+That is not yet a clean two-ledger design.
+
+What the target should be
+Ledger 1: source-to-source relationships
+
+All of these belong in one normalized relationship store:
+
+Stripe payout ↔ QBO deposit
+Stripe charge ↔ QBO donor line
+Stripe charge ↔ QBO fee line
+Donorbox record ↔ Stripe charge
+
+The relationship row should hold:
+
+relationship type
+proposed or confirmed lifecycle
+confidence and evidence
+confirmed by/at
+
+Then retire:
+
+linked_qb_staged_payment_id
+proposed_qb_staged_payment_id
+linked_fee_qb_staged_payment_id
+Ledger 2: money-to-CRM applications
+
+This ledger should answer only:
+
+Which financial unit funds which CRM gift, and by how much?
+
+It should not be used to store source-to-source matching.
+
+Supersession
+
+Supersession should be derived from confirmed source links and money applications, with structured provenance if a persisted transition is necessary.
+
+It should not depend on:
+
+A pointer on the charge
+A parsed note marker
+Four copies of status SQL
+What I would ask the developer to do next
+
+Before adding anything further, produce a table like this for the current code:
+
+Relationship or state	Where written	Where read	Intended authority
+Charge ↔ QBO row	linked_qb_staged_payment_id	tie routes, supersede	Legacy source link
+Proposed charge ↔ QBO row	proposed_qb_staged_payment_id	workbench	Legacy proposal
+Payout ↔ deposit	settlement_links	supersede, workbench	Source-link authority
+Charge → gift	payment_applications	totals, status	Money authority
+QBO row → gift	payment_applications	totals, status	Money authority
+Supersession ownership	PA note marker	revert	Unstructured state
+Workbench status	Four SQL implementations	queues and pickers	Derived
+Gift QBO tie	Persisted gift column	reports and gates	Cached derivation
+
+Then make a decision for every row:
+
+Keep as authoritative
+Convert to the source-link ledger
+Convert to the application ledger
+Derive centrally
+Delete
+
+Until that is done, I would not accept the claim that matching is fully represented by the two ledgers.
