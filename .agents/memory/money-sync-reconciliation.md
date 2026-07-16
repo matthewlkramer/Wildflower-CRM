@@ -49,6 +49,7 @@ description: Grouped index of money-sync lessons — QuickBooks/Stripe/Donorbox 
 - [Charge-grain Stripe↔QB ties](charge-grain-qb-ties.md) — Missing-deposit payouts tie per CHARGE (proposed vs confirmed cols); lump settlement-link owns its payout; settled=every non-terminal charge confirmed-tied.
 - [Charge-tie pair dismissals](charge-tie-dismissals.md) — reject persists the exact charge↔QB pair; propose pass skips it forever, other pairings unaffected; manual "Tie selected" deliberately overrides dismissals.
 - [Sibling Stripe-fee row link](charge-fee-row-link.md) — charge ties match gross OR net exactly; confirm auto-claims the deposit's negative fee row as plane-1 evidence ONLY (never payment_applications); TS pairing must stay lockstep with the SQL backfill; stamp under savepoint so a race never aborts confirm.
+- [Charge-tie supersede + evidence vs claim](charge-tie-supersede.md) — tie confirm moves exact-cents QB counted money to the charge grain; status evidence needs a BOOKED charge, claims use raw linkage; fix all raw-SQL twins together.
 
 ## Donorbox
 

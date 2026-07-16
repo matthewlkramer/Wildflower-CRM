@@ -255,6 +255,23 @@ donor once. This is the durable replacement for today's `processor_payout` exclu
 coarse deposit gift simply *stays* the counted record (the old "keep") — either way,
 exactly one counted representation per dollar.
 
+> **Shipped interim (2026-07): charge-tie supersede.** The same one-count rule
+> already runs today at the *charge-tie* grain for individually-booked payouts
+> (`artifacts/api-server/src/lib/chargeTieSupersede.ts`, backfill migration
+> 0129). On tie confirm (and in the backfill), a QB `counted` ledger row whose
+> amount is the **exact same money** as the tied charge (equals the charge's
+> gross OR net, to the cent) is *moved* to the charge grain — a copy is minted
+> against the charge (note marker `charge_tie_supersede:<qbId>`) and the QB row
+> is demoted to `corroborating`. Anything else (override-mismatch ties, a
+> charge already counted for a different gift) is left untouched for human
+> review. Derived-status consequence: a charge-grain tie counts as
+> `match_confirmed` evidence for the QB row **only when the tied charge itself
+> carries a counted ledger row** — raw linkage alone is a *claim* (it blocks
+> re-picking the QB row) but never status evidence, so a refunded or
+> not-yet-booked tied charge leaves the QB row's `pending`/`excluded` work
+> visible (`derivedStatus.ts`: `stagedChargeTieExists` vs
+> `stagedChargeTieLinkExists`).
+
 ### 4.4 One derived status per record per plane (no new stored columns)
 
 All statuses are pure functions over the two link tables (the

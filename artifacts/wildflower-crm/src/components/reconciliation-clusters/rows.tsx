@@ -903,7 +903,10 @@ function PayoutBundleRow({
                 <GiftCard gift={gift} actions={actions} />
               </div>
               <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">
-                linked charge not shown (charge list capped)
+                {(gift.linkedChargeIds ?? []).length === 0 &&
+                (gift.linkedStagedPaymentIds ?? []).length > 0
+                  ? "booked against the QB deposit — one gift covers this payout's lump"
+                  : "linked charge not shown (charge list capped)"}
               </div>
               <span />
               <span />
@@ -941,6 +944,18 @@ function QbStandaloneRow({
   const anchorRecord =
     cluster.qbRecords.find((r) => r.role === "anchor") ?? cluster.qbRecords[0];
   const label = cluster.title ?? (anchorRecord ? qbLabel(anchorRecord) : "");
+  // Honest middle column: a QB row whose text mentions Stripe DOES have a
+  // processor record somewhere — it just isn't tied to its charge yet.
+  const looksLikeStripeMoney = /stripe/i.test(
+    [
+      anchorRecord?.memo,
+      anchorRecord?.lineDescription,
+      anchorRecord?.reference,
+      cluster.title,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
   const stagedAnchor: AnchorRef | null = anchorRecord
     ? { kind: "staged", id: anchorRecord.stagedPaymentId, label }
     : null;
@@ -987,7 +1002,19 @@ function QbStandaloneRow({
         ) : null}
       </div>
       <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">
-        arrived via QuickBooks — no separate processor record
+        {looksLikeStripeMoney ? (
+          <>
+            looks like Stripe money — charge not tied yet;{" "}
+            <Link
+              href="/reconciliation-workbench"
+              className="text-primary hover:underline underline-offset-2 not-italic"
+            >
+              tie it in the queue workbench
+            </Link>
+          </>
+        ) : (
+          "arrived via QuickBooks — no separate processor record"
+        )}
       </div>
       <div className="space-y-1.5">
         {cluster.qbRecords.map((r) => (

@@ -22,6 +22,8 @@ import {
   stagedStatusWhere,
 } from "../../lib/derivedStatus";
 import { sweepRefundedQbStagedPayments } from "../../lib/refundedChargeSweep";
+import { applyChargeTieSupersedePairs } from "../../lib/chargeTieSupersede";
+import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 
 /**
  * Charge-grain settlement confirm for "individually-booked" payouts — payouts
@@ -437,11 +439,31 @@ router.post(
           chargeAmounts,
         );
 
+        // Move each tied QB row's counted gift booking to the CHARGE grain
+        // (charge-tie supersede): the ledger then shows gift ↔ charge ↔ QB
+        // row as ONE money trail instead of leaving the charge looking
+        // unbooked. Exact-cents same-money test; override-mismatch ties
+        // conservatively keep their QB-side booking.
+        const supersededGiftIds = await applyChargeTieSupersedePairs(
+          tx,
+          [...ties].map(([chargeId, qbId]) => ({
+            chargeId,
+            qbStagedPaymentId: qbId,
+          })),
+        );
+
         // Fully tied when every charge is either confirmed-tied or terminal.
         const stillOpen = openCharges.filter((c) => !ties.has(c.id)).length;
         const payoutFullyTied = charges.length > 0 && stillOpen === 0;
 
-        return { confirmed: true, payoutId, tied, feeRowsTied, payoutFullyTied };
+        return {
+          confirmed: true,
+          payoutId,
+          tied,
+          feeRowsTied,
+          payoutFullyTied,
+          supersededGiftIds,
+        };
       });
 
       req.log.info(
@@ -450,6 +472,7 @@ router.post(
           tied: result.tied,
           feeRowsTied: result.feeRowsTied,
           fullyTied: result.payoutFullyTied,
+          supersededGifts: result.supersededGiftIds.length,
         },
         "Confirmed charge-grain Stripe↔QB ties",
       );
@@ -458,7 +481,14 @@ router.post(
       // all-refunded money — sweep so it lands in Excluded immediately.
       await sweepRefundedQbStagedPayments();
 
-      res.json(result);
+      // Ledger rows moved QB→charge: re-derive each touched gift's persisted
+      // quickbooks_tie_status (post-commit, non-throwing by design of the
+      // derivation — the amounts were copied so the status should not move,
+      // but the recompute keeps the invariant mechanical).
+      await applyGiftQbTieMany(...result.supersededGiftIds);
+
+      const { supersededGiftIds: _superseded, ...response } = result;
+      res.json(response);
     } catch (e) {
       if (e instanceof ReconcileAbort) {
         res.status(e.httpStatus).json(e.payload);
@@ -641,11 +671,21 @@ router.post(
           });
         }
 
+        // Undo the charge-tie supersede: delete the tie-derived (marked)
+        // stripe counted rows and promote the demoted QB rows back to
+        // counted — the gift booking returns to where the human originally
+        // ratified it. Pre-existing (unmarked) charge bookings are never
+        // touched.
+        const supersededGiftIds = await applyChargeTieSupersedePairs(tx, [
+          { chargeId, qbStagedPaymentId: qbId },
+        ]);
+
         return {
           reverted: true,
           chargeId,
           qbStagedPaymentId: qbId,
           feeQbStagedPaymentId: feeQbId,
+          supersededGiftIds,
         };
       });
 
@@ -654,10 +694,17 @@ router.post(
           chargeId,
           qbStagedPaymentId: result.qbStagedPaymentId,
           feeQbStagedPaymentId: result.feeQbStagedPaymentId,
+          supersededGifts: result.supersededGiftIds.length,
         },
         "Reverted a confirmed charge-grain Stripe↔QB tie",
       );
-      res.json(result);
+
+      // Ledger rows moved back charge→QB: re-derive the touched gifts'
+      // persisted quickbooks_tie_status post-commit.
+      await applyGiftQbTieMany(...result.supersededGiftIds);
+
+      const { supersededGiftIds: _superseded, ...response } = result;
+      res.json(response);
     } catch (e) {
       if (e instanceof ReconcileAbort) {
         res.status(e.httpStatus).json(e.payload);

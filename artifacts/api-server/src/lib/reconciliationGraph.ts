@@ -63,7 +63,7 @@ import {
 import { stripeChargeSearchWhere } from "./stripeChargeSearch";
 import {
   chargeStatusWhere,
-  stagedChargeTieExists,
+  stagedChargeTieLinkExists,
   stagedConfirmedSettlementLinkExists,
   stagedStatusSql,
   stagedStatusWhere,
@@ -1710,7 +1710,9 @@ async function searchQbStagedRows(
       // charge already claims this exact row.
       exclusionReason: stagedPayments.exclusionReason,
       settledElsewhere: sql<boolean>`${stagedConfirmedSettlementLinkExists}`,
-      tiedToCharge: sql<boolean>`${stagedChargeTieExists}`,
+      // RAW linkage on purpose: a tie claims the row (re-linking it elsewhere
+      // would conflict) even while the charge's booking is still pending.
+      tiedToCharge: sql<boolean>`${stagedChargeTieLinkExists}`,
     })
     .from(stagedPayments)
     .where(and(...conds))

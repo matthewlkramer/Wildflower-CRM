@@ -63,15 +63,19 @@ const qbCounted = (a: string) =>
   `EXISTS (SELECT 1 FROM payment_applications pa_q WHERE pa_q.payment_id = ${a}.id AND pa_q.link_role = 'counted')`;
 const qbDepositSettled = (a: string) =>
   `EXISTS (SELECT 1 FROM settlement_links sl_q WHERE sl_q.deposit_staged_payment_id = ${a}.id AND sl_q.lifecycle = 'confirmed')`;
+const qbChargeTied = (a: string) =>
+  `EXISTS (SELECT 1 FROM stripe_staged_charges cc_q WHERE cc_q.linked_qb_staged_payment_id = ${a}.id
+    AND EXISTS (SELECT 1 FROM payment_applications pa_ct WHERE pa_ct.stripe_charge_id = cc_q.id
+      AND pa_ct.evidence_source = 'stripe' AND pa_ct.link_role = 'counted'))`;
 const qbStatusCase = (a: string) => `(CASE
   WHEN ${a}.exclusion_reason IS NOT NULL THEN 'excluded'
   WHEN ${a}.auto_applied = true AND ${a}.match_confirmed_at IS NULL AND ${qbCounted(a)} THEN 'match_proposed'
-  WHEN ${qbCounted(a)} OR ${qbDepositSettled(a)} THEN 'match_confirmed'
+  WHEN ${qbCounted(a)} OR ${qbDepositSettled(a)} OR ${qbChargeTied(a)} THEN 'match_confirmed'
   ELSE 'pending'
 END)`;
 /** Open = pending OR match_proposed (still needs donor/gift work). */
 const qbOpen = (a: string) => `(${a}.exclusion_reason IS NULL AND (
-  NOT (${qbCounted(a)} OR ${qbDepositSettled(a)})
+  NOT (${qbCounted(a)} OR ${qbDepositSettled(a)} OR ${qbChargeTied(a)})
   OR (${a}.auto_applied = true AND ${a}.match_confirmed_at IS NULL AND ${qbCounted(a)})
 ))`;
 
@@ -873,6 +877,38 @@ router.get(
         })
       : Promise.resolve([]);
 
+    // Deposit-grain gifts: coarse §4.3 bookings that legitimately stay
+    // counted on the settlement-linked QB deposit (one gift covering the
+    // whole multi-charge lump). Surface them on the payout cluster so
+    // already-booked money never reads as unlinked here.
+    const depositGiftsP: Promise<QbGiftRow[]> = payoutIds.length
+      ? payoutRowsP.then(async (rows) => {
+          const depIds = [
+            ...new Set(
+              rows.map((r) => r.dep_id).filter((x): x is string => x != null),
+            ),
+          ];
+          if (depIds.length === 0) return [];
+          const result = await db.execute(sql`
+      SELECT
+        pa_j.payment_id AS payment_id,
+        g.id AS gift_id,
+        g.name AS gift_name,
+        g.amount::text AS amount,
+        g.date_received::text AS date_received,
+        g.quickbooks_tie_status::text AS quickbooks_tie,
+        ${sql.raw(donorFields)},
+        ${sql.raw(donorboxBacked)} AS donorbox,
+        ${sql.raw(giftGrantLetter)} AS grant_letter,
+        ${sql.raw(giftCodingForm)} AS coding_form
+      FROM payment_applications pa_j
+      JOIN gifts_and_payments g ON g.id = pa_j.gift_id
+      ${sql.raw(donorJoins)}
+      WHERE pa_j.link_role = 'counted' AND pa_j.payment_id IN (${inList(depIds)})`);
+          return result.rows as unknown as QbGiftRow[];
+        })
+      : Promise.resolve([]);
+
     const crmGiftsP: Promise<CrmGiftRow[]> = crmIds.length
       ? db
           .execute(sql`
@@ -893,13 +929,15 @@ router.get(
           .then((r) => r.rows as unknown as CrmGiftRow[])
       : Promise.resolve([]);
 
-    const [payoutRows, payoutGifts, qbRows, qbGifts, crmGifts] = await Promise.all([
-      payoutRowsP,
-      payoutGiftsP,
-      qbRowsP,
-      qbGiftsP,
-      crmGiftsP,
-    ]);
+    const [payoutRows, payoutGifts, qbRows, qbGifts, depositGifts, crmGifts] =
+      await Promise.all([
+        payoutRowsP,
+        payoutGiftsP,
+        qbRowsP,
+        qbGiftsP,
+        depositGiftsP,
+        crmGiftsP,
+      ]);
 
     /* ── index hydration by anchor id ── */
 
@@ -921,6 +959,14 @@ router.get(
         gifts.set(row.gift_id, g);
       }
       if (!g.linkedChargeIds.includes(row.charge_id)) g.linkedChargeIds.push(row.charge_id);
+    }
+
+    // deposit staged-payment id → its deposit-grain (coarse) gifts
+    const depositGiftsByDeposit = new Map<string, QbGiftRow[]>();
+    for (const row of depositGifts) {
+      const list = depositGiftsByDeposit.get(row.payment_id);
+      if (list) list.push(row);
+      else depositGiftsByDeposit.set(row.payment_id, [row]);
     }
 
     // qb member id → anchor id, then gifts per anchor (dedupe, merge member ids)
@@ -960,7 +1006,24 @@ router.get(
 
       if (r.kind === "stripe_payout") {
         const h = payoutById.get(r.anchor_id);
-        const gifts = [...(payoutGiftsByPayout.get(r.anchor_id)?.values() ?? [])];
+        const giftMap =
+          payoutGiftsByPayout.get(r.anchor_id) ?? new Map<string, GiftOut>();
+        // Fold in the deposit-grain (coarse §4.3) gifts counted on the
+        // settlement-linked QB deposit — deduped by gift, tagged with the
+        // deposit staged-payment id so the client can label them honestly.
+        if (h?.dep_id) {
+          for (const row of depositGiftsByDeposit.get(h.dep_id) ?? []) {
+            let g = giftMap.get(row.gift_id);
+            if (!g) {
+              g = giftOut(row, viewer);
+              giftMap.set(row.gift_id, g);
+            }
+            if (!g.linkedStagedPaymentIds.includes(row.payment_id)) {
+              g.linkedStagedPaymentIds.push(row.payment_id);
+            }
+          }
+        }
+        const gifts = [...giftMap.values()];
         // Deposit QB record first, then fee/tie rows (deduped).
         const qbRecords: QbRecordJson[] = [];
         if (h?.dep_id) {

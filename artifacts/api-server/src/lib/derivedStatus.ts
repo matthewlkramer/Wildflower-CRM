@@ -34,6 +34,11 @@ import {
  *                       - a CONFIRMED settlement link naming this row as the
  *                         QB deposit lump (QB only — the deposit is settled
  *                         against a Stripe payout, its money booked per-charge)
+ *                       - a CONFIRMED charge-grain tie claiming this row (QB
+ *                         only — a Stripe charge of an individually-booked
+ *                         payout names it via linked_qb_staged_payment_id;
+ *                         the gift booking lives on the CHARGE, moved there
+ *                         by chargeTieSupersede.ts)
  *   pending         ⇐ none of the above — open work awaiting review.
  *
  * `match_proposed` is checked BEFORE `match_confirmed` because a proposed row
@@ -70,9 +75,29 @@ export const stagedCountedApplicationExists: SQL<boolean> = sql`EXISTS (
     AND ${paymentApplications.linkRole} = 'counted'
 )`;
 
-/** EXISTS: a confirmed CHARGE-grain tie claims this row — some Stripe charge
- *  (of an individually-booked payout) already names it as its QB record. */
+/** EXISTS: a BOOKED charge-grain tie claims this row — some Stripe charge
+ *  (of an individually-booked payout) names it as its QB record AND that
+ *  charge carries a counted ledger row (the gift booking lives on the CHARGE,
+ *  moved there by chargeTieSupersede.ts). Mere linkage is NOT evidence: a
+ *  refunded or not-yet-booked tied charge leaves the QB row's own status
+ *  untouched (the refund sweep and the workbench still own that work). */
 export const stagedChargeTieExists: SQL<boolean> = sql`EXISTS (
+  SELECT 1 FROM ${stripeStagedCharges}
+  WHERE ${stripeStagedCharges.linkedQbStagedPaymentId} = ${stagedPayments.id}
+    AND EXISTS (
+      SELECT 1 FROM ${paymentApplications}
+      WHERE ${paymentApplications.stripeChargeId} = ${stripeStagedCharges.id}
+        AND ${paymentApplications.evidenceSource} = 'stripe'
+        AND ${paymentApplications.linkRole} = 'counted'
+    )
+)`;
+
+/** EXISTS: RAW charge-grain tie linkage — some Stripe charge names this row,
+ *  booked or not. This is the CLAIM fact (pick-list blockers, eligibility
+ *  filters): re-tying the row elsewhere would conflict even before the
+ *  charge's money is booked. Never use it as status evidence — that is
+ *  `stagedChargeTieExists` (which additionally requires the booking). */
+export const stagedChargeTieLinkExists: SQL<boolean> = sql`EXISTS (
   SELECT 1 FROM ${stripeStagedCharges}
   WHERE ${stripeStagedCharges.linkedQbStagedPaymentId} = ${stagedPayments.id}
 )`;
@@ -91,6 +116,7 @@ const stagedProposedCondition: SQL<boolean> = sql`(
 const stagedConfirmedEvidence: SQL<boolean> = sql`(
   ${stagedCountedApplicationExists}
   OR ${stagedConfirmedSettlementLinkExists}
+  OR ${stagedChargeTieExists}
 )`;
 
 /** SELECTable CASE expression emitting the derived status for a staged payment. */
@@ -117,6 +143,7 @@ export const stagedStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
     ${stagedPayments.exclusionReason} IS NULL
     AND NOT ${stagedCountedApplicationExists}
     AND NOT ${stagedConfirmedSettlementLinkExists}
+    AND NOT ${stagedChargeTieExists}
   )`,
 };
 
@@ -192,6 +219,11 @@ export interface StagedStatusFacts {
   hasCountedApplication: boolean;
   /** EXISTS arm — pass when known; default false (QB-rare deposit shape). */
   hasConfirmedSettlementLink?: boolean;
+  /** EXISTS arm — a BOOKED charge-grain tie claims this row (some Stripe
+   * charge's linked_qb_staged_payment_id names it AND that charge carries a
+   * counted ledger row). Mere linkage is NOT evidence — pass true only when
+   * the tied charge's booking is known-counted; default false. */
+  hasConfirmedChargeTie?: boolean;
 }
 
 export function deriveStagedPaymentStatus(f: StagedStatusFacts): DerivedStatus {
@@ -199,7 +231,11 @@ export function deriveStagedPaymentStatus(f: StagedStatusFacts): DerivedStatus {
   if (f.autoApplied && f.matchConfirmedAt == null && f.hasCountedApplication) {
     return "match_proposed";
   }
-  if (f.hasCountedApplication || f.hasConfirmedSettlementLink === true) {
+  if (
+    f.hasCountedApplication ||
+    f.hasConfirmedSettlementLink === true ||
+    f.hasConfirmedChargeTie === true
+  ) {
     return "match_confirmed";
   }
   return "pending";

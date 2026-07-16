@@ -427,6 +427,21 @@ router.get(
                  SELECT 1 FROM payment_applications pa
                  WHERE pa.payment_id = s.id AND pa.link_role = 'counted'
                )
+               OR EXISTS (
+                 SELECT 1 FROM settlement_links sl_q
+                 WHERE sl_q.deposit_staged_payment_id = s.id
+                   AND sl_q.lifecycle = 'confirmed'
+               )
+               OR EXISTS (
+                 SELECT 1 FROM stripe_staged_charges cc_q
+                 WHERE cc_q.linked_qb_staged_payment_id = s.id
+                   AND EXISTS (
+                     SELECT 1 FROM payment_applications pa_ct
+                     WHERE pa_ct.stripe_charge_id = cc_q.id
+                       AND pa_ct.evidence_source = 'stripe'
+                       AND pa_ct.link_role = 'counted'
+                   )
+               )
             THEN 'match_confirmed'
           ELSE 'pending'
         END)::text AS status_label,

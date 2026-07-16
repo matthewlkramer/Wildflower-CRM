@@ -1880,6 +1880,12 @@ const reconSelect = {
          OR EXISTS (SELECT 1 FROM payment_applications pa
                     WHERE pa.payment_id = "active_deposit"."id"
                       AND pa.link_role = 'counted')
+         OR EXISTS (SELECT 1 FROM stripe_staged_charges cc_q
+                    WHERE cc_q.linked_qb_staged_payment_id = "active_deposit"."id"
+                      AND EXISTS (SELECT 1 FROM payment_applications pa_ct
+                                  WHERE pa_ct.stripe_charge_id = cc_q.id
+                                    AND pa_ct.evidence_source = 'stripe'
+                                    AND pa_ct.link_role = 'counted'))
       THEN 'match_confirmed'
     ELSE 'pending'
   END`.as("deposit_status"),

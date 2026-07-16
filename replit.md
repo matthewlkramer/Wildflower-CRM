@@ -205,7 +205,11 @@ reference, and the design docs.
   `FLODESK_API_KEY` + `FLODESK_SEGMENT_ID` are set.
 - **Stripe sync + reconciliation** — a second pull-only money source parallel to
   QuickBooks; the reconciliation queue ties a coarse QB deposit/payout lump to its
-  individual Stripe charges so money is never booked twice. The ratified target
+  individual Stripe charges so money is never booked twice. Charge-tie confirm
+  supersedes an exact-cents QB-grain counted booking onto the tied charge
+  (`chargeTieSupersede.ts`; QB row demoted to corroborating), and a charge-grain
+  tie counts as confirmed status evidence only when the tied charge itself is
+  booked — raw linkage alone only blocks re-picking. The ratified target
   state (two planes, one unit↔gift ledger + one settlement-link table, derived
   statuses, phased prod-safe path) is in
   [`docs/reconciliation-design.md`](docs/reconciliation-design.md) — treat that doc
