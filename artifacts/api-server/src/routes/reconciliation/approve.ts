@@ -44,6 +44,7 @@ import {
   qbLedgerSoleGiftIdForPayment,
   qbLedgerMintedGiftIdForPayment,
   chargeCountedLedgerRow,
+  giftCountedStripeChargeId,
 } from "../../lib/paymentApplications";
 import {
   chargeStatusIn,
@@ -542,7 +543,8 @@ async function mintGiftFromEvidence(
           individualGiverPersonId: donor.individualGiverPersonId,
           householdId: donor.householdId,
           finalAmountSource: null,
-          finalAmountStripeChargeId: null,
+          // New gift has no existing Stripe ledger row yet — no current charge.
+          currentStripeChargeId: null,
         },
         opportunity: opp
           ? {
@@ -1223,18 +1225,18 @@ router.post(
         // that currently backs the gift so we can (a) surface its details in the
         // 409 the UI describes and (b) hand it to the commit to orphan back to the
         // queue. Only meaningful when a new charge is selected and it differs.
+        //
+        // finalAmountStripeChargeId is @deprecated; read from the ledger instead.
         let oldStripeCharge: typeof stripeStagedCharges.$inferSelect | null = null;
+        const currentChargeId = await giftCountedStripeChargeId(tx, giftId);
         const switchingStripeSource =
-          !!charge &&
-          gift.finalAmountSource === "stripe" &&
-          !!gift.finalAmountStripeChargeId &&
-          gift.finalAmountStripeChargeId !== charge.id;
-        if (switchingStripeSource && gift.finalAmountStripeChargeId) {
+          !!charge && !!currentChargeId && currentChargeId !== charge.id;
+        if (switchingStripeSource && currentChargeId) {
           oldStripeCharge =
             (await tx
               .select()
               .from(stripeStagedCharges)
-              .where(eq(stripeStagedCharges.id, gift.finalAmountStripeChargeId))
+              .where(eq(stripeStagedCharges.id, currentChargeId))
               .for("update")
               .then((r) => r[0])) ?? null;
         }
@@ -1273,7 +1275,8 @@ router.post(
             individualGiverPersonId: effectiveGiftDonor.individualGiverPersonId,
             householdId: effectiveGiftDonor.householdId,
             finalAmountSource: gift.finalAmountSource,
-            finalAmountStripeChargeId: gift.finalAmountStripeChargeId,
+            // Ledger-sourced (finalAmountStripeChargeId is @deprecated).
+            currentStripeChargeId: currentChargeId,
           },
           opportunity: opp
             ? {

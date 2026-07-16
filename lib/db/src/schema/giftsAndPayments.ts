@@ -81,9 +81,12 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   finalAmountSource: giftFinalAmountSourceEnum("final_amount_source")
     .notNull()
     .default("human"),
-  // TRANSITIONAL — still READ by financialCorrections.ts; still WRITTEN (to null)
-  // by QB matching. FK + RESTRICT kept while the column lives. See
-  // originalHumanCrmAmount above.
+  /**
+   * @deprecated NEVER READ, NEVER WRITTEN. Stripe linkage lives on the counted
+   * `payment_applications` ledger (`evidenceSource='stripe'`, `linkRole='counted'`).
+   * Backfilled by migration 0130. FK + column kept physical until the reviewed
+   * DROP migration ships. Never return this from the API.
+   */
   finalAmountStripeChargeId: text("final_amount_stripe_charge_id").references(
     (): AnyPgColumn => stripeStagedCharges.id,
     { onDelete: "restrict" },

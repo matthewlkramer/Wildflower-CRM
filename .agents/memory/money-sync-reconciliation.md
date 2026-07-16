@@ -35,12 +35,13 @@ Before writing any reconciliation code, confirm:
 Three authoritative link tables — never conflate:
 
 **Ledger 1: `payment_applications`** — Money unit → CRM gift (current authority). QB
-reads fully flipped to the ledger; Stripe and Donorbox still dual-write to both the
-ledger and their per-row pointer columns, and those reads are not yet flipped —
-Stripe/Donorbox pointer columns remain live until their ledger read-cutovers.
-`link_role='counted'` = money trail (amount NOT NULL); `link_role='corroborating'` =
-audit annotation (see topic file for the two distinct sub-cases). `gift_id` ON DELETE
-RESTRICT.
+reads fully flipped to the ledger; Stripe reads also fully flipped (migration 0130
+backfill + read-cutover complete as of 2026-07); Donorbox pointer column still
+dual-writes. `gifts_and_payments.final_amount_stripe_charge_id` is @deprecated
+(never written, never returned by API, backfill SQL 0130, physical column retained
+until reviewed DROP migration ships). `link_role='counted'` = money trail
+(amount NOT NULL); `link_role='corroborating'` = audit annotation (see topic file
+for the two distinct sub-cases). `gift_id` ON DELETE RESTRICT.
 
 **Ledger 2: `settlement_links`** — Stripe payout ↔ QB deposit (Plane 1 batch↔batch,
 current authority). Lifecycle: `proposed | confirmed | exempt`. Status derived on read.
@@ -102,8 +103,10 @@ entries for QB are archived in `legacy-reconciliation/index.md`.
 ## Stripe
 
 Stripe charges link to gifts via `stripe_staged_charges.matched_gift_id` /
-`created_gift_id` (pointer columns; still live — PA ledger dual-writes Stripe rows
-but does not yet read them). Revert un-sources the pointer + removes ledger rows.
+`created_gift_id` (pointer columns; still live — PA ledger is the authoritative
+Stripe gift read; `final_amount_stripe_charge_id` on the gift table is
+@deprecated+never-written since 2026-07). Revert un-sources the pointer + removes
+ledger rows.
 Derived charge status (`pending | match_proposed | match_confirmed | excluded`) is
 read via `derivedStatus.ts` builders — no stored status column. `match_confirmed`
 requires a BOOKED charge (counted PA row); raw linkage alone is a CLAIM signal only.

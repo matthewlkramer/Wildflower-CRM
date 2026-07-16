@@ -136,7 +136,7 @@ export async function stampGiftFinalAmount(
       .update(giftsAndPayments)
       .set({
         finalAmountSource: "quickbooks",
-        finalAmountStripeChargeId: null,
+        // finalAmountStripeChargeId is @deprecated and no longer written.
         updatedAt: new Date(),
       })
       .where(eq(giftsAndPayments.id, giftId));
@@ -154,11 +154,12 @@ export async function stampGiftFinalAmount(
   // entered figure is preserved and any settled≠entered disagreement surfaces
   // in the reconciliation queue instead of silently rescaling allocations.
   // changed=false ⇒ callers' adjustSingleAllocationOrFlag no-ops.
+  // finalAmountStripeChargeId is @deprecated and no longer written — Stripe
+  // linkage is the caller's ledger row (evidence_source='stripe', counted).
   await tx
     .update(giftsAndPayments)
     .set({
       finalAmountSource: "stripe",
-      finalAmountStripeChargeId: stripeChargeId,
       updatedAt: new Date(),
     })
     .where(eq(giftsAndPayments.id, giftId));
@@ -227,7 +228,6 @@ export async function unstampGiftFinalAmount(
       amount: giftsAndPayments.amount,
       originalHumanCrmAmount: giftsAndPayments.originalHumanCrmAmount,
       finalAmountSource: giftsAndPayments.finalAmountSource,
-      finalAmountStripeChargeId: giftsAndPayments.finalAmountStripeChargeId,
     })
     .from(giftsAndPayments)
     .where(eq(giftsAndPayments.id, giftId))
@@ -242,12 +242,24 @@ export async function unstampGiftFinalAmount(
 
   // …and the reverting evidence must still back the gift.
   if (args.source === "stripe") {
-    if (
-      !args.stripeChargeId ||
-      gift.finalAmountStripeChargeId !== args.stripeChargeId
-    ) {
-      return noop;
-    }
+    // Ledger-backed provenance: the reverting charge must still hold a counted
+    // Stripe cash-application to THIS gift. Callers unstamp BEFORE removing the
+    // ledger rows, so the row is still present here.
+    // finalAmountStripeChargeId is @deprecated and no longer read.
+    if (!args.stripeChargeId) return noop;
+    const backed = await tx
+      .select({ one: sql`1` })
+      .from(paymentApplications)
+      .where(
+        and(
+          eq(paymentApplications.stripeChargeId, args.stripeChargeId),
+          eq(paymentApplications.giftId, giftId),
+          eq(paymentApplications.evidenceSource, "stripe"),
+          eq(paymentApplications.linkRole, "counted"),
+        ),
+      )
+      .limit(1);
+    if (backed.length === 0) return noop;
   } else {
     // Ledger-backed provenance (the legacy final_amount_qb_staged_payment_id
     // pointer is @deprecated and no longer written): the reverting payment
@@ -273,13 +285,13 @@ export async function unstampGiftFinalAmount(
 
   const oldAmount = gift.amount;
   const newAmount = gift.originalHumanCrmAmount ?? gift.amount;
+  // finalAmountStripeChargeId is @deprecated and no longer written.
   await tx
     .update(giftsAndPayments)
     .set({
       amount: newAmount,
       originalHumanCrmAmount: null,
       finalAmountSource: "human",
-      finalAmountStripeChargeId: null,
       updatedAt: new Date(),
     })
     .where(eq(giftsAndPayments.id, giftId));

@@ -227,11 +227,10 @@ router.post(
           ),
           // Stamp provenance at insert: the gift's amount IS this QB evidence
           // (no prior human figure to snapshot). The legacy
-          // final_amount_qb_staged_payment_id pointer is @deprecated and no
-          // longer written — the counted ledger row (created_the_gift = true,
-          // booked below) carries the tie.
+          // final_amount_qb_staged_payment_id and final_amount_stripe_charge_id
+          // pointer columns are @deprecated and never written — the counted
+          // ledger row (created_the_gift = true, booked below) carries the tie.
           finalAmountSource: "quickbooks",
-          finalAmountStripeChargeId: null,
           originalHumanCrmAmount: null,
         });
         // Every gift needs at least one allocation (the sole home of money

@@ -239,12 +239,12 @@ describe.skipIf(!HAS_DB)(
       expect(charge.organizationId).toBe(ORG_ID);
 
       // The gift is now sourced from this Stripe charge (GROSS). The stamp
-      // records provenance pointers — it deliberately does NOT overwrite the
-      // human-entered `amount`; the settled GROSS is derived at read time from
-      // the linked charge (see giftPaymentSummary). No fee-band gate.
+      // records provenance in the ledger (finalAmountStripeChargeId @deprecated);
+      // the settled GROSS is derived at read time from the linked charge
+      // (see giftPaymentSummary). No fee-band gate.
       const gift = await readGift(giftId);
       expect(gift.finalAmountSource).toBe("stripe");
-      expect(gift.finalAmountStripeChargeId).toBe(chargeId);
+      expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
     });
 
     it("is idempotent: re-linking the same charge to the same gift is a 200 no-op", async () => {
@@ -397,10 +397,10 @@ describe.skipIf(!HAS_DB)(
       expect(await stripeGiftIdForCharge(chargeB)).toBe(giftId);
       expect(chargeBRow.matchStatus).toBe("matched");
 
-      // The gift's Stripe provenance pointer moved to the new charge.
+      // The gift's Stripe provenance moved to the new charge (via ledger).
       const gift = await readGift(giftId);
       expect(gift.finalAmountSource).toBe("stripe");
-      expect(gift.finalAmountStripeChargeId).toBe(chargeB);
+      expect(await stripeGiftIdForCharge(chargeB)).toBe(giftId);
     });
 
     it("switchStripeSource=true is a plain link when no incumbent exists", async () => {

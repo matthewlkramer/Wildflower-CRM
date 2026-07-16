@@ -117,8 +117,13 @@ export interface GateGift {
   householdId: string | null;
   /** Current final-amount provenance, to guard Stripe precedence + re-pointing. */
   finalAmountSource?: string | null;
-  /** The Stripe charge currently backing this gift's amount (when stripe-sourced). */
-  finalAmountStripeChargeId?: string | null;
+  /**
+   * The Stripe charge currently counted against this gift in the ledger, or
+   * null. Replaces the retired finalAmountStripeChargeId pointer column — the
+   * caller resolves this from the payment_applications ledger before calling
+   * runConsistencyGate.
+   */
+  currentStripeChargeId?: string | null;
 }
 
 export interface GateOpportunity {
@@ -429,9 +434,8 @@ export function runConsistencyGate(input: ConsistencyGateInput): GateIssue[] {
     // orphans the old charge back to the unmatched-money queue and re-sources the
     // gift to this one.
     if (
-      gift.finalAmountSource === "stripe" &&
-      gift.finalAmountStripeChargeId &&
-      gift.finalAmountStripeChargeId !== stripeCharge.id &&
+      gift.currentStripeChargeId &&
+      gift.currentStripeChargeId !== stripeCharge.id &&
       !switchStripeSource
     ) {
       issues.push({

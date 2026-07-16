@@ -6338,7 +6338,7 @@ components:
         # ── model only during deprecate-then-drop; superseded by derivedSettledAmount.
         originalHumanCrmAmount:     { type: string, nullable: true, readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount." }
         finalAmountSource:          { allOf: [ { $ref: "#/components/schemas/GiftFinalAmountSource" } ], readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — `amount` is always the human-entered amount now; settled money is derivedSettledAmount." }
-        finalAmountStripeChargeId:  { type: string, nullable: true, readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — Stripe linkage lives on stripe_staged_charges; settled amount is derived." }
+        finalAmountStripeChargeId:  { type: string, nullable: true, readOnly: true, deprecated: true, description: "DEPRECATED — never returned by the API. Stripe gift linkage is authoritative on payment_applications (evidenceSource=stripe, linkRole=counted). Column retained in DB until a reviewed DROP migration ships." }
         organizationId:                   { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         householdId:                { type: string, nullable: true }

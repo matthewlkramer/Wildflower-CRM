@@ -114,9 +114,11 @@ async function loadActiveGifts(): Promise<GiftRow[]> {
   // are preserved, with their correlation written explicitly-qualified to the
   // outer gift so they actually match (the parity:reconciliation-guards gate
   // proves the full predicate is unchanged vs the corrected legacy semantics).
+  // QB cash-application now sourced from the authoritative ledger; Stripe
+  // linkage likewise read from the ledger (finalAmountStripeChargeId is
+  // @deprecated and no longer read — the ledger check supersedes it).
   const countedLinked = sql<boolean>`(
     ${qbLedgerExistsForGift()}
-    OR ${g.finalAmountStripeChargeId} IS NOT NULL
     OR EXISTS (SELECT 1 FROM payment_applications pa
       WHERE pa.gift_id = "gifts_and_payments"."id"
         AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted')

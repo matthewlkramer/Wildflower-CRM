@@ -1965,7 +1965,7 @@ export interface GiftOrPayment {
    */
   readonly finalAmountSource: GiftFinalAmountSource;
   /**
-   * DEPRECATED (Task #448) — Stripe linkage lives on stripe_staged_charges; settled amount is derived.
+   * DEPRECATED — never returned by the API. Stripe gift linkage is authoritative on payment_applications (evidenceSource=stripe, linkRole=counted). Column retained in DB until a reviewed DROP migration ships.
    * @deprecated
    */
   readonly finalAmountStripeChargeId?: string | null;

@@ -47,12 +47,12 @@ export function buildGiftValuesFromStripeCharge(
     paymentIntermediaryId: staged.matchedPaymentIntermediaryId,
     details: `Imported from Stripe (charge ${staged.chargeId}).`,
     ownerUserId,
-    // This gift is BORN from a Stripe charge: its final amount is the GROSS
-    // charge from the moment of mint, tied permanently to that charge as the
-    // single XOR provenance pointer. originalHumanCrmAmount stays null (there
-    // was never a human-entered figure to snapshot).
+    // This gift is BORN from a Stripe charge; the provenance is the ledger row
+    // booked by the caller (evidence_source='stripe', created_the_gift=true).
+    // finalAmountStripeChargeId is @deprecated and never written — the ledger
+    // is the sole source. originalHumanCrmAmount stays null (there was never a
+    // human-entered figure to snapshot).
     finalAmountSource: "stripe",
-    finalAmountStripeChargeId: staged.chargeId,
     originalHumanCrmAmount: null,
   };
 }

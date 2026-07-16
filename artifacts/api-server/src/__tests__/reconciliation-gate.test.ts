@@ -365,7 +365,7 @@ describe("runConsistencyGate", () => {
           gift: {
             ...baseInput().gift,
             finalAmountSource: "stripe",
-            finalAmountStripeChargeId: "c-old",
+            currentStripeChargeId: "c-old",
           },
         }),
       ),
@@ -381,7 +381,7 @@ describe("runConsistencyGate", () => {
           gift: {
             ...baseInput().gift,
             finalAmountSource: "stripe",
-            finalAmountStripeChargeId: "c1",
+            currentStripeChargeId: "c1",
           },
         }),
       ),
@@ -398,7 +398,7 @@ describe("runConsistencyGate", () => {
           gift: {
             ...baseInput().gift,
             finalAmountSource: "stripe",
-            finalAmountStripeChargeId: "c-old",
+            currentStripeChargeId: "c-old",
           },
         }),
       ),
@@ -419,7 +419,7 @@ describe("runConsistencyGate", () => {
         gift: {
           ...baseInput().gift,
           finalAmountSource: "stripe",
-          finalAmountStripeChargeId: "c-old",
+          currentStripeChargeId: "c-old",
         },
       }),
     );
@@ -438,7 +438,7 @@ describe("runConsistencyGate", () => {
           gift: {
             ...baseInput().gift,
             finalAmountSource: "quickbooks",
-            finalAmountStripeChargeId: null,
+            currentStripeChargeId: null,
           },
         }),
       ),
@@ -499,7 +499,7 @@ describe("runConsistencyGate", () => {
       gift: {
         ...baseInput().gift,
         finalAmountSource: "stripe",
-        finalAmountStripeChargeId: "c-old",
+        currentStripeChargeId: "c-old",
       },
     });
     const both = codes(conflicting);

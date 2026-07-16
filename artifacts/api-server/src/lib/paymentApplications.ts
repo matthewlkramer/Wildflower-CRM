@@ -9,7 +9,7 @@ import {
   stripeStagedCharges,
   donorboxDonations,
 } from "@workspace/db/schema";
-import { and, eq, ne, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNotNull, ne, sql, type SQL } from "drizzle-orm";
 import { newId } from "./helpers";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -890,6 +890,33 @@ export async function chargeCountedLedgerRow(
     .limit(1)
     .then((r) => r[0]);
   return row ?? null;
+}
+
+/**
+ * The Stripe charge currently counted against this gift, or null.
+ * Inverse of chargeCountedLedgerRow / stripeLedgerGiftIdForCharge — goes
+ * gift → charge. Replaces the retired
+ * gifts_and_payments.final_amount_stripe_charge_id pointer column as the
+ * authoritative source for "which charge backs this gift?".
+ */
+export async function giftCountedStripeChargeId(
+  q: Pick<Tx, "select">,
+  giftId: string,
+): Promise<string | null> {
+  const row = await q
+    .select({ stripeChargeId: paymentApplications.stripeChargeId })
+    .from(paymentApplications)
+    .where(
+      and(
+        eq(paymentApplications.giftId, giftId),
+        eq(paymentApplications.evidenceSource, "stripe"),
+        eq(paymentApplications.linkRole, "counted"),
+        isNotNull(paymentApplications.stripeChargeId),
+      ),
+    )
+    .limit(1)
+    .then((r) => r[0]);
+  return row?.stripeChargeId ?? null;
 }
 
 /** EXISTS a counted Stripe cash-application ledger row anchored on the charge. */

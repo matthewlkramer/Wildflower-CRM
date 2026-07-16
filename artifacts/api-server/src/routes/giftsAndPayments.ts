@@ -55,11 +55,13 @@ const maskGiftDonorRow = maskDonorDisplayFields;
 // are intentionally echoed here to match their deprecated OpenAPI response
 // fields; columns fully retired from the schema (grant_year, needs_research,
 // processor_fee) simply fall out of getTableColumns and never reach a response.
-// finalAmountQbStagedPaymentId is @deprecated NEVER READ / NEVER WRITTEN (the
-// counted payment_applications ledger is the sole QB gift-link source), so it
-// is scrubbed here ahead of its physical drop.
+// finalAmountQbStagedPaymentId and finalAmountStripeChargeId are both
+// @deprecated NEVER READ / NEVER WRITTEN (the counted payment_applications
+// ledger is the sole gift-link source for QB and Stripe), so both are scrubbed
+// here ahead of their physical drops.
 const {
   finalAmountQbStagedPaymentId: _finalAmountQbStagedPaymentId,
+  finalAmountStripeChargeId: _finalAmountStripeChargeId,
   ...giftHeaderColumns
 } = getTableColumns(giftsAndPayments);
 export { giftHeaderColumns };

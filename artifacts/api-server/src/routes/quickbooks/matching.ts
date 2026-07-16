@@ -851,11 +851,11 @@ router.post(
             ),
             amount: remainder.amount,
             // Provenance stamped at insert: the gift's amount IS this QB
-            // evidence. The legacy final_amount_qb_staged_payment_id pointer is
-            // @deprecated and no longer written — the counted ledger row
-            // (created_the_gift = true, booked below) carries the tie.
+            // evidence. The legacy final_amount_qb_staged_payment_id and
+            // final_amount_stripe_charge_id pointer columns are @deprecated and
+            // never written — the counted ledger row (created_the_gift = true,
+            // booked below) carries the tie.
             finalAmountSource: "quickbooks" as const,
-            finalAmountStripeChargeId: null,
             originalHumanCrmAmount: null,
           });
           // Every gift needs at least one allocation (the sole home of money

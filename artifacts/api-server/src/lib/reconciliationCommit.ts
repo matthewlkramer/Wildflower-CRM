@@ -276,18 +276,13 @@ export async function mintGiftInTx(
     ),
     amount: evidenceAmount,
     ...(opportunityId ? { opportunityId } : {}),
-    // The legacy final_amount_qb_staged_payment_id pointer is @deprecated and
-    // never written — WHICH payment stamped a QB-sourced gift is answered by
-    // the counted QB ledger row(s) booked below.
+    // The legacy final_amount_qb_staged_payment_id and
+    // final_amount_stripe_charge_id pointer columns are @deprecated and never
+    // written — WHICH payment stamped the gift is answered by the counted
+    // ledger row(s) booked below (created_the_gift = true).
     ...(charge
-      ? {
-          finalAmountSource: "stripe" as const,
-          finalAmountStripeChargeId: charge.id,
-        }
-      : {
-          finalAmountSource: "quickbooks" as const,
-          finalAmountStripeChargeId: null,
-        }),
+      ? { finalAmountSource: "stripe" as const }
+      : { finalAmountSource: "quickbooks" as const }),
     originalHumanCrmAmount: null,
   });
 
@@ -1093,11 +1088,13 @@ export async function orphanStripeSourceChargeInTx(
   },
 ): Promise<void> {
   const { oldCharge, giftId } = args;
-  await removePaymentApplicationsForStripeCharge(tx, oldCharge.id);
+  // Unstamp BEFORE removing the ledger row — the Stripe guard inside
+  // unstampGiftFinalAmount verifies the counted PA row is still present.
   const unstamped = await unstampGiftFinalAmount(tx, giftId, {
     source: "stripe",
     stripeChargeId: oldCharge.id,
   });
+  await removePaymentApplicationsForStripeCharge(tx, oldCharge.id);
   if (unstamped.restored) {
     await adjustSingleAllocationOrFlag(
       tx,
