@@ -37,6 +37,9 @@ import {
   type Tone,
 } from "./primitives";
 
+/** Derived from WorkbenchCluster — orval doesn't re-export nested subtypes through the tag barrel. */
+type CandidateDonor = NonNullable<WorkbenchCluster["candidateDonor"]>;
+
 // ─── Cluster rows: one row per piece of money work, three facet columns ─────
 
 /** The evidence row an action targets: a Stripe charge or a QB staged payment. */
@@ -100,6 +103,44 @@ function donorHref(gift: WorkbenchClusterGift): string | null {
     default:
       return null;
   }
+}
+
+function candidateDonorHref(cd: CandidateDonor): string | null {
+  if (!cd) return null;
+  switch (cd.donorKind) {
+    case "organization": return `/organizations/${cd.donorId}`;
+    case "person": return `/individuals/${cd.donorId}`;
+    case "household": return `/households/${cd.donorId}`;
+    default: return null;
+  }
+}
+
+/** Shown when a donor has been identified on an evidence row but no gift has been minted yet. */
+function IdentifiedDonorNote({
+  candidateDonor,
+}: {
+  candidateDonor: CandidateDonor;
+}) {
+  if (!candidateDonor) return null;
+  const href = candidateDonorHref(candidateDonor);
+  const name = candidateDonor.donorName ?? "(unnamed)";
+  return (
+    <div className="text-[11px] text-muted-foreground pb-1 pl-0.5">
+      Identified:{" "}
+      {href ? (
+        <Link
+          href={href}
+          className="text-primary font-medium hover:underline underline-offset-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {name}
+        </Link>
+      ) : (
+        <span className="font-medium">{name}</span>
+      )}
+      {" — no gift yet"}
+    </div>
+  );
 }
 
 // ── Card-level ⋯ menu ────────────────────────────────────────────────────────
@@ -477,6 +518,7 @@ function QbCard({
   const subBits = [
     QB_ROLE_LABEL[record.role],
     record.dateReceived ? formatDateShort(record.dateReceived) : null,
+    record.payerName && record.payerName !== label ? record.payerName : null,
     qbReferenceNote(record),
   ].filter(Boolean);
   return (
@@ -566,7 +608,10 @@ function RowKebab({ clusterId }: { clusterId: string }) {
 
 // ── Per-charge status (child rows of an expanded payout bundle) ─────────────
 
-function chargeStatus(c: WorkbenchClusterCharge): {
+function chargeStatus(
+  c: WorkbenchClusterCharge,
+  depositGrainGift?: boolean | null,
+): {
   tone: Tone;
   word: string;
   detail?: string;
@@ -583,6 +628,9 @@ function chargeStatus(c: WorkbenchClusterCharge): {
   if (c.linkedGiftId) {
     if (c.status === "match_confirmed") return { tone: "green", word: "Done" };
     return { tone: "blue", word: "Linked", detail: "awaiting confirm" };
+  }
+  if (depositGrainGift) {
+    return { tone: "green", word: "Covered", detail: "deposit-grain gift" };
   }
   return {
     tone: "amber",
@@ -683,7 +731,7 @@ function PayoutBundleRow({
     const gift = charge.linkedGiftId
       ? giftById.get(charge.linkedGiftId)
       : cluster.gifts[0];
-    const status = chargeStatus(charge);
+    const status = chargeStatus(charge, cluster.depositGrainGift);
     const anchor: AnchorRef = {
       kind: "charge",
       id: charge.chargeId,
@@ -700,18 +748,27 @@ function PayoutBundleRow({
             <GiftCard gift={gift} actions={actions} />
           ) : charge.status === "excluded" ? (
             <ExcludedCard />
+          ) : cluster.depositGrainGift ? (
+            <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">
+              covered by the deposit-grain gift above
+            </div>
           ) : (
-            <DonorActions
-              disabled={actions.busy}
-              onLink={() => actions.openLinkGift(anchor)}
-              onCreate={() =>
-                actions.openCreateGift(anchor, chargePreview(charge))
-              }
-              onIdentify={() =>
-                actions.openIdentify(anchor, chargePreview(charge))
-              }
-              testIdBase={`donor-slot-${charge.chargeId}`}
-            />
+            <>
+              {cluster.candidateDonor ? (
+                <IdentifiedDonorNote candidateDonor={cluster.candidateDonor} />
+              ) : null}
+              <DonorActions
+                disabled={actions.busy}
+                onLink={() => actions.openLinkGift(anchor)}
+                onCreate={() =>
+                  actions.openCreateGift(anchor, chargePreview(charge))
+                }
+                onIdentify={() =>
+                  actions.openIdentify(anchor, chargePreview(charge))
+                }
+                testIdBase={`donor-slot-${charge.chargeId}`}
+              />
+            </>
           )}
         </div>
         <ChargeCard charge={charge} actions={actions} />
@@ -839,7 +896,7 @@ function PayoutBundleRow({
             const gift = charge.linkedGiftId
               ? giftById.get(charge.linkedGiftId)
               : undefined;
-            const status = chargeStatus(charge);
+            const status = chargeStatus(charge, cluster.depositGrainGift);
             const tie = cluster.qbRecords.find(
               (r) =>
                 r.linkedChargeId === charge.chargeId && r.role === "charge_tie",
@@ -861,18 +918,27 @@ function PayoutBundleRow({
                     <GiftCard gift={gift} actions={actions} />
                   ) : charge.status === "excluded" ? (
                     <ExcludedCard />
+                  ) : cluster.depositGrainGift ? (
+                    <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">
+                      covered by the deposit-grain gift above
+                    </div>
                   ) : (
-                    <DonorActions
-                      disabled={actions.busy}
-                      onLink={() => actions.openLinkGift(anchor)}
-                      onCreate={() =>
-                        actions.openCreateGift(anchor, chargePreview(charge))
-                      }
-                      onIdentify={() =>
-                        actions.openIdentify(anchor, chargePreview(charge))
-                      }
-                      testIdBase={`donor-slot-${charge.chargeId}`}
-                    />
+                    <>
+                      {cluster.candidateDonor ? (
+                        <IdentifiedDonorNote candidateDonor={cluster.candidateDonor} />
+                      ) : null}
+                      <DonorActions
+                        disabled={actions.busy}
+                        onLink={() => actions.openLinkGift(anchor)}
+                        onCreate={() =>
+                          actions.openCreateGift(anchor, chargePreview(charge))
+                        }
+                        onIdentify={() =>
+                          actions.openIdentify(anchor, chargePreview(charge))
+                        }
+                        testIdBase={`donor-slot-${charge.chargeId}`}
+                      />
+                    </>
                   )}
                 </div>
                 <ChargeCard charge={charge} actions={actions} />
@@ -992,13 +1058,18 @@ function QbStandaloneRow({
             </Link>
           </div>
         ) : stagedAnchor ? (
-          <DonorActions
-            disabled={actions.busy}
-            onLink={() => actions.openLinkGift(stagedAnchor)}
-            onCreate={() => actions.openCreateGift(stagedAnchor, preview)}
-            onIdentify={() => actions.openIdentify(stagedAnchor, preview)}
-            testIdBase={`donor-slot-${stagedAnchor.id}`}
-          />
+          <>
+            {cluster.candidateDonor ? (
+              <IdentifiedDonorNote candidateDonor={cluster.candidateDonor} />
+            ) : null}
+            <DonorActions
+              disabled={actions.busy}
+              onLink={() => actions.openLinkGift(stagedAnchor)}
+              onCreate={() => actions.openCreateGift(stagedAnchor, preview)}
+              onIdentify={() => actions.openIdentify(stagedAnchor, preview)}
+              testIdBase={`donor-slot-${stagedAnchor.id}`}
+            />
+          </>
         ) : null}
       </div>
       <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">

@@ -8426,6 +8426,7 @@ components:
         dateReceived:    { type: string, format: date, nullable: true }
         status:          { $ref: "#/components/schemas/WorkbenchRecordStatus" }
         linkedChargeId:  { type: string, nullable: true, description: "For fee / charge_tie roles: the stripe_staged_charges id the link runs through." }
+        payerName:       { type: string, nullable: true, description: "QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee / charge_tie / group_member." }
         qbEntityType:
           type: string
           enum: [sales_receipt, payment, deposit]
@@ -8477,6 +8478,17 @@ components:
         qbRecords:     { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterQbRecord" } }
         settlement:    { allOf: [ { $ref: "#/components/schemas/WorkbenchClusterSettlement" } ], nullable: true, description: "Null for non-payout kinds and for orphan payouts with no settlement link yet." }
         group:         { allOf: [ { $ref: "#/components/schemas/WorkbenchClusterGroup" } ], nullable: true, description: "Present only when the qb_standalone anchor represents a unit group." }
+        depositGrainGift: { type: boolean, nullable: true, description: "True when one gift is booked against the settlement-linked QB deposit lump (deposit-grain / coarse §4.3 booking). When true, resolvedCount equals totalCount even though no individual charge has its own payment_application. Null / absent for non-payout kinds." }
+        candidateDonor:
+          nullable: true
+          description: "Donor identified on an evidence row (via the Identify action) when no gift has been minted yet. Null when gifts is non-empty or no evidence row carries an identified donor."
+          allOf:
+            - type: object
+              required: [donorKind, donorId]
+              properties:
+                donorKind: { type: string, enum: [organization, person, household] }
+                donorId:   { type: string }
+                donorName: { type: string, nullable: true }
     WorkbenchLensCounts:
       type: object
       required: [all_open, needs_donor_or_gift, needs_accounting, settlement_gaps, conflicts, refunds, excluded_qb_says_donation, excluded, completed]

@@ -5315,6 +5315,8 @@ export interface WorkbenchClusterQbRecord {
   status: WorkbenchRecordStatus;
   /** For fee / charge_tie roles: the stripe_staged_charges id the link runs through. */
   linkedChargeId?: string | null;
+  /** QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee / charge_tie / group_member. */
+  payerName?: string | null;
   /** The QuickBooks transaction type this staged row came from — drives the 'View in QuickBooks' deep link. */
   qbEntityType?: WorkbenchClusterQbRecordQbEntityType;
   /** The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link). */
@@ -5353,6 +5355,15 @@ export interface WorkbenchClusterGroup {
   /** Group total, major units. */
   totalAmount?: string | null;
 }
+
+/**
+ * Donor identified on an evidence row (via the Identify action) when no gift has been minted yet. Null when gifts is non-empty or no evidence row carries an identified donor.
+ */
+export type WorkbenchClusterCandidateDonor = ({
+  donorKind: 'organization' | 'person' | 'household';
+  donorId: string;
+  donorName?: string | null;
+}) | null;
 
 /**
  * One reconciliation cluster row. A single flat shape for all three kinds —
@@ -5400,6 +5411,10 @@ export interface WorkbenchCluster {
   settlement?: WorkbenchClusterSettlement | null;
   /** Present only when the qb_standalone anchor represents a unit group. */
   group?: WorkbenchClusterGroup | null;
+  /** True when one gift is booked against the settlement-linked QB deposit lump (deposit-grain / coarse §4.3 booking). When true, resolvedCount equals totalCount even though no individual charge has its own payment_application. Null / absent for non-payout kinds. */
+  depositGrainGift?: boolean | null;
+  /** Donor identified on an evidence row (via the Identify action) when no gift has been minted yet. Null when gifts is non-empty or no evidence row carries an identified donor. */
+  candidateDonor?: WorkbenchClusterCandidateDonor;
 }
 
 /**
