@@ -1022,7 +1022,6 @@ export const ListWorkbenchClustersResponse = zod.object({
   "dateReceived": zod.string().date().nullish(),
   "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('Derived per-record linkage status (shared vocabulary for QB staged rows and Stripe charges): pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation.'),
   "linkedChargeId": zod.string().nullish().describe('For fee \/ charge_tie roles: the stripe_staged_charges id the link runs through.'),
-  "payerName": zod.string().nullish().describe('QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee \/ charge_tie \/ group_member.'),
   "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']).nullish().describe('The QuickBooks transaction type this staged row came from — drives the \'View in QuickBooks\' deep link.'),
   "qbEntityId": zod.string().nullish().describe('The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link).')
 }).describe('One QuickBooks staged row in the cluster\'s bank-and-accounting facet.')),
@@ -1034,13 +1033,7 @@ export const ListWorkbenchClustersResponse = zod.object({
   "group": zod.object({
   "memberCount": zod.number().describe('Total rows in the unit group (including the representative).'),
   "totalAmount": zod.string().nullish().describe('Group total, major units.')
-}).describe('Unit-group rollup when the qb_standalone anchor is a group representative.').nullish().describe('Present only when the qb_standalone anchor represents a unit group.'),
-  "depositGrainGift": zod.boolean().nullish().describe('True when one gift is booked against the settlement-linked QB deposit lump (deposit-grain \/ coarse §4.3 booking). When true, resolvedCount equals totalCount even though no individual charge has its own payment_application. Null \/ absent for non-payout kinds.'),
-  "candidateDonor": zod.object({
-  "donorKind": zod.enum(['organization', 'person', 'household']),
-  "donorId": zod.string(),
-  "donorName": zod.string().nullish()
-}).nullish().describe('Donor identified on an evidence row (via the Identify action) when no gift has been minted yet. Null when gifts is non-empty or no evidence row carries an identified donor.')
+}).describe('Unit-group rollup when the qb_standalone anchor is a group representative.').nullish().describe('Present only when the qb_standalone anchor represents a unit group.')
 }).describe('One reconciliation cluster row. A single flat shape for all three kinds —\n`kind` discriminates; kind-inapplicable fields are null\/empty (house style,\nmirrors BundleAnchor). Money fields are null when unknowable for the kind\n(e.g. no fee data for QB-only money).\n')),
   "lensCounts": zod.object({
   "all_open": zod.number(),

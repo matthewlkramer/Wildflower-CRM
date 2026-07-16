@@ -326,14 +326,13 @@ Column-level detail lives in each schema file; this is the orientation map.
   exactly-one enforced only at approve/reconcile) + an `entity_id` attribution.
 - `payment_applications` — the authoritative **cash-application ledger** (M:N
   between `staged_payments` and `gifts_and_payments`). It is the **SOLE**
-  QB↔gift link record: the four legacy pointer columns
-  (`staged_payments.matched_gift_id` / `created_gift_id` /
-  `group_reconciled_gift_id`, `gifts_and_payments.final_amount_qb_staged_payment_id`)
-  are `@deprecated` — never read, never written (migration 0120 closed the
-  backfill parity gap before the read cutover; the columns stay physical,
-  frozen at their pre-cutover values, until a later drop migration). The
-  retired `staged_payment_splits` table was dropped in 0115 — a split's
-  resolution lives entirely in counted ledger rows. One row per payment↔gift
+  QB↔gift link record. All four legacy gift-pointer columns were DROPPED:
+  `staged_payments.matched_gift_id` / `created_gift_id` /
+  `group_reconciled_gift_id` (migration 0126) and
+  `gifts_and_payments.final_amount_qb_staged_payment_id` (migration 0130).
+  Do not reintroduce gift-pointer columns on these tables. The retired
+  `staged_payment_splits` table was dropped in 0115 — a split's resolution
+  lives entirely in counted ledger rows. One row per payment↔gift
   booking (HEADER grain):
   `amount_applied` (> 0); `evidence_source` (`quickbooks` / `stripe` / `donorbox`,
   with the matching `stripe_charge_id` / `donorbox_donation_id` required by CHECK);

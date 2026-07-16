@@ -226,20 +226,6 @@ afterAll(async () => {
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   // Children first: ledger rows → staged rows → gifts → org → user.
   await clearPaymentApplicationsForRealm(REALM_ID);
-  // Un-stamp any gift whose final-amount provenance points at this realm's
-  // staged rows (the FK would otherwise block the staged_payments delete).
-  await db
-    .update(schema.giftsAndPayments)
-    .set({ finalAmountQbStagedPaymentId: null })
-    .where(
-      inArrayFn(
-        schema.giftsAndPayments.finalAmountQbStagedPaymentId,
-        db
-          .select({ id: schema.stagedPayments.id })
-          .from(schema.stagedPayments)
-          .where(eqFn(schema.stagedPayments.realmId, REALM_ID)),
-      ),
-    );
   await db
     .delete(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.realmId, REALM_ID));

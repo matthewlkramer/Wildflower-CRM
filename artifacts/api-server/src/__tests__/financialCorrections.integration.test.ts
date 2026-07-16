@@ -336,18 +336,16 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
     ).toBe(200);
     expect(await corrLedgerCount()).toBe(2);
 
-    // Book-once preserved: the gifts' counted pointers stay null (corroborating
-    // links never become the counted source)...
+    // Book-once preserved: the gifts' counted stripe pointer stays null
+    // (corroborating links never become the counted source)...
     const gifts = await db
       .select({
         id: schema.giftsAndPayments.id,
-        qb: schema.giftsAndPayments.finalAmountQbStagedPaymentId,
         stripe: schema.giftsAndPayments.finalAmountStripeChargeId,
       })
       .from(schema.giftsAndPayments)
       .where(inArrayFn(schema.giftsAndPayments.id, [GIFT_A1, GIFT_A2]));
     for (const g of gifts) {
-      expect(g.qb).toBeNull();
       expect(g.stripe).toBeNull();
     }
   }, 30_000);

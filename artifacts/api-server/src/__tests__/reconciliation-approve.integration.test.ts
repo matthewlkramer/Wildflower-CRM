@@ -479,7 +479,6 @@ afterAll(async () => {
       .set({
         finalAmountSource: "human",
         finalAmountStripeChargeId: null,
-        finalAmountQbStagedPaymentId: null,
       })
       .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
   // Clear the cash-application ledger BEFORE deleting charges/gifts. Stripe

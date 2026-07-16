@@ -287,7 +287,6 @@ afterAll(async () => {
       .set({
         finalAmountSource: "human",
         finalAmountStripeChargeId: null,
-        finalAmountQbStagedPaymentId: null,
       })
       .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
   await clearPaymentApplicationsForGiftIds(giftIds);

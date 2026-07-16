@@ -269,7 +269,6 @@ afterAll(async () => {
       .set({
         finalAmountSource: "human",
         finalAmountStripeChargeId: null,
-        finalAmountQbStagedPaymentId: null,
       })
       .where(
         sqlFn`${inArrayFn(
@@ -441,7 +440,6 @@ describe.skipIf(!HAS_DB)(
         .set({
           finalAmountSource: "stripe",
           finalAmountStripeChargeId: chargeId,
-          finalAmountQbStagedPaymentId: null,
         })
         .where(eqFn(schema.giftsAndPayments.id, giftId));
 

@@ -51,16 +51,15 @@ const maskGiftDonorRow = maskDonorDisplayFields;
 // payments projection and the archive/unarchive routes.
 // This is the single named column set every full-row gift select flows through
 // (see deprecated-column-response-leak). Deprecated-but-physical columns still
-// present in the schema (e.g. originalHumanCrmAmount, finalAmountStripeChargeId)
-// are intentionally echoed here to match their deprecated OpenAPI response
-// fields; columns fully retired from the schema (grant_year, needs_research,
-// processor_fee) simply fall out of getTableColumns and never reach a response.
-// finalAmountQbStagedPaymentId and finalAmountStripeChargeId are both
-// @deprecated NEVER READ / NEVER WRITTEN (the counted payment_applications
-// ledger is the sole gift-link source for QB and Stripe), so both are scrubbed
-// here ahead of their physical drops.
+// present in the schema (e.g. originalHumanCrmAmount) are intentionally echoed
+// here to match their deprecated OpenAPI response fields; columns fully retired
+// from the schema (grant_year, needs_research, processor_fee,
+// final_amount_qb_staged_payment_id) simply fall out of getTableColumns and
+// never reach a response.
+// finalAmountStripeChargeId is @deprecated NEVER READ / NEVER WRITTEN (the
+// counted payment_applications ledger is the sole gift-link source for Stripe),
+// so it is scrubbed here ahead of its physical drop.
 const {
-  finalAmountQbStagedPaymentId: _finalAmountQbStagedPaymentId,
   finalAmountStripeChargeId: _finalAmountStripeChargeId,
   ...giftHeaderColumns
 } = getTableColumns(giftsAndPayments);

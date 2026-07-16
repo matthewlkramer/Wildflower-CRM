@@ -29,7 +29,6 @@ import { households } from "./households";
 // modules are fully evaluated, so the ESM cycle is safe (same pattern as the
 // self-reference on giftBeingMatchedId).
 import { stripeStagedCharges } from "./stripeStagedCharges";
-import { stagedPayments } from "./stagedPayments";
 
 // Header-only row for an actual gift / payment. Like opportunities, all
 // scope (which fund entity, which fiscal year, which regions, which
@@ -91,16 +90,11 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
     (): AnyPgColumn => stripeStagedCharges.id,
     { onDelete: "restrict" },
   ),
-  /**
-   * @deprecated NEVER READ, NEVER WRITTEN. QB amount provenance is derived
-   * from the counted `payment_applications` ledger (the minting/stamping
-   * payment's `created_the_gift` row). Backfilled into the ledger by
-   * migration 0120; FK + column kept physical only until the reviewed drop
-   * migration ships.
-   */
-  finalAmountQbStagedPaymentId: text(
-    "final_amount_qb_staged_payment_id",
-  ).references((): AnyPgColumn => stagedPayments.id, { onDelete: "restrict" }),
+  // NOTE: gifts_and_payments.final_amount_qb_staged_payment_id was DROPPED
+  // (migration 0130). QB amount provenance is derived from the counted
+  // `payment_applications` ledger (the minting/stamping payment's
+  // `created_the_gift` row). Do not reintroduce a gift-pointer column here.
+
   // RESTRICT: the organization is the giver of record.
   organizationId: text("organization_id").references(() => organizations.id, {
     onDelete: "restrict",
