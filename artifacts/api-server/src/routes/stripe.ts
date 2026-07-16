@@ -107,6 +107,7 @@ import {
   chargeStatusSql,
   chargeStatusWhere,
   deriveStripeChargeStatus,
+  qbStatusCaseText,
 } from "../lib/derivedStatus";
 import {
   deriveEvidenceLanes,
@@ -1862,33 +1863,13 @@ const reconSelect = {
   depositAmount: activeDeposit.amount,
   depositDateReceived: activeDeposit.dateReceived,
   depositPayerName: activeDeposit.payerName,
-  // Derived status for the ALIASED deposit row. The shared stagedStatusSql
-  // fragment references the base table (drizzle renders alias columns
-  // unqualified inside sql``), so this alias-local CASE qualifies
-  // "active_deposit" explicitly — keep in lockstep with lib/derivedStatus.ts.
-  depositStatus: sql<string>`CASE
-    WHEN "active_deposit"."exclusion_reason" IS NOT NULL THEN 'excluded'
-    WHEN "active_deposit"."auto_applied" = true
-         AND "active_deposit"."match_confirmed_at" IS NULL
-         AND EXISTS (SELECT 1 FROM payment_applications pa
-                     WHERE pa.payment_id = "active_deposit"."id"
-                       AND pa.link_role = 'counted')
-      THEN 'match_proposed'
-    WHEN EXISTS (SELECT 1 FROM settlement_links sl
-                 WHERE sl.deposit_staged_payment_id = "active_deposit"."id"
-                   AND sl.lifecycle = 'confirmed')
-         OR EXISTS (SELECT 1 FROM payment_applications pa
-                    WHERE pa.payment_id = "active_deposit"."id"
-                      AND pa.link_role = 'counted')
-         OR EXISTS (SELECT 1 FROM stripe_staged_charges cc_q
-                    WHERE cc_q.linked_qb_staged_payment_id = "active_deposit"."id"
-                      AND EXISTS (SELECT 1 FROM payment_applications pa_ct
-                                  WHERE pa_ct.stripe_charge_id = cc_q.id
-                                    AND pa_ct.evidence_source = 'stripe'
-                                    AND pa_ct.link_role = 'counted'))
-      THEN 'match_confirmed'
-    ELSE 'pending'
-  END`.as("deposit_status"),
+  // Derived status for the ALIASED deposit row. The shared base-table
+  // fragment can't be interpolated here (drizzle renders alias columns
+  // unqualified inside sql``), so the SAME derivation comes from the
+  // single-source alias-parameterized builder.
+  depositStatus: sql<string>`${sql.raw(qbStatusCaseText("active_deposit"))}`.as(
+    "deposit_status",
+  ),
   conflictGiftAmount: conflictGift.amount,
   conflictGiftDate: conflictGift.dateReceived,
   conflictGiftArchivedAt: conflictGift.archivedAt,

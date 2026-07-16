@@ -26,16 +26,18 @@ description: Moving tie-booked QB money to the charge grain, and why the QB deri
 - **Claim (pick-list blocker / eligibility)**: raw `linked_qb_staged_payment_id`
   linkage, booked or not — the tie claims the row, so re-picking it elsewhere
   must gray/409 even before the charge's money is booked.
-- The QB derived-status CASE has alias twins outside derivedStatus.ts (raw-SQL
-  status CASEs in workbench-cluster, deposit-picker, and bundle-anchor routes);
-  any semantic change to one arm must be applied to ALL twins — grep
-  `linked_qb_staged_payment_id` across routes.
+- The raw-SQL alias twins were ELIMINATED (2026-07): every call site
+  (workbench-cluster, deposit-picker, bundle-anchor, reconciliation-graph)
+  now renders `qbStatusCaseText(alias)` / `chargeStatusCaseText(alias)` from
+  derivedStatus.ts, so a semantic change edits ONE builder; rendering +
+  execution parity tests fail if a hand-rolled CASE reappears — never
+  reintroduce one.
 
 **Why:** derived status is the single honesty signal for "is this money
 booked?"; a claim-only tie showing as confirmed silently hides open work, and
 an unbooked-tie pick would double-book if allowed.
 
 **How to apply:** touching tie semantics, refund sweeps, or QB staged status →
-decide evidence vs claim first, then update derivedStatus.ts AND every raw-SQL
-twin together; the refunded-charge-exclusion + bundle-anchor integration tests
-catch each side respectively.
+decide evidence vs claim first, then update the ONE builder in
+derivedStatus.ts; the derived-status parity tests plus the
+refunded-charge-exclusion + bundle-anchor integration suites catch drift.

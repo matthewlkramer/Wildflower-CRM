@@ -33,8 +33,15 @@ re-surface as pending work.
 - Never add a stored lifecycle status back to these tables; add FACT columns
   and extend the derivation instead.
 - Any new queue/filter/count must go through `derivedStatus.ts` helpers —
-  never inline a status predicate. Its base-table SQL fragments must NOT be
-  used inside `alias()`ed queries (they reference the base table name).
+  never inline a status predicate. For `alias()`ed or raw-SQL queries use the
+  alias-parameterized text builders (`qbStatusCaseText(alias)` /
+  `chargeStatusCaseText(alias)` + open/claim/evidence predicate builders) —
+  aliases are validated (`^[a-z_][a-z0-9_]*$`, reserved internal aliases
+  rejected) and double-quoted, so never feed them user input anyway. The
+  base-table drizzle fragments are themselves derived FROM the builders, so
+  there is exactly one CASE definition; SQL-rendering + PostgreSQL-execution
+  parity tests (derived-status-builders / derived-status-parity) fail on any
+  divergence.
 - Donorbox is the exception: `donorbox_donations.status` stays STORED
   (write-driven lifecycle) but is mapped to the shared vocabulary at the API
   edge via `donorboxEmittedStatus()` — wire it at EVERY emit point (list +

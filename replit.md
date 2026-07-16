@@ -213,7 +213,12 @@ reference, and the design docs.
   state (two planes, one unit↔gift ledger + one settlement-link table, derived
   statuses, phased prod-safe path) is in
   [`docs/reconciliation-design.md`](docs/reconciliation-design.md) — treat that doc
-  as the source of truth for the in-flight reconciliation redesign.
+  as the source of truth for the in-flight reconciliation redesign. Derived
+  staged/charge statuses come from ONE set of alias-parameterized SQL builders
+  (`api-server/src/lib/derivedStatus.ts`) — never hand-roll a status CASE twin.
+  The evidence↔evidence claim pointers (charge↔QB tie, fee link, Donorbox
+  counterparts) are frozen pending
+  [`docs/adr-source-link-ledger.md`](docs/adr-source-link-ledger.md).
 - **Allocation restriction (three axes)** — restriction captured per allocation on
   `regional`/`usage`/`time` axes (each `donor_restricted`/`wf_restricted`/
   `unrestricted`); a line codes restricted when ANY axis is `donor_restricted`.

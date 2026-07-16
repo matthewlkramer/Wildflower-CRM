@@ -3,6 +3,10 @@ import { db } from "@workspace/db";
 import { sql, type SQL } from "drizzle-orm";
 import { asyncHandler, parsePagination } from "../../lib/helpers";
 import { payoutStatusLabelSql } from "../../lib/settlementLink";
+import {
+  chargeStatusCaseText,
+  qbStatusCaseText,
+} from "../../lib/derivedStatus";
 
 /**
  * Unified settlement-anchor enumeration for the reactive bundle workbench.
@@ -295,23 +299,7 @@ router.get(
           FROM (
             SELECT cc.id, cc.payer_name, cc.description, cc.statement_descriptor,
                    cc.gross_amount, cc.fee_amount, cc.net_amount, cc.date_received,
-                   (CASE
-              WHEN cc.exclusion_reason IS NOT NULL THEN 'excluded'
-              WHEN cc.auto_applied = true AND cc.match_confirmed_at IS NULL
-                   AND EXISTS (
-                     SELECT 1 FROM payment_applications pa
-                     WHERE pa.stripe_charge_id = cc.id
-                       AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
-                   )
-                THEN 'match_proposed'
-              WHEN EXISTS (
-                     SELECT 1 FROM payment_applications pa
-                     WHERE pa.stripe_charge_id = cc.id
-                       AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
-                   )
-                THEN 'match_confirmed'
-              ELSE 'pending'
-            END) AS status,
+                   ${sql.raw(chargeStatusCaseText("cc"))} AS status,
                    cc.exclusion_reason, cc.linked_qb_staged_payment_id,
                    cc.linked_fee_qb_staged_payment_id,
                    pq.id AS pq_id, pq.payer_name AS pq_payer_name,
@@ -415,36 +403,7 @@ router.get(
         s.line_item_names AS line_item_names,
         s.line_account_names AS line_account_names,
         s.line_classes AS line_classes,
-        (CASE
-          WHEN s.exclusion_reason IS NOT NULL THEN 'excluded'
-          WHEN s.auto_applied = true AND s.match_confirmed_at IS NULL
-               AND EXISTS (
-                 SELECT 1 FROM payment_applications pa
-                 WHERE pa.payment_id = s.id AND pa.link_role = 'counted'
-               )
-            THEN 'match_proposed'
-          WHEN EXISTS (
-                 SELECT 1 FROM payment_applications pa
-                 WHERE pa.payment_id = s.id AND pa.link_role = 'counted'
-               )
-               OR EXISTS (
-                 SELECT 1 FROM settlement_links sl_q
-                 WHERE sl_q.deposit_staged_payment_id = s.id
-                   AND sl_q.lifecycle = 'confirmed'
-               )
-               OR EXISTS (
-                 SELECT 1 FROM stripe_staged_charges cc_q
-                 WHERE cc_q.linked_qb_staged_payment_id = s.id
-                   AND EXISTS (
-                     SELECT 1 FROM payment_applications pa_ct
-                     WHERE pa_ct.stripe_charge_id = cc_q.id
-                       AND pa_ct.evidence_source = 'stripe'
-                       AND pa_ct.link_role = 'counted'
-                   )
-               )
-            THEN 'match_confirmed'
-          ELSE 'pending'
-        END)::text AS status_label,
+        ${sql.raw(qbStatusCaseText("s"))}::text AS status_label,
         'orphan'::text AS batch_status,
         NULL::int AS charge_ties_proposed,
         NULL::int AS charge_ties_confirmed,

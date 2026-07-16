@@ -5,6 +5,13 @@ import { asyncHandler, parsePagination } from "../../lib/helpers";
 import { getViewer, maskName, type Viewer } from "../../lib/identityVisibility";
 import { escapeLike, parkedFiscallyExpr } from "../quickbooks/shared";
 import { reimbursablePledgeExistsSql } from "../../lib/reimbursablePlaceholder";
+import {
+  chargeConfirmedText,
+  chargeOpenText,
+  chargeStatusCaseText,
+  qbOpenText,
+  qbStatusCaseText,
+} from "../../lib/derivedStatus";
 import { fullyChargeTied } from "./bundleAnchors";
 
 // ─── GET /reconciliation/workbench-clusters ─────────────────────────────────
@@ -53,46 +60,10 @@ const LENS_PREDICATE: Record<Lens, string> = {
   completed: "f_completed",
 };
 
-/* ── alias-local derived-status fragments (raw strings, static aliases) ────
- * These mirror lib/derivedStatus.ts EXACTLY but take an alias name, because
- * the shared fragments reference the base tables and render unqualified
- * inside alias()d/raw joins (drizzle footgun). Any change to the status
- * derivation must land in BOTH places. */
-
-const qbCounted = (a: string) =>
-  `EXISTS (SELECT 1 FROM payment_applications pa_q WHERE pa_q.payment_id = ${a}.id AND pa_q.link_role = 'counted')`;
-const qbDepositSettled = (a: string) =>
-  `EXISTS (SELECT 1 FROM settlement_links sl_q WHERE sl_q.deposit_staged_payment_id = ${a}.id AND sl_q.lifecycle = 'confirmed')`;
-const qbChargeTied = (a: string) =>
-  `EXISTS (SELECT 1 FROM stripe_staged_charges cc_q WHERE cc_q.linked_qb_staged_payment_id = ${a}.id
-    AND EXISTS (SELECT 1 FROM payment_applications pa_ct WHERE pa_ct.stripe_charge_id = cc_q.id
-      AND pa_ct.evidence_source = 'stripe' AND pa_ct.link_role = 'counted'))`;
-const qbStatusCase = (a: string) => `(CASE
-  WHEN ${a}.exclusion_reason IS NOT NULL THEN 'excluded'
-  WHEN ${a}.auto_applied = true AND ${a}.match_confirmed_at IS NULL AND ${qbCounted(a)} THEN 'match_proposed'
-  WHEN ${qbCounted(a)} OR ${qbDepositSettled(a)} OR ${qbChargeTied(a)} THEN 'match_confirmed'
-  ELSE 'pending'
-END)`;
-/** Open = pending OR match_proposed (still needs donor/gift work). */
-const qbOpen = (a: string) => `(${a}.exclusion_reason IS NULL AND (
-  NOT (${qbCounted(a)} OR ${qbDepositSettled(a)} OR ${qbChargeTied(a)})
-  OR (${a}.auto_applied = true AND ${a}.match_confirmed_at IS NULL AND ${qbCounted(a)})
-))`;
-
-const chCounted = (a: string) =>
-  `EXISTS (SELECT 1 FROM payment_applications pa_s WHERE pa_s.stripe_charge_id = ${a}.id AND pa_s.evidence_source = 'stripe' AND pa_s.link_role = 'counted')`;
-const chStatusCase = (a: string) => `(CASE
-  WHEN ${a}.exclusion_reason IS NOT NULL THEN 'excluded'
-  WHEN ${a}.auto_applied = true AND ${a}.match_confirmed_at IS NULL AND ${chCounted(a)} THEN 'match_proposed'
-  WHEN ${chCounted(a)} THEN 'match_confirmed'
-  ELSE 'pending'
-END)`;
-const chOpen = (a: string) => `(${a}.exclusion_reason IS NULL AND (
-  NOT ${chCounted(a)}
-  OR (${a}.auto_applied = true AND ${a}.match_confirmed_at IS NULL)
-))`;
-const chConfirmed = (a: string) =>
-  `(${a}.exclusion_reason IS NULL AND ${chCounted(a)} AND NOT (${a}.auto_applied = true AND ${a}.match_confirmed_at IS NULL))`;
+/* Derived-status SQL for aliased/raw contexts comes from the alias-
+ * parameterized text builders in lib/derivedStatus.ts — the ONE source of
+ * the derivation (the base-table drizzle fragments there are generated from
+ * the same builders). */
 
 /** Canonical person display-name chain (alias-local twin of personDisplayNameSql). */
 const personNameExpr = (a: string) => `COALESCE(
@@ -139,7 +110,7 @@ const giftCodingForm = `(g.coding_form_circle IS NOT NULL
 // stripe_payout half — per-payout rollup predicates.
 const payoutAnyOpenCharge = `EXISTS (
   SELECT 1 FROM stripe_staged_charges oc
-  WHERE oc.stripe_payout_id = sp.id AND ${chOpen("oc")}
+  WHERE oc.stripe_payout_id = sp.id AND ${chargeOpenText("oc")}
 )`;
 const payoutHasCharges = `EXISTS (SELECT 1 FROM stripe_staged_charges hc WHERE hc.stripe_payout_id = sp.id)`;
 const payoutHasNonExcluded = `EXISTS (SELECT 1 FROM stripe_staged_charges nc WHERE nc.stripe_payout_id = sp.id AND nc.exclusion_reason IS NULL)`;
@@ -228,7 +199,7 @@ const qbSiblingOpen = `EXISTS (
   JOIN unit_group_members ugm2 ON ugm2.group_id = ugm.group_id AND ugm2.evidence_source = 'quickbooks'
   JOIN staged_payments sm ON sm.id = ugm2.source_id
   WHERE ugm.evidence_source = 'quickbooks' AND ugm.source_id = s.id
-    AND sm.id <> s.id AND ${qbOpen("sm")}
+    AND sm.id <> s.id AND ${qbOpenText("sm")}
 )`;
 const qbSiblingNonExcluded = `EXISTS (
   SELECT 1 FROM unit_group_members ugm
@@ -237,7 +208,7 @@ const qbSiblingNonExcluded = `EXISTS (
   WHERE ugm.evidence_source = 'quickbooks' AND ugm.source_id = s.id
     AND sm.id <> s.id AND sm.exclusion_reason IS NULL
 )`;
-const qbNeedsGift = `(${qbOpen("s")} OR ${qbSiblingOpen})`;
+const qbNeedsGift = `(${qbOpenText("s")} OR ${qbSiblingOpen})`;
 const qbAllExcluded = `(s.exclusion_reason IS NOT NULL AND NOT ${qbSiblingNonExcluded})`;
 // QB line coding carries a DONATION marker — the same markers as the
 // donation-first guard in quickbooksExclusionRules.ts (a Donation item or a
@@ -636,7 +607,7 @@ router.get(
         (SELECT count(*)::int FROM stripe_staged_charges tc
           WHERE tc.stripe_payout_id = sp.id AND tc.exclusion_reason IS NULL) AS total_count,
         (SELECT count(*)::int FROM stripe_staged_charges vc
-          WHERE vc.stripe_payout_id = sp.id AND ${sql.raw(chConfirmed("vc"))}) AS resolved_count,
+          WHERE vc.stripe_payout_id = sp.id AND ${sql.raw(chargeConfirmedText("vc"))}) AS resolved_count,
         COALESCE((
           SELECT json_agg(json_build_object(
               'chargeId', c.id,
@@ -664,7 +635,7 @@ router.get(
                    cc.fee_amount::text AS fee_amount,
                    cc.net_amount::text AS net_amount,
                    cc.date_received::text AS charge_date,
-                   ${sql.raw(chStatusCase("cc"))} AS status,
+                   ${sql.raw(chargeStatusCaseText("cc"))} AS status,
                    (SELECT pa_l.gift_id FROM payment_applications pa_l
                      WHERE pa_l.stripe_charge_id = cc.id
                        AND pa_l.evidence_source = 'stripe' AND pa_l.link_role = 'counted'
@@ -696,7 +667,7 @@ router.get(
             SELECT fq.id, 'fee'::text AS role, fq.raw_reference, fq.line_description,
                    fq.qb_transaction_memo, fq.amount::text AS amount,
                    fq.date_received::text AS date_received,
-                   ${sql.raw(qbStatusCase("fq"))} AS status, fc.id AS charge_id,
+                   ${sql.raw(qbStatusCaseText("fq"))} AS status, fc.id AS charge_id,
                    fq.qb_entity_type::text AS qb_entity_type, fq.qb_entity_id
             FROM stripe_staged_charges fc
             JOIN staged_payments fq ON fq.id = fc.linked_fee_qb_staged_payment_id
@@ -705,7 +676,7 @@ router.get(
             SELECT tq.id, 'charge_tie'::text, tq.raw_reference, tq.line_description,
                    tq.qb_transaction_memo, tq.amount::text,
                    tq.date_received::text,
-                   ${sql.raw(qbStatusCase("tq"))}, tc2.id,
+                   ${sql.raw(qbStatusCaseText("tq"))}, tc2.id,
                    tq.qb_entity_type::text, tq.qb_entity_id
             FROM stripe_staged_charges tc2
             JOIN staged_payments tq ON tq.id = tc2.linked_qb_staged_payment_id
@@ -714,7 +685,7 @@ router.get(
             SELECT nf2.id, 'fee'::text, nf2.raw_reference, nf2.line_description,
                    nf2.qb_transaction_memo, nf2.amount::text,
                    nf2.date_received::text,
-                   ${sql.raw(qbStatusCase("nf2"))}, NULL,
+                   ${sql.raw(qbStatusCaseText("nf2"))}, NULL,
                    nf2.qb_entity_type::text, nf2.qb_entity_id
             FROM settlement_links sl_f
             JOIN staged_payments dep0 ON dep0.id = sl_f.deposit_staged_payment_id
@@ -738,7 +709,7 @@ router.get(
         ad.qb_transaction_memo AS dep_memo,
         ad.amount::text AS dep_amount,
         ad.date_received::text AS dep_date,
-        ${sql.raw(qbStatusCase("ad"))} AS dep_status,
+        ${sql.raw(qbStatusCaseText("ad"))} AS dep_status,
         ad.qb_entity_type::text AS dep_qb_entity_type,
         ad.qb_entity_id AS dep_qb_entity_id
       FROM stripe_payouts sp
@@ -789,7 +760,7 @@ router.get(
         s.raw_reference,
         s.line_description,
         s.qb_transaction_memo,
-        ${sql.raw(qbStatusCase("s"))} AS status,
+        ${sql.raw(qbStatusCaseText("s"))} AS status,
         s.qb_entity_type::text AS qb_entity_type,
         s.qb_entity_id,
         ugm.group_id AS group_id,
@@ -807,7 +778,7 @@ router.get(
               'memo', m.qb_transaction_memo,
               'amount', m.amount::text,
               'dateReceived', m.date_received::text,
-              'status', ${sql.raw(qbStatusCase("m"))},
+              'status', ${sql.raw(qbStatusCaseText("m"))},
               'linkedChargeId', NULL,
               'qbEntityType', m.qb_entity_type::text,
               'qbEntityId', m.qb_entity_id
@@ -828,7 +799,7 @@ router.get(
               'memo', nf.qb_transaction_memo,
               'amount', nf.amount::text,
               'dateReceived', nf.date_received::text,
-              'status', ${sql.raw(qbStatusCase("nf"))},
+              'status', ${sql.raw(qbStatusCaseText("nf"))},
               'linkedChargeId', NULL,
               'qbEntityType', nf.qb_entity_type::text,
               'qbEntityId', nf.qb_entity_id

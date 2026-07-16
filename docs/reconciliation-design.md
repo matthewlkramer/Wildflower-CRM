@@ -272,6 +272,16 @@ exactly one counted representation per dollar.
 > visible (`derivedStatus.ts`: `stagedChargeTieExists` vs
 > `stagedChargeTieLinkExists`).
 
+> **Claim-pointer retirement (ADR, 2026-07).** The remaining unit-grain
+> evidence↔evidence pointers — `linked_qb_staged_payment_id`,
+> `proposed_qb_staged_payment_id`, `linked_fee_qb_staged_payment_id` on
+> `stripe_staged_charges`, and the `donorbox_donations` counterparts — are
+> FROZEN (add no new pointer columns). Their replacement (one `source_links`
+> claims table with DB-enforced cardinality, lifecycle/provenance, and a
+> structured supersession `match_method` retiring the
+> `charge_tie_supersede:` note marker) and its prod-safe phased migration are
+> specified in [`adr-source-link-ledger.md`](adr-source-link-ledger.md).
+
 ### 4.4 One derived status per record per plane (no new stored columns)
 
 All statuses are pure functions over the two link tables (the

@@ -62,6 +62,7 @@ import {
 } from "./giftMatch";
 import { stripeChargeSearchWhere } from "./stripeChargeSearch";
 import {
+  chargeStatusCaseText,
   chargeStatusWhere,
   stagedChargeTieLinkExists,
   stagedConfirmedSettlementLinkExists,
@@ -1581,23 +1582,7 @@ export async function searchPayouts(
           ) ORDER BY c.gross_amount DESC NULLS LAST)
         FROM (
           SELECT cc.id, cc.payer_name, cc.description, cc.gross_amount, cc.date_received,
-                 (CASE
-              WHEN cc.exclusion_reason IS NOT NULL THEN 'excluded'
-              WHEN cc.auto_applied = true AND cc.match_confirmed_at IS NULL
-                   AND EXISTS (
-                     SELECT 1 FROM payment_applications pa
-                     WHERE pa.stripe_charge_id = cc.id
-                       AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
-                   )
-                THEN 'match_proposed'
-              WHEN EXISTS (
-                     SELECT 1 FROM payment_applications pa
-                     WHERE pa.stripe_charge_id = cc.id
-                       AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
-                   )
-                THEN 'match_confirmed'
-              ELSE 'pending'
-            END) AS status,
+                 ${sql.raw(chargeStatusCaseText("cc"))} AS status,
                  cc.exclusion_reason
           FROM stripe_staged_charges cc
           WHERE cc.stripe_payout_id = ${stripePayouts.id}
