@@ -3,6 +3,33 @@ name: Money sync & reconciliation
 description: Current-state index of money-sync and reconciliation rules. QB/Stripe/Donorbox ingest, staged-payment approval, the three link tables, workbench UI, and imports. Pointer-era entries (matched/created/group_reconciled_gift_id QB cols — DROPPED migration 0126) are in legacy-reconciliation/index.md.
 ---
 
+## Implementation guard
+
+Before writing any reconciliation code, confirm:
+
+- **Use the authoritative link table for the relationship involved.**
+  `payment_applications` for money unit→gift; `settlement_links` for payout↔deposit;
+  `source_links` (when shipped) for evidence↔evidence. Never route a relationship
+  through the wrong table or add a sibling pointer column.
+- **Do not add new pointer columns, stored queue status columns, copied status CASE
+  expressions, or route-specific money-link logic.** All queue status derives at read
+  time via `derivedStatus.ts` builders — never hand-roll a CASE twin.
+- **Frozen pointer columns may be read only where the current migration phase already
+  requires it.** Do not add new readers or writers of frozen/deprecated pointers.
+  The QB gift-pointer columns (`staged_payments.matched/created/group_reconciled_gift_id`)
+  are DROPPED (0126). Stripe/Donorbox charge pointers are frozen pending their
+  ledger read-flip.
+- **Current state ≠ target state.** Transitional dual-write fields document migration
+  progress, not preferred architecture. New work should move the system toward the
+  target. Any change that must use a frozen, deprecated, or dual-write-only field must
+  either advance its retirement plan or document an explicit removal condition — get
+  user approval before proceeding.
+- **Stop and bring it to the user** when a fix requires updating more than one copy
+  of equivalent logic, adds a parallel representation, or depends on a field the
+  architecture docs mark as transitional. Propose consolidation first.
+
+---
+
 ## Current link-table model
 
 Three authoritative link tables — never conflate:

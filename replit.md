@@ -47,6 +47,32 @@ These recur across the whole app — keep them true whenever you change things:
 7. **Non-destructive, human-applied prod data changes.** The agent cannot write to
    prod. Schema/code ship via Publish; every prod *data* change is a reviewed,
    idempotent SQL file in `lib/db/migrations/`, applied by a human.
+8. **Architecture before patching.** Before changing code, identify the canonical
+   source of truth for every concept affected and verify the proposed change follows
+   the current target architecture — not a legacy field, transitional dual-write path,
+   cached projection, or route-specific workaround. Do not add a new pointer, status
+   field, duplicated derivation, compatibility fallback, or special-case write path
+   merely to fix an immediate symptom. When any of the following is true, **stop and
+   find the shared derivation or mutation boundary first** — do not proceed with a
+   local patch unless the user explicitly approves it as temporary and a removal
+   condition is documented:
+   - The same fact is read from or written to more than one table or field.
+   - A fix requires updating more than one copy of equivalent logic.
+   - A cached or derived value must be recomputed from a new call site.
+   - The implementation uses a field marked frozen, deprecated, dual-write-only, or
+     pending retirement.
+   - The fix would add another pointer, status field, proposal field, or fallback.
+9. **Do not revive retired models.** Historical memory files (e.g. `legacy-reconciliation/`)
+   and `@deprecated` columns document past states for regression context only — never
+   as implementation guidance. Before using any existing field or helper, confirm it is
+   still authoritative and not retained only for migration compatibility. Current
+   architecture documents and schema code take precedence.
+10. **Reduction is the success criterion.** A successful architectural change reduces
+    at least one of: authoritative fields, independent status derivations, write paths,
+    fallback paths, or required recomputation call sites. When a change appears to
+    require a new representation of an existing fact, first identify which current
+    representation can be removed or absorbed. The default is one authority replacing
+    another, not another layer beside it.
 
 ## User preferences
 
@@ -211,8 +237,9 @@ reference, and the design docs.
   (`chargeTieSupersede.ts`; QB row demoted to corroborating), and a charge-grain
   tie counts as confirmed status evidence only when the tied charge itself is
   booked — raw linkage alone only blocks re-picking. The ratified target
-  state (two planes, one unit↔gift ledger + one settlement-link table, derived
-  statuses, phased prod-safe path) is in
+  state (three link tables: `payment_applications` unit→gift, `settlement_links`
+  payout↔deposit, `source_links` evidence↔evidence ADR; all statuses derived;
+  phased prod-safe path) is in
   [`docs/reconciliation-design.md`](docs/reconciliation-design.md) — treat that doc
   as the source of truth for the in-flight reconciliation redesign. Derived
   staged/charge statuses come from ONE set of alias-parameterized SQL builders

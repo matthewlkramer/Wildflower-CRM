@@ -22,6 +22,38 @@ Query hooks (`@workspace/api-client-react`) and the Zod validators
 pnpm --filter @workspace/api-spec run codegen   # regenerate hooks + Zod from spec
 ```
 
+## Architecture gate — required before coding money, status, ownership, or derived-field changes
+
+For any change that touches financial totals, lifecycle status, entity ownership,
+or a derived/computed field, answer these questions **before writing code**. If any
+answer is "I'm not sure," resolve it first.
+
+1. **What concept is changing?** Name it precisely (not "the reconciliation thing" —
+   "the derived queue status for a staged QB payment").
+2. **Where is its single authoritative representation?** One schema column, one
+   deriver function, one service boundary — identify it by file and name.
+3. **Are there other stored or derived representations of the same fact?** List them.
+   If yes, does the change update ALL of them — or better, can it eliminate one?
+4. **Is the proposed edit using a deprecated, transitional, or frozen path?** If yes,
+   stop. Use the current authority or get explicit approval to use the legacy path
+   as a temporary bridge with a documented removal condition.
+5. **Can the fix be made at the shared derivation or mutation boundary** (e.g.
+   `derivedStatus.ts`, `deriveOppFields`, `applyGiftQbTieMany`) instead of at one
+   call site?
+6. **What invariant test proves the system is still correct?** Name it. If none
+   exists, does one need to be added?
+7. **If this adds technical debt, what exact condition removes it?** Write that
+   condition down before coding.
+
+Stop and reassess (do not proceed with a local patch) if any of these is true:
+- The same fact is read from or written to more than one table or field.
+- The fix requires updating more than one copy of equivalent logic.
+- The fix would add a pointer, status field, duplicated derivation, or fallback.
+- A field the fix depends on is marked frozen, deprecated, or dual-write-only.
+
+In those cases, propose the smallest consolidation that removes the duplication first.
+Get explicit user approval before treating any such patch as "temporary."
+
 ## The fast checks (run these, not a full rebuild)
 
 Each is a registered validation check and also a root `check:*` script. First run

@@ -1,0 +1,158 @@
+1. Add an architecture-first principle to replit.md
+
+Place this immediately after the existing design principles:
+
+Architecture before patching. Before changing code, identify the canonical source of truth for every concept affected and verify that the proposed change follows the current target architecture—not a legacy field, transitional dual-write path, cached projection, or route-specific workaround. Do not add a new pointer, status field, duplicated derivation, compatibility fallback, or special-case write path merely to fix the immediate symptom. When current code conflicts with the target architecture, prefer consolidating or deleting the obsolete representation. If a temporary bridge is unavoidable, document its removal condition, prohibit new consumers, and add a regression test for the underlying invariant.
+
+That wording is concrete enough to affect behavior. “Consider architecture” by itself will not.
+
+Add a second rule:
+
+Do not revive retired models. Historical memory files and deprecated columns may be used to understand regressions, but never as implementation guidance. Current architecture documents and schema code take precedence. Before using an existing field or helper, confirm that it is still authoritative and not retained only for migration compatibility.
+
+This is particularly important because your active memory now explicitly separates pointer-era reconciliation into a legacy section.
+
+2. Add a required pre-change checklist to change-recipes.md
+
+replit.md already tells agents to start with docs/change-recipes.md for routine changes. Add a short gate at the top of every recipe:
+
+Architecture check
+
+Before editing:
+
+What concept is changing?
+Where is its single authoritative representation?
+Are there other stored or derived representations of the same fact?
+Is the proposed edit using a deprecated, transitional, or legacy path?
+Can the fix be made at the shared derivation or mutation boundary instead of one caller?
+Which invariant test will prove the whole system remains consistent?
+Does this add debt? If so, what exact condition removes it?
+
+Require the agent to answer those questions in its plan before coding when a change touches money, lifecycle status, entity ownership, or derived fields.
+
+3. Add an explicit “stop and redesign” threshold
+
+Agents often patch because they interpret “fix this bug” narrowly. Give them a mandatory stop condition:
+
+Stop and reassess before coding when any of these are true:
+
+The same fact is read from or written to more than one table or field.
+A fix requires updating more than one copy of equivalent logic.
+A route must “mirror the full write set.”
+A cached derived value must be recomputed from another new call site.
+Revert behavior depends on parsing notes or implicit conventions.
+The fix would add another pointer, status, proposal field, or fallback.
+The implementation uses a field documented as frozen, deprecated, dual-write-only, or pending retirement.
+
+In those cases, first propose the smallest architectural consolidation that removes the duplication. Do not proceed with the local patch unless the user explicitly approves it as temporary.
+
+This directly targets the warning phrases that appeared throughout the reconciliation memory.
+
+4. Put domain-specific architecture guards at the top of canonical indexes
+
+For reconciliation, add a boxed instruction near the top of money-sync-reconciliation.md. The revised file now does a much better job distinguishing the three relationship stores and current versus transitional behavior.
+
+Suggested wording:
+
+Implementation guard: Do not add new reconciliation pointers, stored queue statuses, copied status CASE expressions, or route-specific money-link logic. Changes must use the authoritative link table for the relationship involved and the shared mutation/derivation services. Frozen pointer columns may be read only where the current migration phase still requires them; do not add new readers or writes. Any change relying on a frozen pointer must either advance its retirement plan or explicitly explain why it cannot.
+
+Also add:
+
+Current state is not automatically the target state. Transitional dual-write fields document migration progress, not preferred architecture. New work should move the system toward the target unless doing so would make the requested change materially unsafe.
+
+That distinction matters because the index currently documents both present pointer usage and future source_links.
+
+5. Add a dedicated architecture decision protocol
+
+Create a short file such as:
+
+docs/architecture/change-protocol.md
+
+Reference it from:
+
+replit.md
+MEMORY.md
+docs/change-recipes.md
+Major domain indexes such as money-sync-reconciliation.md
+
+It should define three allowed change categories:
+
+Local correction
+
+Appropriate when:
+
+One implementation exists.
+No authority changes.
+No duplicated state is introduced.
+The fix strengthens an existing invariant.
+Consolidation
+
+Required when:
+
+Logic is duplicated.
+Several representations compete.
+A legacy path remains operational.
+The bug is caused by drift between readers or writers.
+Temporary bridge
+
+Allowed only when:
+
+The target architecture is already documented.
+The bridge has no new consumers.
+It has a removal criterion.
+It is visibly marked transitional.
+Tests cover both migration safety and eventual removal.
+
+This helps prevent every issue from becoming either a tiny patch or an uncontrolled rewrite.
+
+6. Require an authority map for architecture-sensitive changes
+
+For changes involving reconciliation, lifecycle status, financial totals, ownership, or entity merge, require the agent’s plan to include:
+
+Concept	Authority	Other representations	Change
+Example: money → gift	payment_applications	legacy pointers, summaries	Use ledger only
+Example: queue status	shared derivation	cached/UI copies	Change shared derivation
+Example: charge ↔ QBO	current pointer, future source_links	proposal pointer, fee pointer	Do not add sibling
+
+The agent should not begin implementation until this table is coherent.
+
+This would have surfaced the reconciliation problem much earlier.
+
+7. Add a “delete before adding” instruction
+
+A useful agent rule:
+
+When a change appears to require a new representation of an existing fact, first identify which current representation can be removed or absorbed. The default should be one authority replacing another, not another layer beside it.
+
+And:
+
+A successful architectural change should usually reduce at least one of: authoritative fields, independent status derivations, write paths, fallback paths, or required recomputation call sites.
+
+This gives the agent a measurable definition of improvement.
+
+8. Put architectural acceptance criteria in PRs
+
+Add to the PR template or agent completion checklist:
+
+## Architecture review
+
+- [ ] Identified the canonical source of truth for each affected concept
+- [ ] Did not add a parallel pointer, stored status, or duplicated derivation
+- [ ] Did not revive a deprecated or transitional representation
+- [ ] Centralized shared behavior rather than patching one caller
+- [ ] Added or strengthened invariant-level tests
+- [ ] Documented and time-bounded any unavoidable transitional logic
+- [ ] Removed obsolete code or explained why it must remain
+
+This is valuable because planning instructions may be forgotten once implementation begins.
+
+Best minimal set
+
+The highest-leverage combination is:
+
+Add the architecture-first and no-retired-model principles to replit.md.
+Add the stop conditions and authority-map requirement to change-recipes.md.
+Add the reconciliation-specific implementation guard to money-sync-reconciliation.md.
+Add the architecture checklist to the PR/completion template.
+
+That places the instruction at orientation, planning, domain execution, and completion, rather than relying on a single paragraph the agent may overlook.
