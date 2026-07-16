@@ -5374,53 +5374,98 @@ export interface WorkbenchClusterGroup {
 }
 
 /**
- * none = no counted PAs anywhere; charge = only per-charge PAs; deposit = only deposit-level PAs (against the settlement-linked QB deposit); mixed = both grains have PAs (incomplete — one should supersede the other).
+ * Grain at which a dimension is satisfied: none = no evidence yet; unit = one evidence record per charge / QB row; bundle = one record covers all units; mixed = competing unit + bundle representations (always incomplete).
  */
-export type WorkbenchClusterCoverageMode = typeof WorkbenchClusterCoverageMode[keyof typeof WorkbenchClusterCoverageMode];
+export type WorkbenchClusterDimensionGrain = typeof WorkbenchClusterDimensionGrain[keyof typeof WorkbenchClusterDimensionGrain];
 
 
-export const WorkbenchClusterCoverageMode = {
+export const WorkbenchClusterDimensionGrain = {
   none: 'none',
-  charge: 'charge',
-  deposit: 'deposit',
+  unit: 'unit',
+  bundle: 'bundle',
   mixed: 'mixed',
 } as const;
 
-export type WorkbenchClusterCoverageChargeCoverageItem = {
-  chargeId: string;
-  giftId: string;
-  /** amount_applied from the PA row, major units. */
-  amountApplied?: string | null;
-};
+export type WorkbenchClusterEvidenceRecordSource = typeof WorkbenchClusterEvidenceRecordSource[keyof typeof WorkbenchClusterEvidenceRecordSource];
 
-export type WorkbenchClusterCoverageDepositCoverageItem = {
-  paymentApplicationId: string;
-  giftId: string;
-  /** amount_applied from the PA row, major units. */
-  amountApplied?: string | null;
-};
+
+export const WorkbenchClusterEvidenceRecordSource = {
+  stripe_charge: 'stripe_charge',
+  qb_record: 'qb_record',
+  donorbox: 'donorbox',
+} as const;
+
+export type WorkbenchClusterEvidenceRecordRolesItem = typeof WorkbenchClusterEvidenceRecordRolesItem[keyof typeof WorkbenchClusterEvidenceRecordRolesItem];
+
+
+export const WorkbenchClusterEvidenceRecordRolesItem = {
+  payment_transaction: 'payment_transaction',
+  accounting: 'accounting',
+  donor_purpose: 'donor_purpose',
+} as const;
 
 /**
- * Per-payout coverage: which grains have counted payment_application rows and whether
-together they fully account for the expected money. Null for qb_standalone and crm_only kinds.
+ * unit = covers one charge / unit; bundle = covers the whole payout / group.
+ */
+export type WorkbenchClusterEvidenceRecordGrain = typeof WorkbenchClusterEvidenceRecordGrain[keyof typeof WorkbenchClusterEvidenceRecordGrain];
+
+
+export const WorkbenchClusterEvidenceRecordGrain = {
+  unit: 'unit',
+  bundle: 'bundle',
+} as const;
+
+/**
+ * One external evidence record in the cluster. Each physical record appears exactly once; the roles array lists every reconciliation dimension it satisfies.
+ */
+export interface WorkbenchClusterEvidenceRecord {
+  /** External record id: stripe_staged_charges.id (ch_…), staged_payments.id, etc. */
+  id: string;
+  source: WorkbenchClusterEvidenceRecordSource;
+  /** Dimensions this record satisfies. A single QBO record may satisfy both payment_transaction and accounting. */
+  roles: WorkbenchClusterEvidenceRecordRolesItem[];
+  /** unit = covers one charge / unit; bundle = covers the whole payout / group. */
+  grain: WorkbenchClusterEvidenceRecordGrain;
+  /** Record amount, major units. */
+  amount?: string | null;
+  /** gifts_and_payments.id this record is counted into, if any. */
+  linkedGiftId?: string | null;
+}
+
+/**
+ * Coverage status for one of the three reconciliation dimensions.
+ */
+export interface WorkbenchClusterDimensionCoverage {
+  grain: WorkbenchClusterDimensionGrain;
+  complete: boolean;
+  /** Ids of units (charges or QB rows) that are satisfied for this dimension. */
+  coveredIds: string[];
+  /** Ids of units that participate in this dimension but are not yet satisfied. */
+  uncoveredIds: string[];
+  /** Total expected for this dimension, major units. */
+  expectedAmount?: string | null;
+  /** Amount currently represented by covered evidence, major units. */
+  representedAmount?: string | null;
+  /** Human-readable note for mixed or competing representations (grain=mixed). */
+  representationNote?: string | null;
+}
+
+/**
+ * Three-dimension canonical cluster state. Derived once and used for both lens counts and
+the hydrated response — a cluster whose complete=false never appears in the Completed lens.
+Present for all cluster kinds (stripe_payout, qb_standalone, crm_only).
 
  */
 export interface WorkbenchClusterCoverage {
-  /** none = no counted PAs anywhere; charge = only per-charge PAs; deposit = only deposit-level PAs (against the settlement-linked QB deposit); mixed = both grains have PAs (incomplete — one should supersede the other). */
-  mode: WorkbenchClusterCoverageMode;
-  /** Counted PA rows anchored to individual Stripe charges. */
-  chargeCoverage: WorkbenchClusterCoverageChargeCoverageItem[];
-  /** Counted PA rows anchored to the settlement-linked QB deposit lump. */
-  depositCoverage: WorkbenchClusterCoverageDepositCoverageItem[];
-  /** Charge ids with at least one counted charge-grain PA. */
-  coveredChargeIds: string[];
-  /** Non-excluded charge ids with no counted charge-grain PA. */
-  uncoveredChargeIds: string[];
-  /** Sum of all counted PA amount_applied values (charge + deposit grains), major units. */
-  creditedAmount: string;
-  /** The expected total: payout gross_total for charge-grain; deposit amount for deposit-grain, major units. */
-  expectedAmount: string;
-  /** True when the grains are consistent, credited >= expected, and uncoveredChargeIds is empty. */
+  /** Deduplicated list of all external evidence records. Each physical record appears once even when it satisfies multiple dimensions. */
+  evidenceRecords: WorkbenchClusterEvidenceRecord[];
+  /** Dimension 1: donor identified, CRM gift booked, and allocation receiving credit. */
+  donorPurpose: WorkbenchClusterDimensionCoverage;
+  /** Dimension 2: real-world transaction identified (Stripe charge, check, QBO payment, Donorbox). QBO may satisfy both this and accountingEvidence. */
+  paymentTransaction: WorkbenchClusterDimensionCoverage;
+  /** Dimension 3: money is represented in QuickBooks or another accounting system (settlement link or per-charge QB tie). */
+  accountingEvidence: WorkbenchClusterDimensionCoverage;
+  /** True when all three dimensions are complete, amounts balance under canonical rules, and no unresolved conflict or refund. */
   complete: boolean;
 }
 
@@ -5470,8 +5515,8 @@ export interface WorkbenchCluster {
   settlement?: WorkbenchClusterSettlement | null;
   /** Present only when the qb_standalone anchor represents a unit group. */
   group?: WorkbenchClusterGroup | null;
-  /** Coverage derivation for stripe_payout clusters: which grains have counted PA rows and whether they fully account for the payout. Null for qb_standalone and crm_only kinds. */
-  coverage?: WorkbenchClusterCoverage | null;
+  /** Three-dimension canonical cluster state (donorPurpose / paymentTransaction / accountingEvidence). Always present for all cluster kinds. */
+  coverage: WorkbenchClusterCoverage;
 }
 
 /**

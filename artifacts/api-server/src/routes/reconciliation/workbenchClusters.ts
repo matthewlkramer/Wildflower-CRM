@@ -280,6 +280,7 @@ function buildUniverse(q: string | null): SQL {
       ${sql.raw(payoutAllExcluded)} AS f_excluded,
       (${sql.raw(payoutHasNonExcluded)}
         AND NOT ${sql.raw(payoutAnyOpenCharge)}
+        AND ${payoutSettled}
         AND NOT ${sql.raw(payoutConflict)}
         AND NOT ${sql.raw(payoutRefund)}) AS f_completed
     FROM stripe_payouts sp
@@ -500,76 +501,186 @@ interface CoverageRow {
   amount_applied: string | null;
 }
 
+type DimensionGrain = "none" | "unit" | "bundle" | "mixed";
+
+interface DimensionOut {
+  grain: DimensionGrain;
+  complete: boolean;
+  coveredIds: string[];
+  uncoveredIds: string[];
+  expectedAmount: string | null;
+  representedAmount: string | null;
+  representationNote: string | null;
+}
+
+interface EvidenceRecordOut {
+  id: string;
+  source: "stripe_charge" | "qb_record" | "donorbox";
+  roles: ("payment_transaction" | "accounting" | "donor_purpose")[];
+  grain: "unit" | "bundle";
+  amount: string | null;
+  linkedGiftId: string | null;
+}
+
 interface CoverageOut {
-  mode: "none" | "charge" | "deposit" | "mixed";
-  chargeCoverage: Array<{ chargeId: string; giftId: string; amountApplied: string | null }>;
-  depositCoverage: Array<{
-    paymentApplicationId: string;
-    giftId: string;
-    amountApplied: string | null;
-  }>;
-  coveredChargeIds: string[];
-  uncoveredChargeIds: string[];
-  creditedAmount: string;
-  expectedAmount: string;
+  evidenceRecords: EvidenceRecordOut[];
+  donorPurpose: DimensionOut;
+  paymentTransaction: DimensionOut;
+  accountingEvidence: DimensionOut;
   complete: boolean;
 }
 
-function buildCoverage(
-  rows: CoverageRow[],
+/**
+ * Build the three-dimension canonical cluster coverage for a stripe_payout.
+ *
+ * Dimensions:
+ *   donorPurpose      — CRM gift booked + donor + allocation (satisfied by counted PAs)
+ *   paymentTransaction — mirrors donorPurpose for Stripe payouts (same PA evidence)
+ *   accountingEvidence — QB settlement link (bundle-grain) or per-charge QB ties (unit-grain)
+ *
+ * The returned object is the single source of truth: lens counts and hydration
+ * both derive from the same f_completed flag which now requires all three dimensions.
+ */
+function buildClusterCoverage(
+  coverageRows: CoverageRow[],
   charges: ChargeJson[],
+  linkedQbRows: QbRecordJson[],
   grossTotal: string | null,
   depAmount: string | null,
+  depId: string | null,
+  slLifecycle: string | null,
 ): CoverageOut {
-  const chargeRows = rows.filter((r) => r.grain === "charge");
-  const depositRows = rows.filter((r) => r.grain === "deposit");
+  // ── donorPurpose + paymentTransaction (shared PA evidence) ────────────────
+  const chargeRows = coverageRows.filter((r) => r.grain === "charge");
+  const depositRows = coverageRows.filter((r) => r.grain === "deposit");
   const hasCharge = chargeRows.length > 0;
   const hasDeposit = depositRows.length > 0;
-  const mode: CoverageOut["mode"] =
+  const nonExcluded = charges.filter((c) => c.status !== "excluded");
+
+  const dpGrain: DimensionGrain =
     !hasCharge && !hasDeposit
       ? "none"
       : hasCharge && !hasDeposit
-        ? "charge"
+        ? "unit"
         : !hasCharge && hasDeposit
-          ? "deposit"
+          ? "bundle"
           : "mixed";
-  const coveredChargeIds = [
-    ...new Set(chargeRows.map((r) => r.charge_id!).filter(Boolean)),
-  ];
-  const coveredSet = new Set(coveredChargeIds);
-  const nonExcluded = charges.filter((c) => c.status !== "excluded");
-  const uncoveredChargeIds = nonExcluded
-    .map((c) => c.chargeId)
-    .filter((id) => !coveredSet.has(id));
-  const creditedSum = rows.reduce((acc, r) => acc + (Number(r.amount_applied) || 0), 0);
-  const creditedAmount = creditedSum.toFixed(2);
-  const expectedRaw = mode === "deposit" ? depAmount : grossTotal;
-  const expectedAmount = expectedRaw ?? "0.00";
-  let complete = false;
-  if (mode === "charge") {
-    complete = uncoveredChargeIds.length === 0 && nonExcluded.length > 0;
-  } else if (mode === "deposit") {
-    const expected = Number(expectedAmount);
-    complete = expected > 0 && Number.isFinite(expected) && creditedSum >= expected - 0.005;
+
+  const coveredChargeIds = [...new Set(chargeRows.map((r) => r.charge_id!).filter(Boolean))];
+  const coveredChargeSet = new Set(coveredChargeIds);
+
+  const dpCoveredIds =
+    dpGrain === "bundle" || dpGrain === "mixed"
+      ? nonExcluded.map((c) => c.chargeId)
+      : coveredChargeIds;
+  const dpUncoveredIds =
+    dpGrain === "bundle"
+      ? []
+      : nonExcluded.map((c) => c.chargeId).filter((id) => !coveredChargeSet.has(id));
+
+  const creditedSum = coverageRows.reduce((acc, r) => acc + (Number(r.amount_applied) || 0), 0);
+  const dpExpected = dpGrain === "bundle" ? depAmount : grossTotal;
+
+  let dpComplete = false;
+  if (dpGrain === "unit") {
+    dpComplete = dpUncoveredIds.length === 0 && nonExcluded.length > 0;
+  } else if (dpGrain === "bundle") {
+    const expected = Number(dpExpected);
+    dpComplete = expected > 0 && Number.isFinite(expected) && creditedSum >= expected - 0.005;
   }
-  return {
-    mode,
-    chargeCoverage: chargeRows.map((r) => ({
-      chargeId: r.charge_id!,
-      giftId: r.gift_id,
-      amountApplied: r.amount_applied,
-    })),
-    depositCoverage: depositRows.map((r) => ({
-      paymentApplicationId: r.pa_id,
-      giftId: r.gift_id,
-      amountApplied: r.amount_applied,
-    })),
-    coveredChargeIds,
-    uncoveredChargeIds,
-    creditedAmount,
-    expectedAmount,
-    complete,
+
+  const donorPurpose: DimensionOut = {
+    grain: dpGrain,
+    complete: dpComplete,
+    coveredIds: dpCoveredIds,
+    uncoveredIds: dpUncoveredIds,
+    expectedAmount: dpExpected ?? null,
+    representedAmount: creditedSum.toFixed(2),
+    representationNote:
+      dpGrain === "mixed"
+        ? "Both per-charge and deposit-level gifts exist; resolve to one grain."
+        : null,
   };
+
+  // paymentTransaction mirrors donorPurpose for stripe_payout (same PA mechanism)
+  const paymentTransaction: DimensionOut = { ...donorPurpose };
+
+  // ── accountingEvidence (QB settlement link or per-charge QB ties) ─────────
+  const chargeTies = linkedQbRows.filter((r) => r.role === "charge_tie");
+  let aeGrain: DimensionGrain;
+  let aeCoveredIds: string[];
+  let aeUncoveredIds: string[];
+  let aeComplete: boolean;
+  let aeRepresented: string;
+
+  if (slLifecycle === "confirmed") {
+    aeGrain = "bundle";
+    aeCoveredIds = nonExcluded.map((c) => c.chargeId);
+    aeUncoveredIds = [];
+    aeComplete = true;
+    aeRepresented = depAmount ?? "0.00";
+  } else if (chargeTies.length > 0) {
+    const tiedChargeIds = new Set(
+      chargeTies.map((r) => r.linkedChargeId).filter((id): id is string => id != null),
+    );
+    aeGrain = "unit";
+    aeCoveredIds = [...tiedChargeIds];
+    aeUncoveredIds = nonExcluded.map((c) => c.chargeId).filter((id) => !tiedChargeIds.has(id));
+    aeComplete = aeUncoveredIds.length === 0 && nonExcluded.length > 0;
+    const tiedSum = chargeTies.reduce((acc, r) => acc + (Number(r.amount) || 0), 0);
+    aeRepresented = tiedSum.toFixed(2);
+  } else {
+    aeGrain = "none";
+    aeCoveredIds = [];
+    aeUncoveredIds = nonExcluded.map((c) => c.chargeId);
+    aeComplete = false;
+    aeRepresented = "0.00";
+  }
+
+  const accountingEvidence: DimensionOut = {
+    grain: aeGrain,
+    complete: aeComplete,
+    coveredIds: aeCoveredIds,
+    uncoveredIds: aeUncoveredIds,
+    expectedAmount: grossTotal,
+    representedAmount: aeRepresented,
+    representationNote: null,
+  };
+
+  // ── Evidence records (deduplicated; each physical record appears once) ────
+  const chargeGiftMap = new Map(chargeRows.map((r) => [r.charge_id!, r.gift_id]));
+  const chargeEvidence: EvidenceRecordOut[] = charges.map((c) => {
+    const linkedGiftId = chargeGiftMap.get(c.chargeId) ?? null;
+    const roles: EvidenceRecordOut["roles"] = ["payment_transaction"];
+    if (linkedGiftId) roles.push("donor_purpose");
+    return { id: c.chargeId, source: "stripe_charge", roles, grain: "unit", amount: c.amount, linkedGiftId };
+  });
+
+  const qbEvidence: EvidenceRecordOut[] = [];
+  if (slLifecycle === "confirmed" && depId) {
+    qbEvidence.push({
+      id: depId,
+      source: "qb_record",
+      roles: ["accounting"],
+      grain: "bundle",
+      amount: depAmount,
+      linkedGiftId: depositRows[0]?.gift_id ?? null,
+    });
+  } else {
+    for (const tie of chargeTies) {
+      qbEvidence.push({
+        id: tie.stagedPaymentId,
+        source: "qb_record",
+        roles: ["accounting"],
+        grain: "unit",
+        amount: tie.amount,
+        linkedGiftId: null,
+      });
+    }
+  }
+
+  const complete = dpComplete && aeComplete;
+  return { evidenceRecords: [...chargeEvidence, ...qbEvidence], donorPurpose, paymentTransaction, accountingEvidence, complete };
 }
 
 /* ── JS assembly helpers ───────────────────────────────────────────────── */
@@ -952,9 +1063,9 @@ router.get(
         ), '[]'::json) AS folded_fees,
         CASE WHEN s.organization_id IS NOT NULL THEN 'organization'
              WHEN s.individual_giver_person_id IS NOT NULL THEN 'person'
-             WHEN s.household_id IS NOT NULL THEN 'household' END AS candidate_donor_kind,
-        COALESCE(s.organization_id, s.individual_giver_person_id, s.household_id) AS candidate_donor_id,
-        COALESCE(o_cd.name, h_cd.name, ${sql.raw(personNameExpr("p_cd"))}) AS candidate_donor_name
+             WHEN s.household_id IS NOT NULL THEN 'household' END AS attributed_donor_kind,
+        COALESCE(s.organization_id, s.individual_giver_person_id, s.household_id) AS attributed_donor_id,
+        COALESCE(o_cd.name, h_cd.name, ${sql.raw(personNameExpr("p_cd"))}) AS attributed_donor_name
       FROM staged_payments s
       LEFT JOIN unit_group_members ugm
         ON ugm.evidence_source = 'quickbooks' AND ugm.source_id = s.id
@@ -1215,20 +1326,23 @@ router.get(
         }
         const resolved = h?.resolved_count ?? 0;
         const total = h?.total_count ?? 0;
-        const coverage = buildCoverage(
+        const coverage = buildClusterCoverage(
           coverageByPayout.get(r.anchor_id) ?? [],
           h?.charges ?? [],
+          h?.linked_qb_rows ?? [],
           h?.gross_total ?? null,
           h?.dep_amount ?? null,
+          h?.dep_id ?? null,
+          h?.sl_lifecycle ?? null,
         );
         // Status detail: vary by coverage grain and settlement path for accurate diagnostics.
         let statusDetail: string;
         const refundSuffix = r.f_refund ? " · refund awaiting review" : "";
-        if (coverage.mode === "deposit") {
+        if (coverage.donorPurpose.grain === "bundle") {
           // Deposit-grain (coarse §4.3) booking: one gift covers the whole lump.
-          statusDetail = coverage.complete
+          statusDetail = coverage.donorPurpose.complete
             ? `deposit-grain gift covers all ${total} charge${total === 1 ? "" : "s"}${refundSuffix}`
-            : `deposit-grain gift covers ${coverage.creditedAmount} of ${coverage.expectedAmount} expected${refundSuffix}`;
+            : `deposit-grain gift covers ${coverage.donorPurpose.representedAmount} of ${coverage.donorPurpose.expectedAmount} expected${refundSuffix}`;
         } else if (h?.settled && h.sl_lifecycle == null) {
           // fullyChargeTied: settled via per-charge QB ties, no deposit link.
           statusDetail = `${resolved} of ${total} charge-grain ${resolved === 1 ? "tie" : "ties"} confirmed${refundSuffix}`;
@@ -1324,6 +1438,66 @@ router.get(
         const feeSum = foldedFees.reduce((acc, f) => acc + (Number(f.amount) || 0), 0);
         const grossNum = h?.amount != null ? Number(h.amount) : null;
         const hasFees = foldedFees.length > 0 && grossNum != null && Number.isFinite(grossNum);
+        // ── qb_standalone coverage ────────────────────────────────────────────
+        // The QBO record IS both the payment-transaction evidence AND the
+        // accounting evidence (dual-role, appears once in evidenceRecords).
+        // Only donorPurpose may be incomplete (when no gift has been booked yet).
+        const qbExpectedAmount = isGroup ? (h?.group_total ?? null) : (h?.amount ?? null);
+        const nonExcludedQb = countable.filter((x) => x.status !== "excluded");
+        const coveredQbIds = nonExcludedQb
+          .filter((r) => r.status === "match_confirmed")
+          .map((r) => r.stagedPaymentId);
+        const uncoveredQbIds = nonExcludedQb
+          .filter((r) => r.status !== "match_confirmed")
+          .map((r) => r.stagedPaymentId);
+        const qbDpComplete = resolved === total && total > 0;
+        const qbRepresentedAmount = gifts
+          .reduce((acc, g) => acc + (Number(g.amount) || 0), 0)
+          .toFixed(2);
+        const qbCoverage: CoverageOut = {
+          evidenceRecords: countable.map((rec) => ({
+            id: rec.stagedPaymentId,
+            source: "qb_record" as const,
+            roles: (rec.status === "match_confirmed"
+              ? (["payment_transaction", "accounting", "donor_purpose"] as const)
+              : (["payment_transaction", "accounting"] as const)),
+            grain: "unit" as const,
+            amount: rec.amount,
+            linkedGiftId:
+              gifts.find((g) => g.linkedStagedPaymentIds.includes(rec.stagedPaymentId))
+                ?.giftId ?? null,
+          })),
+          donorPurpose: {
+            grain: total === 0 ? "none" : "unit",
+            complete: qbDpComplete,
+            coveredIds: coveredQbIds,
+            uncoveredIds: uncoveredQbIds,
+            expectedAmount: qbExpectedAmount,
+            representedAmount: qbRepresentedAmount,
+            representationNote: null,
+          },
+          // paymentTransaction: the QBO record exists by construction — always complete.
+          paymentTransaction: {
+            grain: "unit",
+            complete: true,
+            coveredIds: countable.map((rec) => rec.stagedPaymentId),
+            uncoveredIds: [],
+            expectedAmount: qbExpectedAmount,
+            representedAmount: qbExpectedAmount,
+            representationNote: null,
+          },
+          // accountingEvidence: same QBO record — always complete.
+          accountingEvidence: {
+            grain: "unit",
+            complete: true,
+            coveredIds: countable.map((rec) => rec.stagedPaymentId),
+            uncoveredIds: [],
+            expectedAmount: qbExpectedAmount,
+            representedAmount: qbExpectedAmount,
+            representationNote: null,
+          },
+          complete: qbDpComplete,
+        };
         return {
           ...base,
           date: h?.date ?? r.anchor_date,
@@ -1352,7 +1526,7 @@ router.get(
                 totalAmount: h?.group_total ?? null,
               }
             : null,
-          coverage: null,
+          coverage: qbCoverage,
         };
       }
 
@@ -1384,7 +1558,40 @@ router.get(
         qbRecords: [],
         settlement: null,
         group: null,
-        coverage: null,
+        // crm_only: donor/purpose always complete (the gift IS the anchor);
+        // payment and accounting evidence are always incomplete (cluster exists
+        // precisely because there is no external transaction or QB record).
+        coverage: {
+          evidenceRecords: [],
+          donorPurpose: {
+            grain: "unit" as const,
+            complete: true,
+            coveredIds: h ? [h.gift_id] : [],
+            uncoveredIds: [],
+            expectedAmount: h?.amount ?? null,
+            representedAmount: h?.amount ?? null,
+            representationNote: null,
+          },
+          paymentTransaction: {
+            grain: "none" as const,
+            complete: false,
+            coveredIds: [],
+            uncoveredIds: [],
+            expectedAmount: h?.amount ?? null,
+            representedAmount: null,
+            representationNote: null,
+          },
+          accountingEvidence: {
+            grain: "none" as const,
+            complete: false,
+            coveredIds: [],
+            uncoveredIds: [],
+            expectedAmount: h?.amount ?? null,
+            representedAmount: null,
+            representationNote: null,
+          },
+          complete: false,
+        } satisfies CoverageOut,
       };
     });
 

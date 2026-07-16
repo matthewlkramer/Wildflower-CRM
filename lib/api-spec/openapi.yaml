@@ -8463,45 +8463,76 @@ components:
       properties:
         memberCount: { type: integer, description: "Total rows in the unit group (including the representative)." }
         totalAmount: { type: string, nullable: true, description: "Group total, major units." }
+    WorkbenchClusterDimensionGrain:
+      type: string
+      enum: [none, unit, bundle, mixed]
+      description: "Grain at which a dimension is satisfied: none = no evidence yet; unit = one evidence record per charge / QB row; bundle = one record covers all units; mixed = competing unit + bundle representations (always incomplete)."
+    WorkbenchClusterEvidenceRecord:
+      type: object
+      required: [id, source, roles, grain]
+      description: "One external evidence record in the cluster. Each physical record appears exactly once; the roles array lists every reconciliation dimension it satisfies."
+      properties:
+        id:
+          type: string
+          description: "External record id: stripe_staged_charges.id (ch_…), staged_payments.id, etc."
+        source:
+          type: string
+          enum: [stripe_charge, qb_record, donorbox]
+        roles:
+          type: array
+          items: { type: string, enum: [payment_transaction, accounting, donor_purpose] }
+          description: "Dimensions this record satisfies. A single QBO record may satisfy both payment_transaction and accounting."
+        grain:
+          type: string
+          enum: [unit, bundle]
+          description: "unit = covers one charge / unit; bundle = covers the whole payout / group."
+        amount:
+          type: string
+          nullable: true
+          description: "Record amount, major units."
+        linkedGiftId:
+          type: string
+          nullable: true
+          description: "gifts_and_payments.id this record is counted into, if any."
+    WorkbenchClusterDimensionCoverage:
+      type: object
+      required: [grain, complete, coveredIds, uncoveredIds]
+      description: "Coverage status for one of the three reconciliation dimensions."
+      properties:
+        grain:             { $ref: "#/components/schemas/WorkbenchClusterDimensionGrain" }
+        complete:          { type: boolean }
+        coveredIds:        { type: array, items: { type: string }, description: "Ids of units (charges or QB rows) that are satisfied for this dimension." }
+        uncoveredIds:      { type: array, items: { type: string }, description: "Ids of units that participate in this dimension but are not yet satisfied." }
+        expectedAmount:    { type: string, nullable: true, description: "Total expected for this dimension, major units." }
+        representedAmount: { type: string, nullable: true, description: "Amount currently represented by covered evidence, major units." }
+        representationNote: { type: string, nullable: true, description: "Human-readable note for mixed or competing representations (grain=mixed)." }
     WorkbenchClusterCoverage:
       type: object
-      required: [mode, chargeCoverage, depositCoverage, coveredChargeIds, uncoveredChargeIds, creditedAmount, expectedAmount, complete]
+      required: [evidenceRecords, donorPurpose, paymentTransaction, accountingEvidence, complete]
       description: |
-        Per-payout coverage: which grains have counted payment_application rows and whether
-        together they fully account for the expected money. Null for qb_standalone and crm_only kinds.
+        Three-dimension canonical cluster state. Derived once and used for both lens counts and
+        the hydrated response — a cluster whose complete=false never appears in the Completed lens.
+        Present for all cluster kinds (stripe_payout, qb_standalone, crm_only).
       properties:
-        mode:
-          type: string
-          enum: [none, charge, deposit, mixed]
-          description: "none = no counted PAs anywhere; charge = only per-charge PAs; deposit = only deposit-level PAs (against the settlement-linked QB deposit); mixed = both grains have PAs (incomplete — one should supersede the other)."
-        chargeCoverage:
+        evidenceRecords:
           type: array
-          description: "Counted PA rows anchored to individual Stripe charges."
-          items:
-            type: object
-            required: [chargeId, giftId]
-            properties:
-              chargeId:      { type: string }
-              giftId:        { type: string }
-              amountApplied: { type: string, nullable: true, description: "amount_applied from the PA row, major units." }
-        depositCoverage:
-          type: array
-          description: "Counted PA rows anchored to the settlement-linked QB deposit lump."
-          items:
-            type: object
-            required: [paymentApplicationId, giftId]
-            properties:
-              paymentApplicationId: { type: string }
-              giftId:               { type: string }
-              amountApplied:        { type: string, nullable: true, description: "amount_applied from the PA row, major units." }
-        coveredChargeIds:   { type: array, items: { type: string }, description: "Charge ids with at least one counted charge-grain PA." }
-        uncoveredChargeIds: { type: array, items: { type: string }, description: "Non-excluded charge ids with no counted charge-grain PA." }
-        creditedAmount: { type: string, description: "Sum of all counted PA amount_applied values (charge + deposit grains), major units." }
-        expectedAmount: { type: string, description: "The expected total: payout gross_total for charge-grain; deposit amount for deposit-grain, major units." }
-        complete:       { type: boolean, description: "True when the grains are consistent, credited >= expected, and uncoveredChargeIds is empty." }
+          items: { $ref: "#/components/schemas/WorkbenchClusterEvidenceRecord" }
+          description: "Deduplicated list of all external evidence records. Each physical record appears once even when it satisfies multiple dimensions."
+        donorPurpose:
+          allOf: [ { $ref: "#/components/schemas/WorkbenchClusterDimensionCoverage" } ]
+          description: "Dimension 1: donor identified, CRM gift booked, and allocation receiving credit."
+        paymentTransaction:
+          allOf: [ { $ref: "#/components/schemas/WorkbenchClusterDimensionCoverage" } ]
+          description: "Dimension 2: real-world transaction identified (Stripe charge, check, QBO payment, Donorbox). QBO may satisfy both this and accountingEvidence."
+        accountingEvidence:
+          allOf: [ { $ref: "#/components/schemas/WorkbenchClusterDimensionCoverage" } ]
+          description: "Dimension 3: money is represented in QuickBooks or another accounting system (settlement link or per-charge QB tie)."
+        complete:
+          type: boolean
+          description: "True when all three dimensions are complete, amounts balance under canonical rules, and no unresolved conflict or refund."
     WorkbenchCluster:
       type: object
-      required: [id, kind, anchorId, status, lenses, gifts, charges, qbRecords]
+      required: [id, kind, anchorId, status, lenses, gifts, charges, qbRecords, coverage]
       description: |
         One reconciliation cluster row. A single flat shape for all three kinds —
         `kind` discriminates; kind-inapplicable fields are null/empty (house style,
@@ -8530,9 +8561,8 @@ components:
         settlement:    { allOf: [ { $ref: "#/components/schemas/WorkbenchClusterSettlement" } ], nullable: true, description: "Null for non-payout kinds and for orphan payouts with no settlement link yet." }
         group:         { allOf: [ { $ref: "#/components/schemas/WorkbenchClusterGroup" } ], nullable: true, description: "Present only when the qb_standalone anchor represents a unit group." }
         coverage:
-          allOf: [ { $ref: "#/components/schemas/WorkbenchClusterCoverage" } ]
-          nullable: true
-          description: "Coverage derivation for stripe_payout clusters: which grains have counted PA rows and whether they fully account for the payout. Null for qb_standalone and crm_only kinds."
+          $ref: "#/components/schemas/WorkbenchClusterCoverage"
+          description: "Three-dimension canonical cluster state (donorPurpose / paymentTransaction / accountingEvidence). Always present for all cluster kinds."
     WorkbenchLensCounts:
       type: object
       required: [all_open, needs_donor_or_gift, needs_accounting, settlement_gaps, conflicts, refunds, excluded_qb_says_donation, excluded, completed]

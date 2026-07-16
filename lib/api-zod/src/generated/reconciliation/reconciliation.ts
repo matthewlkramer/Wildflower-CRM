@@ -1046,23 +1046,43 @@ export const ListWorkbenchClustersResponse = zod.object({
   "totalAmount": zod.string().nullish().describe('Group total, major units.')
 }).describe('Unit-group rollup when the qb_standalone anchor is a group representative.').nullish().describe('Present only when the qb_standalone anchor represents a unit group.'),
   "coverage": zod.object({
-  "mode": zod.enum(['none', 'charge', 'deposit', 'mixed']).describe('none = no counted PAs anywhere; charge = only per-charge PAs; deposit = only deposit-level PAs (against the settlement-linked QB deposit); mixed = both grains have PAs (incomplete — one should supersede the other).'),
-  "chargeCoverage": zod.array(zod.object({
-  "chargeId": zod.string(),
-  "giftId": zod.string(),
-  "amountApplied": zod.string().nullish().describe('amount_applied from the PA row, major units.')
-})).describe('Counted PA rows anchored to individual Stripe charges.'),
-  "depositCoverage": zod.array(zod.object({
-  "paymentApplicationId": zod.string(),
-  "giftId": zod.string(),
-  "amountApplied": zod.string().nullish().describe('amount_applied from the PA row, major units.')
-})).describe('Counted PA rows anchored to the settlement-linked QB deposit lump.'),
-  "coveredChargeIds": zod.array(zod.string()).describe('Charge ids with at least one counted charge-grain PA.'),
-  "uncoveredChargeIds": zod.array(zod.string()).describe('Non-excluded charge ids with no counted charge-grain PA.'),
-  "creditedAmount": zod.string().describe('Sum of all counted PA amount_applied values (charge + deposit grains), major units.'),
-  "expectedAmount": zod.string().describe('The expected total: payout gross_total for charge-grain; deposit amount for deposit-grain, major units.'),
-  "complete": zod.boolean().describe('True when the grains are consistent, credited >= expected, and uncoveredChargeIds is empty.')
-}).describe('Per-payout coverage: which grains have counted payment_application rows and whether\ntogether they fully account for the expected money. Null for qb_standalone and crm_only kinds.\n').nullish().describe('Coverage derivation for stripe_payout clusters: which grains have counted PA rows and whether they fully account for the payout. Null for qb_standalone and crm_only kinds.')
+  "evidenceRecords": zod.array(zod.object({
+  "id": zod.string().describe('External record id: stripe_staged_charges.id (ch_…), staged_payments.id, etc.'),
+  "source": zod.enum(['stripe_charge', 'qb_record', 'donorbox']),
+  "roles": zod.array(zod.enum(['payment_transaction', 'accounting', 'donor_purpose'])).describe('Dimensions this record satisfies. A single QBO record may satisfy both payment_transaction and accounting.'),
+  "grain": zod.enum(['unit', 'bundle']).describe('unit = covers one charge \/ unit; bundle = covers the whole payout \/ group.'),
+  "amount": zod.string().nullish().describe('Record amount, major units.'),
+  "linkedGiftId": zod.string().nullish().describe('gifts_and_payments.id this record is counted into, if any.')
+}).describe('One external evidence record in the cluster. Each physical record appears exactly once; the roles array lists every reconciliation dimension it satisfies.')).describe('Deduplicated list of all external evidence records. Each physical record appears once even when it satisfies multiple dimensions.'),
+  "donorPurpose": zod.object({
+  "grain": zod.enum(['none', 'unit', 'bundle', 'mixed']).describe('Grain at which a dimension is satisfied: none = no evidence yet; unit = one evidence record per charge \/ QB row; bundle = one record covers all units; mixed = competing unit + bundle representations (always incomplete).'),
+  "complete": zod.boolean(),
+  "coveredIds": zod.array(zod.string()).describe('Ids of units (charges or QB rows) that are satisfied for this dimension.'),
+  "uncoveredIds": zod.array(zod.string()).describe('Ids of units that participate in this dimension but are not yet satisfied.'),
+  "expectedAmount": zod.string().nullish().describe('Total expected for this dimension, major units.'),
+  "representedAmount": zod.string().nullish().describe('Amount currently represented by covered evidence, major units.'),
+  "representationNote": zod.string().nullish().describe('Human-readable note for mixed or competing representations (grain=mixed).')
+}).describe('Coverage status for one of the three reconciliation dimensions.').describe('Dimension 1: donor identified, CRM gift booked, and allocation receiving credit.'),
+  "paymentTransaction": zod.object({
+  "grain": zod.enum(['none', 'unit', 'bundle', 'mixed']).describe('Grain at which a dimension is satisfied: none = no evidence yet; unit = one evidence record per charge \/ QB row; bundle = one record covers all units; mixed = competing unit + bundle representations (always incomplete).'),
+  "complete": zod.boolean(),
+  "coveredIds": zod.array(zod.string()).describe('Ids of units (charges or QB rows) that are satisfied for this dimension.'),
+  "uncoveredIds": zod.array(zod.string()).describe('Ids of units that participate in this dimension but are not yet satisfied.'),
+  "expectedAmount": zod.string().nullish().describe('Total expected for this dimension, major units.'),
+  "representedAmount": zod.string().nullish().describe('Amount currently represented by covered evidence, major units.'),
+  "representationNote": zod.string().nullish().describe('Human-readable note for mixed or competing representations (grain=mixed).')
+}).describe('Coverage status for one of the three reconciliation dimensions.').describe('Dimension 2: real-world transaction identified (Stripe charge, check, QBO payment, Donorbox). QBO may satisfy both this and accountingEvidence.'),
+  "accountingEvidence": zod.object({
+  "grain": zod.enum(['none', 'unit', 'bundle', 'mixed']).describe('Grain at which a dimension is satisfied: none = no evidence yet; unit = one evidence record per charge \/ QB row; bundle = one record covers all units; mixed = competing unit + bundle representations (always incomplete).'),
+  "complete": zod.boolean(),
+  "coveredIds": zod.array(zod.string()).describe('Ids of units (charges or QB rows) that are satisfied for this dimension.'),
+  "uncoveredIds": zod.array(zod.string()).describe('Ids of units that participate in this dimension but are not yet satisfied.'),
+  "expectedAmount": zod.string().nullish().describe('Total expected for this dimension, major units.'),
+  "representedAmount": zod.string().nullish().describe('Amount currently represented by covered evidence, major units.'),
+  "representationNote": zod.string().nullish().describe('Human-readable note for mixed or competing representations (grain=mixed).')
+}).describe('Coverage status for one of the three reconciliation dimensions.').describe('Dimension 3: money is represented in QuickBooks or another accounting system (settlement link or per-charge QB tie).'),
+  "complete": zod.boolean().describe('True when all three dimensions are complete, amounts balance under canonical rules, and no unresolved conflict or refund.')
+}).describe('Three-dimension canonical cluster state (donorPurpose \/ paymentTransaction \/ accountingEvidence). Always present for all cluster kinds.')
 }).describe('One reconciliation cluster row. A single flat shape for all three kinds —\n`kind` discriminates; kind-inapplicable fields are null\/empty (house style,\nmirrors BundleAnchor). Money fields are null when unknowable for the kind\n(e.g. no fee data for QB-only money).\n')),
   "lensCounts": zod.object({
   "all_open": zod.number(),

@@ -1,0 +1,19 @@
+Keep per-evidence attributedDonor and replace the independent slim completion heuristic with one canonical cluster-state derivation shared by lens counts, pagination, status, actions, and hydration.
+
+Model three separate required coverage dimensions:
+
+Donor/purpose coverage — identifies the donor, CRM gift, and purpose or allocation receiving credit.
+Payment transaction evidence — identifies the real-world transaction through which money moved, such as a Stripe charge, Donorbox transaction, check, or QBO payment.
+Accounting evidence — identifies how the money is represented in QuickBooks or another accounting source.
+
+These are semantic roles, not fixed source systems. Stripe commonly satisfies payment evidence; QBO commonly satisfies accounting evidence; QBO may also satisfy payment evidence. A single QBO record may legitimately satisfy both payment and accounting roles. Do not duplicate it merely because it serves two roles.
+
+Each dimension may be satisfied at unit grain or bundle grain. For example, four Stripe charges may provide unit-level payment evidence while one QBO record provides bundle-level accounting evidence. Do not require the three dimensions to use the same grain.
+
+For each coverage dimension, return its mode, evidence records, covered and uncovered units, expected amount, represented amount, and completeness. Detect mixed or competing representations explicitly rather than reducing them to complete: false.
+
+Overall cluster completion requires all three required dimensions to be complete, amounts to balance under the canonical gross/net, fee, refund, and adjustment rules, and no unresolved conflict or refund. Explicit exemptions may satisfy a dimension where appropriate.
+
+Imported QBO transaction types such as deposit, payment, or sales receipt are descriptive and should not control whether a record can satisfy a role. Determine the role from the relationship and economic meaning.
+
+Derive lens membership and the hydrated response from the same canonical cluster state. A hydrated cluster marked incomplete must never appear in the Completed lens.
