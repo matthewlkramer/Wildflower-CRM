@@ -465,15 +465,10 @@ export const FundraisingCategory = {
 } as const;
 
 /**
- * The single authoritative loan-vs-grant classification. Supersedes the
-legacy signals, which are write-deprecated (no longer dual-written):
-  - opportunities_and_pledges.fundraising_category (kept physical, frozen)
-  - fiscal_year_entity_goals.category (kept physical, frozen)
-Gifts still derive their flag from `type` ('loan_fund_investment' → loan)
-because the gift type IS the user input. Mapping (1:1): loan_capital /
-loan_fund_investment → `loan`; everything else → `grant`. NOTE: `grant`
-means ALL non-loan money (individual donations, foundation grants, earned
-revenue, …), not literally grants.
+ * The single authoritative loan-vs-grant classification. Gifts derive their
+flag from `type` ('loan_fund_investment' → loan) because the gift type IS
+the user input. NOTE: `grant` means ALL non-loan money (individual
+donations, foundation grants, earned revenue, …), not literally grants.
 
  */
 export type LoanOrGrant = typeof LoanOrGrant[keyof typeof LoanOrGrant];
@@ -1803,7 +1798,7 @@ export interface OpportunityOrPledge {
   name?: string | null;
   organizationId?: string | null;
   householdId?: string | null;
-  /** Authoritative loan-vs-grant classification. User-settable on create/update; defaults to 'grant'. Analytics, goals, and revenue coding all read from this. (The legacy fundraising_category column is @deprecated — frozen, never returned.) */
+  /** Authoritative loan-vs-grant classification. User-settable on create/update; defaults to 'grant'. Analytics, goals, and revenue coding all read from this. */
   loanOrGrant: LoanOrGrant;
   askAmount?: string | null;
   awardedAmount?: string | null;

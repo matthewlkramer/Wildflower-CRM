@@ -17,7 +17,6 @@ import {
   opportunityStageEnum,
   opportunityConditionalEnum,
   opportunityConditionsMetEnum,
-  fundraisingCategoryEnum,
   loanOrGrantEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
@@ -103,17 +102,9 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   // every payment link/amount/archive mutation. Surfaced as the API
   // `paidAmount` field and drives the cash_in status derivation (paid≥awarded).
   paid: numeric("paid", { precision: 14, scale: 2 }).notNull().default("0"),
-  // @deprecated — superseded by `loanOrGrant` (the authoritative flag). Frozen
-  // as of the cutover: never written (new rows get the 'revenue' default and it
-  // stays there regardless of loanOrGrant) and never read or returned by the
-  // API (scrubbed from every response projection). Kept physical only for the
-  // deprecate-then-drop window; do NOT resurrect reads or writes.
-  fundraisingCategory: fundraisingCategoryEnum("fundraising_category")
-    .notNull()
-    .default("revenue"),
   // Authoritative loan-vs-grant flag (see loanOrGrantEnum). User-settable on
   // create/patch (defaults 'grant'); the single read source for dashboard /
-  // projections / goals / revenue coding. Supersedes fundraisingCategory.
+  // projections / goals / revenue coding.
   loanOrGrant: loanOrGrantEnum("loan_or_grant").notNull().default("grant"),
   type: opportunityTypeEnum("type"),
   conditional: opportunityConditionalEnum("conditional"),

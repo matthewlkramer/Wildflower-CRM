@@ -174,48 +174,6 @@ async function seedGiftDesynced(
   return id;
 }
 
-/** Seed an OPEN opp + pledge allocation with fundraising_category ⟂ loan_or_grant. */
-async function seedOpenOppDesynced(
-  subAmount: string,
-  fundraisingCategory: "revenue" | "loan_capital",
-  loanOrGrant: "loan" | "grant",
-): Promise<string> {
-  const id = nextId("rs_opp");
-  await db.insert(schema.opportunitiesAndPledges).values({
-    id,
-    name: `LorG readsrc ${id}`,
-    organizationId: ORG_ID,
-    status: "open",
-    stage: "in_conversation",
-    fundraisingCategory,
-    loanOrGrant,
-  });
-  await db.insert(schema.pledgeAllocations).values({
-    id: nextId("rs_palloc"),
-    pledgeOrOpportunityId: id,
-    subAmount,
-    entityId: ENTITY_RS,
-    grantYear: FY_ID,
-  });
-  seededPledgeIds.push(id);
-  return id;
-}
-
-/** Seed a per-entity FY goal with category ⟂ loan_or_grant (PK is by category). */
-async function seedGoalDesynced(
-  goalAmount: string,
-  category: "revenue" | "loan_capital",
-  loanOrGrant: "loan" | "grant",
-): Promise<void> {
-  await db.insert(schema.fiscalYearEntityGoals).values({
-    fiscalYearId: FY_ID,
-    entityId: ENTITY_RS,
-    category,
-    goalAmount,
-    loanOrGrant,
-  });
-}
-
 async function readSourceBreakdown(): Promise<any> {
   const res = await fetch(
     `${baseUrl}/api/fiscal-year-breakdown/${FY_ID}?entityId=${ENTITY_RS}`,
@@ -530,31 +488,5 @@ describe.skipIf(!HAS_DB)(
       expect(loanIds).not.toContain(flagGrant);
     });
 
-    it("buckets an open opp by loan_or_grant even when the legacy fundraising_category disagrees", async () => {
-      const flagLoan = await seedOpenOppDesynced("3000.00", "revenue", "loan");
-      const flagGrant = await seedOpenOppDesynced("4000.00", "loan_capital", "grant");
-
-      const body = await readSourceBreakdown();
-      const loanIds = body.loanCapital.openPipeline.rows.map(
-        (r: { opportunityId: string }) => r.opportunityId,
-      );
-      const revIds = body.revenue.openPipeline.rows.map(
-        (r: { opportunityId: string }) => r.opportunityId,
-      );
-
-      expect(loanIds).toContain(flagLoan);
-      expect(revIds).not.toContain(flagLoan);
-      expect(revIds).toContain(flagGrant);
-      expect(loanIds).not.toContain(flagGrant);
-    });
-
-    it("buckets an FY goal by loan_or_grant even when the legacy category disagrees", async () => {
-      await seedGoalDesynced("5000.00", "revenue", "loan"); // flag loan → loan capital
-      await seedGoalDesynced("700.00", "loan_capital", "grant"); // flag grant → revenue
-
-      const body = await readSourceBreakdown();
-      expect(body.loanCapital.goal).toBe("5000.00");
-      expect(body.revenue.goal).toBe("700.00");
-    });
   },
 );

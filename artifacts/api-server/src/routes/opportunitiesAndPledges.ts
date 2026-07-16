@@ -20,12 +20,10 @@ const primaryContact = alias(people, "primary_contact_person");
 // Person display name matches the client's `personDisplayName`:
 // COALESCE(full_name, trim(first||' '||last)).
 
-// Header projection: every opportunity column EXCEPT the @deprecated
-// fundraising_category (superseded by loanOrGrant). Responses are plain
-// res.json — no Zod stripping — so every select/returning that reaches the
-// client must go through this scrubbed projection.
-const { fundraisingCategory: _deprecatedFundraisingCategory, ...oppHeaderColumns } =
-  getTableColumns(opportunitiesAndPledges);
+// Header projection: all opportunity columns. Responses are plain res.json —
+// no Zod stripping — so every select/returning that reaches the client must go
+// through this projection.
+const oppHeaderColumns = getTableColumns(opportunitiesAndPledges);
 
 const donorJoinSelect = {
   ...oppHeaderColumns,
@@ -94,7 +92,6 @@ import {
   MintGiftFromOpportunityBody,
   validateOppInvariants,
   validateOppCloseTransition,
-  legacyCategoryToLoanOrGrant,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { copyPledgeAllocationsToGift } from "../lib/reconciliationCommit";
@@ -650,8 +647,7 @@ router.post(
       winProbability?: string | null;
     } = { ...body };
     // loanOrGrant comes straight from the body (authoritative flag); omitted →
-    // the DB default 'grant'. The legacy fundraising_category is frozen — the
-    // new row keeps its 'revenue' column default regardless.
+    // the DB default 'grant'.
     if (
       (body.stage !== undefined || body.lossType !== undefined) &&
       body.winProbability === undefined
@@ -1075,8 +1071,7 @@ router.patch(
     } = {
       ...body,
     };
-    // loanOrGrant (authoritative flag) flows straight from the body when set;
-    // the legacy fundraising_category is frozen and never written.
+    // loanOrGrant (authoritative flag) flows straight from the body when set.
     if (stageOrLossTypeInBody && body.winProbability === undefined) {
       // Conditions live on the pledge allocations now; the inline stamp uses the
       // non-conditional default and applyDerivedOppFields below re-canonicalises

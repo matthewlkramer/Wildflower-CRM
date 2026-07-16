@@ -1,19 +1,18 @@
 ---
 name: Loan vs revenue tracks + loan_or_grant flag
-description: Two parallel money-classification tracks (loan capital vs revenue/grant); loan_or_grant is the SOLE authoritative flag as of 2026-07 cutover; legacy fundraising_category is deprecated physical-only.
+description: Two parallel money-classification tracks (loan capital vs revenue/grant); loan_or_grant is the SOLE authoritative flag; legacy fundraising_category pg enum + columns physically DROPPED (migration 0130).
 ---
 
 Wildflower fundraising splits into two parallel tracks that must never be mixed in
 analytics: **grant** (gifts/grants/revenue) and **loan** (loan-fund capital investment).
 
-## Current authority (cutover complete, 2026-07)
+## Current authority (cutover + drop complete, 2026-07)
 
 `loan_or_grant` enum (`loan | grant`) on `gifts_and_payments`,
 `opportunities_and_pledges`, and `fiscal_year_entity_goals` is the ONLY classification
-signal used. Legacy `fundraising_category` (`revenue | loan_capital`) and goals
-`category` columns are `@deprecated` — physical only, never written, never read;
-scrubbed from every API response via explicit column projections
-(`goalResponseColumns` / `oppHeaderColumns`).
+signal used. The legacy `fundraising_category` pg enum, `opportunities_and_pledges.fundraising_category`,
+and `fiscal_year_entity_goals.category` columns have been **physically dropped** (migration 0130)
+— they no longer exist in the schema or on any response.
 
 **Semantic map (1:1):**
 - `loan_capital` opps / `loan_fund_investment` gift type → `loan`
@@ -39,15 +38,15 @@ thread `loan_or_grant` through and keep the two buckets separate.
 **Why:** loan capital and operating revenue are economically different money and the org
 reports them separately; blending them misstates both goals and pace.
 
-## Rules that survive the cutover
+## Rules that survive the drop (migration 0130)
 
-- **Never write `fundraising_category` or goals `category`.** A full-row opp/goal select
-  reaching the client leaks the deprecated column (no Zod stripping) — always route
-  responses through the scrub projections.
+- **`fundraising_category` pg enum and its two columns are physically dropped** —
+  do not attempt to add them back. If you see a reference to this type in old migration
+  files or runbooks, that is historical context only.
 - **Goals `:category` path param must continue normalizing both token families** — old
-  bookmarks and external callers may still send `loan_capital`/`revenue`.
-- **`legacyCategoryToLoanOrGrant` / `loanOrGrantToLegacyCategory` mappers** in
-  `@workspace/api-zod` remain only for the post-cutover parity script — do not use them
-  in new product code.
-- **Non-destructive default:** all pre-existing rows are `grant`, so absent/unknown
-  category means grant.
+  bookmarks and external callers may still send `loan_capital`/`revenue`. This is the
+  `normalizeGoalCategory` helper in `fiscalYearEntityGoals.ts`.
+- **`giftTypeToLoanOrGrant` is the only surviving mapper** in `@workspace/api-zod`
+  (the `legacyCategoryToLoanOrGrant` / `loanOrGrantToLegacyCategory` pair was removed).
+- **Non-destructive default:** all pre-existing rows are `grant`; the DB default on
+  `loan_or_grant` is `'grant'`.

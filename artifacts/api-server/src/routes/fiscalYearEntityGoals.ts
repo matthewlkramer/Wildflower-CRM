@@ -18,8 +18,7 @@ router.use(requireAuth);
 // a `numeric` cast error.
 const DECIMAL_RE = /^-?\d+(\.\d{1,2})?$/;
 
-// Goal category token → authoritative `loan_or_grant`. The legacy `category`
-// column is @deprecated (frozen, never written/read); the table PK is
+// Goal category token → authoritative `loan_or_grant`. The table PK is
 // (fiscal_year_id, entity_id, loan_or_grant). Accepts BOTH token families so
 // older clients keep working:
 //   - new:    'loan' | 'grant'
@@ -39,10 +38,9 @@ function parseCategoryParam(raw: unknown): "loan" | "grant" | null {
   return typeof raw === "string" ? normalizeGoalCategory(raw) : null;
 }
 
-// Response projection: every column EXCEPT the @deprecated `category`, which
-// must never leak to clients (responses are plain res.json — no Zod stripping).
-const { category: _deprecatedCategory, ...goalResponseColumns } =
-  getTableColumns(fiscalYearEntityGoals);
+// Response projection: all goal columns. Responses are plain res.json — no
+// Zod stripping — so every select/returning uses this projection.
+const goalResponseColumns = getTableColumns(fiscalYearEntityGoals);
 
 router.get(
   "/fiscal-year-entity-goals",
@@ -114,8 +112,7 @@ router.put(
     if (!fy) return notFound(res, `fiscal year '${fyId}'`);
     if (!ent) return notFound(res, `entity '${entityId}'`);
 
-    // Upsert on the authoritative PK (fy, entity, loan_or_grant). The legacy
-    // `category` column is frozen — never written; new rows keep its default.
+    // Upsert on the authoritative PK (fy, entity, loan_or_grant).
     const [row] = await db
       .insert(fiscalYearEntityGoals)
       .values({ fiscalYearId: fyId, entityId, goalAmount: body.goalAmount, loanOrGrant })

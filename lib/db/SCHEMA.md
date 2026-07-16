@@ -109,9 +109,7 @@ in older notes is stale.
   `(fiscal_year_id, entity_id, loan_or_grant)`** (migration 0120), so the grant
   (revenue) and loan-capital tracks each carry their own goal. Cascading FKs to
   both parents. Analytics sum across this table honoring the same entity/track
-  filters as the money rollups. The legacy `category` column
-  (`fundraising_category` enum) is **deprecated** — still physical, no longer in
-  the PK, never written or returned by the API.
+  filters as the money rollups.
 
 - `users` — Clerk-provisioned app users (`role` includes `admin`; admin gates
   show-archived, restore, and admin-only screens).
@@ -142,10 +140,7 @@ in older notes is stale.
     last rows carrying them to `verbal_confirmation`, so zero rows use them.
     `conditional` (`unconditional` / `conditional_unspecified` / `reimbursable` /
     `conditional_on_funder_determination` / `conditional_on_target`),
-    **`loan_or_grant`** (the authoritative loan-vs-grant flag — see below). The
-    legacy **`fundraising_category`** column (`revenue` / `loan_capital`) is
-    **deprecated** — still physical, but no longer written, read, or returned by
-    the API.
+    **`loan_or_grant`** (the authoritative loan-vs-grant flag — see below).
   - A sticky `written_pledge` flag (renamed from `was_pledge`) latches true only
     when a grant letter is uploaded while the money is not already fully in, or
     on an explicit user set — never auto-cleared. It drives the calculated
@@ -296,12 +291,10 @@ writes take it directly; a gift's flag is still derived from its `type`
 earned revenue, etc. — **not literally only grants.**
 
 The cutover is complete: analytics, goals, and revenue coding all read
-`loan_or_grant`, and the legacy signals — `opportunities_and_pledges.
-fundraising_category` and `fiscal_year_entity_goals.category` (both the
-`fundraising_category` enum, historical 1:1 map `loan_capital` → `loan`,
-`revenue` → `grant`) — are **deprecated**: still physical (not dropped), but no
-longer written, read, or returned by the API. Backfills were migrations
-0067/0068; the goals PK swap is 0120.
+`loan_or_grant`. The legacy `fundraising_category` enum and the columns it
+backed (`opportunities_and_pledges.fundraising_category`,
+`fiscal_year_entity_goals.category`) have been physically dropped (migration
+0130). Backfills were migrations 0067/0068; the goals PK swap is 0120.
 
 ## Many-to-many via slug arrays
 

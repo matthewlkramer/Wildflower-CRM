@@ -1349,8 +1349,7 @@ router.post(
           writtenPledge: true,
           // Inherit loan-vs-grant from the source gift(s) so loan-fund money
           // doesn't create a grant pledge; if any source gift is loan the
-          // pledge is loan. (The legacy fundraising_category is frozen —
-          // never written.)
+          // pledge is loan.
           loanOrGrant: gifts.some((g) => g.loanOrGrant === "loan") ? "loan" : "grant",
         });
         // Minimal allocation so the pledge satisfies the "at least one
@@ -1566,8 +1565,7 @@ router.post(
         stage: "verbal_confirmation",
         writtenPledge: true,
         // Inherit loan-vs-grant from the source gift so a loan-fund gift
-        // doesn't create a grant pledge. (The legacy fundraising_category is
-        // frozen — never written.)
+        // doesn't create a grant pledge.
         loanOrGrant: gift.loanOrGrant,
       });
 
@@ -1793,8 +1791,7 @@ router.post(
         awardedAmount: gift.amount,
         stage: asPledge ? "verbal_confirmation" : "in_conversation",
         writtenPledge: asPledge,
-        // Inherit loan-vs-grant from the source gift. (The legacy
-        // fundraising_category is frozen — never written.)
+        // Inherit loan-vs-grant from the source gift.
         loanOrGrant: gift.loanOrGrant,
       });
 
