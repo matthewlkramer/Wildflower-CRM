@@ -61,6 +61,7 @@ import {
 import { ContactIconRow } from "@/components/contact-icon-row";
 import {
   AddPersonOrgRoleDialog,
+  AddPersonToHouseholdDialog,
   EditPeopleEntityRoleDialog,
 } from "@/components/add-role-dialogs";
 import {
@@ -1092,12 +1093,17 @@ function PeopleCard({ person }: { person: PersonDetail }) {
       title="People"
       empty={!hasAny}
       action={
-        canHaveInactive ? (
-          <HideInactiveToggle
-            hidden={hideInactive}
-            onToggle={() => setHideInactive((v) => !v)}
-          />
-        ) : undefined
+        <>
+          {householdIds.length === 0 && (
+            <AddPersonToHouseholdDialog personId={person.id} />
+          )}
+          {canHaveInactive && (
+            <HideInactiveToggle
+              hidden={hideInactive}
+              onToggle={() => setHideInactive((v) => !v)}
+            />
+          )}
+        </>
       }
     >
       {!hasAny ? (
