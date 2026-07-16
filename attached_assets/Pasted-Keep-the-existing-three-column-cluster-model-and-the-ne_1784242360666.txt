@@ -1,0 +1,69 @@
+Keep the existing three-column cluster model and the new three-dimension coverage DTO. Refine the Donor/Purpose dimension into two explicit sub-states:
+
+CRM linkage — whether the relevant payment units or bundle are linked to one or more CRM gift records, with valid amount coverage.
+CRM record completeness — whether every linked CRM gift contains sufficient donor and purpose information.
+
+A linked CRM gift is considered complete when any of the following is true:
+
+It has a linked Donorbox record;
+It has a linked coding-form record; or
+It has a linked donor and every required allocation row has the necessary restriction fields completed.
+
+Use one canonical predicate for CRM-record completeness. Do not reproduce the allocation-field rules separately in the cluster route, UI, and status logic.
+
+Overall Donor/Purpose completion requires both CRM linkage and CRM-record completeness. Return both states separately so the UI can distinguish “no CRM record linked” from “CRM record linked but missing donor or restriction information.”
+
+Derive Payment Transaction evidence independently. A Stripe charge is valid payment evidence whether or not it has a linked CRM gift. Donorbox is not payment-transaction evidence; it belongs only to the Donor/Purpose facet. Donorbox transactions ultimately move through Stripe, PayPal, direct QBO ACH/check, or another actual payment source.
+
+QBO may satisfy payment-transaction evidence, accounting evidence, or both, based on the record’s economic role and relationships—not merely its imported QBO transaction type.
+
+Overall cluster completion requires:
+
+CRM linkage complete;
+CRM record completeness complete;
+Payment-transaction evidence complete;
+Accounting evidence complete;
+Amounts balanced under the canonical fee, refund, adjustment, and allocation rules;
+No competing counted grains or unresolved conflicts.
+
+All lens membership, counts, row status, available actions, and hydrated coverage must derive from this same canonical state. A row whose hydrated coverage is incomplete must never appear in Completed.
+
+Suggested response shape
+coverage: {
+  donorPurpose: {
+    crmLinkage: {
+      grain: "none" | "unit" | "bundle" | "mixed";
+      complete: boolean;
+      coveredIds: string[];
+      uncoveredIds: string[];
+      expectedAmount: string | null;
+      representedAmount: string | null;
+    };
+
+    crmRecordCompleteness: {
+      complete: boolean;
+      completeGiftIds: string[];
+      incompleteGiftIds: string[];
+      reasonsByGift: Array<{
+        giftId: string;
+        reasons: Array<
+          | "missing_donor"
+          | "missing_restriction_fields"
+          | "missing_allocation"
+        >;
+        satisfiedBy:
+          | "donorbox"
+          | "coding_form"
+          | "donor_and_allocations"
+          | null;
+      }>;
+    };
+
+    complete: boolean;
+  };
+
+  paymentTransaction: { /* independent evidence state */ };
+  accountingEvidence: { /* independent accounting state */ };
+
+  complete: boolean;
+}

@@ -8384,6 +8384,7 @@ components:
         donorbox:      { type: boolean, description: "True when a counted Donorbox ledger row backs this gift (renders the DB badge)." }
         grantLetter:   { type: boolean, description: "True when a grant/award letter file is attached — the gift's own upload or its linked pledge's letter (renders the letter badge)." }
         codingForm:    { type: boolean, description: "True when any imported Donation Revenue Coding Form attribute is stamped on the gift (renders the coding badge)." }
+        recordComplete: { type: boolean, description: "True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR coding-form stamped OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule." }
         linkedChargeIds: { type: array, items: { type: string }, description: "stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters." }
         linkedStagedPaymentIds: { type: array, items: { type: string }, description: "staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only." }
     WorkbenchClusterCharge:
@@ -8463,6 +8464,62 @@ components:
       properties:
         memberCount: { type: integer, description: "Total rows in the unit group (including the representative)." }
         totalAmount: { type: string, nullable: true, description: "Group total, major units." }
+    WorkbenchClusterCrmLinkage:
+      type: object
+      required: [grain, complete, coveredIds, uncoveredIds]
+      description: "CRM-linkage sub-dimension: whether the cluster's payment units are linked to CRM gift records with valid amount coverage."
+      properties:
+        grain:             { $ref: "#/components/schemas/WorkbenchClusterDimensionGrain" }
+        complete:          { type: boolean }
+        coveredIds:        { type: array, items: { type: string }, description: "Charge / QB-row ids that have a counted CRM-gift link." }
+        uncoveredIds:      { type: array, items: { type: string }, description: "Charge / QB-row ids that lack a counted CRM-gift link." }
+        expectedAmount:    { type: string, nullable: true }
+        representedAmount: { type: string, nullable: true }
+        representationNote: { type: string, nullable: true, description: "Present when grain=mixed: describes the competing representations." }
+    WorkbenchClusterCrmRecordReason:
+      type: string
+      enum: [missing_donor, missing_restriction_fields, missing_allocation]
+      description: "Why a specific linked gift fails the record-completeness predicate."
+    WorkbenchClusterCrmRecordGiftDetail:
+      type: object
+      required: [giftId, reasons]
+      description: "Per-gift completeness detail for one linked CRM gift."
+      properties:
+        giftId:      { type: string }
+        reasons:
+          type: array
+          items: { $ref: "#/components/schemas/WorkbenchClusterCrmRecordReason" }
+          description: "Empty when satisfiedBy is non-null (gift is complete)."
+        satisfiedBy:
+          type: string
+          enum: [donorbox, coding_form, donor_and_allocations]
+          nullable: true
+          description: "Which path satisfied completeness; null when the gift is incomplete."
+    WorkbenchClusterCrmRecordCompleteness:
+      type: object
+      required: [complete, completeGiftIds, incompleteGiftIds, reasonsByGift]
+      description: "CRM-record-completeness sub-dimension: whether every linked CRM gift contains sufficient donor and purpose information."
+      properties:
+        complete:          { type: boolean, description: "True when all linked CRM gifts are complete (vacuously true when no linked gifts yet)." }
+        completeGiftIds:   { type: array, items: { type: string } }
+        incompleteGiftIds: { type: array, items: { type: string } }
+        reasonsByGift:
+          type: array
+          items: { $ref: "#/components/schemas/WorkbenchClusterCrmRecordGiftDetail" }
+    WorkbenchClusterDonorPurpose:
+      type: object
+      required: [crmLinkage, crmRecordCompleteness, complete]
+      description: "Donor/purpose dimension split into two explicit sub-states: CRM linkage (payment units linked to CRM gift records) and CRM record completeness (linked gifts have sufficient donor and purpose information)."
+      properties:
+        crmLinkage:
+          allOf: [ { $ref: "#/components/schemas/WorkbenchClusterCrmLinkage" } ]
+          description: "Whether the relevant payment units or bundle are linked to one or more CRM gift records with valid amount coverage."
+        crmRecordCompleteness:
+          allOf: [ { $ref: "#/components/schemas/WorkbenchClusterCrmRecordCompleteness" } ]
+          description: "Whether every linked CRM gift contains sufficient donor and purpose information."
+        complete:
+          type: boolean
+          description: "True when both crmLinkage.complete and crmRecordCompleteness.complete are true."
     WorkbenchClusterDimensionGrain:
       type: string
       enum: [none, unit, bundle, mixed]
@@ -8519,17 +8576,17 @@ components:
           items: { $ref: "#/components/schemas/WorkbenchClusterEvidenceRecord" }
           description: "Deduplicated list of all external evidence records. Each physical record appears once even when it satisfies multiple dimensions."
         donorPurpose:
-          allOf: [ { $ref: "#/components/schemas/WorkbenchClusterDimensionCoverage" } ]
-          description: "Dimension 1: donor identified, CRM gift booked, and allocation receiving credit."
+          allOf: [ { $ref: "#/components/schemas/WorkbenchClusterDonorPurpose" } ]
+          description: "Dimension 1: donor identified, CRM gift booked with sufficient record completeness. Split into crmLinkage (payment units linked to CRM gifts) and crmRecordCompleteness (linked gifts have donor + allocation data)."
         paymentTransaction:
           allOf: [ { $ref: "#/components/schemas/WorkbenchClusterDimensionCoverage" } ]
-          description: "Dimension 2: real-world transaction identified (Stripe charge, check, QBO payment, Donorbox). QBO may satisfy both this and accountingEvidence."
+          description: "Dimension 2: real-world transaction identified (Stripe charge, check, QBO payment, Donorbox). For stripe_payout: any non-excluded, non-refunded Stripe charge is valid evidence — independent of CRM linkage. QBO may satisfy both this and accountingEvidence."
         accountingEvidence:
           allOf: [ { $ref: "#/components/schemas/WorkbenchClusterDimensionCoverage" } ]
           description: "Dimension 3: money is represented in QuickBooks or another accounting system (settlement link or per-charge QB tie)."
         complete:
           type: boolean
-          description: "True when all three dimensions are complete, amounts balance under canonical rules, and no unresolved conflict or refund."
+          description: "True when all three dimensions are complete: donorPurpose.complete (crmLinkage + crmRecordCompleteness), paymentTransaction.complete, and accountingEvidence.complete."
     WorkbenchCluster:
       type: object
       required: [id, kind, anchorId, status, lenses, gifts, charges, qbRecords, coverage]

@@ -630,7 +630,7 @@ function chargeStatus(
     if (c.status === "match_confirmed") return { tone: "green", word: "Gift booked" };
     return { tone: "blue", word: "Linked", detail: "awaiting confirm" };
   }
-  if (coverage?.donorPurpose.grain === "bundle" && coverage.donorPurpose.complete) {
+  if (coverage?.donorPurpose.crmLinkage.grain === "bundle" && coverage.donorPurpose.crmLinkage.complete) {
     return { tone: "green", word: "Covered", detail: "deposit-grain gift" };
   }
   return {
@@ -749,8 +749,8 @@ function PayoutBundleRow({
             <GiftCard gift={gift} actions={actions} />
           ) : charge.status === "excluded" ? (
             <ExcludedCard />
-          ) : cluster.coverage?.donorPurpose.grain === "bundle" &&
-            cluster.coverage.donorPurpose.complete ? (
+          ) : cluster.coverage?.donorPurpose.crmLinkage.grain === "bundle" &&
+            cluster.coverage.donorPurpose.crmLinkage.complete ? (
             <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">
               covered by the deposit-grain gift above
             </div>
@@ -920,8 +920,8 @@ function PayoutBundleRow({
                     <GiftCard gift={gift} actions={actions} />
                   ) : charge.status === "excluded" ? (
                     <ExcludedCard />
-                  ) : cluster.coverage?.donorPurpose.grain === "bundle" &&
-                    cluster.coverage.donorPurpose.complete ? (
+                  ) : cluster.coverage?.donorPurpose.crmLinkage.grain === "bundle" &&
+                    cluster.coverage.donorPurpose.crmLinkage.complete ? (
                     <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">
                       covered by the deposit-grain gift above
                     </div>

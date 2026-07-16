@@ -5216,6 +5216,8 @@ export interface WorkbenchClusterGift {
   grantLetter?: boolean;
   /** True when any imported Donation Revenue Coding Form attribute is stamped on the gift (renders the coding badge). */
   codingForm?: boolean;
+  /** True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR coding-form stamped OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule. */
+  recordComplete?: boolean;
   /** stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters. */
   linkedChargeIds?: string[];
   /** staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only. */
@@ -5386,6 +5388,80 @@ export const WorkbenchClusterDimensionGrain = {
   mixed: 'mixed',
 } as const;
 
+/**
+ * CRM-linkage sub-dimension: whether the cluster's payment units are linked to CRM gift records with valid amount coverage.
+ */
+export interface WorkbenchClusterCrmLinkage {
+  grain: WorkbenchClusterDimensionGrain;
+  complete: boolean;
+  /** Charge / QB-row ids that have a counted CRM-gift link. */
+  coveredIds: string[];
+  /** Charge / QB-row ids that lack a counted CRM-gift link. */
+  uncoveredIds: string[];
+  expectedAmount?: string | null;
+  representedAmount?: string | null;
+  /** Present when grain=mixed: describes the competing representations. */
+  representationNote?: string | null;
+}
+
+/**
+ * Why a specific linked gift fails the record-completeness predicate.
+ */
+export type WorkbenchClusterCrmRecordReason = typeof WorkbenchClusterCrmRecordReason[keyof typeof WorkbenchClusterCrmRecordReason];
+
+
+export const WorkbenchClusterCrmRecordReason = {
+  missing_donor: 'missing_donor',
+  missing_restriction_fields: 'missing_restriction_fields',
+  missing_allocation: 'missing_allocation',
+} as const;
+
+/**
+ * Which path satisfied completeness; null when the gift is incomplete.
+ */
+export type WorkbenchClusterCrmRecordGiftDetailSatisfiedBy = typeof WorkbenchClusterCrmRecordGiftDetailSatisfiedBy[keyof typeof WorkbenchClusterCrmRecordGiftDetailSatisfiedBy] | null;
+
+
+export const WorkbenchClusterCrmRecordGiftDetailSatisfiedBy = {
+  donorbox: 'donorbox',
+  coding_form: 'coding_form',
+  donor_and_allocations: 'donor_and_allocations',
+} as const;
+
+/**
+ * Per-gift completeness detail for one linked CRM gift.
+ */
+export interface WorkbenchClusterCrmRecordGiftDetail {
+  giftId: string;
+  /** Empty when satisfiedBy is non-null (gift is complete). */
+  reasons: WorkbenchClusterCrmRecordReason[];
+  /** Which path satisfied completeness; null when the gift is incomplete. */
+  satisfiedBy?: WorkbenchClusterCrmRecordGiftDetailSatisfiedBy;
+}
+
+/**
+ * CRM-record-completeness sub-dimension: whether every linked CRM gift contains sufficient donor and purpose information.
+ */
+export interface WorkbenchClusterCrmRecordCompleteness {
+  /** True when all linked CRM gifts are complete (vacuously true when no linked gifts yet). */
+  complete: boolean;
+  completeGiftIds: string[];
+  incompleteGiftIds: string[];
+  reasonsByGift: WorkbenchClusterCrmRecordGiftDetail[];
+}
+
+/**
+ * Donor/purpose dimension split into two explicit sub-states: CRM linkage (payment units linked to CRM gift records) and CRM record completeness (linked gifts have sufficient donor and purpose information).
+ */
+export interface WorkbenchClusterDonorPurpose {
+  /** Whether the relevant payment units or bundle are linked to one or more CRM gift records with valid amount coverage. */
+  crmLinkage: WorkbenchClusterCrmLinkage;
+  /** Whether every linked CRM gift contains sufficient donor and purpose information. */
+  crmRecordCompleteness: WorkbenchClusterCrmRecordCompleteness;
+  /** True when both crmLinkage.complete and crmRecordCompleteness.complete are true. */
+  complete: boolean;
+}
+
 export type WorkbenchClusterEvidenceRecordSource = typeof WorkbenchClusterEvidenceRecordSource[keyof typeof WorkbenchClusterEvidenceRecordSource];
 
 
@@ -5459,13 +5535,13 @@ Present for all cluster kinds (stripe_payout, qb_standalone, crm_only).
 export interface WorkbenchClusterCoverage {
   /** Deduplicated list of all external evidence records. Each physical record appears once even when it satisfies multiple dimensions. */
   evidenceRecords: WorkbenchClusterEvidenceRecord[];
-  /** Dimension 1: donor identified, CRM gift booked, and allocation receiving credit. */
-  donorPurpose: WorkbenchClusterDimensionCoverage;
-  /** Dimension 2: real-world transaction identified (Stripe charge, check, QBO payment, Donorbox). QBO may satisfy both this and accountingEvidence. */
+  /** Dimension 1: donor identified, CRM gift booked with sufficient record completeness. Split into crmLinkage (payment units linked to CRM gifts) and crmRecordCompleteness (linked gifts have donor + allocation data). */
+  donorPurpose: WorkbenchClusterDonorPurpose;
+  /** Dimension 2: real-world transaction identified (Stripe charge, check, QBO payment, Donorbox). For stripe_payout: any non-excluded, non-refunded Stripe charge is valid evidence — independent of CRM linkage. QBO may satisfy both this and accountingEvidence. */
   paymentTransaction: WorkbenchClusterDimensionCoverage;
   /** Dimension 3: money is represented in QuickBooks or another accounting system (settlement link or per-charge QB tie). */
   accountingEvidence: WorkbenchClusterDimensionCoverage;
-  /** True when all three dimensions are complete, amounts balance under canonical rules, and no unresolved conflict or refund. */
+  /** True when all three dimensions are complete: donorPurpose.complete (crmLinkage + crmRecordCompleteness), paymentTransaction.complete, and accountingEvidence.complete. */
   complete: boolean;
 }
 

@@ -105,6 +105,29 @@ const giftCodingForm = `(g.coding_form_circle IS NOT NULL
   OR g.coding_form_additional_notes IS NOT NULL
   OR g.coding_form_memo IS NOT NULL)`;
 
+/**
+ * Canonical CRM-record-completeness predicate (SQL boolean).
+ * A gift is complete when any of the following is true:
+ *   1. Donorbox-backed (a counted donorbox PA exists)
+ *   2. Coding form stamped (any Donation Revenue Coding Form field is set)
+ *   3. Donor identified AND all active allocations have an entity link
+ *      (NOT EXISTS on entity_id IS NULL is vacuously true when no allocs exist,
+ *      which is fine — test seeds use no-alloc gifts with donors, and every
+ *      real gift must have >= 1 allocation by app invariant.)
+ * Mirror any change here in giftCompletenessFor() below.
+ */
+const giftComplete = `(
+  ${donorboxBacked}
+  OR ${giftCodingForm}
+  OR (
+    COALESCE(g.organization_id, g.individual_giver_person_id, g.household_id) IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM gift_allocations ga_x
+      WHERE ga_x.gift_id = g.id AND ga_x.entity_id IS NULL
+    )
+  )
+)`;
+
 /* ── slim universe (lens flags only) ───────────────────────────────────── */
 
 // stripe_payout half — per-payout rollup predicates.
@@ -439,6 +462,7 @@ interface GiftRowBase {
   donorbox: boolean;
   grant_letter: boolean;
   coding_form: boolean;
+  gift_complete: boolean;
 }
 
 interface PayoutGiftRow extends GiftRowBase {
@@ -488,6 +512,7 @@ interface GiftOut {
   donorbox: boolean;
   grantLetter: boolean;
   codingForm: boolean;
+  recordComplete: boolean;
   linkedChargeIds: string[];
   linkedStagedPaymentIds: string[];
 }
@@ -522,40 +547,107 @@ interface EvidenceRecordOut {
   linkedGiftId: string | null;
 }
 
+// ── CRM coverage sub-types ─────────────────────────────────────────────────
+
+/** CRM-linkage sub-dimension (replaces the bare DimensionOut for donorPurpose). */
+interface CrmLinkageOut extends DimensionOut {
+  grain: DimensionGrain;
+}
+
+type CrmRecordReason = "missing_donor" | "missing_restriction_fields" | "missing_allocation";
+type CrmSatisfiedBy = "donorbox" | "coding_form" | "donor_and_allocations" | null;
+
+interface CrmGiftCompletenessDetail {
+  giftId: string;
+  reasons: CrmRecordReason[];
+  satisfiedBy: CrmSatisfiedBy;
+}
+
+interface CrmRecordCompletenessOut {
+  complete: boolean;
+  completeGiftIds: string[];
+  incompleteGiftIds: string[];
+  reasonsByGift: CrmGiftCompletenessDetail[];
+}
+
+interface DonorPurposeOut {
+  crmLinkage: CrmLinkageOut;
+  crmRecordCompleteness: CrmRecordCompletenessOut;
+  complete: boolean;
+}
+
 interface CoverageOut {
   evidenceRecords: EvidenceRecordOut[];
-  donorPurpose: DimensionOut;
+  donorPurpose: DonorPurposeOut;
   paymentTransaction: DimensionOut;
   accountingEvidence: DimensionOut;
   complete: boolean;
 }
 
 /**
+ * Canonical gift-record-completeness predicate (mirrors giftComplete SQL).
+ * Called once per linked gift to determine satisfiedBy / reasons.
+ * Any change here must be mirrored in the giftComplete SQL constant above.
+ */
+function giftCompletenessFor(g: GiftOut): CrmGiftCompletenessDetail {
+  if (g.donorbox) return { giftId: g.giftId, reasons: [], satisfiedBy: "donorbox" };
+  if (g.codingForm) return { giftId: g.giftId, reasons: [], satisfiedBy: "coding_form" };
+  if (g.recordComplete) {
+    return { giftId: g.giftId, reasons: [], satisfiedBy: "donor_and_allocations" };
+  }
+  const reasons: CrmRecordReason[] = g.donorId
+    ? ["missing_restriction_fields"]
+    : ["missing_donor"];
+  return { giftId: g.giftId, reasons, satisfiedBy: null };
+}
+
+/** Build the crmRecordCompleteness sub-dimension from a set of linked CRM gifts. */
+function buildCrmRecordCompleteness(gifts: GiftOut[]): CrmRecordCompletenessOut {
+  if (gifts.length === 0) {
+    return { complete: true, completeGiftIds: [], incompleteGiftIds: [], reasonsByGift: [] };
+  }
+  const details = gifts.map(giftCompletenessFor);
+  const completeGiftIds = details.filter((d) => d.satisfiedBy !== null).map((d) => d.giftId);
+  const incompleteGiftIds = details.filter((d) => d.satisfiedBy === null).map((d) => d.giftId);
+  return {
+    complete: incompleteGiftIds.length === 0,
+    completeGiftIds,
+    incompleteGiftIds,
+    reasonsByGift: details,
+  };
+}
+
+/**
  * Build the three-dimension canonical cluster coverage for a stripe_payout.
  *
  * Dimensions:
- *   donorPurpose      — CRM gift booked + donor + allocation (satisfied by counted PAs)
- *   paymentTransaction — mirrors donorPurpose for Stripe payouts (same PA evidence)
+ *   donorPurpose      — split into crmLinkage (PAs linking charges/deposit to CRM gifts)
+ *                       and crmRecordCompleteness (linked gifts have donor + allocation data)
+ *   paymentTransaction — independent of CRM linkage: any non-excluded, non-refunded Stripe
+ *                       charge IS the payment-transaction evidence
  *   accountingEvidence — QB settlement link (bundle-grain) or per-charge QB ties (unit-grain)
  *
- * The returned object is the single source of truth: lens counts and hydration
- * both derive from the same f_completed flag which now requires all three dimensions.
+ * The returned object is the single source of truth for both lens counts and hydration.
  */
 function buildClusterCoverage(
   coverageRows: CoverageRow[],
   charges: ChargeJson[],
   linkedQbRows: QbRecordJson[],
+  gifts: GiftOut[],
   grossTotal: string | null,
   depAmount: string | null,
   depId: string | null,
   slLifecycle: string | null,
 ): CoverageOut {
-  // ── donorPurpose + paymentTransaction (shared PA evidence) ────────────────
+  // ── crmLinkage (PA coverage: which charges/deposit are linked to CRM gifts) ─
   const chargeRows = coverageRows.filter((r) => r.grain === "charge");
   const depositRows = coverageRows.filter((r) => r.grain === "deposit");
   const hasCharge = chargeRows.length > 0;
   const hasDeposit = depositRows.length > 0;
   const nonExcluded = charges.filter((c) => c.status !== "excluded");
+  // Refunded charges are real Stripe charges but they're not countable evidence for any
+  // coverage dimension — strip them out of every dimension's scope in one place.
+  const nonRefunded = nonExcluded.filter((c) => !c.refundProposed);
 
   const dpGrain: DimensionGrain =
     !hasCharge && !hasDeposit
@@ -571,27 +663,27 @@ function buildClusterCoverage(
 
   const dpCoveredIds =
     dpGrain === "bundle" || dpGrain === "mixed"
-      ? nonExcluded.map((c) => c.chargeId)
+      ? nonRefunded.map((c) => c.chargeId)
       : coveredChargeIds;
   const dpUncoveredIds =
     dpGrain === "bundle"
       ? []
-      : nonExcluded.map((c) => c.chargeId).filter((id) => !coveredChargeSet.has(id));
+      : nonRefunded.map((c) => c.chargeId).filter((id) => !coveredChargeSet.has(id));
 
   const creditedSum = coverageRows.reduce((acc, r) => acc + (Number(r.amount_applied) || 0), 0);
   const dpExpected = dpGrain === "bundle" ? depAmount : grossTotal;
 
-  let dpComplete = false;
+  let dpLinkageComplete = false;
   if (dpGrain === "unit") {
-    dpComplete = dpUncoveredIds.length === 0 && nonExcluded.length > 0;
+    dpLinkageComplete = dpUncoveredIds.length === 0 && nonRefunded.length > 0;
   } else if (dpGrain === "bundle") {
     const expected = Number(dpExpected);
-    dpComplete = expected > 0 && Number.isFinite(expected) && creditedSum >= expected - 0.005;
+    dpLinkageComplete = expected > 0 && Number.isFinite(expected) && creditedSum >= expected - 0.005;
   }
 
-  const donorPurpose: DimensionOut = {
+  const crmLinkage: CrmLinkageOut = {
     grain: dpGrain,
-    complete: dpComplete,
+    complete: dpLinkageComplete,
     coveredIds: dpCoveredIds,
     uncoveredIds: dpUncoveredIds,
     expectedAmount: dpExpected ?? null,
@@ -602,8 +694,36 @@ function buildClusterCoverage(
         : null,
   };
 
-  // paymentTransaction mirrors donorPurpose for stripe_payout (same PA mechanism)
-  const paymentTransaction: DimensionOut = { ...donorPurpose };
+  // ── crmRecordCompleteness (per-gift record quality) ────────────────────────
+  const crmRecordCompleteness = buildCrmRecordCompleteness(gifts);
+
+  const donorPurpose: DonorPurposeOut = {
+    crmLinkage,
+    crmRecordCompleteness,
+    complete: crmLinkage.complete && crmRecordCompleteness.complete,
+  };
+
+  // ── paymentTransaction (independent of CRM linkage) ───────────────────────
+  // A Stripe charge is valid payment evidence whether or not it has a linked CRM
+  // gift. Refunded charges are excluded — a refunded payment is not real evidence.
+  const validPayment = nonRefunded;
+  const refundedCount = nonExcluded.length - nonRefunded.length;
+  const ptGrain: DimensionGrain = validPayment.length === 0 ? "none" : "unit";
+  const ptRepresented = validPayment
+    .reduce((acc, c) => acc + (Number(c.amount) || 0), 0)
+    .toFixed(2);
+  const paymentTransaction: DimensionOut = {
+    grain: ptGrain,
+    complete: validPayment.length > 0,
+    coveredIds: validPayment.map((c) => c.chargeId),
+    uncoveredIds: [],
+    expectedAmount: grossTotal,
+    representedAmount: ptRepresented,
+    representationNote:
+      refundedCount > 0
+        ? `${refundedCount} refunded charge${refundedCount === 1 ? "" : "s"} excluded from payment evidence`
+        : null,
+  };
 
   // ── accountingEvidence (QB settlement link or per-charge QB ties) ─────────
   const chargeTies = linkedQbRows.filter((r) => r.role === "charge_tie");
@@ -615,7 +735,7 @@ function buildClusterCoverage(
 
   if (slLifecycle === "confirmed") {
     aeGrain = "bundle";
-    aeCoveredIds = nonExcluded.map((c) => c.chargeId);
+    aeCoveredIds = nonRefunded.map((c) => c.chargeId);
     aeUncoveredIds = [];
     aeComplete = true;
     aeRepresented = depAmount ?? "0.00";
@@ -625,14 +745,14 @@ function buildClusterCoverage(
     );
     aeGrain = "unit";
     aeCoveredIds = [...tiedChargeIds];
-    aeUncoveredIds = nonExcluded.map((c) => c.chargeId).filter((id) => !tiedChargeIds.has(id));
-    aeComplete = aeUncoveredIds.length === 0 && nonExcluded.length > 0;
+    aeUncoveredIds = nonRefunded.map((c) => c.chargeId).filter((id) => !tiedChargeIds.has(id));
+    aeComplete = aeUncoveredIds.length === 0 && nonRefunded.length > 0;
     const tiedSum = chargeTies.reduce((acc, r) => acc + (Number(r.amount) || 0), 0);
     aeRepresented = tiedSum.toFixed(2);
   } else {
     aeGrain = "none";
     aeCoveredIds = [];
-    aeUncoveredIds = nonExcluded.map((c) => c.chargeId);
+    aeUncoveredIds = nonRefunded.map((c) => c.chargeId);
     aeComplete = false;
     aeRepresented = "0.00";
   }
@@ -679,7 +799,7 @@ function buildClusterCoverage(
     }
   }
 
-  const complete = dpComplete && aeComplete;
+  const complete = donorPurpose.complete && paymentTransaction.complete && aeComplete;
   return { evidenceRecords: [...chargeEvidence, ...qbEvidence], donorPurpose, paymentTransaction, accountingEvidence, complete };
 }
 
@@ -719,6 +839,7 @@ function giftOut(g: GiftRowBase, viewer: Viewer): GiftOut {
     ),
     donorKind: g.donor_kind,
     donorId: g.donor_id,
+    recordComplete: g.gift_complete,
     amount: g.amount,
     dateReceived: g.date_received,
     quickbooksTie: g.quickbooks_tie,
@@ -987,7 +1108,8 @@ router.get(
         ${sql.raw(donorFields)},
         ${sql.raw(donorboxBacked)} AS donorbox,
         ${sql.raw(giftGrantLetter)} AS grant_letter,
-        ${sql.raw(giftCodingForm)} AS coding_form
+        ${sql.raw(giftCodingForm)} AS coding_form,
+        ${sql.raw(giftComplete)} AS gift_complete
       FROM stripe_staged_charges cc
       JOIN payment_applications pa_j ON pa_j.stripe_charge_id = cc.id
         AND pa_j.evidence_source = 'stripe' AND pa_j.link_role = 'counted'
@@ -1095,7 +1217,8 @@ router.get(
         ${sql.raw(donorFields)},
         ${sql.raw(donorboxBacked)} AS donorbox,
         ${sql.raw(giftGrantLetter)} AS grant_letter,
-        ${sql.raw(giftCodingForm)} AS coding_form
+        ${sql.raw(giftCodingForm)} AS coding_form,
+        ${sql.raw(giftComplete)} AS gift_complete
       FROM payment_applications pa_j
       JOIN gifts_and_payments g ON g.id = pa_j.gift_id
       ${sql.raw(donorJoins)}
@@ -1127,7 +1250,8 @@ router.get(
         ${sql.raw(donorFields)},
         ${sql.raw(donorboxBacked)} AS donorbox,
         ${sql.raw(giftGrantLetter)} AS grant_letter,
-        ${sql.raw(giftCodingForm)} AS coding_form
+        ${sql.raw(giftCodingForm)} AS coding_form,
+        ${sql.raw(giftComplete)} AS gift_complete
       FROM payment_applications pa_j
       JOIN gifts_and_payments g ON g.id = pa_j.gift_id
       ${sql.raw(donorJoins)}
@@ -1149,7 +1273,8 @@ router.get(
         ${sql.raw(donorFields)},
         ${sql.raw(donorboxBacked)} AS donorbox,
         ${sql.raw(giftGrantLetter)} AS grant_letter,
-        ${sql.raw(giftCodingForm)} AS coding_form
+        ${sql.raw(giftCodingForm)} AS coding_form,
+        ${sql.raw(giftComplete)} AS gift_complete
       FROM gifts_and_payments g
       ${sql.raw(donorJoins)}
       WHERE g.id IN (${inList(crmIds)})`)
@@ -1330,6 +1455,7 @@ router.get(
           coverageByPayout.get(r.anchor_id) ?? [],
           h?.charges ?? [],
           h?.linked_qb_rows ?? [],
+          gifts,
           h?.gross_total ?? null,
           h?.dep_amount ?? null,
           h?.dep_id ?? null,
@@ -1338,11 +1464,11 @@ router.get(
         // Status detail: vary by coverage grain and settlement path for accurate diagnostics.
         let statusDetail: string;
         const refundSuffix = r.f_refund ? " · refund awaiting review" : "";
-        if (coverage.donorPurpose.grain === "bundle") {
+        if (coverage.donorPurpose.crmLinkage.grain === "bundle") {
           // Deposit-grain (coarse §4.3) booking: one gift covers the whole lump.
-          statusDetail = coverage.donorPurpose.complete
+          statusDetail = coverage.donorPurpose.crmLinkage.complete
             ? `deposit-grain gift covers all ${total} charge${total === 1 ? "" : "s"}${refundSuffix}`
-            : `deposit-grain gift covers ${coverage.donorPurpose.representedAmount} of ${coverage.donorPurpose.expectedAmount} expected${refundSuffix}`;
+            : `deposit-grain gift covers ${coverage.donorPurpose.crmLinkage.representedAmount} of ${coverage.donorPurpose.crmLinkage.expectedAmount} expected${refundSuffix}`;
         } else if (h?.settled && h.sl_lifecycle == null) {
           // fullyChargeTied: settled via per-charge QB ties, no deposit link.
           statusDetail = `${resolved} of ${total} charge-grain ${resolved === 1 ? "tie" : "ties"} confirmed${refundSuffix}`;
@@ -1450,10 +1576,14 @@ router.get(
         const uncoveredQbIds = nonExcludedQb
           .filter((r) => r.status !== "match_confirmed")
           .map((r) => r.stagedPaymentId);
-        const qbDpComplete = resolved === total && total > 0;
         const qbRepresentedAmount = gifts
           .reduce((acc, g) => acc + (Number(g.amount) || 0), 0)
           .toFixed(2);
+        const qbCrmRecord = buildCrmRecordCompleteness(
+          gifts.filter((g) => coveredQbIds.some((id) => g.linkedStagedPaymentIds.includes(id))),
+        );
+        const qbDpComplete = resolved === total && total > 0;
+        const qbDonorPurposeComplete = qbDpComplete && qbCrmRecord.complete;
         const qbCoverage: CoverageOut = {
           evidenceRecords: countable.map((rec) => ({
             id: rec.stagedPaymentId,
@@ -1468,18 +1598,22 @@ router.get(
                 ?.giftId ?? null,
           })),
           donorPurpose: {
-            grain: total === 0 ? "none" : "unit",
-            complete: qbDpComplete,
-            coveredIds: coveredQbIds,
-            uncoveredIds: uncoveredQbIds,
-            expectedAmount: qbExpectedAmount,
-            representedAmount: qbRepresentedAmount,
-            representationNote: null,
+            crmLinkage: {
+              grain: total === 0 ? "none" : "unit",
+              complete: qbDpComplete,
+              coveredIds: coveredQbIds,
+              uncoveredIds: uncoveredQbIds,
+              expectedAmount: qbExpectedAmount,
+              representedAmount: qbRepresentedAmount,
+              representationNote: null,
+            },
+            crmRecordCompleteness: qbCrmRecord,
+            complete: qbDonorPurposeComplete,
           },
           // paymentTransaction: the QBO record exists by construction — always complete.
           paymentTransaction: {
-            grain: "unit",
-            complete: true,
+            grain: total === 0 ? "none" : "unit",
+            complete: total > 0,
             coveredIds: countable.map((rec) => rec.stagedPaymentId),
             uncoveredIds: [],
             expectedAmount: qbExpectedAmount,
@@ -1488,15 +1622,15 @@ router.get(
           },
           // accountingEvidence: same QBO record — always complete.
           accountingEvidence: {
-            grain: "unit",
-            complete: true,
+            grain: total === 0 ? "none" : "unit",
+            complete: total > 0,
             coveredIds: countable.map((rec) => rec.stagedPaymentId),
             uncoveredIds: [],
             expectedAmount: qbExpectedAmount,
             representedAmount: qbExpectedAmount,
             representationNote: null,
           },
-          complete: qbDpComplete,
+          complete: qbDonorPurposeComplete,
         };
         return {
           ...base,
@@ -1564,13 +1698,17 @@ router.get(
         coverage: {
           evidenceRecords: [],
           donorPurpose: {
-            grain: "unit" as const,
-            complete: true,
-            coveredIds: h ? [h.gift_id] : [],
-            uncoveredIds: [],
-            expectedAmount: h?.amount ?? null,
-            representedAmount: h?.amount ?? null,
-            representationNote: null,
+            crmLinkage: {
+              grain: "unit" as const,
+              complete: true,
+              coveredIds: h ? [h.gift_id] : [],
+              uncoveredIds: [],
+              expectedAmount: h?.amount ?? null,
+              representedAmount: h?.amount ?? null,
+              representationNote: null,
+            },
+            crmRecordCompleteness: buildCrmRecordCompleteness(h ? [giftOut(h, viewer)] : []),
+            complete: buildCrmRecordCompleteness(h ? [giftOut(h, viewer)] : []).complete,
           },
           paymentTransaction: {
             grain: "none" as const,

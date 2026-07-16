@@ -806,14 +806,14 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       const row = map.get(`stripe_payout:${payout}`);
       expect(row).toBeTruthy();
       expect(row.coverage).toBeTruthy();
-      expect(row.coverage.donorPurpose.grain).toBe("none");
-      expect(row.coverage.donorPurpose.complete).toBe(false);
+      expect(row.coverage.donorPurpose.crmLinkage.grain).toBe("none");
+      expect(row.coverage.donorPurpose.crmLinkage.complete).toBe(false);
       expect(row.coverage.accountingEvidence.grain).toBe("none");
       expect(row.coverage.complete).toBe(false);
       // No charge-grain coverage → no donor_purpose roles in evidence records
       expect(row.coverage.evidenceRecords.filter((r: any) => r.roles.includes("donor_purpose"))).toEqual([]);
-      expect(row.coverage.donorPurpose.coveredIds).toEqual([]);
-      expect(row.coverage.donorPurpose.uncoveredIds.length).toBeGreaterThanOrEqual(1);
+      expect(row.coverage.donorPurpose.crmLinkage.coveredIds).toEqual([]);
+      expect(row.coverage.donorPurpose.crmLinkage.uncoveredIds.length).toBeGreaterThanOrEqual(1);
     });
 
     it("donorPurpose+paymentTransaction complete but accountingEvidence absent (needs QB tie or settlement)", async () => {
@@ -831,17 +831,17 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       expect(row).toBeTruthy();
       expect(row.coverage).toBeTruthy();
       // donorPurpose: unit-grain (charge PAs), complete
-      expect(row.coverage.donorPurpose.grain).toBe("unit");
-      expect(row.coverage.donorPurpose.complete).toBe(true);
+      expect(row.coverage.donorPurpose.crmLinkage.grain).toBe("unit");
+      expect(row.coverage.donorPurpose.crmLinkage.complete).toBe(true);
       expect(row.coverage.paymentTransaction.complete).toBe(true);
       // accountingEvidence: none (no QB tie or settlement)
       expect(row.coverage.accountingEvidence.grain).toBe("none");
       expect(row.coverage.accountingEvidence.complete).toBe(false);
       // overall not complete (QB accounting still absent)
       expect(row.coverage.complete).toBe(false);
-      expect(row.coverage.donorPurpose.coveredIds).toContain(ch1);
-      expect(row.coverage.donorPurpose.coveredIds).toContain(ch2);
-      expect(row.coverage.donorPurpose.uncoveredIds).toEqual([]);
+      expect(row.coverage.donorPurpose.crmLinkage.coveredIds).toContain(ch1);
+      expect(row.coverage.donorPurpose.crmLinkage.coveredIds).toContain(ch2);
+      expect(row.coverage.donorPurpose.crmLinkage.uncoveredIds).toEqual([]);
       // Stripe charge evidence records carry donor_purpose role
       const stripeEvidence = row.coverage.evidenceRecords.filter((r: any) => r.source === "stripe_charge");
       expect(stripeEvidence.length).toBe(2);
@@ -859,10 +859,10 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       const { map } = await listClusters("all_open");
       const row = map.get(`stripe_payout:${payout}`);
       expect(row).toBeTruthy();
-      expect(row.coverage.donorPurpose.grain).toBe("unit");
-      expect(row.coverage.donorPurpose.complete).toBe(false);
-      expect(row.coverage.donorPurpose.coveredIds).toContain(ch1);
-      expect(row.coverage.donorPurpose.uncoveredIds).toContain(ch2);
+      expect(row.coverage.donorPurpose.crmLinkage.grain).toBe("unit");
+      expect(row.coverage.donorPurpose.crmLinkage.complete).toBe(false);
+      expect(row.coverage.donorPurpose.crmLinkage.coveredIds).toContain(ch1);
+      expect(row.coverage.donorPurpose.crmLinkage.uncoveredIds).toContain(ch2);
     });
 
     it("donorPurpose grain=bundle + complete when deposit PA covers full amount and settlement confirmed", async () => {
@@ -879,8 +879,8 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       expect(row).toBeTruthy();
       expect(row.coverage).toBeTruthy();
       // donorPurpose: bundle-grain (deposit PA), complete
-      expect(row.coverage.donorPurpose.grain).toBe("bundle");
-      expect(row.coverage.donorPurpose.complete).toBe(true);
+      expect(row.coverage.donorPurpose.crmLinkage.grain).toBe("bundle");
+      expect(row.coverage.donorPurpose.crmLinkage.complete).toBe(true);
       // accountingEvidence: bundle-grain (confirmed settlement link), complete
       expect(row.coverage.accountingEvidence.grain).toBe("bundle");
       expect(row.coverage.accountingEvidence.complete).toBe(true);
@@ -904,12 +904,12 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       const { map: completed } = await listClusters("completed");
       const row = completed.get(`stripe_payout:${payout}`);
       expect(row).toBeTruthy();
-      // Bundle-grain but the credited amount < expected → donorPurpose.complete=false
-      expect(row.coverage.donorPurpose.grain).toBe("bundle");
-      expect(row.coverage.donorPurpose.complete).toBe(false);
+      // Bundle-grain but the credited amount < expected → donorPurpose.crmLinkage.complete=false
+      expect(row.coverage.donorPurpose.crmLinkage.grain).toBe("bundle");
+      expect(row.coverage.donorPurpose.crmLinkage.complete).toBe(false);
       expect(row.coverage.complete).toBe(false);
-      expect(Number(row.coverage.donorPurpose.representedAmount)).toBeLessThan(
-        Number(row.coverage.donorPurpose.expectedAmount),
+      expect(Number(row.coverage.donorPurpose.crmLinkage.representedAmount)).toBeLessThan(
+        Number(row.coverage.donorPurpose.crmLinkage.expectedAmount),
       );
     });
 
@@ -925,10 +925,10 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       const { map: completed } = await listClusters("completed");
       const rowAny = completed.get(`stripe_payout:${payout}`);
       expect(rowAny).toBeTruthy();
-      expect(rowAny.coverage.donorPurpose.grain).toBe("mixed");
-      expect(rowAny.coverage.donorPurpose.complete).toBe(false);
+      expect(rowAny.coverage.donorPurpose.crmLinkage.grain).toBe("mixed");
+      expect(rowAny.coverage.donorPurpose.crmLinkage.complete).toBe(false);
       // All non-excluded charges appear in coveredIds for mixed grain
-      expect(rowAny.coverage.donorPurpose.coveredIds).toContain(ch);
+      expect(rowAny.coverage.donorPurpose.crmLinkage.coveredIds).toContain(ch);
       // Both evidence types present
       expect(rowAny.coverage.evidenceRecords.some((r: any) => r.source === "stripe_charge" && r.roles.includes("donor_purpose"))).toBe(true);
       expect(rowAny.coverage.evidenceRecords.some((r: any) => r.source === "qb_record")).toBe(true);
@@ -950,8 +950,31 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       expect(linked.linkedGiftId).toBe(g1);
       // Coverage is partial — the cluster is NOT complete.
       expect(row.coverage.complete).toBe(false);
-      expect(row.coverage.donorPurpose.grain).toBe("unit");
+      expect(row.coverage.donorPurpose.crmLinkage.grain).toBe("unit");
       // The UI is expected to show "Gift booked" not "Done" here (per chargeStatus logic).
+    });
+
+    it("refunded charge is excluded from paymentTransaction evidence", async () => {
+      // A charge with refund_proposed=true must NOT count as payment-transaction evidence.
+      // The cluster has two charges: one confirmed (with gift), one refunded.
+      // paymentTransaction.complete = false (only the non-refunded gift-linked charge counts).
+      const g1 = await seedGift({ amount: "100.00" });
+      const payout = await seedPayout({ netTotal: "100.00" });
+      const ch1 = await seedCharge(payout, { matchedGiftId: g1, grossAmount: "100.00" });
+      const ch2 = await seedCharge(payout, { refundProposed: true });
+
+      const { map } = await listClusters("all_open");
+      const row = map.get(`stripe_payout:${payout}`);
+      expect(row).toBeTruthy();
+      expect(row.coverage).toBeTruthy();
+      // ch1 is confirmed → crmLinkage coveredIds includes it
+      expect(row.coverage.donorPurpose.crmLinkage.coveredIds).toContain(ch1);
+      // ch2 is refunded → must NOT appear in paymentTransaction coveredIds
+      expect(row.coverage.paymentTransaction.coveredIds).not.toContain(ch2);
+      // paymentTransaction has ch1 (non-refunded, has PA) but coverage overall is incomplete (no QB tie)
+      expect(row.coverage.paymentTransaction.complete).toBe(true);
+      // ch2 not in crmLinkage uncoveredIds either — refunded charges are out of scope
+      expect(row.coverage.donorPurpose.crmLinkage.uncoveredIds).not.toContain(ch2);
     });
   });
 });
