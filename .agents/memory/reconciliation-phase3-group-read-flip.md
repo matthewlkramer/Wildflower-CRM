@@ -13,7 +13,7 @@ Goal: flip group READS/GUARDS off legacy `staged_payments.source_group_id` +
 ## COMPLETED — reads AND writes fully flipped, column dropped
 
 The Phase-3 partial flip is now finished: `source_group_id` is retired. See
-`unit-groups-dualwrite.md` for the final state. What changed since:
+`unit-groups-model.md` for the final state. What changed since:
 - **Query-layer reads flipped too:** `reconciliation/cards.ts` (representative,
   group aggregate, `isSourceGroup`, derived `sourceGroupId`) and
   `reconciliation/bundleAnchors.ts` (eligibility = `NOT EXISTS unit_group_members`)

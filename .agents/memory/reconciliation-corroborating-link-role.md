@@ -49,6 +49,13 @@ reads even though `amount_applied` is non-null.
 `charge_tie_supersede:<qbStagedPaymentId>` — the supersede flow writes this
 deterministically. Sub-case A rows have `amount_applied IS NULL`.
 
+> **Technical debt:** The `note` prefix `charge_tie_supersede:<qbStagedPaymentId>` is
+> transitional executable state — `chargeTieSupersede.ts` writes it deterministically
+> to identify demoted rows. It must be **replaced by structured `source_links`
+> provenance** once `source_links` ships (ADR in `docs/adr-source-link-ledger.md`).
+> Until then, do not add new code that reads or writes this note prefix outside the
+> supersede flow itself.
+
 ## How to apply
 
 When adding or reviewing any PA reader:

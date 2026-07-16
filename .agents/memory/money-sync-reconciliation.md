@@ -34,21 +34,23 @@ Before writing any reconciliation code, confirm:
 
 Three authoritative link tables — never conflate:
 
-**Ledger 1: `source_links`** — Evidence↔evidence claim pointers: charge↔QB tie,
-charge↔fee-row, Donorbox↔QB, Donorbox↔charge. Replaces the FROZEN pointer columns.
-Phased migration (ADR) in `docs/adr-source-link-ledger.md`. Not yet shipped.
-Evidence↔evidence pointer columns are **frozen** — no new pointer columns.
+**Ledger 1: `payment_applications`** — Money unit → CRM gift (current authority). QB
+reads fully flipped to the ledger; Stripe and Donorbox still dual-write to both the
+ledger and their per-row pointer columns, and those reads are not yet flipped —
+Stripe/Donorbox pointer columns remain live until their ledger read-cutovers.
+`link_role='counted'` = money trail (amount NOT NULL); `link_role='corroborating'` =
+audit annotation (see topic file for the two distinct sub-cases). `gift_id` ON DELETE
+RESTRICT.
 
-**Ledger 2: `payment_applications`** — Money unit → CRM gift. QB reads flipped to
-ledger; Stripe/Donorbox dual-write only (not yet read via ledger — their row-level
-charge/donation pointer columns are still live). `link_role='counted'` = money trail
-(amount NOT NULL); `link_role='corroborating'` = audit annotation (see topic file
-for the two distinct sub-cases). `gift_id` ON DELETE RESTRICT.
+**Ledger 2: `settlement_links`** — Stripe payout ↔ QB deposit (Plane 1 batch↔batch,
+current authority). Lifecycle: `proposed | confirmed | exempt`. Status derived on read.
+Separate from `source_links` by design (different link types, different cardinality
+rules); the two tables are siblings, not one absorbing the other.
 
-**Ledger 3: `settlement_links`** — Stripe payout ↔ QB deposit (Plane 1 batch↔batch).
-Lifecycle: `proposed | confirmed | exempt`. Status derived on read. Separate from
-`source_links` by design (different link types, different cardinality rules); the
-two tables are siblings, not one absorbing the other.
+**Ledger 3: `source_links`** — Evidence↔evidence claim pointers: charge↔QB tie,
+charge↔fee-row, Donorbox↔QB, Donorbox↔charge. **NOT YET SHIPPED** — phased migration
+(ADR) in `docs/adr-source-link-ledger.md`. The frozen pointer columns it will replace
+are still live; no new pointer columns until `source_links` ships.
 
 **No stored lifecycle status** on `staged_payments` or `stripe_staged_charges`.
 All reconciliation queue status is derived at read time via `derivedStatus.ts` alias-
@@ -68,7 +70,7 @@ mint ownership = `payment_applications.created_the_gift`; group-reconciled =
 - [QuickBooks payment sync](quickbooks-payment-sync.md) — pull-only QBO→CRM; idempotent (realmId,type,id) rows retained; dev keys⇒sandbox host, prod keys⇒live; redirect URI exact-match per key set; approve mints gift w/ Donor XOR.
 - [QuickBooks exclusion rules](quickbooks-exclusion-rules.md) — TS classifier ↔ SQL backfill lockstep; donation-first guard; classifier is insert-time only, watermark sync won't re-enrich historical line detail ([auto-exclude](quickbooks-staged-exclude.md)).
 - [QuickBooks editable handling rules](quickbooks-editable-rules.md) — QB ingest rules now DB-editable; engine SEED_RULES must mirror code classifier (fidelity test); auto_create_approve mints+allocates+approves; GenOps=intended_usage not a project row.
-- [Entity attribution (replaced fiscally_sponsored exclusion)](quickbooks-fiscally-sponsored-exclusion.md) — that EXCLUSION retired; detectEntity/ENTITY_MARKERS set staged_payments.entity_id + keep row in queue; markers TS↔SQL lockstep.
+- [Entity attribution (replaced fiscally_sponsored exclusion)](quickbooks-entity-attribution.md) — that EXCLUSION retired; detectEntity/ENTITY_MARKERS set staged_payments.entity_id + keep row in queue; markers TS↔SQL lockstep.
 - [QB sync worker never mints](quickbooks-worker-no-mint.md) — worker autoApply only reconciles to ONE existing gift; new-gift auto-create is rule-only (AmazonSmile auto_create_approve at ingest), else row stays pending for review.
 - [QB LinkedTxn provenance](quickbooks-linkedtxn-provenance.md) — top-level LinkedTxn=deposit it was deposited into, line-level=invoices it applies to; deposit link derived read-only from qb_raw at query time, not a column.
 - [QB back-catalog stays stale](quickbooks-clean-reingest.md) — watermark sync never re-pulls back-catalog & donor matching is ingest-only; wipe+reset watermark to re-pull (keep auto-created gifts=reconcile not re-mint); or admin rematchStagedPayments for donor-only ([donor rematch](quickbooks-donor-rematch-backfill.md)).
@@ -137,7 +139,7 @@ stored lifecycle (`status` column); map to shared derived vocab via
 - [Reconciliation phase status source](reconciliation-phase-status-source.md) — trust migration ledger + schema header comments for phase status; phases 2-5 shipped, Phase-6 two-report UI RETIRED (six-queue workbench is final).
 - [payment_applications ledger](payment-applications-ledger.md) — unit→gift ledger (polymorphic evidence_source: quickbooks|stripe|donorbox); QB reads flipped; Stripe/Donorbox dual-write only; book-once in service layer; gift_id RESTRICT; provenance promotion on confirm (system→system_confirmed).
 - [Ledger read-cutover prod gate](ledger-read-cutover-prod-gate.md) — additive dual-write→backfill→flip-reads is only safe once parity runs on PROD (dev parity ≠ prod); after a flip, fixtures seeding legacy-only links must dual-write the ledger row.
-- [settlement_links constraints](settlement-links-parity.md) — sole payout↔deposit store (Plane 1); lifecycle proposed|confirmed|exempt; conflict_approved = proposed+conflict_gift_id; deposit hard-delete errors on required-deposit CHECK. Sibling of source_links, not absorbed by it.
+- [settlement_links model](settlement-links-model.md) — sole payout↔deposit store (Plane 1); lifecycle proposed|confirmed|exempt; conflict_approved = proposed+conflict_gift_id; deposit hard-delete errors on required-deposit CHECK. Sibling of source_links, not absorbed by it.
 - [PA counted vs corroborating link_role](reconciliation-corroborating-link-role.md) — every money/settled/tie read MUST filter link_role='counted'; two distinct corroborating sub-cases: (A) amount NULL = corrections audit annotation; (B) amount NON-NULL = demoted supersede row (kept for reversible promotion — still excluded from every money total).
 - [Reconciliation conflict_approved = awaiting](reconciliation-conflict-approved-per-track.md) — Stripe payout conflict_approved is NOT a discrepancy; show recon status per-track (QB vs Stripe), never one sweeping badge.
 - [Conflict-keep double-book gate](reconciliation-conflict-keep-gate.md) — a conflict_approved "keep" is safe only if kept gift == deposit's gift link; enforce at BOTH the pure derive blocker and the tx write boundary.

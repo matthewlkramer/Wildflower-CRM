@@ -28,6 +28,13 @@ rows). See the active index (`money-sync-reconciliation.md`) for current rules.
 | `stripe-charge-evidence-linkage.md` | "Marking a charge reconciled must ALSO set row-local matchedGiftId"; resolvedGift COALESCE + revert depend on it. |
 | `stripe-failed-charge-exclusion.md` | Failed charges auto-excluded; exclusion-reason enum in 4 places; move-own-application path using ledger==matchedGiftId. |
 
+## Also archived here (completed rollout phases)
+
+| File | What it described |
+|---|---|
+| `reconciliation-phase6-status-read-flip.md` | Phase-6 flip of payout status reads from `stripe_payouts.qb_reconciliation_status` mirror onto `settlement_links`; those 7 legacy columns + their index are DROPPED (migration 0093). |
+| `workbench-historical-group-backfill.md` | One-time backfill of historical QB group-reconciled rows (setting `source_group_id='histgrp_...'`) to make them visible to the workbench; references the retired `source_group_id` column. |
+
 ## What replaced them
 
 - **QB gift linkage:** `payment_applications` counted rows (`link_role='counted'`,
