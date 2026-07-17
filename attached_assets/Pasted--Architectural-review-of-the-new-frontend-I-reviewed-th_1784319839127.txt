@@ -1,0 +1,372 @@
+## Architectural review of the new frontend
+
+I reviewed the four commits from `b121a17` through `0e2323f`, focusing on the workbench frontend rather than visual or interaction defects.
+
+## Overall assessment
+
+The implementation is **still broadly aligned with the architecture**, but it has not fully completed the transition to the canonical state model.
+
+The most important architectural principle remains intact:
+
+> The backend computes canonical reconciliation state, and the frontend receives it.
+
+The frontend imports `WorkbenchRowState` and its canonical subtypes, and it generally renders `coverage.state` rather than attempting to calculate the full row state itself.
+
+However, the implementation currently uses a **hybrid model**:
+
+```text
+canonical backend state
+        +
+legacy card fields and heuristics
+        ↓
+frontend presentation and actions
+```
+
+That is acceptable as a migration stage, but it should not become the settled architecture.
+
+My rating for architectural fidelity is currently about **8/10**.
+
+---
+
+# What remains architecturally strong
+
+## 1. Canonical row state is still backend-owned
+
+The backend type file explicitly says that canonical state must be computed once, used for lens routing and UI rendering, and must not be stored or recomputed separately. It also follows the Option C migration approach: compute canonical state first and derive legacy compatibility fields from it.
+
+That is exactly the architecture we wanted.
+
+The frontend uses the canonical row signal for the main status cell:
+
+```ts
+const state = cluster.coverage?.state;
+```
+
+and renders `state.linkage.state` and `state.information.state` independently.
+
+That preserves the key distinction between:
+
+* linkage completeness
+* information completeness
+
+## 2. The UI does not collapse the two row signals into a new frontend status
+
+`StatusForCluster` selects the linkage label and shows information completeness as a secondary detail. It does not invent a third combined domain state.
+
+That is good. Presentation combines the signals, but domain logic remains separate.
+
+## 3. Card rendering is beginning to consume canonical card state
+
+The CRM card locates its matching canonical `crmCards` entry and reads both:
+
+* `state`
+* `satisfiedBy`
+
+The QB card similarly looks up its canonical entry in `rowState.qbCards`.
+
+This is the correct direction: cards render their server-derived domain state rather than rebuilding reconciliation from raw records.
+
+## 4. CRM completion pathways remain explicit
+
+The UI exposes the canonical `satisfiedBy` paths rather than reducing CRM completeness to a single opaque Boolean.
+
+The backend type also retains the three approved pathways:
+
+* Donorbox
+* completed coding form
+* donor, allocations, and supporting documents
+
+## 5. Direct QB evidence is represented semantically
+
+The canonical QB card entry contains `isTransactionEvidence`, specifically for a QBO standalone record that also serves as the transaction evidence.
+
+This avoids forcing a fictitious second physical transaction record and is consistent with the semantic-role architecture.
+
+---
+
+# Architectural concerns
+
+## 1. Transaction card state is not actually canonical yet
+
+This is the largest gap.
+
+The documented model called for each transaction entry to have its own transaction state. The current backend type only provides:
+
+```ts
+{
+  transactionId;
+  livePayment;
+  refundStatus;
+}
+```
+
+It does **not** provide:
+
+* unmatched
+* partial
+* amount mismatch
+* information conflict
+* matched
+* excluded
+
+As a result, the frontend derives transaction presentation from legacy fields such as:
+
+* `charge.status`
+* `charge.linkedGiftId`
+* `charge.refundProposed`
+
+rather than from a canonical transaction card state.
+
+There is also a separate `chargeStatus()` function that reconstructs transaction status using legacy charge data plus parts of the old coverage object.
+
+### Why this matters
+
+The row is canonical, but the transaction card remains a second state engine.
+
+That means the same underlying transaction can potentially be described differently by:
+
+* backend row state
+* legacy `charge.status`
+* `linkedGiftId`
+* `refundProposed`
+* frontend `chargeStatus()`
+
+### Recommended correction
+
+Add a canonical transaction state to `TransactionEntry`:
+
+```ts
+type TransactionEntry = {
+  transactionId: string;
+  state:
+    | "unmatched"
+    | "partial"
+    | "amount_mismatch"
+    | "info_conflict"
+    | "matched"
+    | "refund_anticipated"
+    | "refunded"
+    | "excluded";
+  livePayment: boolean;
+  refundStatus: "none" | "anticipated" | "refunded";
+};
+```
+
+Then make transaction tone, gap text, action availability, and child-row status consume that state.
+
+This is not a new architectural redesign. It is completing the architecture already described in the business rules.
+
+---
+
+## 2. The frontend still contains substantive legacy fallbacks
+
+Both CRM and QB cards fall back to older heuristics when canonical entries are absent.
+
+For CRM, the fallback uses `gift.quickbooksTie`.
+
+For QB, the fallback uses `record.status === "match_confirmed"`.
+
+The main row status also retains the legacy `cluster.status` fallback.
+
+These are reasonable during migration, but they create an architectural risk: missing canonical state becomes silently masked rather than treated as a contract failure.
+
+### Recommended correction
+
+Use this progression:
+
+1. Keep legacy fields in the API temporarily.
+2. Require `coverage.state` for every new workbench cluster.
+3. Log or report any cluster missing canonical state.
+4. Remove frontend fallback logic once all hydration paths provide it.
+
+The UI should not indefinitely decide that a linked card is green merely because a legacy pointer says `match_confirmed`.
+
+---
+
+## 3. Action availability is still based on raw linkage fields
+
+For example, the charge menu decides whether it can unlink based on:
+
+```ts
+charge.linkedGiftId
+```
+
+rather than the canonical transaction relationship state.
+
+The QB menu similarly uses:
+
+```ts
+record.status === "match_confirmed"
+```
+
+to determine whether the record is linked and whether to show unlink.
+
+This means presentation is becoming canonical faster than behavior.
+
+### Architectural principle
+
+The same domain state should drive:
+
+* label
+* color
+* lens membership
+* available actions
+* mutation target
+
+Currently, the label may be canonical while the action is legacy-driven.
+
+### Recommended correction
+
+Have the backend expose explicit action capabilities, or derive them exclusively from canonical card and relationship state:
+
+```ts
+capabilities: {
+  canMatch: boolean;
+  canUnmatch: boolean;
+  canExclude: boolean;
+  canReinclude: boolean;
+  canFillQb: boolean;
+  blockers: string[];
+}
+```
+
+This would also keep permission and business-rule decisions out of React.
+
+---
+
+## 4. CRM unlinking is not yet card-specific enough
+
+`giftUnlinkAnchor()` chooses the first linked charge or first linked staged payment:
+
+```ts
+gift.linkedChargeIds[0]
+gift.linkedStagedPaymentIds[0]
+```
+
+That does not fully support the business rule you identified:
+
+> When several cards are on one row, the user must be able to remove a specific CRM card or a specific relationship.
+
+If one CRM gift is linked to several pieces of evidence, “unlink this gift” is ambiguous. Selecting the first relationship is not a sound domain operation.
+
+It also routes through a revert action whose description says it may delete a minted gift.
+
+### Recommended correction
+
+The frontend needs relationship-specific choices, even if the underlying tables remain specialized:
+
+```text
+Unmatch from Stripe charge A
+Unmatch from Stripe charge B
+Unmatch from QB record C
+Remove gift from this cluster
+```
+
+The command should carry both sides of the relationship, not infer the target from the first array member.
+
+This does **not** require the generalized universal relationship table we rejected. The existing `payment_applications` and settlement structures can support explicit relationship deletion.
+
+---
+
+## 5. Finance permissions are not represented in the frontend contract
+
+The business rule says only finance-team members may change QB records or accounting relationships.
+
+I found no finance-role capability being passed into the page or QB card. The QB card exposes actions such as:
+
+* flag for research
+* re-include
+* unlink
+* exclude
+
+based only on the record state.
+
+The page also wires all staged-payment mutation hooks without visible role-based gating.
+
+This does not prove the backend lacks authorization; the API may still enforce it. But the frontend is not yet reflecting the business rule.
+
+### Recommended correction
+
+Backend authorization must remain authoritative, but the frontend should receive capabilities such as:
+
+```ts
+permissions: {
+  canModifyQb: boolean;
+  canConfirmSettlement: boolean;
+  canExcludeQb: boolean;
+}
+```
+
+QB-changing actions should be disabled with a clear reason for non-finance users.
+
+Do not implement this as a hard-coded frontend role-name check alone.
+
+---
+
+## 6. Some UI language still makes unsupported inferences
+
+A transaction with no linked gift displays:
+
+> “No donor identified”
+
+That may be true in some cases, but the relationship state only establishes that no gift is linked. A donor may already be attributed separately, or a gift may exist elsewhere but not yet be found.
+
+Similarly, the legacy lens label says:
+
+> “Missing accounting record”
+
+while the business rules are more cautious: accounting evidence may exist but may not have been found or linked.
+
+These are primarily wording issues, but they reveal a domain-model issue: hypotheses are still sometimes being displayed as facts.
+
+Prefer:
+
+* “No CRM gift linked”
+* “Accounting evidence missing or unlinked”
+* “No linked transaction evidence”
+
+---
+
+## 7. `crmComplete` documentation still says “linked CRM gifts”
+
+The canonical backend type comments that `crmComplete` is true when “all linked CRM gift records” are complete.
+
+Your clarified business rule is:
+
+> Every CRM card on the row must be evaluated, whether linked or not.
+
+This may only be a stale comment, but it should be verified in the actual derivation. The type documentation should say:
+
+```text
+True when every in-scope CRM card on the row satisfies a canonical CRM-completeness path.
+```
+
+That prevents future implementation drift.
+
+---
+
+# Priority order
+
+I would address these in this order:
+
+## Before expanding the frontend
+
+1. **Add canonical transaction card state.**
+2. **Make CRM unlinking target a specific relationship/card rather than the first linked evidence record.**
+3. **Verify finance authorization on every QB-changing endpoint and expose frontend capabilities.**
+4. **Ensure every cluster hydration path always supplies canonical state.**
+
+## During the next UI correction pass
+
+5. Drive action availability from canonical state/capabilities.
+6. Remove unsupported “unpaid,” “missing donor,” and similar inferences.
+7. Remove legacy frontend state fallbacks after migration coverage is complete.
+8. Correct the `crmComplete` documentation and verify its implementation includes every CRM card on the row.
+
+## Bottom line
+
+There has not been a major architectural regression. The workbench remains backend-state-led, specialized relationship tables remain intact, and the new UI is consuming the canonical model.
+
+The main problem is **an incomplete migration**: row and CRM/QB presentation are partly canonical, while transaction status and action availability still depend heavily on legacy fields.
+
+I would not redesign the system. I would finish the canonical state contract and then simplify the frontend around it.

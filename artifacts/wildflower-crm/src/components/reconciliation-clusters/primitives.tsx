@@ -135,10 +135,13 @@ export function ExcludedCard({ reason }: { reason?: string | null }) {
 export function SummaryCard({
   lines,
   gap,
+  menu,
   testId,
 }: {
   lines: string[];
   gap?: string | null;
+  /** Optional ⋯ action menu, top-right (e.g. settlement-link actions on the missing-deposit card). */
+  menu?: ReactNode;
   testId?: string;
 }) {
   return (
@@ -146,16 +149,21 @@ export function SummaryCard({
       className="rounded-md border bg-card px-2.5 py-1.5"
       data-testid={testId}
     >
-      {lines.map((l, i) => (
-        <div
-          key={l}
-          className={`text-[11px] leading-snug ${
-            i === 0 ? "font-semibold" : "text-muted-foreground"
-          }`}
-        >
-          {l}
+      <div className="flex items-start justify-between gap-1">
+        <div className="min-w-0 flex-1">
+          {lines.map((l, i) => (
+            <div
+              key={l}
+              className={`text-[11px] leading-snug ${
+                i === 0 ? "font-semibold" : "text-muted-foreground"
+              }`}
+            >
+              {l}
+            </div>
+          ))}
         </div>
-      ))}
+        {menu}
+      </div>
       {gap ? (
         <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 leading-snug">
           {gap}
@@ -229,35 +237,59 @@ export function DonorActions({
   onLink,
   onCreate,
   onIdentify,
+  identified,
   disabled,
   testIdBase,
 }: {
   onLink: () => void;
   onCreate: () => void;
   onIdentify: () => void;
+  /** Donor already identified on the evidence row: creating the gift becomes the primary next step and "Identify donor" becomes "Change identified donor". */
+  identified?: boolean;
   disabled?: boolean;
   testIdBase: string;
 }) {
-  const actions = [
-    {
-      icon: <Link2 className="w-3 h-3" />,
-      label: "Link CRM donation record",
-      onClick: onLink,
-      id: "link",
-    },
-    {
-      icon: <Plus className="w-3 h-3" />,
-      label: "Create CRM donation record",
-      onClick: onCreate,
-      id: "create",
-    },
-    {
-      icon: <Search className="w-3 h-3" />,
-      label: "Identify donor",
-      onClick: onIdentify,
-      id: "identify",
-    },
-  ];
+  const actions = identified
+    ? [
+        {
+          icon: <Plus className="w-3 h-3" />,
+          label: "Create CRM donation record",
+          onClick: onCreate,
+          id: "create",
+        },
+        {
+          icon: <Link2 className="w-3 h-3" />,
+          label: "Link CRM donation record",
+          onClick: onLink,
+          id: "link",
+        },
+        {
+          icon: <Search className="w-3 h-3" />,
+          label: "Change identified donor",
+          onClick: onIdentify,
+          id: "identify",
+        },
+      ]
+    : [
+        {
+          icon: <Link2 className="w-3 h-3" />,
+          label: "Link CRM donation record",
+          onClick: onLink,
+          id: "link",
+        },
+        {
+          icon: <Plus className="w-3 h-3" />,
+          label: "Create CRM donation record",
+          onClick: onCreate,
+          id: "create",
+        },
+        {
+          icon: <Search className="w-3 h-3" />,
+          label: "Identify donor",
+          onClick: onIdentify,
+          id: "identify",
+        },
+      ];
   return (
     <div className="flex flex-col gap-1">
       {actions.map((a) => (

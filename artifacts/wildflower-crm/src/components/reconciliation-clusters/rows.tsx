@@ -306,12 +306,33 @@ function GiftCard({
 
   const donor = donorHref(gift);
   const unlinkAnchor = giftUnlinkAnchor(gift);
-  // Actions per §§8.2.
+  const incomplete =
+    crmState === "unmatched_incomplete" || crmState === "matched_incomplete";
+  const unmatchedGift =
+    crmState === "unmatched_incomplete" || crmState === "unmatched_complete";
+  // Actions per §§8.2, gated on the canonical CRM card state.
   const menu: MenuItem[] = [
-    { label: "Open gift record", href: `/gifts/${gift.giftId}` },
+    {
+      label: incomplete ? "View & complete gift" : "Open gift record",
+      href: `/gifts/${gift.giftId}`,
+    },
     donor
       ? { label: "Open donor record", href: donor }
       : { label: "Open donor record", disabledReason: "No donor on this gift" },
+  ];
+  if (crmState === "conflict") {
+    menu.push({
+      label: "Review conflict — compare sources",
+      href: `/gifts/${gift.giftId}`,
+    });
+  }
+  if (crmState === "pledge_link_broken") {
+    menu.push({
+      label: "Repair pledge link",
+      disabledReason: "Not built yet — re-point the pledge from the gift record",
+    });
+  }
+  menu.push(
     unlinkAnchor
       ? {
           label: "Unlink from this match",
@@ -322,13 +343,31 @@ function GiftCard({
               `Unlink “${gift.name ?? gift.giftId}” from its evidence. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
             ),
         }
-      : { label: "Unlink from this match", disabledReason: "Not linked to evidence in this row" },
+      : {
+          label: "Match to money evidence",
+          disabledReason:
+            "No money evidence in this row yet — link from a charge or QB card when it arrives",
+        },
+  );
+  if (unmatchedGift || !crmEntry) {
+    menu.push(
+      {
+        label: "Mark gift lost",
+        disabledReason: "Not built yet — set the loss type on the gift's opportunity",
+      },
+      {
+        label: "Mark gift dormant",
+        disabledReason: "Not built yet — set the loss type on the gift's opportunity",
+      },
+    );
+  }
+  menu.push(
     { label: "Flag for research", disabledReason: "Open the gift record to flag it for research" },
     {
       label: "Move to another cluster",
       disabledReason: "Clusters follow the evidence ties — unlink here, then link from the other row",
     },
-  ];
+  );
   return (
     <FacetCard
       tone={tone}
@@ -374,6 +413,16 @@ function chargePreview(c: WorkbenchClusterCharge): EvidencePreview {
   };
 }
 
+function qbPreview(r: WorkbenchClusterQbRecord): EvidencePreview {
+  return {
+    amount: fmt(r.amount),
+    date: r.dateReceived ? formatDateShort(r.dateReceived) : "—",
+    method: "QuickBooks payment",
+    source: `QuickBooks record ${qbLabel(r)}`,
+    memo: r.memo ?? r.lineDescription ?? null,
+  };
+}
+
 function chargeLabel(c: WorkbenchClusterCharge): string {
   return c.payerName ?? c.chargeId;
 }
@@ -391,27 +440,23 @@ function ChargeCard({
   const anchor: AnchorRef = { kind: "charge", id: charge.chargeId, label };
   const excluded = charge.status === "excluded";
 
-  // Tone from canonical transaction state (§§5.1).
+  // Canonical transaction facts (§§5.1) — refund status from rowState when present.
   const txnEntry = rowState?.transactions.find((t) => t.transactionId === charge.chargeId);
-  const tone: "green" | "amber" | "slate" =
-    excluded
-      ? "slate"
-      : txnEntry?.livePayment
-        ? charge.status === "match_confirmed"
-          ? "green"
-          : "amber"
-        : charge.status === "match_confirmed"
-          ? "green"
-          : "amber";
+  const refundProposed = txnEntry
+    ? txnEntry.refundStatus === "anticipated"
+    : !!charge.refundProposed;
+  const linked = !!charge.linkedGiftId;
+  const matched = linked && charge.status === "match_confirmed";
+  const donorIdentified = !!charge.attributedDonor;
+  const tone: "green" | "amber" | "slate" = excluded
+    ? "slate"
+    : matched && !refundProposed
+      ? "green"
+      : "amber";
 
-  // Actions per §§5.2.
-  const menu: MenuItem[] = [
-    {
-      label: "View in Stripe",
-      externalHref: `https://dashboard.stripe.com/payments/${charge.chargeId}`,
-    },
-  ];
-  if (charge.refundProposed) {
+  // Actions per §§5.2, gated on the canonical transaction state.
+  const menu: MenuItem[] = [];
+  if (refundProposed) {
     const kind = charge.refundKind === "chargeback" ? "chargeback" : "refund";
     menu.push(
       {
@@ -424,40 +469,57 @@ function ChargeCard({
         onClick: () => actions.openDismissRefund(charge.chargeId, label),
       },
     );
-  } else if (excluded) {
-    menu.push({ label: "Re-include", onClick: () => actions.reInclude(anchor) });
-  } else if (charge.linkedGiftId) {
-    menu.push({
-      label: "Unlink gift",
-      destructive: true,
-      onClick: () =>
-        actions.openRevert(
-          anchor,
-          `Unlink Stripe charge ${label} from its gift. If the gift was minted from this charge it is deleted; a pre-existing gift is kept and just unlinked.`,
-        ),
-    });
-  } else {
-    // No gift linked yet — primary action is to create a gift or exclude.
-    menu.push({
-      label: "Create gift from this charge",
-      disabledReason: "Use the donor slot above to create a gift from this charge",
-    });
-    menu.push({ label: "Exclude — not a donation", onClick: () => actions.openExclude(anchor) });
   }
-  menu.push(
-    {
-      label: "Mark refund anticipated",
-      disabledReason: "Not yet implemented — flag via the cleanup queue for now",
-    },
-    {
-      label: "Move to another cluster",
-      disabledReason: "Charges belong to their Stripe payout — the cluster is fixed",
-    },
-    {
-      label: "Flag for research",
-      disabledReason: "Only QuickBooks records can be flagged for research",
-    },
-  );
+  if (excluded) {
+    menu.push({ label: "Re-include", onClick: () => actions.reInclude(anchor) });
+  } else if (!refundProposed) {
+    if (!linked) {
+      // Unmatched transaction: match / create / identify are the real next steps.
+      menu.push(
+        {
+          label: "Link to existing CRM gift",
+          onClick: () => actions.openLinkGift(anchor),
+        },
+        {
+          label: "Create new CRM gift",
+          onClick: () => actions.openCreateGift(anchor, chargePreview(charge)),
+        },
+        {
+          label: donorIdentified ? "Change identified donor" : "Identify donor",
+          onClick: () => actions.openIdentify(anchor, chargePreview(charge)),
+        },
+        {
+          label: "Match to QuickBooks evidence",
+          disabledReason:
+            "Not built yet — QB deposits tie to the whole payout, not one charge",
+        },
+      );
+    } else {
+      menu.push({
+        label: "Unlink from CRM gift",
+        destructive: true,
+        onClick: () =>
+          actions.openRevert(
+            anchor,
+            `Unlink Stripe charge ${label} from its gift. If the gift was minted from this charge it is deleted; a pre-existing gift is kept and just unlinked.`,
+          ),
+      });
+    }
+    menu.push(
+      {
+        label: "Mark refund anticipated",
+        disabledReason: "Not built yet — flag via the cleanup queue for now",
+      },
+      {
+        label: "Exclude — not a donation",
+        onClick: () => actions.openExclude(anchor),
+      },
+    );
+  }
+  menu.push({
+    label: "View in Stripe",
+    externalHref: `https://dashboard.stripe.com/payments/${charge.chargeId}`,
+  });
   const subBits = [
     charge.chargeDate ? formatDateShort(charge.chargeDate) : null,
     charge.cardBrand,
@@ -469,12 +531,16 @@ function ChargeCard({
     charge.feeAmount != null && charge.netAmount != null
       ? `${fmt(charge.amount)} gross − ${fmt(charge.feeAmount)} fee = ${fmt(charge.netAmount)} net`
       : null;
-  const gap = charge.refundProposed
+  // The gap must not contradict the donor slot: when a donor has been
+  // identified on this charge, the missing piece is the gift, not the donor.
+  const gap = refundProposed
     ? `${charge.refundKind === "chargeback" ? "Chargeback" : "Refund"} proposed`
     : excluded
       ? null
-      : !charge.linkedGiftId
-        ? "No donor identified"
+      : !linked
+        ? donorIdentified
+          ? "Donor identified — no gift linked yet"
+          : "No donor identified"
         : null;
   return (
     <FacetCard
@@ -581,44 +647,78 @@ function QbCard({
               ? "Not linked to a gift"
               : null;
 
-  // Actions per §§7.2.
+  // Actions per §§7.2, gated on the canonical QB card state.
   const qbHrefUrl = qbHref(record);
-  const menu: MenuItem[] = [
-    qbHrefUrl
-      ? { label: "View in QuickBooks", externalHref: qbHrefUrl }
-      : { label: "View in QuickBooks", disabledReason: "No QB entity ID available" },
+  const isFee = record.role === "fee";
+  const menu: MenuItem[] = [];
+  if (excluded) {
+    menu.push({ label: "Re-include", onClick: () => actions.reInclude(anchor) });
+  } else if (isFee) {
+    // Processor fees are accounting detail, never donations to match.
+    menu.push({
+      label: "Exclude — not a donation",
+      disabledReason: "Fees are accounting detail on the payout, not standalone records",
+    });
+  } else if (linked) {
+    menu.push(
+      {
+        label: "Unlink from CRM gift",
+        destructive: true,
+        onClick: () =>
+          actions.openRevert(
+            anchor,
+            `Unlink QuickBooks record from its gift. If the gift was minted from this QB record it is deleted; a pre-existing gift is kept and just unlinked.`,
+          ),
+      },
+      {
+        label: "Fill out QB from CRM",
+        disabledReason: rowState?.information.crmComplete
+          ? "Not built yet — writing back to QuickBooks is planned"
+          : "Complete the CRM gift record first",
+      },
+    );
+  } else {
+    // Raw / enriched / partially matched: matching is the real next step.
+    menu.push(
+      {
+        label: "Match to CRM gift",
+        onClick: () => actions.openLinkGift(anchor),
+      },
+      {
+        label: "Create gift from this record",
+        onClick: () => actions.openCreateGift(anchor, qbPreview(record)),
+      },
+      {
+        label: "Match to transaction",
+        disabledReason: "Not built yet — charge ties are proposed by the Stripe sync",
+      },
+      {
+        label: "Exclude — not a donation",
+        onClick: () => actions.openExclude(anchor),
+      },
+    );
+  }
+  if (!isFee) {
+    menu.push(
+      {
+        label: "Group QuickBooks records",
+        disabledReason: "Not built yet — grouping several QB rows into one event",
+      },
+      {
+        label: "Split into reconciliation units",
+        disabledReason: "Not built yet — splitting one QB row into parts",
+      },
+    );
+  }
+  menu.push(
     {
       label: "Flag for research",
       onClick: () => actions.openFlag(record.stagedPaymentId, qbLabel(record)),
     },
-  ];
-  if (excluded) {
-    menu.push({ label: "Re-include", onClick: () => actions.reInclude(anchor) });
-  } else if (linked) {
-    menu.push({
-      label: "Unlink gift",
-      destructive: true,
-      onClick: () =>
-        actions.openRevert(
-          anchor,
-          `Unlink QuickBooks record from its gift. If the gift was minted from this QB record it is deleted; a pre-existing gift is kept and just unlinked.`,
-        ),
-    });
-    menu.push({
-      label: "Fill out QB from CRM",
-      disabledReason: "Not yet implemented — the CRM gift already exists",
-    });
-  } else {
-    menu.push({
-      label: "Create gift from this record",
-      disabledReason: "Use the donor slot above to create a gift from this QB record",
-    });
-    menu.push({ label: "Exclude — not a donation", onClick: () => actions.openExclude(anchor) });
-  }
-  menu.push({
-    label: "Move to another cluster",
-    disabledReason: "QB records belong to their deposit — the cluster is fixed",
-  });
+    qbHrefUrl
+      ? { label: "View in QuickBooks", externalHref: qbHrefUrl }
+      : { label: "View in QuickBooks", disabledReason: "No QB entity ID available" },
+  );
 
   return (
     <FacetCard
@@ -768,6 +868,28 @@ function StatusAction({
   );
 }
 
+/** ⋯ menu on the "No QB deposit linked yet" card — §§6.2 settlement-link
+ * actions for the `unlinked` state (shown grayed with the honest reason until
+ * the manual settlement flows are built). */
+function SettlementGapMenu({ clusterId }: { clusterId: string }) {
+  return (
+    <CardMenu
+      items={[
+        {
+          label: "Search QuickBooks for this deposit",
+          disabledReason:
+            "Not built yet — deposit matches are proposed by the QuickBooks sync",
+        },
+        {
+          label: "Confirm settlement link",
+          disabledReason: "Nothing proposed yet — needs a QB deposit first",
+        },
+      ]}
+      testId={`button-settlement-menu-${clusterId}`}
+    />
+  );
+}
+
 function StatusForCluster({
   cluster,
   action,
@@ -781,18 +903,31 @@ function StatusForCluster({
   if (state) {
     const lnk = LINKAGE_META[state.linkage.state];
     const inf = INFO_META[state.information.state];
-    // Worst tone wins: amber > blue > green > slate.
-    const tonePriority = { amber: 3, blue: 2, green: 1, slate: 0 } as const;
-    type ToneKey = keyof typeof tonePriority;
-    const tone: Tone =
-      tonePriority[lnk.tone as ToneKey] >= tonePriority[inf.tone as ToneKey]
-        ? lnk.tone
-        : inf.tone;
+    const settle = state.settlementLinkState
+      ? SETTLEMENT_META[state.settlementLinkState]
+      : null;
+    // Worst tone wins across linkage, information AND settlement.
+    const tonePriority: Record<Tone, number> = {
+      red: 4,
+      amber: 3,
+      blue: 2,
+      green: 1,
+      slate: 0,
+    };
+    const facets = settle ? [lnk, inf, settle] : [lnk, inf];
+    const tone = facets.reduce<Tone>(
+      (worst, f) => (tonePriority[f.tone] > tonePriority[worst] ? f.tone : worst),
+      "slate",
+    );
+    const detailBits = [
+      inf.word !== lnk.word ? inf.word : null,
+      settle && state.settlementLinkState !== "confirmed" ? settle.word : null,
+    ].filter((b): b is string => b != null);
     return (
       <StatusCell
         tone={tone}
         word={lnk.word}
-        detail={inf.word !== lnk.word ? inf.word : null}
+        detail={detailBits.length > 0 ? detailBits.join(" · ") : null}
         action={action}
         testId={`status-cluster-${cluster.id}`}
       />
@@ -856,7 +991,7 @@ function PayoutBundleRow({
     const gift = charge.linkedGiftId
       ? giftById.get(charge.linkedGiftId)
       : cluster.gifts[0];
-    const status = chargeStatus(charge, cluster.coverage);
+    const donorIdentified = !!charge.attributedDonor;
     const anchor: AnchorRef = {
       kind: "charge",
       id: charge.chargeId,
@@ -885,6 +1020,7 @@ function PayoutBundleRow({
               ) : null}
               <DonorActions
                 disabled={actions.busy}
+                identified={donorIdentified}
                 onLink={() => actions.openLinkGift(anchor)}
                 onCreate={() =>
                   actions.openCreateGift(anchor, chargePreview(charge))
@@ -907,14 +1043,33 @@ function PayoutBundleRow({
             <SummaryCard
               lines={["No QB deposit linked yet"]}
               gap="settlement link missing"
+              menu={<SettlementGapMenu clusterId={cluster.id} />}
             />
           )}
         </div>
-        <StatusCell
-          tone={status.tone}
-          word={status.word}
-          detail={status.detail}
-          testId={`status-cluster-${cluster.id}`}
+        <StatusForCluster
+          cluster={cluster}
+          action={
+            !gift && charge.status !== "excluded" && !charge.refundProposed ? (
+              donorIdentified ? (
+                <StatusAction
+                  label="Create gift"
+                  onClick={() =>
+                    actions.openCreateGift(anchor, chargePreview(charge))
+                  }
+                  testId={`button-status-create-${cluster.id}`}
+                />
+              ) : (
+                <StatusAction
+                  label="Identify donor"
+                  onClick={() =>
+                    actions.openIdentify(anchor, chargePreview(charge))
+                  }
+                  testId={`button-status-identify-${cluster.id}`}
+                />
+              )
+            ) : null
+          }
         />
         <RowKebab clusterId={cluster.id} />
       </div>
@@ -969,6 +1124,7 @@ function PayoutBundleRow({
           <SummaryCard
             lines={["No QB deposit linked yet"]}
             gap="settlement link missing"
+            menu={<SettlementGapMenu clusterId={cluster.id} />}
           />
         )}
         <StatusForCluster
@@ -1052,6 +1208,7 @@ function PayoutBundleRow({
                       ) : null}
                       <DonorActions
                         disabled={actions.busy}
+                        identified={!!charge.attributedDonor}
                         onLink={() => actions.openLinkGift(anchor)}
                         onCreate={() =>
                           actions.openCreateGift(anchor, chargePreview(charge))
@@ -1179,6 +1336,10 @@ function QbStandaloneRow({
             ) : null}
             <DonorActions
               disabled={actions.busy}
+              identified={
+                !!cluster.qbRecords.find((r) => r.role === "anchor")
+                  ?.attributedDonor
+              }
               onLink={() => actions.openLinkGift(stagedAnchor)}
               onCreate={() => actions.openCreateGift(stagedAnchor, preview)}
               onIdentify={() => actions.openIdentify(stagedAnchor, preview)}

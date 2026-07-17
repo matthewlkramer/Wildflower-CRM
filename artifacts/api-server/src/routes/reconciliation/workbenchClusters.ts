@@ -1056,14 +1056,17 @@ function buildClusterCoverage(
     : !qbComplete || hasPendingRefund ? "accounting_pending"
     : "audit_ready";
 
-  // Settlement link state
-  let settlementLinkState: SettlementLinkState | undefined;
+  // Settlement link state — always present for payout clusters so the UI can
+  // distinguish "no settlement yet" (unlinked) from "not applicable" (absent).
+  let settlementLinkState: SettlementLinkState;
   if (slLifecycle === "confirmed") {
     settlementLinkState = "confirmed";
   } else if (slLifecycle === "proposed") {
     settlementLinkState = isConflict ? "proposed_conflict" : "proposed_full";
   } else if (depId) {
     settlementLinkState = "proposed_partial";
+  } else {
+    settlementLinkState = "unlinked";
   }
 
   const rowState: WorkbenchRowState = {
@@ -1079,7 +1082,7 @@ function buildClusterCoverage(
       conflict: isConflict,
       attentionRequired: hasPendingRefund,
     },
-    ...(settlementLinkState != null && { settlementLinkState }),
+    settlementLinkState,
     qbCards,
     transactions,
     crmCards,

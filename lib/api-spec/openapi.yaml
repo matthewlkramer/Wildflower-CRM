@@ -8566,7 +8566,7 @@ components:
         settlementLinkState:
           allOf: [ { $ref: "#/components/schemas/WorkbenchRowSettlementLinkState" } ]
           nullable: true
-          description: "Present only for stripe_payout clusters that have a settlement link entry."
+          description: "Present for all stripe_payout clusters ('unlinked' when no settlement relationship exists); absent for other cluster kinds."
         qbCards:
           type: array
           items: { $ref: "#/components/schemas/WorkbenchRowQbCardEntry" }

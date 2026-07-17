@@ -1125,7 +1125,7 @@ export const ListWorkbenchClustersResponse = zod.object({
   "conflict": zod.boolean(),
   "attentionRequired": zod.boolean().describe('True when a pending refund blocks audit_ready status.')
 }),
-  "settlementLinkState": zod.enum(['unlinked', 'proposed_full', 'proposed_partial', 'proposed_conflict', 'confirmed']).describe('State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only.').nullish().describe('Present only for stripe_payout clusters that have a settlement link entry.'),
+  "settlementLinkState": zod.enum(['unlinked', 'proposed_full', 'proposed_partial', 'proposed_conflict', 'confirmed']).describe('State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only.').nullish().describe('Present for all stripe_payout clusters (\'unlinked\' when no settlement relationship exists); absent for other cluster kinds.'),
   "qbCards": zod.array(zod.object({
   "qbRecordId": zod.string(),
   "state": zod.enum(['raw', 'enriched', 'matched_complete', 'matched_partial_qb_surplus', 'matched_partial_external_surplus', 'matched_conflict', 'excluded']).describe('Derived display state for one QB evidence card.'),

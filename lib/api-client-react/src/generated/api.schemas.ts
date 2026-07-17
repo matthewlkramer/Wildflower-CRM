@@ -5582,7 +5582,7 @@ export interface WorkbenchRowState {
   linkage: WorkbenchRowStateLinkage;
   information: WorkbenchRowStateInformation;
   flags: WorkbenchRowStateFlags;
-  /** Present only for stripe_payout clusters that have a settlement link entry. */
+  /** Present for all stripe_payout clusters ('unlinked' when no settlement relationship exists); absent for other cluster kinds. */
   settlementLinkState?: WorkbenchRowSettlementLinkState | null;
   qbCards: WorkbenchRowQbCardEntry[];
   transactions: WorkbenchRowTransactionEntry[];
