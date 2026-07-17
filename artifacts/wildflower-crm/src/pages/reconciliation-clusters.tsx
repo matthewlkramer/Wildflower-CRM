@@ -54,7 +54,7 @@ import {
   type AnchorRef,
   type ClusterActions,
 } from "@/components/reconciliation-clusters/rows";
-import { AlertCircle, ArrowLeft, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Search } from "lucide-react";
 
 // ─── Reconciliation cluster workbench ────────────────────────────────────────
 // One unified list: every piece of money work is ONE row (cluster) carrying all
@@ -514,26 +514,14 @@ export default function ReconciliationClustersPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-3xl font-serif font-bold text-foreground">
-            Reconciliation Clusters
+            Reconciliation
           </h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
             Every piece of money work as one row — the CRM gift, the processor
             transactions, and the bank &amp; accounting records it reconciles
-            against, with the money math in between. Bulk queues stay in the{" "}
-            <Link
-              href="/reconciliation-workbench"
-              className="text-primary underline-offset-2 hover:underline"
-            >
-              queue workbench
-            </Link>
-            .
+            against, with the money math in between.
           </p>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/reconciliation-workbench" data-testid="link-back-to-workbench">
-            <ArrowLeft className="mr-1 h-4 w-4" /> Workbench
-          </Link>
-        </Button>
       </div>
 
       <div className="flex gap-4 items-start">

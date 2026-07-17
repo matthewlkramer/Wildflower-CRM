@@ -51,7 +51,7 @@ function targetHref(type: string, id: string): string {
     case "stripe_payout":
       // Staged payments and Stripe payouts have no standalone detail page; send
       // the reviewer to the Reconciliation Workbench where the flagged money lives.
-      return "/reconciliation-workbench";
+      return "/reconciliation/clusters";
     default:
       return `/pledges/${id}`;
   }

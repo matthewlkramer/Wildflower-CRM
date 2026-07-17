@@ -14,6 +14,10 @@ import type {
   WorkbenchClusterGift,
   WorkbenchClusterQbRecord,
   WorkbenchClusterStatus,
+  WorkbenchRowState,
+  WorkbenchRowLinkCompleteness,
+  WorkbenchRowInformationCompleteness,
+  WorkbenchRowSettlementLinkState,
 } from "@workspace/api-client-react";
 import {
   DropdownMenu,
@@ -77,6 +81,30 @@ const CLUSTER_STATUS: Record<
   refund: { tone: "red", word: "Refund proposed" },
   excluded: { tone: "slate", word: "Excluded" },
   unlinked: { tone: "slate", word: "Unlinked" },
+};
+
+// ── Canonical row-state display maps (§2, §6 of workbench-business-rules.md) ─
+
+const LINKAGE_META: Record<WorkbenchRowLinkCompleteness, { tone: Tone; word: string }> = {
+  complete: { tone: "green", word: "Linked" },
+  partial: { tone: "blue", word: "Partial linkage" },
+  mixed: { tone: "amber", word: "Mixed linkage" },
+  partial_mixed: { tone: "amber", word: "Partial & mixed" },
+  missing: { tone: "amber", word: "No linkage" },
+};
+
+const INFO_META: Record<WorkbenchRowInformationCompleteness, { tone: Tone; word: string }> = {
+  audit_ready: { tone: "green", word: "Audit ready" },
+  accounting_pending: { tone: "blue", word: "Accounting pending" },
+  incomplete: { tone: "amber", word: "Record incomplete" },
+};
+
+const SETTLEMENT_META: Record<WorkbenchRowSettlementLinkState, { tone: Tone; word: string }> = {
+  unlinked: { tone: "amber", word: "QB not linked" },
+  proposed_full: { tone: "blue", word: "Settlement proposed" },
+  proposed_partial: { tone: "blue", word: "Partial settlement" },
+  proposed_conflict: { tone: "amber", word: "Settlement conflict" },
+  confirmed: { tone: "green", word: "Settlement confirmed" },
 };
 
 const QB_ROLE_LABEL: Record<WorkbenchClusterQbRecord["role"], string> = {
@@ -218,22 +246,72 @@ function giftUnlinkAnchor(gift: WorkbenchClusterGift): AnchorRef | null {
 function GiftCard({
   gift,
   actions,
+  rowState,
 }: {
   gift: WorkbenchClusterGift;
   actions: ClusterActions;
+  rowState?: WorkbenchRowState | null;
 }) {
-  const tie = gift.quickbooksTie;
-  const bad = tie === "amount_mismatch" || tie === "missing";
+  // Canonical CRM card state (§§8.1).
+  const crmEntry = rowState?.crmCards.find((e) => e.giftId === gift.giftId);
+  const crmState = crmEntry?.state;
+  const satisfiedBy = crmEntry?.satisfiedBy;
+
+  // Tone from canonical state; fall back to QB-tie heuristic.
+  const tone: "green" | "amber" | "slate" =
+    crmState === "matched_complete" || crmState === "unmatched_complete"
+      ? "green"
+      : crmState === "lost" || crmState === "dormant"
+        ? "slate"
+        : crmEntry
+          ? "amber"
+          : gift.quickbooksTie === "amount_mismatch" || gift.quickbooksTie === "missing"
+            ? "amber"
+            : "green";
+
+  // Gap line from canonical state; fall back to QB-tie heuristic.
+  const stateGap: string | null =
+    crmState === "unmatched_incomplete" || crmState === "matched_incomplete"
+      ? "CRM record incomplete"
+      : crmState === "unmatched_complete"
+        ? "Not linked to evidence"
+        : crmState === "conflict"
+          ? "Data conflict"
+          : crmState === "pledge_link_broken"
+            ? "Pledge link broken"
+            : crmState === "partial_gift_surplus"
+              ? "Gift exceeds linked evidence"
+              : crmState === "partial_external_surplus"
+                ? "Evidence exceeds gift amount"
+                : null;
+  const qbTieGap: string | null = !crmEntry
+    ? gift.quickbooksTie === "amount_mismatch"
+      ? "QB amount mismatch"
+      : gift.quickbooksTie === "missing"
+        ? "No QB record tied yet"
+        : null
+    : null;
+
+  // Completion-path sub-label (§§3.4).
+  const completionLabel: string | null =
+    crmState === "matched_complete" || crmState === "unmatched_complete"
+      ? satisfiedBy === "donorbox"
+        ? "· via Donorbox"
+        : satisfiedBy === "completed_coding_form"
+          ? "· via coding form"
+          : satisfiedBy === "donor_allocations_and_supporting_documents"
+            ? "· via donor & allocations"
+            : null
+      : null;
+
   const donor = donorHref(gift);
   const unlinkAnchor = giftUnlinkAnchor(gift);
+  // Actions per §§8.2.
   const menu: MenuItem[] = [
     { label: "Open gift record", href: `/gifts/${gift.giftId}` },
     donor
       ? { label: "Open donor record", href: donor }
-      : {
-          label: "Open donor record",
-          disabledReason: "No donor on this gift",
-        },
+      : { label: "Open donor record", disabledReason: "No donor on this gift" },
     unlinkAnchor
       ? {
           label: "Unlink from this match",
@@ -244,19 +322,16 @@ function GiftCard({
               `Unlink “${gift.name ?? gift.giftId}” from its evidence. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
             ),
         }
-      : {
-          label: "Unlink from this match",
-          disabledReason: "Not linked to evidence in this row",
-        },
+      : { label: "Unlink from this match", disabledReason: "Not linked to evidence in this row" },
+    { label: "Flag for research", disabledReason: "Open the gift record to flag it for research" },
     {
       label: "Move to another cluster",
-      disabledReason:
-        "Clusters follow the evidence ties — unlink here, then link from the other row",
+      disabledReason: "Clusters follow the evidence ties — unlink here, then link from the other row",
     },
   ];
   return (
     <FacetCard
-      tone={bad ? "amber" : "green"}
+      tone={tone}
       amount={fmt(gift.amount)}
       name={
         <Link
@@ -272,15 +347,10 @@ function GiftCard({
         <>
           {gift.donorName ?? "(no donor)"}
           {gift.dateReceived ? ` · ${formatDateShort(gift.dateReceived)}` : ""}
+          {completionLabel ? ` ${completionLabel}` : ""}
         </>
       }
-      gap={
-        tie === "amount_mismatch"
-          ? "QB amount mismatch"
-          : tie === "missing"
-            ? "No QB record tied yet"
-            : null
-      }
+      gap={stateGap ?? qbTieGap}
       badges={
         <>
           {gift.donorbox ? <DbBadge /> : null}
@@ -288,9 +358,7 @@ function GiftCard({
           {gift.grantLetter ? <LetterBadge /> : null}
         </>
       }
-      menu={
-        <CardMenu items={menu} testId={`button-gift-menu-${gift.giftId}`} />
-      }
+      menu={<CardMenu items={menu} testId={`button-gift-menu-${gift.giftId}`} />}
       testId={`card-cluster-gift-${gift.giftId}`}
     />
   );
@@ -313,13 +381,30 @@ function chargeLabel(c: WorkbenchClusterCharge): string {
 function ChargeCard({
   charge,
   actions,
+  rowState,
 }: {
   charge: WorkbenchClusterCharge;
   actions: ClusterActions;
+  rowState?: WorkbenchRowState | null;
 }) {
   const label = chargeLabel(charge);
   const anchor: AnchorRef = { kind: "charge", id: charge.chargeId, label };
   const excluded = charge.status === "excluded";
+
+  // Tone from canonical transaction state (§§5.1).
+  const txnEntry = rowState?.transactions.find((t) => t.transactionId === charge.chargeId);
+  const tone: "green" | "amber" | "slate" =
+    excluded
+      ? "slate"
+      : txnEntry?.livePayment
+        ? charge.status === "match_confirmed"
+          ? "green"
+          : "amber"
+        : charge.status === "match_confirmed"
+          ? "green"
+          : "amber";
+
+  // Actions per §§5.2.
   const menu: MenuItem[] = [
     {
       label: "View in Stripe",
@@ -332,20 +417,15 @@ function ChargeCard({
       {
         label: `Confirm ${kind}`,
         destructive: true,
-        onClick: () =>
-          actions.openConfirmRefund(charge.chargeId, kind, label),
+        onClick: () => actions.openConfirmRefund(charge.chargeId, kind, label),
       },
       {
         label: `Dismiss ${kind} proposal`,
         onClick: () => actions.openDismissRefund(charge.chargeId, label),
       },
     );
-  }
-  if (excluded) {
-    menu.push({
-      label: "Re-include",
-      onClick: () => actions.reInclude(anchor),
-    });
+  } else if (excluded) {
+    menu.push({ label: "Re-include", onClick: () => actions.reInclude(anchor) });
   } else if (charge.linkedGiftId) {
     menu.push({
       label: "Unlink gift",
@@ -357,16 +437,21 @@ function ChargeCard({
         ),
     });
   } else {
+    // No gift linked yet — primary action is to create a gift or exclude.
     menu.push({
-      label: "Exclude — not a donation",
-      onClick: () => actions.openExclude(anchor),
+      label: "Create gift from this charge",
+      disabledReason: "Use the donor slot above to create a gift from this charge",
     });
+    menu.push({ label: "Exclude — not a donation", onClick: () => actions.openExclude(anchor) });
   }
   menu.push(
     {
+      label: "Mark refund anticipated",
+      disabledReason: "Not yet implemented — flag via the cleanup queue for now",
+    },
+    {
       label: "Move to another cluster",
-      disabledReason:
-        "Charges belong to their Stripe payout — the cluster is fixed",
+      disabledReason: "Charges belong to their Stripe payout — the cluster is fixed",
     },
     {
       label: "Flag for research",
@@ -384,11 +469,16 @@ function ChargeCard({
     charge.feeAmount != null && charge.netAmount != null
       ? `${fmt(charge.amount)} gross − ${fmt(charge.feeAmount)} fee = ${fmt(charge.netAmount)} net`
       : null;
+  const gap = charge.refundProposed
+    ? `${charge.refundKind === "chargeback" ? "Chargeback" : "Refund"} proposed`
+    : excluded
+      ? null
+      : !charge.linkedGiftId
+        ? "No donor identified"
+        : null;
   return (
     <FacetCard
-      tone={
-        excluded ? "slate" : charge.status === "match_confirmed" ? "green" : "amber"
-      }
+      tone={tone}
       amount={fmt(charge.amount)}
       name={`${label} · Stripe`}
       sub={
@@ -401,15 +491,7 @@ function ChargeCard({
           subBits.join(" · ")
         )
       }
-      gap={
-        charge.refundProposed
-          ? `${charge.refundKind === "chargeback" ? "Chargeback" : "Refund"} proposed`
-          : excluded
-            ? null
-            : !charge.linkedGiftId
-              ? "No donor identified"
-              : null
-      }
+      gap={gap}
       menu={
         <CardMenu
           items={menu}
@@ -458,81 +540,104 @@ function qbHref(r: WorkbenchClusterQbRecord): string | null {
 function QbCard({
   record,
   actions,
+  rowState,
 }: {
   record: WorkbenchClusterQbRecord;
   actions: ClusterActions;
+  rowState?: WorkbenchRowState | null;
 }) {
-  const label = qbLabel(record);
-  const anchor: AnchorRef = {
-    kind: "staged",
-    id: record.stagedPaymentId,
-    label,
-  };
-  // Deposit / fee / charge-tie rows are payout plumbing — exclude/revert on
-  // them belongs to the payout flows in the queue workbench, so those rows
-  // only offer flag-for-research here.
-  const actionable = record.role === "anchor" || record.role === "group_member";
-  const href = qbHref(record);
+  const roleLabel = QB_ROLE_LABEL[record.role];
+  const anchor: AnchorRef = { kind: "staged", id: record.stagedPaymentId, label: qbLabel(record) };
+  const excluded = record.status === "excluded";
+  const linked = record.status === "match_confirmed";
+  const refNote = qbReferenceNote(record);
+
+  // Tone from canonical QB card state (§§7.1).
+  const qbEntry = rowState?.qbCards.find((e) => e.qbRecordId === record.stagedPaymentId);
+  const qbState = qbEntry?.state;
+  const tone: "green" | "amber" | "slate" =
+    excluded
+      ? "slate"
+      : qbState === "matched_complete"
+        ? "green"
+        : qbState != null
+          ? qbState === "excluded"
+            ? "slate"
+            : "amber"
+          : linked
+            ? "green"
+            : "amber";
+
+  const gap: string | null =
+    excluded
+      ? null
+      : qbState === "matched_partial_qb_surplus"
+        ? "QB amount exceeds gift"
+        : qbState === "matched_partial_external_surplus"
+          ? "External amount exceeds QB"
+          : qbState === "matched_conflict"
+            ? "Record conflict"
+            : !linked
+              ? "Not linked to a gift"
+              : null;
+
+  // Actions per §§7.2.
+  const qbHrefUrl = qbHref(record);
   const menu: MenuItem[] = [
-    href
-      ? { label: "View in QuickBooks", externalHref: href }
-      : {
-          label: "View in QuickBooks",
-          disabledReason: "No QuickBooks transaction id on this row",
-        },
-  ];
-  if (actionable) {
-    if (record.status === "excluded") {
-      menu.push({
-        label: "Re-include",
-        onClick: () => actions.reInclude(anchor),
-      });
-    } else if (record.status === "pending") {
-      menu.push({
-        label: "Exclude — not a donation",
-        onClick: () => actions.openExclude(anchor),
-      });
-    } else {
-      menu.push({
-        label: "Unlink / undo booking",
-        destructive: true,
-        onClick: () =>
-          actions.openRevert(
-            anchor,
-            `Undo the booked reconciliation on ${label}. An auto-minted gift is deleted; a pre-existing gift is kept and just unlinked. The row returns to pending.`,
-          ),
-      });
-    }
-  }
-  menu.push(
+    qbHrefUrl
+      ? { label: "View in QuickBooks", externalHref: qbHrefUrl }
+      : { label: "View in QuickBooks", disabledReason: "No QB entity ID available" },
     {
       label: "Flag for research",
-      onClick: () => actions.openFlag(record.stagedPaymentId, label),
+      onClick: () => actions.openFlag(record.stagedPaymentId, qbLabel(record)),
     },
-    {
-      label: "Flag QB recode",
-      disabledReason:
-        "Not available yet — use Flag for research and note the recode",
-    },
-  );
-  const subBits = [
-    QB_ROLE_LABEL[record.role],
-    record.dateReceived ? formatDateShort(record.dateReceived) : null,
-    record.payerName && record.payerName !== label ? record.payerName : null,
-    qbReferenceNote(record),
-  ].filter(Boolean);
+  ];
+  if (excluded) {
+    menu.push({ label: "Re-include", onClick: () => actions.reInclude(anchor) });
+  } else if (linked) {
+    menu.push({
+      label: "Unlink gift",
+      destructive: true,
+      onClick: () =>
+        actions.openRevert(
+          anchor,
+          `Unlink QuickBooks record from its gift. If the gift was minted from this QB record it is deleted; a pre-existing gift is kept and just unlinked.`,
+        ),
+    });
+    menu.push({
+      label: "Fill out QB from CRM",
+      disabledReason: "Not yet implemented — the CRM gift already exists",
+    });
+  } else {
+    menu.push({
+      label: "Create gift from this record",
+      disabledReason: "Use the donor slot above to create a gift from this QB record",
+    });
+    menu.push({ label: "Exclude — not a donation", onClick: () => actions.openExclude(anchor) });
+  }
+  menu.push({
+    label: "Move to another cluster",
+    disabledReason: "QB records belong to their deposit — the cluster is fixed",
+  });
+
   return (
     <FacetCard
-      tone={
-        record.status === "excluded"
-          ? "slate"
-          : record.status === "match_confirmed"
-            ? "green"
-            : "amber"
+      tone={tone}
+      amount={record.amount != null ? fmt(record.amount) : null}
+      name={
+        <>
+          {qbLabel(record)}
+          <span className="font-normal text-muted-foreground"> · {roleLabel}</span>
+        </>
       }
-      amount={fmt(record.amount)}
-      name={label}
-      sub={subBits.join(" · ")}
+      sub={
+        <>
+          {record.dateReceived ? formatDateShort(record.dateReceived) : null}
+          {record.memo ? ` · ${record.memo}` : null}
+          {refNote ? <span className="block text-xs text-muted-foreground">{refNote}</span> : null}
+        </>
+      }
+      gap={gap}
       menu={
         <CardMenu
           items={menu}
@@ -549,10 +654,6 @@ function QbCard({
 function RowKebab({ clusterId }: { clusterId: string }) {
   const [, navigate] = useLocation();
   const items: MenuItem[] = [
-    {
-      label: "View in queue workbench",
-      onClick: () => navigate("/reconciliation-workbench"),
-    },
     {
       label: "Approve all matches in cluster",
       disabledReason: "Not available yet — confirm each match on its card",
@@ -674,6 +775,30 @@ function StatusForCluster({
   cluster: WorkbenchCluster;
   action?: ReactNode;
 }) {
+  // If the server returned canonical row-state, use it; otherwise fall back to
+  // the legacy cluster.status signal.
+  const state = cluster.coverage?.state;
+  if (state) {
+    const lnk = LINKAGE_META[state.linkage.state];
+    const inf = INFO_META[state.information.state];
+    // Worst tone wins: amber > blue > green > slate.
+    const tonePriority = { amber: 3, blue: 2, green: 1, slate: 0 } as const;
+    type ToneKey = keyof typeof tonePriority;
+    const tone: Tone =
+      tonePriority[lnk.tone as ToneKey] >= tonePriority[inf.tone as ToneKey]
+        ? lnk.tone
+        : inf.tone;
+    return (
+      <StatusCell
+        tone={tone}
+        word={lnk.word}
+        detail={inf.word !== lnk.word ? inf.word : null}
+        action={action}
+        testId={`status-cluster-${cluster.id}`}
+      />
+    );
+  }
+  // Legacy fallback.
   const meta = CLUSTER_STATUS[cluster.status];
   return (
     <StatusCell
@@ -690,7 +815,6 @@ function StatusForCluster({
     />
   );
 }
-
 /** Stripe payout bundle: collapsed summary row + expandable paired child rows. */
 function PayoutBundleRow({
   cluster,
@@ -746,7 +870,7 @@ function PayoutBundleRow({
         <ChevronRight className="w-4 h-4 text-transparent mt-1.5" />
         <div className="space-y-1.5">
           {gift ? (
-            <GiftCard gift={gift} actions={actions} />
+            <GiftCard gift={gift} actions={actions} rowState={cluster.coverage?.state} />
           ) : charge.status === "excluded" ? (
             <ExcludedCard />
           ) : cluster.coverage?.donorPurpose.crmLinkage.grain === "bundle" &&
@@ -773,15 +897,11 @@ function PayoutBundleRow({
             </>
           )}
         </div>
-        <ChargeCard charge={charge} actions={actions} />
+        <ChargeCard charge={charge} actions={actions} rowState={cluster.coverage?.state} />
         <div className="space-y-1.5">
           {cluster.qbRecords.length > 0 ? (
             cluster.qbRecords.map((r) => (
-              <QbCard
-                key={`${r.role}-${r.stagedPaymentId}`}
-                record={r}
-                actions={actions}
-              />
+              <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage?.state} />
             ))
           ) : (
             <SummaryCard
@@ -856,8 +976,8 @@ function PayoutBundleRow({
           action={
             cluster.status === "conflict" ? (
               <StatusAction
-                label="Resolve in queue workbench"
-                onClick={() => navigate("/reconciliation-workbench")}
+                label="Expand to see the conflict"
+                onClick={() => onToggle()}
                 testId={`button-resolve-conflict-${cluster.id}`}
               />
             ) : !expanded &&
@@ -917,7 +1037,7 @@ function PayoutBundleRow({
                 <CornerDownRight className="w-3.5 h-3.5 text-muted-foreground/40 ml-2 mt-2" />
                 <div className="pl-4">
                   {gift ? (
-                    <GiftCard gift={gift} actions={actions} />
+                    <GiftCard gift={gift} actions={actions} rowState={cluster.coverage?.state} />
                   ) : charge.status === "excluded" ? (
                     <ExcludedCard />
                   ) : cluster.coverage?.donorPurpose.crmLinkage.grain === "bundle" &&
@@ -944,9 +1064,9 @@ function PayoutBundleRow({
                     </>
                   )}
                 </div>
-                <ChargeCard charge={charge} actions={actions} />
+                <ChargeCard charge={charge} actions={actions} rowState={cluster.coverage?.state} />
                 {tie ? (
-                  <QbCard record={tie} actions={actions} />
+                  <QbCard record={tie} actions={actions} rowState={cluster.coverage?.state} />
                 ) : (
                   <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1">
                     ↳ part of the payout bundle above
@@ -969,7 +1089,7 @@ function PayoutBundleRow({
             >
               <CornerDownRight className="w-3.5 h-3.5 text-muted-foreground/40 ml-2 mt-2" />
               <div className="pl-4">
-                <GiftCard gift={gift} actions={actions} />
+                <GiftCard gift={gift} actions={actions} rowState={cluster.coverage?.state} />
               </div>
               <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">
                 {(gift.linkedChargeIds ?? []).length === 0 &&
@@ -986,13 +1106,7 @@ function PayoutBundleRow({
             <div className="pl-[52px] pr-4 py-1.5 border-b bg-blue-50/40 dark:bg-blue-950/20">
               <p className="text-[11px] text-muted-foreground italic">
                 … and {hiddenCount.toLocaleString()} more charge
-                {hiddenCount === 1 ? "" : "s"} —{" "}
-                <Link
-                  href="/reconciliation-workbench"
-                  className="text-primary hover:underline underline-offset-2 not-italic"
-                >
-                  open the queue workbench to see all
-                </Link>
+                {hiddenCount === 1 ? "" : "s"} — expand to see all
               </p>
             </div>
           ) : null}
@@ -1046,19 +1160,13 @@ function QbStandaloneRow({
       <div className="space-y-1.5">
         {cluster.gifts.length > 0 ? (
           cluster.gifts.map((g) => (
-            <GiftCard key={g.giftId} gift={g} actions={actions} />
+            <GiftCard key={g.giftId} gift={g} actions={actions} rowState={cluster.coverage?.state} />
           ))
         ) : cluster.status === "excluded" ? (
           <ExcludedCard reason={cluster.statusDetail} />
         ) : cluster.group ? (
           <div className="text-[11px] text-muted-foreground italic pt-1">
-            Grouped payment ({cluster.group.memberCount} rows) —{" "}
-            <Link
-              href="/reconciliation-workbench"
-              className="text-primary hover:underline underline-offset-2 not-italic"
-            >
-              act on the group in the queue workbench
-            </Link>
+            Grouped payment ({cluster.group.memberCount} rows) — expand individual rows to act on each charge
           </div>
         ) : stagedAnchor ? (
           <>
@@ -1082,13 +1190,7 @@ function QbStandaloneRow({
       <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">
         {looksLikeStripeMoney ? (
           <>
-            looks like Stripe money — charge not tied yet;{" "}
-            <Link
-              href="/reconciliation-workbench"
-              className="text-primary hover:underline underline-offset-2 not-italic"
-            >
-              tie it in the queue workbench
-            </Link>
+            looks like Stripe money — charge not tied yet; use the donor slot to link it
           </>
         ) : (
           "arrived via QuickBooks — no separate processor record"
@@ -1096,11 +1198,7 @@ function QbStandaloneRow({
       </div>
       <div className="space-y-1.5">
         {cluster.qbRecords.map((r) => (
-          <QbCard
-            key={`${r.role}-${r.stagedPaymentId}`}
-            record={r}
-            actions={actions}
-          />
+          <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage?.state} />
         ))}
       </div>
       <StatusForCluster cluster={cluster} />
@@ -1126,19 +1224,10 @@ function CrmOnlyRow({
       <ChevronRight className="w-4 h-4 text-transparent mt-1.5" />
       <div className="space-y-1.5">
         {cluster.gifts.map((g) => (
-          <GiftCard key={g.giftId} gift={g} actions={actions} />
+          <GiftCard key={g.giftId} gift={g} actions={actions} rowState={cluster.coverage?.state} />
         ))}
       </div>
-      <LinkSlot
-        label="Link payment evidence"
-        onClick={() => navigate("/reconciliation-workbench")}
-        testId={`button-link-evidence-${cluster.id}`}
-      />
-      <LinkSlot
-        label="Link bank & accounting"
-        onClick={() => navigate("/reconciliation-workbench")}
-        testId={`button-link-accounting-${cluster.id}`}
-      />
+      
       <StatusForCluster cluster={cluster} />
       <RowKebab clusterId={cluster.id} />
     </div>

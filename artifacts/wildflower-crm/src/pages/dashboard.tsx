@@ -395,7 +395,7 @@ const WORKLIST_ITEMS: ReadonlyArray<{
     key: "stagedUnprocessed",
     label: "Money staged, not processed",
     desc: "Staged QuickBooks / Stripe payments awaiting reconciliation.",
-    href: "/reconciliation-workbench?queue=review",
+    href: "/reconciliation/clusters",
   },
   {
     key: "giftsMissingAllocations",
