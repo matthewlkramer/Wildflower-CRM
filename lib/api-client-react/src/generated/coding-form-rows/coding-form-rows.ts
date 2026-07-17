@@ -23,6 +23,7 @@ import type {
   ApplyCodingFormRowBody,
   BadRequestResponse,
   CodingFormApplyResult,
+  CodingFormConfirmSummary,
   CodingFormGrantAgreementsSummary,
   CodingFormRematchSummary,
   CodingFormRow,
@@ -559,6 +560,144 @@ export const useRematchPendingCodingFormRows = <TError = ErrorType<ForbiddenResp
         TContext
       > => {
       return useMutation(getRematchPendingCodingFormRowsMutationOptions(options));
+    }
+    /**
+ * @summary Approve the row's CURRENT proposed donor/opportunity/gift link as-is: stamps matchConfirmedAt + the confirming user WITHOUT rewriting the proposal (matchMethod/matchTier keep their auto provenance). A confirmed row is excluded from every bulk rematch pass. 409 when the row has no donor match to confirm. Admin only.
+ */
+export const getConfirmCodingFormMatchUrl = (id: string,) => {
+
+
+  
+
+  return `/api/coding-form-rows/${id}/confirm-match`
+}
+
+export const confirmCodingFormMatch = async (id: string, options?: RequestInit): Promise<CodingFormRow> => {
+  
+  return customFetch<CodingFormRow>(getConfirmCodingFormMatchUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getConfirmCodingFormMatchMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmCodingFormMatch>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof confirmCodingFormMatch>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['confirmCodingFormMatch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmCodingFormMatch>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  confirmCodingFormMatch(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConfirmCodingFormMatchMutationResult = NonNullable<Awaited<ReturnType<typeof confirmCodingFormMatch>>>
+    
+    export type ConfirmCodingFormMatchMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Approve the row's CURRENT proposed donor/opportunity/gift link as-is: stamps matchConfirmedAt + the confirming user WITHOUT rewriting the proposal (matchMethod/matchTier keep their auto provenance). A confirmed row is excluded from every bulk rematch pass. 409 when the row has no donor match to confirm. Admin only.
+ */
+export const useConfirmCodingFormMatch = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmCodingFormMatch>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof confirmCodingFormMatch>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getConfirmCodingFormMatchMutationOptions(options));
+    }
+    /**
+ * @summary Bulk-approve every still-pending, never-confirmed row that has BOTH a matched donor AND a matched gift (the auto-matcher's exactly-one proposals). Stamps matchConfirmedAt + the confirming user; never touches rows a human already confirmed, applied, or skipped, and never rewrites the proposal itself. Admin only.
+ */
+export const getConfirmMatchedCodingFormRowsUrl = () => {
+
+
+  
+
+  return `/api/coding-form-rows/confirm-matched`
+}
+
+export const confirmMatchedCodingFormRows = async ( options?: RequestInit): Promise<CodingFormConfirmSummary> => {
+  
+  return customFetch<CodingFormConfirmSummary>(getConfirmMatchedCodingFormRowsUrl(),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getConfirmMatchedCodingFormRowsMutationOptions = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmMatchedCodingFormRows>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof confirmMatchedCodingFormRows>>, TError,void, TContext> => {
+
+const mutationKey = ['confirmMatchedCodingFormRows'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmMatchedCodingFormRows>>, void> = () => {
+          
+
+          return  confirmMatchedCodingFormRows(requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConfirmMatchedCodingFormRowsMutationResult = NonNullable<Awaited<ReturnType<typeof confirmMatchedCodingFormRows>>>
+    
+    export type ConfirmMatchedCodingFormRowsMutationError = ErrorType<ForbiddenResponse>
+
+    /**
+ * @summary Bulk-approve every still-pending, never-confirmed row that has BOTH a matched donor AND a matched gift (the auto-matcher's exactly-one proposals). Stamps matchConfirmedAt + the confirming user; never touches rows a human already confirmed, applied, or skipped, and never rewrites the proposal itself. Admin only.
+ */
+export const useConfirmMatchedCodingFormRows = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmMatchedCodingFormRows>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof confirmMatchedCodingFormRows>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getConfirmMatchedCodingFormRowsMutationOptions(options));
     }
     /**
  * @summary Apply approved attributes for a row through the normal create/update paths (reporting-deadline task, allocation restriction/intended-usage/purpose, donor address). Compare-don't-clobber: only fills missing or reviewer-approved conflicts. Idempotent — re-running never duplicates. Admin only.

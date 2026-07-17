@@ -13,6 +13,8 @@ import {
   useSkipCodingFormRow,
   useRematchCodingFormRow,
   useRematchPendingCodingFormRows,
+  useConfirmCodingFormMatch,
+  useConfirmMatchedCodingFormRows,
   CodingFormRowStatus,
   CodingFormGrantAgreementStatus,
   ListCodingFormRowsSource,
@@ -283,6 +285,7 @@ function RowCard({ row }: { row: CodingFormRow }) {
   const applyMut = useApplyCodingFormRow();
   const skipMut = useSkipCodingFormRow();
   const rematchMut = useRematchCodingFormRow();
+  const confirmMut = useConfirmCodingFormMatch();
 
   // Which applicable cross-checks the reviewer has toggled ON to apply.
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -294,7 +297,8 @@ function RowCard({ row }: { row: CodingFormRow }) {
     setMatch.isPending ||
     applyMut.isPending ||
     skipMut.isPending ||
-    rematchMut.isPending;
+    rematchMut.isPending ||
+    confirmMut.isPending;
 
   const onError = (verb: string) => (err: unknown) =>
     toast({
@@ -408,6 +412,22 @@ function RowCard({ row }: { row: CodingFormRow }) {
     );
   };
 
+  // Approve the current proposed link as-is (stamps the confirmation without
+  // rewriting the proposal — unlike editing a picker, which re-stamps it as a
+  // manual match).
+  const handleConfirm = () => {
+    confirmMut.mutate(
+      { id: row.id },
+      {
+        onSuccess: () => {
+          void invalidate();
+          toast({ title: "Link confirmed" });
+        },
+        onError: onError("confirm link"),
+      },
+    );
+  };
+
   const hasDonor = Boolean(
     row.organizationId || row.individualGiverPersonId || row.householdId,
   );
@@ -435,6 +455,14 @@ function RowCard({ row }: { row: CodingFormRow }) {
         </Badge>
         {row.matchTier ? (
           <Badge variant="outline">match: {row.matchTier}</Badge>
+        ) : null}
+        {row.matchConfirmedAt ? (
+          <Badge
+            className="border-transparent bg-emerald-100 text-emerald-900 hover:bg-emerald-100"
+            data-testid={`badge-link-confirmed-${row.id}`}
+          >
+            Link confirmed
+          </Badge>
         ) : null}
         <span className="ml-auto text-sm text-muted-foreground">
           {row.amount ? `$${row.amount}` : "—"}
@@ -644,6 +672,17 @@ function RowCard({ row }: { row: CodingFormRow }) {
         >
           Re-match
         </Button>
+        {!row.matchConfirmedAt && hasDonor ? (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={handleConfirm}
+            data-testid={`button-confirm-link-${row.id}`}
+          >
+            Confirm link
+          </Button>
+        ) : null}
         {row.status === "pending" ? (
           <Button
             variant="outline"
@@ -1024,6 +1063,34 @@ export default function CodingFormImportPage() {
     });
   };
 
+  // Bulk-approve every still-pending, never-confirmed row that has BOTH a
+  // donor AND a matched gift — freezes the auto-matcher's proposals without
+  // touching rows a human already confirmed / applied / skipped.
+  const confirmMatchedMut = useConfirmMatchedCodingFormRows();
+  const handleConfirmMatched = () => {
+    confirmMatchedMut.mutate(undefined, {
+      onSuccess: (res) => {
+        void queryClient.invalidateQueries({
+          queryKey: [CODING_KEY_PREFIX],
+        });
+        toast({
+          title: "Confirmed matched rows",
+          description:
+            res.confirmed === 0
+              ? "No unconfirmed rows with both a donor and a gift link were found."
+              : `${res.confirmed} ${res.confirmed === 1 ? "link" : "links"} confirmed.`,
+        });
+      },
+      onError: (err) =>
+        toast({
+          title: "Couldn't confirm matched rows",
+          description:
+            err instanceof Error ? err.message : "Something went wrong.",
+          variant: "destructive",
+        }),
+    });
+  };
+
   const rows = data?.data ?? [];
 
   return (
@@ -1059,18 +1126,29 @@ export default function CodingFormImportPage() {
           Grant agreements
         </Button>
         {view === "coding" ? (
-          <Button
-            size="sm"
-            variant="outline"
-            className="ml-auto"
-            onClick={handleRematchPending}
-            disabled={rematchPendingMut.isPending}
-            data-testid="button-rematch-pending"
-          >
-            {rematchPendingMut.isPending
-              ? "Re-matching…"
-              : "Re-match all pending"}
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRematchPending}
+              disabled={rematchPendingMut.isPending || confirmMatchedMut.isPending}
+              data-testid="button-rematch-pending"
+            >
+              {rematchPendingMut.isPending
+                ? "Re-matching…"
+                : "Re-match all pending"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleConfirmMatched}
+              disabled={rematchPendingMut.isPending || confirmMatchedMut.isPending}
+              data-testid="button-confirm-matched"
+            >
+              {confirmMatchedMut.isPending
+                ? "Confirming…"
+                : "Confirm all matched"}
+            </Button>
+          </div>
         ) : null}
       </div>
 

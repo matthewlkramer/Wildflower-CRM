@@ -23,6 +23,7 @@ import {
   serializeRow,
   rematchRow,
   rematchPendingRows,
+  confirmMatchedRows,
   applyRow,
   NEEDS_DECISION_FIELDS_META,
 } from "../lib/codingForms";
@@ -201,6 +202,57 @@ router.post(
   asyncHandler(async (req, res) => {
     if (!requireAdmin(req, res)) return;
     res.json(await rematchPendingRows());
+  }),
+);
+
+// Approve the row's CURRENT proposed link as-is: stamps matchConfirmedAt + the
+// confirming user WITHOUT rewriting the proposal (unlike PATCH /match, which
+// overwrites all five link fields and re-stamps provenance as manual). A
+// confirmed row is excluded from every bulk rematch pass.
+router.post(
+  "/coding-form-rows/:id/confirm-match",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const id = paramId(req);
+    const row = await loadRow(id);
+    if (!row) return notFound(res, "coding form row");
+
+    const hasDonor =
+      row.organizationId != null ||
+      row.individualGiverPersonId != null ||
+      row.householdId != null;
+    if (!hasDonor) {
+      res.status(409).json({
+        error:
+          "Nothing to confirm — this row has no matched donor. Set a donor first, or use Re-match.",
+      });
+      return;
+    }
+
+    const user = await getAppUser(req);
+    const [updated] = await db
+      .update(codingFormRows)
+      .set({
+        matchConfirmedAt: new Date(),
+        matchConfirmedByUserId: user?.id ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(codingFormRows.id, id))
+      .returning();
+    res.json(await serializeRow(updated));
+  }),
+);
+
+// Bulk-approve the auto-matcher's proposals: every still-pending,
+// never-confirmed row with BOTH a donor AND a matched gift gets its
+// confirmation stamped. Never touches human-confirmed / applied / skipped rows
+// and never rewrites the proposal itself.
+router.post(
+  "/coding-form-rows/confirm-matched",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const user = await getAppUser(req);
+    res.json(await confirmMatchedRows(user?.id ?? null));
   }),
 );
 

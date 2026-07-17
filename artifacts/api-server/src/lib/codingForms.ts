@@ -235,11 +235,27 @@ export async function computeProposedMatch(
 /**
  * Compute and persist a fresh proposed match for a row. Clears any prior human
  * confirmation.
+ *
+ * `onlyIfUnconfirmed` makes the write row-atomic for the BULK pass: the UPDATE
+ * itself refuses rows that were confirmed (or moved off `pending`) after the
+ * bulk snapshot was taken, so a concurrent admin's confirmation can never be
+ * silently clobbered mid-pass. The explicit per-row rematch route deliberately
+ * omits it — re-matching a confirmed row there is an intentional user action
+ * that clears the confirmation.
  */
 export async function rematchRow(
   row: CodingFormRowSelect,
+  opts: { onlyIfUnconfirmed?: boolean } = {},
 ): Promise<CodingFormRowSelect> {
   const m = await computeProposedMatch(row);
+
+  const where = opts.onlyIfUnconfirmed
+    ? and(
+        eq(codingFormRows.id, row.id),
+        eq(codingFormRows.status, "pending"),
+        sql`${codingFormRows.matchConfirmedAt} IS NULL`,
+      )
+    : eq(codingFormRows.id, row.id);
 
   const [updated] = await db
     .update(codingFormRows)
@@ -256,8 +272,17 @@ export async function rematchRow(
       matchConfirmedByUserId: null,
       updatedAt: new Date(),
     })
-    .where(eq(codingFormRows.id, row.id))
+    .where(where)
     .returning();
+  if (!updated) {
+    // Guard rejected (row confirmed / applied / skipped concurrently): leave
+    // it untouched and return its CURRENT state.
+    const [current] = await db
+      .select()
+      .from(codingFormRows)
+      .where(eq(codingFormRows.id, row.id));
+    return current ?? row;
+  }
   return updated;
 }
 
@@ -356,7 +381,11 @@ export async function rematchPendingRows(): Promise<{
   const CHUNK = 5;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const chunk = rows.slice(i, i + CHUNK);
-    const results = await Promise.all(chunk.map((r) => rematchRow(r)));
+    // onlyIfUnconfirmed makes each write row-atomic: a row confirmed by a
+    // concurrent admin AFTER the snapshot above is skipped, never clobbered.
+    const results = await Promise.all(
+      chunk.map((r) => rematchRow(r, { onlyIfUnconfirmed: true })),
+    );
     for (let j = 0; j < results.length; j++) {
       const before = chunk[j];
       const after = results[j];
@@ -373,6 +402,38 @@ export async function rematchPendingRows(): Promise<{
     }
   }
   return { scanned: rows.length, updated, giftMatches };
+}
+
+/**
+ * Bulk-approve the auto-matcher's proposals: every still-pending,
+ * never-confirmed row that has BOTH a donor AND a matched gift gets
+ * matchConfirmedAt + the confirming user stamped, WITHOUT rewriting the
+ * proposal itself (matchMethod/matchTier keep their auto provenance).
+ * Confirmed rows are excluded from every future bulk rematch pass, so this
+ * freezes the links the reviewer has blessed. Idempotent — a second run finds
+ * zero unconfirmed rows.
+ */
+export async function confirmMatchedRows(
+  userId: string | null,
+): Promise<{ scanned: number; confirmed: number }> {
+  const now = new Date();
+  const updated = await db
+    .update(codingFormRows)
+    .set({
+      matchConfirmedAt: now,
+      matchConfirmedByUserId: userId,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(codingFormRows.status, "pending"),
+        sql`${codingFormRows.matchConfirmedAt} IS NULL`,
+        sql`${codingFormRows.matchedGiftId} IS NOT NULL`,
+        sql`(${codingFormRows.organizationId} IS NOT NULL OR ${codingFormRows.individualGiverPersonId} IS NOT NULL OR ${codingFormRows.householdId} IS NOT NULL)`,
+      ),
+    )
+    .returning({ id: codingFormRows.id });
+  return { scanned: updated.length, confirmed: updated.length };
 }
 
 // ── Allocation resolution ────────────────────────────────────────────────────

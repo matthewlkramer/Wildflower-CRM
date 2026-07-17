@@ -6562,6 +6562,16 @@ export interface CodingFormRematchSummary {
 }
 
 /**
+ * Result of the bulk confirm-matched pass.
+ */
+export interface CodingFormConfirmSummary {
+  /** Rows examined (status pending, never human-confirmed, with a matched donor AND gift). */
+  scanned: number;
+  /** Rows stamped as confirmed. */
+  confirmed: number;
+}
+
+/**
  * Set the donor (XOR — at most one of the three donor FKs) and optionally the matched opportunity/gift. Null clears a field.
  */
 export interface SetCodingFormMatchBody {

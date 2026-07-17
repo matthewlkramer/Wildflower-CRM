@@ -286,6 +286,35 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormRematchSummary" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /coding-form-rows/{id}/confirm-match:
+    post:
+      operationId: confirmCodingFormMatch
+      tags: [coding-form-rows]
+      summary: >-
+        Approve the row's CURRENT proposed donor/opportunity/gift link as-is:
+        stamps matchConfirmedAt + the confirming user WITHOUT rewriting the
+        proposal (matchMethod/matchTier keep their auto provenance). A confirmed
+        row is excluded from every bulk rematch pass. 409 when the row has no
+        donor match to confirm. Admin only.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormRow" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Nothing to confirm — the row has no matched donor." }
+  /coding-form-rows/confirm-matched:
+    post:
+      operationId: confirmMatchedCodingFormRows
+      tags: [coding-form-rows]
+      summary: >-
+        Bulk-approve every still-pending, never-confirmed row that has BOTH a
+        matched donor AND a matched gift (the auto-matcher's exactly-one
+        proposals). Stamps matchConfirmedAt + the confirming user; never touches
+        rows a human already confirmed, applied, or skipped, and never rewrites
+        the proposal itself. Admin only.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormConfirmSummary" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /coding-form-rows/{id}/apply:
     post:
       operationId: applyCodingFormRow
@@ -9151,6 +9180,13 @@ components:
         scanned:     { type: integer, description: "Rows examined (status pending AND never human-confirmed)." }
         updated:     { type: integer, description: "Rows whose proposal was rewritten by the matcher." }
         giftMatches: { type: integer, description: "Rows that now carry a proposed matchedGiftId." }
+    CodingFormConfirmSummary:
+      type: object
+      required: [scanned, confirmed]
+      description: "Result of the bulk confirm-matched pass."
+      properties:
+        scanned:   { type: integer, description: "Rows examined (status pending, never human-confirmed, with a matched donor AND gift)." }
+        confirmed: { type: integer, description: "Rows stamped as confirmed." }
     SetCodingFormMatchBody:
       type: object
       description: "Set the donor (XOR — at most one of the three donor FKs) and optionally the matched opportunity/gift. Null clears a field."

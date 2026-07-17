@@ -375,6 +375,89 @@ export const RematchPendingCodingFormRowsResponse = zod.object({
 }).describe('Result of the bulk rematch-pending pass.')
 
 /**
+ * @summary Approve the row's CURRENT proposed donor/opportunity/gift link as-is: stamps matchConfirmedAt + the confirming user WITHOUT rewriting the proposal (matchMethod/matchTier keep their auto provenance). A confirmed row is excluded from every bulk rematch pass. 409 when the row has no donor match to confirm. Admin only.
+ */
+export const ConfirmCodingFormMatchParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ConfirmCodingFormMatchResponse = zod.object({
+  "id": zod.string(),
+  "source": zod.string(),
+  "sourceRowIndex": zod.number(),
+  "status": zod.enum(['pending', 'applied', 'skipped']),
+  "donorNameRaw": zod.string().nullish(),
+  "internalMemo": zod.string().nullish(),
+  "amount": zod.string().nullish(),
+  "donationDate": zod.string().nullish(),
+  "restrictionLanguage": zod.string().nullish(),
+  "donorNameAddressRaw": zod.string().nullish(),
+  "reportRequired": zod.boolean().nullish(),
+  "reportDueDate": zod.string().nullish(),
+  "intendedUsageSuggested": zod.string().nullish(),
+  "driveLink": zod.string().nullish(),
+  "organizationId": zod.string().nullish(),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish(),
+  "donorName": zod.string().nullish().describe('Resolved display name of the matched donor.'),
+  "matchedOpportunityId": zod.string().nullish(),
+  "matchedOpportunityName": zod.string().nullish(),
+  "matchedGiftId": zod.string().nullish(),
+  "matchedGiftName": zod.string().nullish().describe('Display name of the matched gift (read-time join, like matchedOpportunityName).'),
+  "matchScore": zod.number().nullish(),
+  "matchMethod": zod.string().nullish(),
+  "matchTier": zod.string().nullish(),
+  "matchConfirmedAt": zod.string().nullish(),
+  "giftCandidates": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().nullish()
+}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
+  "crossChecks": zod.array(zod.object({
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
+  "label": zod.string().describe('Human-readable attribute name.'),
+  "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
+  "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
+  "sheetValue": zod.string().nullish().describe('The spreadsheet value (display form).'),
+  "crmValue": zod.string().nullish().describe('The current CRM value (display form).'),
+  "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
+  "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
+  "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
+  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).')
+})),
+  "needsDecision": zod.array(zod.object({
+  "attribute": zod.string(),
+  "label": zod.string(),
+  "value": zod.string().nullish().describe('The captured spreadsheet value with no schema home.')
+})),
+  "grantAgreement": zod.object({
+  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
+  "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
+  "importedFilename": zod.string().nullish(),
+  "importedAt": zod.string().nullish(),
+  "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
+  "oppExistingFilename": zod.string().nullish(),
+  "error": zod.string().nullish().describe('Last recorded fetch\/upload error for this row.')
+}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row.'),
+  "appliedAt": zod.string().nullish(),
+  "appliedTaskId": zod.string().nullish(),
+  "appliedAddressId": zod.string().nullish(),
+  "appliedAllocationId": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+/**
+ * @summary Bulk-approve every still-pending, never-confirmed row that has BOTH a matched donor AND a matched gift (the auto-matcher's exactly-one proposals). Stamps matchConfirmedAt + the confirming user; never touches rows a human already confirmed, applied, or skipped, and never rewrites the proposal itself. Admin only.
+ */
+export const ConfirmMatchedCodingFormRowsResponse = zod.object({
+  "scanned": zod.number().describe('Rows examined (status pending, never human-confirmed, with a matched donor AND gift).'),
+  "confirmed": zod.number().describe('Rows stamped as confirmed.')
+}).describe('Result of the bulk confirm-matched pass.')
+
+/**
  * @summary Apply approved attributes for a row through the normal create/update paths (reporting-deadline task, allocation restriction/intended-usage/purpose, donor address). Compare-don't-clobber: only fills missing or reviewer-approved conflicts. Idempotent — re-running never duplicates. Admin only.
  */
 export const ApplyCodingFormRowParams = zod.object({
