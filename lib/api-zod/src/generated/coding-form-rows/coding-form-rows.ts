@@ -71,7 +71,9 @@ export const ListCodingFormRowsResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
-  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).')
+  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
   "attribute": zod.string(),
@@ -182,7 +184,9 @@ export const GetCodingFormRowResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
-  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).')
+  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
   "attribute": zod.string(),
@@ -265,7 +269,9 @@ export const SetCodingFormMatchResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
-  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).')
+  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
   "attribute": zod.string(),
@@ -340,7 +346,9 @@ export const RematchCodingFormRowResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
-  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).')
+  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
   "attribute": zod.string(),
@@ -424,7 +432,9 @@ export const ConfirmCodingFormMatchResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
-  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).')
+  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
   "attribute": zod.string(),
@@ -512,7 +522,9 @@ export const ApplyCodingFormRowResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
-  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).')
+  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
   "attribute": zod.string(),
@@ -590,7 +602,9 @@ export const SkipCodingFormRowResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
-  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).')
+  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
   "attribute": zod.string(),
@@ -670,7 +684,9 @@ export const PullGrantAgreementResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
-  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).')
+  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
   "attribute": zod.string(),

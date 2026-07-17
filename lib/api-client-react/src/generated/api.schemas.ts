@@ -6437,6 +6437,10 @@ export interface CodingFormCrossCheck {
   decision?: CodingFormCrossCheckDecision;
   /** Why this attribute can't be auto-applied (e.g. ambiguous allocation, no confirmed match). */
   blockedReason?: string | null;
+  /** EXACT value Apply would write (display form). Null when apply would be a no-op (same / not applicable / blocked). */
+  willWrite?: string | null;
+  /** Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op. */
+  willWriteTo?: string | null;
 }
 
 export interface CodingFormNeedsDecision {

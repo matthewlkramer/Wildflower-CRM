@@ -63,6 +63,11 @@ export interface CrossCheck {
   targetId: string | null;
   decision: "apply" | "skip" | null;
   blockedReason: string | null;
+  // What Apply would ACTUALLY do, precomputed here so the review UI shows the
+  // exact pending write and can never drift from applyRow. Both are null when
+  // apply would be a no-op (status same / na / blocked).
+  willWrite: string | null; // the exact value that would be written (display form)
+  willWriteTo: string | null; // destination record + field, incl. create vs overwrite
 }
 
 export interface NeedsDecisionItem {
@@ -648,6 +653,12 @@ export async function crossChecksFor(
         }
       }
     }
+    // Mirrors applyRow: creates a reporting_deadline task with this exact title
+    // + due date on the matched opportunity (skipped if one already exists).
+    const taskTitle = row.donorNameRaw
+      ? `Reporting deadline — ${row.donorNameRaw}`
+      : "Reporting deadline";
+    const actionable = status === "new" && !blockedReason;
     out.push({
       attribute: "reportDeadline",
       label: "Reporting deadline",
@@ -659,6 +670,12 @@ export async function crossChecksFor(
       targetId,
       decision: dec("reportDeadline"),
       blockedReason,
+      willWrite: actionable
+        ? `"${taskTitle}" due ${String(row.reportDueDate)}`
+        : null,
+      willWriteTo: actionable
+        ? "creates a new Reporting-deadline task on the matched opportunity"
+        : null,
     });
   }
 
@@ -671,6 +688,11 @@ export async function crossChecksFor(
   const { alloc, blockedReason: allocBlocked } = needAlloc
     ? await resolveAllocation(row)
     : { alloc: null, blockedReason: null };
+  // Shared destination phrasing for the three allocation-targeted attributes.
+  const allocDest = (field: string, status: CrossCheckStatus): string =>
+    `${status === "conflict" ? "overwrites" : "sets"} "${field}" on the matched ${
+      alloc?.kind === "gift" ? "gift" : "pledge"
+    } allocation`;
 
   // 2. Purpose (verbatim restriction language) → allocation.purposeVerbatim.
   {
@@ -689,6 +711,9 @@ export async function crossChecksFor(
         else status = "conflict";
       }
     }
+    // Mirrors applyRow: patch.purposeVerbatim = row.restrictionLanguage.
+    const actionable =
+      !!alloc && (status === "new" || status === "conflict");
     out.push({
       attribute: "purposeVerbatim",
       label: "Restriction language (purpose)",
@@ -700,6 +725,10 @@ export async function crossChecksFor(
       targetId: alloc?.id ?? null,
       decision: dec("purposeVerbatim"),
       blockedReason,
+      willWrite: actionable ? row.restrictionLanguage : null,
+      willWriteTo: actionable
+        ? allocDest("Purpose (verbatim)", status)
+        : null,
     });
   }
 
@@ -720,6 +749,9 @@ export async function crossChecksFor(
         else status = "conflict"; // wf_restricted differs from donor intent
       }
     }
+    // Mirrors applyRow: patch.usageRestrictionType = "donor_restricted".
+    const actionable =
+      !!alloc && (status === "new" || status === "conflict");
     out.push({
       attribute: "usageRestriction",
       label: "Usage restriction",
@@ -731,6 +763,10 @@ export async function crossChecksFor(
       targetId: alloc?.id ?? null,
       decision: dec("usageRestriction"),
       blockedReason,
+      willWrite: actionable ? "Donor restricted" : null,
+      willWriteTo: actionable
+        ? allocDest("Usage restriction (usage axis)", status)
+        : null,
     });
   }
 
@@ -751,6 +787,9 @@ export async function crossChecksFor(
         else status = "conflict";
       }
     }
+    // Mirrors applyRow: patch.intendedUsage = row.intendedUsageSuggested.
+    const actionable =
+      !!alloc && (status === "new" || status === "conflict");
     out.push({
       attribute: "intendedUsage",
       label: "Intended usage",
@@ -767,6 +806,12 @@ export async function crossChecksFor(
       targetId: alloc?.id ?? null,
       decision: dec("intendedUsage"),
       blockedReason,
+      willWrite:
+        actionable && row.intendedUsageSuggested
+          ? (INTENDED_USAGE_LABELS[row.intendedUsageSuggested] ??
+            row.intendedUsageSuggested)
+          : null,
+      willWriteTo: actionable ? allocDest("Intended usage", status) : null,
     });
   }
 
@@ -796,6 +841,17 @@ export async function crossChecksFor(
         }
       }
     }
+    // Mirrors applyRow: INSERTs a new addresses row — raw mailing string as the
+    // street line plus any confidently parsed city/state/postal/country. Never
+    // edits an existing address.
+    const actionable =
+      !blockedReason && (status === "new" || status === "conflict");
+    const parsedBits = [
+      row.addrCity ? `city: ${row.addrCity}` : null,
+      row.addrState ? `state: ${row.addrState}` : null,
+      row.addrPostal ? `postal: ${row.addrPostal}` : null,
+      row.addrCountry ? `country: ${row.addrCountry}` : null,
+    ].filter((x): x is string => x !== null);
     out.push({
       attribute: "address",
       label: "Donor mailing address",
@@ -807,6 +863,16 @@ export async function crossChecksFor(
       targetId,
       decision: dec("address"),
       blockedReason,
+      willWrite: actionable
+        ? `street line: "${row.donorNameAddressRaw}"${
+            parsedBits.length > 0 ? ` · parsed ${parsedBits.join(", ")}` : ""
+          }`
+        : null,
+      willWriteTo: actionable
+        ? status === "conflict"
+          ? "creates an ADDITIONAL address on the matched donor (the existing address is kept as-is)"
+          : "creates a new address on the matched donor"
+        : null,
     });
   }
 
@@ -896,6 +962,10 @@ export async function crossChecksFor(
           else status = "conflict";
         }
       }
+      // Mirrors applyRow: writes the raw sheet value onto the matched gift's
+      // read-only coding-form reference column (kept "for looking at later").
+      const actionable =
+        !blockedReason && (status === "new" || status === "conflict");
       out.push({
         attribute: s.attribute,
         label: s.label,
@@ -907,6 +977,10 @@ export async function crossChecksFor(
         targetId: row.matchedGiftId,
         decision: dec(s.attribute),
         blockedReason,
+        willWrite: actionable ? s.sheet : null,
+        willWriteTo: actionable
+          ? `${status === "conflict" ? "overwrites" : "sets"} the read-only "${s.label}" coding-form reference field on the matched gift`
+          : null,
       });
     }
   }

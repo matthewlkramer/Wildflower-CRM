@@ -30,3 +30,11 @@ description: Guardrails for coding-form row → gift matching, candidate surfaci
   surface a live (never persisted) candidate list gated to
   `pending && matchedGiftId null && matchConfirmedAt null` and let the human pick —
   consistent with the user's "show, don't guess" preference.
+- Cross-checks carry `willWrite`/`willWriteTo` preview fields (exact value + destination
+  record/field, create vs overwrite) shown before the Apply checkbox.
+  **Why:** the reviewer couldn't tell what Apply would change; sheet/CRM columns alone
+  don't line fields up. **How to apply:** any change to the apply logic (new attribute,
+  different target, changed write semantics) MUST update the matching preview in the
+  cross-check builder in lockstep — the preview is computed beside, not derived from,
+  the apply code, so drift is silent. Preview is populated only when apply is actionable
+  (applicable, unblocked, status new/conflict); null means Apply is a no-op.

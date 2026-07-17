@@ -594,6 +594,7 @@ function RowCard({ row }: { row: CodingFormRow }) {
                 <th className="py-1 pr-3 font-medium">Status</th>
                 <th className="py-1 pr-3 font-medium">Spreadsheet</th>
                 <th className="py-1 pr-3 font-medium">CRM</th>
+                <th className="py-1 pr-3 font-medium">Apply will write…</th>
                 <th className="py-1 pr-3 font-medium">Apply</th>
               </tr>
             </thead>
@@ -621,6 +622,25 @@ function RowCard({ row }: { row: CodingFormRow }) {
                     </td>
                     <td className="py-1.5 pr-3 break-words max-w-[18rem]">
                       {c.crmValue || "—"}
+                    </td>
+                    <td
+                      className="py-1.5 pr-3 break-words max-w-[24rem]"
+                      data-testid={`willwrite-${row.id}-${c.attribute}`}
+                    >
+                      {c.willWrite && row.status !== "applied" ? (
+                        <div className="space-y-0.5">
+                          <div className="text-xs text-muted-foreground">
+                            {c.willWriteTo}:
+                          </div>
+                          <div className="font-medium">{c.willWrite}</div>
+                        </div>
+                      ) : c.applicable && c.status === "same" ? (
+                        <span className="text-xs text-muted-foreground">
+                          nothing — CRM already matches
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="py-1.5 pr-3">
                       {canApply ? (

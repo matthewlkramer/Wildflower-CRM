@@ -9096,6 +9096,8 @@ components:
         targetId:   { type: string, nullable: true, description: "Id of the existing target, when one was resolved." }
         decision:   { type: string, nullable: true, enum: [apply, skip], description: "The reviewer's stored decision for this attribute, if any." }
         blockedReason: { type: string, nullable: true, description: "Why this attribute can't be auto-applied (e.g. ambiguous allocation, no confirmed match)." }
+        willWrite:   { type: string, nullable: true, description: "EXACT value Apply would write (display form). Null when apply would be a no-op (same / not applicable / blocked)." }
+        willWriteTo: { type: string, nullable: true, description: "Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op." }
     CodingFormNeedsDecision:
       type: object
       required: [attribute, label]
