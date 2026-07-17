@@ -12,6 +12,7 @@ import {
   useApplyCodingFormRow,
   useSkipCodingFormRow,
   useRematchCodingFormRow,
+  useRematchPendingCodingFormRows,
   CodingFormRowStatus,
   CodingFormGrantAgreementStatus,
   ListCodingFormRowsSource,
@@ -508,6 +509,36 @@ function RowCard({ row }: { row: CodingFormRow }) {
               Open gift ↗
             </Link>
           ) : null}
+          {!row.matchedGiftId && (row.giftCandidates?.length ?? 0) > 0 ? (
+            <div className="space-y-1 rounded-md border border-dashed p-2">
+              <div className="text-[11px] font-medium uppercase text-muted-foreground">
+                Same-donor gifts at this amount (±90 days)
+              </div>
+              {(row.giftCandidates ?? []).map((c) => (
+                <div
+                  key={c.id}
+                  className="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span className="min-w-0 truncate">
+                    {c.name ?? `Gift ${c.id}`}
+                    {c.dateReceived
+                      ? ` · ${formatDateShort(c.dateReceived)}`
+                      : ""}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 shrink-0 px-2 text-xs"
+                    disabled={pending}
+                    onClick={() => handleSetMatch({ matchedGiftId: c.id })}
+                    data-testid={`button-pick-gift-${row.id}-${c.id}`}
+                  >
+                    Use
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -947,6 +978,8 @@ function GrantAgreementsView() {
 }
 
 export default function CodingFormImportPage() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [view, setView] = useState<"coding" | "grants">("coding");
   const [status, setStatus] = useState<CodingFormRowStatus | "all">("pending");
   const [source, setSource] = useState<ListCodingFormRowsSource | "all">("all");
@@ -965,6 +998,31 @@ export default function CodingFormImportPage() {
     query: { queryKey: getListCodingFormRowsQueryKey(params) },
   });
   const { data: summary } = useGetCodingFormSummary();
+
+  // Bulk matcher pass over every still-pending, never-confirmed row (the server
+  // query excludes confirmed/applied/skipped rows, so no human decision can be
+  // clobbered). Adds the exact-amount same-donor ±90-day gift proposals.
+  const rematchPendingMut = useRematchPendingCodingFormRows();
+  const handleRematchPending = () => {
+    rematchPendingMut.mutate(undefined, {
+      onSuccess: (res) => {
+        void queryClient.invalidateQueries({
+          queryKey: [CODING_KEY_PREFIX],
+        });
+        toast({
+          title: "Re-matched pending rows",
+          description: `${res.scanned} scanned · ${res.updated} updated · ${res.giftMatches} now carry a proposed gift.`,
+        });
+      },
+      onError: (err) =>
+        toast({
+          title: "Couldn't re-match pending rows",
+          description:
+            err instanceof Error ? err.message : "Something went wrong.",
+          variant: "destructive",
+        }),
+    });
+  };
 
   const rows = data?.data ?? [];
 
@@ -1000,6 +1058,20 @@ export default function CodingFormImportPage() {
         >
           Grant agreements
         </Button>
+        {view === "coding" ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            onClick={handleRematchPending}
+            disabled={rematchPendingMut.isPending}
+            data-testid="button-rematch-pending"
+          >
+            {rematchPendingMut.isPending
+              ? "Re-matching…"
+              : "Re-match all pending"}
+          </Button>
+        ) : null}
       </div>
 
       {view === "grants" ? <GrantAgreementsView /> : null}

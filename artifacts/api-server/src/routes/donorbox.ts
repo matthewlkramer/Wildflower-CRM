@@ -58,6 +58,7 @@ import {
   bookDonorboxDonationApplication,
   donorboxLedgerGiftIdForDonation,
   donorboxLedgerCountedExistsForDonation,
+  stripeLedgerGiftIdForCharge,
 } from "../lib/paymentApplications";
 import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { giftHeaderColumns } from "./giftsAndPayments";
@@ -254,9 +255,16 @@ function reviewJoins<T extends PgSelect>(q: T) {
     )
     .leftJoin(
       // Ledger read (pointer columns retired): the counted donorbox
-      // application links the donation to its gift.
+      // application links the donation to its gift. Stripe-processed donations
+      // (the vast majority) have no donorbox-sourced ledger row — their money
+      // was booked against the STRIPE CHARGE — so fall back to the counted
+      // stripe application for the donation's charge. One COALESCE, both
+      // ledger authorities, no new pointer.
       linkedGift,
-      sql`${linkedGift.id} = ${donorboxLedgerGiftIdForDonation()}`,
+      sql`${linkedGift.id} = COALESCE(
+        ${donorboxLedgerGiftIdForDonation()},
+        ${stripeLedgerGiftIdForCharge(sql`${donorboxDonations.stripeChargeId}`)}
+      )`,
     );
 }
 

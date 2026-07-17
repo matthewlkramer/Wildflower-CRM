@@ -2013,6 +2013,8 @@ export interface GiftOrPayment {
   readonly paymentIntermediaryName?: string | null;
   /** Id of the QuickBooks staged payment reconciled to / that created this gift, if any. Lets the reconciler show linked status and offer unmatch. */
   readonly quickbooksStagedPaymentId?: string | null;
+  /** True when a Donorbox donation backs this gift — a counted cash-application ledger row that is Donorbox-sourced directly, or Stripe-sourced where the charge has a Donorbox donation behind it. Same authority as the workbench Donorbox badge (donorboxBackedExistsSql). LIST-populated; drives the Donorbox badge on the gifts list. */
+  readonly donorboxBacked?: boolean;
   readonly organizationPriority?: Priority | null;
   readonly individualGiverPersonPriority?: Priority | null;
   /** Distinct entity_id values from gift_allocations. */
@@ -6445,6 +6447,16 @@ export interface CodingFormNeedsDecision {
 }
 
 /**
+ * A live same-donor exact-amount gift candidate for an unresolved coding-form row.
+ */
+export interface CodingFormGiftCandidate {
+  id: string;
+  name?: string | null;
+  amount?: string | null;
+  dateReceived?: string | null;
+}
+
+/**
  * na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch/upload attempt errored (see error).
  */
 export type CodingFormGrantAgreementStatus = typeof CodingFormGrantAgreementStatus[keyof typeof CodingFormGrantAgreementStatus];
@@ -6500,10 +6512,14 @@ export interface CodingFormRow {
   matchedOpportunityId?: string | null;
   matchedOpportunityName?: string | null;
   matchedGiftId?: string | null;
+  /** Display name of the matched gift (read-time join, like matchedOpportunityName). */
+  readonly matchedGiftName?: string | null;
   matchScore?: number | null;
   matchMethod?: string | null;
   matchTier?: string | null;
   matchConfirmedAt?: string | null;
+  /** LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor/amount is set. */
+  giftCandidates?: CodingFormGiftCandidate[];
   crossChecks: CodingFormCrossCheck[];
   needsDecision: CodingFormNeedsDecision[];
   grantAgreement?: CodingFormGrantAgreement;
@@ -6531,6 +6547,18 @@ export interface CodingFormSummary {
   bySource: CodingFormCount[];
   /** Spreadsheet attributes with no existing schema home, with the number of rows carrying a value for each. */
   needsDecision: CodingFormCount[];
+}
+
+/**
+ * Result of the bulk rematch-pending pass.
+ */
+export interface CodingFormRematchSummary {
+  /** Rows examined (status pending AND never human-confirmed). */
+  scanned: number;
+  /** Rows whose proposal was rewritten by the matcher. */
+  updated: number;
+  /** Rows that now carry a proposed matchedGiftId. */
+  giftMatches: number;
 }
 
 /**

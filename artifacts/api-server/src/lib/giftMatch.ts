@@ -61,8 +61,16 @@ export const INGEST_GIFT_WINDOW_DAYS = 60;
 export function giftMatchAmountBounds(
   giftAmount: SQL,
   anchorAmount: SQL,
-  donorScoped: boolean,
+  donorScoped: boolean | "exact",
 ): SQL {
+  if (donorScoped === "exact") {
+    // EXACT band (±1 cent) — for anchors that transcribe the BOOKED GIFT AMOUNT
+    // itself rather than a processor-side amount (e.g. the coding-form sheet,
+    // which was filled in from the gift). No fee gap can legitimately exist, so
+    // anything beyond rounding noise is a different gift. Donor-scoped callers
+    // only.
+    return sql`(${giftAmount} >= ${anchorAmount} - 0.01 AND ${giftAmount} <= ${anchorAmount} + 0.01)`;
+  }
   const lower = donorScoped
     ? sql`${giftAmount} >= ${anchorAmount} * 0.90 - 1`
     : sql`${giftAmount} >= ${anchorAmount} - 0.01`;

@@ -50,10 +50,17 @@ export const ListCodingFormRowsResponse = zod.object({
   "matchedOpportunityId": zod.string().nullish(),
   "matchedOpportunityName": zod.string().nullish(),
   "matchedGiftId": zod.string().nullish(),
+  "matchedGiftName": zod.string().nullish().describe('Display name of the matched gift (read-time join, like matchedOpportunityName).'),
   "matchScore": zod.number().nullish(),
   "matchMethod": zod.string().nullish(),
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
+  "giftCandidates": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().nullish()
+}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
   "crossChecks": zod.array(zod.object({
   "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
@@ -154,10 +161,17 @@ export const GetCodingFormRowResponse = zod.object({
   "matchedOpportunityId": zod.string().nullish(),
   "matchedOpportunityName": zod.string().nullish(),
   "matchedGiftId": zod.string().nullish(),
+  "matchedGiftName": zod.string().nullish().describe('Display name of the matched gift (read-time join, like matchedOpportunityName).'),
   "matchScore": zod.number().nullish(),
   "matchMethod": zod.string().nullish(),
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
+  "giftCandidates": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().nullish()
+}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
   "crossChecks": zod.array(zod.object({
   "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
@@ -230,10 +244,17 @@ export const SetCodingFormMatchResponse = zod.object({
   "matchedOpportunityId": zod.string().nullish(),
   "matchedOpportunityName": zod.string().nullish(),
   "matchedGiftId": zod.string().nullish(),
+  "matchedGiftName": zod.string().nullish().describe('Display name of the matched gift (read-time join, like matchedOpportunityName).'),
   "matchScore": zod.number().nullish(),
   "matchMethod": zod.string().nullish(),
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
+  "giftCandidates": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().nullish()
+}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
   "crossChecks": zod.array(zod.object({
   "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
@@ -298,10 +319,17 @@ export const RematchCodingFormRowResponse = zod.object({
   "matchedOpportunityId": zod.string().nullish(),
   "matchedOpportunityName": zod.string().nullish(),
   "matchedGiftId": zod.string().nullish(),
+  "matchedGiftName": zod.string().nullish().describe('Display name of the matched gift (read-time join, like matchedOpportunityName).'),
   "matchScore": zod.number().nullish(),
   "matchMethod": zod.string().nullish(),
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
+  "giftCandidates": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().nullish()
+}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
   "crossChecks": zod.array(zod.object({
   "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
@@ -338,6 +366,15 @@ export const RematchCodingFormRowResponse = zod.object({
 })
 
 /**
+ * @summary Bulk re-run the matcher over every row that is still pending AND has never been human-confirmed (rematch clears confirmations, so confirmed or applied rows are never touched). Adds the exact-amount same-donor ±90-day gift proposal pass. Admin only.
+ */
+export const RematchPendingCodingFormRowsResponse = zod.object({
+  "scanned": zod.number().describe('Rows examined (status pending AND never human-confirmed).'),
+  "updated": zod.number().describe('Rows whose proposal was rewritten by the matcher.'),
+  "giftMatches": zod.number().describe('Rows that now carry a proposed matchedGiftId.')
+}).describe('Result of the bulk rematch-pending pass.')
+
+/**
  * @summary Apply approved attributes for a row through the normal create/update paths (reporting-deadline task, allocation restriction/intended-usage/purpose, donor address). Compare-don't-clobber: only fills missing or reviewer-approved conflicts. Idempotent — re-running never duplicates. Admin only.
  */
 export const ApplyCodingFormRowParams = zod.object({
@@ -371,10 +408,17 @@ export const ApplyCodingFormRowResponse = zod.object({
   "matchedOpportunityId": zod.string().nullish(),
   "matchedOpportunityName": zod.string().nullish(),
   "matchedGiftId": zod.string().nullish(),
+  "matchedGiftName": zod.string().nullish().describe('Display name of the matched gift (read-time join, like matchedOpportunityName).'),
   "matchScore": zod.number().nullish(),
   "matchMethod": zod.string().nullish(),
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
+  "giftCandidates": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().nullish()
+}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
   "crossChecks": zod.array(zod.object({
   "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
@@ -442,10 +486,17 @@ export const SkipCodingFormRowResponse = zod.object({
   "matchedOpportunityId": zod.string().nullish(),
   "matchedOpportunityName": zod.string().nullish(),
   "matchedGiftId": zod.string().nullish(),
+  "matchedGiftName": zod.string().nullish().describe('Display name of the matched gift (read-time join, like matchedOpportunityName).'),
   "matchScore": zod.number().nullish(),
   "matchMethod": zod.string().nullish(),
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
+  "giftCandidates": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().nullish()
+}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
   "crossChecks": zod.array(zod.object({
   "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
@@ -515,10 +566,17 @@ export const PullGrantAgreementResponse = zod.object({
   "matchedOpportunityId": zod.string().nullish(),
   "matchedOpportunityName": zod.string().nullish(),
   "matchedGiftId": zod.string().nullish(),
+  "matchedGiftName": zod.string().nullish().describe('Display name of the matched gift (read-time join, like matchedOpportunityName).'),
   "matchScore": zod.number().nullish(),
   "matchMethod": zod.string().nullish(),
   "matchTier": zod.string().nullish(),
   "matchConfirmedAt": zod.string().nullish(),
+  "giftCandidates": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().nullish()
+}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
   "crossChecks": zod.array(zod.object({
   "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),

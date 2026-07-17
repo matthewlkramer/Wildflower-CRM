@@ -24,6 +24,7 @@ import {
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
+import { Badge } from "@/components/ui/badge";
 import { SavedViewsBar } from "@/components/saved-views-bar";
 import { ColumnsMenu } from "@/components/columns-menu";
 import { FiltersMenu } from "@/components/filters-menu";
@@ -148,7 +149,19 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       tdClassName: "font-medium",
       cell: (g) => (
         <Link href={`/gifts/${g.id}`} className="block w-full">
-          {g.name ?? `Gift ${g.id}`}
+          <span className="inline-flex items-center gap-1.5">
+            {g.name ?? `Gift ${g.id}`}
+            {g.donorboxBacked ? (
+              <Badge
+                variant="outline"
+                className="shrink-0 border-teal-300 bg-teal-50 px-1.5 py-0 text-[10px] font-medium text-teal-700"
+                title="Backed by a Donorbox donation"
+                data-testid={`badge-donorbox-${g.id}`}
+              >
+                Donorbox
+              </Badge>
+            ) : null}
+          </span>
         </Link>
       ),
     },

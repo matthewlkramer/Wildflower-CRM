@@ -17,6 +17,7 @@ import {
   type MatchMethod,
   type MatchTier,
 } from "./quickbooksMatch";
+import { giftMatchAmountBounds, GIFT_MATCH_WINDOW_DAYS } from "./giftMatch";
 import { newId } from "./helpers";
 
 /**
@@ -209,9 +210,21 @@ export async function computeProposedMatch(
   } as CodingFormRowSelect;
   const matchedOpportunityId = await bestOpportunityFor(withDonor);
 
+  // Coding-form gift pass: the scored matcher's strict ingest window misses
+  // most sheet rows (the gift was often booked weeks away). When it found no
+  // gift but the donor DID resolve, look for the single unambiguous same-donor
+  // EXACT-amount gift within ±GIFT_MATCH_WINDOW_DAYS of the donation date.
+  // Exactly one → propose it; zero or many → stay null (ambiguous rows surface
+  // their live candidate list in serializeRow so a human picks — never guess).
+  let matchedGiftId = scored.matchedGiftId;
+  if (matchedGiftId == null) {
+    const candidates = await giftCandidatesFor(withDonor, 2);
+    if (candidates.length === 1) matchedGiftId = candidates[0].id;
+  }
+
   return {
     ...donor,
-    matchedGiftId: scored.matchedGiftId,
+    matchedGiftId,
     matchedOpportunityId,
     matchScore: scored.score,
     matchMethod: scored.method,
@@ -246,6 +259,120 @@ export async function rematchRow(
     .where(eq(codingFormRows.id, row.id))
     .returning();
   return updated;
+}
+
+/** Shape of one live gift candidate returned on unresolved rows. */
+export interface GiftCandidate {
+  id: string;
+  name: string | null;
+  amount: string | null;
+  dateReceived: string | null;
+}
+
+/**
+ * LIVE (never persisted) same-donor gift candidates for a coding-form row: the
+ * row's resolved donor's non-archived gifts at the EXACT sheet amount within
+ * ±GIFT_MATCH_WINDOW_DAYS of the donation date. The sheet transcribes the
+ * booked gift amount itself (no processor-fee gap), so the band is the "exact"
+ * mode of the ONE shared matcher predicate (giftMatchAmountBounds) — never a
+ * sibling copy. Requires donor + amount + donation date; otherwise there is
+ * nothing safe to anchor on and the list is empty. Closest date first.
+ */
+export async function giftCandidatesFor(
+  row: CodingFormRowSelect,
+  limit = 6,
+): Promise<GiftCandidate[]> {
+  const donorWhere = row.organizationId
+    ? eq(giftsAndPayments.organizationId, row.organizationId)
+    : row.individualGiverPersonId
+      ? eq(giftsAndPayments.individualGiverPersonId, row.individualGiverPersonId)
+      : row.householdId
+        ? eq(giftsAndPayments.householdId, row.householdId)
+        : null;
+  if (!donorWhere || row.amount == null || !row.donationDate) return [];
+  // Values come from the row's own DB columns (numeric / date), so the casts
+  // below re-apply their native types — not user input needing validation.
+  const anchorAmount = sql`${String(row.amount)}::numeric`;
+  const anchorDate = sql`${String(row.donationDate)}::date`;
+  const rows = await db
+    .select({
+      id: giftsAndPayments.id,
+      name: giftsAndPayments.name,
+      amount: giftsAndPayments.amount,
+      dateReceived: giftsAndPayments.dateReceived,
+    })
+    .from(giftsAndPayments)
+    .where(
+      and(
+        donorWhere,
+        sql`${giftsAndPayments.archivedAt} IS NULL`,
+        sql`${giftsAndPayments.dateReceived} IS NOT NULL`,
+        giftMatchAmountBounds(
+          sql`${giftsAndPayments.amount}`,
+          anchorAmount,
+          "exact",
+        ),
+        sql`ABS(${giftsAndPayments.dateReceived} - ${anchorDate}) <= ${GIFT_MATCH_WINDOW_DAYS}`,
+      ),
+    )
+    .orderBy(
+      sql`ABS(${giftsAndPayments.dateReceived} - ${anchorDate}) ASC`,
+      sql`${giftsAndPayments.id} ASC`,
+    )
+    .limit(limit);
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    amount: r.amount != null ? String(r.amount) : null,
+    dateReceived: r.dateReceived ? String(r.dateReceived) : null,
+  }));
+}
+
+/**
+ * Bulk re-run the matcher over every row still awaiting review.
+ * GUARD (do not weaken): only rows with status='pending' AND
+ * matchConfirmedAt IS NULL pass through — rematchRow rewrites the donor FKs
+ * and CLEARS confirmations, so a confirmed, applied, or skipped row must never
+ * reach it.
+ */
+export async function rematchPendingRows(): Promise<{
+  scanned: number;
+  updated: number;
+  giftMatches: number;
+}> {
+  const rows = await db
+    .select()
+    .from(codingFormRows)
+    .where(
+      and(
+        eq(codingFormRows.status, "pending"),
+        sql`${codingFormRows.matchConfirmedAt} IS NULL`,
+      ),
+    );
+  let updated = 0;
+  let giftMatches = 0;
+  // Small chunks: each rematch runs several matcher queries; 5-wide keeps the
+  // bulk pass snappy without saturating the pool.
+  const CHUNK = 5;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const results = await Promise.all(chunk.map((r) => rematchRow(r)));
+    for (let j = 0; j < results.length; j++) {
+      const before = chunk[j];
+      const after = results[j];
+      if (
+        before.organizationId !== after.organizationId ||
+        before.individualGiverPersonId !== after.individualGiverPersonId ||
+        before.householdId !== after.householdId ||
+        before.matchedGiftId !== after.matchedGiftId ||
+        before.matchedOpportunityId !== after.matchedOpportunityId
+      ) {
+        updated++;
+      }
+      if (after.matchedGiftId != null) giftMatches++;
+    }
+  }
+  return { scanned: rows.length, updated, giftMatches };
 }
 
 // ── Allocation resolution ────────────────────────────────────────────────────
@@ -349,6 +476,16 @@ async function opportunityName(id: string | null): Promise<string | null> {
     .select({ name: opportunitiesAndPledges.name })
     .from(opportunitiesAndPledges)
     .where(eq(opportunitiesAndPledges.id, id))
+    .then((x) => x[0]);
+  return r?.name ?? null;
+}
+
+async function matchedGiftName(id: string | null): Promise<string | null> {
+  if (!id) return null;
+  const r = await db
+    .select({ name: giftsAndPayments.name })
+    .from(giftsAndPayments)
+    .where(eq(giftsAndPayments.id, id))
     .then((x) => x[0]);
   return r?.name ?? null;
 }
@@ -722,12 +859,21 @@ export async function serializeRow(row: CodingFormRowSelect) {
   const { loadOppGrantLetter, deriveGrantAgreement } = await import(
     "./grantAgreements"
   );
-  const [crossChecks, dName, oppName, oppGrant] = await Promise.all([
-    crossChecksFor(row),
-    donorName(row),
-    opportunityName(row.matchedOpportunityId),
-    loadOppGrantLetter(row.matchedOpportunityId),
-  ]);
+  const [crossChecks, dName, oppName, oppGrant, giftName, giftCandidates] =
+    await Promise.all([
+      crossChecksFor(row),
+      donorName(row),
+      opportunityName(row.matchedOpportunityId),
+      loadOppGrantLetter(row.matchedOpportunityId),
+      matchedGiftName(row.matchedGiftId),
+      // Live candidates only while the row is actually unresolved: pending, no
+      // proposed/confirmed gift yet. Resolved rows skip the extra query.
+      row.status === "pending" &&
+      row.matchedGiftId == null &&
+      row.matchConfirmedAt == null
+        ? giftCandidatesFor(row)
+        : Promise.resolve([] as GiftCandidate[]),
+    ]);
   const grantAgreement = deriveGrantAgreement(row, oppGrant);
   return {
     id: row.id,
@@ -751,10 +897,12 @@ export async function serializeRow(row: CodingFormRowSelect) {
     matchedOpportunityId: row.matchedOpportunityId,
     matchedOpportunityName: oppName,
     matchedGiftId: row.matchedGiftId,
+    matchedGiftName: giftName,
     matchScore: row.matchScore,
     matchMethod: row.matchMethod,
     matchTier: row.matchTier,
     matchConfirmedAt: row.matchConfirmedAt?.toISOString() ?? null,
+    giftCandidates,
     crossChecks,
     needsDecision: needsDecisionFor(row),
     grantAgreement,

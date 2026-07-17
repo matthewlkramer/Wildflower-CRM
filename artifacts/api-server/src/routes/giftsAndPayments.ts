@@ -98,6 +98,13 @@ const donorJoinSelect = {
   quickbooksStagedPaymentId: qbLedgerPaymentIdForGift().as(
     "quickbooks_staged_payment_id",
   ),
+  // Donorbox badge for the gifts list — true when a counted ledger row backs
+  // this gift from Donorbox directly OR from a Stripe charge that has a
+  // Donorbox donation behind it. Same single authority as the workbench badge
+  // (donorboxBackedExistsSql in lib/paymentApplications.ts).
+  donorboxBacked: sql<boolean>`${sql.raw(
+    donorboxBackedExistsSql(`"gifts_and_payments"."id"`),
+  )}`.as("donorbox_backed"),
   // Task #448 — settled amount + processor fees derived at read time from the
   // gift's LINKED payments (QuickBooks + Stripe + non-stripe Donorbox), via the
   // one shared {settledGross, totalFees} helper. Replaces the now-dropped header
@@ -154,6 +161,7 @@ import {
   qbLedgerPaymentIdForGift,
   stripeLedgerGiftIdForCharge,
   stripeLedgerMintedGiftIdForCharge,
+  donorboxBackedExistsSql,
 } from "../lib/paymentApplications";
 import { isReimbursablePlaceholderGift } from "../lib/reimbursablePlaceholder";
 import { isFlaggedForResearch } from "../lib/flaggedForResearch";

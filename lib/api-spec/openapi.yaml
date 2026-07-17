@@ -274,6 +274,18 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormRow" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /coding-form-rows/rematch-pending:
+    post:
+      operationId: rematchPendingCodingFormRows
+      tags: [coding-form-rows]
+      summary: >-
+        Bulk re-run the matcher over every row that is still pending AND has
+        never been human-confirmed (rematch clears confirmations, so confirmed
+        or applied rows are never touched). Adds the exact-amount same-donor
+        ±90-day gift proposal pass. Admin only.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormRematchSummary" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /coding-form-rows/{id}/apply:
     post:
       operationId: applyCodingFormRow
@@ -6388,6 +6400,7 @@ components:
         individualGiverPersonName:  { type: string, nullable: true }
         paymentIntermediaryName:    { type: string, nullable: true, readOnly: true }
         quickbooksStagedPaymentId:  { type: string, nullable: true, readOnly: true, description: "Id of the QuickBooks staged payment reconciled to / that created this gift, if any. Lets the reconciler show linked status and offer unmatch." }
+        donorboxBacked:             { type: boolean, readOnly: true, description: "True when a Donorbox donation backs this gift — a counted cash-application ledger row that is Donorbox-sourced directly, or Stripe-sourced where the charge has a Donorbox donation behind it. Same authority as the workbench Donorbox badge (donorboxBackedExistsSql). LIST-populated; drives the Donorbox badge on the gifts list." }
         organizationPriority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
         individualGiverPersonPriority:  { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
         # Aggregates across this gift's gift_allocations rows. All three
@@ -9086,10 +9099,12 @@ components:
         matchedOpportunityId:   { type: string, nullable: true }
         matchedOpportunityName: { type: string, nullable: true }
         matchedGiftId:    { type: string, nullable: true }
+        matchedGiftName:  { type: string, nullable: true, readOnly: true, description: "Display name of the matched gift (read-time join, like matchedOpportunityName)." }
         matchScore:       { type: integer, nullable: true }
         matchMethod:      { type: string, nullable: true }
         matchTier:        { type: string, nullable: true }
         matchConfirmedAt: { type: string, nullable: true }
+        giftCandidates:   { type: array, items: { $ref: "#/components/schemas/CodingFormGiftCandidate" }, description: "LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor/amount is set." }
         crossChecks:      { type: array, items: { $ref: "#/components/schemas/CodingFormCrossCheck" } }
         needsDecision:    { type: array, items: { $ref: "#/components/schemas/CodingFormNeedsDecision" } }
         grantAgreement:   { $ref: "#/components/schemas/CodingFormGrantAgreement" }
@@ -9119,6 +9134,23 @@ components:
         byStatus:  { type: array, items: { $ref: "#/components/schemas/CodingFormCount" } }
         bySource:  { type: array, items: { $ref: "#/components/schemas/CodingFormCount" } }
         needsDecision: { type: array, items: { $ref: "#/components/schemas/CodingFormCount" }, description: "Spreadsheet attributes with no existing schema home, with the number of rows carrying a value for each." }
+    CodingFormGiftCandidate:
+      type: object
+      required: [id]
+      description: "A live same-donor exact-amount gift candidate for an unresolved coding-form row."
+      properties:
+        id:           { type: string }
+        name:         { type: string, nullable: true }
+        amount:       { type: string, nullable: true }
+        dateReceived: { type: string, nullable: true }
+    CodingFormRematchSummary:
+      type: object
+      required: [scanned, updated, giftMatches]
+      description: "Result of the bulk rematch-pending pass."
+      properties:
+        scanned:     { type: integer, description: "Rows examined (status pending AND never human-confirmed)." }
+        updated:     { type: integer, description: "Rows whose proposal was rewritten by the matcher." }
+        giftMatches: { type: integer, description: "Rows that now carry a proposed matchedGiftId." }
     SetCodingFormMatchBody:
       type: object
       description: "Set the donor (XOR — at most one of the three donor FKs) and optionally the matched opportunity/gift. Null clears a field."

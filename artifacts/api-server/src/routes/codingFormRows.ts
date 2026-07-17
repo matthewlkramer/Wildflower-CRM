@@ -22,6 +22,7 @@ import {
 import {
   serializeRow,
   rematchRow,
+  rematchPendingRows,
   applyRow,
   NEEDS_DECISION_FIELDS_META,
 } from "../lib/codingForms";
@@ -188,6 +189,18 @@ router.patch(
       .returning();
 
     res.json(await serializeRow(updated));
+  }),
+);
+
+// Bulk re-run the matcher over every row that is still pending AND has never
+// been human-confirmed. rematchRow clears confirmations and rewrites donor FKs,
+// so confirmed / applied / skipped rows are excluded by the query itself
+// (see rematchPendingRows) — this endpoint can never clobber a human decision.
+router.post(
+  "/coding-form-rows/rematch-pending",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json(await rematchPendingRows());
   }),
 );
 

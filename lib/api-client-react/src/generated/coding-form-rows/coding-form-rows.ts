@@ -24,6 +24,7 @@ import type {
   BadRequestResponse,
   CodingFormApplyResult,
   CodingFormGrantAgreementsSummary,
+  CodingFormRematchSummary,
   CodingFormRow,
   CodingFormRowList,
   CodingFormSummary,
@@ -489,6 +490,75 @@ export const useRematchCodingFormRow = <TError = ErrorType<ForbiddenResponse | N
         TContext
       > => {
       return useMutation(getRematchCodingFormRowMutationOptions(options));
+    }
+    /**
+ * @summary Bulk re-run the matcher over every row that is still pending AND has never been human-confirmed (rematch clears confirmations, so confirmed or applied rows are never touched). Adds the exact-amount same-donor ±90-day gift proposal pass. Admin only.
+ */
+export const getRematchPendingCodingFormRowsUrl = () => {
+
+
+  
+
+  return `/api/coding-form-rows/rematch-pending`
+}
+
+export const rematchPendingCodingFormRows = async ( options?: RequestInit): Promise<CodingFormRematchSummary> => {
+  
+  return customFetch<CodingFormRematchSummary>(getRematchPendingCodingFormRowsUrl(),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getRematchPendingCodingFormRowsMutationOptions = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rematchPendingCodingFormRows>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rematchPendingCodingFormRows>>, TError,void, TContext> => {
+
+const mutationKey = ['rematchPendingCodingFormRows'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rematchPendingCodingFormRows>>, void> = () => {
+          
+
+          return  rematchPendingCodingFormRows(requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RematchPendingCodingFormRowsMutationResult = NonNullable<Awaited<ReturnType<typeof rematchPendingCodingFormRows>>>
+    
+    export type RematchPendingCodingFormRowsMutationError = ErrorType<ForbiddenResponse>
+
+    /**
+ * @summary Bulk re-run the matcher over every row that is still pending AND has never been human-confirmed (rematch clears confirmations, so confirmed or applied rows are never touched). Adds the exact-amount same-donor ±90-day gift proposal pass. Admin only.
+ */
+export const useRematchPendingCodingFormRows = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rematchPendingCodingFormRows>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rematchPendingCodingFormRows>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRematchPendingCodingFormRowsMutationOptions(options));
     }
     /**
  * @summary Apply approved attributes for a row through the normal create/update paths (reporting-deadline task, allocation restriction/intended-usage/purpose, donor address). Compare-don't-clobber: only fills missing or reviewer-approved conflicts. Idempotent — re-running never duplicates. Admin only.
