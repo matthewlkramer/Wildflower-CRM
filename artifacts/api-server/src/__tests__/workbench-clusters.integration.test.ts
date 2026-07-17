@@ -441,7 +441,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     // crm_only: an on-books gift with no counted QB/Stripe ledger row.
     const gCrm = await seedGift();
     // NOT crm_only: matched to a QB row (that row becomes a completed cluster).
-    const gQb = await seedGift();
+    const gQb = await seedCompleteGift();
     const sQb = await seedStaged({ matchedGiftId: gQb });
     // Open payout with an unmatched charge + fee/tie QB rows hanging off it.
     const sFee = await seedStaged({ exclusionReason: "other" });
@@ -454,7 +454,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     });
     // Fully settled payout: confirmed settlement link + confirmed charge.
     const sDep = await seedStaged({ entityType: "deposit" });
-    const gCharge = await seedGift();
+    const gCharge = await seedCompleteGift();
     const pSettled = await seedPayout({ settledDeposit: sDep });
     await seedCharge(pSettled, { matchedGiftId: gCharge });
 
