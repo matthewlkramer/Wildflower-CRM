@@ -75,6 +75,9 @@ const LENSES: { id: WorkbenchLens; label: string }[] = [
   { id: "excluded_qb_says_donation", label: "Excluded · QB says donation" },
   { id: "excluded", label: "Excluded" },
   { id: "completed", label: "Completed" },
+  { id: "link_complete", label: "Linkage complete" },
+  { id: "attention_required", label: "Attention required" },
+  { id: "crm_only", label: "CRM only" },
 ];
 
 function errMessage(err: unknown): string {
