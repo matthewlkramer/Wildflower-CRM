@@ -377,16 +377,19 @@ export function RelatedRow({
   sub,
   amount,
   tone,
+  badge,
 }: {
   name: ReactNode;
   href?: string;
   sub?: ReactNode;
   amount?: ReactNode;
   tone?: "primary";
+  /** Optional icon/badge rendered inline after the name+sub block, before the amount. */
+  badge?: ReactNode;
 }) {
   const body = (
     <div className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60">
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div
           className={cn(
             "truncate text-sm font-medium",
@@ -399,6 +402,9 @@ export function RelatedRow({
           <div className="truncate text-xs text-muted-foreground">{sub}</div>
         ) : null}
       </div>
+      {badge != null ? (
+        <div className="shrink-0">{badge}</div>
+      ) : null}
       {amount != null ? (
         <div className="shrink-0 text-sm font-semibold tabular-nums">
           {amount}

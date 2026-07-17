@@ -7,6 +7,7 @@ import {
   useUpdateOrganization,
   useArchiveOrganization,
   useGetCurrentUser,
+  useGetPerson,
   getGetOrganizationQueryKey,
   getListOrganizationsQueryKey,
   type OrganizationDetail,
@@ -170,6 +171,68 @@ import {
   PhoneNumbersEditor,
   AddressesEditor,
 } from "@/components/contact-info-editor";
+
+/**
+ * Read-only display of a primary contact's emails and phone numbers.
+ * Fetches the person on demand so the org page doesn't require a second
+ * eager query — the Contact info card is below-the-fold and usually
+ * collapsed on first load.
+ */
+function PrimaryContactInfo({
+  personId,
+  personName,
+}: {
+  personId: string;
+  personName: string;
+}) {
+  const { data, isLoading } = useGetPerson(personId);
+  const person = data ?? null;
+
+  if (isLoading) {
+    return (
+      <p className="text-xs text-muted-foreground py-1">Loading contact info…</p>
+    );
+  }
+
+  const emails = person?.emails ?? [];
+  const phones = person?.phoneNumbers ?? [];
+  if (emails.length === 0 && phones.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground py-1">No contact info on file.</p>
+    );
+  }
+
+  return (
+    <div className="space-y-1 text-sm">
+      {emails.map((e) => (
+        <div key={e.id} className="flex items-baseline gap-2">
+          <a
+            href={`mailto:${e.email}`}
+            className="text-primary hover:underline break-all"
+          >
+            {e.email}
+          </a>
+          {e.type ? (
+            <span className="text-xs text-muted-foreground capitalize">{e.type}</span>
+          ) : null}
+        </div>
+      ))}
+      {phones.map((p) => (
+        <div key={p.id} className="flex items-baseline gap-2">
+          <a
+            href={`tel:${p.phoneNumber}`}
+            className="text-primary hover:underline"
+          >
+            {p.phoneNumber}
+          </a>
+          {p.type ? (
+            <span className="text-xs text-muted-foreground capitalize">{p.type}</span>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function OrganizationDetail() {
   const [, params] = useRoute("/organizations/:id");
@@ -718,25 +781,55 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
               (org.addresses?.length ?? 0) === 0
             }
           >
-            <div className="space-y-4">
-              <EmailsEditor
-                owner={{ kind: "organization", id: org.id }}
-                emails={org.emails}
-              />
-              <Separator />
-              <PhoneNumbersEditor
-                owner={{ kind: "organization", id: org.id }}
-                phoneNumbers={org.phoneNumbers}
-              />
-              <Separator />
-              <AddressesEditor
-                owner={{ kind: "organization", id: org.id }}
-                addresses={org.addresses}
-              />
-            </div>
+            {(() => {
+              const primaryContact = people.find((p) => p.primaryContact);
+              return (
+                <div className="space-y-4">
+                  {primaryContact ? (
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {displayName}
+                    </p>
+                  ) : null}
+                  <EmailsEditor
+                    owner={{ kind: "organization", id: org.id }}
+                    emails={org.emails}
+                  />
+                  <Separator />
+                  <PhoneNumbersEditor
+                    owner={{ kind: "organization", id: org.id }}
+                    phoneNumbers={org.phoneNumbers}
+                  />
+                  <Separator />
+                  <AddressesEditor
+                    owner={{ kind: "organization", id: org.id }}
+                    addresses={org.addresses}
+                  />
+                  {primaryContact ? (
+                    <>
+                      <Separator />
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                          Primary contact —{" "}
+                          <Link
+                            href={`/people/${primaryContact.personId}`}
+                            className="normal-case font-medium text-primary hover:underline"
+                          >
+                            {primaryContact.personName ?? "Unknown"}
+                          </Link>
+                        </p>
+                        <PrimaryContactInfo
+                          personId={primaryContact.personId}
+                          personName={primaryContact.personName ?? "Unknown"}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              );
+            })()}
           </FieldCard>
 
-          <FieldCard title="Web" defaultOpen={false}>
+          <FieldCard title="Links" defaultOpen={false}>
             <div className="space-y-1">
               <Row label="Website">
                 <InlineEditText

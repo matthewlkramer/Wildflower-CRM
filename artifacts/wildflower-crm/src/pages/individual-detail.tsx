@@ -711,7 +711,7 @@ function PersonView({ person }: { person: PersonDetail }) {
           </FieldCard>
 
           <FieldCard
-            title="Web"
+            title="Links"
             empty={
               !person.website &&
               !person.linkedin &&

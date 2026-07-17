@@ -22,6 +22,12 @@ import {
   formatDateShort,
   formatEnum,
 } from "@/lib/format";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { CircleDollarSign, Ban } from "lucide-react";
 
 // Same per-card cap as the legacy linked-record cards; the header count
 // still shows the true totals.
@@ -156,6 +162,21 @@ function Section({
   );
 }
 
+/** Crossed-out dollar icon indicating unfunded/unlinked money. */
+function UnfundedIcon({ tooltip }: { tooltip: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="relative inline-flex h-3.5 w-3.5 shrink-0 cursor-default align-middle text-amber-600">
+          <CircleDollarSign className="h-3.5 w-3.5" />
+          <Ban className="absolute inset-0 h-3.5 w-3.5 opacity-80" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="right">{tooltip}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function OppThread({
   thread,
   amountField,
@@ -175,6 +196,12 @@ function OppThread({
     : null;
   const fy = o.fiscalYear?.toUpperCase();
   const sub = [formatEnum(o.stage), statusLabel, fy].filter(Boolean).join(" · ");
+
+  // Show the unfunded icon on pledge rows with no payments yet.
+  const unpaidPledge =
+    o.status === "pledge" &&
+    (!o.paidAmount || parseFloat(o.paidAmount) === 0);
+
   return (
     <div data-testid={`row-giving-opp-${o.id}`}>
       <RelatedRow
@@ -185,6 +212,11 @@ function OppThread({
         amount={formatCurrency(
           amountField === "awarded" ? o.awardedAmount : o.askAmount,
         )}
+        badge={
+          unpaidPledge ? (
+            <UnfundedIcon tooltip="No payments recorded yet" />
+          ) : undefined
+        }
       />
       {thread.gifts.length > 0 ? (
         <div className="ml-3 border-l-2 border-muted pl-2">
@@ -198,14 +230,29 @@ function OppThread({
 }
 
 function GiftRow({ gift: g }: { gift: GiftOrPayment }) {
+  // Suppress the type label when it's the default (standard_gift).
+  const typeLabel =
+    g.type && g.type !== "standard_gift" ? formatEnum(g.type) : null;
+  const sub = [formatDateShort(g.dateReceived), typeLabel]
+    .filter(Boolean)
+    .join(" · ");
+
+  // Show the unfunded icon for on-books gifts with no QuickBooks record yet.
+  const unlinked = !g.offBooks && g.quickbooksTieStatus === "missing";
+
   return (
     <div data-testid={`row-giving-gift-${g.id}`}>
       <RelatedRow
         name={g.name ?? `Gift ${g.id}`}
         href={`/gifts/${g.id}`}
         tone="primary"
-        sub={`${formatDateShort(g.dateReceived)} · ${formatEnum(g.type)}`}
+        sub={sub}
         amount={formatCurrency(g.amount)}
+        badge={
+          unlinked ? (
+            <UnfundedIcon tooltip="Not yet linked to a QuickBooks record" />
+          ) : undefined
+        }
       />
     </div>
   );

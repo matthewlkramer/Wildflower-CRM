@@ -25,10 +25,10 @@ export const modules: ModuleMap = {
   "./components/mockups/reconciliation-cards/TwoLanes.tsx": () => import("../components/mockups/reconciliation-cards/TwoLanes.tsx"),
   "./components/mockups/record-redesign/FunderRecord.tsx": () => import("../components/mockups/record-redesign/FunderRecord.tsx"),
   "./components/mockups/record-redesign/IndividualRecord.tsx": () => import("../components/mockups/record-redesign/IndividualRecord.tsx"),
-  "./components/mockups/record-v2/FunderRecord.tsx": () => import("../components/mockups/record-v2/FunderRecord.tsx"),
-  "./components/mockups/record-v2/IndividualRecord.tsx": () => import("../components/mockups/record-v2/IndividualRecord.tsx"),
   "./components/mockups/workbench-redesign/GuidedTriage.tsx": () => import("../components/mockups/workbench-redesign/GuidedTriage.tsx"),
   "./components/mockups/workbench-redesign/LedgerInspector.tsx": () => import("../components/mockups/workbench-redesign/LedgerInspector.tsx"),
   "./components/mockups/workbench-redesign/MatchDesk.tsx": () => import("../components/mockups/workbench-redesign/MatchDesk.tsx"),
-  "./components/mockups/workbench-redesign/StateBoard.tsx": () => import("../components/mockups/workbench-redesign/StateBoard.tsx")
+  "./components/mockups/workbench-redesign/StateBoard.tsx": () => import("../components/mockups/workbench-redesign/StateBoard.tsx"),
+  "./components/mockups/record-v2/FunderRecord.tsx": () => import("../components/mockups/record-v2/FunderRecord.tsx"),
+  "./components/mockups/record-v2/IndividualRecord.tsx": () => import("../components/mockups/record-v2/IndividualRecord.tsx")
 };

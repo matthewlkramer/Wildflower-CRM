@@ -66,6 +66,7 @@ import {
   X,
   MessageSquarePlus,
   Lightbulb,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -361,6 +362,8 @@ function TaskSuggestion({
     dismiss.isPending ||
     revise.isPending;
 
+  const [expanded, setExpanded] = useState(false);
+
   // Nothing cached yet, still generating the very first one.
   if (isLoading) {
     return (
@@ -382,21 +385,39 @@ function TaskSuggestion({
   const noAction = proposal.error === "no_action_warranted";
   const hadError = !!proposal.error && !noAction && !proposal.title;
 
+  // Real suggestion with title: collapse to one line by default.
+  const hasRealSuggestion = !generating && !noAction && !hadError;
+  const showBody = !hasRealSuggestion || expanded;
+
   return (
     <div
       className="mb-3 rounded-md border border-primary/30 bg-primary/5 p-3 space-y-2"
       data-testid="task-suggestion"
     >
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <Badge variant="secondary" className="gap-1">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Badge variant="secondary" className="gap-1 shrink-0">
             <Sparkles className="h-3 w-3" />
             Suggested
           </Badge>
-          {!generating && !noAction && !hadError ? (
-            <span className="font-medium truncate" data-testid="text-suggestion-title">
-              {proposal.title}
-            </span>
+          {hasRealSuggestion ? (
+            <button
+              type="button"
+              className="flex items-center gap-1 min-w-0 flex-1 text-left"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+              data-testid="button-expand-suggestion"
+            >
+              <span className="font-medium truncate" data-testid="text-suggestion-title">
+                {proposal.title}
+              </span>
+              <ChevronDown
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                  expanded && "rotate-180",
+                )}
+              />
+            </button>
           ) : null}
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -417,7 +438,7 @@ function TaskSuggestion({
         </div>
       </div>
 
-      {generating ? (
+      {showBody && (generating ? (
         <p className="text-sm text-muted-foreground">Thinking through the next best step…</p>
       ) : noAction ? (
         <p className="text-sm text-muted-foreground">
@@ -504,7 +525,7 @@ function TaskSuggestion({
             </Button>
           </div>
         </>
-      )}
+      ))}
 
       {/* Accept-with-note / dismiss-with-note share one dialog. */}
       <Dialog
