@@ -13,6 +13,19 @@ import {
   qbStatusCaseText,
 } from "../../lib/derivedStatus";
 import { fullyChargeTied } from "./bundleAnchors";
+import type {
+  WorkbenchRowState,
+  CoverageState as WbCoverageState,
+  CrmCardEntry,
+  CrmCardState,
+  CrmSatisfiedByCanonical,
+  QbCardEntry,
+  QbCardState,
+  TransactionEntry,
+  LinkCompleteness,
+  InformationCompleteness,
+  SettlementLinkState,
+} from "./workbenchRowState";
 
 // ─── GET /reconciliation/workbench-clusters ─────────────────────────────────
 //
@@ -44,6 +57,9 @@ const LENSES = [
   "excluded_qb_says_donation",
   "excluded",
   "completed",
+  "link_complete",
+  "attention_required",
+  "crm_only",
 ] as const;
 type Lens = (typeof LENSES)[number];
 
@@ -58,6 +74,9 @@ const LENS_PREDICATE: Record<Lens, string> = {
   excluded_qb_says_donation: "f_qb_says_donation",
   excluded: "f_excluded",
   completed: "f_completed",
+  link_complete: "f_link_complete",
+  attention_required: "f_attention_required",
+  crm_only: "kind = 'crm_only'",
 };
 
 /* Derived-status SQL for aliased/raw contexts comes from the alias-
@@ -415,7 +434,15 @@ function buildUniverse(q: string | null): SQL {
         AND (
           (NOT ${sql.raw(payoutAnyOpenCharge)} AND NOT ${sql.raw(depositGrainGiftExists)} AND ${sql.raw(allChargeLinkedGiftsComplete)})
           OR (${sql.raw(depositGrainGiftExists)} AND NOT ${sql.raw(chargeGrainGiftExists)} AND ${sql.raw(depositFullyCovered)} AND ${sql.raw(allDepositLinkedGiftsComplete)})
-        )) AS f_completed
+        )) AS f_completed,
+      (${sql.raw(payoutHasNonExcluded)}
+        AND ${payoutSettled}
+        AND NOT ${sql.raw(payoutConflict)}
+        AND (
+          (NOT ${sql.raw(payoutAnyOpenCharge)} AND NOT ${sql.raw(depositGrainGiftExists)})
+          OR (${sql.raw(depositGrainGiftExists)} AND NOT ${sql.raw(chargeGrainGiftExists)} AND ${sql.raw(depositFullyCovered)})
+        )) AS f_link_complete,
+      ${sql.raw(payoutRefund)} AS f_attention_required
     FROM stripe_payouts sp
     ${stripeSearch}`;
 
@@ -431,7 +458,9 @@ function buildUniverse(q: string | null): SQL {
       false AS f_refund,
       ${sql.raw(qbExcludedSaysDonation)} AS f_qb_says_donation,
       ${sql.raw(qbAllExcluded)} AS f_excluded,
-      (NOT ${sql.raw(qbNeedsGift)} AND NOT ${sql.raw(qbAllExcluded)} AND ${sql.raw(allQbLinkedGiftsComplete)}) AS f_completed
+      (NOT ${sql.raw(qbNeedsGift)} AND NOT ${sql.raw(qbAllExcluded)} AND ${sql.raw(allQbLinkedGiftsComplete)}) AS f_completed,
+      (NOT ${sql.raw(qbNeedsGift)} AND NOT ${sql.raw(qbAllExcluded)}) AS f_link_complete,
+      false AS f_attention_required
     FROM staged_payments s
     WHERE ${sql.raw(qbEligible)}
     ${qbSearch}`;
@@ -448,7 +477,9 @@ function buildUniverse(q: string | null): SQL {
       false AS f_refund,
       false AS f_qb_says_donation,
       false AS f_excluded,
-      false AS f_completed
+      false AS f_completed,
+      false AS f_link_complete,
+      false AS f_attention_required
     FROM gifts_and_payments g
     ${sql.raw(donorJoins)}
     WHERE ${sql.raw(crmEligibleBase)}
@@ -472,6 +503,8 @@ interface SlimRow {
   f_qb_says_donation: boolean;
   f_excluded: boolean;
   f_completed: boolean;
+  f_link_complete: boolean;
+  f_attention_required: boolean;
 }
 
 interface LensCountsRow {
@@ -484,6 +517,9 @@ interface LensCountsRow {
   excluded_qb_says_donation: number;
   excluded: number;
   completed: number;
+  link_complete: number;
+  attention_required: number;
+  crm_only: number;
 }
 
 interface ChargeJson {
@@ -696,6 +732,7 @@ interface CoverageOut {
   paymentTransaction: DimensionOut;
   accountingEvidence: DimensionOut;
   complete: boolean;
+  state: WorkbenchRowState;
 }
 
 /**
@@ -710,6 +747,13 @@ function giftCompletenessFor(g: GiftOut): CrmGiftCompletenessDetail {
   }
   const reasons: CrmRecordReason[] = g.crmReason ? [g.crmReason] : [];
   return { giftId: g.giftId, reasons, satisfiedBy: null };
+}
+
+/** Translate the legacy satisfiedBy value to the canonical spec vocabulary. */
+function mapSatisfiedBy(legacy: CrmSatisfiedBy): CrmSatisfiedByCanonical {
+  if (legacy === "coding_form") return "completed_coding_form";
+  if (legacy === "donor_and_allocations") return "donor_allocations_and_supporting_documents";
+  return legacy; // "donorbox" | null
 }
 
 /** Build the crmRecordCompleteness sub-dimension from a set of linked CRM gifts. */
@@ -749,6 +793,7 @@ function buildClusterCoverage(
   depAmount: string | null,
   depId: string | null,
   slLifecycle: string | null,
+  slConflictGiftId: string | null,
 ): CoverageOut {
   // ── crmLinkage (PA coverage: which charges/deposit are linked to CRM gifts) ─
   const chargeRows = coverageRows.filter((r) => r.grain === "charge");
@@ -910,14 +955,139 @@ function buildClusterCoverage(
     }
   }
 
-  // A pending refund is unresolved work — the cluster is not complete even if
-  // all three dimensions are otherwise satisfied. Gate here so that
-  // coverage.complete stays in lockstep with f_completed (which requires
-  // NOT payoutRefund) and the invariant "in Completed ⟺ coverage.complete"
-  // holds for the refund case without special-casing it in callers.
   const hasPendingRefund = nonExcluded.some((c) => c.refundProposed);
-  const complete = !hasPendingRefund && donorPurpose.complete && paymentTransaction.complete && aeComplete;
-  return { evidenceRecords: [...chargeEvidence, ...qbEvidence], donorPurpose, paymentTransaction, accountingEvidence, complete };
+
+  // ── Canonical WorkbenchRowState (docs/workbench-business-rules.md §10) ────
+  // Option C migration: compute canonical state first, then derive coverage.complete from it.
+
+  // accountingToTransaction: QB ↔ Stripe connection
+  const aeToTxn: WbCoverageState = slLifecycle === "confirmed"
+    ? { state: "complete", grain: "bundle", relationshipCount: 1 }
+    : chargeTies.length > 0
+      ? aeComplete
+        ? { state: "complete", grain: "unit", relationshipCount: aeCoveredIds.length }
+        : { state: "partial", grain: "unit", relationshipCount: aeCoveredIds.length }
+      : { state: "missing", grain: "none", relationshipCount: 0 };
+
+  // transactionToCrm: Stripe ↔ CRM (payment_applications)
+  const txnToCrm: WbCoverageState = (() => {
+    if (dpGrain === "none") return { state: "missing" as const, grain: "none" as const, relationshipCount: 0 };
+    if (dpGrain === "mixed") return { state: "mixed" as const, grain: "mixed" as const, relationshipCount: coveredChargeIds.length + depositRows.length };
+    if (dpGrain === "bundle") {
+      return dpLinkageComplete
+        ? { state: "complete" as const, grain: "bundle" as const, relationshipCount: depositRows.length }
+        : { state: "partial" as const, grain: "bundle" as const, relationshipCount: depositRows.length };
+    }
+    // unit (charge-grain PAs)
+    const linked = coveredChargeIds.length;
+    const total = nonRefunded.length;
+    return linked === 0
+      ? { state: "missing" as const, grain: "unit" as const, relationshipCount: 0 }
+      : linked >= total
+        ? { state: "complete" as const, grain: "unit" as const, relationshipCount: linked }
+        : { state: "partial" as const, grain: "unit" as const, relationshipCount: linked };
+  })();
+
+  // accountingToCrm: direct QB ↔ CRM link (only when deposit-grain PAs exist)
+  const aeToCrm: WbCoverageState = (() => {
+    if (depositRows.length === 0) return { state: "missing" as const, grain: "none" as const, relationshipCount: 0 };
+    const depositCovered = dpGrain === "bundle" && dpLinkageComplete;
+    return depositCovered
+      ? { state: "complete" as const, grain: "bundle" as const, relationshipCount: depositRows.length }
+      : { state: "partial" as const, grain: "bundle" as const, relationshipCount: depositRows.length };
+  })();
+
+  // linkage.state: end-to-end chain completeness
+  const chainComplete =
+    (aeToTxn.state === "complete" && txnToCrm.state === "complete") ||
+    aeToCrm.state === "complete";
+  const anyMixedGrain = dpGrain === "mixed";
+  const noConnections =
+    aeToTxn.state === "missing" && txnToCrm.state === "missing" && aeToCrm.state === "missing";
+  const isConflict = slConflictGiftId != null;
+
+  let linkageState: LinkCompleteness;
+  if (chainComplete && !anyMixedGrain && !isConflict) {
+    linkageState = "complete";
+  } else if (anyMixedGrain || (isConflict && !noConnections)) {
+    linkageState = "partial_mixed";
+  } else if (noConnections) {
+    linkageState = "missing";
+  } else {
+    linkageState = "partial";
+  }
+
+  // CRM cards (one per gift in the cluster)
+  const crmCards: CrmCardEntry[] = gifts.map((g) => {
+    const isLinked = g.linkedChargeIds.length > 0 || g.linkedStagedPaymentIds.length > 0;
+    const cardState: CrmCardState = isLinked
+      ? g.recordComplete ? "matched_complete" : "matched_incomplete"
+      : g.recordComplete ? "unmatched_complete" : "unmatched_incomplete";
+    return { giftId: g.giftId, recordComplete: g.recordComplete, state: cardState, satisfiedBy: mapSatisfiedBy(g.satisfiedBy) };
+  });
+
+  // Transaction entries (non-excluded charges)
+  const transactions: TransactionEntry[] = nonExcluded.map((c) => ({
+    transactionId: c.chargeId,
+    livePayment: !c.refundProposed,
+    refundStatus: c.refundProposed ? ("anticipated" as const) : ("none" as const),
+  }));
+
+  // QB card entries (settlement deposit OR per-charge ties)
+  const qbCards: QbCardEntry[] = [];
+  if (slLifecycle === "confirmed" && depId) {
+    qbCards.push({ qbRecordId: depId, state: "matched_complete", isTransactionEvidence: false });
+  } else {
+    for (const tie of chargeTies) {
+      const tieCardState: QbCardState =
+        tie.status === "match_confirmed" ? "matched_complete"
+        : tie.status === "excluded" ? "excluded"
+        : tie.status === "match_proposed" ? "enriched"
+        : "raw";
+      qbCards.push({ qbRecordId: tie.stagedPaymentId, state: tieCardState, isTransactionEvidence: false });
+    }
+  }
+
+  // Information completeness (qbComplete ≈ aeComplete; future: explicit QB-documentation flag)
+  const crmComplete = crmRecordCompleteness.complete;
+  const qbComplete = aeComplete;
+  const informationState: InformationCompleteness =
+    !crmComplete ? "incomplete"
+    : !qbComplete || hasPendingRefund ? "accounting_pending"
+    : "audit_ready";
+
+  // Settlement link state
+  let settlementLinkState: SettlementLinkState | undefined;
+  if (slLifecycle === "confirmed") {
+    settlementLinkState = "confirmed";
+  } else if (slLifecycle === "proposed") {
+    settlementLinkState = isConflict ? "proposed_conflict" : "proposed_full";
+  } else if (depId) {
+    settlementLinkState = "proposed_partial";
+  }
+
+  const rowState: WorkbenchRowState = {
+    linkage: {
+      state: linkageState,
+      accountingToTransaction: aeToTxn,
+      transactionToCrm: txnToCrm,
+      accountingToCrm: aeToCrm,
+    },
+    information: { state: informationState, crmComplete, qbComplete },
+    flags: {
+      excluded: nonExcluded.length === 0 && charges.length > 0,
+      conflict: isConflict,
+      attentionRequired: hasPendingRefund,
+    },
+    ...(settlementLinkState != null && { settlementLinkState }),
+    qbCards,
+    transactions,
+    crmCards,
+  };
+
+  // Option C: derive coverage.complete from canonical state
+  const complete = linkageState === "complete" && informationState === "audit_ready";
+  return { evidenceRecords: [...chargeEvidence, ...qbEvidence], donorPurpose, paymentTransaction, accountingEvidence, complete, state: rowState };
 }
 
 /* ── JS assembly helpers ───────────────────────────────────────────────── */
@@ -933,6 +1103,9 @@ function lensesOf(r: SlimRow): Lens[] {
   if (r.f_qb_says_donation) out.push("excluded_qb_says_donation");
   if (r.f_excluded) out.push("excluded");
   if (r.f_completed) out.push("completed");
+  if (r.f_link_complete) out.push("link_complete");
+  if (r.f_attention_required) out.push("attention_required");
+  if (r.kind === "crm_only") out.push("crm_only");
   return out;
 }
 
@@ -1015,12 +1188,16 @@ router.get(
           count(*) FILTER (WHERE f_refund)::int AS refunds,
           count(*) FILTER (WHERE f_qb_says_donation)::int AS excluded_qb_says_donation,
           count(*) FILTER (WHERE f_excluded)::int AS excluded,
-          count(*) FILTER (WHERE f_completed)::int AS completed
+          count(*) FILTER (WHERE f_completed)::int AS completed,
+          count(*) FILTER (WHERE f_link_complete)::int AS link_complete,
+          count(*) FILTER (WHERE f_attention_required)::int AS attention_required,
+          count(*) FILTER (WHERE kind = 'crm_only')::int AS crm_only
         FROM ( ${universe} ) u`),
       db.execute(sql`
         SELECT kind, anchor_id, anchor_date,
                f_needs_gift, f_needs_acct, f_gap, f_conflict, f_refund,
-               f_qb_says_donation, f_excluded, f_completed
+               f_qb_says_donation, f_excluded, f_completed,
+               f_link_complete, f_attention_required
         FROM ( ${universe} ) u
         WHERE ${sql.raw(LENS_PREDICATE[lens])}
         ORDER BY anchor_date DESC NULLS LAST, anchor_id DESC
@@ -1037,6 +1214,9 @@ router.get(
       excluded_qb_says_donation: 0,
       excluded: 0,
       completed: 0,
+      link_complete: 0,
+      attention_required: 0,
+      crm_only: 0,
     }) as unknown as LensCountsRow;
     const slim = pageResult.rows as unknown as SlimRow[];
 
@@ -1587,6 +1767,7 @@ router.get(
           h?.dep_amount ?? null,
           h?.dep_id ?? null,
           h?.sl_lifecycle ?? null,
+          h?.sl_conflict_gift_id ?? null,
         );
         // Status detail: vary by coverage grain and settlement path for accurate diagnostics.
         let statusDetail: string;
@@ -1711,6 +1892,48 @@ router.get(
         );
         const qbDpComplete = resolved === total && total > 0;
         const qbDonorPurposeComplete = qbDpComplete && qbCrmRecord.complete;
+
+        // Canonical WorkbenchRowState for qb_standalone
+        const qbTxnCrmState: WbCoverageState["state"] = qbDpComplete ? "complete" : resolved === 0 ? "missing" : "partial";
+        const qbLinkState: LinkCompleteness = r.f_excluded ? "missing"
+          : qbDpComplete ? "complete"
+          : resolved > 0 ? "partial"
+          : "missing";
+        const qbState: WorkbenchRowState = {
+          linkage: {
+            state: qbLinkState,
+            accountingToTransaction: { state: total === 0 ? "missing" : "complete", grain: total === 0 ? "none" : "unit", relationshipCount: total },
+            transactionToCrm: { state: qbTxnCrmState, grain: total === 0 ? "none" : "unit", relationshipCount: resolved },
+            accountingToCrm: { state: qbTxnCrmState, grain: total === 0 ? "none" : "unit", relationshipCount: resolved },
+          },
+          information: {
+            state: qbDonorPurposeComplete ? "audit_ready" : "incomplete",
+            crmComplete: qbCrmRecord.complete,
+            qbComplete: total > 0,
+          },
+          flags: { excluded: r.f_excluded, conflict: false, attentionRequired: false },
+          qbCards: countable.map((rec) => ({
+            qbRecordId: rec.stagedPaymentId,
+            state: (rec.status === "match_confirmed" ? "matched_complete"
+              : rec.status === "excluded" ? "excluded"
+              : rec.status === "match_proposed" ? "enriched"
+              : "raw") as QbCardState,
+            isTransactionEvidence: true,
+          })),
+          transactions: nonExcludedQb.map((rec) => ({
+            transactionId: rec.stagedPaymentId,
+            livePayment: rec.status !== "excluded",
+            refundStatus: "none" as const,
+          })),
+          crmCards: gifts.map((g) => {
+            const isLinked = coveredQbIds.some((id) => g.linkedStagedPaymentIds.includes(id));
+            const cardState: CrmCardState = isLinked
+              ? g.recordComplete ? "matched_complete" : "matched_incomplete"
+              : g.recordComplete ? "unmatched_complete" : "unmatched_incomplete";
+            return { giftId: g.giftId, recordComplete: g.recordComplete, state: cardState, satisfiedBy: mapSatisfiedBy(g.satisfiedBy) };
+          }),
+        };
+
         const qbCoverage: CoverageOut = {
           evidenceRecords: countable.map((rec) => ({
             id: rec.stagedPaymentId,
@@ -1758,6 +1981,7 @@ router.get(
             representationNote: null,
           },
           complete: qbDonorPurposeComplete,
+          state: qbState,
         };
         return {
           ...base,
@@ -1800,6 +2024,30 @@ router.get(
             viewer,
           )
         : null;
+      const crmOnlyGift = h ? giftOut(h, viewer) : null;
+      const crmOnlyRecord = buildCrmRecordCompleteness(crmOnlyGift ? [crmOnlyGift] : []);
+      const crmOnlyState: WorkbenchRowState = {
+        linkage: {
+          state: "missing",
+          accountingToTransaction: { state: "missing", grain: "none", relationshipCount: 0 },
+          transactionToCrm: { state: "missing", grain: "none", relationshipCount: 0 },
+          accountingToCrm: { state: "missing", grain: "none", relationshipCount: 0 },
+        },
+        information: {
+          state: crmOnlyRecord.complete ? "accounting_pending" : "incomplete",
+          crmComplete: crmOnlyRecord.complete,
+          qbComplete: false,
+        },
+        flags: { excluded: false, conflict: false, attentionRequired: false },
+        qbCards: [],
+        transactions: [],
+        crmCards: crmOnlyGift ? [{
+          giftId: crmOnlyGift.giftId,
+          recordComplete: crmOnlyGift.recordComplete,
+          state: (crmOnlyRecord.complete ? "unmatched_complete" : "unmatched_incomplete") as CrmCardState,
+          satisfiedBy: mapSatisfiedBy(crmOnlyGift.satisfiedBy),
+        }] : [],
+      };
       return {
         ...base,
         date: h?.date_received ?? r.anchor_date,
@@ -1814,7 +2062,7 @@ router.get(
         chargeCount: null,
         status: statusOf(r, null),
         statusDetail: "no accounting record yet",
-        gifts: h ? [giftOut(h, viewer)] : [],
+        gifts: crmOnlyGift ? [crmOnlyGift] : [],
         charges: [],
         qbRecords: [],
         settlement: null,
@@ -1834,8 +2082,8 @@ router.get(
               representedAmount: h?.amount ?? null,
               representationNote: null,
             },
-            crmRecordCompleteness: buildCrmRecordCompleteness(h ? [giftOut(h, viewer)] : []),
-            complete: buildCrmRecordCompleteness(h ? [giftOut(h, viewer)] : []).complete,
+            crmRecordCompleteness: crmOnlyRecord,
+            complete: crmOnlyRecord.complete,
           },
           paymentTransaction: {
             grain: "none" as const,
@@ -1856,6 +2104,7 @@ router.get(
             representationNote: null,
           },
           complete: false,
+          state: crmOnlyState,
         } satisfies CoverageOut,
       };
     });
@@ -1872,6 +2121,9 @@ router.get(
         excluded_qb_says_donation: lensCounts.excluded_qb_says_donation ?? 0,
         excluded: lensCounts.excluded ?? 0,
         completed: lensCounts.completed ?? 0,
+        link_complete: lensCounts.link_complete ?? 0,
+        attention_required: lensCounts.attention_required ?? 0,
+        crm_only: lensCounts.crm_only ?? 0,
       },
       pagination: { page, limit, total: lensCounts[lens] ?? 0 },
     });

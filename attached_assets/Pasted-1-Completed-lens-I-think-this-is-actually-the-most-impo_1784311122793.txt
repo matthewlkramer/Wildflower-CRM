@@ -1,0 +1,141 @@
+1. Completed lens
+
+I think this is actually the most important correction.
+
+I would not define Completed as simply:
+
+linkage.state === "complete"
+
+Instead, I'd define it as:
+
+Completed means there is nothing left to do in the workbench.
+
+The workbench's job is reconciliation and preparation for accounting. If a row still requires a finance person to populate QB fields, it isn't really finished.
+
+So I'd answer:
+
+A row belongs in Completed only when:
+
+linkage.state === "complete", and
+information.state === "audit_ready".
+
+accounting_pending is a successful reconciliation, but it's still an active work item.
+
+That gives you a nice progression:
+
+missing linkage
+↓
+partial linkage
+↓
+complete linkage + accounting_pending
+↓
+complete linkage + audit_ready
+
+Only the last state is truly "done."
+
+2. CoverageState
+
+I actually don't think I'd expose amounts here.
+
+The implementation certainly needs them, but the state object shouldn't become another reconciliation engine.
+
+I'd rather have something like:
+
+type CoverageState = {
+    state:
+        | "missing"
+        | "partial"
+        | "complete"
+        | "mixed";
+
+    grain:
+        | "unit"
+        | "bundle"
+        | "mixed";
+
+    relationshipCount: number;
+}
+
+The amount math already lives elsewhere.
+
+This object should describe the relationship, not recompute it.
+
+3. CRM-only rows
+
+I agree with almost everything except one sentence:
+
+audit_ready would never apply
+
+I think that's correct.
+
+If there is no accounting record, there is nothing to audit.
+
+So:
+
+CRM complete
+QB absent
+
+↓
+
+accounting_pending
+
+is exactly right.
+
+4. QB ACH / check
+
+I would definitely choose Option B.
+
+Earlier we agreed the model is semantic rather than physical.
+
+A QB check can simultaneously satisfy:
+
+accounting evidence
+transaction evidence
+
+Those are two semantic roles.
+
+Duplicating the record internally (or referencing it from both arrays) preserves the architecture much better.
+
+Otherwise you'll wind up littering the codebase with:
+
+if qbStandalone...
+
+special cases.
+
+I would answer:
+
+Treat the same physical QB record as satisfying both semantic roles. It may appear in both collections or be referenced by both, but it should not require a separate special-case execution path.
+
+5. Migration
+
+I'd actually say neither.
+
+I'd propose:
+
+Option C
+
+Keep the API contract stable.
+
+Internally:
+
+compute the new canonical state
+derive the legacy fields from it
+
+Eventually remove the legacy fields once nothing consumes them.
+
+That means:
+
+canonical state
+        ↓
+legacy coverage.complete
+legacy lenses
+legacy frontend
+
+rather than
+
+old engine
+new engine
+
+running in parallel.
+
+That's the distinction I'd emphasize.

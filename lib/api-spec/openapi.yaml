@@ -8331,7 +8331,7 @@ components:
         pagination: { $ref: "#/components/schemas/Pagination" }
     WorkbenchLens:
       type: string
-      enum: [all_open, needs_donor_or_gift, needs_accounting, settlement_gaps, conflicts, refunds, excluded_qb_says_donation, excluded, completed]
+      enum: [all_open, needs_donor_or_gift, needs_accounting, settlement_gaps, conflicts, refunds, excluded_qb_says_donation, excluded, completed, link_complete, attention_required, crm_only]
       description: |
         A lens is a saved filter over the cluster list — linkage-only in this phase
         (record-adequacy lenses like "missing key info" are additive later).
@@ -8464,6 +8464,118 @@ components:
       properties:
         memberCount: { type: integer, description: "Total rows in the unit group (including the representative)." }
         totalAmount: { type: string, nullable: true, description: "Group total, major units." }
+    WorkbenchRowLinkCompleteness:
+      type: string
+      enum: [complete, partial, mixed, partial_mixed, missing]
+      description: |
+        End-to-end chain completeness across all three columns (accounting / transaction / CRM).
+        complete — chain fully connected, no conflict, no competing grains.
+        partial — some connections exist but the chain is not fully closed.
+        mixed — competing grain representations coexist (always requires resolution).
+        partial_mixed — both partial and mixed.
+        missing — no connections at all (only one column of evidence).
+    WorkbenchRowInformationCompleteness:
+      type: string
+      enum: [audit_ready, accounting_pending, incomplete]
+      description: |
+        Content completeness of the cluster's records.
+        audit_ready — CRM gift records complete AND accounting evidence settled AND no pending refunds.
+        accounting_pending — CRM records complete but accounting not yet settled or a refund is pending.
+        incomplete — one or more CRM gift records lack required donor / allocation information.
+    WorkbenchRowSettlementLinkState:
+      type: string
+      enum: [unlinked, proposed_full, proposed_partial, proposed_conflict, confirmed]
+      description: "State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only."
+    WorkbenchRowCoverageState:
+      type: object
+      required: [state, grain, relationshipCount]
+      description: "Pairwise coverage between two of the three columns."
+      properties:
+        state:             { type: string, enum: [missing, partial, complete, mixed] }
+        grain:             { type: string, enum: [unit, bundle, mixed, none] }
+        relationshipCount: { type: integer, description: "Number of linked records on the source side of this pairwise edge." }
+    WorkbenchRowQbCardState:
+      type: string
+      enum: [raw, enriched, matched_complete, matched_partial_qb_surplus, matched_partial_external_surplus, matched_conflict, excluded]
+      description: "Derived display state for one QB evidence card."
+    WorkbenchRowQbCardEntry:
+      type: object
+      required: [qbRecordId, state, isTransactionEvidence]
+      description: "One QB evidence card in the cluster."
+      properties:
+        qbRecordId:            { type: string }
+        state:                 { $ref: "#/components/schemas/WorkbenchRowQbCardState" }
+        isTransactionEvidence: { type: boolean, description: "True for qb_standalone clusters where the QB record is also the transaction evidence." }
+    WorkbenchRowCrmCardState:
+      type: string
+      enum: [missing, unmatched_incomplete, unmatched_complete, matched_incomplete, matched_complete, partial_gift_surplus, partial_external_surplus, mixed, conflict, pledge_link_broken, lost, dormant]
+      description: "Derived display state for one CRM gift card."
+    WorkbenchRowCrmSatisfiedByCanonical:
+      type: string
+      enum: [donorbox, completed_coding_form, donor_allocations_and_supporting_documents]
+      nullable: true
+      description: "Canonical vocabulary for which completeness path was satisfied; null when the gift is incomplete."
+    WorkbenchRowCrmCardEntry:
+      type: object
+      required: [giftId, recordComplete, state]
+      description: "One CRM gift card in the cluster."
+      properties:
+        giftId:         { type: string }
+        recordComplete: { type: boolean }
+        state:          { $ref: "#/components/schemas/WorkbenchRowCrmCardState" }
+        satisfiedBy:    { $ref: "#/components/schemas/WorkbenchRowCrmSatisfiedByCanonical" }
+    WorkbenchRowTransactionEntry:
+      type: object
+      required: [transactionId, livePayment, refundStatus]
+      description: "One countable transaction unit (Stripe charge or QB record for qb_standalone)."
+      properties:
+        transactionId: { type: string }
+        livePayment:   { type: boolean, description: "False when the charge is proposed-refunded." }
+        refundStatus:  { type: string, enum: [none, anticipated, refunded] }
+    WorkbenchRowState:
+      type: object
+      required: [linkage, information, flags, qbCards, transactions, crmCards]
+      description: |
+        Canonical row-level state per docs/workbench-business-rules.md §10.
+        Computed once per cluster from authoritative DB/hydration data. All
+        other per-cluster display fields (coverage.complete, lenses) are derived
+        from this — never maintained independently.
+      properties:
+        linkage:
+          type: object
+          required: [state, accountingToTransaction, transactionToCrm, accountingToCrm]
+          properties:
+            state:                   { $ref: "#/components/schemas/WorkbenchRowLinkCompleteness" }
+            accountingToTransaction: { allOf: [ { $ref: "#/components/schemas/WorkbenchRowCoverageState" } ], description: "QB ↔ Stripe: does the accounting record know about the transaction?" }
+            transactionToCrm:        { allOf: [ { $ref: "#/components/schemas/WorkbenchRowCoverageState" } ], description: "Stripe ↔ CRM: does the transaction link to a CRM gift?" }
+            accountingToCrm:         { allOf: [ { $ref: "#/components/schemas/WorkbenchRowCoverageState" } ], description: "QB ↔ CRM: direct accounting-to-CRM link (deposit-grain PAs; missing for the charge-tie path)." }
+        information:
+          type: object
+          required: [state, crmComplete, qbComplete]
+          properties:
+            state:       { $ref: "#/components/schemas/WorkbenchRowInformationCompleteness" }
+            crmComplete: { type: boolean, description: "True when all linked CRM gift records satisfy the record-completeness predicate." }
+            qbComplete:  { type: boolean, description: "True when the accounting evidence is present and settled." }
+        flags:
+          type: object
+          required: [excluded, conflict, attentionRequired]
+          properties:
+            excluded:          { type: boolean }
+            conflict:          { type: boolean }
+            attentionRequired: { type: boolean, description: "True when a pending refund blocks audit_ready status." }
+        settlementLinkState:
+          allOf: [ { $ref: "#/components/schemas/WorkbenchRowSettlementLinkState" } ]
+          nullable: true
+          description: "Present only for stripe_payout clusters that have a settlement link entry."
+        qbCards:
+          type: array
+          items: { $ref: "#/components/schemas/WorkbenchRowQbCardEntry" }
+        transactions:
+          type: array
+          items: { $ref: "#/components/schemas/WorkbenchRowTransactionEntry" }
+        crmCards:
+          type: array
+          items: { $ref: "#/components/schemas/WorkbenchRowCrmCardEntry" }
     WorkbenchClusterCrmLinkage:
       type: object
       required: [grain, complete, coveredIds, uncoveredIds]
@@ -8587,6 +8699,9 @@ components:
         complete:
           type: boolean
           description: "True when all three dimensions are complete: donorPurpose.complete (crmLinkage + crmRecordCompleteness), paymentTransaction.complete, and accountingEvidence.complete."
+        state:
+          allOf: [ { $ref: "#/components/schemas/WorkbenchRowState" } ]
+          description: "Canonical row-level state (Option C). Derived first; coverage.complete and all lens flags are derived from this."
     WorkbenchCluster:
       type: object
       required: [id, kind, anchorId, status, lenses, gifts, charges, qbRecords, coverage]
@@ -8622,7 +8737,7 @@ components:
           description: "Three-dimension canonical cluster state (donorPurpose / paymentTransaction / accountingEvidence). Always present for all cluster kinds."
     WorkbenchLensCounts:
       type: object
-      required: [all_open, needs_donor_or_gift, needs_accounting, settlement_gaps, conflicts, refunds, excluded_qb_says_donation, excluded, completed]
+      required: [all_open, needs_donor_or_gift, needs_accounting, settlement_gaps, conflicts, refunds, excluded_qb_says_donation, excluded, completed, link_complete, attention_required, crm_only]
       description: "Cluster counts per lens over the WHOLE universe (not the page), computed in the same request so the rail always agrees with the rows."
       properties:
         all_open:                  { type: integer }
@@ -8634,6 +8749,9 @@ components:
         excluded_qb_says_donation: { type: integer }
         excluded:                  { type: integer }
         completed:                 { type: integer }
+        link_complete:             { type: integer, description: "Clusters where linkage is end-to-end complete but CRM records may still need work." }
+        attention_required:        { type: integer, description: "Clusters with a pending refund or other flag that blocks audit_ready status." }
+        crm_only:                  { type: integer, description: "On-books CRM gifts with no counted QB or Stripe ledger row." }
     WorkbenchClusterListResponse:
       type: object
       required: [data, lensCounts, pagination]
