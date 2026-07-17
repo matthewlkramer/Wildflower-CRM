@@ -5201,6 +5201,8 @@ export const WorkbenchClusterGiftDonorKind = {
 export interface WorkbenchClusterGift {
   /** gifts_and_payments.id */
   giftId: string;
+  /** The gift's linked opportunity/pledge id, when it is a payment against one. Enables opportunity-level actions (e.g. setting loss_type) straight from the workbench. */
+  opportunityId?: string | null;
   /** Gift name (NOT anonymous-masked today — matches app-wide behavior). */
   name?: string | null;
   /** Donor display name, anonymous-masked for the viewer. */
@@ -5332,6 +5334,8 @@ export interface WorkbenchClusterQbRecord {
   /** Staged amount, major units. */
   amount?: string | null;
   dateReceived?: string | null;
+  /** Raw QB PaymentMethodRef name (e.g. Check, ACH, Visa) from the staged row — accounting evidence as QuickBooks recorded it; null when QB recorded none. */
+  paymentMethod?: string | null;
   status: WorkbenchRecordStatus;
   /** For fee / charge_tie roles: the stripe_staged_charges id the link runs through. */
   linkedChargeId?: string | null;

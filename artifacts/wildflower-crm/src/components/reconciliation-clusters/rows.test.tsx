@@ -58,6 +58,9 @@ function makeActions(): ClusterActions {
     openConfirmRefund: vi.fn(),
     openDismissRefund: vi.fn(),
     openFlag: vi.fn(),
+    openFlagGift: vi.fn(),
+    openMarkLoss: vi.fn(),
+    openSettlementSearch: vi.fn(),
   };
 }
 
@@ -211,7 +214,7 @@ describe("DonorActions identified gating", () => {
 });
 
 describe("single-charge payout row (canonical state display)", () => {
-  it("no QB deposit → gap card renders with the grayed settlement ⋯ menu trigger", () => {
+  it("no QB deposit → cardless gap slot renders with the settlement ⋯ menu trigger", () => {
     const cluster = makePayoutCluster({ charges: [makeCharge()] });
     render(
       <ClusterRow

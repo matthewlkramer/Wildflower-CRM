@@ -67,7 +67,9 @@ export function ResolveTieDialog({
   onPick,
   busy = false,
 }: {
-  anchor: BundleAnchor;
+  /** Only the anchor id + money context are needed, so callers outside the
+   *  Settlement report (e.g. the cluster workbench) can pass a minimal shape. */
+  anchor: Pick<BundleAnchor, "anchorId" | "amount" | "date">;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPick: (counterpartId: string, opts?: PickOptions) => void;

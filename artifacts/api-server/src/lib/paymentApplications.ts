@@ -593,6 +593,41 @@ export function donorboxLedgerExistsForGift(
   )`;
 }
 
+/**
+ * "Is this gift Donorbox-backed?" — the single authority for the DB badge and
+ * the donorbox path of CRM record-completeness. TRUE when EITHER:
+ *   1. a counted donorbox-sourced payment application exists (the direct
+ *      ledger fact `donorboxLedgerExistsForGift` reads), OR
+ *   2. a counted stripe-sourced payment application's charge has a Donorbox
+ *      ledger counterpart (donorbox_donations.stripe_charge_id — the same 1:1
+ *      join the gift-detail Donorbox enrichment panel uses). This is how ALL
+ *      real Donorbox money links today: Stripe-settled Donorbox donations are
+ *      counted through their stripe charge, and no donorbox-sourced PA is
+ *      minted for them.
+ *
+ * Deliberately DISTINCT from `donorboxLedgerExistsForGift`, which answers the
+ * narrower ledger question "does a donorbox counted PA exist" for per-source
+ * precedence (gift QB-tie, gifts-missing-qb exemptions) — do not merge them.
+ *
+ * Returns a raw SQL string (not a bound `sql` fragment) because its consumer,
+ * the workbench-clusters query, composes plain-SQL strings. Pass a
+ * pre-qualified gift-id expression (e.g. "g.id").
+ */
+export function donorboxBackedExistsSql(giftRef: string): string {
+  return `EXISTS (
+    SELECT 1 FROM payment_applications pa_dbx
+    WHERE pa_dbx.gift_id = ${giftRef} AND pa_dbx.link_role = 'counted'
+      AND (
+        pa_dbx.evidence_source = 'donorbox'
+        OR (pa_dbx.evidence_source = 'stripe' AND pa_dbx.stripe_charge_id IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM donorbox_donations dd_dbx
+              WHERE dd_dbx.stripe_charge_id = pa_dbx.stripe_charge_id
+            ))
+      )
+  )`;
+}
+
 /** SUM(amount_applied) of the gift's Donorbox counted ledger rows, as text. */
 export function donorboxLedgerSumForGift(
   giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,

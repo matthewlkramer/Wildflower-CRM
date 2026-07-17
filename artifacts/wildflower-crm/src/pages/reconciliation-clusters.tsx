@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  getListOpportunitiesAndPledgesQueryKey,
   getListWorkbenchClustersQueryKey,
   getListWorkbenchRecentChangesQueryKey,
+  useConfirmSettlementLink,
   useConfirmStripeRefundPropagation,
   useCreateGiftFromStagedPayment,
   useCreateGiftFromStripeStagedCharge,
@@ -20,6 +22,7 @@ import {
   useResolveStripeStagedCharge,
   useRevertStagedPayment,
   useRevertStripeStagedCharge,
+  useUpdateOpportunityOrPledge,
   type GiftOrPayment,
   type StagedPaymentExclusionReason,
   type WorkbenchLens,
@@ -41,6 +44,15 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { GiftSearchDialog } from "@/components/gift-search-dialog";
 import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
+import {
+  ResolveTieDialog,
+  type PickOptions,
+} from "@/components/reconciliation-bundles/ResolveTieDialog";
+import {
+  apiErrorMessage,
+  is409,
+  isPermanentSettlementError,
+} from "@/components/reconciliation-bundles/settlement-actions";
 import { extractStripeSourceConflict, type StripeSourceConflict } from "@/lib/reconciliation";
 import type { DonorType } from "@/components/entity-picker";
 import {
@@ -158,6 +170,20 @@ export default function ReconciliationClustersPage() {
     stagedPaymentId: string;
     label: string;
   } | null>(null);
+  const [flagGiftFor, setFlagGiftFor] = useState<{
+    giftId: string;
+    label: string;
+  } | null>(null);
+  const [markLossFor, setMarkLossFor] = useState<{
+    opportunityId: string;
+    kind: "lost" | "dormant";
+    label: string;
+  } | null>(null);
+  const [settlementSearchFor, setSettlementSearchFor] = useState<{
+    payoutId: string;
+    amount: string | null;
+    date: string | null;
+  } | null>(null);
 
   // Debounce free-text search so we don't refetch per keystroke.
   useEffect(() => {
@@ -203,6 +229,8 @@ export default function ReconciliationClustersPage() {
   const excludeStagedM = useExcludeStagedPayment();
   const reIncludeStagedM = useReIncludeStagedPayment();
   const revertStagedM = useRevertStagedPayment();
+  const updateOppM = useUpdateOpportunityOrPledge();
+  const confirmSettlementM = useConfirmSettlementLink();
 
   const busy =
     linkChargeM.isPending ||
@@ -218,7 +246,9 @@ export default function ReconciliationClustersPage() {
     createStagedGiftM.isPending ||
     excludeStagedM.isPending ||
     reIncludeStagedM.isPending ||
-    revertStagedM.isPending;
+    revertStagedM.isPending ||
+    updateOppM.isPending ||
+    confirmSettlementM.isPending;
 
   const invalidate = useCallback(() => {
     void queryClient.invalidateQueries({
@@ -487,6 +517,78 @@ export default function ReconciliationClustersPage() {
     }
   };
 
+  // Mark the gift's opportunity lost/dormant: the user-set loss_type is the
+  // ONE lifecycle input and it outranks the payment-driven cash_in status —
+  // the confirm dialog spells that out before writing.
+  const handleMarkLoss = async () => {
+    if (!markLossFor) return;
+    try {
+      await updateOppM.mutateAsync({
+        id: markLossFor.opportunityId,
+        data: { lossType: markLossFor.kind },
+      });
+      setMarkLossFor(null);
+      invalidate();
+      void queryClient.invalidateQueries({
+        queryKey: getListOpportunitiesAndPledgesQueryKey(),
+      });
+      toast({
+        title: markLossFor.kind === "lost" ? "Marked lost" : "Marked dormant",
+        description: `The opportunity behind ${markLossFor.label} now shows ${markLossFor.kind}.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't update the opportunity",
+        description: errMessage(err),
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Tie the picked QB deposit to the payout and approve — same endpoint and
+  // 409 split as the Settlement report's resolve flow: permanent conflicts
+  // are destructive toasts, transient state changes just ask to retry.
+  const handleSettlementPick = async (
+    counterpartId: string,
+    opts?: PickOptions,
+  ) => {
+    if (!settlementSearchFor) return;
+    try {
+      await confirmSettlementM.mutateAsync({
+        payoutId: settlementSearchFor.payoutId,
+        data: {
+          depositStagedPaymentId: counterpartId,
+          ...(opts?.overrideExclusion ? { overrideExclusion: true } : {}),
+        },
+      });
+      setSettlementSearchFor(null);
+      invalidate();
+      toast({ title: "Settlement approved." });
+    } catch (err) {
+      if (is409(err)) {
+        if (isPermanentSettlementError(err)) {
+          toast({
+            title: "Couldn't resolve this settlement",
+            description: apiErrorMessage(err) ?? errMessage(err),
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "The settlement changed — try resolving again.",
+            description: apiErrorMessage(err) ?? undefined,
+          });
+          invalidate();
+        }
+      } else {
+        toast({
+          title: "Couldn't resolve",
+          description: errMessage(err),
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
   const actions: ClusterActions = {
     busy,
     openLinkGift: (anchor) => setLinkGiftFor(anchor),
@@ -499,6 +601,10 @@ export default function ReconciliationClustersPage() {
       setRefundFor({ chargeId, kind, label }),
     openDismissRefund: (chargeId, label) => setDismissFor({ chargeId, label }),
     openFlag: (stagedPaymentId, label) => setFlagFor({ stagedPaymentId, label }),
+    openFlagGift: (giftId, label) => setFlagGiftFor({ giftId, label }),
+    openMarkLoss: (opportunityId, kind, label) =>
+      setMarkLossFor({ opportunityId, kind, label }),
+    openSettlementSearch: (args) => setSettlementSearchFor(args),
   };
 
   const toggleExpanded = (id: string) =>
@@ -904,6 +1010,75 @@ export default function ReconciliationClustersPage() {
           open
           onOpenChange={(v) => (!v ? setFlagFor(null) : null)}
           hideTrigger
+        />
+      ) : null}
+
+      {flagGiftFor ? (
+        <FlagForResearchDialog
+          targetType="gift"
+          targetId={flagGiftFor.giftId}
+          recordLabel={flagGiftFor.label}
+          open
+          onOpenChange={(v) => (!v ? setFlagGiftFor(null) : null)}
+          hideTrigger
+        />
+      ) : null}
+
+      {/* Mark lost / dormant — writes loss_type on the gift's OPPORTUNITY */}
+      <AlertDialog
+        open={markLossFor != null}
+        onOpenChange={(v) => (!v && !busy ? setMarkLossFor(null) : null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Mark this opportunity {markLossFor?.kind === "lost" ? "lost" : "dormant"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This sets the loss type on the whole opportunity behind{" "}
+              {markLossFor?.label} — not just this gift. The loss type outranks
+              every other status signal: even if payments were received, the
+              opportunity will show{" "}
+              {markLossFor?.kind === "lost" ? "lost" : "dormant"} instead of
+              cash-in until the loss type is cleared on the opportunity page.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={(e) => {
+                // Keep the dialog open while the save runs (Radix closes on
+                // click by default) — handleMarkLoss closes it on success.
+                e.preventDefault();
+                void handleMarkLoss();
+              }}
+              className={
+                markLossFor?.kind === "lost"
+                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  : undefined
+              }
+              data-testid="button-confirm-mark-loss"
+            >
+              Mark {markLossFor?.kind === "lost" ? "lost" : "dormant"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* QB-deposit search → confirm settlement link (same flow as the
+          Settlement report's resolve dialog) */}
+      {settlementSearchFor ? (
+        <ResolveTieDialog
+          anchor={{
+            anchorId: settlementSearchFor.payoutId,
+            amount: settlementSearchFor.amount,
+            date: settlementSearchFor.date,
+          }}
+          open
+          onOpenChange={(v) => (!v ? setSettlementSearchFor(null) : null)}
+          onPick={(id, opts) => void handleSettlementPick(id, opts)}
+          busy={busy}
         />
       ) : null}
     </div>

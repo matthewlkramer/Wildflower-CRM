@@ -68,6 +68,20 @@ export interface ClusterActions {
   ) => void;
   openDismissRefund: (chargeId: string, label: string) => void;
   openFlag: (stagedPaymentId: string, label: string) => void;
+  /** Flag a CRM gift for research (cleanup queue), same flow as staged rows. */
+  openFlagGift: (giftId: string, label: string) => void;
+  /** Set loss_type on the gift's opportunity — marks the whole opportunity lost/dormant. */
+  openMarkLoss: (
+    opportunityId: string,
+    kind: "lost" | "dormant",
+    label: string,
+  ) => void;
+  /** Search QB deposits and confirm the settlement link for a payout. */
+  openSettlementSearch: (args: {
+    payoutId: string;
+    amount: string | null;
+    date: string | null;
+  }) => void;
 }
 
 const CLUSTER_STATUS: Record<
@@ -350,19 +364,31 @@ function GiftCard({
         },
   );
   if (unmatchedGift || !crmEntry) {
+    const oppId = gift.opportunityId;
+    const giftLabel = gift.name ?? gift.giftId;
+    const noOppReason =
+      "No opportunity linked — this gift isn't a pledge payment";
     menu.push(
-      {
-        label: "Mark gift lost",
-        disabledReason: "Not built yet — set the loss type on the gift's opportunity",
-      },
-      {
-        label: "Mark gift dormant",
-        disabledReason: "Not built yet — set the loss type on the gift's opportunity",
-      },
+      oppId
+        ? {
+            label: "Mark gift lost",
+            destructive: true,
+            onClick: () => actions.openMarkLoss(oppId, "lost", giftLabel),
+          }
+        : { label: "Mark gift lost", disabledReason: noOppReason },
+      oppId
+        ? {
+            label: "Mark gift dormant",
+            onClick: () => actions.openMarkLoss(oppId, "dormant", giftLabel),
+          }
+        : { label: "Mark gift dormant", disabledReason: noOppReason },
     );
   }
   menu.push(
-    { label: "Flag for research", disabledReason: "Open the gift record to flag it for research" },
+    {
+      label: "Flag for research",
+      onClick: () => actions.openFlagGift(gift.giftId, gift.name ?? gift.giftId),
+    },
     {
       label: "Move to another cluster",
       disabledReason: "Clusters follow the evidence ties — unlink here, then link from the other row",
@@ -733,6 +759,9 @@ function QbCard({
       sub={
         <>
           {record.dateReceived ? formatDateShort(record.dateReceived) : null}
+          {record.paymentMethod
+            ? `${record.dateReceived ? " · " : ""}${record.paymentMethod}`
+            : null}
           {record.memo ? ` · ${record.memo}` : null}
           {refNote ? <span className="block text-xs text-muted-foreground">{refNote}</span> : null}
         </>
@@ -868,25 +897,59 @@ function StatusAction({
   );
 }
 
-/** ⋯ menu on the "No QB deposit linked yet" card — §§6.2 settlement-link
- * actions for the `unlinked` state (shown grayed with the honest reason until
- * the manual settlement flows are built). */
-function SettlementGapMenu({ clusterId }: { clusterId: string }) {
+/** ⋯ menu on the "No QB deposit linked yet" slot — §§6.2 settlement-link
+ * actions for the `unlinked` state: search-and-tie is live; confirm stays
+ * honestly disabled because nothing is proposed when this slot shows. */
+function SettlementGapMenu({
+  cluster,
+  actions,
+}: {
+  cluster: WorkbenchCluster;
+  actions: ClusterActions;
+}) {
   return (
     <CardMenu
       items={[
         {
           label: "Search QuickBooks for this deposit",
-          disabledReason:
-            "Not built yet — deposit matches are proposed by the QuickBooks sync",
+          onClick: () =>
+            actions.openSettlementSearch({
+              payoutId: cluster.anchorId,
+              amount: cluster.bankAmount ?? cluster.netTotal ?? null,
+              date: cluster.date ?? null,
+            }),
         },
         {
           label: "Confirm settlement link",
           disabledReason: "Nothing proposed yet — needs a QB deposit first",
         },
       ]}
-      testId={`button-settlement-menu-${clusterId}`}
+      testId={`button-settlement-menu-${cluster.id}`}
     />
+  );
+}
+
+/** Cardless "no QB deposit yet" slot — absence isn't evidence, so it renders
+ * as plain text (no card chrome), keeping the settlement-gap ⋯ menu. */
+function SettlementGapSlot({
+  cluster,
+  actions,
+}: {
+  cluster: WorkbenchCluster;
+  actions: ClusterActions;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-1 px-1 pt-1.5">
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] leading-snug text-muted-foreground italic">
+          No QB deposit linked yet
+        </div>
+        <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 leading-snug">
+          settlement link missing
+        </div>
+      </div>
+      <SettlementGapMenu cluster={cluster} actions={actions} />
+    </div>
   );
 }
 
@@ -919,14 +982,19 @@ function StatusForCluster({
       (worst, f) => (tonePriority[f.tone] > tonePriority[worst] ? f.tone : worst),
       "slate",
     );
-    const detailBits = [
-      inf.word !== lnk.word ? inf.word : null,
-      settle && state.settlementLinkState !== "confirmed" ? settle.word : null,
-    ].filter((b): b is string => b != null);
+    // The headline is the facet that CAUSED the tone — the first facet (in
+    // linkage > information > settlement priority) matching the worst tone —
+    // so the word never contradicts the dot color.
+    const headline = facets.find((f) => f.tone === tone) ?? lnk;
+    const detailBits = facets
+      .filter((f) => f !== headline)
+      .filter((f) => !(f === settle && state.settlementLinkState === "confirmed"))
+      .map((f) => f.word)
+      .filter((w) => w !== headline.word);
     return (
       <StatusCell
         tone={tone}
-        word={lnk.word}
+        word={headline.word}
         detail={detailBits.length > 0 ? detailBits.join(" · ") : null}
         action={action}
         testId={`status-cluster-${cluster.id}`}
@@ -1040,11 +1108,7 @@ function PayoutBundleRow({
               <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage?.state} />
             ))
           ) : (
-            <SummaryCard
-              lines={["No QB deposit linked yet"]}
-              gap="settlement link missing"
-              menu={<SettlementGapMenu clusterId={cluster.id} />}
-            />
+            <SettlementGapSlot cluster={cluster} actions={actions} />
           )}
         </div>
         <StatusForCluster
@@ -1121,11 +1185,7 @@ function PayoutBundleRow({
         {qbLines.length > 0 ? (
           <SummaryCard lines={qbLines} />
         ) : (
-          <SummaryCard
-            lines={["No QB deposit linked yet"]}
-            gap="settlement link missing"
-            menu={<SettlementGapMenu clusterId={cluster.id} />}
-          />
+          <SettlementGapSlot cluster={cluster} actions={actions} />
         )}
         <StatusForCluster
           cluster={cluster}
@@ -1348,19 +1408,18 @@ function QbStandaloneRow({
           </>
         ) : null}
       </div>
-      <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">
-        {looksLikeStripeMoney ? (
-          <>
-            looks like Stripe money — charge not tied yet; use the donor slot to link it
-          </>
-        ) : (
-          "arrived via QuickBooks — no separate processor record"
-        )}
-      </div>
-      <div className="space-y-1.5">
+      {/* QB-anchored money has no separate processor evidence: the QB cards
+          ARE the evidence, so they span the evidence + accounting columns
+          instead of leaving a hollow middle column. */}
+      <div className="col-span-2 space-y-1.5">
         {cluster.qbRecords.map((r) => (
           <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage?.state} />
         ))}
+        <div className="text-[11px] text-muted-foreground/70 pl-1 italic">
+          {looksLikeStripeMoney
+            ? "looks like Stripe money — charge not tied yet; use the donor slot to link it"
+            : "arrived via QuickBooks — no separate processor record"}
+        </div>
       </div>
       <StatusForCluster cluster={cluster} />
       <RowKebab clusterId={cluster.id} />

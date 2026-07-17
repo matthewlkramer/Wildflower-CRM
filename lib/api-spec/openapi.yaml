@@ -8374,6 +8374,7 @@ components:
       description: "One CRM gift card in the cluster's donor-and-purpose facet. Carries actionable ids so later phases can wire actions without a contract change."
       properties:
         giftId:        { type: string, description: "gifts_and_payments.id" }
+        opportunityId: { type: string, nullable: true, description: "The gift's linked opportunity/pledge id, when it is a payment against one. Enables opportunity-level actions (e.g. setting loss_type) straight from the workbench." }
         name:          { type: string, nullable: true, description: "Gift name (NOT anonymous-masked today — matches app-wide behavior)." }
         donorName:     { type: string, nullable: true, description: "Donor display name, anonymous-masked for the viewer." }
         donorKind:     { type: string, enum: [organization, person, household], nullable: true }
@@ -8430,6 +8431,7 @@ components:
         memo:            { type: string, nullable: true, description: "Transaction-level memo (PrivateNote)." }
         amount:          { type: string, nullable: true, description: "Staged amount, major units." }
         dateReceived:    { type: string, format: date, nullable: true }
+        paymentMethod:   { type: string, nullable: true, description: "Raw QB PaymentMethodRef name (e.g. Check, ACH, Visa) from the staged row — accounting evidence as QuickBooks recorded it; null when QB recorded none." }
         status:          { $ref: "#/components/schemas/WorkbenchRecordStatus" }
         linkedChargeId:  { type: string, nullable: true, description: "For fee / charge_tie roles: the stripe_staged_charges id the link runs through." }
         payerName:       { type: string, nullable: true, description: "QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee / charge_tie / group_member." }

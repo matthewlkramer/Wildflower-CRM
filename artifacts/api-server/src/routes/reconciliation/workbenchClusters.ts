@@ -5,6 +5,7 @@ import { asyncHandler, parsePagination } from "../../lib/helpers";
 import { getViewer, maskName, type Viewer } from "../../lib/identityVisibility";
 import { escapeLike, parkedFiscallyExpr } from "../quickbooks/shared";
 import { reimbursablePledgeExistsSql } from "../../lib/reimbursablePlaceholder";
+import { donorboxBackedExistsSql } from "../../lib/paymentApplications";
 import {
   chargeConfirmedText,
   chargeOpenText,
@@ -107,10 +108,10 @@ const donorJoins = `
   LEFT JOIN people p ON p.id = g.individual_giver_person_id
   LEFT JOIN households h ON h.id = g.household_id`;
 
-const donorboxBacked = `EXISTS (
-  SELECT 1 FROM payment_applications pa_d
-  WHERE pa_d.gift_id = g.id AND pa_d.evidence_source = 'donorbox' AND pa_d.link_role = 'counted'
-)`;
+// Donorbox-backed badge/completeness: shared authority in paymentApplications.ts
+// (counted donorbox PA OR counted stripe PA whose charge has a Donorbox
+// counterpart) — real Donorbox money links via its stripe charge today.
+const donorboxBacked = donorboxBackedExistsSql("g.id");
 
 /** Grant-letter badge: the gift's own upload OR its linked pledge's letter. */
 const giftGrantLetter = `(g.grant_letter_url IS NOT NULL OR EXISTS (
@@ -157,7 +158,8 @@ const fullAllocComplete = `(
 /**
  * Canonical CRM-record-completeness predicate (SQL boolean).
  * Paths:
- *   1. Donorbox-backed: a counted donorbox PA exists.
+ *   1. Donorbox-backed: a counted donorbox PA exists, or a counted stripe PA
+ *      whose charge has a Donorbox counterpart (see donorboxBackedExistsSql).
  *   2. Coding-form: any Donation Revenue Coding Form field is stamped.
  *   3. Donor + allocations + letter: donor identified, ≥1 allocation with
  *      all restriction fields filled (entity_id + conditional dates/purpose/
@@ -551,6 +553,7 @@ interface QbRecordJson {
   memo: string | null;
   amount: string | null;
   dateReceived: string | null;
+  paymentMethod?: string | null;
   status: string;
   linkedChargeId: string | null;
   payerName?: string | null;
@@ -587,6 +590,7 @@ interface PayoutRow {
   dep_amount: string | null;
   dep_date: string | null;
   dep_status: string | null;
+  dep_payment_method: string | null;
   dep_qb_entity_type: string | null;
   dep_qb_entity_id: string | null;
   dep_attributed_donor_kind: "organization" | "person" | "household" | null;
@@ -596,6 +600,7 @@ interface PayoutRow {
 
 interface GiftRowBase {
   gift_id: string;
+  opportunity_id: string | null;
   gift_name: string | null;
   amount: string | null;
   date_received: string | null;
@@ -626,6 +631,7 @@ interface QbAnchorRow {
   id: string;
   date: string | null;
   amount: string | null;
+  payment_method: string | null;
   payer_name: string | null;
   raw_reference: string | null;
   line_description: string | null;
@@ -650,6 +656,7 @@ interface CrmGiftRow extends GiftRowBase {
 
 interface GiftOut {
   giftId: string;
+  opportunityId: string | null;
   name: string | null;
   donorName: string | null;
   donorKind: string | null;
@@ -1124,6 +1131,7 @@ function statusOf(r: SlimRow, resolvedCount: number | null): string {
 function giftOut(g: GiftRowBase, viewer: Viewer): GiftOut {
   return {
     giftId: g.gift_id,
+    opportunityId: g.opportunity_id,
     name: g.gift_name,
     donorName: maskName(
       g.donor_name,
@@ -1317,6 +1325,7 @@ router.get(
               'memo', f.qb_transaction_memo,
               'amount', f.amount,
               'dateReceived', f.date_received,
+              'paymentMethod', f.payment_method,
               'status', f.status,
               'linkedChargeId', f.charge_id,
               'payerName', f.payer_name,
@@ -1327,6 +1336,7 @@ router.get(
             SELECT fq.id, 'fee'::text AS role, fq.raw_reference, fq.line_description,
                    fq.qb_transaction_memo, fq.amount::text AS amount,
                    fq.date_received::text AS date_received,
+                   fq.qb_payment_method AS payment_method,
                    ${sql.raw(qbStatusCaseText("fq"))} AS status, fc.id AS charge_id,
                    fq.payer_name,
                    fq.qb_entity_type::text AS qb_entity_type, fq.qb_entity_id
@@ -1337,6 +1347,7 @@ router.get(
             SELECT tq.id, 'charge_tie'::text, tq.raw_reference, tq.line_description,
                    tq.qb_transaction_memo, tq.amount::text,
                    tq.date_received::text,
+                   tq.qb_payment_method,
                    ${sql.raw(qbStatusCaseText("tq"))}, tc2.id,
                    tq.payer_name,
                    tq.qb_entity_type::text, tq.qb_entity_id
@@ -1347,6 +1358,7 @@ router.get(
             SELECT nf2.id, 'fee'::text, nf2.raw_reference, nf2.line_description,
                    nf2.qb_transaction_memo, nf2.amount::text,
                    nf2.date_received::text,
+                   nf2.qb_payment_method,
                    ${sql.raw(qbStatusCaseText("nf2"))}, NULL,
                    nf2.payer_name,
                    nf2.qb_entity_type::text, nf2.qb_entity_id
@@ -1373,6 +1385,7 @@ router.get(
         ad.amount::text AS dep_amount,
         ad.date_received::text AS dep_date,
         ${sql.raw(qbStatusCaseText("ad"))} AS dep_status,
+        ad.qb_payment_method AS dep_payment_method,
         ad.qb_entity_type::text AS dep_qb_entity_type,
         ad.qb_entity_id AS dep_qb_entity_id,
         CASE WHEN ad.organization_id IS NOT NULL THEN 'organization'::text
@@ -1403,6 +1416,7 @@ router.get(
         cc.stripe_payout_id AS payout_id,
         cc.id AS charge_id,
         g.id AS gift_id,
+        g.opportunity_id AS opportunity_id,
         g.name AS gift_name,
         g.amount::text AS amount,
         g.date_received::text AS date_received,
@@ -1430,6 +1444,7 @@ router.get(
         s.id AS id,
         s.date_received::text AS date,
         s.amount::text AS amount,
+        s.qb_payment_method AS payment_method,
         s.payer_name,
         s.raw_reference,
         s.line_description,
@@ -1452,6 +1467,7 @@ router.get(
               'memo', m.qb_transaction_memo,
               'amount', m.amount::text,
               'dateReceived', m.date_received::text,
+              'paymentMethod', m.qb_payment_method,
               'status', ${sql.raw(qbStatusCaseText("m"))},
               'linkedChargeId', NULL,
               'qbEntityType', m.qb_entity_type::text,
@@ -1473,6 +1489,7 @@ router.get(
               'memo', nf.qb_transaction_memo,
               'amount', nf.amount::text,
               'dateReceived', nf.date_received::text,
+              'paymentMethod', nf.qb_payment_method,
               'status', ${sql.raw(qbStatusCaseText("nf"))},
               'linkedChargeId', NULL,
               'qbEntityType', nf.qb_entity_type::text,
@@ -1514,6 +1531,7 @@ router.get(
       SELECT
         pa_j.payment_id AS payment_id,
         g.id AS gift_id,
+        g.opportunity_id AS opportunity_id,
         g.name AS gift_name,
         g.amount::text AS amount,
         g.date_received::text AS date_received,
@@ -1549,6 +1567,7 @@ router.get(
       SELECT
         pa_j.payment_id AS payment_id,
         g.id AS gift_id,
+        g.opportunity_id AS opportunity_id,
         g.name AS gift_name,
         g.amount::text AS amount,
         g.date_received::text AS date_received,
@@ -1573,6 +1592,7 @@ router.get(
           .execute(sql`
       SELECT
         g.id AS gift_id,
+        g.opportunity_id AS opportunity_id,
         g.name AS gift_name,
         g.name AS title_gift_name,
         g.amount::text AS amount,
@@ -1745,6 +1765,7 @@ router.get(
             memo: h.dep_memo,
             amount: h.dep_amount,
             dateReceived: h.dep_date,
+            paymentMethod: h.dep_payment_method,
             status: h.dep_status ?? "pending",
             linkedChargeId: null,
             payerName: h.deposit_payer_name,
@@ -1851,6 +1872,7 @@ router.get(
                 memo: h.qb_transaction_memo,
                 amount: h.amount,
                 dateReceived: h.date,
+                paymentMethod: h.payment_method,
                 status: h.status,
                 linkedChargeId: null,
                 payerName: h.payer_name,
