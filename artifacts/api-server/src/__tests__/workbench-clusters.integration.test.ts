@@ -998,6 +998,69 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     });
   });
 
+  // ── Canonical row-state contract: coverage.state + settlementLinkState ──
+  //
+  // The workbench UI derives status words, gap cards and menu gating from
+  // coverage.state (docs/workbench-business-rules.md §10). Contract:
+  //   - EVERY cluster kind carries coverage.state with the linkage /
+  //     information / flags facets,
+  //   - stripe_payout clusters ALWAYS set settlementLinkState (so the UI can
+  //     distinguish "no settlement yet" from "not applicable"),
+  //   - qb_standalone / crm_only clusters never carry a settlement facet.
+  it("every cluster carries coverage.state; payouts always set settlementLinkState", async () => {
+    // No settlement link at all → "unlinked".
+    const pNone = await seedPayout();
+    await seedCharge(pNone, {});
+    // Confirmed settlement + confirmed charge to a complete gift → "confirmed".
+    const dep = await seedStaged({ entityType: "deposit" });
+    const gDone = await seedCompleteGift();
+    const pConfirmed = await seedPayout({ settledDeposit: dep });
+    await seedCharge(pConfirmed, { matchedGiftId: gDone });
+    // Proposed link with a conflicting gift → "proposed_conflict".
+    const dep2 = await seedStaged({ entityType: "deposit" });
+    const gConf = await seedGift();
+    const pConflict = await seedPayout({
+      proposedDeposit: dep2,
+      conflictGiftId: gConf,
+    });
+    await seedCharge(pConflict, {});
+    // Non-payout kinds: state present, settlement facet absent.
+    const gCrm = await seedGift();
+    const sQb = await seedStaged({});
+
+    const [{ map: open }, { map: completed }, { map: conflicts }] =
+      await Promise.all([
+        listClusters("all_open"),
+        listClusters("completed"),
+        listClusters("conflicts"),
+      ]);
+
+    const rowNone = open.get(`stripe_payout:${pNone}`);
+    expect(rowNone?.coverage?.state?.settlementLinkState).toBe("unlinked");
+    const rowConfirmed = completed.get(`stripe_payout:${pConfirmed}`);
+    expect(rowConfirmed?.coverage?.state?.settlementLinkState).toBe(
+      "confirmed",
+    );
+    const rowConflict = conflicts.get(`stripe_payout:${pConflict}`);
+    expect(rowConflict?.coverage?.state?.settlementLinkState).toBe(
+      "proposed_conflict",
+    );
+    expect(rowConflict?.coverage?.state?.flags.conflict).toBe(true);
+
+    const qbRow = open.get(`qb_standalone:${sQb}`);
+    const crmRow = open.get(`crm_only:${gCrm}`);
+    for (const row of [rowNone, rowConfirmed, rowConflict, qbRow, crmRow]) {
+      expect(row).toBeTruthy();
+      expect(row.coverage?.state).toBeTruthy();
+      expect(typeof row.coverage.state.linkage.state).toBe("string");
+      expect(typeof row.coverage.state.information.state).toBe("string");
+      expect(row.coverage.state.flags).toBeTruthy();
+    }
+    // Non-payout kinds never carry a settlement facet.
+    expect(qbRow.coverage.state.settlementLinkState ?? null).toBeNull();
+    expect(crmRow.coverage.state.settlementLinkState ?? null).toBeNull();
+  }, 60_000);
+
   // ── Invariant: cluster in Completed ⟺ coverage.complete ─────────────────
   //
   // This describe tests the central contract of the workbench-cluster system:
