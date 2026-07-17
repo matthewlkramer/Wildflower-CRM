@@ -107,11 +107,13 @@ const giftCodingForm = `(g.coding_form_circle IS NOT NULL
 
 /**
  * Full allocation completeness — at least one allocation row exists AND
- * every row has entity_id set AND all conditional restriction-field
- * requirements are met:
- *   - time ≠ unrestricted → spending_start + spending_end both set
- *   - usage ≠ unrestricted → purpose_verbatim set
- *   - regional ≠ unrestricted → region_ids non-empty
+ * every row has entity_id set AND all restriction-type fields are non-null AND
+ * all conditional restriction-field requirements are met:
+ *   - NULL restriction type         → incomplete (field not yet filled in)
+ *   - time = donor/wf restricted    → spending_start + spending_end both set
+ *   - usage = donor/wf restricted   → purpose_verbatim set
+ *   - regional = donor/wf restricted → region_ids non-empty
+ *   - unrestricted on any axis      → no supplemental fields required
  */
 const fullAllocComplete = `(
   EXISTS (SELECT 1 FROM gift_allocations ga_c WHERE ga_c.gift_id = g.id)
@@ -120,6 +122,9 @@ const fullAllocComplete = `(
     WHERE ga_x.gift_id = g.id
       AND (
         ga_x.entity_id IS NULL
+        OR ga_x.time_restriction_type IS NULL
+        OR ga_x.usage_restriction_type IS NULL
+        OR ga_x.regional_restriction_type IS NULL
         OR (ga_x.time_restriction_type <> 'unrestricted'
             AND (ga_x.spending_start IS NULL OR ga_x.spending_end IS NULL))
         OR (ga_x.usage_restriction_type <> 'unrestricted'
@@ -905,7 +910,13 @@ function buildClusterCoverage(
     }
   }
 
-  const complete = donorPurpose.complete && paymentTransaction.complete && aeComplete;
+  // A pending refund is unresolved work — the cluster is not complete even if
+  // all three dimensions are otherwise satisfied. Gate here so that
+  // coverage.complete stays in lockstep with f_completed (which requires
+  // NOT payoutRefund) and the invariant "in Completed ⟺ coverage.complete"
+  // holds for the refund case without special-casing it in callers.
+  const hasPendingRefund = nonExcluded.some((c) => c.refundProposed);
+  const complete = !hasPendingRefund && donorPurpose.complete && paymentTransaction.complete && aeComplete;
   return { evidenceRecords: [...chargeEvidence, ...qbEvidence], donorPurpose, paymentTransaction, accountingEvidence, complete };
 }
 
