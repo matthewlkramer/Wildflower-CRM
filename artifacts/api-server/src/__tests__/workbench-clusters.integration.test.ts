@@ -131,6 +131,21 @@ async function seedGift(opts: { amount?: string } = {}): Promise<string> {
   return id;
 }
 
+/** A gift that satisfies giftComplete via the coding_form path (no alloc/grant-letter needed). */
+async function seedCompleteGift(opts: { amount?: string } = {}): Promise<string> {
+  const id = nextId("gift");
+  await db.insert(schema.giftsAndPayments).values({
+    id,
+    organizationId: ORG_ID,
+    ownerUserId: TEST_USER_ID,
+    amount: opts.amount ?? "75.00",
+    dateReceived: futureDate(),
+    codingFormMemo: "complete-for-test",
+  });
+  giftIds.push(id);
+  return id;
+}
+
 async function seedPayout(
   opts: {
     settledDeposit?: string;
@@ -680,7 +695,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     // not here (mirrors the queue workbench split).
     const sParked = await seedStaged({ entityId: "embracing_equity" });
     // Same entity WITH a gift link → normal money, reconciles here.
-    const gSponsored = await seedGift();
+    const gSponsored = await seedCompleteGift();
     const sSponsoredDone = await seedStaged({
       entityId: "embracing_equity",
       matchedGiftId: gSponsored,
@@ -869,7 +884,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       // depositGrainGiftExists=true suppresses payoutAnyOpenCharge; payoutSettled=true
       // → f_completed=true → cluster in "completed" lens.
       const dep = await seedStaged({ entityType: "deposit", amount: "100.00" });
-      const gDep = await seedGift({ amount: "100.00" });
+      const gDep = await seedCompleteGift({ amount: "100.00" });
       const payout = await seedPayout({ settledDeposit: dep, amount: "100.00", netTotal: "100.00" });
       await seedCharge(payout, {});
       await seedDepositApplication({ depositId: dep, giftId: gDep, amountApplied: "100.00" });
@@ -892,9 +907,8 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       expect(qbRecord.linkedGiftId).toBe(gDep);
     });
 
-    it("donorPurpose grain=bundle + incomplete when deposit PA < expected amount", async () => {
-      // depositGrainGiftExists=true even for partial PA → payoutAnyOpenCharge=false, payoutSettled=true
-      // → f_completed=true → cluster in "completed", but coverage.complete=false (shortfall).
+    it("donorPurpose grain=bundle + incomplete when deposit PA < expected amount → cluster stays open", async () => {
+      // depositGrainGiftExists=true, but depositFullyCovered=false (50 < 100) → f_completed=false.
       const dep = await seedStaged({ entityType: "deposit", amount: "100.00" });
       const gDep = await seedGift({ amount: "50.00" });
       const payout = await seedPayout({ settledDeposit: dep, amount: "100.00", netTotal: "100.00" });
@@ -902,7 +916,10 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       await seedDepositApplication({ depositId: dep, giftId: gDep, amountApplied: "50.00" });
 
       const { map: completed } = await listClusters("completed");
-      const row = completed.get(`stripe_payout:${payout}`);
+      expect(completed.has(`stripe_payout:${payout}`)).toBe(false);
+
+      const { map: open } = await listClusters("all_open");
+      const row = open.get(`stripe_payout:${payout}`);
       expect(row).toBeTruthy();
       // Bundle-grain but the credited amount < expected → donorPurpose.crmLinkage.complete=false
       expect(row.coverage.donorPurpose.crmLinkage.grain).toBe("bundle");
@@ -913,8 +930,8 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       );
     });
 
-    it("donorPurpose grain=mixed when both charge PA and deposit PA exist", async () => {
-      // Charge PA + deposit PA → mixed grain; settled → f_completed=true → "completed" lens.
+    it("donorPurpose grain=mixed when both charge PA and deposit PA exist → cluster stays open", async () => {
+      // chargeGrainGiftExists=true AND depositGrainGiftExists=true → neither f_completed arm fires.
       const dep = await seedStaged({ entityType: "deposit", amount: "100.00" });
       const gCharge = await seedGift({ amount: "100.00" });
       const gDep = await seedGift({ amount: "100.00" });
@@ -923,7 +940,10 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       await seedDepositApplication({ depositId: dep, giftId: gDep, amountApplied: "100.00" });
 
       const { map: completed } = await listClusters("completed");
-      const rowAny = completed.get(`stripe_payout:${payout}`);
+      expect(completed.has(`stripe_payout:${payout}`)).toBe(false);
+
+      const { map: open } = await listClusters("all_open");
+      const rowAny = open.get(`stripe_payout:${payout}`);
       expect(rowAny).toBeTruthy();
       expect(rowAny.coverage.donorPurpose.crmLinkage.grain).toBe("mixed");
       expect(rowAny.coverage.donorPurpose.crmLinkage.complete).toBe(false);

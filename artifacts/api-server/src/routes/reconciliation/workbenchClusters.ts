@@ -106,27 +106,76 @@ const giftCodingForm = `(g.coding_form_circle IS NOT NULL
   OR g.coding_form_memo IS NOT NULL)`;
 
 /**
+ * Full allocation completeness — at least one allocation row exists AND
+ * every row has entity_id set AND all conditional restriction-field
+ * requirements are met:
+ *   - time ≠ unrestricted → spending_start + spending_end both set
+ *   - usage ≠ unrestricted → purpose_verbatim set
+ *   - regional ≠ unrestricted → region_ids non-empty
+ */
+const fullAllocComplete = `(
+  EXISTS (SELECT 1 FROM gift_allocations ga_c WHERE ga_c.gift_id = g.id)
+  AND NOT EXISTS (
+    SELECT 1 FROM gift_allocations ga_x
+    WHERE ga_x.gift_id = g.id
+      AND (
+        ga_x.entity_id IS NULL
+        OR (ga_x.time_restriction_type <> 'unrestricted'
+            AND (ga_x.spending_start IS NULL OR ga_x.spending_end IS NULL))
+        OR (ga_x.usage_restriction_type <> 'unrestricted'
+            AND ga_x.purpose_verbatim IS NULL)
+        OR (ga_x.regional_restriction_type <> 'unrestricted'
+            AND (ga_x.region_ids IS NULL OR cardinality(ga_x.region_ids) = 0))
+      )
+  )
+)`;
+
+/**
  * Canonical CRM-record-completeness predicate (SQL boolean).
- * A gift is complete when any of the following is true:
- *   1. Donorbox-backed (a counted donorbox PA exists)
- *   2. Coding form stamped (any Donation Revenue Coding Form field is set)
- *   3. Donor identified AND all active allocations have an entity link
- *      (NOT EXISTS on entity_id IS NULL is vacuously true when no allocs exist,
- *      which is fine — test seeds use no-alloc gifts with donors, and every
- *      real gift must have >= 1 allocation by app invariant.)
- * Mirror any change here in giftCompletenessFor() below.
+ * Paths:
+ *   1. Donorbox-backed: a counted donorbox PA exists.
+ *   2. Coding-form: any Donation Revenue Coding Form field is stamped.
+ *   3. Donor + allocations + letter: donor identified, ≥1 allocation with
+ *      all restriction fields filled (entity_id + conditional dates/purpose/
+ *      regions), AND a grant letter on file.
+ *
+ * satisfiedBy and crmReason columns are derived from this predicate in SQL
+ * and read by giftCompletenessFor() — no separate TypeScript twin.
  */
 const giftComplete = `(
   ${donorboxBacked}
   OR ${giftCodingForm}
   OR (
     COALESCE(g.organization_id, g.individual_giver_person_id, g.household_id) IS NOT NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM gift_allocations ga_x
-      WHERE ga_x.gift_id = g.id AND ga_x.entity_id IS NULL
-    )
+    AND ${fullAllocComplete}
+    AND ${giftGrantLetter}
   )
 )`;
+
+/**
+ * SQL CASE: which path satisfied completeness. Mirrors giftComplete paths 1:1.
+ * Returns 'donorbox' | 'coding_form' | 'donor_and_allocations' | NULL.
+ */
+const giftSatisfiedBy = `(CASE
+  WHEN ${donorboxBacked} THEN 'donorbox'
+  WHEN ${giftCodingForm} THEN 'coding_form'
+  WHEN COALESCE(g.organization_id, g.individual_giver_person_id, g.household_id) IS NOT NULL
+    AND ${fullAllocComplete} AND ${giftGrantLetter} THEN 'donor_and_allocations'
+  ELSE NULL
+END)`;
+
+/**
+ * SQL CASE: primary reason when not satisfied (NULL when complete).
+ * Precedence: donor missing → allocation missing → restriction fields incomplete.
+ */
+const giftCrmReason = `(CASE
+  WHEN ${giftComplete} THEN NULL
+  WHEN COALESCE(g.organization_id, g.individual_giver_person_id, g.household_id) IS NULL
+    THEN 'missing_donor'
+  WHEN NOT EXISTS (SELECT 1 FROM gift_allocations ga_r WHERE ga_r.gift_id = g.id)
+    THEN 'missing_allocation'
+  ELSE 'missing_restriction_fields'
+END)`;
 
 /* ── slim universe (lens flags only) ───────────────────────────────────── */
 
@@ -258,6 +307,59 @@ const qbSaysDonation = (a: string) => `(
 // Excluded, but the coding says donation ⇒ likely wrongly excluded.
 const qbExcludedSaysDonation = `(${qbAllExcluded} AND ${qbSaysDonation("s")})`;
 
+// ── f_completed sub-predicates ───────────────────────────────────────────
+// At least one charge has a counted charge-grain Stripe PA.
+const chargeGrainGiftExists = `EXISTS (
+  SELECT 1 FROM stripe_staged_charges cc_cg
+  JOIN payment_applications pa_cg ON pa_cg.stripe_charge_id = cc_cg.id
+    AND pa_cg.evidence_source = 'stripe' AND pa_cg.link_role = 'counted'
+  WHERE cc_cg.stripe_payout_id = sp.id
+)`;
+// Total PA amount applied to the settled deposit >= net_total (±0.005 tolerance).
+const depositFullyCovered = `EXISTS (
+  SELECT 1 FROM settlement_links sl_dfc
+  WHERE sl_dfc.payout_id = sp.id AND sl_dfc.lifecycle = 'confirmed'
+    AND (
+      SELECT COALESCE(SUM(pa_dfc.amount_applied), 0)
+      FROM payment_applications pa_dfc
+      WHERE pa_dfc.payment_id = sl_dfc.deposit_staged_payment_id
+        AND pa_dfc.link_role = 'counted' AND pa_dfc.evidence_source = 'quickbooks'
+    ) >= COALESCE(sp.net_total, sp.amount) - 0.005
+)`;
+// No charge-linked gift fails giftComplete.
+const allChargeLinkedGiftsComplete = `NOT EXISTS (
+  SELECT 1 FROM stripe_staged_charges cc_gc
+  JOIN payment_applications pa_gc ON pa_gc.stripe_charge_id = cc_gc.id
+    AND pa_gc.evidence_source = 'stripe' AND pa_gc.link_role = 'counted'
+  JOIN gifts_and_payments g ON g.id = pa_gc.gift_id
+  WHERE cc_gc.stripe_payout_id = sp.id AND NOT (${giftComplete})
+)`;
+// No deposit-linked gift fails giftComplete.
+const allDepositLinkedGiftsComplete = `NOT EXISTS (
+  SELECT 1 FROM settlement_links sl_gc
+  JOIN payment_applications pa_gc ON pa_gc.payment_id = sl_gc.deposit_staged_payment_id
+    AND pa_gc.evidence_source = 'quickbooks' AND pa_gc.link_role = 'counted'
+  JOIN gifts_and_payments g ON g.id = pa_gc.gift_id
+  WHERE sl_gc.payout_id = sp.id AND sl_gc.lifecycle = 'confirmed'
+    AND NOT (${giftComplete})
+)`;
+// No QB-linked gift (own PA or any group sibling PA) fails giftComplete.
+const allQbLinkedGiftsComplete = `NOT EXISTS (
+  SELECT 1 FROM payment_applications pa_qgc
+  JOIN gifts_and_payments g ON g.id = pa_qgc.gift_id
+  WHERE pa_qgc.link_role = 'counted'
+    AND NOT (${giftComplete})
+    AND (
+      pa_qgc.payment_id = s.id
+      OR pa_qgc.payment_id IN (
+        SELECT ugm_m.source_id FROM unit_group_members ugm_m
+        JOIN unit_group_members ugm_rep ON ugm_rep.group_id = ugm_m.group_id
+          AND ugm_rep.evidence_source = 'quickbooks'
+        WHERE ugm_rep.source_id = s.id AND ugm_m.evidence_source = 'quickbooks'
+      )
+    )
+)`;
+
 // crm_only half — an on-books gift with no counted QB/Stripe ledger row.
 // Donorbox-only gifts stay (badge); exempt/off-books and reimbursable
 // placeholders are omitted; archived and awaiting-settlement gifts too.
@@ -302,10 +404,13 @@ function buildUniverse(q: string | null): SQL {
       false AS f_qb_says_donation,
       ${sql.raw(payoutAllExcluded)} AS f_excluded,
       (${sql.raw(payoutHasNonExcluded)}
-        AND NOT ${sql.raw(payoutAnyOpenCharge)}
         AND ${payoutSettled}
         AND NOT ${sql.raw(payoutConflict)}
-        AND NOT ${sql.raw(payoutRefund)}) AS f_completed
+        AND NOT ${sql.raw(payoutRefund)}
+        AND (
+          (NOT ${sql.raw(payoutAnyOpenCharge)} AND NOT ${sql.raw(depositGrainGiftExists)} AND ${sql.raw(allChargeLinkedGiftsComplete)})
+          OR (${sql.raw(depositGrainGiftExists)} AND NOT ${sql.raw(chargeGrainGiftExists)} AND ${sql.raw(depositFullyCovered)} AND ${sql.raw(allDepositLinkedGiftsComplete)})
+        )) AS f_completed
     FROM stripe_payouts sp
     ${stripeSearch}`;
 
@@ -321,7 +426,7 @@ function buildUniverse(q: string | null): SQL {
       false AS f_refund,
       ${sql.raw(qbExcludedSaysDonation)} AS f_qb_says_donation,
       ${sql.raw(qbAllExcluded)} AS f_excluded,
-      (NOT ${sql.raw(qbNeedsGift)} AND NOT ${sql.raw(qbAllExcluded)}) AS f_completed
+      (NOT ${sql.raw(qbNeedsGift)} AND NOT ${sql.raw(qbAllExcluded)} AND ${sql.raw(allQbLinkedGiftsComplete)}) AS f_completed
     FROM staged_payments s
     WHERE ${sql.raw(qbEligible)}
     ${qbSearch}`;
@@ -463,6 +568,8 @@ interface GiftRowBase {
   grant_letter: boolean;
   coding_form: boolean;
   gift_complete: boolean;
+  satisfied_by: "donorbox" | "coding_form" | "donor_and_allocations" | null;
+  crm_reason: "missing_donor" | "missing_restriction_fields" | "missing_allocation" | null;
 }
 
 interface PayoutGiftRow extends GiftRowBase {
@@ -513,6 +620,8 @@ interface GiftOut {
   grantLetter: boolean;
   codingForm: boolean;
   recordComplete: boolean;
+  satisfiedBy: CrmSatisfiedBy;
+  crmReason: CrmRecordReason | null;
   linkedChargeIds: string[];
   linkedStagedPaymentIds: string[];
 }
@@ -585,19 +694,16 @@ interface CoverageOut {
 }
 
 /**
- * Canonical gift-record-completeness predicate (mirrors giftComplete SQL).
- * Called once per linked gift to determine satisfiedBy / reasons.
- * Any change here must be mirrored in the giftComplete SQL constant above.
+ * Read the SQL-derived satisfiedBy / crmReason fields from GiftOut.
+ * No logic is duplicated here — satisfiedBy and crmReason are computed
+ * once in the gift SELECT queries (giftSatisfiedBy / giftCrmReason SQL
+ * fragments) and passed through verbatim.
  */
 function giftCompletenessFor(g: GiftOut): CrmGiftCompletenessDetail {
-  if (g.donorbox) return { giftId: g.giftId, reasons: [], satisfiedBy: "donorbox" };
-  if (g.codingForm) return { giftId: g.giftId, reasons: [], satisfiedBy: "coding_form" };
-  if (g.recordComplete) {
-    return { giftId: g.giftId, reasons: [], satisfiedBy: "donor_and_allocations" };
+  if (g.satisfiedBy !== null) {
+    return { giftId: g.giftId, reasons: [], satisfiedBy: g.satisfiedBy };
   }
-  const reasons: CrmRecordReason[] = g.donorId
-    ? ["missing_restriction_fields"]
-    : ["missing_donor"];
+  const reasons: CrmRecordReason[] = g.crmReason ? [g.crmReason] : [];
   return { giftId: g.giftId, reasons, satisfiedBy: null };
 }
 
@@ -840,6 +946,8 @@ function giftOut(g: GiftRowBase, viewer: Viewer): GiftOut {
     donorKind: g.donor_kind,
     donorId: g.donor_id,
     recordComplete: g.gift_complete,
+    satisfiedBy: g.satisfied_by,
+    crmReason: g.crm_reason,
     amount: g.amount,
     dateReceived: g.date_received,
     quickbooksTie: g.quickbooks_tie,
@@ -1109,7 +1217,9 @@ router.get(
         ${sql.raw(donorboxBacked)} AS donorbox,
         ${sql.raw(giftGrantLetter)} AS grant_letter,
         ${sql.raw(giftCodingForm)} AS coding_form,
-        ${sql.raw(giftComplete)} AS gift_complete
+        ${sql.raw(giftComplete)} AS gift_complete,
+        ${sql.raw(giftSatisfiedBy)}::text AS satisfied_by,
+        ${sql.raw(giftCrmReason)}::text AS crm_reason
       FROM stripe_staged_charges cc
       JOIN payment_applications pa_j ON pa_j.stripe_charge_id = cc.id
         AND pa_j.evidence_source = 'stripe' AND pa_j.link_role = 'counted'
@@ -1218,7 +1328,9 @@ router.get(
         ${sql.raw(donorboxBacked)} AS donorbox,
         ${sql.raw(giftGrantLetter)} AS grant_letter,
         ${sql.raw(giftCodingForm)} AS coding_form,
-        ${sql.raw(giftComplete)} AS gift_complete
+        ${sql.raw(giftComplete)} AS gift_complete,
+        ${sql.raw(giftSatisfiedBy)}::text AS satisfied_by,
+        ${sql.raw(giftCrmReason)}::text AS crm_reason
       FROM payment_applications pa_j
       JOIN gifts_and_payments g ON g.id = pa_j.gift_id
       ${sql.raw(donorJoins)}
@@ -1251,7 +1363,9 @@ router.get(
         ${sql.raw(donorboxBacked)} AS donorbox,
         ${sql.raw(giftGrantLetter)} AS grant_letter,
         ${sql.raw(giftCodingForm)} AS coding_form,
-        ${sql.raw(giftComplete)} AS gift_complete
+        ${sql.raw(giftComplete)} AS gift_complete,
+        ${sql.raw(giftSatisfiedBy)}::text AS satisfied_by,
+        ${sql.raw(giftCrmReason)}::text AS crm_reason
       FROM payment_applications pa_j
       JOIN gifts_and_payments g ON g.id = pa_j.gift_id
       ${sql.raw(donorJoins)}
@@ -1274,7 +1388,9 @@ router.get(
         ${sql.raw(donorboxBacked)} AS donorbox,
         ${sql.raw(giftGrantLetter)} AS grant_letter,
         ${sql.raw(giftCodingForm)} AS coding_form,
-        ${sql.raw(giftComplete)} AS gift_complete
+        ${sql.raw(giftComplete)} AS gift_complete,
+        ${sql.raw(giftSatisfiedBy)}::text AS satisfied_by,
+        ${sql.raw(giftCrmReason)}::text AS crm_reason
       FROM gifts_and_payments g
       ${sql.raw(donorJoins)}
       WHERE g.id IN (${inList(crmIds)})`)

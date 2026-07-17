@@ -147,6 +147,7 @@ timeoutMs = 180000
 
 [nix]
 channel = "stable-25_05"
+packages = ["myrddin"]
 
 [userenv]
 
