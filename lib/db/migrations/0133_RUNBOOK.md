@@ -1,15 +1,17 @@
 # 0133 — Bulk resolution of the coding-form review queue
 
-**Date judged:** 2026-07-18 · **Rows:** 269 pending prod `coding_form_rows`
+**Date judged:** 2026-07-18 (first pass; second pass the same day re-judged the 73 rows
+left pending, one by one against prod gifts) · **Rows:** 269 pending prod `coding_form_rows`
 
 | Outcome | Count | What the SQL does |
 |---|---|---|
 | Confirmed (matcher verified) | 161 | stamps `match_confirmed_at/by` + per-attribute `decisions` |
-| Confirmed (hand-matched) | 8 | also sets donor + `matched_gift_id` (method=manual, tier=high) |
-| Donor pre-filled, stays pending | 18 | sets donor only — gift isn't booked yet, so no confirm |
-| Skipped (non-donations + 1 duplicate) | 27 | `status='skipped'` |
-| Matching QB rows excluded | 2 | `staged_payments.exclusion_reason` set (rest were already excluded) |
-| Left pending for a human | 55 | untouched — reasons listed below |
+| Confirmed (hand-matched, first pass) | 8 | also sets donor + `matched_gift_id` (method=manual, tier=high) |
+| Confirmed (hand-matched, second pass) | 49 | same shape — section 6 of the SQL; 12 were donor-only in the first pass |
+| Donor pre-filled, stays pending | 13 | 6 first-pass stamps + 2 IRS→US Treasury stamps; 5 verified matcher prefills need no write |
+| Skipped (non-donations + duplicates) | 32 | `status='skipped'` (25 first pass + 7 second pass) |
+| Matching QB rows excluded | 2 | `staged_payments.exclusion_reason` set (every second-pass skip's QB row was already excluded) |
+| Left pending for a human | 6 | untouched — each carries a note below |
 
 **Confirmer:** all confirmations are stamped `usr_matthew_kramer`. To attribute to Erica
 instead, find-replace `usr_matthew_kramer` in the SQL before running.
@@ -34,10 +36,10 @@ The decisions below were re-audited against four owner rules. Where a rule and t
 form answer disagree, the rule wins:
 
 1. **Yield gift + anything from Arthur Rock: NEVER donor-restricted** (always
-   unrestricted or Wildflower-designated). No confirmed rows were affected — every
-   Arthur Rock row (fy25_0, fy25_109, fy25_110, fy26_107, fy26_108, fy26_109) is
-   pending or donor-only. Whoever resolves them by hand: do NOT apply any
-   restriction, whatever the form says.
+   unrestricted or Wildflower-designated). All six Arthur Rock rows (fy25_0,
+   fy25_109, fy25_110, fy26_107, fy26_108, fy26_109) are now confirmed in the
+   second pass (section 4) with every restriction attribute skipped, per this
+   rule — whatever the form said.
 2. **Anything for BWF / Black Wildflowers Fund is donor-restricted**, even when the
    form says gen-ops/unrestricted. 6 rows flipped to apply the usage-restriction
    axis: fy24_43 (Bainum "no", but the memo says this half is for BWF), fy24_44
@@ -62,10 +64,19 @@ form answer disagree, the rule wins:
    those projects). No row in this queue carries an unapplied Donorbox designation —
    the Donorbox BWF rows already apply — but the rule governs future queue reviews.
 
-Rules 2–4 also bind the rows left pending/donor-only (e.g. fy24_36 NBCDI-for-BWF,
-fy24_33 + fy25_103 MN gen-op, fy24_39 Mid-Atlantic, fy24_12 + fy25_2 DC hub,
-fy24_21/22 Colorado/Minnesota): when a human confirms them later, apply the matching
-restriction even if the form says unrestricted.
+Rules 2–4 were applied through the second pass as well (fy24_33 MN gen-op and
+fy24_39 Mid-Atlantic are now confirmed with the matching flips). **One manual
+follow-up:** the two malformed "Hub:" rows fy24_21 (Gates Family Foundation $95,000,
+Colorado) and fy24_22 (Sauer Family Foundation $20,000, Minnesota) are confirmed,
+but the hub designation sits only in the raw donor-name cell — there is no parsed
+restriction attribute for "Apply decided" to flip. A prod check shows the Gates
+allocation carries the Colorado region but its regional axis is still unrestricted,
+and the Sauer allocation has neither the region nor the restriction. After "Apply
+decided", set both allocations' regional axis to donor-restricted (and add Minnesota
+to the Sauer allocation) by hand in the app, per rule 3. The rules still bind the
+rows left donor-only (e.g. fy24_36 NBCDI-for-BWF, fy25_103 MN gen-op): when a human
+confirms them later, apply the matching restriction even if the form says
+unrestricted.
 
 ## Other judgment calls to sanity-check
 
@@ -76,8 +87,8 @@ restriction even if the form says unrestricted.
   "unrestricted to Wildflower", fy25_7 "Not restricted but… Seed fund".
 - **"Yes to BWF"-style answers DO latch donor-restricted** (the submitter answered yes to
   the restriction question), incl. "only to BWF, not by purpose".
-- **Addresses:** applied only when the CRM had none (78 rows); conflicting addresses were left alone.
-- **Regional restriction:** now applied on 56 rows (2 original + 54 under rule 3).
+- **Addresses:** applied only when the CRM had none (99 rows across both passes); conflicting addresses were left alone.
+- **Regional restriction:** now applied on 70 rows (2 original + 54 under rule 3 + 14 second-pass confirms).
   Append-the-region semantics: existing allocation regions are kept, the hub region
   is added once, and the regional axis latches to donor-restricted.
 - **Amy Gips** appears as BOTH a person and an organization — the person record was used
@@ -96,40 +107,31 @@ restriction even if the form says unrestricted.
 | GIRASOL row 0 | Han Kao and Kaye Quema Kao $5,000.00 | Hanhwa Kao | $5,000 Kao check #1 FY25 | gift "Kao check #1 FY25" $5,000 2024-10-03 vs row 2024-10-01 |
 | GIRASOL row 1 | Han Kao and Kaye Quema Kao $5,000.00 | Hanhwa Kao | $5,000 Kao check #2 FY25 | gift "Kao check #2 FY25" $5,000 2024-10-03 vs row 2024-10-01 |
 
-## 2. Donor pre-filled, left pending (18) — gift not booked yet
+## 2. Donor pre-filled, left pending (6) — gift not booked yet
 
-These stay in the queue: the money isn't in the CRM as a gift yet (mostly checks that
-predate QuickBooks sync coverage or aren't deposited). The donor is stamped so a later
-reviewer only has to attach the gift.
+These stay in the queue: the money isn't in the CRM as a gift yet. The donor is stamped
+so a later reviewer only has to attach the gift. (The other 12 rows that sat here in the
+first pass moved to the second-pass confirms in section 4 — their gifts turned out to be
+booked.)
 
 | Row | Sheet says | Donor stamped | Note |
 |---|---|---|---|
 | FY24 row 30 | LISC $8,578.61 | Early Milestones (CO LISC) | LISC/Colorado funder; no $8,578.61 gift booked yet |
-| FY24 row 33 | McKnight Foundation (Dana Anderson) $25,000.00 | McKnight Foundation | clean org match; no $25,000 gift booked yet |
 | FY24 row 36 | NBCDI $540.00 | National Black Child Development Institute | NBCDI = National Black Child Development Institute; no $540 gift booked yet |
-| FY24 row 39 | Spring Point $5,000.00 | Spring Point Partners | clean org match; no $5,000 gift booked yet |
 | FY25 row 103 | Frey Foundation (via St. Paul + Minnesota Foundation) $60,000.00 | Frey Foundation | clean org match; no $60,000 gift booked yet |
-| FY25 row 34 | Lars + Becky Klevan via Schwab Charitable $250.00 | Lars and Becky Klevan | household matched via FY23 "$250 Schwab DAF Klevan gift"; FY25 $250 gift not booked yet |
-| FY25 row 39 | Amy Gips / Fidelity Charitable DAF $5,000.00 | Amy Gips | person matched (books the "$15,000 AG to BWF" gift); NOTE: a separate org record "Amy Gips" also exists — possible duplicate; no $5,000 gift booked yet |
-| FY26 row 108 | Arthur Rock (via Vanguard Charitable) $150,000.00 | Arthur Rock | gave via Vanguard Charitable (person, not the company); $150k BWF slice of a larger gift not booked yet |
-| FY26 row 19 | Allen + Carolina Vasan $5,000.00 | Allen Vasan | person matched via 2020 gift; no FY26 $5,000 Seed Fund gift booked yet |
-| FY26 row 21 | Lars and Becky Klevan / DAFGiving360 $500.00 | Lars and Becky Klevan | same household as FY25 row; FY26 $500 gift not booked yet |
-| FY26 row 25 | Cisco via Benevity $10,000.00 | Cisco / Cisco Foundation | employee-match donor; no $10,000 Cisco gift booked yet (the $10k FY26 gift is the Barnes DAF gift, matched to cfr_fy26_26) |
 | FY26 row 58 | Fidelity Foundations (prefers to be Anonymous in public facing documents) $15,000.00 | Fidelity Foundations | $15,000 slice of the $80,000 Inkwell grant; no matching gift booked yet |
 | FY26 row 59 | Fidelity Foundations (They prefer to remain Anonymous in public facing documents) $65,000.00 | Fidelity Foundations | $65,000 slice of the $80,000 Inkwell grant; no matching gift booked yet |
 | FY26 row 6 | Loyola University Maryland's Center for Montessori Education $2,088.00 | Loyola University Maryland | Center for Montessori Education sits under Loyola University Maryland; no $2,088 gift booked yet |
-| FY26 row 61 | The Scholler Foundation (paid by The Glenmede Trust) $5,000.00 | Scholler Foundation (of Philadelphia) | memo says "for work in PA / the MidAtlantic" — the Philadelphia Scholler; no FY26 $5,000 gift booked yet |
-| FY26 row 70 | Jacqui Miller $104.70 | Jacqueline Miller | name match; candidate gift "MILLER 104.7" is 2025-12-31 vs row 2026-02-23 — likely a different monthly payment, gift left unmatched |
-| FY26 row 91 | James Cantoni $104.70 | Jim and Gretchen Cantoni | name match (Jim=James); candidate gift 2026-02-12 vs row 2026-03-11 — likely a different monthly payment, gift left unmatched |
-| FY26 row 99 | Gary Community Ventures $500.00 | Gary Community Investments | Gary Community Ventures = Gary Community Investments; no $500 gift booked yet |
 
-## 3. Skipped (27)
+
+## 3. Skipped in the first pass (25)
+
+(The two IRS ERC refund rows first judged as skips moved to section 5 — they are real
+expected money (Employee Retention Credit refunds), donor = US Dept of the Treasury.)
 
 | Row | Sheet says | Reason |
 |---|---|---|
-| FY24 row 26 | IRS Credit $4,133.58 | IRS employee-retention credit refund — not a donation |
 | FY24 row 49 | WeWork — | WeWork service-retainer refund — not a donation |
-| FY25 row 1 | IRS Credit $4,133.58 | IRS credit refund (same 941 credit as the FY24 sheet row) — not a donation |
 | FY25 row 10 | Cosmos $1,567.09 | school membership fee (invoice) — not a donation |
 | FY25 row 11 | Sweet Pea $500.00 | school fee invoice — not a donation |
 | FY25 row 14 | IRS - not a donor $5,021.50 | IRS check; submitter marked "not a donor" |
@@ -165,67 +167,110 @@ excludes the remaining two:
 - `g6Ad2qr2RNPSkCSgnTZPb` — We Are Rally $637.83 (2024-07-22) — travel-expense reimbursement mislabeled "Donation" → `expense_refund`
 - `OnHtz0il_QXi68OtEm2_n` — IRS check $5,021.50 (deposit 2024-08-30) — submitter marked "not a donor" → `tax_refund`
 
-## 4. Left pending for a human (55)
+## 4. SECOND PASS — hand-matched confirms (49)
+
+Each row was matched by hand against the booked gift in prod (donor cross-checked against
+the gift's donor in every case — zero mismatches). Decisions follow the same owner policy
+rules as the first pass. The three Kinsman/Clark duplicate pairs (FY25 rows 26/27/49 vs
+GIRASOL rows 2/3/5) intentionally confirm the same gifts — each pair is the same money
+appearing on two sheets.
+
+| Row | Sheet says | Donor | Gift | Decisions | Why |
+|---|---|---|---|---|---|
+| FY25 row 45 | Sinha Kikeri Fund at Vanguard Charitable $500.00 | Sinha Kikeri Fund | FY25 Meera Sinha $500 to BWF (`rec1NB1EFS7dppJxA`) | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo | Sinha Kikeri Fund org; Meera Sinha (rec6Hdt6FCL1eoq8V) is the associated person |
+| FY24 row 38 | Scholler Foundation $5,000.00 | Scholler Foundation (of Philadelphia) | FY24 Scholler $5,000 Grant (`recMHxIilqMtmedlw`) | apply: purposeVerbatim, usageRestriction, intendedUsage, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo | Scholler Foundation FY24 $5,000 grant, 2023-11-15 |
+| FY26 row 61 | The Scholler Foundation (paid by The Glenmede Trust) $5,000.00 | Scholler Foundation (of Philadelphia) | FY26 $5,000 Scholler Donation (`recYz1N2w7yA2Rj8s`) | apply: purposeVerbatim, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction | Scholler FY26 $5,000, 2026-01-05 |
+| FY24 row 39 | Spring Point $5,000.00 | Spring Point Partners | Spring Point $5,000 for MidAtlantic Conference Travel (`recbtJ7T6UEpUmrQE`) | apply: purposeVerbatim, usageRestriction, regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address | Spring Point $5,000 MidAtlantic conference travel |
+| FY25 row 34 | Lars + Becky Klevan via Schwab Charitable $250.00 | Lars and Becky Klevan | $250 Schwab DAF Klevan FY25 (`recWAZ502r2py0y79`) | apply: intendedUsage, address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction | Klevan Schwab DAF $250 FY25, 2024-11-22 |
+| FY26 row 21 | Lars and Becky Klevan / DAFGiving360 $500.00 | Lars and Becky Klevan | FY26 $500 Klevan DAFGIving 360 (`recuWeRNpweITpTmV`) | apply: intendedUsage, address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction | Klevan DAFGiving360 $500 FY26, same-day |
+| FY26 row 25 | Cisco via Benevity $10,000.00 | Cisco / Cisco Foundation | FY26 Cisco Matching Gift/Benevity $10,000 (`rectfTJHD1Ct2Bff6`) | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo | Cisco/Benevity matching gift; booked $9,745 net of Benevity fee vs $10,000 sheet |
+| FY26 row 99 | Gary Community Ventures $500.00 | Gary Community Investments | $500 Gary Community gift FY26 (`recSZlM6PB2MpEjpb`) | apply: intendedUsage, regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address | Gary Community $500 FY26, 2026-04-03 |
+| FY26 row 19 | Allen + Carolina Vasan $5,000.00 | Allen Vasan | Allen Vasan FY26 $5,000 gift (`recfizeCcgJDLcstI`) | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address | Allen Vasan FY26 $5,000, 2025-10-28 |
+| FY26 row 66 | Tosha Downey / DAFGiving360 $500.00 | Tosha Downey | FY26 $500 Downey to BWF (`recscOXQlnqcFapGh`) | apply: purposeVerbatim, usageRestriction, intendedUsage, circle, seriesType, additionalNotes, internalMemo · skip: address | Tosha Downey $500 via AOGF DAF (AOGF org is the intermediary, person is donor) |
+| FY26 row 94 | Angie Schiavoni $261.28 | Sep Kamvar and Angie Schiavoni | FY26 Schiavoni $250 to support MN (`recJD01osCFlp9JBK`) | apply: regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction | Schiavoni $261.28 (sheet matches booked amount exactly), 2026-02-17 |
+| FY26 row 60 | Diana Barrientos / Barrientos Family $10,000.00 | Abinadi and Diana Barrientos | FY26 Barrientos $10,000 to Girasol (`recKJm17gyYk0ElbE`) | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo | Barrientos FY26 $10,000 to Girasol; gift on household (row prefill was person) |
+| FY24 row 21 | Hub: Colorado — | Gates Family Foundation | FY23/24 $95,000 (`reclJw7j6j0cv1AZW`) | apply: circle, seriesType, additionalNotes · skip: address | "Hub: Colorado / $95,000" = Gates Family Foundation FY23/24 $95,000 gift |
+| FY25 row 72 | Erica Cantoni $1,041.00 | Erica Cantoni | FY25 $1000 to BWF (`reclHgE9b3eAiV4yB`) | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo | Erica Cantoni $1,041.44 booked 2024-12-13 (sheet $1,041, sheet date is entry date) |
+| FY25 row 74 | Zita Blankenship $200.00 | Zita Blankenship | Zita FY25 $200 to BWF (`rec0CStLdZIdrKaUq`) | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address | Zita FY25 $200 to BWF, 2024-11-13; donor from gift |
+| FY25 row 78 | Alia Peera $26.00 | Alia Peera | Peera FY25 $26.34 to BWF (`rec8WGeEsMTXIzkui`) | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo | Alia Peera $26.34 to BWF, 2024-11-20 |
+| FY25 row 83 | Jasmine Williams $30.00 | Jasmine Williams | $30 FY25 Williams to BWF (`recDVrhuBjwrQn2tp`) | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo | Jasmine Williams $30 FY25 to BWF |
+| FY25 row 99 | Mike Esposito $5.00 | Mike Esposito | $5 FY25 Esposito to BWF (`rec4RAqfCFyKbpOPd`) | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo | Esposito $5 FY25 to BWF |
+| FY26 row 50 | Yohance Fuller $1,000.00 | Yohance Fuller | Fuller 1000.0 2025-12-17T18:00:36.871Z (`rec2rmfIruZyp45QG`) | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address | Yohance Fuller $1,000 donation booked $1,025.52 gross (donor covered fees) |
+| FY26 row 67 | Keith Tom / Daffy Charitable Fund $50,000.00 | Keith Tom | FY26 $50,000 Tom grant to SSJ tech project (`recIFKQo27eY4UAss`) | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address | Keith Tom FY26 $50,000 (gift was prefilled by matcher; date on gift is 2024-12-03) |
+| FY25 row 39 | Amy Gips / Fidelity Charitable DAF $5,000.00 | Amy Gips | $5000 FY25 BWF Sponsorship (`recSzMEOcixiUIJCc`) | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address | Amy Gips $5,000 FY25 BWF sponsorship, exact date match 2024-12-03 |
+| FY25 row 61 | Coulter Financial Services, LLC $52.37 | Cristina Coulter | $52 FY25 Coulter to BWF (`recv2jzkZwsWyswq5`) | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo | $52.37 FY25 Coulter to BWF booked on person Cristina Coulter (row FK was Coulter Financial org) |
+| FY26 row 70 | Jacqui Miller $104.70 | Jacqueline Miller | MILLER 104.7 2026-01-01T04:51:37.240Z (`recD9JriPj0KXnfs9`) | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address | Jacqueline Miller $104.70 booked 2025-12-31; sheet dated 2026-02-23 (entry lag) |
+| FY26 row 91 | James Cantoni $104.70 | Jim and Gretchen Cantoni | FY26 Jim Cantoni $104 to WF MN (`recWGpAhncOLyoCZ2`) | apply: regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction | Jim Cantoni $104.70 to WF MN booked 2026-02-12 |
+| FY24 row 22 | Hub: Minnesota — | Sauer Family Foundation | Sauer FY24 Renewal (`copper-26819504`) | apply: circle, seriesType, additionalNotes · skip: purposeVerbatim, usageRestriction, address | "Hub: Minnesota / $20,000" = Sauer Family Foundation FY24 renewal $20,000, 2023-06-28 (inferred: only $20k MN-donor gift in window) |
+| FY26 row 82 | Inspired Minds Collide $514.41 | Erika McDowell | McDowell 514.41 2026-02-06T21:17:17.771Z (`rechzl3wVUGWvokGY`) | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address | Inspired Minds Collide $514.41 booked on Erika McDowell person (her org); same exact amount |
+| FY26 row 7 | Erica Cantoni $25.00 | Erica Cantoni | Erica Cantoni (`3Sma2jl733kNY_PeaKufu`) | apply: intendedUsage, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction | Erica Cantoni $25 + covered fees = $26.41 gross, same-day 2025-08-13 |
+| FY26 row 9 | Matt Kramer $50.00 | Matthew Kramer | Matthew Kramer (`q8hdNMW-tU3mocujuvEvs`) | apply: intendedUsage, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address | Kramer $50 2025-08-13; gift on "Matthew Kramer" person (row prefill "Matt Kramer" recfaGqFyVmmQEt9Q is a duplicate person record — dedup candidate) |
+| FY26 row 100 | Alexander Brown $150.00 | Alexander Brown | Alexander Brown (`CQCTOUS6l-g85uTYdidxx`) | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address | Alexander Brown $150 monthly, April instance 2026-04-10 |
+| FY26 row 104 | Alexander Brown $150.00 | Alexander Brown | Alexander Brown (`O19isipf8UIhokCX94iCu`) | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address | Brown May instance; NOTE two May $150 gifts exist (eUBk8zWoVto1XYBEqosYN 05-08 and O19isipf 05-12) — possible duplicate booking to review |
+| FY25 row 26 | Robert Kinsman $5,000.00 | Robert Kinsman | FY25 #1 $5000 to Girasol School (`recaEvDq6sH0dUwwD`) | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage | Kinsman gift #1 |
+| GIRASOL row 2 | Robert Kinsman $5,000.00 | Robert Kinsman | FY25 #1 $5000 to Girasol School (`recaEvDq6sH0dUwwD`) | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, internalMemo · skip: intendedUsage | duplicate of fy25_26 (girasol sheet) |
+| FY25 row 27 | Robert Kinsman- Kinsman & Krause Law Firm $5,000.00 | Robert Kinsman | FY25 #2 $5000 to Girasol School (`recIjd13EwIbt4srb`) | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage | Kinsman gift #2 (sheet row named the law firm; gift booked on person) |
+| GIRASOL row 3 | Robert Kinsman- Kinsman & Krause Law Firm $5,000.00 | Robert Kinsman | FY25 #2 $5000 to Girasol School (`recIjd13EwIbt4srb`) | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, internalMemo · skip: intendedUsage | duplicate of fy25_27 (girasol sheet) |
+| FY25 row 49 | Tom and Sarah Clark ℅ Timber Capital LLC $10,000.00 | Timber Capital LLC | $10,000 FY25 Timber Capital / Clark gift to Girasol (`recapgGLcI8ABN0R7`) | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage | Timber Capital/Clark $10,000 to Girasol, 2025-01-09 |
+| GIRASOL row 5 | Tom and Sarah Clark ℅ Timber Capital LLC $10,000.00 | Timber Capital LLC | $10,000 FY25 Timber Capital / Clark gift to Girasol (`recapgGLcI8ABN0R7`) | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, internalMemo · skip: intendedUsage | duplicate of fy25_49 (girasol sheet) |
+| FY25 row 0 | Arthur Rock $1,500,000.00 | Arthur Rock & Company | Arthur School FY24 (`recPuB4akP0d4AZsN`) | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, intendedUsage, address | Arthur Rock $1.5M "Arthur School FY24" gift 2024-06-25 (2 allocations: gen-ops + seed fund per memo) |
+| FY25 row 109 | Arthur Rock $1,000,000.00 | Arthur Rock & Company | FY25 Arthur Rock - National (`rec9jTzxSntRLSX5K`) | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address | Rock FY25 $1.5M gift covers this $1M National row + fy25_110 $500k Seed row (2 allocations) |
+| FY25 row 110 | Arthur Rock $500,000.00 | Arthur Rock & Company | FY25 Arthur Rock - National (`rec9jTzxSntRLSX5K`) | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address | second row of the $1.5M FY25 Rock gift (see fy25_109) |
+| FY26 row 107 | Arthur Rock $1,150,000.00 | Arthur Rock & Company | Vanguard Charitable/Arthur Rock Fund (`DWN2URcC3_p0WhfUItlxo`) | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, intendedUsage, address | FY26 Rock $1.6M gift = $1.15M gen-ops + $150k BWF + $300k Seed; 3 allocations mirror rows 107/108/109 |
+| FY26 row 108 | Arthur Rock (via Vanguard Charitable) $150,000.00 | Arthur Rock & Company | Vanguard Charitable/Arthur Rock Fund (`DWN2URcC3_p0WhfUItlxo`) | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, intendedUsage, address | BWF $150k row of the FY26 Rock $1.6M gift |
+| FY26 row 109 | Arthur Rock $300,000.00 | Arthur Rock & Company | Vanguard Charitable/Arthur Rock Fund (`DWN2URcC3_p0WhfUItlxo`) | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, intendedUsage, address | Seed Fund $300k row of the FY26 Rock $1.6M gift |
+| FY26 row 14 | The Bainum Family Foundation $100,000.00 | Bainum Family Foundation | FY26 Bainum (`recPAyPfDYjmRPFMY`) | apply: reportDeadline, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address | FY26 Bainum $200k booked as one gift with WF + BWF allocations; this is the BWF $100k row |
+| FY26 row 15 | The Bainum Family Foundation $100,000.00 | Bainum Family Foundation | FY26 Bainum (`recPAyPfDYjmRPFMY`) | apply: reportDeadline, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, intendedUsage, address | Foundation General $100k row of the FY26 Bainum $200k gift |
+| FY25 row 12 | Bainum Family Foundation $150,000.00 | Bainum Family Foundation | FY25 Bainum Grant - BWF #1 $75,000 (`rec6M9ehJDbPxExkc`) | apply: reportDeadline, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address | FY25 Bainum $150k paid as two $75k gifts; linked #1 (has the WF+BWF split allocations); #2 = rech41XoGnOj5mFf1 |
+| FY25 row 40 | Spencer Burns $10,000.00 | Spencer Burns | FY25 $5,000 Burns to PR #1 (`rec45R65X7FeIZ9rs`) | apply: purposeVerbatim, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction, intendedUsage | Spencer Burns $10k booked as two $5k gifts (PR #1 + #2); linked #1; #2 = recjnNxL16EtgjwFM |
+| FY25 row 64 | American Online Giving Foundation $3,500.00 | Gates Foundation | FY25 $2625 Gates matching grant for Tosha Downey (`recYeA9b5NLTUTWUE`) | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address | AOGF $3,500 check funded two gifts: Gates matching $2,625 (linked) + Downey $875 (recGpltnPNwQQXuQ3); AOGF is the DAF intermediary |
+| FY24 row 33 | McKnight Foundation (Dana Anderson) $25,000.00 | McKnight Foundation | FY24 $25,000 McKnight - board designated (`recReHXt8wdJxqRwL`) | apply: intendedUsage, regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address | McKnight $25k board-designated paid as two $12.5k gifts; linked #1 (2023-09-08); #2 = recrmfdpKoADPXlWx (2023-11-06) |
+| FY25 row 108 | Stand Together Trust $500,000.00 | Stand Together | Stand Together FY26 $500,000 (`recPcj9oTgckhzPTp`) | apply: reportDeadline, address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction | Stand Together final $500k of 3; they paid $1M covering FY25+FY26 — this row maps to the FY26 $500k gift |
+
+## 5. SECOND PASS — donor stamped, stays pending (7)
+
+The two IRS rows move from "skip" to donor-stamped: Employee Retention Credit refunds are
+real expected money, booked to the US Department of the Treasury when they arrive.
+
+| Row | Sheet says | Donor | Note |
+|---|---|---|---|
+| FY24 row 26 | IRS Credit $4,133.58 | U.S. Department of the Treasury | stamped by the SQL (section 7) — IRS ERC refund — no gift booked anywhere (searched names, Treasury org, opportunities); Treasury org set as donor for when it lands |
+| FY25 row 1 | IRS Credit $4,133.58 | U.S. Department of the Treasury | stamped by the SQL (section 7) — IRS ERC refund (FY25 letter) — same as fy24_26, not yet booked |
+| FY24 row 20 | Gates Family Foundation $25,000.00 | already prefilled by the matcher (verified) | no write — Gates Family Foundation $25k 2024-05-15 — no booked gift at that amount (only the FY23/24 $95k exists) |
+| FY26 row 31 | Jennifer Houghton — | already prefilled by the matcher (verified) | no write — Houghton — sheet has no amount; nothing to match |
+| FY26 row 87 | Lizzette Sauque $5,000.00 | already prefilled by the matcher (verified) | no write — Sauque $5,000 2026-03-11 — no booked gift found in window |
+| FY26 row 18 | Excellent Schools New Mexico $1,292.57 | already prefilled by the matcher (verified) | no write — Excellent Schools NM $1,292.57 stand-alone reimbursement — no booked gift yet |
+| FY25 row 73 | Anonymous Donor $100.00 | already prefilled by the matcher (verified) | no write — Anonymous $100 — prefilled person is a catch-all anonymous record; no clean $100 FY25 gift on it |
+
+## 6. SECOND PASS — skipped (7)
+
+Prod was checked for staged QuickBooks rows matching each of these: every one is already
+excluded in the reconciliation queue (earned_income / membership / zero_amount), so no new
+staged-payment exclusions are needed.
+
+| Row | Sheet says | Reason |
+|---|---|---|
+| FY25 row 60 | Vladimir and Chia Rodeski $5,000.00 | duplicate of girasol_11 (Rodeski booked $7,000, already confirmed there); fy25 sheet recorded a stale $5,000 |
+| FY24 row 12 | DC Wildflower Public Charter School (DCWFPCS) $3,182.00 | DCWFPCS $3,182 — payment for Maia's time, not a donation (duplicate of fy25_2) |
+| FY25 row 2 | DC Wildflower Public Charter School (DCWFPCS) $3,182.00 | DCWFPCS $3,182 — payment for services, not a donation |
+| FY26 row 11 | DC Wildflower Public Charter School $24,965.00 | DCWFPCS $24,965 — reimbursement + services, not a donation |
+| FY25 row 29 | ACUDEN $15,000.00 | ACUDEN — service revenue, not a donation |
+| FY25 row 30 | ACUDEN $3,500.00 | ACUDEN — service revenue, not a donation |
+| FY25 row 6 | Dr. Erika McDowell (not a donation) $141.68 | Dr. Erika McDowell $141.68 — sheet itself says not a donation |
+
+## 7. SECOND PASS — left pending for a human (6)
 
 | Row | Sheet says | Why it needs you |
 |---|---|---|
-| FY24 row 12 | DC Wildflower Public Charter School (DCWFPCS) $3,182.00 | donor matched but no gift at $3182 — likely not yet booked |
-| FY24 row 20 | Gates Family Foundation $25,000.00 | donor matched but no gift at $25000 — likely not yet booked |
-| FY24 row 21 | Hub: Colorado — | malformed row: no amount; memo names Gates Family Foundation — needs manual re-entry |
-| FY24 row 22 | Hub: Minnesota — | malformed row: no amount; memo names Sauer Family Foundation ("check already received") — needs manual re-entry |
-| FY24 row 38 | Scholler Foundation $5,000.00 | two Scholler Foundation orgs exist (Philadelphia vs Saint Paul & MN); memo "Poinciana start up" doesn't disambiguate |
-| FY25 row 0 | Arthur Rock $1,500,000.00 | donor matched but no gift at $1500000 — likely not yet booked |
-| FY25 row 108 | Stand Together Trust $500,000.00 | donor matched but no gift at $500000 — likely not yet booked |
-| FY25 row 109 | Arthur Rock $1,000,000.00 | donor matched but no gift at $1000000 — likely not yet booked |
-| FY25 row 110 | Arthur Rock $500,000.00 | donor matched but no gift at $500000 — likely not yet booked |
-| FY25 row 12 | Bainum Family Foundation $150,000.00 | donor matched but no gift at $150000 — likely not yet booked |
-| FY25 row 2 | DC Wildflower Public Charter School (DCWFPCS) $3,182.00 | donor matched but no gift at $3182 — likely not yet booked |
-| FY25 row 26 | Robert Kinsman $5,000.00 | donor matched but no gift at $5000 — likely not yet booked |
-| FY25 row 27 | Robert Kinsman- Kinsman & Krause Law Firm $5,000.00 | donor matched but no gift at $5000 — likely not yet booked |
-| FY25 row 29 | ACUDEN $15,000.00 | ACUDEN (PR government agency) is not in the CRM — create the org first ($15,000, PR-restricted) |
-| FY25 row 30 | ACUDEN $3,500.00 | ACUDEN is not in the CRM — create the org first ($3,500, PR-restricted) |
-| FY25 row 40 | Spencer Burns $10,000.00 | donor matched but no gift at $10000 — likely not yet booked |
-| FY25 row 45 | Sinha Kikeri Fund at Vanguard Charitable $500.00 | "Sinha Kikeri Fund at Vanguard Charitable" — only person "Meera Sinha" exists; donor record unclear |
-| FY25 row 49 | Tom and Sarah Clark ℅ Timber Capital LLC $10,000.00 | Tom & Sarah Clark $10,000 to Girasol: near-exact gift recvgqf4iQuNUWYTv (2025-01-09, $10,000, Girasol) is booked under household "Abinadi and Diana Barrientos" — booking conflict needs a human |
-| FY25 row 6 | Dr. Erika McDowell (not a donation) $141.68 | donor matched but no gift at $141.68 — likely not yet booked |
-| FY25 row 60 | Vladimir and Chia Rodeski $5,000.00 | donor matched but no gift at $5000 — likely not yet booked |
-| FY25 row 61 | Coulter Financial Services, LLC $52.37 | donor matched but no gift at $52.37 — likely not yet booked |
-| FY25 row 64 | American Online Giving Foundation $3,500.00 | donor matched but no gift at $3500 — likely not yet booked |
-| FY25 row 70 | Erica Cantoni $6.00 | donor matched but no gift at $6 — likely not yet booked |
-| FY25 row 71 | Erica Cantoni $6.00 | donor matched but no gift at $6 — likely not yet booked |
-| FY25 row 72 | Erica Cantoni $1,041.00 | donor matched but no gift at $1041 — likely not yet booked |
-| FY25 row 73 | Anonymous Donor $100.00 | donor matched but no gift at $100 — likely not yet booked |
-| FY25 row 74 | Zita Blankenship $200.00 | donor matched but no gift at $200 — likely not yet booked |
-| FY25 row 75 | Erica Cantoni $6.00 | donor matched but no gift at $6 — likely not yet booked |
-| FY25 row 78 | Alia Peera $26.00 | donor matched but no gift at $26 — likely not yet booked |
-| FY25 row 83 | Jasmine Williams $30.00 | donor matched but no gift at $30 — likely not yet booked |
-| FY25 row 99 | Mike Esposito $5.00 | donor matched but no gift at $5 — likely not yet booked |
-| FY26 row 10 | Anonymous $20,071.51 | anonymous $20,071.51 stock gift for the Seed Fund — no donor record, needs a human |
-| FY26 row 100 | Alexander Brown $150.00 | donor matched but no gift at $150 — likely not yet booked |
-| FY26 row 104 | Alexander Brown $150.00 | donor matched but no gift at $150 — likely not yet booked |
-| FY26 row 107 | Arthur Rock $1,150,000.00 | donor matched but no gift at $1150000 — likely not yet booked |
-| FY26 row 109 | Arthur Rock $300,000.00 | donor matched but no gift at $300000 — likely not yet booked |
-| FY26 row 11 | DC Wildflower Public Charter School $24,965.00 | donor matched but no gift at $24965 — likely not yet booked |
-| FY26 row 14 | The Bainum Family Foundation $100,000.00 | donor matched but no gift at $100000 — likely not yet booked |
-| FY26 row 15 | The Bainum Family Foundation $100,000.00 | donor matched but no gift at $100000 — likely not yet booked |
-| FY26 row 18 | Excellent Schools New Mexico $1,292.57 | donor matched but no gift at $1292.57 — likely not yet booked |
-| FY26 row 28 | Erica Cantoni $20.00 | donor matched but no gift at $20 — likely not yet booked |
-| FY26 row 31 | Jennifer Houghton — | donor matched but no gift at $null — likely not yet booked |
-| FY26 row 50 | Yohance Fuller $1,000.00 | donor matched but no gift at $1000 — likely not yet booked |
-| FY26 row 60 | Diana Barrientos / Barrientos Family $10,000.00 | donor matched but no gift at $10000 — likely not yet booked |
-| FY26 row 66 | Tosha Downey / DAFGiving360 $500.00 | donor matched but no gift at $500 — likely not yet booked |
-| FY26 row 67 | Keith Tom / Daffy Charitable Fund $50,000.00 | date gap 409d: sheet 2026-01-16 vs gift 2024-12-03 |
-| FY26 row 7 | Erica Cantoni $25.00 | donor matched but no gift at $25 — likely not yet booked |
-| FY26 row 8 | Matt Kramer $3.00 | donor matched but no gift at $3 — likely not yet booked |
-| FY26 row 82 | Inspired Minds Collide $514.41 | donor matched but no gift at $514.41 — likely not yet booked |
-| FY26 row 87 | Lizzette Sauque $5,000.00 | donor matched but no gift at $5000 — likely not yet booked |
-| FY26 row 9 | Matt Kramer $50.00 | donor matched but no gift at $50 — likely not yet booked |
-| FY26 row 94 | Angie Schiavoni $261.28 | donor matched but no gift at $261.28 — likely not yet booked |
-| GIRASOL row 2 | Robert Kinsman $5,000.00 | donor matched but no gift at $5000 — likely not yet booked |
-| GIRASOL row 3 | Robert Kinsman- Kinsman & Krause Law Firm $5,000.00 | donor matched but no gift at $5000 — likely not yet booked |
-| GIRASOL row 5 | Tom and Sarah Clark ℅ Timber Capital LLC $10,000.00 | same money as cfr_fy25_49 (Clark $10,000 to Girasol) — candidate gift is booked under the Barrientos household; resolve together |
+| FY26 row 10 | Anonymous $20,071.51 | Anonymous $20,071.51 Seed Fund 2025-09-05 — no gift at this amount anywhere; donor unknown |
+| FY26 row 8 | Matt Kramer $3.00 | Kramer $3 2025-08-13 — TWO identical $3 gifts exist same person/date (GtYi4sQJUKO4_YWcm0w8X, NONk3IQcw79-QdMJPmiNz): likely duplicate booking, resolve which to keep first |
+| FY25 row 70 | Erica Cantoni $6.00 | Erica Cantoni $6 recurring — two $5.52 gifts (2024-11-04) for three $6 sheet rows; net/gross and count ambiguity |
+| FY25 row 71 | Erica Cantoni $6.00 | same ambiguity as fy25_70 |
+| FY25 row 75 | Erica Cantoni $6.00 | same ambiguity as fy25_70 |
+| FY26 row 28 | Erica Cantoni $20.00 | Erica Cantoni $20 2025-12-02 — nearest gift $17.80 2025-11-17; not confident |
 
-## 5. Confirmed matcher suggestions (161)
+
+## 8. Confirmed matcher suggestions (161)
 
 Donor + gift/opportunity suggestions the matcher already made, verified offline against the
 sheet (amount, date, name, fiscal year). The decisions column is what "Apply decided" will write.
