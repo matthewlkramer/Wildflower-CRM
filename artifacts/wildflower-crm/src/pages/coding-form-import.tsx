@@ -15,6 +15,9 @@ import {
   useRematchPendingCodingFormRows,
   useConfirmCodingFormMatch,
   useConfirmMatchedCodingFormRows,
+  usePullGrantAgreementsBulk,
+  useReinterpretCodingFormRow,
+  useReinterpretCodingFormRows,
   CodingFormRowStatus,
   CodingFormGrantAgreementStatus,
   ListCodingFormRowsSource,
@@ -93,7 +96,7 @@ type GrantAgreementStatus = CodingFormGrantAgreement["status"];
 
 const GA_STATUS_LABEL: Record<GrantAgreementStatus, string> = {
   na: "No link",
-  no_match: "No opportunity",
+  no_match: "No match",
   ready: "Ready",
   imported: "Imported",
   conflict: "Conflict",
@@ -111,6 +114,103 @@ const GA_STATUS_VARIANT: Record<
   conflict: "destructive",
   failed: "destructive",
 };
+
+const AI_JUNK_LABEL: Record<string, string> = {
+  internalMemo: "Internal memo",
+  restrictionLanguage: "Restriction language",
+  additionalNotes: "Additional notes",
+  circleRaw: "Circle",
+  seriesTypeRaw: "Series type",
+  donorNameAddressRaw: "Name+address blob",
+  reportRequiredRaw: "Report answer",
+};
+
+/** AI reinterpretation provenance: what the model changed and why. The
+ *  effective values already flow through the cross-checks server-side — this
+ *  block only shows the reviewer the AI's contribution (or its failure). */
+function AiInterpretationBlock({ row }: { row: CodingFormRow }) {
+  const ai = row.aiInterpretation ?? null;
+  if (!ai && !row.aiError) return null;
+
+  if (!ai) {
+    return (
+      <div
+        className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive"
+        data-testid={`ai-error-${row.id}`}
+      >
+        <span className="font-medium">AI reinterpretation failed: </span>
+        {row.aiError}
+      </div>
+    );
+  }
+
+  const address = ai.address
+    ? [
+        ai.address.street,
+        ai.address.city,
+        ai.address.state,
+        ai.address.postal,
+        ai.address.country,
+      ]
+        .filter(Boolean)
+        .join(", ")
+    : null;
+
+  const items: Array<{ label: string; value: string }> = [];
+  if (ai.donorName) items.push({ label: "Donor name", value: ai.donorName });
+  if (address) items.push({ label: "Address", value: address });
+  if (ai.reportRequired !== null && ai.reportRequired !== undefined)
+    items.push({
+      label: "Report required",
+      value: ai.reportRequired ? "Yes" : "No",
+    });
+  if (ai.reportDueDate)
+    items.push({ label: "Report due", value: ai.reportDueDate });
+
+  return (
+    <div
+      className="rounded-md border border-violet-200 bg-violet-50 p-2 text-xs text-violet-950 space-y-1"
+      data-testid={`ai-interpretation-${row.id}`}
+    >
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="font-medium uppercase text-[11px]">
+          AI interpretation
+        </span>
+        <span className="text-violet-700">
+          {row.aiModel ?? "model"}
+          {row.aiInterpretedAt
+            ? ` · ${formatDateShort(row.aiInterpretedAt)}`
+            : ""}
+        </span>
+      </div>
+      {items.length > 0 ? (
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+          {items.map((it) => (
+            <span key={it.label}>
+              <span className="text-violet-700">{it.label}: </span>
+              <span className="font-medium">{it.value}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {ai.junkFields.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="text-violet-700">Flagged as junk:</span>
+          {ai.junkFields.map((f) => (
+            <Badge
+              key={f}
+              variant="outline"
+              className="border-violet-300 text-violet-900"
+            >
+              {AI_JUNK_LABEL[f] ?? f}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+      {ai.notes ? <p className="text-violet-800 italic">{ai.notes}</p> : null}
+    </div>
+  );
+}
 
 type DonorKind = "organization" | "individual" | "household";
 
@@ -286,6 +386,7 @@ function RowCard({ row }: { row: CodingFormRow }) {
   const skipMut = useSkipCodingFormRow();
   const rematchMut = useRematchCodingFormRow();
   const confirmMut = useConfirmCodingFormMatch();
+  const reinterpretMut = useReinterpretCodingFormRow();
 
   // Which applicable cross-checks the reviewer has toggled ON to apply.
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -298,7 +399,8 @@ function RowCard({ row }: { row: CodingFormRow }) {
     applyMut.isPending ||
     skipMut.isPending ||
     rematchMut.isPending ||
-    confirmMut.isPending;
+    confirmMut.isPending ||
+    reinterpretMut.isPending;
 
   const onError = (verb: string) => (err: unknown) =>
     toast({
@@ -412,6 +514,29 @@ function RowCard({ row }: { row: CodingFormRow }) {
     );
   };
 
+  // Always re-runs the model, even when a payload exists (per-row = explicit
+  // reviewer intent); a failure is recorded on the row, prior payload kept.
+  const handleReinterpret = () => {
+    reinterpretMut.mutate(
+      { id: row.id },
+      {
+        onSuccess: (res) => {
+          void invalidate();
+          if (res.ok) {
+            toast({ title: "AI reinterpretation updated" });
+          } else {
+            toast({
+              title: "AI reinterpretation failed",
+              description: res.error ?? "The model call failed.",
+              variant: "destructive",
+            });
+          }
+        },
+        onError: onError("reinterpret"),
+      },
+    );
+  };
+
   // Approve the current proposed link as-is (stamps the confirmation without
   // rewriting the proposal — unlike editing a picker, which re-stamps it as a
   // manual match).
@@ -478,6 +603,9 @@ function RowCard({ row }: { row: CodingFormRow }) {
         ) : null}
       </div>
 
+      {/* AI provenance */}
+      <AiInterpretationBlock row={row} />
+
       {/* Donor match */}
       <div className="space-y-1.5">
         <div className="text-xs font-medium uppercase text-muted-foreground">
@@ -540,8 +668,13 @@ function RowCard({ row }: { row: CodingFormRow }) {
           {!row.matchedGiftId && (row.giftCandidates?.length ?? 0) > 0 ? (
             <div className="space-y-1 rounded-md border border-dashed p-2">
               <div className="text-[11px] font-medium uppercase text-muted-foreground">
-                Same-donor gifts at this amount (±90 days)
+                Gifts at this amount (±90 days)
               </div>
+              {!hasDonor ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Picking one fills in the donor from the gift.
+                </p>
+              ) : null}
               {(row.giftCandidates ?? []).map((c) => (
                 <div
                   key={c.id}
@@ -687,6 +820,15 @@ function RowCard({ row }: { row: CodingFormRow }) {
           variant="ghost"
           size="sm"
           disabled={pending}
+          onClick={handleReinterpret}
+          data-testid={`button-reinterpret-${row.id}`}
+        >
+          {reinterpretMut.isPending ? "Reinterpreting…" : "AI reinterpret"}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={pending}
           onClick={handleRematch}
           data-testid={`button-rematch-${row.id}`}
         >
@@ -739,7 +881,15 @@ function GrantAgreementRow({
 }) {
   const ga = row.grantAgreement;
   const status: GrantAgreementStatus = ga?.status ?? "na";
-  const oppName = useOpportunityName(row.matchedOpportunityId ?? null);
+  // opportunity-else-gift: the server says where the letter goes.
+  const targetType = ga?.targetType ?? null;
+  const targetNoun = targetType === "gift" ? "gift" : "opportunity";
+  const oppName = useOpportunityName(
+    targetType === "opportunity" ? row.matchedOpportunityId ?? null : null,
+  );
+  const giftName = useGiftName(
+    targetType === "gift" ? row.matchedGiftId ?? null : null,
+  );
 
   return (
     <div
@@ -767,8 +917,8 @@ function GrantAgreementRow({
         <span className="font-medium">{row.donorNameRaw ?? "(no name)"}</span>
       </div>
 
-      {/* Opportunity link / no-match notice */}
-      {row.matchedOpportunityId ? (
+      {/* Target link (opportunity-else-gift) / no-match notice */}
+      {targetType === "opportunity" && row.matchedOpportunityId ? (
         <Link
           href={`/opportunities/${row.matchedOpportunityId}`}
           className="text-xs text-primary underline-offset-2 hover:underline"
@@ -776,9 +926,18 @@ function GrantAgreementRow({
         >
           {oppName ?? "Open opportunity"} ↗
         </Link>
+      ) : targetType === "gift" && row.matchedGiftId ? (
+        <Link
+          href={`/gifts/${row.matchedGiftId}`}
+          className="text-xs text-primary underline-offset-2 hover:underline"
+          data-testid={`ga-link-gift-${row.id}`}
+        >
+          {giftName ?? "Open gift"} ↗ <span className="text-muted-foreground">(gift — no opportunity matched)</span>
+        </Link>
       ) : (
         <p className="text-xs text-muted-foreground">
-          No matched opportunity — match one in the coding-form view first.
+          No matched opportunity or gift — match one in the coding-form view
+          first.
         </p>
       )}
 
@@ -800,7 +959,7 @@ function GrantAgreementRow({
       {/* Before / after */}
       {ga?.oppExistingUrl ? (
         <p className="text-xs text-muted-foreground">
-          Existing letter on opportunity:{" "}
+          Existing letter on {targetNoun}:{" "}
           <a
             href={ga.oppExistingUrl}
             target="_blank"
@@ -840,7 +999,7 @@ function GrantAgreementRow({
             onClick={() => onPull(row, false)}
             data-testid={`button-pull-${row.id}`}
           >
-            Pull onto opportunity
+            Pull onto {targetNoun}
           </Button>
         ) : null}
         {status === "failed" ? (
@@ -897,6 +1056,7 @@ function GrantAgreementsView() {
   });
 
   const pullMut = usePullGrantAgreement();
+  const bulkPullMut = usePullGrantAgreementsBulk();
   const rows = data?.data ?? [];
 
   const invalidate = () =>
@@ -907,6 +1067,10 @@ function GrantAgreementsView() {
       }),
       queryClient.invalidateQueries({
         queryKey: ["/api/opportunities-and-pledges"],
+      }),
+      // Letters can also land on gifts (opportunity-else-gift).
+      queryClient.invalidateQueries({
+        queryKey: ["/api/gifts-and-payments"],
       }),
     ]);
 
@@ -942,35 +1106,45 @@ function GrantAgreementsView() {
     }
   };
 
-  // Sequential client-side import of every "ready" row (no overwrites).
-  const handleImportAllReady = async () => {
-    const ready = rows.filter((r) => r.grantAgreement?.status === "ready");
-    if (ready.length === 0) return;
+  // ONE server-side pass over every actionable row (ready + recorded
+  // failures); skips na/no_match/imported and never replaces an existing
+  // letter — conflicts stay for per-row review.
+  const handleImportAllReady = () => {
     setBulkRunning(true);
-    let ok = 0;
-    let failed = 0;
-    for (const r of ready) {
-      setBusyId(r.id);
-      try {
-        const res = await pullOne(r.id, false);
-        if (res.outcome === "failed") failed += 1;
-        else ok += 1;
-      } catch {
-        failed += 1;
-      }
-    }
-    setBusyId(null);
-    setBulkRunning(false);
-    await invalidate();
-    toast({
-      title: "Import all ready — done",
-      description: `${ok} attached${failed ? `, ${failed} failed` : ""}.`,
-      variant: failed ? "destructive" : undefined,
+    bulkPullMut.mutate(undefined, {
+      onSuccess: async (res) => {
+        await invalidate();
+        setBulkRunning(false);
+        const parts = [
+          `${res.imported} attached`,
+          res.alreadyImported ? `${res.alreadyImported} already imported` : null,
+          res.conflict ? `${res.conflict} conflict (existing letter kept)` : null,
+          res.noMatch ? `${res.noMatch} without a matched record` : null,
+          res.failed ? `${res.failed} failed` : null,
+        ].filter(Boolean);
+        toast({
+          title: `Bulk pull — ${res.attempted} attempted`,
+          description: `${parts.join(" · ")}.`,
+          variant: res.failed ? "destructive" : undefined,
+        });
+      },
+      onError: (err) => {
+        setBulkRunning(false);
+        toast({
+          title: "Bulk pull failed",
+          description:
+            err instanceof Error ? err.message : "Something went wrong.",
+          variant: "destructive",
+        });
+      },
     });
   };
 
   const readyCount =
     summary?.byStatus.find((s) => s.key === "ready")?.count ?? 0;
+  const failedCount =
+    summary?.byStatus.find((s) => s.key === "failed")?.count ?? 0;
+  const actionableCount = readyCount + failedCount;
 
   return (
     <div className="space-y-6">
@@ -983,13 +1157,15 @@ function GrantAgreementsView() {
             <Button
               size="sm"
               className="ml-auto"
-              disabled={bulkRunning || readyCount === 0}
+              disabled={bulkRunning || actionableCount === 0}
               onClick={handleImportAllReady}
               data-testid="button-import-all-ready"
             >
               {bulkRunning
                 ? "Importing…"
-                : `Import all ready (${readyCount})`}
+                : failedCount
+                  ? `Import ready (${readyCount}) + retry failed (${failedCount})`
+                  : `Import all ready (${readyCount})`}
             </Button>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1111,6 +1287,57 @@ export default function CodingFormImportPage() {
     });
   };
 
+  // Bulk AI pass over pending rows that have no stored payload yet (the
+  // server default; per-row "AI reinterpret" is the explicit re-run path).
+  // Chunked: one full pass would outlive the HTTP request, so we ask for a
+  // small batch at a time and keep going while full chunks come back. The
+  // server processes never-failed rows first, so a chunk with zero successes
+  // means only persistently-failing rows remain — stop there.
+  const [reinterpretRunning, setReinterpretRunning] = useState(false);
+  const reinterpretAllMut = useReinterpretCodingFormRows();
+  const handleReinterpretAll = async () => {
+    const CHUNK = 10;
+    setReinterpretRunning(true);
+    let total = 0;
+    let succeeded = 0;
+    let failed = 0;
+    try {
+      // 40 chunks × 200-row max backlog is unreachable; the cap only guards
+      // against a runaway loop.
+      for (let i = 0; i < 40; i++) {
+        const res = await reinterpretAllMut.mutateAsync({
+          data: { limit: CHUNK },
+        });
+        total += res.total;
+        succeeded += res.succeeded;
+        failed += res.failed;
+        if (res.total < CHUNK || res.succeeded === 0) break;
+      }
+      toast({
+        title: "AI reinterpretation — done",
+        description:
+          total === 0
+            ? "Every pending row already has an AI interpretation."
+            : `${total} rows · ${succeeded} succeeded${failed ? ` · ${failed} failed` : ""}.`,
+        variant: failed ? "destructive" : undefined,
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't run AI reinterpretation",
+        description: `${err instanceof Error ? err.message : "Something went wrong."}${succeeded ? ` (${succeeded} rows were already updated.)` : ""}`,
+        variant: "destructive",
+      });
+    } finally {
+      setReinterpretRunning(false);
+      void queryClient.invalidateQueries({ queryKey: [CODING_KEY_PREFIX] });
+    }
+  };
+
+  const bulkBusy =
+    rematchPendingMut.isPending ||
+    confirmMatchedMut.isPending ||
+    reinterpretRunning;
+
   const rows = data?.data ?? [];
 
   return (
@@ -1150,8 +1377,19 @@ export default function CodingFormImportPage() {
             <Button
               size="sm"
               variant="outline"
+              onClick={handleReinterpretAll}
+              disabled={bulkBusy}
+              data-testid="button-reinterpret-pending"
+            >
+              {reinterpretRunning
+                ? "Reinterpreting…"
+                : "AI reinterpret pending"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
               onClick={handleRematchPending}
-              disabled={rematchPendingMut.isPending || confirmMatchedMut.isPending}
+              disabled={bulkBusy}
               data-testid="button-rematch-pending"
             >
               {rematchPendingMut.isPending
@@ -1161,7 +1399,7 @@ export default function CodingFormImportPage() {
             <Button
               size="sm"
               onClick={handleConfirmMatched}
-              disabled={rematchPendingMut.isPending || confirmMatchedMut.isPending}
+              disabled={bulkBusy}
               data-testid="button-confirm-matched"
             >
               {confirmMatchedMut.isPending

@@ -6392,6 +6392,8 @@ export const CodingFormCrossCheckAttribute = {
   purposeVerbatim: 'purposeVerbatim',
   usageRestriction: 'usageRestriction',
   intendedUsage: 'intendedUsage',
+  regionalRestriction: 'regionalRestriction',
+  allocationEntity: 'allocationEntity',
   address: 'address',
   circle: 'circle',
   seriesType: 'seriesType',
@@ -6444,17 +6446,21 @@ export interface CodingFormNeedsDecision {
 }
 
 /**
- * A live same-donor exact-amount gift candidate for an unresolved coding-form row.
+ * A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift.
  */
 export interface CodingFormGiftCandidate {
   id: string;
   name?: string | null;
   amount?: string | null;
   dateReceived?: string | null;
+  /** The candidate gift's donor org (donor XOR — at most one of the three is set). */
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
 }
 
 /**
- * na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch/upload attempt errored (see error).
+ * na = no Drive link; no_match = link but no matched opportunity OR gift; ready = will attach; imported = already attached by this backfill; conflict = the matched target already has a DIFFERENT grant letter; failed = the last fetch/upload attempt errored (see error).
  */
 export type CodingFormGrantAgreementStatus = typeof CodingFormGrantAgreementStatus[keyof typeof CodingFormGrantAgreementStatus];
 
@@ -6469,21 +6475,76 @@ export const CodingFormGrantAgreementStatus = {
 } as const;
 
 /**
- * Derived (live) grant-agreement backfill view for a coding-form row.
+ * Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.
+ */
+export type CodingFormGrantAgreementTargetType = typeof CodingFormGrantAgreementTargetType[keyof typeof CodingFormGrantAgreementTargetType] | null;
+
+
+export const CodingFormGrantAgreementTargetType = {
+  opportunity: 'opportunity',
+  gift: 'gift',
+} as const;
+
+/**
+ * Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift.
  */
 export interface CodingFormGrantAgreement {
   status: CodingFormGrantAgreementStatus;
+  /** Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched. */
+  targetType?: CodingFormGrantAgreementTargetType;
   /** File id extracted from the captured Drive link. */
   driveFileId?: string | null;
   /** Object-storage url of the file this backfill attached. */
   importedUrl?: string | null;
   importedFilename?: string | null;
   importedAt?: string | null;
-  /** The matched opportunity's current grant-letter url (for conflict/imported display). */
+  /** The TARGET's (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict/imported display). */
   oppExistingUrl?: string | null;
   oppExistingFilename?: string | null;
   /** Last recorded fetch/upload error for this row. */
   error?: string | null;
+}
+
+export type CodingFormAiInterpretationJunkFieldsItem = typeof CodingFormAiInterpretationJunkFieldsItem[keyof typeof CodingFormAiInterpretationJunkFieldsItem];
+
+
+export const CodingFormAiInterpretationJunkFieldsItem = {
+  internalMemo: 'internalMemo',
+  restrictionLanguage: 'restrictionLanguage',
+  additionalNotes: 'additionalNotes',
+  circleRaw: 'circleRaw',
+  seriesTypeRaw: 'seriesTypeRaw',
+  donorNameAddressRaw: 'donorNameAddressRaw',
+  reportRequiredRaw: 'reportRequiredRaw',
+} as const;
+
+/**
+ * Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address.
+ */
+export type CodingFormAiInterpretationAddress = {
+  street: string | null;
+  city: string | null;
+  state: string | null;
+  postal: string | null;
+  country: string | null;
+} | null;
+
+/**
+ * One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize/suppress — it never maps circles to regions/entities.
+ */
+export interface CodingFormAiInterpretation {
+  /** Normalized donor display name (typo-fixed); null when the raw name needs no fixing. */
+  donorName: string | null;
+  /** Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address. */
+  address: CodingFormAiInterpretationAddress;
+  /** Reinterpreted 'written report required?' answer; null when ambiguous. */
+  reportRequired: boolean | null;
+  /** YYYY-MM-DD when the raw answer states an explicit due date. */
+  reportDueDate: string | null;
+  /** Row fields the AI flagged as junk/redundant (suppressed from tag/notes/address writes and cross-checks). */
+  junkFields: CodingFormAiInterpretationJunkFieldsItem[];
+  /** One-sentence rationale for the reviewer. */
+  notes: string | null;
 }
 
 export interface CodingFormRow {
@@ -6515,11 +6576,19 @@ export interface CodingFormRow {
   matchMethod?: string | null;
   matchTier?: string | null;
   matchConfirmedAt?: string | null;
-  /** LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor/amount is set. */
+  /** LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift's own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift's donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount/date is set. */
   giftCandidates?: CodingFormGiftCandidate[];
   crossChecks: CodingFormCrossCheck[];
   needsDecision: CodingFormNeedsDecision[];
   grantAgreement?: CodingFormGrantAgreement;
+  /** The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation). */
+  aiInterpretation?: CodingFormAiInterpretation | null;
+  /** When the current AI payload was produced. */
+  aiInterpretedAt?: string | null;
+  /** Model that produced the current AI payload. */
+  aiModel?: string | null;
+  /** Last AI reinterpretation failure for this row (cleared on success). */
+  aiError?: string | null;
   appliedAt?: string | null;
   appliedTaskId?: string | null;
   appliedAddressId?: string | null;
@@ -6635,6 +6704,64 @@ export interface CodingFormGrantAgreementsSummary {
   totalWithLink: number;
   /** Count per derived grant-agreement status. */
   byStatus: CodingFormCount[];
+}
+
+export interface CodingFormRowFailure {
+  rowId: string;
+  error: string;
+}
+
+/**
+ * Result of the bulk grant-agreement pull pass.
+ */
+export interface CodingFormBulkPullSummary {
+  /** Rows carrying a Drive link (scanned). */
+  totalWithLink: number;
+  /** Rows whose derived status was ready/failed — a pull was attempted. */
+  attempted: number;
+  /** Letters attached in this pass. */
+  imported: number;
+  /** Idempotent no-ops (letter already attached by this backfill). */
+  alreadyImported: number;
+  /** Targets holding a DIFFERENT letter — left for per-row review with replace=true. */
+  conflict: number;
+  /** Rows with a link but no matched opportunity or gift. */
+  noMatch: number;
+  /** Drive/upload failures (recorded on the rows; see failures). */
+  failed: number;
+  failures: CodingFormRowFailure[];
+}
+
+export interface CodingFormReinterpretResult {
+  row: CodingFormRow;
+  /** False when the model call or validation failed (see error; also recorded on the row as aiError). */
+  ok: boolean;
+  error: string | null;
+}
+
+/**
+ * Bulk AI reinterpretation options.
+ */
+export interface ReinterpretCodingFormRowsBody {
+  /** Re-run every pending row, not just rows without a stored payload. Defaults to false. */
+  force?: boolean;
+  /**
+   * Cap the number of rows processed in this pass (rows without a recorded failure first). Callers chunk with this to keep each request short; omit for the full set.
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+}
+
+/**
+ * Result of the bulk AI reinterpretation pass.
+ */
+export interface CodingFormReinterpretSummary {
+  /** Pending rows selected for this pass. */
+  total: number;
+  succeeded: number;
+  failed: number;
+  failures: CodingFormRowFailure[];
 }
 
 /**

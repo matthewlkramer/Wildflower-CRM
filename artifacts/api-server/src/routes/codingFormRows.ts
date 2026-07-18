@@ -1,6 +1,10 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { codingFormRows } from "@workspace/db/schema";
+import {
+  codingFormRows,
+  giftsAndPayments,
+  opportunitiesAndPledges,
+} from "@workspace/db/schema";
 import { and, count, eq, sql, type SQL } from "drizzle-orm";
 import {
   ListCodingFormRowsQueryParams,
@@ -8,7 +12,12 @@ import {
   ApplyCodingFormRowBody,
   PullGrantAgreementBody,
 } from "@workspace/api-zod";
-import { pullGrantAgreement } from "../lib/grantAgreements";
+import {
+  deriveGrantAgreement,
+  loadTargetGrantLetter,
+  pullGrantAgreement,
+  resolveGrantLetterTarget,
+} from "../lib/grantAgreements";
 import { requireAuth } from "../middlewares/requireAuth";
 import { requireAdmin } from "../lib/archive";
 import { getAppUser } from "../lib/appRequest";
@@ -27,6 +36,8 @@ import {
   applyRow,
   NEEDS_DECISION_FIELDS_META,
 } from "../lib/codingForms";
+import { reinterpretRow, reinterpretRows } from "../lib/codingFormAi";
+import { z } from "zod";
 
 // One-time Donation Coding Form import + reconciliation (Task #484). Admin-gated:
 // this is a finance back-office migration tool, not a day-to-day CRM surface.
@@ -47,6 +58,44 @@ async function loadRow(id: string) {
     .from(codingFormRows)
     .where(eq(codingFormRows.id, id))
     .then((r) => r[0] ?? null);
+}
+
+/**
+ * Donor FKs of a matched record for inheritance (gift preferred over
+ * opportunity — the gift IS the money being coded). Returns null when neither
+ * id resolves, so the caller leaves the donor cleared rather than guessing.
+ */
+async function inheritDonorFromRecord(
+  giftId: string | null,
+  opportunityId: string | null,
+): Promise<{
+  organizationId: string | null;
+  individualGiverPersonId: string | null;
+  householdId: string | null;
+} | null> {
+  if (giftId) {
+    const [g] = await db
+      .select({
+        organizationId: giftsAndPayments.organizationId,
+        individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
+        householdId: giftsAndPayments.householdId,
+      })
+      .from(giftsAndPayments)
+      .where(eq(giftsAndPayments.id, giftId));
+    if (g) return g;
+  }
+  if (opportunityId) {
+    const [o] = await db
+      .select({
+        organizationId: opportunitiesAndPledges.organizationId,
+        individualGiverPersonId: opportunitiesAndPledges.individualGiverPersonId,
+        householdId: opportunitiesAndPledges.householdId,
+      })
+      .from(opportunitiesAndPledges)
+      .where(eq(opportunitiesAndPledges.id, opportunityId));
+    if (o) return o;
+  }
+  return null;
 }
 
 // List — filter by source / status, paginated. Auto-match any never-matched row
@@ -146,7 +195,9 @@ router.get(
 );
 
 // Set the donor + opportunity/gift match by hand (donor XOR), and stamp it as a
-// human-confirmed match.
+// human-confirmed match. When the reviewer picks a gift/opportunity WITHOUT
+// naming a donor, the donor is INHERITED from the picked record (gift wins) —
+// record-first semantics; the record's Donor XOR guarantees exactly one FK.
 router.patch(
   "/coding-form-rows/:id/match",
   asyncHandler(async (req, res) => {
@@ -171,13 +222,27 @@ router.patch(
       return;
     }
 
+    // Inherit the donor from the matched record when none was provided.
+    let donor = {
+      organizationId: body.organizationId ?? null,
+      individualGiverPersonId: body.individualGiverPersonId ?? null,
+      householdId: body.householdId ?? null,
+    };
+    if (donorCount === 0 && (body.matchedGiftId || body.matchedOpportunityId)) {
+      const inherited = await inheritDonorFromRecord(
+        body.matchedGiftId ?? null,
+        body.matchedOpportunityId ?? null,
+      );
+      if (inherited) donor = inherited;
+    }
+
     const user = await getAppUser(req);
     const [updated] = await db
       .update(codingFormRows)
       .set({
-        organizationId: body.organizationId ?? null,
-        individualGiverPersonId: body.individualGiverPersonId ?? null,
-        householdId: body.householdId ?? null,
+        organizationId: donor.organizationId,
+        individualGiverPersonId: donor.individualGiverPersonId,
+        householdId: donor.householdId,
         matchedOpportunityId: body.matchedOpportunityId ?? null,
         matchedGiftId: body.matchedGiftId ?? null,
         matchMethod: "manual",
@@ -350,14 +415,14 @@ router.post(
     if (result.kind === "no_match") {
       res.status(409).json({
         error:
-          "This row has no matched opportunity to attach the grant agreement to.",
+          "This row has no matched opportunity or gift to attach the grant agreement to.",
       });
       return;
     }
     if (result.kind === "conflict") {
       res.status(409).json({
         error:
-          "The matched opportunity already has a grant letter. Re-send with replace=true to overwrite it.",
+          "The matched record already has a grant letter. Re-send with replace=true to overwrite it.",
         code: "grant_letter_conflict",
       });
       return;
@@ -369,6 +434,146 @@ router.post(
       outcome: result.kind,
       replaced: result.kind === "imported" ? result.replaced : false,
       error: result.kind === "failed" ? result.error : null,
+    });
+  }),
+);
+
+// Bulk grant-agreement pull — attaches every actionable row's Drive file to its
+// matched opportunity-else-gift. Conservative by design: bulk NEVER replaces an
+// existing letter (conflicts are left for per-row review with replace=true);
+// per-row Drive failures are recorded on the row and reported, not thrown.
+// Sequential on purpose (Drive + object-storage friendliness at ~300-row scale).
+router.post(
+  "/coding-form-rows/pull-grant-agreements",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const user = await getAppUser(req);
+
+    const rows = await db
+      .select()
+      .from(codingFormRows)
+      .where(sql`NULLIF(TRIM(${codingFormRows.driveLink}), '') IS NOT NULL`)
+      .orderBy(codingFormRows.sourceRowIndex);
+
+    const counts = {
+      attempted: 0,
+      imported: 0,
+      alreadyImported: 0,
+      conflict: 0,
+      noMatch: 0,
+      failed: 0,
+    };
+    const failures: Array<{ rowId: string; error: string }> = [];
+    for (const row of rows) {
+      const status = deriveGrantAgreement(
+        row,
+        await loadTargetGrantLetter(resolveGrantLetterTarget(row)),
+      ).status;
+      if (status === "na") continue;
+      if (status === "imported") {
+        counts.alreadyImported++;
+        continue;
+      }
+      if (status === "conflict") {
+        counts.conflict++;
+        continue;
+      }
+      if (status === "no_match") {
+        counts.noMatch++;
+        continue;
+      }
+      // ready OR failed (a bulk re-run retries recorded transient failures)
+      counts.attempted++;
+      const result = await pullGrantAgreement(row, {
+        replace: false,
+        userId: user?.id ?? null,
+      });
+      if (result.kind === "imported") counts.imported++;
+      else if (result.kind === "already_imported") counts.alreadyImported++;
+      else if (result.kind === "conflict") counts.conflict++;
+      else if (result.kind === "no_match") counts.noMatch++;
+      else if (result.kind === "failed") {
+        counts.failed++;
+        failures.push({ rowId: row.id, error: result.error });
+      }
+    }
+
+    res.json({ totalWithLink: rows.length, ...counts, failures });
+  }),
+);
+
+// AI reinterpretation — one row. Always (re-)runs the model for the row, even
+// when a payload already exists (the reviewer explicitly asked). A failure is
+// recorded on the row (`aiError`) and reported in the response, never thrown.
+router.post(
+  "/coding-form-rows/:id/reinterpret",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const id = paramId(req);
+    const row = await loadRow(id);
+    if (!row) return notFound(res, "coding form row");
+
+    const outcome = await reinterpretRow(row);
+    const updated = await loadRow(id);
+    res.json({
+      row: await serializeRow(updated!),
+      ok: outcome.ok,
+      error: outcome.ok ? null : outcome.error,
+    });
+  }),
+);
+
+// AI reinterpretation — bulk over PENDING rows (applied/skipped rows are
+// settled; their payload only changes via the per-row endpoint). Default skips
+// rows that already have a payload so a re-run only fills gaps + retries
+// failures; `force: true` reinterprets every pending row. Runs through the
+// rate-limit-aware batch runner (concurrency 2); per-row failures are recorded
+// on the rows and summarized, never thrown.
+//
+// `limit` caps one pass so the client can chunk (a full ~284-row pass would
+// outlive the HTTP request). Never-failed rows sort FIRST so chunked re-calls
+// always make progress; once only persistently-failing rows remain, a chunk
+// comes back with succeeded=0 and the client stops.
+const ReinterpretAllBody = z
+  .object({
+    force: z.boolean().optional(),
+    limit: z.number().int().min(1).max(200).optional(),
+  })
+  .nullish();
+router.post(
+  "/coding-form-rows/reinterpret",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const body = ReinterpretAllBody.safeParse(req.body);
+    const force = body.success ? (body.data?.force ?? false) : false;
+    const limit = body.success ? (body.data?.limit ?? null) : null;
+
+    const baseQuery = db
+      .select()
+      .from(codingFormRows)
+      .where(
+        force
+          ? eq(codingFormRows.status, "pending")
+          : and(
+              eq(codingFormRows.status, "pending"),
+              sql`${codingFormRows.aiInterpretation} IS NULL`,
+            ),
+      )
+      .orderBy(
+        sql`(${codingFormRows.aiError} IS NOT NULL)`,
+        codingFormRows.sourceRowIndex,
+      );
+    const rows = limit ? await baseQuery.limit(limit) : await baseQuery;
+
+    const outcomes = await reinterpretRows(rows);
+    const failures = outcomes.flatMap((o) =>
+      o.ok ? [] : [{ rowId: o.rowId, error: o.error }],
+    );
+    res.json({
+      total: rows.length,
+      succeeded: outcomes.length - failures.length,
+      failed: failures.length,
+      failures,
     });
   }),
 );
@@ -385,9 +590,6 @@ router.get(
       .from(codingFormRows)
       .where(sql`NULLIF(TRIM(${codingFormRows.driveLink}), '') IS NOT NULL`);
 
-    const { loadOppGrantLetter, deriveGrantAgreement } = await import(
-      "../lib/grantAgreements"
-    );
     const counts: Record<string, number> = {
       na: 0,
       no_match: 0,
@@ -397,8 +599,8 @@ router.get(
       failed: 0,
     };
     for (const row of rows) {
-      const opp = await loadOppGrantLetter(row.matchedOpportunityId);
-      const { status } = deriveGrantAgreement(row, opp);
+      const letter = await loadTargetGrantLetter(resolveGrantLetterTarget(row));
+      const { status } = deriveGrantAgreement(row, letter);
       counts[status] = (counts[status] ?? 0) + 1;
     }
 

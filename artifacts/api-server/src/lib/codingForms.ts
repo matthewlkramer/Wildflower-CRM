@@ -10,6 +10,7 @@ import {
   households,
   addresses,
   tasks,
+  regions,
 } from "@workspace/db/schema";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import {
@@ -18,6 +19,14 @@ import {
   type MatchTier,
 } from "./quickbooksMatch";
 import { giftMatchAmountBounds, GIFT_MATCH_WINDOW_DAYS } from "./giftMatch";
+import {
+  effectiveDonorName,
+  effectiveText,
+  effectiveAddress,
+  effectiveReport,
+  effectiveCircle,
+  parseAiInterpretation,
+} from "./codingFormEffective";
 import { newId } from "./helpers";
 
 /**
@@ -44,6 +53,10 @@ export type CodingFormAttribute =
   | "purposeVerbatim"
   | "usageRestriction"
   | "intendedUsage"
+  // Structured circle mappings: "Hub: <place>" → allocation region + regional
+  // axis; Black Wildflowers Fund circles → allocation fund entity.
+  | "regionalRestriction"
+  | "allocationEntity"
   | "address"
   // Raw coding-form reference values stamped on the matched gift "for looking
   // at later" (no structured home). See crossChecksFor / applyRow.
@@ -169,10 +182,18 @@ async function bestOpportunityFor(
 }
 
 /**
- * The proposed match for a row: the donor (via the shared scored matcher), the
- * single unambiguous gift the matcher resolved, and a same-donor opportunity.
- * Donor XOR holds because scoreStagedPayment returns at most one donor FK.
+ * Coding-form match provenance: the shared scorer's methods plus the two
+ * RECORD-FIRST methods (donor inherited FROM the matched record, not resolved
+ * from the sheet's donor text) and the manual override. record_* proposals are
+ * always tier `suggested` and are excluded from bulk confirm — a human must
+ * eyeball the inherited donor per row.
  */
+export type CodingFormMatchMethod =
+  | MatchMethod
+  | "manual"
+  | "record_exact_gift"
+  | "record_exact_pledge";
+
 export interface ProposedMatch {
   organizationId: string | null;
   individualGiverPersonId: string | null;
@@ -180,25 +201,89 @@ export interface ProposedMatch {
   matchedGiftId: string | null;
   matchedOpportunityId: string | null;
   matchScore: number;
-  matchMethod: MatchMethod | null;
+  matchMethod: CodingFormMatchMethod | null;
   matchTier: MatchTier;
 }
 
 /**
- * Compute (READ-ONLY — no write) a fresh proposed match for a row: donor via the
- * shared scored matcher, then a same-donor opportunity. Extracted so the exact
- * live match can be reused by read-only tooling (the one-time conflict-analysis
- * script) without persisting or clearing anything. `rematchRow` layers the write
- * (+ confirmation reset) on top of this.
+ * Nominal score persisted on record-first proposals. The 0–100 score scale
+ * belongs to the donor-name scorer; a record-first hit is structural evidence
+ * (exact amount + date window against the whole record table), so the TIER
+ * (`suggested`) is the authoritative signal and this number is display-only.
+ */
+const RECORD_MATCH_SCORE = 0;
+
+/**
+ * Compute (READ-ONLY — no write) a fresh proposed match for a row. Extracted so
+ * the exact live match can be reused by read-only tooling (the one-time
+ * conflict-analysis script) without persisting or clearing anything.
+ * `rematchRow` layers the write (+ confirmation reset) on top of this.
+ *
+ * RECORD-FIRST: the sheet transcribes the booked amount itself, so an exact
+ * amount + date-window hit against the WHOLE gift/pledge table (donor-agnostic)
+ * is stronger evidence than a fuzzy donor-name resolution. Exactly ONE record
+ * hit → propose that record and INHERIT its donor (Donor XOR holds because the
+ * inherited record carries exactly one donor by DB invariant). Zero or many →
+ * fall back to the original donor-first flow (scored donor, then same-donor
+ * gift/opportunity). Gifts win over pledges when both are unique.
  */
 export async function computeProposedMatch(
   row: CodingFormRowSelect,
 ): Promise<ProposedMatch> {
+  const [recordGifts, recordPledges] = await Promise.all([
+    giftCandidatesFor(row, 2, { donorAgnostic: true }),
+    pledgeCandidatesFor(row, 2, { donorAgnostic: true }),
+  ]);
+
+  if (recordGifts.length === 1) {
+    const g = recordGifts[0];
+    const donor = {
+      organizationId: g.organizationId,
+      individualGiverPersonId: g.individualGiverPersonId,
+      householdId: g.householdId,
+    };
+    const withDonor = { ...row, ...donor } as CodingFormRowSelect;
+    return {
+      ...donor,
+      matchedGiftId: g.id,
+      // Complete the link with the inherited donor's single unambiguous
+      // opportunity (never a cross-donor guess).
+      matchedOpportunityId: await bestOpportunityFor(withDonor),
+      matchScore: RECORD_MATCH_SCORE,
+      matchMethod: "record_exact_gift",
+      matchTier: "suggested",
+    };
+  }
+
+  if (recordPledges.length === 1) {
+    const p = recordPledges[0];
+    const donor = {
+      organizationId: p.organizationId,
+      individualGiverPersonId: p.individualGiverPersonId,
+      householdId: p.householdId,
+    };
+    const withDonor = { ...row, ...donor } as CodingFormRowSelect;
+    // Fill the gift side from the inherited donor when unambiguous.
+    const sameDonorGifts = await giftCandidatesFor(withDonor, 2);
+    return {
+      ...donor,
+      matchedGiftId: sameDonorGifts.length === 1 ? sameDonorGifts[0].id : null,
+      matchedOpportunityId: p.id,
+      matchScore: RECORD_MATCH_SCORE,
+      matchMethod: "record_exact_pledge",
+      matchTier: "suggested",
+    };
+  }
+
+  // ── Donor-first fallback (the original flow) ─────────────────────────────
+  // Reads go through the effective accessors: the AI-normalized donor name and
+  // junk-suppressed memo/restriction text anchor the scorer instead of raw
+  // sheet noise ("n/a" memos scoring against donor names, etc.).
   const scored = await scoreStagedPayment({
-    payerName: row.donorNameRaw,
+    payerName: effectiveDonorName(row),
     payerEmail: null,
-    rawReference: row.internalMemo,
-    lineDescription: row.restrictionLanguage,
+    rawReference: effectiveText(row, "internalMemo"),
+    lineDescription: effectiveText(row, "restrictionLanguage"),
     amount: row.amount ? String(row.amount) : null,
     dateReceived: row.donationDate ? String(row.donationDate) : null,
   });
@@ -297,20 +382,33 @@ export interface GiftCandidate {
   name: string | null;
   amount: string | null;
   dateReceived: string | null;
+  organizationId: string | null;
+  individualGiverPersonId: string | null;
+  householdId: string | null;
 }
 
 /**
- * LIVE (never persisted) same-donor gift candidates for a coding-form row: the
- * row's resolved donor's non-archived gifts at the EXACT sheet amount within
- * ±GIFT_MATCH_WINDOW_DAYS of the donation date. The sheet transcribes the
- * booked gift amount itself (no processor-fee gap), so the band is the "exact"
- * mode of the ONE shared matcher predicate (giftMatchAmountBounds) — never a
- * sibling copy. Requires donor + amount + donation date; otherwise there is
- * nothing safe to anchor on and the list is empty. Closest date first.
+ * LIVE (never persisted) gift candidates for a coding-form row: non-archived
+ * gifts at the EXACT sheet amount within ±GIFT_MATCH_WINDOW_DAYS of the
+ * donation date. The sheet transcribes the booked gift amount itself (no
+ * processor-fee gap), so the band is the "exact" mode of the ONE shared
+ * matcher predicate (giftMatchAmountBounds) — never a sibling copy.
+ *
+ * Scope: same-donor by default (requires a resolved donor FK on the row);
+ * `donorAgnostic: true` searches the whole gift table for the record-first
+ * pass, and the returned donor FKs let the caller INHERIT the donor.
+ *
+ * Date proximity uses the CLOSEST of the gift's own date_received and the
+ * date_received of any QuickBooks staged payment counted onto the gift
+ * (payment_applications, evidence_source='quickbooks', link_role='counted'):
+ * the sheet's date is when the check arrived, which often matches the QB
+ * deposit date better than the gift's booked date. Requires amount + donation
+ * date; otherwise there is nothing safe to anchor on. Closest date first.
  */
 export async function giftCandidatesFor(
   row: CodingFormRowSelect,
   limit = 6,
+  opts: { donorAgnostic?: boolean } = {},
 ): Promise<GiftCandidate[]> {
   const donorWhere = row.organizationId
     ? eq(giftsAndPayments.organizationId, row.organizationId)
@@ -319,43 +417,117 @@ export async function giftCandidatesFor(
       : row.householdId
         ? eq(giftsAndPayments.householdId, row.householdId)
         : null;
-  if (!donorWhere || row.amount == null || !row.donationDate) return [];
+  if (!opts.donorAgnostic && !donorWhere) return [];
+  if (row.amount == null || !row.donationDate) return [];
   // Values come from the row's own DB columns (numeric / date), so the casts
   // below re-apply their native types — not user input needing validation.
   const anchorAmount = sql`${String(row.amount)}::numeric`;
   const anchorDate = sql`${String(row.donationDate)}::date`;
+  // LEAST ignores NULLs in Postgres, so a gift with only one of the two dates
+  // still gets a distance; a gift with neither yields NULL and is filtered by
+  // the window predicate (NULL <= n is not true).
+  const dateDistance = sql`LEAST(
+    ABS(${giftsAndPayments.dateReceived} - ${anchorDate}),
+    (SELECT MIN(ABS(sp.date_received - ${anchorDate}))
+       FROM payment_applications pa
+       JOIN staged_payments sp ON sp.id = pa.payment_id
+      WHERE pa.gift_id = ${giftsAndPayments.id}
+        AND pa.evidence_source = 'quickbooks'
+        AND pa.link_role = 'counted'
+        AND sp.date_received IS NOT NULL)
+  )`;
   const rows = await db
     .select({
       id: giftsAndPayments.id,
       name: giftsAndPayments.name,
       amount: giftsAndPayments.amount,
       dateReceived: giftsAndPayments.dateReceived,
+      organizationId: giftsAndPayments.organizationId,
+      individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
+      householdId: giftsAndPayments.householdId,
     })
     .from(giftsAndPayments)
     .where(
       and(
-        donorWhere,
+        ...(opts.donorAgnostic ? [] : [donorWhere!]),
         sql`${giftsAndPayments.archivedAt} IS NULL`,
-        sql`${giftsAndPayments.dateReceived} IS NOT NULL`,
         giftMatchAmountBounds(
           sql`${giftsAndPayments.amount}`,
           anchorAmount,
           "exact",
         ),
-        sql`ABS(${giftsAndPayments.dateReceived} - ${anchorDate}) <= ${GIFT_MATCH_WINDOW_DAYS}`,
+        sql`${dateDistance} <= ${GIFT_MATCH_WINDOW_DAYS}`,
       ),
     )
-    .orderBy(
-      sql`ABS(${giftsAndPayments.dateReceived} - ${anchorDate}) ASC`,
-      sql`${giftsAndPayments.id} ASC`,
-    )
+    .orderBy(sql`${dateDistance} ASC`, sql`${giftsAndPayments.id} ASC`)
     .limit(limit);
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
     amount: r.amount != null ? String(r.amount) : null,
     dateReceived: r.dateReceived ? String(r.dateReceived) : null,
+    organizationId: r.organizationId,
+    individualGiverPersonId: r.individualGiverPersonId,
+    householdId: r.householdId,
   }));
+}
+
+/** Shape of one live pledge/opportunity candidate for the record-first pass. */
+export interface PledgeCandidate {
+  id: string;
+  name: string | null;
+  organizationId: string | null;
+  individualGiverPersonId: string | null;
+  householdId: string | null;
+}
+
+/**
+ * LIVE (never persisted) pledge/opportunity candidates: non-archived
+ * opportunities with at least one pledge allocation at the EXACT sheet amount
+ * (same shared "exact" band as gifts). All scope lives on the allocation rows
+ * (money model), so the amount matches per-allocation `sub_amount` — a $50k
+ * sheet row finds the $50k tranche of a $150k multi-year pledge. One row per
+ * opportunity (EXISTS, not a join). Same donor-scoping contract as
+ * `giftCandidatesFor`. Pledges have no reliable received-date to anchor on, so
+ * the guard against false positives is uniqueness (exactly one hit), not a
+ * date window.
+ */
+export async function pledgeCandidatesFor(
+  row: CodingFormRowSelect,
+  limit = 6,
+  opts: { donorAgnostic?: boolean } = {},
+): Promise<PledgeCandidate[]> {
+  const donorWhere = donorWhereOpp(row);
+  if (!opts.donorAgnostic && !donorWhere) return [];
+  if (row.amount == null) return [];
+  const anchorAmount = sql`${String(row.amount)}::numeric`;
+  const rows = await db
+    .select({
+      id: opportunitiesAndPledges.id,
+      name: opportunitiesAndPledges.name,
+      organizationId: opportunitiesAndPledges.organizationId,
+      individualGiverPersonId: opportunitiesAndPledges.individualGiverPersonId,
+      householdId: opportunitiesAndPledges.householdId,
+    })
+    .from(opportunitiesAndPledges)
+    .where(
+      and(
+        ...(opts.donorAgnostic ? [] : [donorWhere!]),
+        sql`${opportunitiesAndPledges.archivedAt} IS NULL`,
+        sql`EXISTS (
+          SELECT 1 FROM pledge_allocations pal
+          WHERE pal.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}
+            AND pal.sub_amount IS NOT NULL
+            AND ${giftMatchAmountBounds(sql`pal.sub_amount`, anchorAmount, "exact")}
+        )`,
+      ),
+    )
+    .orderBy(
+      sql`${opportunitiesAndPledges.createdAt} DESC`,
+      sql`${opportunitiesAndPledges.id} ASC`,
+    )
+    .limit(limit);
+  return rows;
 }
 
 /**
@@ -417,6 +589,12 @@ export async function rematchPendingRows(): Promise<{
  * Confirmed rows are excluded from every future bulk rematch pass, so this
  * freezes the links the reviewer has blessed. Idempotent — a second run finds
  * zero unconfirmed rows.
+ *
+ * record_* proposals are EXCLUDED: their donor was inherited from the matched
+ * record rather than resolved from the sheet's donor text, so the sheet name
+ * and the linked donor have never been compared by anyone. Bulk-blessing them
+ * would silently ratify every inheritance; each needs a per-row human look
+ * (the per-row confirm-match endpoint remains available).
  */
 export async function confirmMatchedRows(
   userId: string | null,
@@ -434,6 +612,7 @@ export async function confirmMatchedRows(
         eq(codingFormRows.status, "pending"),
         sql`${codingFormRows.matchConfirmedAt} IS NULL`,
         sql`${codingFormRows.matchedGiftId} IS NOT NULL`,
+        sql`(${codingFormRows.matchMethod} IS NULL OR ${codingFormRows.matchMethod} NOT LIKE 'record\\_%')`,
         sql`(${codingFormRows.organizationId} IS NOT NULL OR ${codingFormRows.individualGiverPersonId} IS NOT NULL OR ${codingFormRows.householdId} IS NOT NULL)`,
       ),
     )
@@ -449,6 +628,9 @@ interface AllocationRef {
   purposeVerbatim: string | null;
   usageRestrictionType: string;
   intendedUsage: string | null;
+  regionIds: string[] | null;
+  regionalRestrictionType: string;
+  entityId: string | null;
 }
 
 /**
@@ -467,6 +649,9 @@ async function resolveAllocation(
         purposeVerbatim: giftAllocations.purposeVerbatim,
         usageRestrictionType: giftAllocations.usageRestrictionType,
         intendedUsage: giftAllocations.intendedUsage,
+        regionIds: giftAllocations.regionIds,
+        regionalRestrictionType: giftAllocations.regionalRestrictionType,
+        entityId: giftAllocations.entityId,
       })
       .from(giftAllocations)
       .where(eq(giftAllocations.giftId, row.matchedGiftId))
@@ -487,6 +672,9 @@ async function resolveAllocation(
         purposeVerbatim: pledgeAllocations.purposeVerbatim,
         usageRestrictionType: pledgeAllocations.usageRestrictionType,
         intendedUsage: pledgeAllocations.intendedUsage,
+        regionIds: pledgeAllocations.regionIds,
+        regionalRestrictionType: pledgeAllocations.regionalRestrictionType,
+        entityId: pledgeAllocations.entityId,
       })
       .from(pledgeAllocations)
       .where(eq(pledgeAllocations.pledgeOrOpportunityId, row.matchedOpportunityId))
@@ -573,11 +761,19 @@ function hasDonor(row: CodingFormRowSelect): boolean {
   );
 }
 
-/** An equivalent reporting-deadline task already on the opportunity (same due date). */
+/**
+ * An equivalent reporting-deadline task (same due date) already attached to the
+ * target record — the matched opportunity when there is one, else the matched
+ * gift (tasks carry both `opportunityIds` and `giftIds` arrays).
+ */
 async function existingReportingTask(
-  oppId: string,
+  target: { oppId: string } | { giftId: string },
   dueDate: string,
 ): Promise<string | null> {
+  const attachedTo =
+    "oppId" in target
+      ? sql`${tasks.opportunityIds} @> ARRAY[${target.oppId}]::text[]`
+      : sql`${tasks.giftIds} @> ARRAY[${target.giftId}]::text[]`;
   const rows = await db
     .select({ id: tasks.id })
     .from(tasks)
@@ -585,7 +781,7 @@ async function existingReportingTask(
       and(
         eq(tasks.kind, "reporting_deadline"),
         eq(tasks.dueDate, dueDate),
-        sql`${tasks.opportunityIds} @> ARRAY[${oppId}]::text[]`,
+        attachedTo,
       ),
     )
     .limit(1);
@@ -663,25 +859,34 @@ export async function crossChecksFor(
 
   const out: CrossCheck[] = [];
 
-  // 1. Reporting deadline → reporting_deadline task on the matched opportunity.
+  // 1. Reporting deadline → reporting_deadline task on the matched opportunity
+  //    when there is one, else on the matched gift (grant reports can govern a
+  //    booked gift with no surviving opportunity). AI-reinterpreted report
+  //    answer (effectiveReport) wins over the deterministic parse.
   {
-    const applicable = !!(row.reportRequired && row.reportDueDate);
+    const rep = effectiveReport(row);
+    const applicable = !!(rep.required && rep.dueDate);
+    const dueDate = rep.dueDate ? String(rep.dueDate) : null;
     let status: CrossCheckStatus = "na";
     let crmValue: string | null = null;
     let targetId: string | null = null;
     let blockedReason: string | null = null;
-    if (applicable) {
-      if (!row.matchedOpportunityId) {
-        blockedReason = "no matched opportunity to attach the deadline to";
+    const taskTarget: { oppId: string } | { giftId: string } | null =
+      row.matchedOpportunityId
+        ? { oppId: row.matchedOpportunityId }
+        : row.matchedGiftId
+          ? { giftId: row.matchedGiftId }
+          : null;
+    if (applicable && dueDate) {
+      if (!taskTarget) {
+        blockedReason =
+          "no matched opportunity or gift to attach the deadline to";
         status = "na";
       } else {
-        const existing = await existingReportingTask(
-          row.matchedOpportunityId,
-          String(row.reportDueDate),
-        );
+        const existing = await existingReportingTask(taskTarget, dueDate);
         if (existing) {
           status = "same";
-          crmValue = String(row.reportDueDate);
+          crmValue = dueDate;
           targetId = existing;
         } else {
           status = "new";
@@ -689,42 +894,49 @@ export async function crossChecksFor(
       }
     }
     // Mirrors applyRow: creates a reporting_deadline task with this exact title
-    // + due date on the matched opportunity (skipped if one already exists).
-    // A deadline already in the past is still recorded, but the task is created
-    // as already completed so it never shows up as overdue work.
-    const taskTitle = row.donorNameRaw
-      ? `Reporting deadline — ${row.donorNameRaw}`
+    // + due date on the matched opportunity (else gift; skipped if one already
+    // exists). A deadline already in the past is still recorded, but the task
+    // is created as already completed so it never shows up as overdue work.
+    const donorLabel = effectiveDonorName(row);
+    const taskTitle = donorLabel
+      ? `Reporting deadline — ${donorLabel}`
       : "Reporting deadline";
     const actionable = status === "new" && !blockedReason;
-    const duePast = actionable && String(row.reportDueDate) < todayISO();
+    const duePast = actionable && dueDate !== null && dueDate < todayISO();
+    const targetNoun =
+      taskTarget && "giftId" in taskTarget ? "gift" : "opportunity";
     out.push({
       attribute: "reportDeadline",
       label: "Reporting deadline",
       status,
       applicable,
-      sheetValue: row.reportDueDate ? String(row.reportDueDate) : null,
+      sheetValue: dueDate,
       crmValue,
       targetType: "task",
       targetId,
       decision: dec("reportDeadline"),
       blockedReason,
       willWrite: actionable
-        ? `"${taskTitle}" due ${String(row.reportDueDate)}${duePast ? " (date is in the past — created already completed)" : ""}`
+        ? `"${taskTitle}" due ${dueDate}${duePast ? " (date is in the past — created already completed)" : ""}`
         : null,
       willWriteTo: actionable
         ? duePast
-          ? "creates a new, already-completed Reporting-deadline task on the matched opportunity"
-          : "creates a new Reporting-deadline task on the matched opportunity"
+          ? `creates a new, already-completed Reporting-deadline task on the matched ${targetNoun}`
+          : `creates a new Reporting-deadline task on the matched ${targetNoun}`
         : null,
     });
   }
 
-  // Allocation-targeted attributes share one resolution.
-  const restrictionPresent = !!(
-    row.restrictionLanguage && row.restrictionLanguage.trim().length > 0
-  );
+  // Allocation-targeted attributes share one resolution. All sheet-side values
+  // go through the effective accessors (AI reinterpretation + junk suppression).
+  const effRestriction = effectiveText(row, "restrictionLanguage");
+  const restrictionPresent = !!effRestriction;
   const intendedPresent = !!row.intendedUsageSuggested;
-  const needAlloc = restrictionPresent || intendedPresent;
+  const circle = effectiveCircle(row);
+  const circleRegion = circle?.kind === "hub_region" ? circle : null;
+  const circleEntity = circle?.kind === "entity" ? circle : null;
+  const needAlloc =
+    restrictionPresent || intendedPresent || !!circleRegion || !!circleEntity;
   const { alloc, blockedReason: allocBlocked } = needAlloc
     ? await resolveAllocation(row)
     : { alloc: null, blockedReason: null };
@@ -747,11 +959,11 @@ export async function crossChecksFor(
       } else {
         crmValue = alloc.purposeVerbatim;
         if (!crmValue || crmValue.trim().length === 0) status = "new";
-        else if (eqText(crmValue, row.restrictionLanguage)) status = "same";
+        else if (eqText(crmValue, effRestriction)) status = "same";
         else status = "conflict";
       }
     }
-    // Mirrors applyRow: patch.purposeVerbatim = row.restrictionLanguage.
+    // Mirrors applyRow: patch.purposeVerbatim = effRestriction.
     const actionable =
       !!alloc && (status === "new" || status === "conflict");
     out.push({
@@ -759,13 +971,13 @@ export async function crossChecksFor(
       label: "Restriction language (purpose)",
       status,
       applicable,
-      sheetValue: row.restrictionLanguage,
+      sheetValue: effRestriction,
       crmValue,
       targetType: "allocation",
       targetId: alloc?.id ?? null,
       decision: dec("purposeVerbatim"),
       blockedReason,
-      willWrite: actionable ? row.restrictionLanguage : null,
+      willWrite: actionable ? effRestriction : null,
       willWriteTo: actionable
         ? allocDest("Purpose (verbatim)", status)
         : null,
@@ -855,11 +1067,110 @@ export async function crossChecksFor(
     });
   }
 
-  // 5. Donor mailing address → addresses row for the matched donor.
-  {
-    const applicable = !!(
-      row.donorNameAddressRaw && row.donorNameAddressRaw.trim().length > 0
+  // 4b. "Hub: <place>" circle → allocation region + regional axis
+  //     donor_restricted. Append-the-region semantics: existing regions are
+  //     kept; conflict only when the allocation already carries a DIFFERENT
+  //     regional scope (other regions, or a wf_restricted axis).
+  if (circleRegion) {
+    const applicable = true;
+    let status: CrossCheckStatus = "na";
+    let crmValue: string | null = null;
+    let blockedReason: string | null = null;
+    // Display names for the target + any existing regions (ids are slugs).
+    const idsToName = Array.from(
+      new Set([circleRegion.regionId, ...(alloc?.regionIds ?? [])]),
     );
+    const nameRows = await db
+      .select({ id: regions.id, name: regions.name })
+      .from(regions)
+      .where(sql`${regions.id} = ANY(${idsToName}::text[])`);
+    const regionName = (id: string): string =>
+      nameRows.find((r) => r.id === id)?.name ?? id;
+    if (!alloc) {
+      blockedReason = allocBlocked;
+    } else {
+      const existing = alloc.regionIds ?? [];
+      const hasRegion = existing.includes(circleRegion.regionId);
+      const axisDR = alloc.regionalRestrictionType === "donor_restricted";
+      crmValue =
+        existing.length > 0
+          ? `regions: ${existing.map(regionName).join(", ")} · regional axis: ${alloc.regionalRestrictionType}`
+          : `no regions · regional axis: ${alloc.regionalRestrictionType}`;
+      if (hasRegion && axisDR) status = "same";
+      else if (
+        existing.length === 0 &&
+        alloc.regionalRestrictionType === "unrestricted"
+      )
+        status = "new";
+      else status = "conflict";
+    }
+    // Mirrors applyRow: appends the region to allocation.regionIds (existing
+    // regions kept) and sets regionalRestrictionType = donor_restricted.
+    const actionable =
+      !!alloc && (status === "new" || status === "conflict");
+    out.push({
+      attribute: "regionalRestriction",
+      label: "Hub → regional restriction",
+      status,
+      applicable,
+      sheetValue: circleRegion.label,
+      crmValue,
+      targetType: "allocation",
+      targetId: alloc?.id ?? null,
+      decision: dec("regionalRestriction"),
+      blockedReason,
+      willWrite: actionable
+        ? `region "${regionName(circleRegion.regionId)}" + regional axis "Donor restricted"`
+        : null,
+      willWriteTo: actionable
+        ? `adds the region and sets the regional-restriction axis on the matched ${
+            alloc?.kind === "gift" ? "gift" : "pledge"
+          } allocation (existing regions kept)`
+        : null,
+    });
+  }
+
+  // 4c. Black Wildflowers Fund circle → allocation fund entity.
+  if (circleEntity) {
+    const applicable = true;
+    let status: CrossCheckStatus = "na";
+    let crmValue: string | null = null;
+    let blockedReason: string | null = null;
+    if (!alloc) {
+      blockedReason = allocBlocked;
+    } else {
+      crmValue = alloc.entityId;
+      if (alloc.entityId === circleEntity.entityId) status = "same";
+      else if (alloc.entityId == null) status = "new";
+      else status = "conflict";
+    }
+    // Mirrors applyRow: patch.entityId = "black_wildflowers_fund".
+    const actionable =
+      !!alloc && (status === "new" || status === "conflict");
+    out.push({
+      attribute: "allocationEntity",
+      label: "Circle → fund entity",
+      status,
+      applicable,
+      sheetValue: circleEntity.label,
+      crmValue,
+      targetType: "allocation",
+      targetId: alloc?.id ?? null,
+      decision: dec("allocationEntity"),
+      blockedReason,
+      willWrite: actionable ? "Black Wildflowers Fund" : null,
+      willWriteTo: actionable
+        ? allocDest("Fund entity", status)
+        : null,
+    });
+  }
+
+  // 5. Donor mailing address → addresses row for the matched donor. The
+  //    effective address (AI-parsed ?? deterministic parse ?? raw blob as
+  //    street line; junk-suppressed) is what gets written.
+  {
+    const effAddr = effectiveAddress(row);
+    const applicable = effAddr !== null;
     let status: CrossCheckStatus = "na";
     let crmValue: string | null = null;
     let targetId: string | null = null;
@@ -881,16 +1192,16 @@ export async function crossChecksFor(
         }
       }
     }
-    // Mirrors applyRow: INSERTs a new addresses row — raw mailing string as the
-    // street line plus any confidently parsed city/state/postal/country. Never
-    // edits an existing address.
+    // Mirrors applyRow: INSERTs a new addresses row from the effective address
+    // (street + any parsed city/state/postal/country). Never edits an existing
+    // address.
     const actionable =
       !blockedReason && (status === "new" || status === "conflict");
     const parsedBits = [
-      row.addrCity ? `city: ${row.addrCity}` : null,
-      row.addrState ? `state: ${row.addrState}` : null,
-      row.addrPostal ? `postal: ${row.addrPostal}` : null,
-      row.addrCountry ? `country: ${row.addrCountry}` : null,
+      effAddr?.city ? `city: ${effAddr.city}` : null,
+      effAddr?.state ? `state: ${effAddr.state}` : null,
+      effAddr?.postal ? `postal: ${effAddr.postal}` : null,
+      effAddr?.country ? `country: ${effAddr.country}` : null,
     ].filter((x): x is string => x !== null);
     out.push({
       attribute: "address",
@@ -903,11 +1214,12 @@ export async function crossChecksFor(
       targetId,
       decision: dec("address"),
       blockedReason,
-      willWrite: actionable
-        ? `street line: "${row.donorNameAddressRaw}"${
-            parsedBits.length > 0 ? ` · parsed ${parsedBits.join(", ")}` : ""
-          }`
-        : null,
+      willWrite:
+        actionable && effAddr
+          ? `${effAddr.street ? `street line: "${effAddr.street}"` : "no street line"}${
+              parsedBits.length > 0 ? ` · ${parsedBits.join(", ")}` : ""
+            }`
+          : null,
       willWriteTo: actionable
         ? status === "conflict"
           ? "creates an ADDITIONAL address on the matched donor (the existing address is kept as-is)"
@@ -923,23 +1235,33 @@ export async function crossChecksFor(
   //    somewhere in tags) or "new" — never "conflict". Block when there is no
   //    matched gift to attach them to.
   {
+    // Junk-suppressed effective text (deterministic junk tokens + AI junk
+    // flags): junked cells simply aren't applicable, so no tag is appended.
     const refSpecs: Array<{
       attribute: CodingRefAttr;
       label: string;
       sheet: string | null;
     }> = [
-      { attribute: "circle", label: "Circle / coding", sheet: row.circleRaw },
+      {
+        attribute: "circle",
+        label: "Circle / coding",
+        sheet: effectiveText(row, "circleRaw"),
+      },
       {
         attribute: "seriesType",
         label: "Stand-alone vs multi-series",
-        sheet: row.seriesTypeRaw,
+        sheet: effectiveText(row, "seriesTypeRaw"),
       },
       {
         attribute: "additionalNotes",
         label: "Additional notes",
-        sheet: row.additionalNotes,
+        sheet: effectiveText(row, "additionalNotes"),
       },
-      { attribute: "internalMemo", label: "Internal memo", sheet: row.internalMemo },
+      {
+        attribute: "internalMemo",
+        label: "Internal memo",
+        sheet: effectiveText(row, "internalMemo"),
+      },
     ];
     const anyPresent = refSpecs.some(
       (s) => s.sheet != null && s.sheet.trim().length > 0,
@@ -1004,15 +1326,14 @@ export async function crossChecksFor(
 // ── Serialization ────────────────────────────────────────────────────────────
 
 export async function serializeRow(row: CodingFormRowSelect) {
-  const { loadOppGrantLetter, deriveGrantAgreement } = await import(
-    "./grantAgreements"
-  );
-  const [crossChecks, dName, oppName, oppGrant, giftName, giftCandidates] =
+  const { resolveGrantLetterTarget, loadTargetGrantLetter, deriveGrantAgreement } =
+    await import("./grantAgreements");
+  const [crossChecks, dName, oppName, targetLetter, giftName, giftCandidates] =
     await Promise.all([
       crossChecksFor(row),
       donorName(row),
       opportunityName(row.matchedOpportunityId),
-      loadOppGrantLetter(row.matchedOpportunityId),
+      loadTargetGrantLetter(resolveGrantLetterTarget(row)),
       matchedGiftName(row.matchedGiftId),
       // Live candidates only while the row is actually unresolved: pending, no
       // proposed/confirmed gift yet. Resolved rows skip the extra query.
@@ -1022,7 +1343,7 @@ export async function serializeRow(row: CodingFormRowSelect) {
         ? giftCandidatesFor(row)
         : Promise.resolve([] as GiftCandidate[]),
     ]);
-  const grantAgreement = deriveGrantAgreement(row, oppGrant);
+  const grantAgreement = deriveGrantAgreement(row, targetLetter);
   return {
     id: row.id,
     source: row.source,
@@ -1054,6 +1375,13 @@ export async function serializeRow(row: CodingFormRowSelect) {
     crossChecks,
     needsDecision: needsDecisionFor(row),
     grantAgreement,
+    // AI reinterpretation provenance: the VALIDATED payload (invalid stored
+    // json serializes as null — same degradation the effective accessors use)
+    // + stamps, so the review UI can show what the AI changed and why.
+    aiInterpretation: parseAiInterpretation(row.aiInterpretation),
+    aiInterpretedAt: row.aiInterpretedAt?.toISOString() ?? null,
+    aiModel: row.aiModel,
+    aiError: row.aiError,
     appliedAt: row.appliedAt?.toISOString() ?? null,
     appliedTaskId: row.appliedTaskId,
     appliedAddressId: row.appliedAddressId,
@@ -1131,13 +1459,18 @@ export async function applyRow(
 
   const want = (a: CodingFormAttribute): boolean => wanted.has(a);
 
-  // 1. Reporting deadline → reporting_deadline task.
-  if (want("reportDeadline") && row.matchedOpportunityId && row.reportDueDate) {
-    const dueDate = String(row.reportDueDate);
-    const existing = await existingReportingTask(
-      row.matchedOpportunityId,
-      dueDate,
-    );
+  // 1. Reporting deadline → reporting_deadline task on the matched opportunity
+  //    when there is one, else on the matched gift. Mirrors crossChecksFor #1.
+  const rep = effectiveReport(row);
+  const repTarget: { oppId: string } | { giftId: string } | null =
+    row.matchedOpportunityId
+      ? { oppId: row.matchedOpportunityId }
+      : row.matchedGiftId
+        ? { giftId: row.matchedGiftId }
+        : null;
+  if (want("reportDeadline") && repTarget && rep.required && rep.dueDate) {
+    const dueDate = String(rep.dueDate);
+    const existing = await existingReportingTask(repTarget, dueDate);
     if (existing) {
       appliedTaskId = existing;
       skipped.push("reportDeadline");
@@ -1146,18 +1479,20 @@ export async function applyRow(
       // but created as already done so it never surfaces as overdue work.
       // (Preview wording in crossChecksFor mirrors this — keep in lockstep.)
       const isPast = dueDate < todayISO();
+      const donorLabel = effectiveDonorName(row);
       const [task] = await db
         .insert(tasks)
         .values({
           id: newId(),
-          title: row.donorNameRaw
-            ? `Reporting deadline — ${row.donorNameRaw}`
+          title: donorLabel
+            ? `Reporting deadline — ${donorLabel}`
             : "Reporting deadline",
           kind: "reporting_deadline",
           status: isPast ? "done" : "open",
           completedAt: isPast ? new Date() : null,
           dueDate,
-          opportunityIds: [row.matchedOpportunityId],
+          opportunityIds: "oppId" in repTarget ? [repTarget.oppId] : null,
+          giftIds: "giftId" in repTarget ? [repTarget.giftId] : null,
           createdByUserId: userId,
         })
         .returning();
@@ -1168,11 +1503,14 @@ export async function applyRow(
     }
   }
 
-  // 2-4. Allocation attributes (purpose / usage axis / intended usage).
+  // 2-4. Allocation attributes (purpose / usage axis / intended usage /
+  //      hub region / fund entity). Mirrors crossChecksFor #2-#4c.
   const allocAttrs: CodingFormAttribute[] = [
     "purposeVerbatim",
     "usageRestriction",
     "intendedUsage",
+    "regionalRestriction",
+    "allocationEntity",
   ];
   const allocToApply = allocAttrs.filter((a) => want(a));
   if (allocToApply.length > 0) {
@@ -1180,11 +1518,27 @@ export async function applyRow(
     if (alloc) {
       const patch: Record<string, unknown> = { updatedAt: new Date() };
       if (allocToApply.includes("purposeVerbatim"))
-        patch.purposeVerbatim = row.restrictionLanguage;
+        patch.purposeVerbatim = effectiveText(row, "restrictionLanguage");
       if (allocToApply.includes("usageRestriction"))
         patch.usageRestrictionType = "donor_restricted";
       if (allocToApply.includes("intendedUsage"))
         patch.intendedUsage = row.intendedUsageSuggested;
+      if (allocToApply.includes("regionalRestriction")) {
+        const circle = effectiveCircle(row);
+        if (circle?.kind === "hub_region") {
+          // Append-the-region semantics: existing regions kept, target region
+          // added once; regional axis latched to donor_restricted.
+          const existing = alloc.regionIds ?? [];
+          patch.regionIds = existing.includes(circle.regionId)
+            ? existing
+            : [...existing, circle.regionId];
+          patch.regionalRestrictionType = "donor_restricted";
+        }
+      }
+      if (allocToApply.includes("allocationEntity")) {
+        const circle = effectiveCircle(row);
+        if (circle?.kind === "entity") patch.entityId = circle.entityId;
+      }
       if (alloc.kind === "gift") {
         await db
           .update(giftAllocations)
@@ -1206,9 +1560,10 @@ export async function applyRow(
   }
 
   // 5. Donor mailing address → addresses row (create only when none exists, or a
-  //    reviewer-approved conflict). Conservative: store the raw mailing string as
-  //    the street line plus any confidently parsed postal/state/city.
-  if (want("address") && hasDonor(row)) {
+  //    reviewer-approved conflict). Writes the effective address (AI-parsed ??
+  //    deterministic parse ?? raw blob as street line). Mirrors crossChecksFor #5.
+  const effAddr = effectiveAddress(row);
+  if (want("address") && hasDonor(row) && effAddr) {
     // Idempotency: if we already created an address that still exists, reuse it.
     let reuse: string | null = null;
     if (appliedAddressId) {
@@ -1225,11 +1580,11 @@ export async function applyRow(
       const id = newId();
       await db.insert(addresses).values({
         id,
-        street: row.donorNameAddressRaw,
-        cityName: row.addrCity,
-        stateCode: row.addrState,
-        postalCode: row.addrPostal,
-        country: row.addrCountry,
+        street: effAddr.street,
+        cityName: effAddr.city,
+        stateCode: effAddr.state,
+        postalCode: effAddr.postal,
+        country: effAddr.country,
         organizationId: row.organizationId,
         personId: row.individualGiverPersonId,
         householdId: row.householdId,
@@ -1244,10 +1599,10 @@ export async function applyRow(
   //    always kept, and a raw value already present anywhere in tags (per
   //    tagsContain, same rule as the cross-check) is not appended again.
   const refApply: Array<{ attr: CodingRefAttr; value: string | null }> = [
-    { attr: "circle", value: row.circleRaw },
-    { attr: "seriesType", value: row.seriesTypeRaw },
-    { attr: "additionalNotes", value: row.additionalNotes },
-    { attr: "internalMemo", value: row.internalMemo },
+    { attr: "circle", value: effectiveText(row, "circleRaw") },
+    { attr: "seriesType", value: effectiveText(row, "seriesTypeRaw") },
+    { attr: "additionalNotes", value: effectiveText(row, "additionalNotes") },
+    { attr: "internalMemo", value: effectiveText(row, "internalMemo") },
   ];
   const refToApply = refApply.filter(
     (r) => want(r.attr) && r.value != null && r.value.trim().length > 0,

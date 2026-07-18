@@ -59,10 +59,13 @@ export const ListCodingFormRowsResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
   "amount": zod.string().nullish(),
-  "dateReceived": zod.string().nullish()
-}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
+  "dateReceived": zod.string().nullish(),
+  "organizationId": zod.string().nullish().describe('The candidate gift\'s donor org (donor XOR — at most one of the three is set).'),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish()
+}).describe('A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift.')).optional().describe('LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift\'s own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift\'s donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount\/date is set.'),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'regionalRestriction', 'allocationEntity', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -81,15 +84,33 @@ export const ListCodingFormRowsResponse = zod.object({
   "value": zod.string().nullish().describe('The captured spreadsheet value with no schema home.')
 })),
   "grantAgreement": zod.object({
-  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity OR gift; ready = will attach; imported = already attached by this backfill; conflict = the matched target already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "targetType": zod.enum(['opportunity', 'gift']).nullish().describe('Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
   "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
-  "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
+  "oppExistingUrl": zod.string().nullish().describe('The TARGET\'s (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict\/imported display).'),
   "oppExistingFilename": zod.string().nullish(),
   "error": zod.string().nullish().describe('Last recorded fetch\/upload error for this row.')
-}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row.'),
+}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift.'),
+  "aiInterpretation": zod.object({
+  "donorName": zod.string().nullable().describe('Normalized donor display name (typo-fixed); null when the raw name needs no fixing.'),
+  "address": zod.object({
+  "street": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "postal": zod.string().nullable(),
+  "country": zod.string().nullable()
+}).nullable().describe('Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address.'),
+  "reportRequired": zod.boolean().nullable().describe('Reinterpreted \'written report required?\' answer; null when ambiguous.'),
+  "reportDueDate": zod.string().nullable().describe('YYYY-MM-DD when the raw answer states an explicit due date.'),
+  "junkFields": zod.array(zod.enum(['internalMemo', 'restrictionLanguage', 'additionalNotes', 'circleRaw', 'seriesTypeRaw', 'donorNameAddressRaw', 'reportRequiredRaw'])).describe('Row fields the AI flagged as junk\/redundant (suppressed from tag\/notes\/address writes and cross-checks).'),
+  "notes": zod.string().nullable().describe('One-sentence rationale for the reviewer.')
+}).describe('One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize\/suppress — it never maps circles to regions\/entities.').nullish().describe('The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation).'),
+  "aiInterpretedAt": zod.string().nullish().describe('When the current AI payload was produced.'),
+  "aiModel": zod.string().nullish().describe('Model that produced the current AI payload.'),
+  "aiError": zod.string().nullish().describe('Last AI reinterpretation failure for this row (cleared on success).'),
   "appliedAt": zod.string().nullish(),
   "appliedTaskId": zod.string().nullish(),
   "appliedAddressId": zod.string().nullish(),
@@ -172,10 +193,13 @@ export const GetCodingFormRowResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
   "amount": zod.string().nullish(),
-  "dateReceived": zod.string().nullish()
-}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
+  "dateReceived": zod.string().nullish(),
+  "organizationId": zod.string().nullish().describe('The candidate gift\'s donor org (donor XOR — at most one of the three is set).'),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish()
+}).describe('A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift.')).optional().describe('LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift\'s own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift\'s donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount\/date is set.'),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'regionalRestriction', 'allocationEntity', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -194,15 +218,33 @@ export const GetCodingFormRowResponse = zod.object({
   "value": zod.string().nullish().describe('The captured spreadsheet value with no schema home.')
 })),
   "grantAgreement": zod.object({
-  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity OR gift; ready = will attach; imported = already attached by this backfill; conflict = the matched target already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "targetType": zod.enum(['opportunity', 'gift']).nullish().describe('Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
   "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
-  "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
+  "oppExistingUrl": zod.string().nullish().describe('The TARGET\'s (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict\/imported display).'),
   "oppExistingFilename": zod.string().nullish(),
   "error": zod.string().nullish().describe('Last recorded fetch\/upload error for this row.')
-}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row.'),
+}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift.'),
+  "aiInterpretation": zod.object({
+  "donorName": zod.string().nullable().describe('Normalized donor display name (typo-fixed); null when the raw name needs no fixing.'),
+  "address": zod.object({
+  "street": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "postal": zod.string().nullable(),
+  "country": zod.string().nullable()
+}).nullable().describe('Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address.'),
+  "reportRequired": zod.boolean().nullable().describe('Reinterpreted \'written report required?\' answer; null when ambiguous.'),
+  "reportDueDate": zod.string().nullable().describe('YYYY-MM-DD when the raw answer states an explicit due date.'),
+  "junkFields": zod.array(zod.enum(['internalMemo', 'restrictionLanguage', 'additionalNotes', 'circleRaw', 'seriesTypeRaw', 'donorNameAddressRaw', 'reportRequiredRaw'])).describe('Row fields the AI flagged as junk\/redundant (suppressed from tag\/notes\/address writes and cross-checks).'),
+  "notes": zod.string().nullable().describe('One-sentence rationale for the reviewer.')
+}).describe('One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize\/suppress — it never maps circles to regions\/entities.').nullish().describe('The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation).'),
+  "aiInterpretedAt": zod.string().nullish().describe('When the current AI payload was produced.'),
+  "aiModel": zod.string().nullish().describe('Model that produced the current AI payload.'),
+  "aiError": zod.string().nullish().describe('Last AI reinterpretation failure for this row (cleared on success).'),
   "appliedAt": zod.string().nullish(),
   "appliedTaskId": zod.string().nullish(),
   "appliedAddressId": zod.string().nullish(),
@@ -257,10 +299,13 @@ export const SetCodingFormMatchResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
   "amount": zod.string().nullish(),
-  "dateReceived": zod.string().nullish()
-}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
+  "dateReceived": zod.string().nullish(),
+  "organizationId": zod.string().nullish().describe('The candidate gift\'s donor org (donor XOR — at most one of the three is set).'),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish()
+}).describe('A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift.')).optional().describe('LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift\'s own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift\'s donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount\/date is set.'),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'regionalRestriction', 'allocationEntity', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -279,15 +324,33 @@ export const SetCodingFormMatchResponse = zod.object({
   "value": zod.string().nullish().describe('The captured spreadsheet value with no schema home.')
 })),
   "grantAgreement": zod.object({
-  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity OR gift; ready = will attach; imported = already attached by this backfill; conflict = the matched target already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "targetType": zod.enum(['opportunity', 'gift']).nullish().describe('Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
   "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
-  "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
+  "oppExistingUrl": zod.string().nullish().describe('The TARGET\'s (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict\/imported display).'),
   "oppExistingFilename": zod.string().nullish(),
   "error": zod.string().nullish().describe('Last recorded fetch\/upload error for this row.')
-}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row.'),
+}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift.'),
+  "aiInterpretation": zod.object({
+  "donorName": zod.string().nullable().describe('Normalized donor display name (typo-fixed); null when the raw name needs no fixing.'),
+  "address": zod.object({
+  "street": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "postal": zod.string().nullable(),
+  "country": zod.string().nullable()
+}).nullable().describe('Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address.'),
+  "reportRequired": zod.boolean().nullable().describe('Reinterpreted \'written report required?\' answer; null when ambiguous.'),
+  "reportDueDate": zod.string().nullable().describe('YYYY-MM-DD when the raw answer states an explicit due date.'),
+  "junkFields": zod.array(zod.enum(['internalMemo', 'restrictionLanguage', 'additionalNotes', 'circleRaw', 'seriesTypeRaw', 'donorNameAddressRaw', 'reportRequiredRaw'])).describe('Row fields the AI flagged as junk\/redundant (suppressed from tag\/notes\/address writes and cross-checks).'),
+  "notes": zod.string().nullable().describe('One-sentence rationale for the reviewer.')
+}).describe('One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize\/suppress — it never maps circles to regions\/entities.').nullish().describe('The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation).'),
+  "aiInterpretedAt": zod.string().nullish().describe('When the current AI payload was produced.'),
+  "aiModel": zod.string().nullish().describe('Model that produced the current AI payload.'),
+  "aiError": zod.string().nullish().describe('Last AI reinterpretation failure for this row (cleared on success).'),
   "appliedAt": zod.string().nullish(),
   "appliedTaskId": zod.string().nullish(),
   "appliedAddressId": zod.string().nullish(),
@@ -334,10 +397,13 @@ export const RematchCodingFormRowResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
   "amount": zod.string().nullish(),
-  "dateReceived": zod.string().nullish()
-}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
+  "dateReceived": zod.string().nullish(),
+  "organizationId": zod.string().nullish().describe('The candidate gift\'s donor org (donor XOR — at most one of the three is set).'),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish()
+}).describe('A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift.')).optional().describe('LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift\'s own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift\'s donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount\/date is set.'),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'regionalRestriction', 'allocationEntity', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -356,15 +422,33 @@ export const RematchCodingFormRowResponse = zod.object({
   "value": zod.string().nullish().describe('The captured spreadsheet value with no schema home.')
 })),
   "grantAgreement": zod.object({
-  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity OR gift; ready = will attach; imported = already attached by this backfill; conflict = the matched target already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "targetType": zod.enum(['opportunity', 'gift']).nullish().describe('Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
   "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
-  "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
+  "oppExistingUrl": zod.string().nullish().describe('The TARGET\'s (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict\/imported display).'),
   "oppExistingFilename": zod.string().nullish(),
   "error": zod.string().nullish().describe('Last recorded fetch\/upload error for this row.')
-}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row.'),
+}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift.'),
+  "aiInterpretation": zod.object({
+  "donorName": zod.string().nullable().describe('Normalized donor display name (typo-fixed); null when the raw name needs no fixing.'),
+  "address": zod.object({
+  "street": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "postal": zod.string().nullable(),
+  "country": zod.string().nullable()
+}).nullable().describe('Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address.'),
+  "reportRequired": zod.boolean().nullable().describe('Reinterpreted \'written report required?\' answer; null when ambiguous.'),
+  "reportDueDate": zod.string().nullable().describe('YYYY-MM-DD when the raw answer states an explicit due date.'),
+  "junkFields": zod.array(zod.enum(['internalMemo', 'restrictionLanguage', 'additionalNotes', 'circleRaw', 'seriesTypeRaw', 'donorNameAddressRaw', 'reportRequiredRaw'])).describe('Row fields the AI flagged as junk\/redundant (suppressed from tag\/notes\/address writes and cross-checks).'),
+  "notes": zod.string().nullable().describe('One-sentence rationale for the reviewer.')
+}).describe('One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize\/suppress — it never maps circles to regions\/entities.').nullish().describe('The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation).'),
+  "aiInterpretedAt": zod.string().nullish().describe('When the current AI payload was produced.'),
+  "aiModel": zod.string().nullish().describe('Model that produced the current AI payload.'),
+  "aiError": zod.string().nullish().describe('Last AI reinterpretation failure for this row (cleared on success).'),
   "appliedAt": zod.string().nullish(),
   "appliedTaskId": zod.string().nullish(),
   "appliedAddressId": zod.string().nullish(),
@@ -420,10 +504,13 @@ export const ConfirmCodingFormMatchResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
   "amount": zod.string().nullish(),
-  "dateReceived": zod.string().nullish()
-}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
+  "dateReceived": zod.string().nullish(),
+  "organizationId": zod.string().nullish().describe('The candidate gift\'s donor org (donor XOR — at most one of the three is set).'),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish()
+}).describe('A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift.')).optional().describe('LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift\'s own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift\'s donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount\/date is set.'),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'regionalRestriction', 'allocationEntity', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -442,15 +529,33 @@ export const ConfirmCodingFormMatchResponse = zod.object({
   "value": zod.string().nullish().describe('The captured spreadsheet value with no schema home.')
 })),
   "grantAgreement": zod.object({
-  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity OR gift; ready = will attach; imported = already attached by this backfill; conflict = the matched target already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "targetType": zod.enum(['opportunity', 'gift']).nullish().describe('Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
   "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
-  "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
+  "oppExistingUrl": zod.string().nullish().describe('The TARGET\'s (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict\/imported display).'),
   "oppExistingFilename": zod.string().nullish(),
   "error": zod.string().nullish().describe('Last recorded fetch\/upload error for this row.')
-}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row.'),
+}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift.'),
+  "aiInterpretation": zod.object({
+  "donorName": zod.string().nullable().describe('Normalized donor display name (typo-fixed); null when the raw name needs no fixing.'),
+  "address": zod.object({
+  "street": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "postal": zod.string().nullable(),
+  "country": zod.string().nullable()
+}).nullable().describe('Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address.'),
+  "reportRequired": zod.boolean().nullable().describe('Reinterpreted \'written report required?\' answer; null when ambiguous.'),
+  "reportDueDate": zod.string().nullable().describe('YYYY-MM-DD when the raw answer states an explicit due date.'),
+  "junkFields": zod.array(zod.enum(['internalMemo', 'restrictionLanguage', 'additionalNotes', 'circleRaw', 'seriesTypeRaw', 'donorNameAddressRaw', 'reportRequiredRaw'])).describe('Row fields the AI flagged as junk\/redundant (suppressed from tag\/notes\/address writes and cross-checks).'),
+  "notes": zod.string().nullable().describe('One-sentence rationale for the reviewer.')
+}).describe('One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize\/suppress — it never maps circles to regions\/entities.').nullish().describe('The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation).'),
+  "aiInterpretedAt": zod.string().nullish().describe('When the current AI payload was produced.'),
+  "aiModel": zod.string().nullish().describe('Model that produced the current AI payload.'),
+  "aiError": zod.string().nullish().describe('Last AI reinterpretation failure for this row (cleared on success).'),
   "appliedAt": zod.string().nullish(),
   "appliedTaskId": zod.string().nullish(),
   "appliedAddressId": zod.string().nullish(),
@@ -510,10 +615,13 @@ export const ApplyCodingFormRowResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
   "amount": zod.string().nullish(),
-  "dateReceived": zod.string().nullish()
-}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
+  "dateReceived": zod.string().nullish(),
+  "organizationId": zod.string().nullish().describe('The candidate gift\'s donor org (donor XOR — at most one of the three is set).'),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish()
+}).describe('A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift.')).optional().describe('LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift\'s own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift\'s donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount\/date is set.'),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'regionalRestriction', 'allocationEntity', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -532,15 +640,33 @@ export const ApplyCodingFormRowResponse = zod.object({
   "value": zod.string().nullish().describe('The captured spreadsheet value with no schema home.')
 })),
   "grantAgreement": zod.object({
-  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity OR gift; ready = will attach; imported = already attached by this backfill; conflict = the matched target already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "targetType": zod.enum(['opportunity', 'gift']).nullish().describe('Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
   "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
-  "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
+  "oppExistingUrl": zod.string().nullish().describe('The TARGET\'s (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict\/imported display).'),
   "oppExistingFilename": zod.string().nullish(),
   "error": zod.string().nullish().describe('Last recorded fetch\/upload error for this row.')
-}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row.'),
+}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift.'),
+  "aiInterpretation": zod.object({
+  "donorName": zod.string().nullable().describe('Normalized donor display name (typo-fixed); null when the raw name needs no fixing.'),
+  "address": zod.object({
+  "street": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "postal": zod.string().nullable(),
+  "country": zod.string().nullable()
+}).nullable().describe('Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address.'),
+  "reportRequired": zod.boolean().nullable().describe('Reinterpreted \'written report required?\' answer; null when ambiguous.'),
+  "reportDueDate": zod.string().nullable().describe('YYYY-MM-DD when the raw answer states an explicit due date.'),
+  "junkFields": zod.array(zod.enum(['internalMemo', 'restrictionLanguage', 'additionalNotes', 'circleRaw', 'seriesTypeRaw', 'donorNameAddressRaw', 'reportRequiredRaw'])).describe('Row fields the AI flagged as junk\/redundant (suppressed from tag\/notes\/address writes and cross-checks).'),
+  "notes": zod.string().nullable().describe('One-sentence rationale for the reviewer.')
+}).describe('One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize\/suppress — it never maps circles to regions\/entities.').nullish().describe('The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation).'),
+  "aiInterpretedAt": zod.string().nullish().describe('When the current AI payload was produced.'),
+  "aiModel": zod.string().nullish().describe('Model that produced the current AI payload.'),
+  "aiError": zod.string().nullish().describe('Last AI reinterpretation failure for this row (cleared on success).'),
   "appliedAt": zod.string().nullish(),
   "appliedTaskId": zod.string().nullish(),
   "appliedAddressId": zod.string().nullish(),
@@ -590,10 +716,13 @@ export const SkipCodingFormRowResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
   "amount": zod.string().nullish(),
-  "dateReceived": zod.string().nullish()
-}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
+  "dateReceived": zod.string().nullish(),
+  "organizationId": zod.string().nullish().describe('The candidate gift\'s donor org (donor XOR — at most one of the three is set).'),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish()
+}).describe('A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift.')).optional().describe('LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift\'s own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift\'s donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount\/date is set.'),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'regionalRestriction', 'allocationEntity', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -612,15 +741,33 @@ export const SkipCodingFormRowResponse = zod.object({
   "value": zod.string().nullish().describe('The captured spreadsheet value with no schema home.')
 })),
   "grantAgreement": zod.object({
-  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity OR gift; ready = will attach; imported = already attached by this backfill; conflict = the matched target already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "targetType": zod.enum(['opportunity', 'gift']).nullish().describe('Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
   "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
-  "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
+  "oppExistingUrl": zod.string().nullish().describe('The TARGET\'s (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict\/imported display).'),
   "oppExistingFilename": zod.string().nullish(),
   "error": zod.string().nullish().describe('Last recorded fetch\/upload error for this row.')
-}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row.'),
+}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift.'),
+  "aiInterpretation": zod.object({
+  "donorName": zod.string().nullable().describe('Normalized donor display name (typo-fixed); null when the raw name needs no fixing.'),
+  "address": zod.object({
+  "street": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "postal": zod.string().nullable(),
+  "country": zod.string().nullable()
+}).nullable().describe('Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address.'),
+  "reportRequired": zod.boolean().nullable().describe('Reinterpreted \'written report required?\' answer; null when ambiguous.'),
+  "reportDueDate": zod.string().nullable().describe('YYYY-MM-DD when the raw answer states an explicit due date.'),
+  "junkFields": zod.array(zod.enum(['internalMemo', 'restrictionLanguage', 'additionalNotes', 'circleRaw', 'seriesTypeRaw', 'donorNameAddressRaw', 'reportRequiredRaw'])).describe('Row fields the AI flagged as junk\/redundant (suppressed from tag\/notes\/address writes and cross-checks).'),
+  "notes": zod.string().nullable().describe('One-sentence rationale for the reviewer.')
+}).describe('One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize\/suppress — it never maps circles to regions\/entities.').nullish().describe('The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation).'),
+  "aiInterpretedAt": zod.string().nullish().describe('When the current AI payload was produced.'),
+  "aiModel": zod.string().nullish().describe('Model that produced the current AI payload.'),
+  "aiError": zod.string().nullish().describe('Last AI reinterpretation failure for this row (cleared on success).'),
   "appliedAt": zod.string().nullish(),
   "appliedTaskId": zod.string().nullish(),
   "appliedAddressId": zod.string().nullish(),
@@ -630,7 +777,7 @@ export const SkipCodingFormRowResponse = zod.object({
 })
 
 /**
- * @summary Pull this row's grant-agreement file (PDF, image, or Word doc) from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
+ * @summary Pull this row's grant-agreement file (PDF, image, or Word doc) from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE — or, when the row has no matched opportunity, to the matched GIFT — via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
  */
 export const PullGrantAgreementParams = zod.object({
   "id": zod.coerce.string()
@@ -672,10 +819,13 @@ export const PullGrantAgreementResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
   "amount": zod.string().nullish(),
-  "dateReceived": zod.string().nullish()
-}).describe('A live same-donor exact-amount gift candidate for an unresolved coding-form row.')).optional().describe('LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor\/amount is set.'),
+  "dateReceived": zod.string().nullish(),
+  "organizationId": zod.string().nullish().describe('The candidate gift\'s donor org (donor XOR — at most one of the three is set).'),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish()
+}).describe('A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift.')).optional().describe('LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift\'s own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift\'s donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount\/date is set.'),
   "crossChecks": zod.array(zod.object({
-  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'regionalRestriction', 'allocationEntity', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
   "label": zod.string().describe('Human-readable attribute name.'),
   "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
   "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
@@ -694,15 +844,33 @@ export const PullGrantAgreementResponse = zod.object({
   "value": zod.string().nullish().describe('The captured spreadsheet value with no schema home.')
 })),
   "grantAgreement": zod.object({
-  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity; ready = will attach; imported = already attached by this backfill; conflict = the matched opportunity already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity OR gift; ready = will attach; imported = already attached by this backfill; conflict = the matched target already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "targetType": zod.enum(['opportunity', 'gift']).nullish().describe('Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.'),
   "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
   "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
   "importedFilename": zod.string().nullish(),
   "importedAt": zod.string().nullish(),
-  "oppExistingUrl": zod.string().nullish().describe('The matched opportunity\'s current grant-letter url (for conflict\/imported display).'),
+  "oppExistingUrl": zod.string().nullish().describe('The TARGET\'s (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict\/imported display).'),
   "oppExistingFilename": zod.string().nullish(),
   "error": zod.string().nullish().describe('Last recorded fetch\/upload error for this row.')
-}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row.'),
+}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift.'),
+  "aiInterpretation": zod.object({
+  "donorName": zod.string().nullable().describe('Normalized donor display name (typo-fixed); null when the raw name needs no fixing.'),
+  "address": zod.object({
+  "street": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "postal": zod.string().nullable(),
+  "country": zod.string().nullable()
+}).nullable().describe('Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address.'),
+  "reportRequired": zod.boolean().nullable().describe('Reinterpreted \'written report required?\' answer; null when ambiguous.'),
+  "reportDueDate": zod.string().nullable().describe('YYYY-MM-DD when the raw answer states an explicit due date.'),
+  "junkFields": zod.array(zod.enum(['internalMemo', 'restrictionLanguage', 'additionalNotes', 'circleRaw', 'seriesTypeRaw', 'donorNameAddressRaw', 'reportRequiredRaw'])).describe('Row fields the AI flagged as junk\/redundant (suppressed from tag\/notes\/address writes and cross-checks).'),
+  "notes": zod.string().nullable().describe('One-sentence rationale for the reviewer.')
+}).describe('One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize\/suppress — it never maps circles to regions\/entities.').nullish().describe('The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation).'),
+  "aiInterpretedAt": zod.string().nullish().describe('When the current AI payload was produced.'),
+  "aiModel": zod.string().nullish().describe('Model that produced the current AI payload.'),
+  "aiError": zod.string().nullish().describe('Last AI reinterpretation failure for this row (cleared on success).'),
   "appliedAt": zod.string().nullish(),
   "appliedTaskId": zod.string().nullish(),
   "appliedAddressId": zod.string().nullish(),
@@ -714,4 +882,145 @@ export const PullGrantAgreementResponse = zod.object({
   "replaced": zod.boolean().describe('True when an existing grant letter was overwritten.'),
   "error": zod.string().nullish().describe('Human-readable failure reason when outcome=failed.')
 })
+
+/**
+ * @summary Bulk grant-agreement pull: attach every actionable row's Drive file to its matched opportunity-else-gift. Attempts rows whose derived status is ready or failed (re-runs retry recorded transient failures); skips na/no_match/imported, and NEVER replaces an existing letter (conflicts are counted and left for per-row review with replace=true). Per-row failures are recorded on the rows and summarized, never thrown. Admin only.
+ */
+export const PullGrantAgreementsBulkResponse = zod.object({
+  "totalWithLink": zod.number().describe('Rows carrying a Drive link (scanned).'),
+  "attempted": zod.number().describe('Rows whose derived status was ready\/failed — a pull was attempted.'),
+  "imported": zod.number().describe('Letters attached in this pass.'),
+  "alreadyImported": zod.number().describe('Idempotent no-ops (letter already attached by this backfill).'),
+  "conflict": zod.number().describe('Targets holding a DIFFERENT letter — left for per-row review with replace=true.'),
+  "noMatch": zod.number().describe('Rows with a link but no matched opportunity or gift.'),
+  "failed": zod.number().describe('Drive\/upload failures (recorded on the rows; see failures).'),
+  "failures": zod.array(zod.object({
+  "rowId": zod.string(),
+  "error": zod.string()
+}))
+}).describe('Result of the bulk grant-agreement pull pass.')
+
+/**
+ * @summary AI-reinterpret ONE row (normalize donor name, re-parse the address blob, reinterpret the report answer, flag junk fields). Always re-runs, even when a payload already exists. A model/validation failure is recorded on the row (aiError) and returned in the response — never thrown; the prior payload is left untouched. Admin only.
+ */
+export const ReinterpretCodingFormRowParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ReinterpretCodingFormRowResponse = zod.object({
+  "row": zod.object({
+  "id": zod.string(),
+  "source": zod.string(),
+  "sourceRowIndex": zod.number(),
+  "status": zod.enum(['pending', 'applied', 'skipped']),
+  "donorNameRaw": zod.string().nullish(),
+  "internalMemo": zod.string().nullish(),
+  "amount": zod.string().nullish(),
+  "donationDate": zod.string().nullish(),
+  "restrictionLanguage": zod.string().nullish(),
+  "donorNameAddressRaw": zod.string().nullish(),
+  "reportRequired": zod.boolean().nullish(),
+  "reportDueDate": zod.string().nullish(),
+  "intendedUsageSuggested": zod.string().nullish(),
+  "driveLink": zod.string().nullish(),
+  "organizationId": zod.string().nullish(),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish(),
+  "donorName": zod.string().nullish().describe('Resolved display name of the matched donor.'),
+  "matchedOpportunityId": zod.string().nullish(),
+  "matchedOpportunityName": zod.string().nullish(),
+  "matchedGiftId": zod.string().nullish(),
+  "matchedGiftName": zod.string().nullish().describe('Display name of the matched gift (read-time join, like matchedOpportunityName).'),
+  "matchScore": zod.number().nullish(),
+  "matchMethod": zod.string().nullish(),
+  "matchTier": zod.string().nullish(),
+  "matchConfirmedAt": zod.string().nullish(),
+  "giftCandidates": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().nullish(),
+  "organizationId": zod.string().nullish().describe('The candidate gift\'s donor org (donor XOR — at most one of the three is set).'),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish()
+}).describe('A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift.')).optional().describe('LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift\'s own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift\'s donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount\/date is set.'),
+  "crossChecks": zod.array(zod.object({
+  "attribute": zod.enum(['reportDeadline', 'purposeVerbatim', 'usageRestriction', 'intendedUsage', 'regionalRestriction', 'allocationEntity', 'address', 'circle', 'seriesType', 'additionalNotes', 'internalMemo']).describe('Which importable attribute this row describes.'),
+  "label": zod.string().describe('Human-readable attribute name.'),
+  "status": zod.enum(['new', 'same', 'conflict', 'na']).describe('new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.'),
+  "applicable": zod.boolean().describe('False when the sheet has nothing to import for this attribute.'),
+  "sheetValue": zod.string().nullish().describe('The spreadsheet value (display form).'),
+  "crmValue": zod.string().nullish().describe('The current CRM value (display form).'),
+  "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
+  "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
+  "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
+  "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
+})),
+  "needsDecision": zod.array(zod.object({
+  "attribute": zod.string(),
+  "label": zod.string(),
+  "value": zod.string().nullish().describe('The captured spreadsheet value with no schema home.')
+})),
+  "grantAgreement": zod.object({
+  "status": zod.enum(['na', 'no_match', 'ready', 'imported', 'conflict', 'failed']).describe('na = no Drive link; no_match = link but no matched opportunity OR gift; ready = will attach; imported = already attached by this backfill; conflict = the matched target already has a DIFFERENT grant letter; failed = the last fetch\/upload attempt errored (see error).'),
+  "targetType": zod.enum(['opportunity', 'gift']).nullish().describe('Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.'),
+  "driveFileId": zod.string().nullish().describe('File id extracted from the captured Drive link.'),
+  "importedUrl": zod.string().nullish().describe('Object-storage url of the file this backfill attached.'),
+  "importedFilename": zod.string().nullish(),
+  "importedAt": zod.string().nullish(),
+  "oppExistingUrl": zod.string().nullish().describe('The TARGET\'s (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict\/imported display).'),
+  "oppExistingFilename": zod.string().nullish(),
+  "error": zod.string().nullish().describe('Last recorded fetch\/upload error for this row.')
+}).optional().describe('Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift.'),
+  "aiInterpretation": zod.object({
+  "donorName": zod.string().nullable().describe('Normalized donor display name (typo-fixed); null when the raw name needs no fixing.'),
+  "address": zod.object({
+  "street": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "postal": zod.string().nullable(),
+  "country": zod.string().nullable()
+}).nullable().describe('Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address.'),
+  "reportRequired": zod.boolean().nullable().describe('Reinterpreted \'written report required?\' answer; null when ambiguous.'),
+  "reportDueDate": zod.string().nullable().describe('YYYY-MM-DD when the raw answer states an explicit due date.'),
+  "junkFields": zod.array(zod.enum(['internalMemo', 'restrictionLanguage', 'additionalNotes', 'circleRaw', 'seriesTypeRaw', 'donorNameAddressRaw', 'reportRequiredRaw'])).describe('Row fields the AI flagged as junk\/redundant (suppressed from tag\/notes\/address writes and cross-checks).'),
+  "notes": zod.string().nullable().describe('One-sentence rationale for the reviewer.')
+}).describe('One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize\/suppress — it never maps circles to regions\/entities.').nullish().describe('The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation).'),
+  "aiInterpretedAt": zod.string().nullish().describe('When the current AI payload was produced.'),
+  "aiModel": zod.string().nullish().describe('Model that produced the current AI payload.'),
+  "aiError": zod.string().nullish().describe('Last AI reinterpretation failure for this row (cleared on success).'),
+  "appliedAt": zod.string().nullish(),
+  "appliedTaskId": zod.string().nullish(),
+  "appliedAddressId": zod.string().nullish(),
+  "appliedAllocationId": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}),
+  "ok": zod.boolean().describe('False when the model call or validation failed (see error; also recorded on the row as aiError).'),
+  "error": zod.string().nullable()
+})
+
+/**
+ * @summary Bulk AI reinterpretation over PENDING rows (applied/skipped rows are settled). Default only fills gaps — rows with no stored payload yet (including prior failures); force=true re-runs every pending row. Rate-limit-aware, concurrency 2; per-row failures are recorded on the rows and summarized, never thrown. Admin only.
+ */
+export const reinterpretCodingFormRowsBodyLimitMax = 200;
+
+
+
+export const ReinterpretCodingFormRowsBody = zod.object({
+  "force": zod.boolean().optional().describe('Re-run every pending row, not just rows without a stored payload. Defaults to false.'),
+  "limit": zod.number().min(1).max(reinterpretCodingFormRowsBodyLimitMax).optional().describe('Cap the number of rows processed in this pass (rows without a recorded failure first). Callers chunk with this to keep each request short; omit for the full set.')
+}).describe('Bulk AI reinterpretation options.')
+
+export const ReinterpretCodingFormRowsResponse = zod.object({
+  "total": zod.number().describe('Pending rows selected for this pass.'),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "failures": zod.array(zod.object({
+  "rowId": zod.string(),
+  "error": zod.string()
+}))
+}).describe('Result of the bulk AI reinterpretation pass.')
 

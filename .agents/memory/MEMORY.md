@@ -76,4 +76,5 @@
 - [prod executeSql enum cast](prod-executesql-enum-cast.md) — prod read returns ZERO rows (only START TRANSACTION/ROLLBACK, success=true) if the SELECT list has an un-cast enum column; always ::text enums.
 - [Mockup preview iframe URLs](mockup-preview-url.md) — canvas iframes must use https://$REPLIT_DOMAINS/__mockup/preview/… (shared proxy), NEVER :8000 (unreachable → "couldn't reach this app").
 - [Canonical person display-name SQL](person-name-display-sql.md) — chain is preferred(nickname)+last → full → first+last, one shared helper; UI label "Preferred name", field stays nickname; ILIKE exempt.
+- [Coding-form import](coding-form-import.md) — effective reads are AI??parsed??raw via one accessor module; AI only normalizes/suppresses (never maps circles); record-first gift match inherits donor; grant letters opp-else-gift.
 - [Coding-form gift matching](coding-form-gift-matching.md) — bulk rematch must stay pending+unconfirmed (rematch clears human decisions); exact ±1¢ band ≠ ingest fee band; auto-propose only on exactly-one candidate.

@@ -23,8 +23,11 @@ import type {
   ApplyCodingFormRowBody,
   BadRequestResponse,
   CodingFormApplyResult,
+  CodingFormBulkPullSummary,
   CodingFormConfirmSummary,
   CodingFormGrantAgreementsSummary,
+  CodingFormReinterpretResult,
+  CodingFormReinterpretSummary,
   CodingFormRematchSummary,
   CodingFormRow,
   CodingFormRowList,
@@ -34,6 +37,7 @@ import type {
   NotFoundResponse,
   PullGrantAgreementBody,
   PullGrantAgreementResult,
+  ReinterpretCodingFormRowsBody,
   SetCodingFormMatchBody
 } from '../api.schemas';
 
@@ -840,7 +844,7 @@ export const useSkipCodingFormRow = <TError = ErrorType<ForbiddenResponse | NotF
       return useMutation(getSkipCodingFormRowMutationOptions(options));
     }
     /**
- * @summary Pull this row's grant-agreement file (PDF, image, or Word doc) from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
+ * @summary Pull this row's grant-agreement file (PDF, image, or Word doc) from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE — or, when the row has no matched opportunity, to the matched GIFT — via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
  */
 export const getPullGrantAgreementUrl = (id: string,) => {
 
@@ -898,7 +902,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type PullGrantAgreementMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | void>
 
     /**
- * @summary Pull this row's grant-agreement file (PDF, image, or Word doc) from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
+ * @summary Pull this row's grant-agreement file (PDF, image, or Word doc) from Google Drive and attach it to the matched OPPORTUNITY/PLEDGE — or, when the row has no matched opportunity, to the matched GIFT — via the normal grant-letter flow. Idempotent (already-imported → noop). Never silently overwrites an existing grant letter — a different existing letter is a 409 conflict unless replace=true. A Drive fetch failure is recorded on the row and returned as a `failed` outcome (200). Admin only.
  */
 export const usePullGrantAgreement = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pullGrantAgreement>>, TError,{id: string;data: BodyType<PullGrantAgreementBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -909,5 +913,213 @@ export const usePullGrantAgreement = <TError = ErrorType<ForbiddenResponse | Not
         TContext
       > => {
       return useMutation(getPullGrantAgreementMutationOptions(options));
+    }
+    /**
+ * @summary Bulk grant-agreement pull: attach every actionable row's Drive file to its matched opportunity-else-gift. Attempts rows whose derived status is ready or failed (re-runs retry recorded transient failures); skips na/no_match/imported, and NEVER replaces an existing letter (conflicts are counted and left for per-row review with replace=true). Per-row failures are recorded on the rows and summarized, never thrown. Admin only.
+ */
+export const getPullGrantAgreementsBulkUrl = () => {
+
+
+  
+
+  return `/api/coding-form-rows/pull-grant-agreements`
+}
+
+export const pullGrantAgreementsBulk = async ( options?: RequestInit): Promise<CodingFormBulkPullSummary> => {
+  
+  return customFetch<CodingFormBulkPullSummary>(getPullGrantAgreementsBulkUrl(),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getPullGrantAgreementsBulkMutationOptions = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pullGrantAgreementsBulk>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pullGrantAgreementsBulk>>, TError,void, TContext> => {
+
+const mutationKey = ['pullGrantAgreementsBulk'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pullGrantAgreementsBulk>>, void> = () => {
+          
+
+          return  pullGrantAgreementsBulk(requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PullGrantAgreementsBulkMutationResult = NonNullable<Awaited<ReturnType<typeof pullGrantAgreementsBulk>>>
+    
+    export type PullGrantAgreementsBulkMutationError = ErrorType<ForbiddenResponse>
+
+    /**
+ * @summary Bulk grant-agreement pull: attach every actionable row's Drive file to its matched opportunity-else-gift. Attempts rows whose derived status is ready or failed (re-runs retry recorded transient failures); skips na/no_match/imported, and NEVER replaces an existing letter (conflicts are counted and left for per-row review with replace=true). Per-row failures are recorded on the rows and summarized, never thrown. Admin only.
+ */
+export const usePullGrantAgreementsBulk = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pullGrantAgreementsBulk>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pullGrantAgreementsBulk>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getPullGrantAgreementsBulkMutationOptions(options));
+    }
+    /**
+ * @summary AI-reinterpret ONE row (normalize donor name, re-parse the address blob, reinterpret the report answer, flag junk fields). Always re-runs, even when a payload already exists. A model/validation failure is recorded on the row (aiError) and returned in the response — never thrown; the prior payload is left untouched. Admin only.
+ */
+export const getReinterpretCodingFormRowUrl = (id: string,) => {
+
+
+  
+
+  return `/api/coding-form-rows/${id}/reinterpret`
+}
+
+export const reinterpretCodingFormRow = async (id: string, options?: RequestInit): Promise<CodingFormReinterpretResult> => {
+  
+  return customFetch<CodingFormReinterpretResult>(getReinterpretCodingFormRowUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getReinterpretCodingFormRowMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reinterpretCodingFormRow>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reinterpretCodingFormRow>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['reinterpretCodingFormRow'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reinterpretCodingFormRow>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  reinterpretCodingFormRow(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReinterpretCodingFormRowMutationResult = NonNullable<Awaited<ReturnType<typeof reinterpretCodingFormRow>>>
+    
+    export type ReinterpretCodingFormRowMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary AI-reinterpret ONE row (normalize donor name, re-parse the address blob, reinterpret the report answer, flag junk fields). Always re-runs, even when a payload already exists. A model/validation failure is recorded on the row (aiError) and returned in the response — never thrown; the prior payload is left untouched. Admin only.
+ */
+export const useReinterpretCodingFormRow = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reinterpretCodingFormRow>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reinterpretCodingFormRow>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getReinterpretCodingFormRowMutationOptions(options));
+    }
+    /**
+ * @summary Bulk AI reinterpretation over PENDING rows (applied/skipped rows are settled). Default only fills gaps — rows with no stored payload yet (including prior failures); force=true re-runs every pending row. Rate-limit-aware, concurrency 2; per-row failures are recorded on the rows and summarized, never thrown. Admin only.
+ */
+export const getReinterpretCodingFormRowsUrl = () => {
+
+
+  
+
+  return `/api/coding-form-rows/reinterpret`
+}
+
+export const reinterpretCodingFormRows = async (reinterpretCodingFormRowsBody?: ReinterpretCodingFormRowsBody, options?: RequestInit): Promise<CodingFormReinterpretSummary> => {
+  
+  return customFetch<CodingFormReinterpretSummary>(getReinterpretCodingFormRowsUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      reinterpretCodingFormRowsBody,)
+  }
+);}
+  
+
+
+
+export const getReinterpretCodingFormRowsMutationOptions = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reinterpretCodingFormRows>>, TError,{data: BodyType<ReinterpretCodingFormRowsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reinterpretCodingFormRows>>, TError,{data: BodyType<ReinterpretCodingFormRowsBody>}, TContext> => {
+
+const mutationKey = ['reinterpretCodingFormRows'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reinterpretCodingFormRows>>, {data: BodyType<ReinterpretCodingFormRowsBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  reinterpretCodingFormRows(data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReinterpretCodingFormRowsMutationResult = NonNullable<Awaited<ReturnType<typeof reinterpretCodingFormRows>>>
+    export type ReinterpretCodingFormRowsMutationBody = BodyType<ReinterpretCodingFormRowsBody>
+    export type ReinterpretCodingFormRowsMutationError = ErrorType<ForbiddenResponse>
+
+    /**
+ * @summary Bulk AI reinterpretation over PENDING rows (applied/skipped rows are settled). Default only fills gaps — rows with no stored payload yet (including prior failures); force=true re-runs every pending row. Rate-limit-aware, concurrency 2; per-row failures are recorded on the rows and summarized, never thrown. Admin only.
+ */
+export const useReinterpretCodingFormRows = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reinterpretCodingFormRows>>, TError,{data: BodyType<ReinterpretCodingFormRowsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reinterpretCodingFormRows>>,
+        TError,
+        {data: BodyType<ReinterpretCodingFormRowsBody>},
+        TContext
+      > => {
+      return useMutation(getReinterpretCodingFormRowsMutationOptions(options));
     }
     

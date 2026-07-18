@@ -351,7 +351,8 @@ paths:
       tags: [coding-form-rows]
       summary: >-
         Pull this row's grant-agreement file (PDF, image, or Word doc) from Google
-        Drive and attach it to the matched OPPORTUNITY/PLEDGE via the normal
+        Drive and attach it to the matched OPPORTUNITY/PLEDGE — or, when the row
+        has no matched opportunity, to the matched GIFT — via the normal
         grant-letter flow. Idempotent
         (already-imported → noop). Never silently overwrites an existing grant
         letter — a different existing letter is a 409 conflict unless replace=true.
@@ -365,7 +366,53 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PullGrantAgreementResult" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "No Drive link, no matched opportunity, or an existing grant letter would be overwritten without replace=true." }
+        "409": { description: "No Drive link, no matched opportunity/gift, or an existing grant letter would be overwritten without replace=true." }
+  /coding-form-rows/pull-grant-agreements:
+    post:
+      operationId: pullGrantAgreementsBulk
+      tags: [coding-form-rows]
+      summary: >-
+        Bulk grant-agreement pull: attach every actionable row's Drive file to
+        its matched opportunity-else-gift. Attempts rows whose derived status is
+        ready or failed (re-runs retry recorded transient failures); skips
+        na/no_match/imported, and NEVER replaces an existing letter (conflicts
+        are counted and left for per-row review with replace=true). Per-row
+        failures are recorded on the rows and summarized, never thrown.
+        Admin only.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormBulkPullSummary" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /coding-form-rows/{id}/reinterpret:
+    post:
+      operationId: reinterpretCodingFormRow
+      tags: [coding-form-rows]
+      summary: >-
+        AI-reinterpret ONE row (normalize donor name, re-parse the address blob,
+        reinterpret the report answer, flag junk fields). Always re-runs, even
+        when a payload already exists. A model/validation failure is recorded on
+        the row (aiError) and returned in the response — never thrown; the prior
+        payload is left untouched. Admin only.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormReinterpretResult" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /coding-form-rows/reinterpret:
+    post:
+      operationId: reinterpretCodingFormRows
+      tags: [coding-form-rows]
+      summary: >-
+        Bulk AI reinterpretation over PENDING rows (applied/skipped rows are
+        settled). Default only fills gaps — rows with no stored payload yet
+        (including prior failures); force=true re-runs every pending row.
+        Rate-limit-aware, concurrency 2; per-row failures are recorded on the
+        rows and summarized, never thrown. Admin only.
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/ReinterpretCodingFormRowsBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormReinterpretSummary" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   # ─── Email intelligence proposals ──────────────────────────────────────────
   /email-proposals:
@@ -9077,7 +9124,7 @@ components:
       type: object
       required: [attribute, label, status, applicable]
       properties:
-        attribute:  { type: string, enum: [reportDeadline, purposeVerbatim, usageRestriction, intendedUsage, address, circle, seriesType, additionalNotes, internalMemo], description: "Which importable attribute this row describes." }
+        attribute:  { type: string, enum: [reportDeadline, purposeVerbatim, usageRestriction, intendedUsage, regionalRestriction, allocationEntity, address, circle, seriesType, additionalNotes, internalMemo], description: "Which importable attribute this row describes." }
         label:      { type: string, description: "Human-readable attribute name." }
         status:     { $ref: "#/components/schemas/CrossCheckStatus" }
         applicable: { type: boolean, description: "False when the sheet has nothing to import for this attribute." }
@@ -9126,10 +9173,14 @@ components:
         matchMethod:      { type: string, nullable: true }
         matchTier:        { type: string, nullable: true }
         matchConfirmedAt: { type: string, nullable: true }
-        giftCandidates:   { type: array, items: { $ref: "#/components/schemas/CodingFormGiftCandidate" }, description: "LIVE (never persisted) same-donor exact-amount gift candidates within ±90 days of the donation date. Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no donor/amount is set." }
+        giftCandidates:   { type: array, items: { $ref: "#/components/schemas/CodingFormGiftCandidate" }, description: "LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift's own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift's donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount/date is set." }
         crossChecks:      { type: array, items: { $ref: "#/components/schemas/CodingFormCrossCheck" } }
         needsDecision:    { type: array, items: { $ref: "#/components/schemas/CodingFormNeedsDecision" } }
         grantAgreement:   { $ref: "#/components/schemas/CodingFormGrantAgreement" }
+        aiInterpretation: { allOf: [ { $ref: "#/components/schemas/CodingFormAiInterpretation" } ], nullable: true, description: "The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation)." }
+        aiInterpretedAt:  { type: string, nullable: true, description: "When the current AI payload was produced." }
+        aiModel:          { type: string, nullable: true, description: "Model that produced the current AI payload." }
+        aiError:          { type: string, nullable: true, description: "Last AI reinterpretation failure for this row (cleared on success)." }
         appliedAt:        { type: string, nullable: true }
         appliedTaskId:    { type: string, nullable: true }
         appliedAddressId: { type: string, nullable: true }
@@ -9159,12 +9210,15 @@ components:
     CodingFormGiftCandidate:
       type: object
       required: [id]
-      description: "A live same-donor exact-amount gift candidate for an unresolved coding-form row."
+      description: "A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift."
       properties:
         id:           { type: string }
         name:         { type: string, nullable: true }
         amount:       { type: string, nullable: true }
         dateReceived: { type: string, nullable: true }
+        organizationId:          { type: string, nullable: true, description: "The candidate gift's donor org (donor XOR — at most one of the three is set)." }
+        individualGiverPersonId: { type: string, nullable: true }
+        householdId:             { type: string, nullable: true }
     CodingFormRematchSummary:
       type: object
       required: [scanned, updated, giftMatches]
@@ -9209,21 +9263,22 @@ components:
       type: string
       enum: [na, no_match, ready, imported, conflict, failed]
       description: >-
-        na = no Drive link; no_match = link but no matched opportunity;
+        na = no Drive link; no_match = link but no matched opportunity OR gift;
         ready = will attach; imported = already attached by this backfill;
-        conflict = the matched opportunity already has a DIFFERENT grant letter;
+        conflict = the matched target already has a DIFFERENT grant letter;
         failed = the last fetch/upload attempt errored (see error).
     CodingFormGrantAgreement:
       type: object
       required: [status]
-      description: "Derived (live) grant-agreement backfill view for a coding-form row."
+      description: "Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift."
       properties:
         status:              { $ref: "#/components/schemas/CodingFormGrantAgreementStatus" }
+        targetType:          { type: string, nullable: true, enum: [opportunity, gift], description: "Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched." }
         driveFileId:         { type: string, nullable: true, description: "File id extracted from the captured Drive link." }
         importedUrl:         { type: string, nullable: true, description: "Object-storage url of the file this backfill attached." }
         importedFilename:    { type: string, nullable: true }
         importedAt:          { type: string, nullable: true }
-        oppExistingUrl:      { type: string, nullable: true, description: "The matched opportunity's current grant-letter url (for conflict/imported display)." }
+        oppExistingUrl:      { type: string, nullable: true, description: "The TARGET's (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict/imported display)." }
         oppExistingFilename: { type: string, nullable: true }
         error:               { type: string, nullable: true, description: "Last recorded fetch/upload error for this row." }
     PullGrantAgreementBody:
@@ -9245,6 +9300,75 @@ components:
       properties:
         totalWithLink: { type: integer, description: "Rows carrying a grant-agreement Drive link." }
         byStatus:      { type: array, items: { $ref: "#/components/schemas/CodingFormCount" }, description: "Count per derived grant-agreement status." }
+    CodingFormBulkPullSummary:
+      type: object
+      required: [totalWithLink, attempted, imported, alreadyImported, conflict, noMatch, failed, failures]
+      description: "Result of the bulk grant-agreement pull pass."
+      properties:
+        totalWithLink:   { type: integer, description: "Rows carrying a Drive link (scanned)." }
+        attempted:       { type: integer, description: "Rows whose derived status was ready/failed — a pull was attempted." }
+        imported:        { type: integer, description: "Letters attached in this pass." }
+        alreadyImported: { type: integer, description: "Idempotent no-ops (letter already attached by this backfill)." }
+        conflict:        { type: integer, description: "Targets holding a DIFFERENT letter — left for per-row review with replace=true." }
+        noMatch:         { type: integer, description: "Rows with a link but no matched opportunity or gift." }
+        failed:          { type: integer, description: "Drive/upload failures (recorded on the rows; see failures)." }
+        failures:
+          type: array
+          items: { $ref: "#/components/schemas/CodingFormRowFailure" }
+    CodingFormRowFailure:
+      type: object
+      required: [rowId, error]
+      properties:
+        rowId: { type: string }
+        error: { type: string }
+    CodingFormAiInterpretation:
+      type: object
+      required: [donorName, address, reportRequired, reportDueDate, junkFields, notes]
+      description: "One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize/suppress — it never maps circles to regions/entities."
+      properties:
+        donorName: { type: string, nullable: true, description: "Normalized donor display name (typo-fixed); null when the raw name needs no fixing." }
+        address:
+          type: object
+          nullable: true
+          required: [street, city, state, postal, country]
+          description: "Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address."
+          properties:
+            street:  { type: string, nullable: true }
+            city:    { type: string, nullable: true }
+            state:   { type: string, nullable: true }
+            postal:  { type: string, nullable: true }
+            country: { type: string, nullable: true }
+        reportRequired: { type: boolean, nullable: true, description: "Reinterpreted 'written report required?' answer; null when ambiguous." }
+        reportDueDate:  { type: string, nullable: true, description: "YYYY-MM-DD when the raw answer states an explicit due date." }
+        junkFields:
+          type: array
+          items: { type: string, enum: [internalMemo, restrictionLanguage, additionalNotes, circleRaw, seriesTypeRaw, donorNameAddressRaw, reportRequiredRaw] }
+          description: "Row fields the AI flagged as junk/redundant (suppressed from tag/notes/address writes and cross-checks)."
+        notes: { type: string, nullable: true, description: "One-sentence rationale for the reviewer." }
+    CodingFormReinterpretResult:
+      type: object
+      required: [row, ok, error]
+      properties:
+        row:   { $ref: "#/components/schemas/CodingFormRow" }
+        ok:    { type: boolean, description: "False when the model call or validation failed (see error; also recorded on the row as aiError)." }
+        error: { type: string, nullable: true }
+    ReinterpretCodingFormRowsBody:
+      type: object
+      description: "Bulk AI reinterpretation options."
+      properties:
+        force: { type: boolean, description: "Re-run every pending row, not just rows without a stored payload. Defaults to false." }
+        limit: { type: integer, minimum: 1, maximum: 200, description: "Cap the number of rows processed in this pass (rows without a recorded failure first). Callers chunk with this to keep each request short; omit for the full set." }
+    CodingFormReinterpretSummary:
+      type: object
+      required: [total, succeeded, failed, failures]
+      description: "Result of the bulk AI reinterpretation pass."
+      properties:
+        total:     { type: integer, description: "Pending rows selected for this pass." }
+        succeeded: { type: integer }
+        failed:    { type: integer }
+        failures:
+          type: array
+          items: { $ref: "#/components/schemas/CodingFormRowFailure" }
     ResolveStagedPaymentBody:
       type: object
       description: "Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary."

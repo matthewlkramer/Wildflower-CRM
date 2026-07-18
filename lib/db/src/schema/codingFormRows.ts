@@ -48,11 +48,12 @@ import { codingFormRowStatusEnum, intendedUsageEnum } from "./_enums";
  *
  * Grant-agreement PDF ingestion (Task #485): the captured `driveLink` is
  * resolved through the Google Drive connector, the PDF is uploaded to object
- * storage and attached to the matched opportunity/pledge via the normal
- * grant-letter flow. The `grantLetterImported*` columns record what we attached
- * (and the matched opp's url) so re-runs are idempotent and a fetch failure is
- * surfaced per-row instead of silently lost. Grant letters live on opportunities
- * /pledges, never on gifts.
+ * storage and attached via the normal grant-letter flow. Target precedence
+ * (user-ratified): the matched OPPORTUNITY/PLEDGE when one exists (keeps the
+ * written-pledge latch semantics), else the matched GIFT (gifts carry their own
+ * grant_letter_* columns). The `grantLetterImported*` columns record what we
+ * attached so re-runs are idempotent and a fetch failure is surfaced per-row
+ * instead of silently lost.
  */
 export const codingFormRows = pgTable(
   "coding_form_rows",
@@ -140,6 +141,20 @@ export const codingFormRows = pgTable(
     grantLetterImportedFilename: text("grant_letter_imported_filename"),
     grantLetterImportedAt: timestamp("grant_letter_imported_at"),
     grantLetterImportError: text("grant_letter_import_error"),
+
+    // ── 7. AI reinterpretation (admin-triggered, Anthropic) ─────────────────
+    // One Zod-validated jsonb payload per row: normalized donor name, parsed
+    // address, circle classification, junk/redundant-text flags, reinterpreted
+    // report requirement. Deterministic code reads EFFECTIVE values
+    // (AI ?? parsed ?? raw) through ONE accessor (api-server
+    // lib/codingFormEffective.ts) — never raw columns directly. The re-runnable
+    // seed refreshes raw/normalized scalars only and must NEVER touch these
+    // four columns. `aiError` records the last failed attempt (cleared on
+    // success) so the reviewer sees which rows need a retry.
+    aiInterpretation: jsonb("ai_interpretation"),
+    aiInterpretedAt: timestamp("ai_interpreted_at"),
+    aiModel: text("ai_model"),
+    aiError: text("ai_error"),
 
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
