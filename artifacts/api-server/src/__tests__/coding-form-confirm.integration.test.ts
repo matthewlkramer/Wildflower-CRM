@@ -64,6 +64,7 @@ const ROW = {
   giftOnly: `${RUN}_gift_only`, // bulk must skip (no donor); per-row 409
   alreadyConfirmed: `${RUN}_confirmed`, // bulk must not touch (already confirmed)
   skipped: `${RUN}_skipped`, // bulk must not touch (status skipped)
+  hubCircle: `${RUN}_hub_circle`, // regression: Hub circle → real regions query in crossChecksFor
 } as const;
 
 const FROZEN_CONFIRMED_AT = new Date("2026-01-01T00:00:00Z");
@@ -156,6 +157,14 @@ beforeAll(async () => {
       organizationId: `${RUN}_org2`,
       matchedGiftId: `${RUN}_gift_d`,
       status: "skipped",
+    }),
+    // Regression (prod 500, 2026-07): a Hub circle makes crossChecksFor run a
+    // real regions lookup; the old `= ANY(${jsArray}::text[])` interpolation
+    // produced "malformed array literal" at runtime (invisible to typecheck).
+    // Seeded under the per-run source so the list GET below is isolated.
+    seedRow(ROW.hubCircle, 6, {
+      source: RUN,
+      circleRaw: "Hub: Colorado",
     }),
   ]);
 
@@ -281,5 +290,33 @@ describe.skipIf(!HAS_DB)("coding-form link approval (integration)", () => {
     expect(target2!.matchConfirmedAt!.getTime()).toBe(
       target!.matchConfirmedAt!.getTime(),
     );
+  }, 30_000);
+
+  it("serializes a Hub-circle row against the real DB (regions lookup regression)", async () => {
+    // Regression for a prod-only 500: crossChecksFor ran
+    // `regions.id = ANY(${jsArray}::text[])`, which typechecks but throws
+    // "malformed array literal" at runtime. Listing a row whose circle maps to
+    // a hub region exercises the real query (now inArray).
+    //
+    // The `source` query filter is an enum (fy24/fy25/fy26/girasol), so the
+    // per-run source can't be filtered directly; the list orders by source ASC
+    // and `cfr_confirm_*` sorts before every real source, so page 1 has it.
+    const res = await fetch(
+      `${baseUrl}/api/coding-form-rows?status=pending&limit=100`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: Array<{
+        id: string;
+        crossChecks: Array<{ attribute: string; sheetValue: string | null }>;
+      }>;
+    };
+    const row = body.data.find((r) => r.id === ROW.hubCircle);
+    expect(row).toBeDefined();
+    const regional = row!.crossChecks.find(
+      (c) => c.attribute === "regionalRestriction",
+    );
+    expect(regional).toBeDefined();
+    expect(regional!.sheetValue).toMatch(/colorado/i);
   }, 30_000);
 });

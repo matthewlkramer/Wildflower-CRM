@@ -12,7 +12,7 @@ import {
   tasks,
   regions,
 } from "@workspace/db/schema";
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import {
   scoreStagedPayment,
   type MatchMethod,
@@ -1083,7 +1083,7 @@ export async function crossChecksFor(
     const nameRows = await db
       .select({ id: regions.id, name: regions.name })
       .from(regions)
-      .where(sql`${regions.id} = ANY(${idsToName}::text[])`);
+      .where(inArray(regions.id, idsToName));
     const regionName = (id: string): string =>
       nameRows.find((r) => r.id === id)?.name ?? id;
     if (!alloc) {
