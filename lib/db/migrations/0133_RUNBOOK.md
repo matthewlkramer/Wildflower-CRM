@@ -28,21 +28,58 @@ instead, find-replace `usr_matthew_kramer` in the SQL before running.
    matched gifts, opportunities and allocations).
 5. Then **Pull grant agreements** as planned.
 
-## Judgment calls to sanity-check
+## Donor-intent policy (owner rules, 2026-07-18) — overrides the coding-form text
 
-- **"Not restricted" answers do NOT latch donor-restricted.** 45 rows whose restriction
-  answer was a negation ("no", "unrestricted", "not restricted but…", "gen op") apply
-  nothing to the usage-restriction axis; 36 bare yes/no answers also skip the purpose text.
-  The 10 non-obvious ones: fy24_16 "no - designated but not restricted", fy24_37 "general
-  operating for NJ work", fy24_40 "No - gen op support", fy24_44 "intended for BWF but not
-  restricted", fy25_104 "general operating for MN Hub", fy25_37 "unrestricted, general
-  operating", fy25_43 "unrestricted to Wildflower", fy25_5 "Intended for BWF gen op",
-  fy25_7 "Not restricted but… Seed fund", fy26_29 "no- but for general operating in MN Hub".
+The decisions below were re-audited against four owner rules. Where a rule and the
+form answer disagree, the rule wins:
+
+1. **Yield gift + anything from Arthur Rock: NEVER donor-restricted** (always
+   unrestricted or Wildflower-designated). No confirmed rows were affected — every
+   Arthur Rock row (fy25_0, fy25_109, fy25_110, fy26_107, fy26_108, fy26_109) is
+   pending or donor-only. Whoever resolves them by hand: do NOT apply any
+   restriction, whatever the form says.
+2. **Anything for BWF / Black Wildflowers Fund is donor-restricted**, even when the
+   form says gen-ops/unrestricted. 6 rows flipped to apply the usage-restriction
+   axis: fy24_43 (Bainum "no", but the memo says this half is for BWF), fy24_44
+   ("intended for BWF but not restricted"), fy24_50 (William Penn match for BWF),
+   fy25_5 ("Intended for BWF gen op"), fy25_13 (Common Future BWF grant, form says
+   "No"), fy26_102 ("Yes, to BWF"). Note on fy25_13: the AI layer had flagged its
+   restriction answer as junk, which would have suppressed the cross-check and
+   silently dropped the flip — the SQL includes a guarded un-junk UPDATE for this
+   row so the decision actually acts.
+3. **Anything for a regional hub is geo-restricted to its region**, regardless of the
+   form. 54 rows flipped to apply the hub→region write (appends the region and sets
+   the regional axis to donor-restricted): the MN gen-op block (fy24_14/32/35/46,
+   fy25_37/104, fy26_29/74–81/83/88/89/90/92/93/95/96/103 — the gaps in that FY26
+   span are rows that were not hub-circle confirms), the PR/Girasol rows (fy24_19/42/47,
+   fy25_28/33/38/44/47/48/50/51/52/66, fy26_47/48, girasol 1/4/6/7/8/9/10/11 — incl.
+   the two hand-matched rows fy24_32 and girasol_1, whose flips live in the SQL
+   only), and Colorado/Mid-Atlantic (fy24_29/31, fy25_4/31/41/53, fy26_68).
+   Exception: fy24_37 "general operating for NJ work" sits in the Radicle circle — a
+   cohort, not a geography — so there is no region to map; left unflipped.
+4. **Donorbox designations are authoritative** (straight from the donor: "growth in
+   DC" → DC geo-restricted; hurricane relief / MN immigrant families → restricted to
+   those projects). No row in this queue carries an unapplied Donorbox designation —
+   the Donorbox BWF rows already apply — but the rule governs future queue reviews.
+
+Rules 2–4 also bind the rows left pending/donor-only (e.g. fy24_36 NBCDI-for-BWF,
+fy24_33 + fy25_103 MN gen-op, fy24_39 Mid-Atlantic, fy24_12 + fy25_2 DC hub,
+fy24_21/22 Colorado/Minnesota): when a human confirms them later, apply the matching
+restriction even if the form says unrestricted.
+
+## Other judgment calls to sanity-check
+
+- **Outside rules 1–4, "not restricted" answers do NOT latch donor-restricted.**
+  Negation answers ("no", "unrestricted", "not restricted but…", "gen op") on
+  non-BWF, non-hub rows still apply nothing to the usage axis, e.g. fy24_16 "no -
+  designated but not restricted", fy24_40 "No - gen op support", fy25_43
+  "unrestricted to Wildflower", fy25_7 "Not restricted but… Seed fund".
 - **"Yes to BWF"-style answers DO latch donor-restricted** (the submitter answered yes to
   the restriction question), incl. "only to BWF, not by purpose".
 - **Addresses:** applied only when the CRM had none (78 rows); conflicting addresses were left alone.
-- **Regional restriction:** applied on only 2 rows; 50 conflicts with existing allocation
-  scope were skipped (allocation region stays authoritative).
+- **Regional restriction:** now applied on 56 rows (2 original + 54 under rule 3).
+  Append-the-region semantics: existing allocation regions are kept, the hub region
+  is added once, and the regional axis latches to donor-restricted.
 - **Amy Gips** appears as BOTH a person and an organization — the person record was used
   (it books the $15k gift); the org record looks like a duplicate worth merging.
 
@@ -196,59 +233,59 @@ sheet (amount, date, name, fiscal year). The decisions column is what "Apply dec
 | Row | Sheet says | Donor | Matched | Decisions |
 |---|---|---|---|---|
 | FY24 row 10 | Common Future $250.00 | recgkkqmXcEhlBUVv | gift: FY24 $250 accelerator stipend | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
-| FY24 row 14 | Douglass Brandenborg Family Foundation $60,000.00 | recJe1jM2ZxwHbQBw | gift: Brandenborg FY24 Renewal | apply: address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction |
+| FY24 row 14 | Douglass Brandenborg Family Foundation $60,000.00 | recJe1jM2ZxwHbQBw | gift: Brandenborg FY24 Renewal | apply: regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction |
 | FY24 row 16 | Fidelity Foundations $350,000.00 | rec56v5anV8D4xP9l | gift: FY24 Anon MA Grant $350,000 (SSJ Phase II) | apply: reportDeadline, purposeVerbatim, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction, address |
-| FY24 row 19 | Fundación Banco Popular $30,000.00 | recXNGcwyRuUo8vGd | gift: FY24 Banco Popular | apply: reportDeadline, purposeVerbatim, usageRestriction, address, circle, seriesType, internalMemo · skip: regionalRestriction |
+| FY24 row 19 | Fundación Banco Popular $30,000.00 | recXNGcwyRuUo8vGd | gift: FY24 Banco Popular | apply: reportDeadline, purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, internalMemo |
 | FY24 row 23 | Imaginable Futures $300,000.00 | recYkXr1waYSGZanu | gift: FY24 Imaginable Futures $300k to BWF | apply: reportDeadline, purposeVerbatim, usageRestriction, intendedUsage, address, circle, seriesType, additionalNotes, internalMemo |
 | FY24 row 24 | Imaginable Futures $300,000.00 | recYkXr1waYSGZanu | gift: FY25 Imaginable Futures $300,000 to Black Wildflowers Fund | apply: reportDeadline, purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
 | FY24 row 25 | Imaginable Futures $500,000.00 | recYkXr1waYSGZanu | gift: FY25 Imaginable Futures $500,000 grant to Wildflower | apply: reportDeadline, address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction |
 | FY24 row 27 | Kellie Brown $240.00 | recUg5dbcAM7E7mZM | gift: $240 FY24 donation to Black Wildflowers Fund | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
 | FY24 row 28 | Krishnan Sampath $5,000.00 | recsK6O9mFzpwSY8t | gift: FY24 $5000 Sampath Donation | apply: circle, seriesType, additionalNotes, internalMemo · skip: address |
-| FY24 row 29 | LISC $40,000.00 | rec1CB47gTxjD01FR | opp: LISC PRI or grant | apply: address |
-| FY24 row 31 | LISC $17,750.00 | rec14pJ2GxEA8rDBL | gift: Q3 FY24 LISC CO Reimbursement $17,750 | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, internalMemo · skip: intendedUsage, regionalRestriction |
+| FY24 row 29 | LISC $40,000.00 | rec1CB47gTxjD01FR | opp: LISC PRI or grant | apply: regionalRestriction, address |
+| FY24 row 31 | LISC $17,750.00 | rec14pJ2GxEA8rDBL | gift: Q3 FY24 LISC CO Reimbursement $17,750 | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, internalMemo · skip: intendedUsage |
 | FY24 row 34 | Montessori Northwest $3,750.00 | recv3yWDxEVB7sqLD | gift: FY24 Black Wildflowers Fund $3,750 Donation | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
-| FY24 row 35 | Mortenson Family Foundation $4,000.00 | recIDJIhAo1tuXS3A | gift: Mortenson FY24 Gift $4,000 | apply: address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction |
+| FY24 row 35 | Mortenson Family Foundation $4,000.00 | recIDJIhAo1tuXS3A | gift: Mortenson FY24 Gift $4,000 | apply: regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction |
 | FY24 row 37 | Overdeck Family Foundation $60,000.00 | recSwPSZWJEXI7ye2 | gift: Overdeck $60,000 FY24 gift | apply: reportDeadline, purposeVerbatim, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction, address |
 | FY24 row 40 | Stand Together Trust $500,000.00 | recSv5y0mG6ZQGFBX | gift: Stand Together FY24 | apply: purposeVerbatim, address, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction |
 | FY24 row 41 | Stand Together Trust $500,000.00 | recSv5y0mG6ZQGFBX | gift: Stand Together FY25 | apply: address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction |
-| FY24 row 42 | The 20/22 Act Society $10,000.00 | recRGn3fb67g5TCuH | gift: FY24 $10,000 Training Grant | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: regionalRestriction |
-| FY24 row 43 | The Bainum Family Foundation $50,000.00 | recykXYoQ7gJhNeoE | gift: FY24 Black Wildflowers Fund $50,000 | apply: reportDeadline, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
-| FY24 row 44 | The McKnight Foundation $10,000.00 | rec5hHTZtAvHDAAou | gift: FY24 McKnight to BWF $10,000 | apply: purposeVerbatim, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction, address |
+| FY24 row 42 | The 20/22 Act Society $10,000.00 | recRGn3fb67g5TCuH | gift: FY24 $10,000 Training Grant | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo |
+| FY24 row 43 | The Bainum Family Foundation $50,000.00 | recykXYoQ7gJhNeoE | gift: FY24 Black Wildflowers Fund $50,000 | apply: reportDeadline, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, address |
+| FY24 row 44 | The McKnight Foundation $10,000.00 | rec5hHTZtAvHDAAou | gift: FY24 McKnight to BWF $10,000 | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY24 row 45 | The Yass Prize $100,000.00 | rechBkBNQM8J2B6do | gift: Yass Prize 2023 $100,000 Award | apply: reportDeadline, purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
-| FY24 row 46 | WEM $250,000.00 | rec3AIEdNLQSpTAfb | gift: WEM Foundation Grant to MN $250k | apply: address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction |
-| FY24 row 47 | WEND Collective $200,000.00 | recb7IVIo9rzCST5M | gift: Wend PR FY24 | apply: reportDeadline, purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: regionalRestriction |
+| FY24 row 46 | WEM $250,000.00 | rec3AIEdNLQSpTAfb | gift: WEM Foundation Grant to MN $250k | apply: regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction |
+| FY24 row 47 | WEND Collective $200,000.00 | recb7IVIo9rzCST5M | gift: Wend PR FY24 | apply: reportDeadline, purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo |
 | FY24 row 48 | Wend Collective $40,000.00 | recb7IVIo9rzCST5M | gift: FY24 $40,000 Wend to BWF | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
-| FY24 row 50 | William Penn Foundation $480.00 | recmpIhNf83IrqWI1 | gift: William Penn Foundation | apply: circle, seriesType, additionalNotes, internalMemo · skip: address |
+| FY24 row 50 | William Penn Foundation $480.00 | recmpIhNf83IrqWI1 | gift: William Penn Foundation | apply: usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY25 row 100 | Erica Cantoni $500.00 | reczTuMKDMJjQpg5z | gift: FY25 $500 to Wildflower | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
 | FY25 row 101 | Beverlee Mendoza $50.00 | recLgHSkehPspjN48 | gift: $50 FY25 Mendoza to BWF | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY25 row 102 | Dionne Kirby $200.00 | recwTcVIeS6VCL7Lh | gift: FY25 Kirby to BWF #2 $200 | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
-| FY25 row 104 | The McKnight Foundation $10,000.00 | rec5hHTZtAvHDAAou | gift: FY25 McKnight $10,000 | apply: purposeVerbatim, circle, seriesType, internalMemo · skip: usageRestriction, regionalRestriction, address |
+| FY25 row 104 | The McKnight Foundation $10,000.00 | rec5hHTZtAvHDAAou | gift: FY25 McKnight $10,000 | apply: purposeVerbatim, regionalRestriction, circle, seriesType, internalMemo · skip: usageRestriction, address |
 | FY25 row 105 | Inspired Minds Collide LLC / Dr. Erika McDowell $2,000.00 | recOCgtncqvV7ad1g | gift: $2,000 FY25 BWF Donation | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY25 row 106 | Education Leaders of Color $100,000.00 | recZvSmirPRO5lk3s | gift: FY25 Boulder Fund $100,000 | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
 | FY25 row 107 | ANONYMOUS - Amy Gips/Fidelity $15,000.00 | Amy Gips | gift: $15,000 AG to BWF FY25 #2 | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
-| FY25 row 13 | Common Future $25,000.00 | recgkkqmXcEhlBUVv | gift: FY24 BWF $25,000 Accelerator Grant #2 | apply: circle, seriesType, additionalNotes, internalMemo · skip: address |
+| FY25 row 13 | Common Future $25,000.00 | recgkkqmXcEhlBUVv | gift: FY24 BWF $25,000 Accelerator Grant #2 | apply: usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY25 row 24 | Imaginable Futures $500,000.00 | recYkXr1waYSGZanu | gift: FY26 Imaginable Futures Nation Dev $500,000 | apply: reportDeadline, address, circle, seriesType, additionalNotes, internalMemo |
 | FY25 row 25 | Imaginable Futures $300,000.00 | recYkXr1waYSGZanu | gift: FY26 Imaginable Futures BWF $300,000 | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
-| FY25 row 28 | ACUDEN $1,500.00 | reckjxiH33tdtOQiW | gift: $1500 FY25 Meeker Rom for Rosebay | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: regionalRestriction |
-| FY25 row 31 | Local Initiatives Support Corporation (LISC) $1,721.39 | rec1CB47gTxjD01FR | opp: LISC PRI or grant | apply: address |
+| FY25 row 28 | ACUDEN $1,500.00 | reckjxiH33tdtOQiW | gift: $1500 FY25 Meeker Rom for Rosebay | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo |
+| FY25 row 31 | Local Initiatives Support Corporation (LISC) $1,721.39 | rec1CB47gTxjD01FR | opp: LISC PRI or grant | apply: regionalRestriction, address |
 | FY25 row 32 | Allen Vasan $500.00 | Allen Vasan | gift: FY25 $500 Vasan Donation | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
-| FY25 row 33 | Fundación Banco Popular $30,000.00 | recXNGcwyRuUo8vGd | gift: FY25 $30,000 Banco Popular for Camelia School | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage, regionalRestriction |
+| FY25 row 33 | Fundación Banco Popular $30,000.00 | recXNGcwyRuUo8vGd | gift: FY25 $30,000 Banco Popular for Camelia School | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage |
 | FY25 row 36 | Patrick and Alice Rogers Family Foundation $5,000.00 | Patrick & Alice Rogers Family Foundation | gift: FY25 Barrett $5,000 via Rogers Foundation | apply: address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction |
-| FY25 row 37 | Douglass Brandenborg Family Foundation $60,000.00 | recJe1jM2ZxwHbQBw | gift: Brandenborg FY25 $60,000 Renewal | apply: purposeVerbatim, address, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction, regionalRestriction |
-| FY25 row 38 | David McKnight $5,000.00 | recy9WtBRFTEIrSUp | gift: FY25 David McKnight Girasol $5000 Donation | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: regionalRestriction |
-| FY25 row 4 | Local Initiatives Support Corporation (LISC) $4,237.50 | rec1CB47gTxjD01FR | opp: LISC PRI or grant | apply: address |
-| FY25 row 41 | Scholler Foundation -- Glenmede Trust $4,000.00 | recpJVf8d3D7fDCad | gift: Scholler Foundation FY 2025 $4,000 | apply: address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, intendedUsage, regionalRestriction |
+| FY25 row 37 | Douglass Brandenborg Family Foundation $60,000.00 | recJe1jM2ZxwHbQBw | gift: Brandenborg FY25 $60,000 Renewal | apply: purposeVerbatim, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction |
+| FY25 row 38 | David McKnight $5,000.00 | recy9WtBRFTEIrSUp | gift: FY25 David McKnight Girasol $5000 Donation | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo |
+| FY25 row 4 | Local Initiatives Support Corporation (LISC) $4,237.50 | rec1CB47gTxjD01FR | opp: LISC PRI or grant | apply: regionalRestriction, address |
+| FY25 row 41 | Scholler Foundation -- Glenmede Trust $4,000.00 | recpJVf8d3D7fDCad | gift: Scholler Foundation FY 2025 $4,000 | apply: regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, intendedUsage |
 | FY25 row 42 | Fidelity Foundations $200,000.00 | rec56v5anV8D4xP9l | gift: FY25 $200,000 Anon MA SSJ Phase II/ Open Schools | apply: reportDeadline, purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY25 row 43 | Bainum Family Foundation $75,000.00 | recykXYoQ7gJhNeoE | gift: FY25 Bainum #2 to National $75,000 | apply: purposeVerbatim, intendedUsage, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction, address |
-| FY25 row 44 | Aaron Augusten & Kristen Tronsky $5,000.00 | recbVW1CwSP4v78bG | gift: $5,000 FY25 Augusten/Tronsky gift to Girasol | apply: reportDeadline, purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: regionalRestriction |
+| FY25 row 44 | Aaron Augusten & Kristen Tronsky $5,000.00 | recbVW1CwSP4v78bG | gift: $5,000 FY25 Augusten/Tronsky gift to Girasol | apply: reportDeadline, purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo |
 | FY25 row 46 | The Scully Peretsman Fund via Vanguard Charitable $100,000.00 | recIJTPGCH2DtgplA | gift: Peretsman FY25 $100,000 | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
-| FY25 row 47 | THE 20/22 ACT SOCIETY $10,000.00 | recRGn3fb67g5TCuH | gift: FY25 $10,000 Act 20/22 Society | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: regionalRestriction |
-| FY25 row 48 | Tom and Sarah Clark  Timber Capital LLC $6,780.00 | reck9nH8cCjBHHVsN | gift: $6,780 FY25 Timber Capital/Clark gift to Girasol | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage, regionalRestriction |
-| FY25 row 5 | Angela Schiavoni $1,000.00 | recRCXN9REdI3Wg5c | gift: $1,000 Schiavoni to BWF FY25 | apply: purposeVerbatim, intendedUsage, address, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction |
-| FY25 row 50 | Abinadi and Diane Barrientos $10,000.00 | Abinadi and Diana Barrientos | gift: $10,000 FY25 Barrientos gift to Girasol | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage, regionalRestriction |
-| FY25 row 51 | Melanie Sue Spiegel $5,000.00 | recmVGuzlgrmB6wST | gift: $5000 FY25 Spiegel gift to Girasol | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage, regionalRestriction, address |
-| FY25 row 52 | Micah Winkelspecht $5,000.00 | rec4QsTAuJ3QXuQdT | gift: $5000 Winkelspecht FY25 gift to Girasol | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage, regionalRestriction, address |
-| FY25 row 53 | Buell Foundation $40,000.00 | recAhaoCFiAvjDVm6 | gift: FY25 WF CO $40,000 | apply: reportDeadline, circle, seriesType, internalMemo · skip: regionalRestriction, address |
+| FY25 row 47 | THE 20/22 ACT SOCIETY $10,000.00 | recRGn3fb67g5TCuH | gift: FY25 $10,000 Act 20/22 Society | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo |
+| FY25 row 48 | Tom and Sarah Clark  Timber Capital LLC $6,780.00 | reck9nH8cCjBHHVsN | gift: $6,780 FY25 Timber Capital/Clark gift to Girasol | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage |
+| FY25 row 5 | Angela Schiavoni $1,000.00 | recRCXN9REdI3Wg5c | gift: $1,000 Schiavoni to BWF FY25 | apply: purposeVerbatim, usageRestriction, intendedUsage, address, circle, seriesType, additionalNotes, internalMemo |
+| FY25 row 50 | Abinadi and Diane Barrientos $10,000.00 | Abinadi and Diana Barrientos | gift: $10,000 FY25 Barrientos gift to Girasol | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage |
+| FY25 row 51 | Melanie Sue Spiegel $5,000.00 | recmVGuzlgrmB6wST | gift: $5000 FY25 Spiegel gift to Girasol | apply: purposeVerbatim, usageRestriction, regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage, address |
+| FY25 row 52 | Micah Winkelspecht $5,000.00 | rec4QsTAuJ3QXuQdT | gift: $5000 Winkelspecht FY25 gift to Girasol | apply: purposeVerbatim, usageRestriction, regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage, address |
+| FY25 row 53 | Buell Foundation $40,000.00 | recAhaoCFiAvjDVm6 | gift: FY25 WF CO $40,000 | apply: reportDeadline, regionalRestriction, circle, seriesType, internalMemo · skip: address |
 | FY25 row 54 | Krishnan Sampath $5,000.00 | recsK6O9mFzpwSY8t | gift: FY25 $5,000 Sampath donation | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
 | FY25 row 56 | Janet Begin $100.00 | Janet Begin | gift: $100 FY25 Janet Begin donation to BWF | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY25 row 57 | Lindsay and Matt Haldeman $2,000.00 | recdz3InaVKbqVhv5 | gift: $2000 FY25 Haldeman for BWF | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
@@ -257,7 +294,7 @@ sheet (amount, date, name, fiscal year). The decisions column is what "Apply dec
 | FY25 row 62 | The Meeker Rom Family Foundation $1,500.00 | reckjxiH33tdtOQiW | gift: $1500 FY25 Meeker Rom for Rosebay | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
 | FY25 row 63 | Melanie Dukes $5,000.00 | Melanie Dukes | gift: $5000 FY25 Dukes sponsorship of The Exchange | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY25 row 65 | Reinvestment Fund / LaToshia DeVose $750.00 | rec0yUF6xfz4teFyu | gift: FY25 Reinvestment $750 BWF Sponsorship | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
-| FY25 row 66 | David McKnight $5,000.00 | recy9WtBRFTEIrSUp | gift: FY25 David McKnight Girasol $5000 Donation | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: regionalRestriction |
+| FY25 row 66 | David McKnight $5,000.00 | recy9WtBRFTEIrSUp | gift: FY25 David McKnight Girasol $5000 Donation | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo |
 | FY25 row 67 | Maia Blankenship $1,400.00 | recUdeGVQKlHczo79 | gift: FY25 $1400 BWF Donation | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY25 row 68 | VA Montessori Association $300.00 | recNdB6fN3QqGNjqN | gift: $300 FY25 BWF sponsorship | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, internalMemo |
 | FY25 row 7 | Avi Nash- Indira Foundation $100,000.00 | recR28K8Twq5uV8Q0 | gift: Avi Nash Seed Grant | apply: purposeVerbatim, address, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction |
@@ -284,8 +321,8 @@ sheet (amount, date, name, fiscal year). The decisions column is what "Apply dec
 | FY25 row 98 | (Anonymous Donor) Ariana Bray $150.00 | rec40rBlhv2V3YU7E | gift: $150 FY25 Bray to BWF | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY26 row 1 | Allen Vasan $3,000.00 | Allen Vasan | gift: FY26 Allen Vasan $3000 | apply: circle, seriesType, additionalNotes · skip: address |
 | FY26 row 101 | Danielle Tucker $52.51 | recp6UBfqpSD01oC9 | gift: Tucker 52.51 2026-03-08T23:50:24.139Z | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
-| FY26 row 102 | LaTania Scott $50.00 | 5P8Z3pGo-0bxZege5U7ME | gift: LaTania Scott (Donor) | apply: address, circle, seriesType, additionalNotes, internalMemo |
-| FY26 row 103 | Katherine Bradley $1,000.00 | recx1ifTLExCb887N | opp: Request for support for DC charter | apply: address |
+| FY26 row 102 | LaTania Scott $50.00 | 5P8Z3pGo-0bxZege5U7ME | gift: LaTania Scott (Donor) | apply: usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
+| FY26 row 103 | Katherine Bradley $1,000.00 | recx1ifTLExCb887N | opp: Request for support for DC charter | apply: regionalRestriction, address |
 | FY26 row 105 | Truist Foundation $90,000.00 | recXyHKniULRe5ZzT | gift: FY26 Truist $90,000 to BWF | apply: reportDeadline, purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY26 row 12 | Gregory Harrison $100.00 | recodFJZxJnfXWZQu | gift: FY26 Harrison $100 donation to BWF | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo |
 | FY26 row 13 | Melvin Waits $200.00 | recYKN77UwhbIsM7f | gift: FY26 $200 Melvin Wait to BWF | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes |
@@ -296,7 +333,7 @@ sheet (amount, date, name, fiscal year). The decisions column is what "Apply dec
 | FY26 row 23 | Jim and Gretchen Cantoni $50.00 | Jim and Gretchen Cantoni | gift: Jim Cantoni $50 FY26 to BWF | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
 | FY26 row 24 | ANONYMOUS Amy Gips Family Fund at Fidelity $7,000.00 | Amy Gips | gift: FY26 AG Anon $7k BWF sponsorship | apply: usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, address |
 | FY26 row 27 | Erica Cantoni $5.54 | reczTuMKDMJjQpg5z | gift: Cantoni 5.0 2025-11-13T15:37:54.738Z | apply: circle, additionalNotes |
-| FY26 row 29 | Douglass Brandenborg Family Foundation $60,000.00 | recJe1jM2ZxwHbQBw | gift: FY26 $60,000 Brandenborg grant | apply: purposeVerbatim, address, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction, regionalRestriction |
+| FY26 row 29 | Douglass Brandenborg Family Foundation $60,000.00 | recJe1jM2ZxwHbQBw | gift: FY26 $60,000 Brandenborg grant | apply: purposeVerbatim, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: usageRestriction |
 | FY26 row 3 | Howley Foundation $120,000.00 | recamL8KTYrZONpIS | gift: Howley MidAtlantic FY26 $120k | apply: reportDeadline, purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: intendedUsage |
 | FY26 row 33 | Zita Blankenship $574.43 | recbgDQl6P7V19TGl | gift: Blankenship $574 FY26 to BWF #1 | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY26 row 34 | Lisa Thomas $50.00 | recVHgerdVKWMjf4U | gift: Thomas 50.0 2025-12-02T16:34:45.492Z | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
@@ -311,8 +348,8 @@ sheet (amount, date, name, fiscal year). The decisions column is what "Apply dec
 | FY26 row 44 | Sampath Krishnan $2,000.00 | recsK6O9mFzpwSY8t | gift: FY26 Sampath $2000 | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
 | FY26 row 45 | The Patrick & Alice Rogers Foundation $5,000.00 | Patrick & Alice Rogers Family Foundation | gift: FY26 Rogers Foundation $5,000 | apply: address, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction |
 | FY26 row 46 | Transparent Classroom $2,500.00 | recVG0lspJZAYEjyg | gift: FY26 Transparent Classroom $2500 to BWF | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
-| FY26 row 47 | Vladimir and Chia Rodeski $2,500.00 | recP1ebGhDzgyCDd1 | gift: FY26 $2500 Rodeski to Girasol | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: regionalRestriction |
-| FY26 row 48 | Foundation Banco Popular $30,000.00 | recXNGcwyRuUo8vGd | gift: FY26 Banco Popular $30,000 | apply: reportDeadline, purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo · skip: regionalRestriction |
+| FY26 row 47 | Vladimir and Chia Rodeski $2,500.00 | recP1ebGhDzgyCDd1 | gift: FY26 $2500 Rodeski to Girasol | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo |
+| FY26 row 48 | Foundation Banco Popular $30,000.00 | recXNGcwyRuUo8vGd | gift: FY26 Banco Popular $30,000 | apply: reportDeadline, purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo |
 | FY26 row 49 | Vladimir and Chia Rodeski $1,000.00 | recP1ebGhDzgyCDd1 | gift: FY26 #2 Rodeski $1000 | apply: purposeVerbatim, usageRestriction, address, circle, seriesType, additionalNotes, internalMemo |
 | FY26 row 5 | Excellent Schools New Mexico $60,000.00 | reca1aY0uiWlzWwxp | gift: FY26 $60,000 Excellent Schools NM grant | apply: reportDeadline, purposeVerbatim, usageRestriction, address, circle, seriesType, internalMemo |
 | FY26 row 51 | Carrie Horwitz Lang $522.24 | recs85Feq6KVb4QOd | gift: Horwitz Lang 522.24 2025-12-17T14:41:13.904Z | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
@@ -323,37 +360,37 @@ sheet (amount, date, name, fiscal year). The decisions column is what "Apply dec
 | FY26 row 57 | Zita Blankenship $522.24 | recbgDQl6P7V19TGl | gift: Blankenship $522 FY26 to BWF #2 | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY26 row 62 | The Act 20/22 Society $20,000.00 | recRGn3fb67g5TCuH | gift: 20/22 Act FY26 | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, seriesType, additionalNotes, internalMemo |
 | FY26 row 63 | Maia Blankenship $1,109.81 | recUdeGVQKlHczo79 | gift: Fy26 BWF Blankenship $1109 | apply: purposeVerbatim, usageRestriction, intendedUsage, circle, seriesType, additionalNotes, internalMemo · skip: address |
-| FY26 row 68 | Buell Foundation $40,000.00 | recAhaoCFiAvjDVm6 | gift: FY26 Buell $40,000 | apply: reportDeadline, purposeVerbatim, usageRestriction, circle, seriesType, internalMemo · skip: regionalRestriction, address |
+| FY26 row 68 | Buell Foundation $40,000.00 | recAhaoCFiAvjDVm6 | gift: FY26 Buell $40,000 | apply: reportDeadline, purposeVerbatim, usageRestriction, regionalRestriction, circle, seriesType, internalMemo · skip: address |
 | FY26 row 69 | Matt and Lindsay Haldeman $5,000.00 | recdz3InaVKbqVhv5 | gift: $5000 FY26 Haldeman to BWF | apply: purposeVerbatim, usageRestriction, intendedUsage, address, circle, seriesType, additionalNotes, internalMemo |
 | FY26 row 71 | Marlene Fultz Cooper $150.00 | recXGMjPL7OryJspM | gift: Fultz Cooper 150.0 2026-01-24T16:34:10.035Z | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY26 row 72 | Meisha Perrin $261.28 | recKk1U5BfGDYJNka | gift: Perrin FY26 BWF $261 | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY26 row 73 | Paul Serotkin $150.00 | recSMzjv6GhNefJN6 | gift: FY26 $150 Serotkin | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
-| FY26 row 74 | Philip Vasan $1,044.16 | Philip Vasan | gift: FY26 Vasan $1044 to WF MN | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 75 | Neil Campbell $250.00 | rechkgUhD9YjAgDwe | gift: FY26 Campbell $250 to WF MN | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 76 | Sarah Muncey $50.00 | recDvLUrLFI4Sz0pp | gift: FY26 Muncey $50 to WF MN | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 77 | Maia Blankenship $104.70 | recUdeGVQKlHczo79 | gift: FY26 Blankenship $104 to WF MN | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 78 | Jeff Bradach $261.28 | recVcLA7TFQICx1Yh | gift: FY26 Bradach $261 to WF MN | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 79 | Massie Ritsch $209.09 | recX8A7FkEjkFAFJB | gift: FY26 Ritsch $209 to WF MN | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 80 | Michael Buman $100.00 | recY0gz8tw9ZnnpAr | gift: FY26 Buman $100 to WF MN | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 81 | Erica Cantoni $5.00 | reczTuMKDMJjQpg5z | gift: FY26 Cantoni $5 test | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 83 | Danielle Higa $50.00 | recgTRYPhcsJNoCSX | gift: FY26 Higa $50 to MN schools | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
+| FY26 row 74 | Philip Vasan $1,044.16 | Philip Vasan | gift: FY26 Vasan $1044 to WF MN | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 75 | Neil Campbell $250.00 | rechkgUhD9YjAgDwe | gift: FY26 Campbell $250 to WF MN | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 76 | Sarah Muncey $50.00 | recDvLUrLFI4Sz0pp | gift: FY26 Muncey $50 to WF MN | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 77 | Maia Blankenship $104.70 | recUdeGVQKlHczo79 | gift: FY26 Blankenship $104 to WF MN | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 78 | Jeff Bradach $261.28 | recVcLA7TFQICx1Yh | gift: FY26 Bradach $261 to WF MN | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 79 | Massie Ritsch $209.09 | recX8A7FkEjkFAFJB | gift: FY26 Ritsch $209 to WF MN | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 80 | Michael Buman $100.00 | recY0gz8tw9ZnnpAr | gift: FY26 Buman $100 to WF MN | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 81 | Erica Cantoni $5.00 | reczTuMKDMJjQpg5z | gift: FY26 Cantoni $5 test | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 83 | Danielle Higa $50.00 | recgTRYPhcsJNoCSX | gift: FY26 Higa $50 to MN schools | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
 | FY26 row 84 | Dionne Kirby $50.00 | recwTcVIeS6VCL7Lh | gift: Kirby 50.0 2026-02-22T23:45:37.942Z | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY26 row 85 | Kathleen Rash $50.00 | recSschvF1pFzWrQH | gift: Rash 50.0 2026-02-26T00:55:07.262Z | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
 | FY26 row 86 | NaTasha Day $50.00 | recZUhh5OJ92h3T3Q | gift: Day 50.0 2026-03-04T17:35:21.470Z | apply: purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
-| FY26 row 88 | Kali DeCambra $25.00 | rec2unSi9ZC2r1sN6 | gift: FY26 DeCambra $25 to WF MN | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 89 | Sara Rogers $100.00 | recf9q0Aem5zgQB6O | gift: FY26 Sara Rogers $100 to MN WF | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 90 | Daniel Sellers $42.07 | recxIfSqs0eDFacz0 | gift: FY26 Sellers $42 to WF MN | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 92 | Sara Suchman $100.00 | recVWroDtZbAsfUBg | gift: FY 26 Suchman $100 to WF MN | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 93 | Shannon Rogers $1,000.00 | recxSINdT6Iux7TSa | gift: FY26 Rogers $1000 to WF MN | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 95 | Erica Cantoni $417.85 | reczTuMKDMJjQpg5z | gift: FY26 E Cantoni $417 to WF MN | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
-| FY26 row 96 | Nora Flood $261.28 | reca9mlJPn39fAxPb | gift: FY26 Nora Flood $250 donation to MN Support | apply: circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, regionalRestriction, address |
+| FY26 row 88 | Kali DeCambra $25.00 | rec2unSi9ZC2r1sN6 | gift: FY26 DeCambra $25 to WF MN | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 89 | Sara Rogers $100.00 | recf9q0Aem5zgQB6O | gift: FY26 Sara Rogers $100 to MN WF | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 90 | Daniel Sellers $42.07 | recxIfSqs0eDFacz0 | gift: FY26 Sellers $42 to WF MN | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 92 | Sara Suchman $100.00 | recVWroDtZbAsfUBg | gift: FY 26 Suchman $100 to WF MN | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 93 | Shannon Rogers $1,000.00 | recxSINdT6Iux7TSa | gift: FY26 Rogers $1000 to WF MN | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 95 | Erica Cantoni $417.85 | reczTuMKDMJjQpg5z | gift: FY26 E Cantoni $417 to WF MN | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
+| FY26 row 96 | Nora Flood $261.28 | reca9mlJPn39fAxPb | gift: FY26 Nora Flood $250 donation to MN Support | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
 | FY26 row 97 | Clifford Bussie $52.51 | recUSO9QioQ3hM38g | gift: Bussie 52.51 2026-02-24T18:02:57.253Z | apply: regionalRestriction, circle, seriesType, additionalNotes, internalMemo · skip: purposeVerbatim, usageRestriction, address |
 | FY26 row 98 | Fidelity Foundations (Anonymous) $175,000.00 | rec56v5anV8D4xP9l | gift: FY26 National Grant $175,000 | apply: reportDeadline, purposeVerbatim, usageRestriction, circle, seriesType, additionalNotes, internalMemo · skip: address |
-| GIRASOL row 10 | David McKnight $5,000.00 | recy9WtBRFTEIrSUp | gift: FY25 David McKnight Girasol $5000 Donation | apply: purposeVerbatim, usageRestriction, address, circle · skip: regionalRestriction |
-| GIRASOL row 11 | Vladimir and Chia Rodeski $7,000.00 | recP1ebGhDzgyCDd1 | gift: Rodeski FY25 $7,000 gift to Girasol | apply: purposeVerbatim, usageRestriction, circle, internalMemo · skip: intendedUsage, regionalRestriction |
-| GIRASOL row 4 | Tom and Sarah Clark  Timber Capital LLC $6,780.00 | reck9nH8cCjBHHVsN | gift: $6,780 FY25 Timber Capital/Clark gift to Girasol | apply: purposeVerbatim, usageRestriction, address, circle, internalMemo · skip: intendedUsage, regionalRestriction |
-| GIRASOL row 6 | Abinadi and Diane Barrientos $10,000.00 | Abinadi and Diana Barrientos | gift: $10,000 FY25 Barrientos gift to Girasol | apply: purposeVerbatim, usageRestriction, address, circle, internalMemo · skip: intendedUsage, regionalRestriction |
-| GIRASOL row 7 | Melanie Sue Spiegel $5,000.00 | recmVGuzlgrmB6wST | gift: $5000 FY25 Spiegel gift to Girasol | apply: purposeVerbatim, usageRestriction, circle, internalMemo · skip: intendedUsage, regionalRestriction, address |
-| GIRASOL row 8 | Micah Winkelspecht $5,000.00 | rec4QsTAuJ3QXuQdT | gift: $5000 Winkelspecht FY25 gift to Girasol | apply: purposeVerbatim, usageRestriction, circle, internalMemo · skip: intendedUsage, regionalRestriction, address |
-| GIRASOL row 9 | Aaron Augusten & Kristen Tronsky $5,000.00 | recbVW1CwSP4v78bG | gift: $5,000 FY25 Augusten/Tronsky gift to Girasol | apply: reportDeadline, purposeVerbatim, usageRestriction, address, circle, internalMemo · skip: regionalRestriction |
+| GIRASOL row 10 | David McKnight $5,000.00 | recy9WtBRFTEIrSUp | gift: FY25 David McKnight Girasol $5000 Donation | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle |
+| GIRASOL row 11 | Vladimir and Chia Rodeski $7,000.00 | recP1ebGhDzgyCDd1 | gift: Rodeski FY25 $7,000 gift to Girasol | apply: purposeVerbatim, usageRestriction, regionalRestriction, circle, internalMemo · skip: intendedUsage |
+| GIRASOL row 4 | Tom and Sarah Clark  Timber Capital LLC $6,780.00 | reck9nH8cCjBHHVsN | gift: $6,780 FY25 Timber Capital/Clark gift to Girasol | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, internalMemo · skip: intendedUsage |
+| GIRASOL row 6 | Abinadi and Diane Barrientos $10,000.00 | Abinadi and Diana Barrientos | gift: $10,000 FY25 Barrientos gift to Girasol | apply: purposeVerbatim, usageRestriction, regionalRestriction, address, circle, internalMemo · skip: intendedUsage |
+| GIRASOL row 7 | Melanie Sue Spiegel $5,000.00 | recmVGuzlgrmB6wST | gift: $5000 FY25 Spiegel gift to Girasol | apply: purposeVerbatim, usageRestriction, regionalRestriction, circle, internalMemo · skip: intendedUsage, address |
+| GIRASOL row 8 | Micah Winkelspecht $5,000.00 | rec4QsTAuJ3QXuQdT | gift: $5000 Winkelspecht FY25 gift to Girasol | apply: purposeVerbatim, usageRestriction, regionalRestriction, circle, internalMemo · skip: intendedUsage, address |
+| GIRASOL row 9 | Aaron Augusten & Kristen Tronsky $5,000.00 | recbVW1CwSP4v78bG | gift: $5,000 FY25 Augusten/Tronsky gift to Girasol | apply: reportDeadline, purposeVerbatim, usageRestriction, regionalRestriction, address, circle, internalMemo |
 
