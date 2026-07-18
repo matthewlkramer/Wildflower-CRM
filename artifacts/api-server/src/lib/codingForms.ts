@@ -620,6 +620,74 @@ export async function confirmMatchedRows(
   return { scanned: updated.length, confirmed: updated.length };
 }
 
+export interface ApplyDecidedSummary {
+  scanned: number;
+  applied: number;
+  alreadyApplied: number;
+  nothingToApply: number;
+  failed: number;
+  failures: Array<{ rowId: string; error: string }>;
+}
+
+/**
+ * Bulk apply: every still-pending row whose match a human (or the reviewed
+ * import SQL) has CONFIRMED and that carries stored per-attribute decisions
+ * goes through the exact same applyRow path as the per-row Apply button —
+ * compare-don't-clobber, idempotent, all live-table writes in ONE tested code
+ * path. Rows whose approved attributes are no longer actionable are counted
+ * (`nothingToApply`) and left pending for per-row review; per-row failures are
+ * recorded in the summary, never thrown, so one bad row can't abort the pass.
+ */
+export async function applyDecidedRows(
+  userId: string | null,
+): Promise<ApplyDecidedSummary> {
+  const rows = await db
+    .select()
+    .from(codingFormRows)
+    .where(
+      and(
+        eq(codingFormRows.status, "pending"),
+        sql`${codingFormRows.matchConfirmedAt} IS NOT NULL`,
+        sql`${codingFormRows.decisions} <> '{}'::jsonb`,
+      ),
+    )
+    .orderBy(codingFormRows.source, codingFormRows.sourceRowIndex);
+
+  const summary: ApplyDecidedSummary = {
+    scanned: rows.length,
+    applied: 0,
+    alreadyApplied: 0,
+    nothingToApply: 0,
+    failed: 0,
+    failures: [],
+  };
+
+  for (const row of rows) {
+    // Keep only well-formed decision entries; stray values are ignored rather
+    // than trusted (the jsonb column is not schema-constrained).
+    const decisions: Record<string, "apply" | "skip"> = {};
+    for (const [k, v] of Object.entries(
+      (row.decisions ?? {}) as Record<string, unknown>,
+    )) {
+      if (v === "apply" || v === "skip") decisions[k] = v;
+    }
+    try {
+      const outcome = await applyRow(row, decisions, userId);
+      if (outcome.kind === "applied") summary.applied += 1;
+      else if (outcome.kind === "noop") summary.alreadyApplied += 1;
+      else summary.nothingToApply += 1;
+    } catch (err) {
+      summary.failed += 1;
+      summary.failures.push({
+        rowId: row.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return summary;
+}
+
 // ── Allocation resolution ────────────────────────────────────────────────────
 
 interface AllocationRef {

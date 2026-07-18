@@ -33,6 +33,7 @@ import {
   rematchRow,
   rematchPendingRows,
   confirmMatchedRows,
+  applyDecidedRows,
   applyRow,
   NEEDS_DECISION_FIELDS_META,
 } from "../lib/codingForms";
@@ -318,6 +319,18 @@ router.post(
     if (!requireAdmin(req, res)) return;
     const user = await getAppUser(req);
     res.json(await confirmMatchedRows(user?.id ?? null));
+  }),
+);
+
+// Bulk apply: every pending + match-confirmed row with stored decisions goes
+// through the same applyRow path as the per-row Apply. Per-row failures are
+// summarized, never thrown.
+router.post(
+  "/coding-form-rows/apply-decided",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const user = await getAppUser(req);
+    res.json(await applyDecidedRows(user?.id ?? null));
   }),
 );
 

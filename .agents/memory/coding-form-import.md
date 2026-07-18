@@ -27,6 +27,16 @@ description: Invariants for the one-time donation coding-form import — effecti
   the three donor XOR FKs for this). Gift-candidate date window uses the gift's
   own date OR its counted QB payment date (via payment_applications →
   staged_payments.date_received), whichever is closer.
+- **Non-donation coding form ⇒ exclude its staged QB row too.** User rule: when a
+  coding-form row is skipped as not-a-donation (refund, reimbursement, school fee),
+  the matching `staged_payments` row must also be excluded from the reconciliation
+  queue (same exclusion semantics as the exclude route: `exclusion_reason` +
+  `classification_source='manual'`, guarded on derived-pending). Most are already
+  auto-excluded — check before adding writes.
+  **Why:** otherwise the same non-donation money lingers as reviewable in two queues.
+- **Confirm ≠ status change.** `match_confirmed_at` stamps leave
+  `status='pending'`; only applyRow flips to `applied`. Bulk-resolution SQL
+  verification counts must expect confirmed rows to still count as pending.
 - **Grant letters go opportunity-else-gift**: attach to the matched
   opportunity when one exists, else the matched gift. API field names
   `oppExistingUrl`/`oppExistingFilename` were kept for compatibility but mean

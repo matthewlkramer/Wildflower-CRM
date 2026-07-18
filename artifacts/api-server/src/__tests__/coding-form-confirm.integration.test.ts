@@ -48,6 +48,8 @@ let db: Db["db"];
 let schema: {
   users: Db["users"];
   codingFormRows: Db["codingFormRows"];
+  organizations: Db["organizations"];
+  giftsAndPayments: Db["giftsAndPayments"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let likeFn: (typeof import("drizzle-orm"))["like"];
@@ -65,7 +67,13 @@ const ROW = {
   alreadyConfirmed: `${RUN}_confirmed`, // bulk must not touch (already confirmed)
   skipped: `${RUN}_skipped`, // bulk must not touch (status skipped)
   hubCircle: `${RUN}_hub_circle`, // regression: Hub circle → real regions query in crossChecksFor
+  applyDecided: `${RUN}_apply_decided`, // apply-decided target: confirmed + stored decisions + REAL gift
 } as const;
+
+// Real donor + gift rows (FK-valid) so apply-decided can write gift tags.
+const ORG_REAL = `${RUN}_org_real`;
+const GIFT_REAL = `${RUN}_gift_real`;
+const MEMO_TEXT = `ApplyDecided memo ${RUN}`;
 
 const FROZEN_CONFIRMED_AT = new Date("2026-01-01T00:00:00Z");
 
@@ -116,7 +124,12 @@ beforeAll(async () => {
   const dbMod = await import("@workspace/db");
   const drizzle = await import("drizzle-orm");
   db = dbMod.db;
-  schema = { users: dbMod.users, codingFormRows: dbMod.codingFormRows };
+  schema = {
+    users: dbMod.users,
+    codingFormRows: dbMod.codingFormRows,
+    organizations: dbMod.organizations,
+    giftsAndPayments: dbMod.giftsAndPayments,
+  };
   eqFn = drizzle.eq;
   likeFn = drizzle.like;
 
@@ -166,7 +179,27 @@ beforeAll(async () => {
       source: RUN,
       circleRaw: "Hub: Colorado",
     }),
+    // apply-decided target: pending, HUMAN-CONFIRMED, stored decisions, and a
+    // REAL matched gift so the memo-tag write goes to a live row.
+    seedRow(ROW.applyDecided, 7, {
+      source: RUN,
+      organizationId: ORG_REAL,
+      matchedGiftId: GIFT_REAL,
+      matchConfirmedAt: FROZEN_CONFIRMED_AT,
+      matchConfirmedByUserId: ADMIN_ID,
+      internalMemo: MEMO_TEXT,
+      decisions: { internalMemo: "apply" },
+    }),
   ]);
+
+  await db
+    .insert(schema.organizations)
+    .values({ id: ORG_REAL, name: `Test Org ${RUN}` });
+  await db.insert(schema.giftsAndPayments).values({
+    id: GIFT_REAL,
+    name: `Test Gift ${RUN}`,
+    organizationId: ORG_REAL,
+  });
 
   state.user = { id: ADMIN_ID, role: "admin" };
 
@@ -185,6 +218,12 @@ afterAll(async () => {
   await db
     .delete(schema.codingFormRows)
     .where(likeFn(schema.codingFormRows.id, `${RUN}%`));
+  await db
+    .delete(schema.giftsAndPayments)
+    .where(eqFn(schema.giftsAndPayments.id, GIFT_REAL));
+  await db
+    .delete(schema.organizations)
+    .where(eqFn(schema.organizations.id, ORG_REAL));
   await db.delete(schema.users).where(eqFn(schema.users.id, ADMIN_ID));
   await db.delete(schema.users).where(eqFn(schema.users.id, NON_ADMIN_ID));
 }, 60_000);
@@ -318,5 +357,59 @@ describe.skipIf(!HAS_DB)("coding-form link approval (integration)", () => {
     );
     expect(regional).toBeDefined();
     expect(regional!.sheetValue).toMatch(/colorado/i);
+  }, 30_000);
+
+  it("bulk apply-decided runs stored decisions through the real apply path, skips empty-decision rows, and is idempotent", async () => {
+    // Admin-only.
+    state.user = { id: NON_ADMIN_ID, role: "team_member" };
+    const denied = await post("/api/coding-form-rows/apply-decided");
+    expect(denied.status).toBe(403);
+    state.user = { id: ADMIN_ID, role: "admin" };
+
+    // NOTE: the endpoint scans the whole table, so counts use >= and the real
+    // assertions are on OUR rows' state (same convention as bulk confirm).
+    const first = await post("/api/coding-form-rows/apply-decided");
+    expect(first.status).toBe(200);
+    const summary = first.json as {
+      scanned: number;
+      applied: number;
+      alreadyApplied: number;
+      nothingToApply: number;
+      failed: number;
+      failures: Array<{ rowId: string; error: string }>;
+    };
+    expect(summary.scanned).toBeGreaterThanOrEqual(1);
+    expect(summary.applied).toBeGreaterThanOrEqual(1);
+    expect(
+      summary.failures.filter((f) => f.rowId.startsWith(RUN)),
+    ).toEqual([]);
+
+    // Our row went through the REAL apply: status applied + memo tag written
+    // onto the live gift row.
+    const after = await loadRowDb(ROW.applyDecided);
+    expect(after!.status).toBe("applied");
+    expect(after!.appliedAt).not.toBeNull();
+    expect(after!.appliedByUserId).toBe(ADMIN_ID);
+    const [gift] = await db
+      .select({ tags: schema.giftsAndPayments.tags })
+      .from(schema.giftsAndPayments)
+      .where(eqFn(schema.giftsAndPayments.id, GIFT_REAL));
+    expect(gift!.tags).toContain(`Memo: ${MEMO_TEXT}`);
+
+    // A confirmed row WITHOUT stored decisions is never swept (donorAndGift
+    // was bulk-confirmed above but its decisions are empty).
+    const control = await loadRowDb(ROW.donorAndGift);
+    expect(control!.status).toBe("pending");
+
+    // Idempotent: the applied row is out of scope on a second pass.
+    const second = await post("/api/coding-form-rows/apply-decided");
+    expect(second.status).toBe(200);
+    const after2 = await loadRowDb(ROW.applyDecided);
+    expect(after2!.updatedAt!.getTime()).toBe(after!.updatedAt!.getTime());
+    const [gift2] = await db
+      .select({ tags: schema.giftsAndPayments.tags })
+      .from(schema.giftsAndPayments)
+      .where(eqFn(schema.giftsAndPayments.id, GIFT_REAL));
+    expect(gift2!.tags).toBe(gift!.tags); // no double-append
   }, 30_000);
 });

@@ -6637,6 +6637,28 @@ export interface CodingFormConfirmSummary {
   confirmed: number;
 }
 
+export interface CodingFormRowFailure {
+  rowId: string;
+  error: string;
+}
+
+/**
+ * Result of the bulk apply-decided pass over pending, match-confirmed rows with stored decisions.
+ */
+export interface CodingFormApplyDecidedSummary {
+  /** Rows examined (status pending, match confirmed, non-empty stored decisions). */
+  scanned: number;
+  /** Rows applied in this pass (now status applied). */
+  applied: number;
+  /** Idempotent no-ops (row already applied). */
+  alreadyApplied: number;
+  /** Rows whose approved attributes were no longer actionable — left pending for per-row review. */
+  nothingToApply: number;
+  /** Rows that errored mid-apply (see failures); left pending. */
+  failed: number;
+  failures: CodingFormRowFailure[];
+}
+
 /**
  * Set the donor (XOR — at most one of the three donor FKs) and optionally the matched opportunity/gift. Null clears a field.
  */
@@ -6704,11 +6726,6 @@ export interface CodingFormGrantAgreementsSummary {
   totalWithLink: number;
   /** Count per derived grant-agreement status. */
   byStatus: CodingFormCount[];
-}
-
-export interface CodingFormRowFailure {
-  rowId: string;
-  error: string;
 }
 
 /**

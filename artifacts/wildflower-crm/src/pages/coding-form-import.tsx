@@ -15,6 +15,7 @@ import {
   useRematchPendingCodingFormRows,
   useConfirmCodingFormMatch,
   useConfirmMatchedCodingFormRows,
+  useApplyDecidedCodingFormRows,
   usePullGrantAgreementsBulk,
   useReinterpretCodingFormRow,
   useReinterpretCodingFormRows,
@@ -1287,6 +1288,41 @@ export default function CodingFormImportPage() {
     });
   };
 
+  // Bulk apply: every pending + match-confirmed row with stored per-attribute
+  // decisions runs through the SAME apply path as the per-row Apply button.
+  // Rows whose approved attributes aren't actionable stay pending for per-row
+  // review; per-row failures are summarized, never thrown.
+  const applyDecidedMut = useApplyDecidedCodingFormRows();
+  const handleApplyDecided = () => {
+    applyDecidedMut.mutate(undefined, {
+      onSuccess: (res) => {
+        void queryClient.invalidateQueries({
+          queryKey: [CODING_KEY_PREFIX],
+        });
+        const parts: string[] = [];
+        if (res.applied) parts.push(`${res.applied} applied`);
+        if (res.nothingToApply)
+          parts.push(`${res.nothingToApply} left pending (nothing to apply)`);
+        if (res.failed) parts.push(`${res.failed} failed`);
+        toast({
+          title: "Apply decided — done",
+          description:
+            res.scanned === 0
+              ? "No pending rows with a confirmed match and stored decisions were found."
+              : `${res.scanned} rows scanned · ${parts.join(" · ")}.`,
+          variant: res.failed ? "destructive" : undefined,
+        });
+      },
+      onError: (err) =>
+        toast({
+          title: "Couldn't apply decided rows",
+          description:
+            err instanceof Error ? err.message : "Something went wrong.",
+          variant: "destructive",
+        }),
+    });
+  };
+
   // Bulk AI pass over pending rows that have no stored payload yet (the
   // server default; per-row "AI reinterpret" is the explicit re-run path).
   // Chunked: one full pass would outlive the HTTP request, so we ask for a
@@ -1336,6 +1372,7 @@ export default function CodingFormImportPage() {
   const bulkBusy =
     rematchPendingMut.isPending ||
     confirmMatchedMut.isPending ||
+    applyDecidedMut.isPending ||
     reinterpretRunning;
 
   const rows = data?.data ?? [];
@@ -1405,6 +1442,14 @@ export default function CodingFormImportPage() {
               {confirmMatchedMut.isPending
                 ? "Confirming…"
                 : "Confirm all matched"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleApplyDecided}
+              disabled={bulkBusy}
+              data-testid="button-apply-decided"
+            >
+              {applyDecidedMut.isPending ? "Applying…" : "Apply decided"}
             </Button>
           </div>
         ) : null}

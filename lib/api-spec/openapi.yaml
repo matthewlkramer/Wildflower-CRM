@@ -315,6 +315,20 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormConfirmSummary" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /coding-form-rows/apply-decided:
+    post:
+      operationId: applyDecidedCodingFormRows
+      tags: [coding-form-rows]
+      summary: >-
+        Bulk-apply every still-pending row whose match has been confirmed AND
+        that carries stored per-attribute decisions: each row goes through the
+        SAME apply path as the per-row Apply (compare-don't-clobber, idempotent,
+        reporting task / allocation / address / gift-tag writes). Rows whose
+        approved attributes are no longer actionable are counted (not errors);
+        per-row failures are summarized, never thrown. Admin only.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CodingFormApplyDecidedSummary" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /coding-form-rows/{id}/apply:
     post:
       operationId: applyCodingFormRow
@@ -9234,6 +9248,19 @@ components:
       properties:
         scanned:   { type: integer, description: "Rows examined (status pending, never human-confirmed, with a matched donor AND gift)." }
         confirmed: { type: integer, description: "Rows stamped as confirmed." }
+    CodingFormApplyDecidedSummary:
+      type: object
+      required: [scanned, applied, alreadyApplied, nothingToApply, failed, failures]
+      description: "Result of the bulk apply-decided pass over pending, match-confirmed rows with stored decisions."
+      properties:
+        scanned:        { type: integer, description: "Rows examined (status pending, match confirmed, non-empty stored decisions)." }
+        applied:        { type: integer, description: "Rows applied in this pass (now status applied)." }
+        alreadyApplied: { type: integer, description: "Idempotent no-ops (row already applied)." }
+        nothingToApply: { type: integer, description: "Rows whose approved attributes were no longer actionable — left pending for per-row review." }
+        failed:         { type: integer, description: "Rows that errored mid-apply (see failures); left pending." }
+        failures:
+          type: array
+          items: { $ref: "#/components/schemas/CodingFormRowFailure" }
     SetCodingFormMatchBody:
       type: object
       description: "Set the donor (XOR — at most one of the three donor FKs) and optionally the matched opportunity/gift. Null clears a field."

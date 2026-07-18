@@ -22,6 +22,7 @@ import type {
 import type {
   ApplyCodingFormRowBody,
   BadRequestResponse,
+  CodingFormApplyDecidedSummary,
   CodingFormApplyResult,
   CodingFormBulkPullSummary,
   CodingFormConfirmSummary,
@@ -702,6 +703,75 @@ export const useConfirmMatchedCodingFormRows = <TError = ErrorType<ForbiddenResp
         TContext
       > => {
       return useMutation(getConfirmMatchedCodingFormRowsMutationOptions(options));
+    }
+    /**
+ * @summary Bulk-apply every still-pending row whose match has been confirmed AND that carries stored per-attribute decisions: each row goes through the SAME apply path as the per-row Apply (compare-don't-clobber, idempotent, reporting task / allocation / address / gift-tag writes). Rows whose approved attributes are no longer actionable are counted (not errors); per-row failures are summarized, never thrown. Admin only.
+ */
+export const getApplyDecidedCodingFormRowsUrl = () => {
+
+
+  
+
+  return `/api/coding-form-rows/apply-decided`
+}
+
+export const applyDecidedCodingFormRows = async ( options?: RequestInit): Promise<CodingFormApplyDecidedSummary> => {
+  
+  return customFetch<CodingFormApplyDecidedSummary>(getApplyDecidedCodingFormRowsUrl(),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getApplyDecidedCodingFormRowsMutationOptions = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyDecidedCodingFormRows>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof applyDecidedCodingFormRows>>, TError,void, TContext> => {
+
+const mutationKey = ['applyDecidedCodingFormRows'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyDecidedCodingFormRows>>, void> = () => {
+          
+
+          return  applyDecidedCodingFormRows(requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplyDecidedCodingFormRowsMutationResult = NonNullable<Awaited<ReturnType<typeof applyDecidedCodingFormRows>>>
+    
+    export type ApplyDecidedCodingFormRowsMutationError = ErrorType<ForbiddenResponse>
+
+    /**
+ * @summary Bulk-apply every still-pending row whose match has been confirmed AND that carries stored per-attribute decisions: each row goes through the SAME apply path as the per-row Apply (compare-don't-clobber, idempotent, reporting task / allocation / address / gift-tag writes). Rows whose approved attributes are no longer actionable are counted (not errors); per-row failures are summarized, never thrown. Admin only.
+ */
+export const useApplyDecidedCodingFormRows = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyDecidedCodingFormRows>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof applyDecidedCodingFormRows>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getApplyDecidedCodingFormRowsMutationOptions(options));
     }
     /**
  * @summary Apply approved attributes for a row through the normal create/update paths (reporting-deadline task, allocation restriction/intended-usage/purpose, donor address). Compare-don't-clobber: only fills missing or reviewer-approved conflicts. Idempotent — re-running never duplicates. Admin only.

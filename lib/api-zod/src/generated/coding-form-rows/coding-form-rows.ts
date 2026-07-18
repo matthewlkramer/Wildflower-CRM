@@ -573,6 +573,21 @@ export const ConfirmMatchedCodingFormRowsResponse = zod.object({
 }).describe('Result of the bulk confirm-matched pass.')
 
 /**
+ * @summary Bulk-apply every still-pending row whose match has been confirmed AND that carries stored per-attribute decisions: each row goes through the SAME apply path as the per-row Apply (compare-don't-clobber, idempotent, reporting task / allocation / address / gift-tag writes). Rows whose approved attributes are no longer actionable are counted (not errors); per-row failures are summarized, never thrown. Admin only.
+ */
+export const ApplyDecidedCodingFormRowsResponse = zod.object({
+  "scanned": zod.number().describe('Rows examined (status pending, match confirmed, non-empty stored decisions).'),
+  "applied": zod.number().describe('Rows applied in this pass (now status applied).'),
+  "alreadyApplied": zod.number().describe('Idempotent no-ops (row already applied).'),
+  "nothingToApply": zod.number().describe('Rows whose approved attributes were no longer actionable — left pending for per-row review.'),
+  "failed": zod.number().describe('Rows that errored mid-apply (see failures); left pending.'),
+  "failures": zod.array(zod.object({
+  "rowId": zod.string(),
+  "error": zod.string()
+}))
+}).describe('Result of the bulk apply-decided pass over pending, match-confirmed rows with stored decisions.')
+
+/**
  * @summary Apply approved attributes for a row through the normal create/update paths (reporting-deadline task, allocation restriction/intended-usage/purpose, donor address). Compare-don't-clobber: only fills missing or reviewer-approved conflicts. Idempotent — re-running never duplicates. Admin only.
  */
 export const ApplyCodingFormRowParams = zod.object({
