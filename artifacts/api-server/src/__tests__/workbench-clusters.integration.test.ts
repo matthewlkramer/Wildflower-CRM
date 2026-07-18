@@ -149,9 +149,12 @@ async function seedCompleteGift(opts: { amount?: string } = {}): Promise<string>
   });
   giftIds.push(id);
   const cfrId = nextId("cfr");
+  // Unique per-run source: the real import owns ("fy26", 1..N), so seeding
+  // under "fy26" collides with the unique (source, source_row_index) index
+  // once actual rows exist in the dev DB.
   await db.insert(schema.codingFormRows).values({
     id: cfrId,
-    source: "fy26",
+    source: RUN,
     sourceRowIndex: seq,
     rawData: { seededBy: RUN },
     matchedGiftId: id,

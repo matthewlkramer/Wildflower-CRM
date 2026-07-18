@@ -1,10 +1,10 @@
 ---
 name: Test-data hygiene (dev DB pollution)
-description: Three recurring patterns that leave orphan rows in the dev DB after killed test runs, and the cleanup recipe for each. All look like code regressions but are data contamination.
+description: Four recurring patterns that leave orphan rows in the dev DB after killed test runs, and the cleanup recipe for each. All look like code regressions but are data contamination.
 ---
 
 Killed vitest / e2e runs (CPU throttling is the primary cause in this environment) abort
-before `afterAll` cleanup runs. Check these three patterns whenever a test fails
+before `afterAll` cleanup runs. Check these four patterns whenever a test fails
 "for no reason" after a previous interrupted run.
 
 ---
@@ -100,6 +100,34 @@ DELETE FROM users WHERE id LIKE 'dupspec%';
 ```
 
 Re-run the failing suite after cleanup.
+
+---
+
+## 4. Real-looking `source` values collide with unique natural keys
+
+`coding_form_rows` has a unique index on `(source, source_row_index)`. Tests that seed
+rows under a REAL source value (e.g. `"fy26"` — the actual FY26 import's namespace) with
+small row indexes collide with rows from a prior killed run of the SAME suite (and would
+collide with the real import once it's loaded into a DB). Symptom: `duplicate key value
+violates unique constraint "coding_form_rows_source_row_unique"` mid-seed.
+
+**Rule:** seed rows under the per-run unique id (the suite's `RUN` constant), never a
+production namespace. Fixed in `workbench-clusters.integration.test.ts` (2026-07).
+
+**Cleanup** (wbcluster-prefixed leftovers; `settlement_links` ids use `sl_wbcluster_…`,
+so match `'%wbcluster_%'` there, and it must be deleted FIRST — a CHECK forbids the
+ON DELETE SET NULL path on confirmed links):
+```sql
+DELETE FROM settlement_links WHERE id LIKE '%wbcluster_%' OR payout_id LIKE 'wbcluster_%'
+  OR deposit_staged_payment_id LIKE 'wbcluster_%' OR conflict_gift_id LIKE 'wbcluster_%';
+DELETE FROM payment_applications WHERE id LIKE 'wbcluster_%' OR gift_id LIKE 'wbcluster_%';
+DELETE FROM gift_allocations WHERE gift_id LIKE 'wbcluster_%';
+DELETE FROM coding_form_rows WHERE raw_data->>'seededBy' LIKE 'wbcluster%';
+DELETE FROM staged_payments WHERE id LIKE 'wbcluster_%';
+DELETE FROM stripe_staged_charges WHERE id LIKE 'wbcluster_%';
+DELETE FROM stripe_payouts WHERE id LIKE 'wbcluster_%';
+DELETE FROM gifts_and_payments WHERE id LIKE 'wbcluster_%';
+```
 
 **Related:** the validation harness runs `codegen:check` concurrently with test suites,
 which transiently deletes `generated/` dirs → false "Cannot find module './generated'"
