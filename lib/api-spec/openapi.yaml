@@ -6392,16 +6392,7 @@ components:
         quickbooksTieStatus:        { allOf: [ { $ref: "#/components/schemas/GiftQuickbooksTie" } ], readOnly: true, description: "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update." }
         loanOrGrant:                { allOf: [ { $ref: "#/components/schemas/LoanOrGrant" } ], readOnly: true, description: "Authoritative loan-vs-grant classification. Derived-but-persisted from the gift `type` on every write ('loan_fund_investment' → loan, everything else → grant) — the gift type IS the user input for loan-ness." }
         reconciliationLanes:        { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses." }
-        tags:                       { type: string, nullable: true }
-        # ── Coding-form reference (one-time Donation Revenue Coding Form import). ──
-        # Raw, read-only copies of coding-form attributes with no structured CRM
-        # home, stamped onto the matched gift by the coding-form apply step "for
-        # looking at later". Provisional; never settable via gift create/update;
-        # never drives derivation / analytics / QuickBooks tie.
-        codingFormCircle:           { type: string, nullable: true, readOnly: true, description: "Raw 'circle / coding' label from the donation coding form (e.g. fund/hub/track). Reference only." }
-        codingFormSeries:           { type: string, nullable: true, readOnly: true, description: "Raw 'stand-alone vs multi-series' value from the donation coding form. Reference only." }
-        codingFormAdditionalNotes:  { type: string, nullable: true, readOnly: true, description: "Raw 'additional notes' free text from the donation coding form. Reference only." }
-        codingFormMemo:             { type: string, nullable: true, readOnly: true, description: "Raw 'internal memo' free text from the donation coding form. Reference only." }
+        tags:                       { type: string, nullable: true, description: "Comma-separated free-text tags. The coding-form apply step appends its reference attributes (circle, series, notes, memo) here as prefixed entries — there are no dedicated coding-form columns." }
         thankYouSentAt:             { type: string, format: date, nullable: true, description: "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time." }
         thankYouEmailMessageId:     { type: string, nullable: true, description: "FK to the email_messages row that was identified as the thank-you. Read-only; set via /link-thank-you-email or the thank_you_acknowledgment proposal accept." }
         thankYouAttachments:
@@ -8426,8 +8417,8 @@ components:
         quickbooksTie: { allOf: [ { $ref: "#/components/schemas/GiftQuickbooksTie" } ], nullable: true, description: "The gift's persisted QB tie status (exempt/tied/amount_mismatch/missing)." }
         donorbox:      { type: boolean, description: "True when a counted Donorbox ledger row backs this gift (renders the DB badge)." }
         grantLetter:   { type: boolean, description: "True when a grant/award letter file is attached — the gift's own upload or its linked pledge's letter (renders the letter badge)." }
-        codingForm:    { type: boolean, description: "True when any imported Donation Revenue Coding Form attribute is stamped on the gift (renders the coding badge)." }
-        recordComplete: { type: boolean, description: "True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR coding-form stamped OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule." }
+        codingForm:    { type: boolean, description: "True when an APPLIED Donation Revenue Coding Form row is matched to this gift (renders the coding badge)." }
+        recordComplete: { type: boolean, description: "True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule." }
         linkedChargeIds: { type: array, items: { type: string }, description: "stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters." }
         linkedStagedPaymentIds: { type: array, items: { type: string }, description: "staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only." }
     WorkbenchClusterCharge:

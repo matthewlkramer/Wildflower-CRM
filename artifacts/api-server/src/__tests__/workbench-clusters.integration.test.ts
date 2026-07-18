@@ -76,6 +76,7 @@ let schema: {
   paymentApplications: Db["paymentApplications"];
   settlementLinks: Db["settlementLinks"];
   donorboxDonations: Db["donorboxDonations"];
+  codingFormRows: Db["codingFormRows"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -88,6 +89,7 @@ const stagedIds: string[] = [];
 const unitGroupIds: string[] = [];
 const giftIds: string[] = [];
 const donorboxIds: string[] = [];
+const codingFormRowIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 const futureDate = () => `2099-11-${String((seq % 27) + 1).padStart(2, "0")}`;
@@ -131,7 +133,11 @@ async function seedGift(opts: { amount?: string } = {}): Promise<string> {
   return id;
 }
 
-/** A gift that satisfies giftComplete via the coding_form path (no alloc/grant-letter needed). */
+/**
+ * A gift that satisfies giftComplete via the coding_form path (no
+ * alloc/grant-letter needed): an APPLIED coding_form_rows row matched to the
+ * gift is the badge authority (the former codingForm* gift columns are retired).
+ */
 async function seedCompleteGift(opts: { amount?: string } = {}): Promise<string> {
   const id = nextId("gift");
   await db.insert(schema.giftsAndPayments).values({
@@ -140,9 +146,18 @@ async function seedCompleteGift(opts: { amount?: string } = {}): Promise<string>
     ownerUserId: TEST_USER_ID,
     amount: opts.amount ?? "75.00",
     dateReceived: futureDate(),
-    codingFormMemo: "complete-for-test",
   });
   giftIds.push(id);
+  const cfrId = nextId("cfr");
+  await db.insert(schema.codingFormRows).values({
+    id: cfrId,
+    source: "fy26",
+    sourceRowIndex: seq,
+    rawData: { seededBy: RUN },
+    matchedGiftId: id,
+    status: "applied",
+  });
+  codingFormRowIds.push(cfrId);
   return id;
 }
 
@@ -360,6 +375,7 @@ beforeAll(async () => {
     paymentApplications: dbMod.paymentApplications,
     settlementLinks: dbMod.settlementLinks,
     donorboxDonations: dbMod.donorboxDonations,
+    codingFormRows: dbMod.codingFormRows,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -418,6 +434,10 @@ afterAll(async () => {
     await db
       .delete(schema.donorboxDonations)
       .where(inArrayFn(schema.donorboxDonations.id, donorboxIds));
+  if (codingFormRowIds.length)
+    await db
+      .delete(schema.codingFormRows)
+      .where(inArrayFn(schema.codingFormRows.id, codingFormRowIds));
   await db
     .delete(schema.people)
     .where(eqFn(schema.people.ownerUserId, TEST_USER_ID));
@@ -1272,7 +1292,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     it("crm_only: coverage.complete always false — payment/accounting evidence absent by definition", async () => {
       // Incomplete CRM record (no allocs/coding-form → crmReason='missing_allocation').
       const gIncomplete = await seedGift();
-      // CRM-complete gift (codingFormMemo set) — donorPurpose can be complete
+      // CRM-complete gift (applied coding-form row matched) — donorPurpose can be complete
       // (the gift IS the anchor so linkage is trivially covered), but payment and
       // accounting evidence are always absent → coverage.complete stays false.
       const gComplete = await seedCompleteGift();

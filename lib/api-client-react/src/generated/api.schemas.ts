@@ -1984,15 +1984,8 @@ export interface GiftOrPayment {
   readonly loanOrGrant?: LoanOrGrant;
   /** Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses. */
   readonly reconciliationLanes?: ReconciliationLanes;
+  /** Comma-separated free-text tags. The coding-form apply step appends its reference attributes (circle, series, notes, memo) here as prefixed entries — there are no dedicated coding-form columns. */
   tags?: string | null;
-  /** Raw 'circle / coding' label from the donation coding form (e.g. fund/hub/track). Reference only. */
-  readonly codingFormCircle?: string | null;
-  /** Raw 'stand-alone vs multi-series' value from the donation coding form. Reference only. */
-  readonly codingFormSeries?: string | null;
-  /** Raw 'additional notes' free text from the donation coding form. Reference only. */
-  readonly codingFormAdditionalNotes?: string | null;
-  /** Raw 'internal memo' free text from the donation coding form. Reference only. */
-  readonly codingFormMemo?: string | null;
   /** Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time. */
   thankYouSentAt?: string | null;
   /** FK to the email_messages row that was identified as the thank-you. Read-only; set via /link-thank-you-email or the thank_you_acknowledgment proposal accept. */
@@ -5221,9 +5214,9 @@ export interface WorkbenchClusterGift {
   donorbox?: boolean;
   /** True when a grant/award letter file is attached — the gift's own upload or its linked pledge's letter (renders the letter badge). */
   grantLetter?: boolean;
-  /** True when any imported Donation Revenue Coding Form attribute is stamped on the gift (renders the coding badge). */
+  /** True when an APPLIED Donation Revenue Coding Form row is matched to this gift (renders the coding badge). */
   codingForm?: boolean;
-  /** True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR coding-form stamped OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule. */
+  /** True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule. */
   recordComplete?: boolean;
   /** stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters. */
   linkedChargeIds?: string[];

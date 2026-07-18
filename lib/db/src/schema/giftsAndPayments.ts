@@ -255,15 +255,19 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   thankYouLetterUploadedAt: timestamp("thank_you_letter_uploaded_at", { mode: "string" }),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
-  // ── Coding-form reference (one-time Donation Revenue Coding Form import) ──
-  // Raw, read-only copies of the form attributes that have no structured CRM
-  // home, stamped onto the matched gift by the coding-form apply step purely
-  // "for looking at later". Provisional — may be dropped if the team decides
-  // they aren't worth keeping. NEVER set via the gift create/update API and
-  // never read by derivation / analytics / QuickBooks-tie logic.
+  // ── @deprecated coding-form reference columns (RETIRED 2026-07) ──────────
+  // The coding-form apply step now appends these values to `tags` as prefixed
+  // entries ("Circle: …" / "Series: …" / "Notes: …" / "Memo: …"); existing
+  // values were folded into tags by migration 0131. Physical-only: never
+  // written, read, or returned. Kept so drizzle push doesn't propose a drop
+  // (see post-merge push-abort precedent); do not revive.
+  /** @deprecated folded into gifts.tags (0131); physical-only. */
   codingFormCircle: text("coding_form_circle"),
+  /** @deprecated folded into gifts.tags (0131); physical-only. */
   codingFormSeries: text("coding_form_series"),
+  /** @deprecated folded into gifts.tags (0131); physical-only. */
   codingFormAdditionalNotes: text("coding_form_additional_notes"),
+  /** @deprecated folded into gifts.tags (0131); physical-only. */
   codingFormMemo: text("coding_form_memo"),
   // Soft-delete: non-null = archived (hidden from non-admins). Financial
   // records aren't hard-deleted; archiving hides them from default views.

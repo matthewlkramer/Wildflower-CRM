@@ -657,50 +657,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
             </div>
           </FieldCard>
 
-          {gift.codingFormCircle ||
-          gift.codingFormSeries ||
-          gift.codingFormAdditionalNotes ||
-          gift.codingFormMemo ? (
-            <FieldCard title="Coding form reference" defaultOpen={false}>
-              <div className="space-y-4">
-                <p className="text-xs text-muted-foreground">
-                  Raw values copied from the donation coding form, kept for
-                  reference only.
-                </p>
-                {gift.codingFormCircle ? (
-                  <Row label="Circle / coding">
-                    <span className="text-sm">{gift.codingFormCircle}</span>
-                  </Row>
-                ) : null}
-                {gift.codingFormSeries ? (
-                  <Row label="Stand-alone vs multi-series">
-                    <span className="text-sm">{gift.codingFormSeries}</span>
-                  </Row>
-                ) : null}
-                {gift.codingFormAdditionalNotes ? (
-                  <div>
-                    <div className="text-xs font-medium text-muted-foreground mb-1">
-                      Additional notes
-                    </div>
-                    <p className="whitespace-pre-wrap text-left text-sm">
-                      {gift.codingFormAdditionalNotes}
-                    </p>
-                  </div>
-                ) : null}
-                {gift.codingFormMemo ? (
-                  <div>
-                    <div className="text-xs font-medium text-muted-foreground mb-1">
-                      Internal memo
-                    </div>
-                    <p className="whitespace-pre-wrap text-left text-sm">
-                      {gift.codingFormMemo}
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-            </FieldCard>
-          ) : null}
-
           <GiftStripeChainCard giftId={gift.id} />
 
           <div className="px-1 text-xs text-muted-foreground">

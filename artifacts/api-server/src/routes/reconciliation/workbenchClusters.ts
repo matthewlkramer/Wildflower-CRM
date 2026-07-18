@@ -119,11 +119,15 @@ const giftGrantLetter = `(g.grant_letter_url IS NOT NULL OR EXISTS (
   WHERE opp_gl.id = g.opportunity_id AND opp_gl.grant_letter_url IS NOT NULL
 ))`;
 
-/** Coding-form badge: any imported Donation Revenue Coding Form attribute stamped on the gift. */
-const giftCodingForm = `(g.coding_form_circle IS NOT NULL
-  OR g.coding_form_series IS NOT NULL
-  OR g.coding_form_additional_notes IS NOT NULL
-  OR g.coding_form_memo IS NOT NULL)`;
+/**
+ * Coding-form badge: an APPLIED Donation Revenue Coding Form row is matched to
+ * the gift. The staging row is the authority — the former codingForm* gift
+ * columns are retired (reference values now land in gifts.tags).
+ */
+const giftCodingForm = `EXISTS (
+  SELECT 1 FROM coding_form_rows cfr_badge
+  WHERE cfr_badge.matched_gift_id = g.id AND cfr_badge.status = 'applied'
+)`;
 
 /**
  * Full allocation completeness — at least one allocation row exists AND

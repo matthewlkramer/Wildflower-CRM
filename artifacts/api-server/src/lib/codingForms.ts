@@ -619,6 +619,41 @@ function eqText(a: string | null, b: string | null): boolean {
   return (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
 }
 
+/** Calendar-day "today" (UTC) for date-only comparisons against DATE columns. */
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Coding-form reference attributes land in the gift's free-text `tags` field as
+ * prefixed comma-separated entries (there are no dedicated coding-form columns;
+ * the former codingForm* gift columns are retired). The prefix keeps provenance
+ * visible once the entry sits among other tags.
+ */
+const CODING_TAG_PREFIXES = {
+  circle: "Circle",
+  seriesType: "Series",
+  additionalNotes: "Notes",
+  internalMemo: "Memo",
+} as const;
+
+type CodingRefAttr = keyof typeof CODING_TAG_PREFIXES;
+
+function codingTagEntry(attr: CodingRefAttr, raw: string): string {
+  return `${CODING_TAG_PREFIXES[attr]}: ${raw.trim()}`;
+}
+
+/**
+ * True when the raw sheet value already appears anywhere in the gift's tags
+ * (case-insensitive). Checked on the RAW value, not the prefixed entry, so a
+ * hand-typed tag with the same content also counts as "already there".
+ * MUST stay identical between the cross-check, applyRow, and the fold-in
+ * migration — it is the dedupe rule for tag appends.
+ */
+function tagsContain(tags: string | null, raw: string): boolean {
+  return !!tags && tags.toLowerCase().includes(raw.trim().toLowerCase());
+}
+
 export async function crossChecksFor(
   row: CodingFormRowSelect,
 ): Promise<CrossCheck[]> {
@@ -655,10 +690,13 @@ export async function crossChecksFor(
     }
     // Mirrors applyRow: creates a reporting_deadline task with this exact title
     // + due date on the matched opportunity (skipped if one already exists).
+    // A deadline already in the past is still recorded, but the task is created
+    // as already completed so it never shows up as overdue work.
     const taskTitle = row.donorNameRaw
       ? `Reporting deadline — ${row.donorNameRaw}`
       : "Reporting deadline";
     const actionable = status === "new" && !blockedReason;
+    const duePast = actionable && String(row.reportDueDate) < todayISO();
     out.push({
       attribute: "reportDeadline",
       label: "Reporting deadline",
@@ -671,10 +709,12 @@ export async function crossChecksFor(
       decision: dec("reportDeadline"),
       blockedReason,
       willWrite: actionable
-        ? `"${taskTitle}" due ${String(row.reportDueDate)}`
+        ? `"${taskTitle}" due ${String(row.reportDueDate)}${duePast ? " (date is in the past — created already completed)" : ""}`
         : null,
       willWriteTo: actionable
-        ? "creates a new Reporting-deadline task on the matched opportunity"
+        ? duePast
+          ? "creates a new, already-completed Reporting-deadline task on the matched opportunity"
+          : "creates a new Reporting-deadline task on the matched opportunity"
         : null,
     });
   }
@@ -877,68 +917,41 @@ export async function crossChecksFor(
   }
 
   // 6. Coding-form reference attributes (circle / series / additional notes /
-  //    internal memo) → raw copies stamped on the MATCHED GIFT, kept read-only
-  //    "for looking at later". These have no structured CRM home; compare —
-  //    don't clobber — against the gift's current stored reference value, and
-  //    block when there is no matched gift to attach them to.
+  //    internal memo) → APPENDED to the matched gift's free-text `tags` field
+  //    as prefixed entries ("Circle: …", "Series: …", "Notes: …", "Memo: …").
+  //    Appending never overwrites, so these can be "same" (raw value already
+  //    somewhere in tags) or "new" — never "conflict". Block when there is no
+  //    matched gift to attach them to.
   {
     const refSpecs: Array<{
-      attribute: CodingFormAttribute;
+      attribute: CodingRefAttr;
       label: string;
       sheet: string | null;
-      col:
-        | "codingFormCircle"
-        | "codingFormSeries"
-        | "codingFormAdditionalNotes"
-        | "codingFormMemo";
     }> = [
-      {
-        attribute: "circle",
-        label: "Circle / coding",
-        sheet: row.circleRaw,
-        col: "codingFormCircle",
-      },
+      { attribute: "circle", label: "Circle / coding", sheet: row.circleRaw },
       {
         attribute: "seriesType",
         label: "Stand-alone vs multi-series",
         sheet: row.seriesTypeRaw,
-        col: "codingFormSeries",
       },
       {
         attribute: "additionalNotes",
         label: "Additional notes",
         sheet: row.additionalNotes,
-        col: "codingFormAdditionalNotes",
       },
-      {
-        attribute: "internalMemo",
-        label: "Internal memo",
-        sheet: row.internalMemo,
-        col: "codingFormMemo",
-      },
+      { attribute: "internalMemo", label: "Internal memo", sheet: row.internalMemo },
     ];
     const anyPresent = refSpecs.some(
       (s) => s.sheet != null && s.sheet.trim().length > 0,
     );
-    let giftRef: Pick<
-      typeof giftsAndPayments.$inferSelect,
-      | "codingFormCircle"
-      | "codingFormSeries"
-      | "codingFormAdditionalNotes"
-      | "codingFormMemo"
-    > | null = null;
+    let giftTags: { tags: string | null } | null = null;
     if (anyPresent && row.matchedGiftId) {
       const [g] = await db
-        .select({
-          codingFormCircle: giftsAndPayments.codingFormCircle,
-          codingFormSeries: giftsAndPayments.codingFormSeries,
-          codingFormAdditionalNotes: giftsAndPayments.codingFormAdditionalNotes,
-          codingFormMemo: giftsAndPayments.codingFormMemo,
-        })
+        .select({ tags: giftsAndPayments.tags })
         .from(giftsAndPayments)
         .where(eq(giftsAndPayments.id, row.matchedGiftId))
         .limit(1);
-      giftRef = g ?? null;
+      giftTags = g ?? null;
     }
     for (const s of refSpecs) {
       const applicable = !!(s.sheet && s.sheet.trim().length > 0);
@@ -950,22 +963,22 @@ export async function crossChecksFor(
           blockedReason =
             "no matched gift to attach the coding-form reference to";
           status = "na";
-        } else if (!giftRef) {
+        } else if (!giftTags) {
           // matchedGiftId points at a gift that no longer exists (no FK on the
           // staging table). Block instead of silently treating it as "new".
           blockedReason = "matched gift no longer exists";
           status = "na";
         } else {
-          crmValue = giftRef[s.col];
-          if (!crmValue || crmValue.trim().length === 0) status = "new";
-          else if (eqText(crmValue, s.sheet)) status = "same";
-          else status = "conflict";
+          crmValue =
+            giftTags.tags && giftTags.tags.trim().length > 0
+              ? giftTags.tags
+              : null;
+          status = tagsContain(giftTags.tags, s.sheet!) ? "same" : "new";
         }
       }
-      // Mirrors applyRow: writes the raw sheet value onto the matched gift's
-      // read-only coding-form reference column (kept "for looking at later").
-      const actionable =
-        !blockedReason && (status === "new" || status === "conflict");
+      // Mirrors applyRow: appends the prefixed entry to the matched gift's
+      // tags (existing tags are always kept; nothing is overwritten).
+      const actionable = !blockedReason && status === "new";
       out.push({
         attribute: s.attribute,
         label: s.label,
@@ -977,9 +990,9 @@ export async function crossChecksFor(
         targetId: row.matchedGiftId,
         decision: dec(s.attribute),
         blockedReason,
-        willWrite: actionable ? s.sheet : null,
+        willWrite: actionable ? codingTagEntry(s.attribute, s.sheet!) : null,
         willWriteTo: actionable
-          ? `${status === "conflict" ? "overwrites" : "sets"} the read-only "${s.label}" coding-form reference field on the matched gift`
+          ? 'appends to "Tags" on the matched gift (existing tags kept)'
           : null,
       });
     }
@@ -1129,6 +1142,10 @@ export async function applyRow(
       appliedTaskId = existing;
       skipped.push("reportDeadline");
     } else if (userId) {
+      // A deadline already in the past is still recorded for the audit trail,
+      // but created as already done so it never surfaces as overdue work.
+      // (Preview wording in crossChecksFor mirrors this — keep in lockstep.)
+      const isPast = dueDate < todayISO();
       const [task] = await db
         .insert(tasks)
         .values({
@@ -1137,7 +1154,8 @@ export async function applyRow(
             ? `Reporting deadline — ${row.donorNameRaw}`
             : "Reporting deadline",
           kind: "reporting_deadline",
-          status: "open",
+          status: isPast ? "done" : "open",
+          completedAt: isPast ? new Date() : null,
           dueDate,
           opportunityIds: [row.matchedOpportunityId],
           createdByUserId: userId,
@@ -1221,40 +1239,51 @@ export async function applyRow(
     }
   }
 
-  // 6. Coding-form reference attributes → raw copies on the matched gift.
-  //    Compare-don't-clobber already happened in the cross-check; here we just
-  //    write the reviewer-approved actionable ones onto the gift row.
-  const refApply: Array<{
-    attr: CodingFormAttribute;
-    col:
-      | "codingFormCircle"
-      | "codingFormSeries"
-      | "codingFormAdditionalNotes"
-      | "codingFormMemo";
-    value: string | null;
-  }> = [
-    { attr: "circle", col: "codingFormCircle", value: row.circleRaw },
-    { attr: "seriesType", col: "codingFormSeries", value: row.seriesTypeRaw },
-    {
-      attr: "additionalNotes",
-      col: "codingFormAdditionalNotes",
-      value: row.additionalNotes,
-    },
-    { attr: "internalMemo", col: "codingFormMemo", value: row.internalMemo },
+  // 6. Coding-form reference attributes → appended to the matched gift's
+  //    free-text `tags` as prefixed entries. Append-only: existing tags are
+  //    always kept, and a raw value already present anywhere in tags (per
+  //    tagsContain, same rule as the cross-check) is not appended again.
+  const refApply: Array<{ attr: CodingRefAttr; value: string | null }> = [
+    { attr: "circle", value: row.circleRaw },
+    { attr: "seriesType", value: row.seriesTypeRaw },
+    { attr: "additionalNotes", value: row.additionalNotes },
+    { attr: "internalMemo", value: row.internalMemo },
   ];
-  const refToApply = refApply.filter((r) => want(r.attr));
+  const refToApply = refApply.filter(
+    (r) => want(r.attr) && r.value != null && r.value.trim().length > 0,
+  );
   if (refToApply.length > 0 && row.matchedGiftId) {
-    const patch: Record<string, unknown> = { updatedAt: new Date() };
-    for (const r of refToApply) patch[r.col] = r.value;
-    // Self-verifying write: if the matched gift vanished between the cross-check
-    // and here, the update touches zero rows — mark skipped, never applied.
-    const updated = await db
-      .update(giftsAndPayments)
-      .set(patch)
+    const [g] = await db
+      .select({ tags: giftsAndPayments.tags })
+      .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, row.matchedGiftId))
-      .returning({ id: giftsAndPayments.id });
-    if (updated.length > 0) applied.push(...refToApply.map((r) => r.attr));
-    else skipped.push(...refToApply.map((r) => r.attr));
+      .limit(1);
+    if (!g) {
+      // Matched gift vanished between the cross-check and here.
+      skipped.push(...refToApply.map((r) => r.attr));
+    } else {
+      const entries = refToApply
+        .filter((r) => !tagsContain(g.tags, r.value!))
+        .map((r) => codingTagEntry(r.attr, r.value!));
+      if (entries.length === 0) {
+        // Every value is already in tags — the desired state is achieved.
+        applied.push(...refToApply.map((r) => r.attr));
+      } else {
+        const base = g.tags && g.tags.trim().length > 0 ? g.tags.trim() : null;
+        const nextTags = base
+          ? `${base}, ${entries.join(", ")}`
+          : entries.join(", ");
+        // Self-verifying write: if the gift vanished since the SELECT, the
+        // update touches zero rows — mark skipped, never applied.
+        const updated = await db
+          .update(giftsAndPayments)
+          .set({ tags: nextTags, updatedAt: new Date() })
+          .where(eq(giftsAndPayments.id, row.matchedGiftId))
+          .returning({ id: giftsAndPayments.id });
+        if (updated.length > 0) applied.push(...refToApply.map((r) => r.attr));
+        else skipped.push(...refToApply.map((r) => r.attr));
+      }
+    }
   }
 
   // Persist merged decisions + applied artifact ids + status.

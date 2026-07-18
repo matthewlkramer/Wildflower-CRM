@@ -30,6 +30,17 @@ description: Guardrails for coding-form row → gift matching, candidate surfaci
   surface a live (never persisted) candidate list gated to
   `pending && matchedGiftId null && matchConfirmedAt null` and let the human pick —
   consistent with the user's "show, don't guess" preference.
+- Reference attributes (circle/series/notes/memo) are **appended to the gift's
+  free-text `tags`** as prefixed entries ("Circle: …"/"Series: …"/"Notes: …"/"Memo: …") —
+  the dedicated codingForm* gift columns are RETIRED (physical-only, folded by
+  migration 0131; kept so drizzle push won't propose a drop). Append-only semantics:
+  status is same/new, never conflict; dedupe rule = raw value already contained in
+  tags case-insensitively (`tagsContain`), identical in cross-check, applyRow, AND the
+  fold migration. The workbench coding badge / record-completeness authority is now
+  "an APPLIED coding_form_rows row is matched to the gift", not any gift column.
+- A `reportDeadline` whose due date is already past still creates the task, but
+  **created as `done` + `completedAt` stamped** (audit trail without overdue noise);
+  the cross-check preview wording flags this — keep both sides in lockstep.
 - Cross-checks carry `willWrite`/`willWriteTo` preview fields (exact value + destination
   record/field, create vs overwrite) shown before the Apply checkbox.
   **Why:** the reviewer couldn't tell what Apply would change; sheet/CRM columns alone
