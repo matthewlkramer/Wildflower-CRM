@@ -16,9 +16,11 @@ import {
   ListGiftsAndPaymentsRestrictionLabelsItem,
   useUpdateGiftAllocation,
   useDeleteGiftAllocation,
+  RestrictionAxis,
   type ListGiftsAndPaymentsParams,
   type UpdateGiftAllocationBody,
   type GiftAllocation,
+  type RestrictionAxis as RestrictionAxisType,
   type GiftType,
   type GiftPaymentMethod,
   type GiftOrPayment,
@@ -853,7 +855,14 @@ export default function Gifts() {
   const [allocDraft, setAllocDraft] = useState<UpdateGiftAllocationBody>({});
   const startAllocEdit = (a: GiftAllocation) => {
     setEditingAllocId(a.id);
-    setAllocDraft({ subAmount: a.subAmount ?? undefined, grantYear: a.grantYear ?? undefined, purposeVerbatim: a.purposeVerbatim ?? undefined });
+    setAllocDraft({
+      subAmount: a.subAmount ?? undefined,
+      grantYear: a.grantYear ?? undefined,
+      purposeVerbatim: a.purposeVerbatim ?? undefined,
+      regionalRestrictionType: a.regionalRestrictionType,
+      usageRestrictionType: a.usageRestrictionType,
+      timeRestrictionType: a.timeRestrictionType,
+    });
   };
   const cancelAllocEdit = () => { setEditingAllocId(null); setAllocDraft({}); };
   const saveAllocEdit = async (giftId: string) => {
@@ -1218,7 +1227,7 @@ export default function Gifts() {
                         <TableCell colSpan={visibleCols.length} className="py-2 text-xs text-muted-foreground italic">No allocations</TableCell>
                       </TableRow>
                     );
-                    const EDITABLE_COLS = new Set(["amount", "grantYears", "purposeVerbatims"]);
+                    const EDITABLE_COLS = new Set(["amount", "grantYears", "purposeVerbatims", "regionalRestrictionTypes", "usageRestrictionTypes", "timeRestrictionTypes"]);
                     return allocs.map((a) => {
                       const isEditing = editingAllocId === a.id;
                       return (
@@ -1245,6 +1254,20 @@ export default function Gifts() {
                               content = <Input className="h-6 text-xs w-24" value={allocDraft.grantYear ?? ""} onChange={e => setAllocDraft(d => ({ ...d, grantYear: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
                             } else if (isEditing && c.key === "purposeVerbatims") {
                               content = <Input className="h-6 text-xs w-48" value={allocDraft.purposeVerbatim ?? ""} onChange={e => setAllocDraft(d => ({ ...d, purposeVerbatim: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
+                            } else if (isEditing && (c.key === "regionalRestrictionTypes" || c.key === "usageRestrictionTypes" || c.key === "timeRestrictionTypes")) {
+                              const draftKey = c.key === "regionalRestrictionTypes" ? "regionalRestrictionType" : c.key === "usageRestrictionTypes" ? "usageRestrictionType" : "timeRestrictionType";
+                              content = (
+                                <select
+                                  className="h-6 text-xs rounded border border-input bg-background px-1"
+                                  value={allocDraft[draftKey] ?? ""}
+                                  onChange={e => setAllocDraft(d => ({ ...d, [draftKey]: e.target.value as RestrictionAxisType }))}
+                                  onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }}
+                                >
+                                  {(Object.values(RestrictionAxis) as RestrictionAxisType[]).map(v => (
+                                    <option key={v} value={v}>{formatEnum(v)}</option>
+                                  ))}
+                                </select>
+                              );
                             } else if (c.key === "amount") {
                               content = a.subAmount != null ? <span className="text-xs tabular-nums">${Number(a.subAmount).toLocaleString()}</span> : null;
                             } else if (c.key === "entities") {
@@ -1255,10 +1278,17 @@ export default function Gifts() {
                               content = a.displayUsage ? <span className="text-xs text-muted-foreground">{a.displayUsage}</span> : null;
                             } else if (c.key === "purposeVerbatims") {
                               content = a.purposeVerbatim ? <span className="text-xs text-muted-foreground max-w-[200px] truncate block">{a.purposeVerbatim}</span> : null;
+                            } else if (c.key === "regionalRestrictionTypes") {
+                              content = <span className="text-xs text-muted-foreground">{formatEnum(a.regionalRestrictionType)}</span>;
+                            } else if (c.key === "usageRestrictionTypes") {
+                              content = <span className="text-xs text-muted-foreground">{formatEnum(a.usageRestrictionType)}</span>;
+                            } else if (c.key === "timeRestrictionTypes") {
+                              content = <span className="text-xs text-muted-foreground">{formatEnum(a.timeRestrictionType)}</span>;
                             }
                             const canStartEdit = !isEditing && EDITABLE_COLS.has(c.key) && !updateGiftAllocMut.isPending;
+                            const isSelectCol = c.key === "regionalRestrictionTypes" || c.key === "usageRestrictionTypes" || c.key === "timeRestrictionTypes";
                             return (
-                              <TableCell key={c.key} className={`${c.tdClassName ?? ""} py-0.5`} onClick={canStartEdit ? () => startAllocEdit(a) : undefined} style={canStartEdit ? { cursor: "text" } : undefined}>
+                              <TableCell key={c.key} className={`${c.tdClassName ?? ""} py-0.5`} onClick={canStartEdit ? () => startAllocEdit(a) : undefined} style={canStartEdit ? { cursor: isSelectCol ? "pointer" : "text" } : undefined}>
                                 {content}
                               </TableCell>
                             );
