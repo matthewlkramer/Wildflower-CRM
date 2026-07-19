@@ -314,6 +314,8 @@ router.get(
     else if (q.openAsksPresence === "blank") filters.push(sql`${peopleOpenOppCountExpr} = 0`);
     if (q.activeAffiliationPresence === "has") filters.push(peopleActiveAffiliationExists);
     else if (q.activeAffiliationPresence === "blank") filters.push(sql`NOT ${peopleActiveAffiliationExists}`);
+    if (q.lastContactedPresence === "has") filters.push(sql`people.last_contacted IS NOT NULL`);
+    else if (q.lastContactedPresence === "blank") filters.push(sql`people.last_contacted IS NULL`);
     // Derived newsletter status — OR the selected statuses together.
     {
       const statuses = (q.newsletterStatus as string[] | undefined) ?? [];

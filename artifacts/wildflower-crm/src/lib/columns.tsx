@@ -27,6 +27,12 @@ export type ColumnDef<R> = {
    * still be reordered). Use for anchor columns like the entity name.
    */
   required?: boolean;
+  /**
+   * When true, the column is always rendered as the rightmost visible
+   * column regardless of any user-saved order. Use for the actions
+   * column so the icon buttons always sit at the far right.
+   */
+  alwaysLast?: boolean;
   /** Defaults to true. Set false on infrequently useful columns. */
   defaultVisible?: boolean;
   align?: "left" | "right" | "center";
@@ -93,13 +99,18 @@ export function resolveColumns<R>(
   // has actually seen/toggled them.
   const hasState = !!(state?.order && state.order.length > 0);
   const orderSet = new Set(state?.order ?? []);
-  return ordered.filter((def) => {
+  const visible = ordered.filter((def) => {
     if (def.required) return true;
     if (hasState && !orderSet.has(def.key)) return def.defaultVisible ?? true;
     if (hiddenSet.has(def.key)) return false;
     if (hasState) return true;
     return def.defaultVisible ?? true;
   });
+  // Always pin alwaysLast columns to the rightmost positions regardless of
+  // the user-saved order (e.g. the actions icon column must stay far right).
+  const normal = visible.filter((d) => !d.alwaysLast);
+  const pinned = visible.filter((d) => d.alwaysLast);
+  return [...normal, ...pinned];
 }
 
 /**

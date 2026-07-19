@@ -25,6 +25,7 @@ export const ListPeopleQueryParams = zod.object({
   "lastGiftPresence": zod.enum(['has', 'blank']).optional().describe('Rollup presence filter on most-recent gift date (`has` = any gift, `blank` = none).'),
   "openAsksPresence": zod.enum(['has', 'blank']).optional().describe('Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).'),
   "activeAffiliationPresence": zod.enum(['has', 'blank']).optional().describe('Presence filter on current funder\/organization roles (`has` = any current role, `blank` = none).'),
+  "lastContactedPresence": zod.enum(['has', 'blank']).optional().describe('Presence filter on last contacted date (`has` = set, `blank` = null).'),
   "newsletterStatus": zod.array(zod.enum(['subscribed', 'unsubscribed', 'not_subscribed'])).optional().describe('Filter to people by derived newsletter status. Multi-value\n(OR semantics): repeat or comma-separate. `subscribed` =\nnewsletter on and not unsubscribed; `unsubscribed` =\nunsubscribed flag set (wins over newsletter); `not_subscribed`\n= newsletter off and not unsubscribed.\n'),
   "capacityRating": zod.array(zod.coerce.string()).optional().describe('Capacity-rating slugs (see CapacityRating). Accepts the\nliteral `__blank__` to match rows with no capacity rating set.\n'),
   "connectionStatus": zod.array(zod.coerce.string()).optional().describe('Connection-status slugs (see ConnectionStatus). Accepts the\nliteral `__blank__` to match rows with no connection status set.\n'),

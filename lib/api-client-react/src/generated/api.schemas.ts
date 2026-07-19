@@ -9249,6 +9249,10 @@ openAsksPresence?: ListPeopleOpenAsksPresence;
  */
 activeAffiliationPresence?: ListPeopleActiveAffiliationPresence;
 /**
+ * Presence filter on last contacted date (`has` = set, `blank` = null).
+ */
+lastContactedPresence?: ListPeopleLastContactedPresence;
+/**
  * Filter to people by derived newsletter status. Multi-value
 (OR semantics): repeat or comma-separate. `subscribed` =
 newsletter on and not unsubscribed; `unsubscribed` =
@@ -9330,6 +9334,14 @@ export type ListPeopleActiveAffiliationPresence = typeof ListPeopleActiveAffilia
 
 
 export const ListPeopleActiveAffiliationPresence = {
+  has: 'has',
+  blank: 'blank',
+} as const;
+
+export type ListPeopleLastContactedPresence = typeof ListPeopleLastContactedPresence[keyof typeof ListPeopleLastContactedPresence];
+
+
+export const ListPeopleLastContactedPresence = {
   has: 'has',
   blank: 'blank',
 } as const;
@@ -9428,6 +9440,18 @@ coveredFysPresence?: ListOpportunitiesAndPledgesCoveredFysPresence;
  * Presence filter on linked entities (`has` = any allocation, `blank` = none).
  */
 entitiesPresence?: ListOpportunitiesAndPledgesEntitiesPresence;
+/**
+ * Presence filter on projected close date (`has` = set, `blank` = null).
+ */
+projectedCloseDatePresence?: ListOpportunitiesAndPledgesProjectedCloseDatePresence;
+/**
+ * Presence filter on application deadline (`has` = set, `blank` = null).
+ */
+applicationDeadlinePresence?: ListOpportunitiesAndPledgesApplicationDeadlinePresence;
+/**
+ * Presence filter on win probability (`has` = set, `blank` = null).
+ */
+winProbabilityPresence?: ListOpportunitiesAndPledgesWinProbabilityPresence;
 status?: string[];
 stage?: string[];
 /**
@@ -9528,6 +9552,30 @@ export const ListOpportunitiesAndPledgesEntitiesPresence = {
   blank: 'blank',
 } as const;
 
+export type ListOpportunitiesAndPledgesProjectedCloseDatePresence = typeof ListOpportunitiesAndPledgesProjectedCloseDatePresence[keyof typeof ListOpportunitiesAndPledgesProjectedCloseDatePresence];
+
+
+export const ListOpportunitiesAndPledgesProjectedCloseDatePresence = {
+  has: 'has',
+  blank: 'blank',
+} as const;
+
+export type ListOpportunitiesAndPledgesApplicationDeadlinePresence = typeof ListOpportunitiesAndPledgesApplicationDeadlinePresence[keyof typeof ListOpportunitiesAndPledgesApplicationDeadlinePresence];
+
+
+export const ListOpportunitiesAndPledgesApplicationDeadlinePresence = {
+  has: 'has',
+  blank: 'blank',
+} as const;
+
+export type ListOpportunitiesAndPledgesWinProbabilityPresence = typeof ListOpportunitiesAndPledgesWinProbabilityPresence[keyof typeof ListOpportunitiesAndPledgesWinProbabilityPresence];
+
+
+export const ListOpportunitiesAndPledgesWinProbabilityPresence = {
+  has: 'has',
+  blank: 'blank',
+} as const;
+
 export type ListOpportunitiesAndPledgesPledgeView = typeof ListOpportunitiesAndPledgesPledgeView[keyof typeof ListOpportunitiesAndPledgesPledgeView];
 
 
@@ -9586,6 +9634,18 @@ paymentMethod?: string[];
  * Presence filter on thank-you sent date (`has` = sent, `blank` = not sent).
  */
 thankYouSentAtPresence?: ListGiftsAndPaymentsThankYouSentAtPresence;
+/**
+ * Presence filter on date received (`has` = set, `blank` = null).
+ */
+dateReceivedPresence?: ListGiftsAndPaymentsDateReceivedPresence;
+/**
+ * Presence filter on purpose verbatim notes across allocations (`has` = any allocation has one, `blank` = none).
+ */
+purposeVerbatimPresence?: ListGiftsAndPaymentsPurposeVerbatimPresence;
+/**
+ * Filter by restriction summary label (OR semantics). `unrestricted` = no donor-restricted axis; `purpose` = regional or usage donor-restricted but not time; `time` = time donor-restricted but not regional/usage; `both` = time AND (regional or usage) donor-restricted.
+ */
+restrictionLabels?: ListGiftsAndPaymentsRestrictionLabelsItem[];
 ownerUserId?: string[];
 /**
  * Filter to gifts that have at least one gift_allocation with `entity_id`
@@ -9685,6 +9745,32 @@ export type ListGiftsAndPaymentsThankYouSentAtPresence = typeof ListGiftsAndPaym
 export const ListGiftsAndPaymentsThankYouSentAtPresence = {
   has: 'has',
   blank: 'blank',
+} as const;
+
+export type ListGiftsAndPaymentsDateReceivedPresence = typeof ListGiftsAndPaymentsDateReceivedPresence[keyof typeof ListGiftsAndPaymentsDateReceivedPresence];
+
+
+export const ListGiftsAndPaymentsDateReceivedPresence = {
+  has: 'has',
+  blank: 'blank',
+} as const;
+
+export type ListGiftsAndPaymentsPurposeVerbatimPresence = typeof ListGiftsAndPaymentsPurposeVerbatimPresence[keyof typeof ListGiftsAndPaymentsPurposeVerbatimPresence];
+
+
+export const ListGiftsAndPaymentsPurposeVerbatimPresence = {
+  has: 'has',
+  blank: 'blank',
+} as const;
+
+export type ListGiftsAndPaymentsRestrictionLabelsItem = typeof ListGiftsAndPaymentsRestrictionLabelsItem[keyof typeof ListGiftsAndPaymentsRestrictionLabelsItem];
+
+
+export const ListGiftsAndPaymentsRestrictionLabelsItem = {
+  unrestricted: 'unrestricted',
+  purpose: 'purpose',
+  time: 'time',
+  both: 'both',
 } as const;
 
 export type ListGiftsAndPaymentsLinkedToQuickbooks = typeof ListGiftsAndPaymentsLinkedToQuickbooks[keyof typeof ListGiftsAndPaymentsLinkedToQuickbooks];

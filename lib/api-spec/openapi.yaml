@@ -1163,6 +1163,7 @@ paths:
         - { name: lastGiftPresence, in: query, required: false, description: "Rollup presence filter on most-recent gift date (`has` = any gift, `blank` = none).", schema: { type: string, enum: [has, blank] } }
         - { name: openAsksPresence, in: query, required: false, description: "Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).", schema: { type: string, enum: [has, blank] } }
         - { name: activeAffiliationPresence, in: query, required: false, description: "Presence filter on current funder/organization roles (`has` = any current role, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - { name: lastContactedPresence, in: query, required: false, description: "Presence filter on last contacted date (`has` = set, `blank` = null).", schema: { type: string, enum: [has, blank] } }
         - name: newsletterStatus
           in: query
           description: |
@@ -1446,6 +1447,9 @@ paths:
         - { name: paidPresence, in: query, required: false, description: "Rollup presence filter on paid amount (`has` = >0, `blank` = none).", schema: { type: string, enum: [has, blank] } }
         - { name: coveredFysPresence, in: query, required: false, description: "Presence filter on covered fiscal years (`has` = any, `blank` = none).", schema: { type: string, enum: [has, blank] } }
         - { name: entitiesPresence, in: query, required: false, description: "Presence filter on linked entities (`has` = any allocation, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - { name: projectedCloseDatePresence, in: query, required: false, description: "Presence filter on projected close date (`has` = set, `blank` = null).", schema: { type: string, enum: [has, blank] } }
+        - { name: applicationDeadlinePresence, in: query, required: false, description: "Presence filter on application deadline (`has` = set, `blank` = null).", schema: { type: string, enum: [has, blank] } }
+        - { name: winProbabilityPresence, in: query, required: false, description: "Presence filter on win probability (`has` = set, `blank` = null).", schema: { type: string, enum: [has, blank] } }
         # Filter params on nullable enum columns accept the literal
         # `__blank__` to match rows where the column is NULL. Item type is
         # plain string so the sentinel passes generated zod validation.
@@ -1646,6 +1650,15 @@ paths:
           explode: false
           schema: { type: array, items: { type: string } }
         - { name: thankYouSentAtPresence, in: query, required: false, description: "Presence filter on thank-you sent date (`has` = sent, `blank` = not sent).", schema: { type: string, enum: [has, blank] } }
+        - { name: dateReceivedPresence, in: query, required: false, description: "Presence filter on date received (`has` = set, `blank` = null).", schema: { type: string, enum: [has, blank] } }
+        - { name: purposeVerbatimPresence, in: query, required: false, description: "Presence filter on purpose verbatim notes across allocations (`has` = any allocation has one, `blank` = none).", schema: { type: string, enum: [has, blank] } }
+        - name: restrictionLabels
+          in: query
+          required: false
+          description: "Filter by restriction summary label (OR semantics). `unrestricted` = no donor-restricted axis; `purpose` = regional or usage donor-restricted but not time; `time` = time donor-restricted but not regional/usage; `both` = time AND (regional or usage) donor-restricted."
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string, enum: [unrestricted, purpose, time, both] } }
         - name: ownerUserId
           in: query
           style: form

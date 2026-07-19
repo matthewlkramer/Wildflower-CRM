@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, Fragment } from "react";
 import { Link, useLocation, useSearch } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQueries } from "@tanstack/react-query";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   useListOpportunitiesAndPledges,
@@ -10,6 +10,8 @@ import {
   useArchiveOpportunityOrPledge,
   useUnarchiveOpportunityOrPledge,
   useUpdateOpportunityOrPledge,
+  getGetOpportunityOrPledgeQueryOptions,
+  getGetOpportunityOrPledgeQueryKey,
   useListEntities,
   ListOpportunitiesAndPledgesWorklist,
   type ListOpportunitiesAndPledgesParams,
@@ -17,6 +19,7 @@ import {
   type OpportunityStage,
   type OpportunityType,
   type OpportunityOrPledge,
+  type OpportunityOrPledgeDetail,
 } from "@workspace/api-client-react";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
@@ -78,7 +81,7 @@ import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { FiscalYearMultiSelect } from "@/components/fiscal-year-multi-select";
 import { useUserNameMap } from "@/components/user-picker";
-import { LayoutList, Columns3, X } from "lucide-react";
+import { LayoutList, Columns3, X, ChevronDown, ChevronRight } from "lucide-react";
 import { OpportunityKanban } from "@/components/opportunity-kanban";
 
 const KANBAN_LIMIT = 500;
@@ -297,6 +300,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<OpportunityOrPledge>[] {
       key: "actions",
       label: "",
       required: true,
+      alwaysLast: true,
       sortable: false,
       align: "right",
       thClassName: "w-32",
@@ -378,6 +382,10 @@ export default function Opportunities({
   const [paidPresence, setPaidPresence] = usePersistedState<PresenceValue>(`${persistNs}.f.paid`, undefined);
   const [coveredFysPresence, setCoveredFysPresence] = usePersistedState<PresenceValue>(`${persistNs}.f.coveredFys`, undefined);
   const [entitiesPresence, setEntitiesPresence] = usePersistedState<PresenceValue>(`${persistNs}.f.entities`, undefined);
+  const [projectedCloseDatePresence, setProjectedCloseDatePresence] = usePersistedState<PresenceValue>(`${persistNs}.f.projectedClose`, undefined);
+  const [applicationDeadlinePresence, setApplicationDeadlinePresence] = usePersistedState<PresenceValue>(`${persistNs}.f.appDeadline`, undefined);
+  const [winProbabilityPresence, setWinProbabilityPresence] = usePersistedState<PresenceValue>(`${persistNs}.f.winProb`, undefined);
+  const [expandedOppIds, setExpandedOppIds] = useState<Set<string>>(new Set());
   const [page, setPage] = usePersistedState<number>(`${persistNs}.page`, 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     `${persistNs}.columns`,
@@ -470,6 +478,9 @@ export default function Opportunities({
     ...(paidPresence ? { paidPresence } : {}),
     ...(coveredFysPresence ? { coveredFysPresence } : {}),
     ...(entitiesPresence ? { entitiesPresence } : {}),
+    ...(projectedCloseDatePresence ? { projectedCloseDatePresence } : {}),
+    ...(applicationDeadlinePresence ? { applicationDeadlinePresence } : {}),
+    ...(winProbabilityPresence ? { winProbabilityPresence } : {}),
   };
 
   const { data, isLoading, isError, error } = useListOpportunitiesAndPledges(params, {
@@ -570,7 +581,31 @@ export default function Opportunities({
     () => resolveColumns(registry, columnsState),
     [registry, columnsState],
   );
-  const colSpan = visibleCols.length + 1;
+  const colSpan = visibleCols.length + 1 + (isPledgeView ? 1 : 0);
+
+  // Expand/collapse: for pledges only, fetch the detail to show allocation sub-rows.
+  const toggleExpandOpp = (id: string) =>
+    setExpandedOppIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  const expandOppQueries = useQueries({
+    queries: isPledgeView
+      ? [...expandedOppIds].map((id) =>
+          getGetOpportunityOrPledgeQueryOptions(id, {
+            query: { enabled: true, staleTime: 60_000, queryKey: getGetOpportunityOrPledgeQueryKey(id) },
+          }),
+        )
+      : [],
+  });
+  const expandedOppDetailsById = useMemo(() => {
+    const map = new Map<string, OpportunityOrPledgeDetail>();
+    for (const q of expandOppQueries) {
+      if (q.data) map.set(q.data.id, q.data);
+    }
+    return map;
+  }, [expandOppQueries]);
 
   // Determine "is anything filtered beyond default?" for the Clear button.
   const sameDefaultStatus =
@@ -700,6 +735,51 @@ export default function Opportunities({
           />
         ),
       },
+      {
+        key: "projectedCloseDate",
+        label: "Projected close",
+        defaultVisible: false,
+        active: !!projectedCloseDatePresence,
+        clear: () => { setProjectedCloseDatePresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Projected close"
+            value={projectedCloseDatePresence}
+            onChange={(v) => { setProjectedCloseDatePresence(v); setPage(1); selection.clear(); }}
+            testId="filter-projected-close"
+          />
+        ),
+      },
+      {
+        key: "applicationDeadline",
+        label: "App deadline",
+        defaultVisible: false,
+        active: !!applicationDeadlinePresence,
+        clear: () => { setApplicationDeadlinePresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="App deadline"
+            value={applicationDeadlinePresence}
+            onChange={(v) => { setApplicationDeadlinePresence(v); setPage(1); selection.clear(); }}
+            testId="filter-app-deadline"
+          />
+        ),
+      },
+      {
+        key: "winProbability",
+        label: "Win probability",
+        defaultVisible: false,
+        active: !!winProbabilityPresence,
+        clear: () => { setWinProbabilityPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Win probability"
+            value={winProbabilityPresence}
+            onChange={(v) => { setWinProbabilityPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-win-probability"
+          />
+        ),
+      },
       ];
       // Pledges drop the stage filter (stage is irrelevant once committed) and
       // the type filter (solicitation/renewal/open_application is a funnel
@@ -713,7 +793,7 @@ export default function Opportunities({
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [statuses, stages, types, fiscalYears, owners, paidPresence, coveredFysPresence, entitiesPresence, sameDefaultStatus, defaultStatusArr, isPledgeView, effectiveViewMode],
+    [statuses, stages, types, fiscalYears, owners, paidPresence, coveredFysPresence, entitiesPresence, projectedCloseDatePresence, applicationDeadlinePresence, winProbabilityPresence, sameDefaultStatus, defaultStatusArr, isPledgeView, effectiveViewMode],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -777,7 +857,10 @@ export default function Opportunities({
     owners.length > 0 ||
     !!paidPresence ||
     !!coveredFysPresence ||
-    !!entitiesPresence;
+    !!entitiesPresence ||
+    !!projectedCloseDatePresence ||
+    !!applicationDeadlinePresence ||
+    !!winProbabilityPresence;
 
   // ─── Saved views ─────────────────────────────────────────────────
   // /opportunities and /pledges share this component but should not
@@ -792,6 +875,9 @@ export default function Opportunities({
     paidPresence: PresenceValue;
     coveredFysPresence: PresenceValue;
     entitiesPresence: PresenceValue;
+    projectedCloseDatePresence: PresenceValue;
+    applicationDeadlinePresence: PresenceValue;
+    winProbabilityPresence: PresenceValue;
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -807,6 +893,9 @@ export default function Opportunities({
     paidPresence,
     coveredFysPresence,
     entitiesPresence,
+    projectedCloseDatePresence,
+    applicationDeadlinePresence,
+    winProbabilityPresence,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -821,6 +910,9 @@ export default function Opportunities({
     setPaidPresence(undefined);
     setCoveredFysPresence(undefined);
     setEntitiesPresence(undefined);
+    setProjectedCloseDatePresence(undefined);
+    setApplicationDeadlinePresence(undefined);
+    setWinProbabilityPresence(undefined);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -838,6 +930,9 @@ export default function Opportunities({
       setPaidPresence(s.paidPresence ?? undefined);
       setCoveredFysPresence(s.coveredFysPresence ?? undefined);
       setEntitiesPresence(s.entitiesPresence ?? undefined);
+      setProjectedCloseDatePresence(s.projectedCloseDatePresence ?? undefined);
+      setApplicationDeadlinePresence(s.applicationDeadlinePresence ?? undefined);
+      setWinProbabilityPresence(s.winProbabilityPresence ?? undefined);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
       setFiltersState(s.filters ?? null);
@@ -857,6 +952,9 @@ export default function Opportunities({
         !s.paidPresence &&
         !s.coveredFysPresence &&
         !s.entitiesPresence &&
+        !s.projectedCloseDatePresence &&
+        !s.applicationDeadlinePresence &&
+        !s.winProbabilityPresence &&
         (s.sort?.key ?? null) === null &&
         (s.columns ?? null) === null &&
         (s.filters ?? null) === null
@@ -992,6 +1090,9 @@ export default function Opportunities({
               setPaidPresence(undefined);
               setCoveredFysPresence(undefined);
               setEntitiesPresence(undefined);
+              setProjectedCloseDatePresence(undefined);
+              setApplicationDeadlinePresence(undefined);
+              setWinProbabilityPresence(undefined);
               setPage(1);
               selection.clear();
             }}
@@ -1015,6 +1116,7 @@ export default function Opportunities({
         <Table>
           <TableHeader>
             <TableRow>
+              {isPledgeView && <TableHead className="w-6 px-1" />}
               <TableHead className="w-8">
                 <Checkbox
                   checked={
@@ -1053,21 +1155,81 @@ export default function Opportunities({
               <TableRow><TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">No opportunities match these filters.</TableCell></TableRow>
             ) : (
               pagedRows.map((o) => (
-                <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-opp-${o.id}`}>
-                  <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selection.isSelected(o.id)}
-                      onCheckedChange={() => selection.toggle(o.id)}
-                      aria-label={`Select ${o.name ?? o.id}`}
-                      data-testid={`checkbox-select-${o.id}`}
-                    />
-                  </TableCell>
-                  {visibleCols.map((c) => (
-                    <TableCell key={c.key} className={c.tdClassName}>
-                      {c.cell(o)}
+                <Fragment key={o.id}>
+                  <TableRow className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-opp-${o.id}`}>
+                    {isPledgeView && (
+                      <TableCell className="w-6 px-1" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 p-0 text-muted-foreground"
+                          onClick={() => toggleExpandOpp(o.id)}
+                          aria-label={expandedOppIds.has(o.id) ? "Collapse allocations" : "Expand allocations"}
+                          tabIndex={-1}
+                        >
+                          {expandedOppIds.has(o.id)
+                            ? <ChevronDown className="h-3 w-3" />
+                            : <ChevronRight className="h-3 w-3" />
+                          }
+                        </Button>
+                      </TableCell>
+                    )}
+                    <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selection.isSelected(o.id)}
+                        onCheckedChange={() => selection.toggle(o.id)}
+                        aria-label={`Select ${o.name ?? o.id}`}
+                        data-testid={`checkbox-select-${o.id}`}
+                      />
                     </TableCell>
-                  ))}
-                </TableRow>
+                    {visibleCols.map((c) => (
+                      <TableCell
+                        key={c.key}
+                        className={c.tdClassName}
+                        onClick={c.key !== "name" && c.key !== "actions" && !inlineEdit.isEditing(o.id) && !o.archivedAt ? () => inlineEdit.start(o) : undefined}
+                        style={c.key !== "name" && c.key !== "actions" && !inlineEdit.isEditing(o.id) && !o.archivedAt ? { cursor: "text" } : undefined}
+                      >
+                        {c.cell(o)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  {isPledgeView && expandedOppIds.has(o.id) && (
+                    <TableRow className="bg-muted/30 hover:bg-muted/30">
+                      <TableCell />
+                      <TableCell />
+                      <TableCell colSpan={visibleCols.length} className="py-2">
+                        {expandedOppDetailsById.has(o.id) ? (
+                          (expandedOppDetailsById.get(o.id)!.allocations ?? []).length === 0 ? (
+                            <span className="text-xs text-muted-foreground italic">No allocations</span>
+                          ) : (
+                            <table className="text-xs text-muted-foreground w-full">
+                              <thead>
+                                <tr className="text-left">
+                                  <th className="font-medium pb-1 pr-3">Entity</th>
+                                  <th className="font-medium pb-1 pr-3">FY</th>
+                                  <th className="font-medium pb-1 pr-3 text-right">Awarded</th>
+                                  <th className="font-medium pb-1">Usage</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(expandedOppDetailsById.get(o.id)!.allocations ?? []).map((a, i) => (
+                                  <tr key={i}>
+                                    <td className="pr-3 pb-0.5">{entityNameById.get(a.entityId ?? "") ?? "—"}</td>
+                                    <td className="pr-3 pb-0.5">{a.grantYear?.toUpperCase() ?? "—"}</td>
+                                    <td className="pr-3 pb-0.5 text-right tabular-nums">{a.subAmount != null ? `$${Number(a.subAmount).toLocaleString()}` : "—"}</td>
+                                    <td className="pb-0.5">{a.intendedUsage != null ? a.intendedUsage.replace(/_/g, " ") : "—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">Loading…</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
               ))
             )}
           </TableBody>

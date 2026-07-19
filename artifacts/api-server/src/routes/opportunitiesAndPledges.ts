@@ -317,6 +317,12 @@ router.get(
     } else if (q.entitiesPresence === "blank") {
       filters.push(sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`);
     }
+    if (q.projectedCloseDatePresence === "has") filters.push(sql`${opportunitiesAndPledges.projectedCloseDate} IS NOT NULL`);
+    else if (q.projectedCloseDatePresence === "blank") filters.push(sql`${opportunitiesAndPledges.projectedCloseDate} IS NULL`);
+    if (q.applicationDeadlinePresence === "has") filters.push(sql`${opportunitiesAndPledges.applicationDeadline} IS NOT NULL`);
+    else if (q.applicationDeadlinePresence === "blank") filters.push(sql`${opportunitiesAndPledges.applicationDeadline} IS NULL`);
+    if (q.winProbabilityPresence === "has") filters.push(sql`${opportunitiesAndPledges.winProbability} IS NOT NULL`);
+    else if (q.winProbabilityPresence === "blank") filters.push(sql`${opportunitiesAndPledges.winProbability} IS NULL`);
     // Donor-lifecycle worklist preset — composite predicate shared verbatim
     // with the dashboard worklist counts (see lib/worklists).
     if (q.worklist) filters.push(...oppWorklistConds(q.worklist as OppWorklist));

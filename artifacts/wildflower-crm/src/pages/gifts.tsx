@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, Fragment } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useSearch } from "wouter";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
@@ -13,6 +13,7 @@ import {
   getGetGiftOrPaymentQueryOptions,
   getGetGiftOrPaymentQueryKey,
   ListGiftsAndPaymentsWorklist,
+  ListGiftsAndPaymentsRestrictionLabelsItem,
   type ListGiftsAndPaymentsParams,
   type GiftType,
   type GiftPaymentMethod,
@@ -71,7 +72,7 @@ import {
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
+import { X, ChevronDown, ChevronRight } from "lucide-react";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { FiscalYearMultiSelect } from "@/components/fiscal-year-multi-select";
 import {
@@ -354,6 +355,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       key: "actions",
       label: "",
       required: true,
+      alwaysLast: true,
       sortable: false,
       align: "right",
       thClassName: "w-32",
@@ -401,6 +403,9 @@ export default function Gifts() {
   const [paymentMethods, setPaymentMethods] = usePersistedState<string[]>("wf.list.gifts.paymentMethods", []);
   const [thankYouPresence, setThankYouPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.thankYouSentAt", undefined);
   const [awaitingEvidence, setAwaitingEvidence] = usePersistedState<boolean>("wf.list.gifts.f.awaitingEvidence", false);
+  const [dateReceivedPresence, setDateReceivedPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.dateReceived", undefined);
+  const [purposeVerbatimPresence, setPurposeVerbatimPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.purposeVerbatim", undefined);
+  const [restrictionLabels, setRestrictionLabels] = usePersistedState<string[]>("wf.list.gifts.f.restrictionLabels", []);
   const [page, setPage] = usePersistedState<number>("wf.list.gifts.page", 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     "wf.list.gifts.columns",
@@ -465,6 +470,9 @@ export default function Gifts() {
     ...(paymentMethods.length > 0 ? { paymentMethod: [...paymentMethods].sort() as GiftPaymentMethod[] } : {}),
     ...(thankYouPresence ? { thankYouSentAtPresence: thankYouPresence } : {}),
     ...(awaitingEvidence ? { awaitingEvidence: true } : {}),
+    ...(dateReceivedPresence ? { dateReceivedPresence } : {}),
+    ...(purposeVerbatimPresence ? { purposeVerbatimPresence } : {}),
+    ...(restrictionLabels.length > 0 ? { restrictionLabels: [...restrictionLabels].sort() as ListGiftsAndPaymentsRestrictionLabelsItem[] } : {}),
   };
 
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {
@@ -574,7 +582,7 @@ export default function Gifts() {
     () => resolveColumns(registry, columnsState),
     [registry, columnsState],
   );
-  const colSpan = visibleCols.length + 1;
+  const colSpan = visibleCols.length + 2;
 
   // Filter registry — enum filters default visible; presence filters on
   // computed columns are opt-in (defaultVisible:false). Each def's
@@ -727,9 +735,60 @@ export default function Gifts() {
           </div>
         ),
       },
+      {
+        key: "dateReceived",
+        label: "Date received",
+        defaultVisible: false,
+        active: !!dateReceivedPresence,
+        clear: () => { setDateReceivedPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Date received"
+            value={dateReceivedPresence}
+            onChange={(v) => { setDateReceivedPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-date-received"
+          />
+        ),
+      },
+      {
+        key: "purposeVerbatim",
+        label: "Purpose (verbatim)",
+        defaultVisible: false,
+        active: !!purposeVerbatimPresence,
+        clear: () => { setPurposeVerbatimPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Purpose (verbatim)"
+            value={purposeVerbatimPresence}
+            onChange={(v) => { setPurposeVerbatimPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-purpose-verbatim"
+          />
+        ),
+      },
+      {
+        key: "restrictionLabels",
+        label: "Restriction",
+        defaultVisible: false,
+        active: restrictionLabels.length > 0,
+        clear: () => { setRestrictionLabels([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Restriction"
+            selected={restrictionLabels}
+            onChange={(v) => { setRestrictionLabels(v); setPage(1); selection.clear(); }}
+            options={[
+              { value: "unrestricted", label: "Unrestricted" },
+              { value: "purpose", label: "Purpose restricted" },
+              { value: "time", label: "Time restricted" },
+              { value: "both", label: "Purpose + time restricted" },
+            ]}
+            testId="select-restriction-labels"
+          />
+        ),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [types, owners, fiscalYears, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence],
+    [types, owners, fiscalYears, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence, dateReceivedPresence, purposeVerbatimPresence, restrictionLabels],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -768,6 +827,29 @@ export default function Gifts() {
   // submit until all selected records resolve.
   const mergeExpectedCount = mergeIds.length;
   const mergeLoadError = mergeQueries.some((q) => q.isError);
+
+  // Expand/collapse: fetch the gift detail for expanded rows to show allocations.
+  const [expandedGiftIds, setExpandedGiftIds] = useState<Set<string>>(new Set());
+  const toggleExpandGift = (id: string) =>
+    setExpandedGiftIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  const expandGiftQueries = useQueries({
+    queries: [...expandedGiftIds].map((id) =>
+      getGetGiftOrPaymentQueryOptions(id, {
+        query: { enabled: true, staleTime: 60_000, queryKey: getGetGiftOrPaymentQueryKey(id) },
+      }),
+    ),
+  });
+  const expandedGiftDetailsById = useMemo(() => {
+    const map = new Map<string, GiftOrPaymentDetail>();
+    for (const q of expandGiftQueries) {
+      if (q.data) map.set(q.data.id, q.data);
+    }
+    return map;
+  }, [expandGiftQueries]);
 
   const sortedRows = useMemo(
     () =>
@@ -810,6 +892,9 @@ export default function Gifts() {
     paymentMethods: string[];
     thankYouPresence: PresenceValue;
     awaitingEvidence: boolean;
+    dateReceivedPresence: PresenceValue;
+    purposeVerbatimPresence: PresenceValue;
+    restrictionLabels: string[];
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -825,6 +910,9 @@ export default function Gifts() {
     paymentMethods,
     thankYouPresence,
     awaitingEvidence,
+    dateReceivedPresence,
+    purposeVerbatimPresence,
+    restrictionLabels,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -840,6 +928,9 @@ export default function Gifts() {
     setPaymentMethods([]);
     setThankYouPresence(undefined);
     setAwaitingEvidence(false);
+    setDateReceivedPresence(undefined);
+    setPurposeVerbatimPresence(undefined);
+    setRestrictionLabels([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -858,6 +949,9 @@ export default function Gifts() {
       setPaymentMethods(s.paymentMethods ?? []);
       setThankYouPresence(s.thankYouPresence ?? undefined);
       setAwaitingEvidence(s.awaitingEvidence ?? false);
+      setDateReceivedPresence(s.dateReceivedPresence ?? undefined);
+      setPurposeVerbatimPresence(s.purposeVerbatimPresence ?? undefined);
+      setRestrictionLabels(s.restrictionLabels ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
       setFiltersState(s.filters ?? null);
@@ -875,6 +969,9 @@ export default function Gifts() {
       (s.paymentMethods?.length ?? 0) === 0 &&
       !s.thankYouPresence &&
       !s.awaitingEvidence &&
+      !s.dateReceivedPresence &&
+      !s.purposeVerbatimPresence &&
+      (s.restrictionLabels?.length ?? 0) === 0 &&
       (s.sort?.key ?? null) === null &&
       (s.columns ?? null) === null &&
       (s.filters ?? null) === null,
@@ -889,7 +986,10 @@ export default function Gifts() {
     !!grantYearsPresence ||
     paymentMethods.length > 0 ||
     !!thankYouPresence ||
-    awaitingEvidence;
+    awaitingEvidence ||
+    !!dateReceivedPresence ||
+    !!purposeVerbatimPresence ||
+    restrictionLabels.length > 0;
 
   return (
     <div className="space-y-6">
@@ -991,6 +1091,10 @@ export default function Gifts() {
               setGrantYearsPresence(undefined);
               setPaymentMethods([]);
               setThankYouPresence(undefined);
+              setAwaitingEvidence(false);
+              setDateReceivedPresence(undefined);
+              setPurposeVerbatimPresence(undefined);
+              setRestrictionLabels([]);
               setPage(1);
               selection.clear();
             }}
@@ -1004,6 +1108,7 @@ export default function Gifts() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-6 px-1" />
               <TableHead className="w-8">
                 <Checkbox
                   checked={
@@ -1042,21 +1147,81 @@ export default function Gifts() {
               <TableRow><TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">No gifts match these filters.</TableCell></TableRow>
             ) : (
               pagedRows.map((g) => (
-                <TableRow key={g.id} className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-gift-${g.id}`}>
-                  <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selection.isSelected(g.id)}
-                      onCheckedChange={() => selection.toggle(g.id)}
-                      aria-label={`Select ${g.name ?? g.id}`}
-                      data-testid={`checkbox-select-${g.id}`}
-                    />
-                  </TableCell>
-                  {visibleCols.map((c) => (
-                    <TableCell key={c.key} className={c.tdClassName}>
-                      {c.cell(g)}
+                <Fragment key={g.id}>
+                  <TableRow className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-gift-${g.id}`}>
+                    <TableCell className="w-6 px-1" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 p-0 text-muted-foreground"
+                        onClick={() => toggleExpandGift(g.id)}
+                        aria-label={expandedGiftIds.has(g.id) ? "Collapse allocations" : "Expand allocations"}
+                        tabIndex={-1}
+                      >
+                        {expandedGiftIds.has(g.id)
+                          ? <ChevronDown className="h-3 w-3" />
+                          : <ChevronRight className="h-3 w-3" />
+                        }
+                      </Button>
                     </TableCell>
-                  ))}
-                </TableRow>
+                    <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selection.isSelected(g.id)}
+                        onCheckedChange={() => selection.toggle(g.id)}
+                        aria-label={`Select ${g.name ?? g.id}`}
+                        data-testid={`checkbox-select-${g.id}`}
+                      />
+                    </TableCell>
+                    {visibleCols.map((c) => (
+                      <TableCell
+                        key={c.key}
+                        className={c.tdClassName}
+                        onClick={c.key !== "name" && c.key !== "actions" && !inlineEdit.isEditing(g.id) && !g.archivedAt ? () => inlineEdit.start(g) : undefined}
+                        style={c.key !== "name" && c.key !== "actions" && !inlineEdit.isEditing(g.id) && !g.archivedAt ? { cursor: "text" } : undefined}
+                      >
+                        {c.cell(g)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  {expandedGiftIds.has(g.id) && (
+                    <TableRow className="bg-muted/30 hover:bg-muted/30">
+                      <TableCell />
+                      <TableCell />
+                      <TableCell colSpan={visibleCols.length} className="py-2">
+                        {expandedGiftDetailsById.has(g.id) ? (
+                          (expandedGiftDetailsById.get(g.id)!.allocations ?? []).length === 0 ? (
+                            <span className="text-xs text-muted-foreground italic">No allocations</span>
+                          ) : (
+                            <table className="text-xs text-muted-foreground w-full">
+                              <thead>
+                                <tr className="text-left">
+                                  <th className="font-medium pb-1 pr-3">Entity</th>
+                                  <th className="font-medium pb-1 pr-3">FY</th>
+                                  <th className="font-medium pb-1 pr-3 text-right">Amount</th>
+                                  <th className="font-medium pb-1 pr-3">Usage</th>
+                                  <th className="font-medium pb-1">Purpose (verbatim)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(expandedGiftDetailsById.get(g.id)!.allocations ?? []).map((a, i) => (
+                                  <tr key={i}>
+                                    <td className="pr-3 pb-0.5">{entityNameById.get(a.entityId ?? "") ?? "—"}</td>
+                                    <td className="pr-3 pb-0.5">{a.grantYear?.toUpperCase() ?? "—"}</td>
+                                    <td className="pr-3 pb-0.5 text-right tabular-nums">{a.subAmount != null ? `$${Number(a.subAmount).toLocaleString()}` : "—"}</td>
+                                    <td className="pr-3 pb-0.5">{a.displayUsage ?? "—"}</td>
+                                    <td className="pb-0.5 max-w-[220px] truncate">{a.purposeVerbatim ?? "—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">Loading…</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
               ))
             )}
           </TableBody>

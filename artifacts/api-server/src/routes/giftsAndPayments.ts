@@ -216,7 +216,7 @@ import { stagedStatusSql } from "../lib/derivedStatus";
 import { inArray } from "drizzle-orm";
 import { personDisplayNameSql } from "../lib/personNameSql";
 
-const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "quickbooksTie"] as const;
+const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "quickbooksTie", "restrictionLabels"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -382,6 +382,31 @@ router.get(
     }
     if (q.thankYouSentAtPresence === "has") filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NOT NULL`);
     else if (q.thankYouSentAtPresence === "blank") filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NULL`);
+    if (q.dateReceivedPresence === "has") filters.push(sql`${giftsAndPayments.dateReceived} IS NOT NULL`);
+    else if (q.dateReceivedPresence === "blank") filters.push(sql`${giftsAndPayments.dateReceived} IS NULL`);
+    if (q.purposeVerbatimPresence === "has") {
+      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.purposeVerbatim} IS NOT NULL)`);
+    } else if (q.purposeVerbatimPresence === "blank") {
+      filters.push(sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.purposeVerbatim} IS NOT NULL)`);
+    }
+    {
+      const labels = (q.restrictionLabels as string[] | undefined) ?? [];
+      if (labels.length > 0) {
+        const clauses: SQL[] = [];
+        for (const label of labels) {
+          if (label === "unrestricted") {
+            clauses.push(sql`NOT EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftsAndPayments.id} AND (ga.regional_restriction_type = 'donor_restricted' OR ga.usage_restriction_type = 'donor_restricted' OR ga.time_restriction_type = 'donor_restricted'))`);
+          } else if (label === "purpose") {
+            clauses.push(sql`EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftsAndPayments.id} AND (ga.regional_restriction_type = 'donor_restricted' OR ga.usage_restriction_type = 'donor_restricted'))`);
+          } else if (label === "time") {
+            clauses.push(sql`EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.time_restriction_type = 'donor_restricted')`);
+          } else if (label === "both") {
+            clauses.push(sql`EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.time_restriction_type = 'donor_restricted' AND (ga.regional_restriction_type = 'donor_restricted' OR ga.usage_restriction_type = 'donor_restricted'))`);
+          }
+        }
+        if (clauses.length > 0) filters.push(or(...clauses)!);
+      }
+    }
     // Donor-lifecycle worklist preset — composite predicate shared verbatim
     // with the dashboard worklist counts (see lib/worklists).
     if (q.worklist) filters.push(...giftWorklistConds(q.worklist as GiftWorklist));

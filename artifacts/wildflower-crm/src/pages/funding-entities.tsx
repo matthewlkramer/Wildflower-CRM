@@ -476,6 +476,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
       key: "actions",
       label: "",
       required: true,
+      alwaysLast: true,
       sortable: false,
       align: "right",
       thClassName: "w-32",
@@ -1472,7 +1473,12 @@ export default function Organizations() {
                     />
                   </TableCell>
                   {visibleCols.map((c) => (
-                    <TableCell key={c.key} className={c.tdClassName}>
+                    <TableCell
+                      key={c.key}
+                      className={c.tdClassName}
+                      onClick={c.key !== "name" && c.key !== "actions" && !inlineEdit.isEditing(f.id) && !f.archivedAt ? () => inlineEdit.start(f) : undefined}
+                      style={c.key !== "name" && c.key !== "actions" && !inlineEdit.isEditing(f.id) && !f.archivedAt ? { cursor: "text" } : undefined}
+                    >
                       {c.cell(f)}
                     </TableCell>
                   ))}

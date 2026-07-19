@@ -472,6 +472,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
       key: "actions",
       label: "",
       required: true,
+      alwaysLast: true,
       sortable: false,
       align: "right",
       thClassName: "w-32",
@@ -522,6 +523,7 @@ export default function Individuals() {
   const [lastGiftPresence, setLastGiftPresence] = usePersistedState<PresenceValue>("wf.list.people.f.lastGift", undefined);
   const [openAsksPresence, setOpenAsksPresence] = usePersistedState<PresenceValue>("wf.list.people.f.openAsks", undefined);
   const [activeAffiliationPresence, setActiveAffiliationPresence] = usePersistedState<PresenceValue>("wf.list.people.f.activeAffiliation", undefined);
+  const [lastContactedPresence, setLastContactedPresence] = usePersistedState<PresenceValue>("wf.list.people.f.lastContacted", undefined);
   const [connectionStatusSel, setConnectionStatusSel] = usePersistedState<string[]>("wf.list.people.connectionStatuses", []);
   const [enthusiasmSel, setEnthusiasmSel] = usePersistedState<string[]>("wf.list.people.enthusiasms", []);
   const [prioritySel, setPrioritySel] = usePersistedState<string[]>("wf.list.people.priorities", []);
@@ -588,6 +590,7 @@ export default function Individuals() {
     ...(lastGiftPresence ? { lastGiftPresence } : {}),
     ...(openAsksPresence ? { openAsksPresence } : {}),
     ...(activeAffiliationPresence ? { activeAffiliationPresence } : {}),
+    ...(lastContactedPresence ? { lastContactedPresence } : {}),
     // Kanban view groups columns by connection status + enthusiasm, so those
     // filters would just narrow the board — never apply them there.
     ...(viewMode !== "kanban" && connectionStatusSel.length > 0
@@ -885,6 +888,21 @@ export default function Individuals() {
         ),
       },
       {
+        key: "lastContacted",
+        label: "Last contacted",
+        defaultVisible: false,
+        active: !!lastContactedPresence,
+        clear: () => { setLastContactedPresence(undefined); setPage(1); selection.clear(); },
+        render: () => (
+          <PresenceFilter
+            label="Last contacted"
+            value={lastContactedPresence}
+            onChange={(v) => { setLastContactedPresence(v); setPage(1); selection.clear(); }}
+            testId="filter-last-contacted"
+          />
+        ),
+      },
+      {
         key: "connectionStatus",
         label: "Connection",
         active: connectionStatusSel.length > 0,
@@ -971,7 +989,7 @@ export default function Individuals() {
         : defs;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel, newsletterSel, viewMode],
+    [capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, lastContactedPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel, newsletterSel, viewMode],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -1033,6 +1051,7 @@ export default function Individuals() {
     !!lastGiftPresence ||
     !!openAsksPresence ||
     !!activeAffiliationPresence ||
+    !!lastContactedPresence ||
     connectionStatusSel.length > 0 ||
     enthusiasmSel.length > 0 ||
     prioritySel.length > 0 ||
@@ -1052,6 +1071,7 @@ export default function Individuals() {
     lastGiftPresence: PresenceValue;
     openAsksPresence: PresenceValue;
     activeAffiliationPresence: PresenceValue;
+    lastContactedPresence: PresenceValue;
     connectionStatusSel: string[];
     enthusiasmSel: string[];
     prioritySel: string[];
@@ -1069,6 +1089,7 @@ export default function Individuals() {
     lastGiftPresence,
     openAsksPresence,
     activeAffiliationPresence,
+    lastContactedPresence,
     connectionStatusSel,
     enthusiasmSel,
     prioritySel,
@@ -1086,6 +1107,7 @@ export default function Individuals() {
     setLastGiftPresence(undefined);
     setOpenAsksPresence(undefined);
     setActiveAffiliationPresence(undefined);
+    setLastContactedPresence(undefined);
     setConnectionStatusSel([]);
     setEnthusiasmSel([]);
     setPrioritySel([]);
@@ -1109,6 +1131,7 @@ export default function Individuals() {
       setLastGiftPresence(s.lastGiftPresence ?? undefined);
       setOpenAsksPresence(s.openAsksPresence ?? undefined);
       setActiveAffiliationPresence(s.activeAffiliationPresence ?? undefined);
+      setLastContactedPresence(s.lastContactedPresence ?? undefined);
       setConnectionStatusSel(s.connectionStatusSel ?? []);
       setEnthusiasmSel(s.enthusiasmSel ?? []);
       setPrioritySel(s.prioritySel ?? []);
@@ -1131,6 +1154,7 @@ export default function Individuals() {
       !s.lastGiftPresence &&
       !s.openAsksPresence &&
       !s.activeAffiliationPresence &&
+      !s.lastContactedPresence &&
       (s.connectionStatusSel?.length ?? 0) === 0 &&
       (s.enthusiasmSel?.length ?? 0) === 0 &&
       (s.prioritySel?.length ?? 0) === 0 &&
@@ -1289,6 +1313,7 @@ export default function Individuals() {
               setLastGiftPresence(undefined);
               setOpenAsksPresence(undefined);
               setActiveAffiliationPresence(undefined);
+              setLastContactedPresence(undefined);
               setConnectionStatusSel([]);
               setEnthusiasmSel([]);
               setPrioritySel([]);
@@ -1390,7 +1415,12 @@ export default function Individuals() {
                     />
                   </TableCell>
                   {visibleCols.map((c) => (
-                    <TableCell key={c.key} className={c.tdClassName}>
+                    <TableCell
+                      key={c.key}
+                      className={c.tdClassName}
+                      onClick={c.key !== "name" && c.key !== "actions" && !inlineEdit.isEditing(p.id) && !p.archivedAt ? () => inlineEdit.start(p) : undefined}
+                      style={c.key !== "name" && c.key !== "actions" && !inlineEdit.isEditing(p.id) && !p.archivedAt ? { cursor: "text" } : undefined}
+                    >
                       {c.cell(p)}
                     </TableCell>
                   ))}
