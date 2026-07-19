@@ -10,10 +10,19 @@
   -- (+5 matcher prefills verified as-is), 7 skipped, 6 left pending with notes. The two IRS
   -- ERC rows moved from skip to donor-stamped (real expected money), and 12 first-pass
   -- donor-only rows were upgraded to full confirms after their gifts were found booked.
+-- THIRD PASS 2026-07-19 (owner line-by-line review): fy25_28 confirm → skip (ACUDEN service
+  -- revenue force-matched to the Meeker Rosebay gift on amount alone); fy25_92 rematched
+  -- (matcher had the wrong donor+opp — Melva Legrand's $156 ask instead of Dionne Kirby's
+  -- booked $156 gift); fy26_103 rematched (matcher confirmed Bradley's 2028 $1,000 ASK opp
+  -- instead of the booked FY26 $1,000 gift); fy26_87 hand-matched (Sauque gift found booked
+  -- under The College Board, the DAF sponsor); fy26_104 retargeted to the canonical May
+  -- Brown gift (its previous target is a duplicate QB-grain booking of the same payment);
+  -- plus one owner-verified data correction (LISC opportunity loan→grant, section 10).
   -- Idempotent: every UPDATE is guarded (status='pending' AND match_confirmed_at IS NULL for
 -- coding rows; derived-pending for staged QB rows), so re-running is a no-op and rows a
 -- human already touched are never overwritten.
--- Touches coding_form_rows + two staged_payments exclusions (non-donation QB rows).
+-- Touches coding_form_rows + two staged_payments exclusions (non-donation QB rows)
+-- + one opportunities_and_pledges loan_or_grant correction (section 10).
 -- Gift/opportunity/allocation writes happen later in-app via "Apply decided"
 -- (POST /coding-form-rows/apply-decided), which runs the normal applyRow path per row.
 -- Confirmer stamped as usr_matthew_kramer; to attribute to Erica instead, replace all
@@ -21,7 +30,7 @@
 -- Run AFTER Publish, from the repo root:
 --   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0133_bulk_resolve_coding_form_rows.sql
 
--- ── 1. Confirm verified matcher suggestions (161 rows; donor + gift/opp cross-checked offline) ──
+-- ── 1. Confirm verified matcher suggestions (158 rows; donor + gift/opp cross-checked offline) ──
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","address":"skip","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy24_10' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 3d apart; tier high)
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"skip","usageRestriction":"skip","regionalRestriction":"apply","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
@@ -36,6 +45,9 @@ UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_
   WHERE id = 'cfr_fy24_24' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 0d apart; tier high)
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"reportDeadline":"apply","purposeVerbatim":"skip","usageRestriction":"skip","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy24_25' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 8d apart; tier high)
+  -- ^ fy24_25 note (owner asked): the matched gift is named "FY25" but received 2024-06-20 (inside FY24) —
+  --   it is payment #2 of a 3-payment series and the FY name is the designation year, not the receipt year.
+  --   Payment #1 (recWAqR4eN9OffxOO, FY24-named, 2023-10-20) has no sheet row; payment #3 is fy25_24 → recXtS1TDwmhAnRUr. Match stands.
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy24_27' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 0d apart; tier high)
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"address":"skip","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
@@ -103,8 +115,6 @@ UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_
   WHERE id = 'cfr_fy25_24' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 1d apart; tier high)
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy25_25' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 0d apart; tier high)
-UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","regionalRestriction":"apply","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
-  WHERE id = 'cfr_fy25_28' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 70d apart; tier suggested)
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"regionalRestriction":"apply","address":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy25_31' AND status = 'pending' AND match_confirmed_at IS NULL; -- opportunity match verified (donor ok; tier high)
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"skip","usageRestriction":"skip","address":"skip","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
@@ -195,8 +205,6 @@ UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_
   WHERE id = 'cfr_fy25_90' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 74d apart; tier high)
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy25_91' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 48d apart; tier high)
-UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","address":"apply"}'::jsonb, updated_at = now()
-  WHERE id = 'cfr_fy25_92' AND status = 'pending' AND match_confirmed_at IS NULL; -- opportunity match verified (donor ok; tier suggested)
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy25_93' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 37d apart; tier high)
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","address":"skip","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
@@ -215,8 +223,6 @@ UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_
   WHERE id = 'cfr_fy26_101' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 40d apart; tier high)
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"usageRestriction":"apply","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy26_102' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 26d apart; tier high)
-UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"regionalRestriction":"apply","address":"apply"}'::jsonb, updated_at = now()
-  WHERE id = 'cfr_fy26_103' AND status = 'pending' AND match_confirmed_at IS NULL; -- opportunity match verified (donor ok; tier high)
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"reportDeadline":"apply","purposeVerbatim":"apply","usageRestriction":"apply","address":"skip","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy26_105' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 1d apart; tier suggested)
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
@@ -358,7 +364,7 @@ UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_
 UPDATE coding_form_rows SET match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"reportDeadline":"apply","purposeVerbatim":"apply","usageRestriction":"apply","regionalRestriction":"apply","address":"apply","circle":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_girasol_9' AND status = 'pending' AND match_confirmed_at IS NULL; -- gift match verified (donor+amount, 12d apart; tier high)
 
--- ── 2. Hand-matched donor + gift (8 rows; manual matches, confirmed) ──
+-- ── 2. Hand-matched donor + gift (10 rows; manual matches, confirmed) ──
 -- cfr_fy24_32: Patrick & Alice Rogers Family Foundation — gift "Marge Barrett FY24 Renewal" $5,000 under the Rogers Family Foundation — name/FY/amount all line up
 UPDATE coding_form_rows SET organization_id = 'recQKRNjVhIbx5XUK', individual_giver_person_id = NULL, household_id = NULL, matched_gift_id = 'recJVrV3gyde5cQLH', matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"skip","usageRestriction":"skip","regionalRestriction":"apply","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy24_32' AND status = 'pending' AND match_confirmed_at IS NULL;
@@ -383,6 +389,18 @@ UPDATE coding_form_rows SET organization_id = NULL, individual_giver_person_id =
 -- cfr_girasol_1: Hanhwa Kao — gift "Kao check #2 FY25" $5,000 2024-10-03 vs row 2024-10-01
 UPDATE coding_form_rows SET organization_id = NULL, individual_giver_person_id = 'rech9yJEBFKYrNhO1', household_id = NULL, matched_gift_id = 'rec5MgcANAINnbNL1', matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","intendedUsage":"skip","regionalRestriction":"apply","address":"apply","circle":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_girasol_1' AND status = 'pending' AND match_confirmed_at IS NULL;
+-- cfr_fy25_92 (THIRD PASS rematch): Dionne Kirby $156 to BWF — the matcher had prefilled Melva Legrand
+--   (recrWhhKEVtUciSWQ) and her open $156 ASK opportunity; the booked money is Kirby's gift
+--   "$156 FY25 Kirby to BWF" (recmMR2XcUrph7MSl). Donor corrected + matched to the gift; decisions mirror
+--   the sibling BWF rows fy25_84/93/95 (same donor cohort, same form language).
+UPDATE coding_form_rows SET organization_id = NULL, individual_giver_person_id = 'recwTcVIeS6VCL7Lh', household_id = NULL, matched_gift_id = 'recmMR2XcUrph7MSl', matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
+  WHERE id = 'cfr_fy25_92' AND status = 'pending' AND match_confirmed_at IS NULL;
+-- cfr_fy26_103 (THIRD PASS rematch): Katherine Bradley $1,000 for MN — the matcher had confirmed her
+--   FUTURE $1,000 ASK opportunity (2028); the booked money is "$1000 Bradley FY26 to MN" (recggLgBVNih7u3S9,
+--   booked under her giving-vehicle org recQlMQJNgssSXCTO). Row keeps the true donor (Bradley the person);
+--   regional flip applies (Hub: Minnesota rule); memo/notes tags record provenance on the gift.
+UPDATE coding_form_rows SET organization_id = NULL, individual_giver_person_id = 'recx1ifTLExCb887N', household_id = NULL, matched_gift_id = 'recggLgBVNih7u3S9', matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"skip","usageRestriction":"skip","regionalRestriction":"apply","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
+  WHERE id = 'cfr_fy26_103' AND status = 'pending' AND match_confirmed_at IS NULL;
 
 -- ── 3. Donor identified, gift not yet booked (6 rows; donor pre-filled, row stays pending, NOT confirmed) ──
   -- (12 first-pass rows that were here moved to section 6 after their gifts were found booked.)
@@ -395,10 +413,14 @@ UPDATE coding_form_rows SET organization_id = 'recHrDwEgoYLZfH3f', individual_gi
 -- cfr_fy25_103: Frey Foundation — clean org match; no $60,000 gift booked yet
 UPDATE coding_form_rows SET organization_id = 'recZapft5FP7mSHen', individual_giver_person_id = NULL, household_id = NULL, matched_gift_id = NULL, matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', updated_at = now()
   WHERE id = 'cfr_fy25_103' AND status = 'pending' AND match_confirmed_at IS NULL AND organization_id IS NULL AND individual_giver_person_id IS NULL AND household_id IS NULL;
--- cfr_fy26_58: Fidelity Foundations — $15,000 slice of the $80,000 Inkwell grant; no matching gift booked yet
+-- cfr_fy26_58: Fidelity Foundations $15,000 — owner says fy26_58/59 are the first two payments on a
+--   $320,000 Fidelity pledge, but NO $320k Fidelity pledge/opportunity exists in the CRM (searched all
+--   Fidelity opps; only the $80k Inkwell grant is close). Neither payment is booked as a gift either.
+--   MANUAL FOLLOW-UP: create the $320k pledge, then book these two payments against it; donor stamp below
+--   keeps the rows ready.
 UPDATE coding_form_rows SET organization_id = 'rec56v5anV8D4xP9l', individual_giver_person_id = NULL, household_id = NULL, matched_gift_id = NULL, matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', updated_at = now()
   WHERE id = 'cfr_fy26_58' AND status = 'pending' AND match_confirmed_at IS NULL AND organization_id IS NULL AND individual_giver_person_id IS NULL AND household_id IS NULL;
--- cfr_fy26_59: Fidelity Foundations — $65,000 slice of the $80,000 Inkwell grant; no matching gift booked yet
+-- cfr_fy26_59: Fidelity Foundations $65,000 — second payment on the same $320k pledge (see fy26_58 note)
 UPDATE coding_form_rows SET organization_id = 'rec56v5anV8D4xP9l', individual_giver_person_id = NULL, household_id = NULL, matched_gift_id = NULL, matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', updated_at = now()
   WHERE id = 'cfr_fy26_59' AND status = 'pending' AND match_confirmed_at IS NULL AND organization_id IS NULL AND individual_giver_person_id IS NULL AND household_id IS NULL;
 -- cfr_fy26_6: Loyola University Maryland — Center for Montessori Education sits under Loyola University Maryland; no $2,088 gift booked yet
@@ -459,7 +481,7 @@ UPDATE coding_form_rows SET status = 'skipped', updated_at = now()
   WHERE id = 'cfr_fy26_65' AND status = 'pending' AND match_confirmed_at IS NULL; -- IRS refund — not a donation
 
 
-  -- ── 6. SECOND PASS — confirm hand-matched donor + gift (49 rows; each verified against the booked gift in prod) ──
+  -- ── 6. SECOND PASS — confirm hand-matched donor + gift (50 rows; each verified against the booked gift in prod) ──
   -- 12 of these were donor-only in section 3 in the first pass and are upgraded here now that
   -- their booked gifts were found; their section-3 stamps were removed above. Decisions follow
   -- the same owner policy rules as the first pass (Rock never restricted; BWF = usage-restricted;
@@ -548,12 +570,26 @@ UPDATE coding_form_rows SET organization_id = NULL, individual_giver_person_id =
 -- cfr_fy26_9: Kramer $50 2025-08-13; gift on "Matthew Kramer" person (row prefill "Matt Kramer" recfaGqFyVmmQEt9Q is a duplicate person record — dedup candidate)
 UPDATE coding_form_rows SET organization_id = NULL, individual_giver_person_id = 'rec3SDFFk6rokw1pW', household_id = NULL, matched_gift_id = 'q8hdNMW-tU3mocujuvEvs', matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"skip","usageRestriction":"skip","intendedUsage":"apply","address":"skip","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy26_9' AND status = 'pending' AND match_confirmed_at IS NULL;
--- cfr_fy26_100: Alexander Brown $150 monthly, April instance 2026-04-10
+-- cfr_fy26_100: Alexander Brown $150/month (four payments Mar/Apr/May/Jun 2026, each a Stripe charge that
+--   settles into a QB deposit a few days later). This row = the April instance (gift CQCTOUS6l, Stripe-counted,
+--   QB corroborating). Sheet dates are form-submission dates and lag the money — month assignment is by
+--   elimination; both Brown rows carry identical decisions, so the assignment cannot change what Apply writes.
 UPDATE coding_form_rows SET organization_id = NULL, individual_giver_person_id = 'rec8N0JkuFLYJPbS1', household_id = NULL, matched_gift_id = 'CQCTOUS6l-g85uTYdidxx', matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","address":"skip","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy26_100' AND status = 'pending' AND match_confirmed_at IS NULL;
--- cfr_fy26_104: Brown May instance; NOTE two May $150 gifts exist (eUBk8zWoVto1XYBEqosYN 05-08 and O19isipf 05-12) — possible duplicate booking to review
-UPDATE coding_form_rows SET organization_id = NULL, individual_giver_person_id = 'rec8N0JkuFLYJPbS1', household_id = NULL, matched_gift_id = 'O19isipf8UIhokCX94iCu', matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","address":"skip","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
+-- cfr_fy26_104: Brown May instance (THIRD PASS retarget). The owner's duplicate hunch was RIGHT: May has TWO
+--   $150 Brown gifts for ONE payment — eUBk8zWoVto1XYBEqosYN (05-08, Stripe-counted, matches the canonical
+--   monthly pattern) and O19isipf8UIhokCX94iCu (05-12, counted from the QB deposit the 05-08 charge settles
+--   into; every other month's QB deposit is only corroborating). Row now targets the canonical Stripe-counted
+--   gift. MANUAL FOLLOW-UP: unbook/merge duplicate gift O19isipf8UIhokCX94iCu (demote its QB deposit
+--   R2a_3l4HEIV7b4sWIAfjO to corroborating on eUBk8zWoVto1XYBEqosYN) so May isn't double-counted.
+UPDATE coding_form_rows SET organization_id = NULL, individual_giver_person_id = 'rec8N0JkuFLYJPbS1', household_id = NULL, matched_gift_id = 'eUBk8zWoVto1XYBEqosYN', matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","address":"skip","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy26_104' AND status = 'pending' AND match_confirmed_at IS NULL;
+-- cfr_fy26_87: Gabriela (Lizzette) Sauque $5,000 for MN (THIRD PASS: was "no booked gift found" — the money IS
+--   booked, as "$5000 College Board donation to MN Support" (rechFIhsFJgbDgGBd) under The College Board
+--   (rec0jBcKPXdw6oKMG), her DAF/employer giving vehicle. Row keeps the true donor (Sauque, matcher-prefilled);
+--   regional flip applies (Hub: Minnesota rule); memo/notes tags record provenance on the gift.
+UPDATE coding_form_rows SET organization_id = NULL, individual_giver_person_id = 'recbN18kucfbE0a75', household_id = NULL, matched_gift_id = 'rechFIhsFJgbDgGBd', matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"skip","usageRestriction":"skip","regionalRestriction":"apply","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
+  WHERE id = 'cfr_fy26_87' AND status = 'pending' AND match_confirmed_at IS NULL;
 -- cfr_fy25_26: Kinsman gift #1
 UPDATE coding_form_rows SET organization_id = NULL, individual_giver_person_id = 'reccil4JAF6rGK9xi', household_id = NULL, matched_gift_id = 'recaEvDq6sH0dUwwD', matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"purposeVerbatim":"apply","usageRestriction":"apply","intendedUsage":"skip","regionalRestriction":"apply","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy25_26' AND status = 'pending' AND match_confirmed_at IS NULL;
@@ -612,7 +648,7 @@ UPDATE coding_form_rows SET organization_id = 'rec5hHTZtAvHDAAou', individual_gi
 UPDATE coding_form_rows SET organization_id = 'recSv5y0mG6ZQGFBX', individual_giver_person_id = NULL, household_id = NULL, matched_gift_id = 'recPcj9oTgckhzPTp', matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', match_confirmed_at = now(), match_confirmed_by_user_id = 'usr_matthew_kramer', decisions = '{"reportDeadline":"apply","purposeVerbatim":"skip","usageRestriction":"skip","address":"apply","circle":"apply","seriesType":"apply","additionalNotes":"apply","internalMemo":"apply"}'::jsonb, updated_at = now()
   WHERE id = 'cfr_fy25_108' AND status = 'pending' AND match_confirmed_at IS NULL;
 
-  -- ── 7. SECOND PASS — donor stamped, gift not yet booked (2 writes; 5 more verified as-is) ──
+  -- ── 7. SECOND PASS — donor stamped, gift not yet booked (2 writes; 4 more verified as-is) ──
   -- The two IRS ERC rows were skipped in the first pass; they are real expected money
   -- (Employee Retention Credit refunds) — donor = US Dept of the Treasury, rows stay pending.
   -- cfr_fy24_26: IRS ERC refund — no gift booked anywhere (searched names, Treasury org, opportunities); Treasury org set as donor for when it lands
@@ -621,18 +657,18 @@ UPDATE coding_form_rows SET organization_id = 'rec1H13psR0jKXMLr', individual_gi
 -- cfr_fy25_1: IRS ERC refund (FY25 letter) — same as fy24_26, not yet booked
 UPDATE coding_form_rows SET organization_id = 'rec1H13psR0jKXMLr', individual_giver_person_id = NULL, household_id = NULL, matched_gift_id = NULL, matched_opportunity_id = NULL, match_method = 'manual', match_tier = 'high', updated_at = now()
   WHERE id = 'cfr_fy25_1' AND status = 'pending' AND match_confirmed_at IS NULL AND organization_id IS NULL AND individual_giver_person_id IS NULL AND household_id IS NULL;
-  -- These 5 rows already carry the correct matcher-prefilled donor (match_method 'name'), verified
-  -- against prod during the second pass; no write needed — they stay pending until the money books:
+  -- These 4 rows already carry the correct matcher-prefilled donor (match_method 'name'), verified
+  -- against prod during the second pass; no write needed — they stay pending until the money books
+  -- (fy26_87 was in this list until the third pass found its gift booked under The College Board — section 6):
   --   cfr_fy24_20: Gates Family Foundation $25k 2024-05-15 — no booked gift at that amount (only the FY23/24 $95k exists)
-  --   cfr_fy26_31: Katie Houghton — sheet has no amount; nothing to match
-  --   cfr_fy26_87: Gabriela Sauque $5,000 2026-03-11 — no booked gift found in window
+  --   cfr_fy26_31: Jennifer Houghton — sheet has no amount; nothing to match
   --   cfr_fy26_18: Excellent Schools NM $1,292.57 stand-alone reimbursement — no booked gift yet
   --   cfr_fy25_73: Anonymous $100 — prefilled catch-all anonymous person is right; no clean $100 FY25 gift on it yet
 
-  -- ── 8. SECOND PASS — skip non-donations & one stale duplicate (7 rows) ──
+  -- ── 8. SECOND PASS — skip non-donations & one stale duplicate (8 rows; fy25_28 added in the third pass) ──
   -- Their QuickBooks staged counterparts (DCWFPCS, ACUDEN, McDowell, Rodeski) were checked in
-  -- prod 2026-07-18: every one is already excluded (earned_income / membership / zero_amount),
-  -- so no new staged_payments exclusions are needed.
+  -- prod 2026-07-18 (all three ACUDEN rows re-checked 2026-07-19): every one is already excluded
+  -- (earned_income / membership / zero_amount), so no new staged_payments exclusions are needed.
   UPDATE coding_form_rows SET status = 'skipped', updated_at = now()
   WHERE id = 'cfr_fy25_60' AND status = 'pending' AND match_confirmed_at IS NULL; -- duplicate of girasol_11 (Rodeski booked $7,000, already confirmed there); fy25 sheet recorded a stale $5,000
 UPDATE coding_form_rows SET status = 'skipped', updated_at = now()
@@ -646,11 +682,13 @@ UPDATE coding_form_rows SET status = 'skipped', updated_at = now()
 UPDATE coding_form_rows SET status = 'skipped', updated_at = now()
   WHERE id = 'cfr_fy25_30' AND status = 'pending' AND match_confirmed_at IS NULL; -- ACUDEN — service revenue, not a donation
 UPDATE coding_form_rows SET status = 'skipped', updated_at = now()
+  WHERE id = 'cfr_fy25_28' AND status = 'pending' AND match_confirmed_at IS NULL; -- ACUDEN $1,500 — the third of the three ACUDEN service-revenue payments (sheet: "Not a donation, to be coded as service revenue"); was wrongly a §1 confirm onto the Meeker Rosebay gift (amount-only match). Its QB row 5AJOS6vgz474fVV8plHvi is already excluded (earned_income). THIRD PASS fix.
+UPDATE coding_form_rows SET status = 'skipped', updated_at = now()
   WHERE id = 'cfr_fy25_6' AND status = 'pending' AND match_confirmed_at IS NULL; -- Dr. Erika McDowell $141.68 — sheet itself says not a donation
 
   -- ── 9. SECOND PASS — left pending intentionally (6 rows; genuine ambiguity, needs the owner) ──
   --   cfr_fy26_10: Anonymous $20,071.51 Seed Fund 2025-09-05 — no gift at this amount anywhere; donor unknown
---   cfr_fy26_8: Kramer $3 2025-08-13 — TWO identical $3 gifts exist same person/date (GtYi4sQJUKO4_YWcm0w8X, NONk3IQcw79-QdMJPmiNz): likely duplicate booking, resolve which to keep first
+--   cfr_fy26_8: Kramer $3 2025-08-13 — TWO identical $3 gifts same person/date (GtYi4sQJUKO4_YWcm0w8X, NONk3IQcw79-QdMJPmiNz). THIRD PASS checked Stripe: these are TWO REAL distinct charges minutes apart (both booked, each Stripe-counted) — NOT a duplicate booking. The sheet has one row for two payments; owner should pick which charge this row describes (or add a row for the other)
 --   cfr_fy25_70: Erica Cantoni $6 recurring — two $5.52 gifts (2024-11-04) for three $6 sheet rows; net/gross and count ambiguity
 --   cfr_fy25_71: same ambiguity as fy25_70
 --   cfr_fy25_75: same ambiguity as fy25_70
@@ -676,19 +714,28 @@ UPDATE staged_payments SET exclusion_reason = 'tax_refund', classification_sourc
     AND NOT EXISTS (SELECT 1 FROM stripe_staged_charges cc WHERE cc.linked_qb_staged_payment_id = staged_payments.id
           AND EXISTS (SELECT 1 FROM payment_applications pac WHERE pac.stripe_charge_id = cc.id AND pac.evidence_source = 'stripe' AND pac.link_role = 'counted'));
 
+-- ── 10. THIRD PASS — owner-verified data correction: LISC money is grants, not loans ──
+-- The owner confirmed all LISC money is grant funding. All 5 booked LISC gifts already carry
+-- loan_or_grant='grant' (verified in prod 2026-07-19); the one straggler is the LISC
+-- opportunity, still flagged 'loan'. Guarded flip (no-op if already corrected):
+UPDATE opportunities_and_pledges SET loan_or_grant = 'grant', updated_at = now()
+  WHERE id = 'recdM1oPDrP7gGZxK' AND loan_or_grant = 'loan';
+
 -- ── Verification ──
 -- Note: confirming does NOT change status — confirmed rows stay status='pending' until
 -- "Apply decided" in the app flips them to 'applied'. Expected right after this run
 -- (queue was 269 pending when judged on 2026-07-18):
---   ready_to_apply  >= 218 (161 verified matcher confirms + 8 first-pass hand matches + 49 second-pass confirms; more if anyone confirmed via the UI since 2026-07-18)
---   donor_prefilled >= 8   (6 first-pass + 2 IRS/Treasury; the 5 verified matcher prefills keep match_method 'name' and are not counted here)
---   still_pending   = 237  (269 - 32 skips; drops to 19 after "Apply decided": 8 donor-stamped + 5 verified prefills + 6 left with notes)
+--   ready_to_apply  >= 218 (158 verified matcher confirms + 10 first-pass hand matches + 50 second-pass confirms; more if anyone confirmed via the UI since 2026-07-18)
+--   donor_prefilled >= 8   (6 first-pass + 2 IRS/Treasury; the 4 verified matcher prefills keep match_method 'name' and are not counted here)
+--   still_pending   = 236  (269 - 33 skips; drops to 18 after "Apply decided": 8 donor-stamped + 4 verified prefills + 6 left with notes)
 --   qb_excluded     = 2
+--   lisc_grant      = 1    (the LISC opportunity carries loan_or_grant='grant' after section 10)
 SELECT
   count(*) FILTER (WHERE status = 'pending' AND match_confirmed_at IS NOT NULL) AS ready_to_apply,
   count(*) FILTER (WHERE status = 'pending' AND match_confirmed_at IS NULL AND match_method = 'manual'
                    AND matched_gift_id IS NULL
                    AND (organization_id IS NOT NULL OR individual_giver_person_id IS NOT NULL OR household_id IS NOT NULL)) AS donor_prefilled,
   count(*) FILTER (WHERE status = 'pending') AS still_pending,
-  (SELECT count(*) FROM staged_payments WHERE id IN ('g6Ad2qr2RNPSkCSgnTZPb', 'OnHtz0il_QXi68OtEm2_n') AND exclusion_reason IS NOT NULL) AS qb_excluded
+  (SELECT count(*) FROM staged_payments WHERE id IN ('g6Ad2qr2RNPSkCSgnTZPb', 'OnHtz0il_QXi68OtEm2_n') AND exclusion_reason IS NOT NULL) AS qb_excluded,
+  (SELECT count(*) FROM opportunities_and_pledges WHERE id = 'recdM1oPDrP7gGZxK' AND loan_or_grant = 'grant') AS lisc_grant
 FROM coding_form_rows;
