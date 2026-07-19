@@ -43,3 +43,12 @@ description: Invariants for the one-time donation coding-form import — effecti
   "the target's letter". Bulk pull attempts ready+failed, skips
   na/no_match/imported, and NEVER replaces (conflict stays per-row with
   replace=true).
+- **Bulk letter pull is vetted-rows-only.** The bulk pull WHERE gate requires
+  non-skipped AND (confirmed OR applied); the grant-agreements summary mirrors
+  the same predicate to report non-vetted ready/failed rows as a synthetic
+  `held` bucket — keep the two predicates in lockstep or the "Import all ready
+  (N)" button count drifts from what bulk attempts. Per-row pull stays
+  ungated by design (explicit reviewer action, works on held/skipped rows).
+  **Why:** skipped rows can retain a stale matcher target (a non-donation
+  force-matched on amount alone); an ungated bulk pull would attach their
+  letter to that wrong record.

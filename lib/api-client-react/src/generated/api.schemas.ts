@@ -6724,7 +6724,7 @@ export interface PullGrantAgreementResult {
 export interface CodingFormGrantAgreementsSummary {
   /** Rows carrying a grant-agreement Drive link. */
   totalWithLink: number;
-  /** Count per derived grant-agreement status. */
+  /** Count per derived grant-agreement status. Includes a synthetic `held` key: ready/failed rows the bulk pull will NOT attempt (skipped, or match not confirmed/applied) — pull those per-row if genuinely wanted. */
   byStatus: CodingFormCount[];
 }
 
@@ -6732,7 +6732,7 @@ export interface CodingFormGrantAgreementsSummary {
  * Result of the bulk grant-agreement pull pass.
  */
 export interface CodingFormBulkPullSummary {
-  /** Rows carrying a Drive link (scanned). */
+  /** Owner-vetted rows carrying a Drive link (scanned by this pass). */
   totalWithLink: number;
   /** Rows whose derived status was ready/failed — a pull was attempted. */
   attempted: number;

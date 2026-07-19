@@ -133,7 +133,7 @@ export const GetCodingFormGrantAgreementsSummaryResponse = zod.object({
   "byStatus": zod.array(zod.object({
   "key": zod.string(),
   "count": zod.number()
-})).describe('Count per derived grant-agreement status.')
+})).describe('Count per derived grant-agreement status. Includes a synthetic `held` key: ready\/failed rows the bulk pull will NOT attempt (skipped, or match not confirmed\/applied) — pull those per-row if genuinely wanted.')
 })
 
 /**
@@ -899,10 +899,10 @@ export const PullGrantAgreementResponse = zod.object({
 })
 
 /**
- * @summary Bulk grant-agreement pull: attach every actionable row's Drive file to its matched opportunity-else-gift. Attempts rows whose derived status is ready or failed (re-runs retry recorded transient failures); skips na/no_match/imported, and NEVER replaces an existing letter (conflicts are counted and left for per-row review with replace=true). Per-row failures are recorded on the rows and summarized, never thrown. Admin only.
+ * @summary Bulk grant-agreement pull: attach every actionable row's Drive file to its matched opportunity-else-gift. Only owner-vetted rows are attempted (human-confirmed match or applied row; skipped rows are excluded — pull those per-row if genuinely wanted). Attempts rows whose derived status is ready or failed (re-runs retry recorded transient failures); skips na/no_match/imported, and NEVER replaces an existing letter (conflicts are counted and left for per-row review with replace=true). Per-row failures are recorded on the rows and summarized, never thrown. Admin only.
  */
 export const PullGrantAgreementsBulkResponse = zod.object({
-  "totalWithLink": zod.number().describe('Rows carrying a Drive link (scanned).'),
+  "totalWithLink": zod.number().describe('Owner-vetted rows carrying a Drive link (scanned by this pass).'),
   "attempted": zod.number().describe('Rows whose derived status was ready\/failed — a pull was attempted.'),
   "imported": zod.number().describe('Letters attached in this pass.'),
   "alreadyImported": zod.number().describe('Idempotent no-ops (letter already attached by this backfill).'),

@@ -456,6 +456,11 @@ router.post(
 // existing letter (conflicts are left for per-row review with replace=true);
 // per-row Drive failures are recorded on the row and reported, not thrown.
 // Sequential on purpose (Drive + object-storage friendliness at ~300-row scale).
+// Only OWNER-VETTED rows are attempted: a human-confirmed match or an applied
+// row. Skipped rows are excluded entirely — they can still carry a stale
+// matcher target (e.g. a non-donation force-matched on amount alone), and bulk
+// would silently decorate that wrong record with the row's letter. A skipped
+// row's letter can still be pulled per-row (an explicit reviewer action).
 router.post(
   "/coding-form-rows/pull-grant-agreements",
   asyncHandler(async (req, res) => {
@@ -465,7 +470,13 @@ router.post(
     const rows = await db
       .select()
       .from(codingFormRows)
-      .where(sql`NULLIF(TRIM(${codingFormRows.driveLink}), '') IS NOT NULL`)
+      .where(
+        and(
+          sql`NULLIF(TRIM(${codingFormRows.driveLink}), '') IS NOT NULL`,
+          sql`${codingFormRows.status} <> 'skipped'`,
+          sql`(${codingFormRows.matchConfirmedAt} IS NOT NULL OR ${codingFormRows.status} = 'applied')`,
+        ),
+      )
       .orderBy(codingFormRows.sourceRowIndex);
 
     const counts = {
@@ -593,6 +604,10 @@ router.post(
 
 // Grant-agreement backfill progress — counts by derived grant-agreement status
 // across the rows that carry a Drive link (the before/after the reviewer sees).
+// Rows that derive ready/failed but are NOT bulk-vetted (skipped, or an
+// unconfirmed non-applied match) are reported as a distinct `held` bucket so
+// the "Import all ready (N)" button count matches exactly what the bulk pull
+// will attempt; held rows stay visible in the list and can be pulled per-row.
 router.get(
   "/coding-form-grant-agreements-summary",
   asyncHandler(async (req, res) => {
@@ -610,11 +625,20 @@ router.get(
       imported: 0,
       conflict: 0,
       failed: 0,
+      held: 0,
     };
     for (const row of rows) {
       const letter = await loadTargetGrantLetter(resolveGrantLetterTarget(row));
       const { status } = deriveGrantAgreement(row, letter);
-      counts[status] = (counts[status] ?? 0) + 1;
+      // Mirror of the bulk-pull WHERE gate — keep the two in lockstep.
+      const bulkVetted =
+        row.status !== "skipped" &&
+        (row.matchConfirmedAt !== null || row.status === "applied");
+      if ((status === "ready" || status === "failed") && !bulkVetted) {
+        counts.held += 1;
+      } else {
+        counts[status] = (counts[status] ?? 0) + 1;
+      }
     }
 
     res.json({

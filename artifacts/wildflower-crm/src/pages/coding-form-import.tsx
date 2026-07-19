@@ -95,17 +95,21 @@ const SOURCE_LABEL: Record<string, string> = {
 
 type GrantAgreementStatus = CodingFormGrantAgreement["status"];
 
-const GA_STATUS_LABEL: Record<GrantAgreementStatus, string> = {
+// `held` is a summary-only synthetic bucket (not a per-row derived status):
+// ready/failed rows the bulk pull will NOT attempt because the row is skipped
+// or its match is unconfirmed — still pullable per-row.
+const GA_STATUS_LABEL: Record<GrantAgreementStatus | "held", string> = {
   na: "No link",
   no_match: "No match",
   ready: "Ready",
   imported: "Imported",
   conflict: "Conflict",
   failed: "Failed",
+  held: "Held (skipped/unconfirmed)",
 };
 
 const GA_STATUS_VARIANT: Record<
-  GrantAgreementStatus,
+  GrantAgreementStatus | "held",
   "default" | "secondary" | "destructive" | "outline"
 > = {
   na: "outline",
@@ -114,6 +118,7 @@ const GA_STATUS_VARIANT: Record<
   imported: "secondary",
   conflict: "destructive",
   failed: "destructive",
+  held: "outline",
 };
 
 const AI_JUNK_LABEL: Record<string, string> = {

@@ -387,8 +387,10 @@ paths:
       tags: [coding-form-rows]
       summary: >-
         Bulk grant-agreement pull: attach every actionable row's Drive file to
-        its matched opportunity-else-gift. Attempts rows whose derived status is
-        ready or failed (re-runs retry recorded transient failures); skips
+        its matched opportunity-else-gift. Only owner-vetted rows are attempted
+        (human-confirmed match or applied row; skipped rows are excluded — pull
+        those per-row if genuinely wanted). Attempts rows whose derived status
+        is ready or failed (re-runs retry recorded transient failures); skips
         na/no_match/imported, and NEVER replaces an existing letter (conflicts
         are counted and left for per-row review with replace=true). Per-row
         failures are recorded on the rows and summarized, never thrown.
@@ -9326,13 +9328,13 @@ components:
       required: [totalWithLink, byStatus]
       properties:
         totalWithLink: { type: integer, description: "Rows carrying a grant-agreement Drive link." }
-        byStatus:      { type: array, items: { $ref: "#/components/schemas/CodingFormCount" }, description: "Count per derived grant-agreement status." }
+        byStatus:      { type: array, items: { $ref: "#/components/schemas/CodingFormCount" }, description: "Count per derived grant-agreement status. Includes a synthetic `held` key: ready/failed rows the bulk pull will NOT attempt (skipped, or match not confirmed/applied) — pull those per-row if genuinely wanted." }
     CodingFormBulkPullSummary:
       type: object
       required: [totalWithLink, attempted, imported, alreadyImported, conflict, noMatch, failed, failures]
       description: "Result of the bulk grant-agreement pull pass."
       properties:
-        totalWithLink:   { type: integer, description: "Rows carrying a Drive link (scanned)." }
+        totalWithLink:   { type: integer, description: "Owner-vetted rows carrying a Drive link (scanned by this pass)." }
         attempted:       { type: integer, description: "Rows whose derived status was ready/failed — a pull was attempted." }
         imported:        { type: integer, description: "Letters attached in this pass." }
         alreadyImported: { type: integer, description: "Idempotent no-ops (letter already attached by this backfill)." }

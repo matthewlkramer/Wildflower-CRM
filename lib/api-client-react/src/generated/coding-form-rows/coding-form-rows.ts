@@ -985,7 +985,7 @@ export const usePullGrantAgreement = <TError = ErrorType<ForbiddenResponse | Not
       return useMutation(getPullGrantAgreementMutationOptions(options));
     }
     /**
- * @summary Bulk grant-agreement pull: attach every actionable row's Drive file to its matched opportunity-else-gift. Attempts rows whose derived status is ready or failed (re-runs retry recorded transient failures); skips na/no_match/imported, and NEVER replaces an existing letter (conflicts are counted and left for per-row review with replace=true). Per-row failures are recorded on the rows and summarized, never thrown. Admin only.
+ * @summary Bulk grant-agreement pull: attach every actionable row's Drive file to its matched opportunity-else-gift. Only owner-vetted rows are attempted (human-confirmed match or applied row; skipped rows are excluded — pull those per-row if genuinely wanted). Attempts rows whose derived status is ready or failed (re-runs retry recorded transient failures); skips na/no_match/imported, and NEVER replaces an existing letter (conflicts are counted and left for per-row review with replace=true). Per-row failures are recorded on the rows and summarized, never thrown. Admin only.
  */
 export const getPullGrantAgreementsBulkUrl = () => {
 
@@ -1041,7 +1041,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type PullGrantAgreementsBulkMutationError = ErrorType<ForbiddenResponse>
 
     /**
- * @summary Bulk grant-agreement pull: attach every actionable row's Drive file to its matched opportunity-else-gift. Attempts rows whose derived status is ready or failed (re-runs retry recorded transient failures); skips na/no_match/imported, and NEVER replaces an existing letter (conflicts are counted and left for per-row review with replace=true). Per-row failures are recorded on the rows and summarized, never thrown. Admin only.
+ * @summary Bulk grant-agreement pull: attach every actionable row's Drive file to its matched opportunity-else-gift. Only owner-vetted rows are attempted (human-confirmed match or applied row; skipped rows are excluded — pull those per-row if genuinely wanted). Attempts rows whose derived status is ready or failed (re-runs retry recorded transient failures); skips na/no_match/imported, and NEVER replaces an existing letter (conflicts are counted and left for per-row review with replace=true). Per-row failures are recorded on the rows and summarized, never thrown. Admin only.
  */
 export const usePullGrantAgreementsBulk = <TError = ErrorType<ForbiddenResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pullGrantAgreementsBulk>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
