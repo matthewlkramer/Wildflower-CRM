@@ -300,6 +300,57 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       cell: (g) => formatDateShort(g.thankYouSentAt),
     },
     {
+      key: "restrictionLabel",
+      label: "Restriction",
+      defaultVisible: false,
+      tdClassName: "text-sm",
+      cell: (g) => g.restrictionLabel ?? "—",
+    },
+    {
+      key: "purposeVerbatims",
+      label: "Purpose verbatim",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[300px] whitespace-normal",
+      cell: (g) => {
+        const vals = g.purposeVerbatims ?? [];
+        return vals.length === 0 ? "—" : vals.join("; ");
+      },
+    },
+    {
+      key: "regionalRestrictionTypes",
+      label: "Regional restriction",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground",
+      cell: (g) => {
+        const vals = g.regionalRestrictionTypes ?? [];
+        return vals.length === 0 ? "—" : vals.map(formatEnum).join(", ");
+      },
+    },
+    {
+      key: "usageRestrictionTypes",
+      label: "Usage restriction",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground",
+      cell: (g) => {
+        const vals = g.usageRestrictionTypes ?? [];
+        return vals.length === 0 ? "—" : vals.map(formatEnum).join(", ");
+      },
+    },
+    {
+      key: "timeRestrictionTypes",
+      label: "Time restriction",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground",
+      cell: (g) => {
+        const vals = g.timeRestrictionTypes ?? [];
+        return vals.length === 0 ? "—" : vals.map(formatEnum).join(", ");
+      },
+    },
+    {
       key: "actions",
       label: "",
       required: true,

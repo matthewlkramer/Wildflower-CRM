@@ -84,6 +84,47 @@ const donorJoinSelect = {
     FROM gift_allocations ga
     WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.grant_year IS NOT NULL
   )`.as("grant_years"),
+  // ── Restriction aggregates across allocations (column-chooser opt-in). ──
+  // All four mirror the per-allocation fields; arrays are de-duplicated.
+  // purposeVerbatims: free-text donor restriction language (verbatim).
+  // *RestrictionTypes: distinct axis enum values — donor_restricted /
+  //   wf_restricted / unrestricted. Cast ::text to avoid the pg-enum Drizzle
+  //   pitfall (array of unknown enum type → wrong runtime type).
+  // restrictionLabel: Unrestricted / Purpose / Time / Both — mirrors the
+  //   GiftAuditReconciliation.restrictionType derivation (regional/usage ⇒
+  //   Purpose, time ⇒ Time). NULL when the gift has no allocations.
+  purposeVerbatims: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT ga.purpose_verbatim ORDER BY ga.purpose_verbatim)
+    FROM gift_allocations ga
+    WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.purpose_verbatim IS NOT NULL
+  )`.as("purpose_verbatims"),
+  regionalRestrictionTypes: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT ga.regional_restriction_type::text ORDER BY ga.regional_restriction_type::text)
+    FROM gift_allocations ga
+    WHERE ga.gift_id = ${giftsAndPayments.id}
+  )`.as("regional_restriction_types"),
+  usageRestrictionTypes: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT ga.usage_restriction_type::text ORDER BY ga.usage_restriction_type::text)
+    FROM gift_allocations ga
+    WHERE ga.gift_id = ${giftsAndPayments.id}
+  )`.as("usage_restriction_types"),
+  timeRestrictionTypes: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT ga.time_restriction_type::text ORDER BY ga.time_restriction_type::text)
+    FROM gift_allocations ga
+    WHERE ga.gift_id = ${giftsAndPayments.id}
+  )`.as("time_restriction_types"),
+  restrictionLabel: sql<string | null>`(
+    SELECT CASE
+      WHEN BOOL_OR(ga.regional_restriction_type = 'donor_restricted' OR ga.usage_restriction_type = 'donor_restricted')
+           AND BOOL_OR(ga.time_restriction_type = 'donor_restricted') THEN 'Both'
+      WHEN BOOL_OR(ga.regional_restriction_type = 'donor_restricted' OR ga.usage_restriction_type = 'donor_restricted') THEN 'Purpose'
+      WHEN BOOL_OR(ga.time_restriction_type = 'donor_restricted') THEN 'Time'
+      WHEN COUNT(*) > 0 THEN 'Unrestricted'
+      ELSE NULL
+    END
+    FROM gift_allocations ga
+    WHERE ga.gift_id = ${giftsAndPayments.id}
+  )`.as("restriction_label"),
   // Display name of the gift's payment intermediary (DAF / platform), if any.
   // Correlated subquery so no extra join is forced on donorJoinSelect callers.
   paymentIntermediaryName: sql<string | null>`(

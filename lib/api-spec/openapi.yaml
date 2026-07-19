@@ -6491,6 +6491,12 @@ components:
         entityIds:                  { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct entity_id values from gift_allocations." }
         displayUsages:              { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct display_usage values from gift_allocations (server-computed labels)." }
         grantYears:                 { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct grant_year values from gift_allocations." }
+        # ── Restriction aggregates across allocations (column-chooser opt-in) ──
+        purposeVerbatims:          { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct non-null purpose_verbatim strings across allocations (the donor's verbatim restriction language)." }
+        regionalRestrictionTypes:  { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct regional_restriction_type values across allocations." }
+        usageRestrictionTypes:     { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct usage_restriction_type values across allocations." }
+        timeRestrictionTypes:      { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct time_restriction_type values across allocations." }
+        restrictionLabel:          { type: string, nullable: true, readOnly: true, description: "Derived restriction summary across allocations: Unrestricted / Purpose / Time / Both. Mirrors GiftAuditReconciliation.restrictionType (regional/usage donor_restricted ⇒ Purpose; time donor_restricted ⇒ Time). Null when the gift has no allocations." }
         archivedAt:                 { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         donorbox:                   { allOf: [ { $ref: "#/components/schemas/DonorboxEnrichment" } ], nullable: true, readOnly: true, description: "Donorbox donation facts for this gift, joined via its linked Stripe charge (donorbox_donations.stripe_charge_id = the gift's matched/created stripe_staged_charges.id). Populated only on the detail endpoint. Enrichment only — never mints a gift." }
         createdAt:                  { type: string, format: date-time }

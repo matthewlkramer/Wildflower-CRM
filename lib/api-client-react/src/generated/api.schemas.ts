@@ -2016,6 +2016,16 @@ export interface GiftOrPayment {
   readonly displayUsages?: readonly string[] | null;
   /** Distinct grant_year values from gift_allocations. */
   readonly grantYears?: readonly string[] | null;
+  /** Distinct non-null purpose_verbatim strings across allocations (the donor's verbatim restriction language). */
+  readonly purposeVerbatims?: readonly string[] | null;
+  /** Distinct regional_restriction_type values across allocations. */
+  readonly regionalRestrictionTypes?: readonly RestrictionAxis[] | null;
+  /** Distinct usage_restriction_type values across allocations. */
+  readonly usageRestrictionTypes?: readonly RestrictionAxis[] | null;
+  /** Distinct time_restriction_type values across allocations. */
+  readonly timeRestrictionTypes?: readonly RestrictionAxis[] | null;
+  /** Derived restriction summary across allocations: Unrestricted / Purpose / Time / Both. Mirrors GiftAuditReconciliation.restrictionType (regional/usage donor_restricted ⇒ Purpose; time donor_restricted ⇒ Time). Null when the gift has no allocations. */
+  readonly restrictionLabel?: string | null;
   /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
   archivedAt?: string | null;
   /** Donorbox donation facts for this gift, joined via its linked Stripe charge (donorbox_donations.stripe_charge_id = the gift's matched/created stripe_staged_charges.id). Populated only on the detail endpoint. Enrichment only — never mints a gift. */
