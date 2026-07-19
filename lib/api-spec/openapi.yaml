@@ -1659,6 +1659,27 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string, enum: [unrestricted, purpose, time, both] } }
+        - name: regionalRestrictionTypes
+          in: query
+          required: false
+          description: "Filter to gifts with at least one allocation whose regional_restriction_type is in the given set (OR). Repeat or comma-separate."
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" } }
+        - name: usageRestrictionTypes
+          in: query
+          required: false
+          description: "Filter to gifts with at least one allocation whose usage_restriction_type is in the given set (OR). Repeat or comma-separate."
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" } }
+        - name: timeRestrictionTypes
+          in: query
+          required: false
+          description: "Filter to gifts with at least one allocation whose time_restriction_type is in the given set (OR). Repeat or comma-separate."
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" } }
         - name: ownerUserId
           in: query
           style: form

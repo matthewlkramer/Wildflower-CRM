@@ -216,7 +216,7 @@ import { stagedStatusSql } from "../lib/derivedStatus";
 import { inArray } from "drizzle-orm";
 import { personDisplayNameSql } from "../lib/personNameSql";
 
-const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "quickbooksTie", "restrictionLabels"] as const;
+const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "quickbooksTie", "restrictionLabels", "regionalRestrictionTypes", "usageRestrictionTypes", "timeRestrictionTypes"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -406,6 +406,17 @@ router.get(
         }
         if (clauses.length > 0) filters.push(or(...clauses)!);
       }
+    }
+    // Per-axis restriction type filters — each is an OR across allocations,
+    // axes are AND-ed together.
+    if (q.regionalRestrictionTypes && q.regionalRestrictionTypes.length > 0) {
+      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.regionalRestrictionType, q.regionalRestrictionTypes as never[])})`);
+    }
+    if (q.usageRestrictionTypes && q.usageRestrictionTypes.length > 0) {
+      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.usageRestrictionType, q.usageRestrictionTypes as never[])})`);
+    }
+    if (q.timeRestrictionTypes && q.timeRestrictionTypes.length > 0) {
+      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.timeRestrictionType, q.timeRestrictionTypes as never[])})`);
     }
     // Donor-lifecycle worklist preset — composite predicate shared verbatim
     // with the dashboard worklist counts (see lib/worklists).

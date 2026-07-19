@@ -412,6 +412,9 @@ export default function Gifts() {
   const [dateReceivedPresence, setDateReceivedPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.dateReceived", undefined);
   const [purposeVerbatimPresence, setPurposeVerbatimPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.purposeVerbatim", undefined);
   const [restrictionLabels, setRestrictionLabels] = usePersistedState<string[]>("wf.list.gifts.f.restrictionLabels", []);
+  const [regionalRestrictionTypes, setRegionalRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.regionalRestrictionTypes", []);
+  const [usageRestrictionTypes, setUsageRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.usageRestrictionTypes", []);
+  const [timeRestrictionTypes, setTimeRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.timeRestrictionTypes", []);
   const [page, setPage] = usePersistedState<number>("wf.list.gifts.page", 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     "wf.list.gifts.columns",
@@ -481,6 +484,9 @@ export default function Gifts() {
     ...(dateReceivedPresence ? { dateReceivedPresence } : {}),
     ...(purposeVerbatimPresence ? { purposeVerbatimPresence } : {}),
     ...(restrictionLabels.length > 0 ? { restrictionLabels: [...restrictionLabels].sort() as ListGiftsAndPaymentsRestrictionLabelsItem[] } : {}),
+    ...(regionalRestrictionTypes.length > 0 ? { regionalRestrictionTypes: [...regionalRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
+    ...(usageRestrictionTypes.length > 0 ? { usageRestrictionTypes: [...usageRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
+    ...(timeRestrictionTypes.length > 0 ? { timeRestrictionTypes: [...timeRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
   };
 
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {
@@ -794,9 +800,57 @@ export default function Gifts() {
           />
         ),
       },
+      {
+        key: "regionalRestrictionTypes",
+        label: "Regional restriction",
+        defaultVisible: false,
+        active: regionalRestrictionTypes.length > 0,
+        clear: () => { setRegionalRestrictionTypes([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Regional restriction"
+            selected={regionalRestrictionTypes}
+            onChange={(v) => { setRegionalRestrictionTypes(v); setPage(1); selection.clear(); }}
+            options={Object.values(RestrictionAxis).map((v) => ({ value: v, label: formatEnum(v) }))}
+            testId="select-regional-restriction-types"
+          />
+        ),
+      },
+      {
+        key: "usageRestrictionTypes",
+        label: "Usage restriction",
+        defaultVisible: false,
+        active: usageRestrictionTypes.length > 0,
+        clear: () => { setUsageRestrictionTypes([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Usage restriction"
+            selected={usageRestrictionTypes}
+            onChange={(v) => { setUsageRestrictionTypes(v); setPage(1); selection.clear(); }}
+            options={Object.values(RestrictionAxis).map((v) => ({ value: v, label: formatEnum(v) }))}
+            testId="select-usage-restriction-types"
+          />
+        ),
+      },
+      {
+        key: "timeRestrictionTypes",
+        label: "Time restriction",
+        defaultVisible: false,
+        active: timeRestrictionTypes.length > 0,
+        clear: () => { setTimeRestrictionTypes([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Time restriction"
+            selected={timeRestrictionTypes}
+            onChange={(v) => { setTimeRestrictionTypes(v); setPage(1); selection.clear(); }}
+            options={Object.values(RestrictionAxis).map((v) => ({ value: v, label: formatEnum(v) }))}
+            testId="select-time-restriction-types"
+          />
+        ),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [types, owners, fiscalYears, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence, dateReceivedPresence, purposeVerbatimPresence, restrictionLabels],
+    [types, owners, fiscalYears, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence, dateReceivedPresence, purposeVerbatimPresence, restrictionLabels, regionalRestrictionTypes, usageRestrictionTypes, timeRestrictionTypes],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -924,6 +978,9 @@ export default function Gifts() {
     dateReceivedPresence: PresenceValue;
     purposeVerbatimPresence: PresenceValue;
     restrictionLabels: string[];
+    regionalRestrictionTypes: string[];
+    usageRestrictionTypes: string[];
+    timeRestrictionTypes: string[];
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -942,6 +999,9 @@ export default function Gifts() {
     dateReceivedPresence,
     purposeVerbatimPresence,
     restrictionLabels,
+    regionalRestrictionTypes,
+    usageRestrictionTypes,
+    timeRestrictionTypes,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -960,6 +1020,9 @@ export default function Gifts() {
     setDateReceivedPresence(undefined);
     setPurposeVerbatimPresence(undefined);
     setRestrictionLabels([]);
+    setRegionalRestrictionTypes([]);
+    setUsageRestrictionTypes([]);
+    setTimeRestrictionTypes([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -981,6 +1044,9 @@ export default function Gifts() {
       setDateReceivedPresence(s.dateReceivedPresence ?? undefined);
       setPurposeVerbatimPresence(s.purposeVerbatimPresence ?? undefined);
       setRestrictionLabels(s.restrictionLabels ?? []);
+      setRegionalRestrictionTypes(s.regionalRestrictionTypes ?? []);
+      setUsageRestrictionTypes(s.usageRestrictionTypes ?? []);
+      setTimeRestrictionTypes(s.timeRestrictionTypes ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
       setFiltersState(s.filters ?? null);
@@ -1001,6 +1067,9 @@ export default function Gifts() {
       !s.dateReceivedPresence &&
       !s.purposeVerbatimPresence &&
       (s.restrictionLabels?.length ?? 0) === 0 &&
+      (s.regionalRestrictionTypes?.length ?? 0) === 0 &&
+      (s.usageRestrictionTypes?.length ?? 0) === 0 &&
+      (s.timeRestrictionTypes?.length ?? 0) === 0 &&
       (s.sort?.key ?? null) === null &&
       (s.columns ?? null) === null &&
       (s.filters ?? null) === null,
@@ -1018,7 +1087,10 @@ export default function Gifts() {
     awaitingEvidence ||
     !!dateReceivedPresence ||
     !!purposeVerbatimPresence ||
-    restrictionLabels.length > 0;
+    restrictionLabels.length > 0 ||
+    regionalRestrictionTypes.length > 0 ||
+    usageRestrictionTypes.length > 0 ||
+    timeRestrictionTypes.length > 0;
 
   return (
     <div className="space-y-6">

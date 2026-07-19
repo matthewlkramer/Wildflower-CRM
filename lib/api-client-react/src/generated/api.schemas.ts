@@ -9646,6 +9646,18 @@ purposeVerbatimPresence?: ListGiftsAndPaymentsPurposeVerbatimPresence;
  * Filter by restriction summary label (OR semantics). `unrestricted` = no donor-restricted axis; `purpose` = regional or usage donor-restricted but not time; `time` = time donor-restricted but not regional/usage; `both` = time AND (regional or usage) donor-restricted.
  */
 restrictionLabels?: ListGiftsAndPaymentsRestrictionLabelsItem[];
+/**
+ * Filter to gifts with at least one allocation whose regional_restriction_type is in the given set (OR). Repeat or comma-separate.
+ */
+regionalRestrictionTypes?: RestrictionAxis[];
+/**
+ * Filter to gifts with at least one allocation whose usage_restriction_type is in the given set (OR). Repeat or comma-separate.
+ */
+usageRestrictionTypes?: RestrictionAxis[];
+/**
+ * Filter to gifts with at least one allocation whose time_restriction_type is in the given set (OR). Repeat or comma-separate.
+ */
+timeRestrictionTypes?: RestrictionAxis[];
 ownerUserId?: string[];
 /**
  * Filter to gifts that have at least one gift_allocation with `entity_id`
