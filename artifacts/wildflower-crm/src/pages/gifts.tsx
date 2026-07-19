@@ -14,7 +14,11 @@ import {
   getGetGiftOrPaymentQueryKey,
   ListGiftsAndPaymentsWorklist,
   ListGiftsAndPaymentsRestrictionLabelsItem,
+  useUpdateGiftAllocation,
+  useDeleteGiftAllocation,
   type ListGiftsAndPaymentsParams,
+  type UpdateGiftAllocationBody,
+  type GiftAllocation,
   type GiftType,
   type GiftPaymentMethod,
   type GiftOrPayment,
@@ -72,7 +76,7 @@ import {
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { X, ChevronDown, ChevronRight } from "lucide-react";
+import { X, ChevronDown, ChevronRight, FolderOpen, Trash2, Check } from "lucide-react";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { FiscalYearMultiSelect } from "@/components/fiscal-year-multi-select";
 import {
@@ -444,6 +448,8 @@ export default function Gifts() {
   const archiveMut = useArchiveGiftOrPayment();
   const unarchiveMut = useUnarchiveGiftOrPayment();
   const updateGift = useUpdateGiftOrPayment();
+  const updateGiftAllocMut = useUpdateGiftAllocation();
+  const deleteGiftAllocMut = useDeleteGiftAllocation();
 
   // Global entity filter (header dropdown). Forwarded to the server so the
   // gifts list is scoped to gifts with at least one allocation on the
@@ -843,6 +849,20 @@ export default function Gifts() {
       }),
     ),
   });
+  const [editingAllocId, setEditingAllocId] = useState<string | null>(null);
+  const [allocDraft, setAllocDraft] = useState<UpdateGiftAllocationBody>({});
+  const startAllocEdit = (a: GiftAllocation) => {
+    setEditingAllocId(a.id);
+    setAllocDraft({ subAmount: a.subAmount ?? undefined, grantYear: a.grantYear ?? undefined, purposeVerbatim: a.purposeVerbatim ?? undefined });
+  };
+  const cancelAllocEdit = () => { setEditingAllocId(null); setAllocDraft({}); };
+  const saveAllocEdit = async (giftId: string) => {
+    await updateGiftAllocMut.mutateAsync({ id: editingAllocId!, data: allocDraft });
+    void queryClient.invalidateQueries({ queryKey: getGetGiftOrPaymentQueryKey(giftId) });
+    setEditingAllocId(null);
+    setAllocDraft({});
+  };
+
   const expandedGiftDetailsById = useMemo(() => {
     const map = new Map<string, GiftOrPaymentDetail>();
     for (const q of expandGiftQueries) {
@@ -1183,44 +1203,70 @@ export default function Gifts() {
                       </TableCell>
                     ))}
                   </TableRow>
-                  {expandedGiftIds.has(g.id) && (
-                    <TableRow className="bg-muted/30 hover:bg-muted/30">
-                      <TableCell />
-                      <TableCell />
-                      <TableCell colSpan={visibleCols.length} className="py-2">
-                        {expandedGiftDetailsById.has(g.id) ? (
-                          (expandedGiftDetailsById.get(g.id)!.allocations ?? []).length === 0 ? (
-                            <span className="text-xs text-muted-foreground italic">No allocations</span>
-                          ) : (
-                            <table className="text-xs text-muted-foreground w-full">
-                              <thead>
-                                <tr className="text-left">
-                                  <th className="font-medium pb-1 pr-3">Entity</th>
-                                  <th className="font-medium pb-1 pr-3">FY</th>
-                                  <th className="font-medium pb-1 pr-3 text-right">Amount</th>
-                                  <th className="font-medium pb-1 pr-3">Usage</th>
-                                  <th className="font-medium pb-1">Purpose (verbatim)</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(expandedGiftDetailsById.get(g.id)!.allocations ?? []).map((a, i) => (
-                                  <tr key={i}>
-                                    <td className="pr-3 pb-0.5">{entityNameById.get(a.entityId ?? "") ?? "—"}</td>
-                                    <td className="pr-3 pb-0.5">{a.grantYear?.toUpperCase() ?? "—"}</td>
-                                    <td className="pr-3 pb-0.5 text-right tabular-nums">{a.subAmount != null ? `$${Number(a.subAmount).toLocaleString()}` : "—"}</td>
-                                    <td className="pr-3 pb-0.5">{a.displayUsage ?? "—"}</td>
-                                    <td className="pb-0.5 max-w-[220px] truncate">{a.purposeVerbatim ?? "—"}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )
-                        ) : (
-                          <span className="text-xs text-muted-foreground italic">Loading…</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )}
+                  {expandedGiftIds.has(g.id) && (() => {
+                    const detail = expandedGiftDetailsById.get(g.id);
+                    if (!detail) return (
+                      <TableRow className="bg-muted/30">
+                        <TableCell /><TableCell />
+                        <TableCell colSpan={visibleCols.length} className="py-2 text-xs text-muted-foreground italic">Loading…</TableCell>
+                      </TableRow>
+                    );
+                    const allocs = detail.allocations ?? [];
+                    if (allocs.length === 0) return (
+                      <TableRow className="bg-muted/30">
+                        <TableCell /><TableCell />
+                        <TableCell colSpan={visibleCols.length} className="py-2 text-xs text-muted-foreground italic">No allocations</TableCell>
+                      </TableRow>
+                    );
+                    const EDITABLE_COLS = new Set(["amount", "grantYears", "purposeVerbatims"]);
+                    return allocs.map((a) => {
+                      const isEditing = editingAllocId === a.id;
+                      return (
+                        <TableRow key={a.id} className="bg-muted/30 hover:bg-muted/40">
+                          <TableCell className="py-0.5 px-1" />
+                          <TableCell className="py-0.5" />
+                          {visibleCols.map((c) => {
+                            let content: React.ReactNode = null;
+                            if (c.key === "actions") {
+                              content = isEditing ? (
+                                <div className="flex gap-0.5">
+                                  <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => void saveAllocEdit(g.id)} disabled={updateGiftAllocMut.isPending}><Check className="h-3 w-3" /></Button>
+                                  <Button size="icon" variant="ghost" className="h-6 w-6" onClick={cancelAllocEdit}><X className="h-3 w-3" /></Button>
+                                </div>
+                              ) : (
+                                <div className="flex gap-0.5">
+                                  <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground" onClick={() => navigate(`/gifts/${g.id}`)}><FolderOpen className="h-3 w-3" /></Button>
+                                  <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={async () => { await deleteGiftAllocMut.mutateAsync({ id: a.id }); void queryClient.invalidateQueries({ queryKey: getGetGiftOrPaymentQueryKey(g.id) }); }} disabled={deleteGiftAllocMut.isPending}><Trash2 className="h-3 w-3" /></Button>
+                                </div>
+                              );
+                            } else if (isEditing && c.key === "amount") {
+                              content = <Input className="h-6 text-xs w-28" value={allocDraft.subAmount ?? ""} onChange={e => setAllocDraft(d => ({ ...d, subAmount: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
+                            } else if (isEditing && c.key === "grantYears") {
+                              content = <Input className="h-6 text-xs w-24" value={allocDraft.grantYear ?? ""} onChange={e => setAllocDraft(d => ({ ...d, grantYear: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
+                            } else if (isEditing && c.key === "purposeVerbatims") {
+                              content = <Input className="h-6 text-xs w-48" value={allocDraft.purposeVerbatim ?? ""} onChange={e => setAllocDraft(d => ({ ...d, purposeVerbatim: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
+                            } else if (c.key === "amount") {
+                              content = a.subAmount != null ? <span className="text-xs tabular-nums">${Number(a.subAmount).toLocaleString()}</span> : null;
+                            } else if (c.key === "entities") {
+                              content = a.entityId ? <span className="text-xs text-muted-foreground">{entityNameById.get(a.entityId) ?? a.entityId}</span> : null;
+                            } else if (c.key === "grantYears") {
+                              content = a.grantYear ? <span className="text-xs text-muted-foreground">{a.grantYear.toUpperCase()}</span> : null;
+                            } else if (c.key === "usages") {
+                              content = a.displayUsage ? <span className="text-xs text-muted-foreground">{a.displayUsage}</span> : null;
+                            } else if (c.key === "purposeVerbatims") {
+                              content = a.purposeVerbatim ? <span className="text-xs text-muted-foreground max-w-[200px] truncate block">{a.purposeVerbatim}</span> : null;
+                            }
+                            const canStartEdit = !isEditing && EDITABLE_COLS.has(c.key) && !updateGiftAllocMut.isPending;
+                            return (
+                              <TableCell key={c.key} className={`${c.tdClassName ?? ""} py-0.5`} onClick={canStartEdit ? () => startAllocEdit(a) : undefined} style={canStartEdit ? { cursor: "text" } : undefined}>
+                                {content}
+                              </TableCell>
+                            );
+                          })}
+                        </TableRow>
+                      );
+                    });
+                  })()}
                 </Fragment>
               ))
             )}

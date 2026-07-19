@@ -12,9 +12,13 @@ import {
   useUpdateOpportunityOrPledge,
   getGetOpportunityOrPledgeQueryOptions,
   getGetOpportunityOrPledgeQueryKey,
+  useUpdatePledgeAllocation,
+  useDeletePledgeAllocation,
   useListEntities,
   ListOpportunitiesAndPledgesWorklist,
   type ListOpportunitiesAndPledgesParams,
+  type UpdatePledgeAllocationBody,
+  type PledgeAllocation,
   type OpportunityStatus,
   type OpportunityStage,
   type OpportunityType,
@@ -81,7 +85,7 @@ import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { FiscalYearMultiSelect } from "@/components/fiscal-year-multi-select";
 import { useUserNameMap } from "@/components/user-picker";
-import { LayoutList, Columns3, X, ChevronDown, ChevronRight } from "lucide-react";
+import { LayoutList, Columns3, X, ChevronDown, ChevronRight, FolderOpen, Trash2, Check } from "lucide-react";
 import { OpportunityKanban } from "@/components/opportunity-kanban";
 
 const KANBAN_LIMIT = 500;
@@ -429,6 +433,8 @@ export default function Opportunities({
   const archiveMut = useArchiveOpportunityOrPledge();
   const unarchiveMut = useUnarchiveOpportunityOrPledge();
   const updateOpp = useUpdateOpportunityOrPledge();
+  const updatePledgeAllocMut = useUpdatePledgeAllocation();
+  const deletePledgeAllocMut = useDeletePledgeAllocation();
   // Lookup map so the Entities column can render slug -> human name
   // without firing one fetch per row. Same pattern as gifts.tsx.
   const entitiesQ = useListEntities();
@@ -606,6 +612,20 @@ export default function Opportunities({
     }
     return map;
   }, [expandOppQueries]);
+
+  const [editingAllocId, setEditingAllocId] = useState<string | null>(null);
+  const [allocDraft, setAllocDraft] = useState<UpdatePledgeAllocationBody>({});
+  const startAllocEdit = (a: PledgeAllocation) => {
+    setEditingAllocId(a.id);
+    setAllocDraft({ subAmount: a.subAmount ?? undefined, grantYear: a.grantYear ?? undefined, purposeVerbatim: a.purposeVerbatim ?? undefined });
+  };
+  const cancelAllocEdit = () => { setEditingAllocId(null); setAllocDraft({}); };
+  const saveAllocEdit = async (oppId: string) => {
+    await updatePledgeAllocMut.mutateAsync({ id: editingAllocId!, data: allocDraft });
+    void queryClient.invalidateQueries({ queryKey: getGetOpportunityOrPledgeQueryKey(oppId) });
+    setEditingAllocId(null);
+    setAllocDraft({});
+  };
 
   // Determine "is anything filtered beyond default?" for the Clear button.
   const sameDefaultStatus =
@@ -1193,42 +1213,64 @@ export default function Opportunities({
                       </TableCell>
                     ))}
                   </TableRow>
-                  {isPledgeView && expandedOppIds.has(o.id) && (
-                    <TableRow className="bg-muted/30 hover:bg-muted/30">
-                      <TableCell />
-                      <TableCell />
-                      <TableCell colSpan={visibleCols.length} className="py-2">
-                        {expandedOppDetailsById.has(o.id) ? (
-                          (expandedOppDetailsById.get(o.id)!.allocations ?? []).length === 0 ? (
-                            <span className="text-xs text-muted-foreground italic">No allocations</span>
-                          ) : (
-                            <table className="text-xs text-muted-foreground w-full">
-                              <thead>
-                                <tr className="text-left">
-                                  <th className="font-medium pb-1 pr-3">Entity</th>
-                                  <th className="font-medium pb-1 pr-3">FY</th>
-                                  <th className="font-medium pb-1 pr-3 text-right">Awarded</th>
-                                  <th className="font-medium pb-1">Usage</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(expandedOppDetailsById.get(o.id)!.allocations ?? []).map((a, i) => (
-                                  <tr key={i}>
-                                    <td className="pr-3 pb-0.5">{entityNameById.get(a.entityId ?? "") ?? "—"}</td>
-                                    <td className="pr-3 pb-0.5">{a.grantYear?.toUpperCase() ?? "—"}</td>
-                                    <td className="pr-3 pb-0.5 text-right tabular-nums">{a.subAmount != null ? `$${Number(a.subAmount).toLocaleString()}` : "—"}</td>
-                                    <td className="pb-0.5">{a.intendedUsage != null ? a.intendedUsage.replace(/_/g, " ") : "—"}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )
-                        ) : (
-                          <span className="text-xs text-muted-foreground italic">Loading…</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )}
+                  {isPledgeView && expandedOppIds.has(o.id) && (() => {
+                    const detail = expandedOppDetailsById.get(o.id);
+                    if (!detail) return (
+                      <TableRow className="bg-muted/30">
+                        <TableCell /><TableCell />
+                        <TableCell colSpan={visibleCols.length} className="py-2 text-xs text-muted-foreground italic">Loading…</TableCell>
+                      </TableRow>
+                    );
+                    const allocs = detail.allocations ?? [];
+                    if (allocs.length === 0) return (
+                      <TableRow className="bg-muted/30">
+                        <TableCell /><TableCell />
+                        <TableCell colSpan={visibleCols.length} className="py-2 text-xs text-muted-foreground italic">No allocations</TableCell>
+                      </TableRow>
+                    );
+                    const EDITABLE_COLS = new Set(["awarded", "coveredFys"]);
+                    return allocs.map((a) => {
+                      const isEditing = editingAllocId === a.id;
+                      return (
+                        <TableRow key={a.id} className="bg-muted/30 hover:bg-muted/40">
+                          <TableCell className="py-0.5 px-1" />
+                          <TableCell className="py-0.5" />
+                          {visibleCols.map((c) => {
+                            let content: React.ReactNode = null;
+                            if (c.key === "actions") {
+                              content = isEditing ? (
+                                <div className="flex gap-0.5">
+                                  <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => void saveAllocEdit(o.id)} disabled={updatePledgeAllocMut.isPending}><Check className="h-3 w-3" /></Button>
+                                  <Button size="icon" variant="ghost" className="h-6 w-6" onClick={cancelAllocEdit}><X className="h-3 w-3" /></Button>
+                                </div>
+                              ) : (
+                                <div className="flex gap-0.5">
+                                  <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground" onClick={() => navigate(`/opportunities/${o.id}`)}><FolderOpen className="h-3 w-3" /></Button>
+                                  <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={async () => { await deletePledgeAllocMut.mutateAsync({ id: a.id }); void queryClient.invalidateQueries({ queryKey: getGetOpportunityOrPledgeQueryKey(o.id) }); }} disabled={deletePledgeAllocMut.isPending}><Trash2 className="h-3 w-3" /></Button>
+                                </div>
+                              );
+                            } else if (isEditing && c.key === "awarded") {
+                              content = <Input className="h-6 text-xs w-28" value={allocDraft.subAmount ?? ""} onChange={e => setAllocDraft(d => ({ ...d, subAmount: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(o.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
+                            } else if (isEditing && c.key === "coveredFys") {
+                              content = <Input className="h-6 text-xs w-24" value={allocDraft.grantYear ?? ""} onChange={e => setAllocDraft(d => ({ ...d, grantYear: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(o.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
+                            } else if (c.key === "awarded") {
+                              content = a.subAmount != null ? <span className="text-xs tabular-nums">${Number(a.subAmount).toLocaleString()}</span> : null;
+                            } else if (c.key === "entities") {
+                              content = a.entityId ? <span className="text-xs text-muted-foreground">{entityNameById.get(a.entityId) ?? a.entityId}</span> : null;
+                            } else if (c.key === "coveredFys") {
+                              content = a.grantYear ? <span className="text-xs text-muted-foreground">{a.grantYear.toUpperCase()}</span> : null;
+                            }
+                            const canStartEdit = !isEditing && EDITABLE_COLS.has(c.key) && !updatePledgeAllocMut.isPending;
+                            return (
+                              <TableCell key={c.key} className={`${c.tdClassName ?? ""} py-0.5`} onClick={canStartEdit ? () => startAllocEdit(a) : undefined} style={canStartEdit ? { cursor: "text" } : undefined}>
+                                {content}
+                              </TableCell>
+                            );
+                          })}
+                        </TableRow>
+                      );
+                    });
+                  })()}
                 </Fragment>
               ))
             )}
