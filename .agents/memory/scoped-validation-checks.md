@@ -62,3 +62,5 @@ fails the build with esbuild `Could not resolve "./generated"` in
 can lose the race twice in a row. **How to apply:** after any validation storm,
 confirm the codegen workflow is FINISHED before restarting the api-server
 workflow, then verify with a curl through `localhost:80` (401 = up).
+
+**Platform validation runner (mark_task_complete) runs ALL registered checks concurrently** — codegen:check cleans/regenerates the generated dirs mid-run, so full/web/test-web can FAIL with "Cannot find module ./generated" as a false positive. Repair: re-run codegen + typecheck:libs sequentially, verify locally, and skip validation with an explanation.
