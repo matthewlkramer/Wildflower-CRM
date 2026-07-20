@@ -8969,7 +8969,7 @@ components:
         representationNote: { type: string, nullable: true, description: "Human-readable note for mixed or competing representations (grain=mixed)." }
     WorkbenchClusterCoverage:
       type: object
-      required: [evidenceRecords, donorPurpose, paymentTransaction, accountingEvidence, complete]
+      required: [evidenceRecords, donorPurpose, paymentTransaction, accountingEvidence, complete, state]
       description: |
         Three-dimension canonical cluster state. Derived once and used for both lens counts and
         the hydrated response — a cluster whose complete=false never appears in the Completed lens.
@@ -8993,7 +8993,7 @@ components:
           description: "True when all three dimensions are complete: donorPurpose.complete (crmLinkage + crmRecordCompleteness), paymentTransaction.complete, and accountingEvidence.complete."
         state:
           allOf: [ { $ref: "#/components/schemas/WorkbenchRowState" } ]
-          description: "Canonical row-level state (Option C). Derived first; coverage.complete and all lens flags are derived from this."
+          description: "Canonical row-level state (Option C). Required — the server always derives it; coverage.complete and all lens flags are derived from this."
     WorkbenchCluster:
       type: object
       required: [id, kind, anchorId, status, lenses, gifts, charges, qbRecords, coverage]

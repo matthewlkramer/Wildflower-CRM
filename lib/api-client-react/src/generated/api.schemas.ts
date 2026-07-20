@@ -5852,8 +5852,8 @@ export interface WorkbenchClusterCoverage {
   accountingEvidence: WorkbenchClusterDimensionCoverage;
   /** True when all three dimensions are complete: donorPurpose.complete (crmLinkage + crmRecordCompleteness), paymentTransaction.complete, and accountingEvidence.complete. */
   complete: boolean;
-  /** Canonical row-level state (Option C). Derived first; coverage.complete and all lens flags are derived from this. */
-  state?: WorkbenchRowState;
+  /** Canonical row-level state (Option C). Required — the server always derives it; coverage.complete and all lens flags are derived from this. */
+  state: WorkbenchRowState;
 }
 
 /**
