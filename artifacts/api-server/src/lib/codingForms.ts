@@ -856,17 +856,48 @@ async function existingReportingTask(
   return rows[0]?.id ?? null;
 }
 
-async function existingAddressId(
-  row: CodingFormRowSelect,
-): Promise<string | null> {
+async function existingAddress(row: CodingFormRowSelect): Promise<{
+  id: string;
+  street: string | null;
+  cityName: string | null;
+  stateCode: string | null;
+  postalCode: string | null;
+  country: string | null;
+} | null> {
   const where = addressOwnerWhere(row);
   if (!where) return null;
   const rows = await db
-    .select({ id: addresses.id })
+    .select({
+      id: addresses.id,
+      street: addresses.street,
+      cityName: addresses.cityName,
+      stateCode: addresses.stateCode,
+      postalCode: addresses.postalCode,
+      country: addresses.country,
+    })
     .from(addresses)
     .where(where)
     .limit(1);
-  return rows[0]?.id ?? null;
+  return rows[0] ?? null;
+}
+
+function formatAddress(addr: {
+  street: string | null;
+  cityName: string | null;
+  stateCode: string | null;
+  postalCode: string | null;
+  country: string | null;
+}): string {
+  const cityStateParts = [
+    addr.cityName,
+    [addr.stateCode, addr.postalCode].filter(Boolean).join(" "),
+  ].filter(Boolean);
+  const parts = [
+    addr.street || null,
+    cityStateParts.length > 0 ? cityStateParts.join(", ") : null,
+    addr.country || null,
+  ].filter((x): x is string => x !== null && x !== "");
+  return parts.join(", ");
 }
 
 const INTENDED_USAGE_LABELS: Record<string, string> = {
@@ -1248,13 +1279,13 @@ export async function crossChecksFor(
         blockedReason = "no matched donor to attach the address to";
         status = "na";
       } else {
-        const existing = await existingAddressId(row);
+        const existing = await existingAddress(row);
         if (existing) {
           // We cannot reliably compare a free-text mailing string to a
           // structured address, so surface it as a conflict for a human.
           status = "conflict";
-          crmValue = "(existing address on record)";
-          targetId = existing;
+          crmValue = formatAddress(existing) || "(existing address on record)";
+          targetId = existing.id;
         } else {
           status = "new";
         }
