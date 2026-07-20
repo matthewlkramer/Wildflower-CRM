@@ -1120,7 +1120,8 @@ export const ListWorkbenchClustersResponse = zod.object({
   "information": zod.object({
   "state": zod.enum(['audit_ready', 'accounting_pending', 'incomplete']).describe('Content completeness of the cluster\'s records.\naudit_ready — CRM gift records complete AND accounting evidence settled AND no pending refunds.\naccounting_pending — CRM records complete but accounting not yet settled or a refund is pending.\nincomplete — one or more CRM gift records lack required donor \/ allocation information.\n'),
   "crmComplete": zod.boolean().describe('True when all linked CRM gift records satisfy the record-completeness predicate.'),
-  "qbComplete": zod.boolean().describe('True when the accounting evidence is present and settled.')
+  "qbComplete": zod.boolean().describe('QB DOCUMENTATION completeness: finance has filled out the QB record from CRM (fill-out-QB workflow). Always false until that workflow ships — gates audit_ready, so evidence-linked-but-undocumented rows stay accounting_pending.'),
+  "qbEvidenceComplete": zod.boolean().describe('True when the accounting evidence is present and settled (evidence linkage only — does NOT imply documentation completeness).')
 }),
   "flags": zod.object({
   "excluded": zod.boolean(),
@@ -1136,7 +1137,8 @@ export const ListWorkbenchClustersResponse = zod.object({
   "transactions": zod.array(zod.object({
   "transactionId": zod.string(),
   "livePayment": zod.boolean().describe('False when the charge is proposed-refunded.'),
-  "refundStatus": zod.enum(['none', 'anticipated', 'refunded'])
+  "refundStatus": zod.enum(['none', 'anticipated', 'refunded']),
+  "state": zod.enum(['unmatched', 'partial', 'amount_mismatch', 'info_conflict', 'matched', 'refund_anticipated', 'refunded', 'excluded']).describe('Canonical per-transaction card state (docs\/workbench-business-rules.md §5.1).\nunmatched = live transaction with no CRM\/accounting link; partial = some\nlinkage but coverage incomplete; amount_mismatch = links exist but amounts\ndo not reconcile; info_conflict = amounts reconcile but metadata materially\nconflicts; matched = required links present and amounts reconcile;\nrefund_anticipated \/ refunded apply to the individual transaction only;\nexcluded = intentionally excluded from active reconciliation.\n')
 }).describe('One countable transaction unit (Stripe charge or QB record for qb_standalone).')),
   "crmCards": zod.array(zod.object({
   "giftId": zod.string(),

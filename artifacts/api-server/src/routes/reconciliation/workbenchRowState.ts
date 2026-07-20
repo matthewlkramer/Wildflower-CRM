@@ -26,10 +26,26 @@ export type CoverageState = {
   relationshipCount: number;
 };
 
+/**
+ * Canonical per-transaction card state (docs/workbench-business-rules.md §5.1).
+ * refund_anticipated / refunded / excluded apply to the individual transaction
+ * only and never bleed into row-level flags.
+ */
+export type TransactionCardState =
+  | "unmatched"
+  | "partial"
+  | "amount_mismatch"
+  | "info_conflict"
+  | "matched"
+  | "refund_anticipated"
+  | "refunded"
+  | "excluded";
+
 export type TransactionEntry = {
   transactionId: string;
   livePayment: boolean;
   refundStatus: "none" | "anticipated" | "refunded";
+  state: TransactionCardState;
 };
 
 export type QbCardState =
@@ -104,9 +120,14 @@ export type WorkbenchRowState = {
     state: InformationCompleteness;
     /** True when all linked CRM gift records satisfy the record-completeness predicate. */
     crmComplete: boolean;
-    /** True when the accounting evidence is present and settled.
-     *  Future: tracks explicit QB documentation by finance (fills in QB fields from CRM). */
+    /**
+     * QB DOCUMENTATION completeness — finance has filled out the QB record from
+     * CRM (the fill-out-QB workflow). Gates audit_ready. Always false until that
+     * workflow ships (see QB_DOCUMENTATION_COMPLETE).
+     */
     qbComplete: boolean;
+    /** True when the accounting evidence is present and settled (evidence linkage only). */
+    qbEvidenceComplete: boolean;
   };
   flags: {
     /** True when all non-zero charges/records in the cluster are excluded from counts. */
@@ -125,3 +146,58 @@ export type WorkbenchRowState = {
   /** One card per CRM gift in the cluster. */
   crmCards: CrmCardEntry[];
 };
+
+/**
+ * QB DOCUMENTATION predicate — the fill-out-QB workflow does not exist yet, so
+ * no row can be documentation-complete. ONE authority for both the TS
+ * derivation (information.qbComplete) and the slim SQL f_completed arm
+ * (QB_DOCUMENTATION_COMPLETE_SQL). When the fill-out-QB workflow ships, both
+ * must change in lockstep to the real documentation state.
+ */
+export const QB_DOCUMENTATION_COMPLETE = false;
+export const QB_DOCUMENTATION_COMPLETE_SQL = "false";
+
+/**
+ * The ONE information-state derivation (§10): CRM content first, then
+ * accounting. audit_ready requires the DOCUMENTATION predicate (qbDocumented),
+ * not merely linked/settled evidence — evidence-linked-but-undocumented rows
+ * stay accounting_pending until the fill-out-QB workflow exists.
+ */
+export function informationStateOf(args: {
+  crmComplete: boolean;
+  qbEvidenceComplete: boolean;
+  qbDocumented: boolean;
+  attentionRequired: boolean;
+}): InformationCompleteness {
+  if (!args.crmComplete) return "incomplete";
+  if (!args.qbEvidenceComplete || !args.qbDocumented || args.attentionRequired) {
+    return "accounting_pending";
+  }
+  return "audit_ready";
+}
+
+/** Row-level completion classification — the one definition Completed uses. */
+export function rowCompleteFromState(s: WorkbenchRowState): boolean {
+  return s.linkage.state === "complete" && s.information.state === "audit_ready";
+}
+
+/**
+ * Lens-relevant flags derived from the canonical state. The slim SQL f_* flags
+ * in buildUniverse() are a performance twin of THIS derivation — the
+ * integration parity test asserts they agree for every returned row.
+ */
+export function lensFlagsFromState(s: WorkbenchRowState): {
+  completed: boolean;
+  excluded: boolean;
+  conflicts: boolean;
+  refunds: boolean;
+  attention_required: boolean;
+} {
+  return {
+    completed: rowCompleteFromState(s),
+    excluded: s.flags.excluded,
+    conflicts: s.flags.conflict,
+    refunds: s.transactions.some((t) => t.state === "refund_anticipated"),
+    attention_required: s.flags.attentionRequired,
+  };
+}

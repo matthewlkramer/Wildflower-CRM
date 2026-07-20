@@ -15,18 +15,23 @@ import {
   qbStatusCaseText,
 } from "../../lib/derivedStatus";
 import { fullyChargeTied } from "./bundleAnchors";
-import type {
-  WorkbenchRowState,
-  CoverageState as WbCoverageState,
-  CrmCardEntry,
-  CrmCardState,
-  CrmSatisfiedByCanonical,
-  QbCardEntry,
-  QbCardState,
-  TransactionEntry,
-  LinkCompleteness,
-  InformationCompleteness,
-  SettlementLinkState,
+import {
+  QB_DOCUMENTATION_COMPLETE,
+  QB_DOCUMENTATION_COMPLETE_SQL,
+  informationStateOf,
+  rowCompleteFromState,
+  lensFlagsFromState,
+  type WorkbenchRowState,
+  type CoverageState as WbCoverageState,
+  type CrmCardEntry,
+  type CrmCardState,
+  type CrmSatisfiedByCanonical,
+  type QbCardEntry,
+  type QbCardState,
+  type TransactionEntry,
+  type TransactionCardState,
+  type LinkCompleteness,
+  type SettlementLinkState,
 } from "./workbenchRowState";
 
 // ─── GET /reconciliation/workbench-clusters ─────────────────────────────────
@@ -131,6 +136,38 @@ const giftCodingForm = `EXISTS (
 )`;
 
 /**
+ * §3.2 COMPLETE coding form: an applied row alone is NOT sufficient — the form
+ * must carry its required normalized fields (amount + donation date) and the
+ * gift must have an identified donor. Partial/blank forms never satisfy.
+ */
+const giftCodingFormComplete = `EXISTS (
+  SELECT 1 FROM coding_form_rows cfr_c
+  WHERE cfr_c.matched_gift_id = g.id
+    AND cfr_c.status = 'applied'
+    AND cfr_c.amount IS NOT NULL
+    AND cfr_c.donation_date IS NOT NULL
+) AND COALESCE(g.organization_id, g.individual_giver_person_id, g.household_id) IS NOT NULL`;
+
+/**
+ * Donor restrictions present: any allocation axis coded donor_restricted.
+ * Drives the CONDITIONAL grant-letter requirement (§3.2/§3.3).
+ */
+const giftDonorRestricted = `EXISTS (
+  SELECT 1 FROM gift_allocations ga_dr
+  WHERE ga_dr.gift_id = g.id
+    AND (ga_dr.time_restriction_type = 'donor_restricted'
+      OR ga_dr.usage_restriction_type = 'donor_restricted'
+      OR ga_dr.regional_restriction_type = 'donor_restricted')
+)`;
+
+/**
+ * §3.2/§3.3 letter rule: a grant letter is REQUIRED only when donor
+ * restrictions make supporting documentation necessary; restriction-free
+ * money completes without one.
+ */
+const giftLetterOk = `(NOT ${giftDonorRestricted} OR ${giftGrantLetter})`;
+
+/**
  * Full allocation completeness — at least one allocation row exists AND
  * every row has entity_id set AND all restriction-type fields are non-null AND
  * all conditional restriction-field requirements are met:
@@ -162,24 +199,27 @@ const fullAllocComplete = `(
 
 /**
  * Canonical CRM-record-completeness predicate (SQL boolean).
- * Paths:
- *   1. Donorbox-backed: a counted donorbox PA exists, or a counted stripe PA
- *      whose charge has a Donorbox counterpart (see donorboxBackedExistsSql).
- *   2. Coding-form: any Donation Revenue Coding Form field is stamped.
- *   3. Donor + allocations + letter: donor identified, ≥1 allocation with
- *      all restriction fields filled (entity_id + conditional dates/purpose/
- *      regions), AND a grant letter on file.
+ * Paths (docs/workbench-business-rules.md §3):
+ *   1. Donorbox-backed (§3.1): a counted donorbox PA exists, or a counted
+ *      stripe PA whose charge has a Donorbox counterpart.
+ *   2. COMPLETE coding form (§3.2): applied form with required fields filled +
+ *      donor identified, AND the conditional grant-letter rule satisfied
+ *      (letter required only when donor restrictions are present).
+ *   3. Donor + allocations + supporting documents (§3.3): donor identified,
+ *      ≥1 allocation with all restriction fields filled, AND a grant letter
+ *      when donor restrictions are present (NOT required for restriction-free
+ *      money).
  *
  * satisfiedBy and crmReason columns are derived from this predicate in SQL
  * and read by giftCompletenessFor() — no separate TypeScript twin.
  */
 const giftComplete = `(
   ${donorboxBacked}
-  OR ${giftCodingForm}
+  OR (${giftCodingFormComplete} AND ${giftLetterOk})
   OR (
     COALESCE(g.organization_id, g.individual_giver_person_id, g.household_id) IS NOT NULL
     AND ${fullAllocComplete}
-    AND ${giftGrantLetter}
+    AND ${giftLetterOk}
   )
 )`;
 
@@ -189,15 +229,17 @@ const giftComplete = `(
  */
 const giftSatisfiedBy = `(CASE
   WHEN ${donorboxBacked} THEN 'donorbox'
-  WHEN ${giftCodingForm} THEN 'coding_form'
+  WHEN ${giftCodingFormComplete} AND ${giftLetterOk} THEN 'coding_form'
   WHEN COALESCE(g.organization_id, g.individual_giver_person_id, g.household_id) IS NOT NULL
-    AND ${fullAllocComplete} AND ${giftGrantLetter} THEN 'donor_and_allocations'
+    AND ${fullAllocComplete} AND ${giftLetterOk} THEN 'donor_and_allocations'
   ELSE NULL
 END)`;
 
 /**
  * SQL CASE: primary reason when not satisfied (NULL when complete).
- * Precedence: donor missing → allocation missing → restriction fields incomplete.
+ * Precedence: donor missing → allocation missing → restriction fields /
+ * required supporting documents incomplete (missing_restriction_fields also
+ * covers a missing-but-required grant letter).
  */
 const giftCrmReason = `(CASE
   WHEN ${giftComplete} THEN NULL
@@ -234,9 +276,13 @@ const payoutConflict = `EXISTS (
   SELECT 1 FROM settlement_links sl_c
   WHERE sl_c.payout_id = sp.id AND sl_c.lifecycle = 'proposed' AND sl_c.conflict_gift_id IS NOT NULL
 )`;
+// Pending refund on a LIVE (non-excluded) charge — lockstep with the canonical
+// state's transactions[].state === 'refund_anticipated' (nonExcluded only).
 const payoutRefund = `EXISTS (
   SELECT 1 FROM stripe_staged_charges rf
-  WHERE rf.stripe_payout_id = sp.id AND rf.refund_propagation_status = 'proposed'
+  WHERE rf.stripe_payout_id = sp.id
+    AND rf.exclusion_reason IS NULL
+    AND rf.refund_propagation_status = 'proposed'
 )`;
 // Settled = a confirmed settlement link OR the individually-booked
 // fully-charge-tied path (shared fragment; alias sp — matches this FROM).
@@ -438,6 +484,7 @@ function buildUniverse(q: string | null): SQL {
         AND ${payoutSettled}
         AND NOT ${sql.raw(payoutConflict)}
         AND NOT ${sql.raw(payoutRefund)}
+        AND ${sql.raw(QB_DOCUMENTATION_COMPLETE_SQL)}
         AND (
           (NOT ${sql.raw(payoutAnyOpenCharge)} AND NOT ${sql.raw(depositGrainGiftExists)} AND ${sql.raw(allChargeLinkedGiftsComplete)})
           OR (${sql.raw(depositGrainGiftExists)} AND NOT ${sql.raw(chargeGrainGiftExists)} AND ${sql.raw(depositFullyCovered)} AND ${sql.raw(allDepositLinkedGiftsComplete)})
@@ -446,8 +493,8 @@ function buildUniverse(q: string | null): SQL {
         AND ${payoutSettled}
         AND NOT ${sql.raw(payoutConflict)}
         AND (
-          (NOT ${sql.raw(payoutAnyOpenCharge)} AND NOT ${sql.raw(depositGrainGiftExists)})
-          OR (${sql.raw(depositGrainGiftExists)} AND NOT ${sql.raw(chargeGrainGiftExists)} AND ${sql.raw(depositFullyCovered)})
+          (NOT ${sql.raw(payoutAnyOpenCharge)} AND NOT ${sql.raw(depositGrainGiftExists)} AND ${sql.raw(allChargeLinkedGiftsComplete)})
+          OR (${sql.raw(depositGrainGiftExists)} AND NOT ${sql.raw(chargeGrainGiftExists)} AND ${sql.raw(depositFullyCovered)} AND ${sql.raw(allDepositLinkedGiftsComplete)})
         )) AS f_link_complete,
       ${sql.raw(payoutRefund)} AS f_attention_required
     FROM stripe_payouts sp
@@ -465,8 +512,9 @@ function buildUniverse(q: string | null): SQL {
       false AS f_refund,
       ${sql.raw(qbExcludedSaysDonation)} AS f_qb_says_donation,
       ${sql.raw(qbAllExcluded)} AS f_excluded,
-      (NOT ${sql.raw(qbNeedsGift)} AND NOT ${sql.raw(qbAllExcluded)} AND ${sql.raw(allQbLinkedGiftsComplete)}) AS f_completed,
-      (NOT ${sql.raw(qbNeedsGift)} AND NOT ${sql.raw(qbAllExcluded)}) AS f_link_complete,
+      (NOT ${sql.raw(qbNeedsGift)} AND NOT ${sql.raw(qbAllExcluded)} AND ${sql.raw(allQbLinkedGiftsComplete)}
+        AND ${sql.raw(QB_DOCUMENTATION_COMPLETE_SQL)}) AS f_completed,
+      (NOT ${sql.raw(qbNeedsGift)} AND NOT ${sql.raw(qbAllExcluded)} AND ${sql.raw(allQbLinkedGiftsComplete)}) AS f_link_complete,
       false AS f_attention_required
     FROM staged_payments s
     WHERE ${sql.raw(qbEligible)}
@@ -1038,12 +1086,24 @@ function buildClusterCoverage(
     return { giftId: g.giftId, recordComplete: g.recordComplete, state: cardState, satisfiedBy: mapSatisfiedBy(g.satisfiedBy) };
   });
 
-  // Transaction entries (non-excluded charges)
-  const transactions: TransactionEntry[] = nonExcluded.map((c) => ({
-    transactionId: c.chargeId,
-    livePayment: !c.refundProposed,
-    refundStatus: c.refundProposed ? ("anticipated" as const) : ("none" as const),
-  }));
+  // Transaction entries (non-excluded charges) with the canonical §5.1 card state
+  const bundleCoversAll = dpGrain === "bundle" && dpLinkageComplete;
+  const bundlePartial = dpGrain === "bundle" && !dpLinkageComplete;
+  const transactions: TransactionEntry[] = nonExcluded.map((c) => {
+    const state: TransactionCardState = c.refundProposed
+      ? "refund_anticipated"
+      : chargeGiftMap.has(c.chargeId) || bundleCoversAll
+        ? "matched"
+        : bundlePartial || dpGrain === "mixed"
+          ? "partial"
+          : "unmatched";
+    return {
+      transactionId: c.chargeId,
+      livePayment: !c.refundProposed,
+      refundStatus: c.refundProposed ? ("anticipated" as const) : ("none" as const),
+      state,
+    };
+  });
 
   // QB card entries (settlement deposit OR per-charge ties)
   const qbCards: QbCardEntry[] = [];
@@ -1060,13 +1120,19 @@ function buildClusterCoverage(
     }
   }
 
-  // Information completeness (qbComplete ≈ aeComplete; future: explicit QB-documentation flag)
+  // Information completeness: accounting-EVIDENCE completeness (aeComplete) is
+  // a separate predicate from QB-DOCUMENTATION completeness. Only the latter
+  // satisfies audit_ready, and it is always false until the fill-out-QB
+  // workflow ships — evidence-linked rows stay accounting_pending.
   const crmComplete = crmRecordCompleteness.complete;
-  const qbComplete = aeComplete;
-  const informationState: InformationCompleteness =
-    !crmComplete ? "incomplete"
-    : !qbComplete || hasPendingRefund ? "accounting_pending"
-    : "audit_ready";
+  const qbEvidenceComplete = aeComplete;
+  const qbComplete = QB_DOCUMENTATION_COMPLETE;
+  const informationState = informationStateOf({
+    crmComplete,
+    qbEvidenceComplete,
+    qbDocumented: qbComplete,
+    attentionRequired: hasPendingRefund,
+  });
 
   // Settlement link state — always present for payout clusters so the UI can
   // distinguish "no settlement yet" (unlinked) from "not applicable" (absent).
@@ -1088,7 +1154,7 @@ function buildClusterCoverage(
       transactionToCrm: txnToCrm,
       accountingToCrm: aeToCrm,
     },
-    information: { state: informationState, crmComplete, qbComplete },
+    information: { state: informationState, crmComplete, qbComplete, qbEvidenceComplete },
     flags: {
       excluded: nonExcluded.length === 0 && charges.length > 0,
       conflict: isConflict,
@@ -1100,26 +1166,35 @@ function buildClusterCoverage(
     crmCards,
   };
 
-  // Option C: derive coverage.complete from canonical state
-  const complete = linkageState === "complete" && informationState === "audit_ready";
+  // Derive coverage.complete from canonical state — the ONE completion definition.
+  const complete = rowCompleteFromState(rowState);
   return { evidenceRecords: [...chargeEvidence, ...qbEvidence], donorPurpose, paymentTransaction, accountingEvidence, complete, state: rowState };
 }
 
 /* ── JS assembly helpers ───────────────────────────────────────────────── */
 
-function lensesOf(r: SlimRow): Lens[] {
+/**
+ * Lens membership for a hydrated row. State-derived lenses (completed,
+ * excluded, conflicts, refunds, attention_required) come from the canonical
+ * WorkbenchRowState via lensFlagsFromState — the SQL f_* twins only drive the
+ * rail COUNTS, and the integration parity test asserts the two always agree
+ * for every returned row. The remaining lenses (needs_*, gaps, qb-says-
+ * donation, link_complete) have no canonical-state equivalent and stay SQL.
+ */
+function lensesOf(r: SlimRow, state: WorkbenchRowState): Lens[] {
+  const f = lensFlagsFromState(state);
   const out: Lens[] = [];
-  if (!r.f_completed && !r.f_excluded) out.push("all_open");
+  if (!f.completed && !f.excluded) out.push("all_open");
   if (r.f_needs_gift) out.push("needs_donor_or_gift");
   if (r.f_needs_acct) out.push("needs_accounting");
   if (r.f_gap) out.push("settlement_gaps");
-  if (r.f_conflict) out.push("conflicts");
-  if (r.f_refund) out.push("refunds");
+  if (f.conflicts) out.push("conflicts");
+  if (f.refunds) out.push("refunds");
   if (r.f_qb_says_donation) out.push("excluded_qb_says_donation");
-  if (r.f_excluded) out.push("excluded");
-  if (r.f_completed) out.push("completed");
+  if (f.excluded) out.push("excluded");
+  if (f.completed) out.push("completed");
   if (r.f_link_complete) out.push("link_complete");
-  if (r.f_attention_required) out.push("attention_required");
+  if (f.attention_required) out.push("attention_required");
   if (r.kind === "crm_only") out.push("crm_only");
   return out;
 }
@@ -1732,11 +1807,12 @@ router.get(
     /* ── assemble in page order ── */
 
     const data = slim.map((r) => {
+      // lenses are attached per-branch: they derive from the canonical
+      // WorkbenchRowState, which is computed with each branch's coverage.
       const base = {
         id: `${r.kind}:${r.anchor_id}`,
         kind: r.kind,
         anchorId: r.anchor_id,
-        lenses: lensesOf(r),
       };
 
       if (r.kind === "stripe_payout") {
@@ -1827,6 +1903,7 @@ router.get(
           : null;
         return {
           ...base,
+          lenses: lensesOf(r, coverage.state),
           date: h?.date ?? r.anchor_date,
           title: h?.deposit_payer_name ?? null,
           grossTotal: h?.gross_total ?? null,
@@ -1937,9 +2014,19 @@ router.get(
             accountingToCrm: { state: qbTxnCrmState, grain: total === 0 ? "none" : "unit", relationshipCount: resolved },
           },
           information: {
-            state: qbDonorPurposeComplete ? "audit_ready" : "incomplete",
+            // Evidence exists by construction (the QBO record IS the accounting
+            // evidence), but documentation completeness is a separate predicate
+            // that is always false until the fill-out-QB workflow ships — so a
+            // fully-matched qb_standalone row tops out at accounting_pending.
+            state: informationStateOf({
+              crmComplete: qbCrmRecord.complete,
+              qbEvidenceComplete: total > 0,
+              qbDocumented: QB_DOCUMENTATION_COMPLETE,
+              attentionRequired: false,
+            }),
             crmComplete: qbCrmRecord.complete,
-            qbComplete: total > 0,
+            qbComplete: QB_DOCUMENTATION_COMPLETE,
+            qbEvidenceComplete: total > 0,
           },
           flags: { excluded: r.f_excluded, conflict: false, attentionRequired: false },
           qbCards: countable.map((rec) => ({
@@ -1954,6 +2041,11 @@ router.get(
             transactionId: rec.stagedPaymentId,
             livePayment: rec.status !== "excluded",
             refundStatus: "none" as const,
+            state: (rec.status === "match_confirmed"
+              ? "matched"
+              : rec.status === "match_proposed"
+                ? "partial"
+                : "unmatched") as TransactionCardState,
           })),
           crmCards: gifts.map((g) => {
             const isLinked = coveredQbIds.some((id) => g.linkedStagedPaymentIds.includes(id));
@@ -2010,11 +2102,13 @@ router.get(
             representedAmount: qbExpectedAmount,
             representationNote: null,
           },
-          complete: qbDonorPurposeComplete,
+          // ONE completion definition: linkage complete AND audit_ready.
+          complete: rowCompleteFromState(qbState),
           state: qbState,
         };
         return {
           ...base,
+          lenses: lensesOf(r, qbState),
           date: h?.date ?? r.anchor_date,
           title: h?.payer_name ?? h?.raw_reference ?? null,
           grossTotal: hasFees ? (h?.amount ?? null) : null,
@@ -2066,7 +2160,8 @@ router.get(
         information: {
           state: crmOnlyRecord.complete ? "accounting_pending" : "incomplete",
           crmComplete: crmOnlyRecord.complete,
-          qbComplete: false,
+          qbComplete: QB_DOCUMENTATION_COMPLETE,
+          qbEvidenceComplete: false,
         },
         flags: { excluded: false, conflict: false, attentionRequired: false },
         qbCards: [],
@@ -2080,6 +2175,7 @@ router.get(
       };
       return {
         ...base,
+        lenses: lensesOf(r, crmOnlyState),
         date: h?.date_received ?? r.anchor_date,
         title: maskedDonor ?? h?.title_gift_name ?? null,
         grossTotal: null,

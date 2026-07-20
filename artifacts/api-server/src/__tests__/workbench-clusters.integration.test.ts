@@ -134,9 +134,10 @@ async function seedGift(opts: { amount?: string } = {}): Promise<string> {
 }
 
 /**
- * A gift that satisfies giftComplete via the coding_form path (no
- * alloc/grant-letter needed): an APPLIED coding_form_rows row matched to the
- * gift is the badge authority (the former codingForm* gift columns are retired).
+ * A gift that satisfies giftComplete via the §3.2 COMPLETE-coding-form path:
+ * an APPLIED coding_form_rows row with its required normalized fields
+ * (amount + donation date) matched to a donor-identified gift. No donor
+ * restrictions exist on the gift, so no grant letter is required.
  */
 async function seedCompleteGift(opts: { amount?: string } = {}): Promise<string> {
   const id = nextId("gift");
@@ -152,6 +153,35 @@ async function seedCompleteGift(opts: { amount?: string } = {}): Promise<string>
   // Unique per-run source: the real import owns ("fy26", 1..N), so seeding
   // under "fy26" collides with the unique (source, source_row_index) index
   // once actual rows exist in the dev DB.
+  await db.insert(schema.codingFormRows).values({
+    id: cfrId,
+    source: RUN,
+    sourceRowIndex: seq,
+    rawData: { seededBy: RUN },
+    matchedGiftId: id,
+    status: "applied",
+    amount: opts.amount ?? "75.00",
+    donationDate: futureDate(),
+  });
+  codingFormRowIds.push(cfrId);
+  return id;
+}
+
+/**
+ * A gift with an APPLIED but INCOMPLETE coding form (missing amount +
+ * donation date) — per §3.2 this does NOT satisfy CRM completeness.
+ */
+async function seedGiftWithBareForm(): Promise<string> {
+  const id = nextId("gift");
+  await db.insert(schema.giftsAndPayments).values({
+    id,
+    organizationId: ORG_ID,
+    ownerUserId: TEST_USER_ID,
+    amount: "75.00",
+    dateReceived: futureDate(),
+  });
+  giftIds.push(id);
+  const cfrId = nextId("cfr");
   await db.insert(schema.codingFormRows).values({
     id: cfrId,
     source: RUN,
@@ -483,6 +513,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
 
     const { map: open } = await listClusters("all_open");
     const { map: completed } = await listClusters("completed");
+    const { map: linkComplete } = await listClusters("link_complete");
 
     // Open payout cluster: needs gift work AND has no settled deposit.
     const openPayout = open.get(`stripe_payout:${pOpen}`);
@@ -500,7 +531,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     // Standalone QB rows that reconcile THROUGH a payout never appear alone.
     for (const hidden of [sDep, sFee, sTie]) {
       expect(open.has(`qb_standalone:${hidden}`)).toBe(false);
-      expect(completed.has(`qb_standalone:${hidden}`)).toBe(false);
+      expect(linkComplete.has(`qb_standalone:${hidden}`)).toBe(false);
     }
 
     // crm_only: present, unlinked, needs accounting; QB-matched gift is not.
@@ -510,20 +541,24 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     expect(crm.lenses).toContain("needs_accounting");
     expect(crm.gifts[0]?.donorName).toBe(ORG_NAME);
     expect(open.has(`crm_only:${gQb}`)).toBe(false);
-    expect(completed.has(`crm_only:${gQb}`)).toBe(false);
+    expect(linkComplete.has(`crm_only:${gQb}`)).toBe(false);
 
-    // The matched QB row is a COMPLETED cluster carrying its gift.
-    const done = completed.get(`qb_standalone:${sQb}`);
+    // The matched QB row is fully LINKED carrying its gift — but NOT Completed:
+    // QB documentation completeness does not exist yet, so audit_ready is
+    // unreachable and the row stays accounting_pending (and thus open).
+    const done = linkComplete.get(`qb_standalone:${sQb}`);
     expect(done).toBeTruthy();
-    expect(done.status).toBe("complete");
     expect(done.gifts.map((g: any) => g.giftId)).toEqual([gQb]);
     expect(done.gifts[0].linkedStagedPaymentIds).toEqual([sQb]);
-    expect(open.has(`qb_standalone:${sQb}`)).toBe(false);
+    expect(done.coverage.state.information.state).toBe("accounting_pending");
+    expect(done.coverage.state.information.crmComplete).toBe(true);
+    expect(done.coverage.state.information.qbComplete).toBe(false);
+    expect(completed.has(`qb_standalone:${sQb}`)).toBe(false);
+    expect(open.has(`qb_standalone:${sQb}`)).toBe(true);
 
-    // The settled payout is completed, with the deposit as a QB record.
-    const settled = completed.get(`stripe_payout:${pSettled}`);
+    // The settled payout is link-complete, with the deposit as a QB record.
+    const settled = linkComplete.get(`stripe_payout:${pSettled}`);
     expect(settled).toBeTruthy();
-    expect(settled.status).toBe("complete");
     expect(settled.settlement?.lifecycle).toBe("confirmed");
     expect(settled.settlement?.depositStagedPaymentId).toBe(sDep);
     expect(
@@ -532,7 +567,9 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       ),
     ).toBe(true);
     expect(settled.gifts.map((g: any) => g.giftId)).toEqual([gCharge]);
-    expect(open.has(`stripe_payout:${pSettled}`)).toBe(false);
+    expect(settled.coverage.state.information.state).toBe("accounting_pending");
+    expect(completed.has(`stripe_payout:${pSettled}`)).toBe(false);
+    expect(open.has(`stripe_payout:${pSettled}`)).toBe(true);
   });
 
   it("a unit-group representative carries the whole group", async () => {
@@ -728,8 +765,8 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       const { map } = await listClusters(lens);
       expect(map.has(`qb_standalone:${sParked}`)).toBe(false);
     }
-    const { map: completed } = await listClusters("completed");
-    expect(completed.has(`qb_standalone:${sSponsoredDone}`)).toBe(true);
+    const { map: linkComplete } = await listClusters("link_complete");
+    expect(linkComplete.has(`qb_standalone:${sSponsoredDone}`)).toBe(true);
   });
 
   it("flags payouts whose net disagrees with the bank amount as settlement gaps", async () => {
@@ -905,15 +942,18 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
 
     it("donorPurpose grain=bundle + complete when deposit PA covers full amount and settlement confirmed", async () => {
       // depositGrainGiftExists=true suppresses payoutAnyOpenCharge; payoutSettled=true
-      // → f_completed=true → cluster in "completed" lens.
+      // → f_link_complete=true — but NOT Completed (QB documentation predicate
+      // is always false until fill-out-QB ships, so audit_ready is unreachable).
       const dep = await seedStaged({ entityType: "deposit", amount: "100.00" });
       const gDep = await seedCompleteGift({ amount: "100.00" });
       const payout = await seedPayout({ settledDeposit: dep, amount: "100.00", netTotal: "100.00" });
       await seedCharge(payout, {});
       await seedDepositApplication({ depositId: dep, giftId: gDep, amountApplied: "100.00" });
 
+      const { map: linkComplete } = await listClusters("link_complete");
       const { map: completed } = await listClusters("completed");
-      const row = completed.get(`stripe_payout:${payout}`);
+      expect(completed.has(`stripe_payout:${payout}`)).toBe(false);
+      const row = linkComplete.get(`stripe_payout:${payout}`);
       expect(row).toBeTruthy();
       expect(row.coverage).toBeTruthy();
       // donorPurpose: bundle-grain (deposit PA), complete
@@ -922,7 +962,11 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       // accountingEvidence: bundle-grain (confirmed settlement link), complete
       expect(row.coverage.accountingEvidence.grain).toBe("bundle");
       expect(row.coverage.accountingEvidence.complete).toBe(true);
-      expect(row.coverage.complete).toBe(true);
+      // Evidence-linked but NOT audit_ready → row completion stays false.
+      expect(row.coverage.state.information.state).toBe("accounting_pending");
+      expect(row.coverage.state.information.qbEvidenceComplete).toBe(true);
+      expect(row.coverage.state.information.qbComplete).toBe(false);
+      expect(row.coverage.complete).toBe(false);
       // QB deposit evidence record with bundle grain linked to gDep
       const qbRecord = row.coverage.evidenceRecords.find((r: any) => r.source === "qb_record");
       expect(qbRecord).toBeTruthy();
@@ -1051,16 +1095,16 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     const gCrm = await seedGift();
     const sQb = await seedStaged({});
 
-    const [{ map: open }, { map: completed }, { map: conflicts }] =
+    const [{ map: open }, { map: linkComplete }, { map: conflicts }] =
       await Promise.all([
         listClusters("all_open"),
-        listClusters("completed"),
+        listClusters("link_complete"),
         listClusters("conflicts"),
       ]);
 
     const rowNone = open.get(`stripe_payout:${pNone}`);
     expect(rowNone?.coverage?.state?.settlementLinkState).toBe("unlinked");
-    const rowConfirmed = completed.get(`stripe_payout:${pConfirmed}`);
+    const rowConfirmed = linkComplete.get(`stripe_payout:${pConfirmed}`);
     expect(rowConfirmed?.coverage?.state?.settlementLinkState).toBe(
       "confirmed",
     );
@@ -1084,13 +1128,15 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     expect(crmRow.coverage.state.settlementLinkState ?? null).toBeNull();
   }, 60_000);
 
-  // ── Invariant: cluster in Completed ⟺ coverage.complete ─────────────────
+  // ── Invariant: Completed ⟺ audit_ready ⟺ coverage.complete ──────────────
   //
-  // This describe tests the central contract of the workbench-cluster system:
-  // the server-side SQL flag f_completed (which gates lens membership) and the
-  // JS-computed coverage.complete object MUST agree for every cluster kind.
-  // Any divergence is a bug — one side would show "done" while the other shows
-  // "still work to do".
+  // Since the QB-documentation predicate is a constant FALSE until the
+  // fill-out-QB workflow ships, the Completed lens is structurally EMPTY and
+  // coverage.complete is false for every cluster kind. Rows that finish all
+  // linkage work land in link_complete with information.state =
+  // 'accounting_pending' (evidence linked but not documented). The SQL flag
+  // f_completed and the JS-computed rowCompleteFromState(state) must stay in
+  // lockstep — both gated on the same documentation predicate.
   //
   // Cases covered:
   //   stripe_payout — charge-grain, bundle-grain, mixed-grain, refund (single
@@ -1100,8 +1146,8 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
   //                   payment/accounting always absent)
   describe("f_completed ↔ coverage.complete invariant", () => {
     // ── stripe_payout, charge-grain ────────────────────────────────────────
-    it("stripe_payout charge-grain: complete gift → completed; incomplete gift → not completed", async () => {
-      // COMPLETE side: confirmed settlement link + charge PA to CRM-complete gift.
+    it("stripe_payout charge-grain: complete gift → link_complete + accounting_pending; incomplete gift → not", async () => {
+      // LINK-COMPLETE side: confirmed settlement link + charge PA to CRM-complete gift.
       const dep = await seedStaged({ entityType: "deposit" });
       const gComplete = await seedCompleteGift();
       const pComplete = await seedPayout({ settledDeposit: dep, amount: "100.00", netTotal: "100.00" });
@@ -1114,27 +1160,36 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       await seedCharge(pIncomplete, { matchedGiftId: gIncomplete, grossAmount: "100.00" });
 
       const { map: completed } = await listClusters("completed");
+      const { map: linkComplete } = await listClusters("link_complete");
       const { map: open } = await listClusters("all_open");
 
-      // Complete: in completed lens AND coverage.complete=true.
-      const doneRow = completed.get(`stripe_payout:${pComplete}`);
+      // Link-complete: evidence fully linked, but NOT Completed (no QB docs).
+      expect(completed.has(`stripe_payout:${pComplete}`)).toBe(false);
+      const doneRow = linkComplete.get(`stripe_payout:${pComplete}`);
       expect(doneRow).toBeTruthy();
-      expect(doneRow.coverage.complete).toBe(true);
-      expect(open.has(`stripe_payout:${pComplete}`)).toBe(false);
+      expect(doneRow.coverage.complete).toBe(false);
+      expect(doneRow.coverage.state.information.state).toBe("accounting_pending");
+      expect(doneRow.coverage.state.information.crmComplete).toBe(true);
+      expect(doneRow.coverage.state.information.qbEvidenceComplete).toBe(true);
+      expect(doneRow.coverage.state.information.qbComplete).toBe(false);
+      // Still open — accounting documentation is outstanding work.
+      expect(open.has(`stripe_payout:${pComplete}`)).toBe(true);
 
-      // Incomplete: NOT in completed AND coverage.complete=false.
+      // Incomplete: in neither completed nor link_complete.
       expect(completed.has(`stripe_payout:${pIncomplete}`)).toBe(false);
+      expect(linkComplete.has(`stripe_payout:${pIncomplete}`)).toBe(false);
       const openRow = open.get(`stripe_payout:${pIncomplete}`);
       expect(openRow).toBeTruthy();
       expect(openRow.coverage.complete).toBe(false);
       // donorPurpose linkage is covered (charge has PA) but CRM record is incomplete.
       expect(openRow.coverage.donorPurpose.crmLinkage.complete).toBe(true);
       expect(openRow.coverage.donorPurpose.crmRecordCompleteness.complete).toBe(false);
+      expect(openRow.coverage.state.information.state).toBe("incomplete");
     });
 
     // ── stripe_payout, bundle-grain ────────────────────────────────────────
-    it("stripe_payout bundle-grain: deposit PA fully covered + complete gift → completed; incomplete → not", async () => {
-      // COMPLETE: deposit-grain PA covers full amount, confirmed settlement.
+    it("stripe_payout bundle-grain: deposit PA fully covered + complete gift → link_complete; incomplete → not", async () => {
+      // LINK-COMPLETE: deposit-grain PA covers full amount, confirmed settlement.
       // Charge has NO PA → chargeGrainGiftExists=false, depositGrainGiftExists=true.
       const dep = await seedStaged({ entityType: "deposit", amount: "100.00" });
       const gComplete = await seedCompleteGift({ amount: "100.00" });
@@ -1150,15 +1205,18 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       await seedDepositApplication({ depositId: dep2, giftId: gIncomplete, amountApplied: "100.00" });
 
       const { map: completed } = await listClusters("completed");
+      const { map: linkComplete } = await listClusters("link_complete");
       const { map: open } = await listClusters("all_open");
 
-      const doneRow = completed.get(`stripe_payout:${pComplete}`);
+      expect(completed.has(`stripe_payout:${pComplete}`)).toBe(false);
+      const doneRow = linkComplete.get(`stripe_payout:${pComplete}`);
       expect(doneRow).toBeTruthy();
-      expect(doneRow.coverage.complete).toBe(true);
+      expect(doneRow.coverage.complete).toBe(false);
       expect(doneRow.coverage.donorPurpose.crmLinkage.grain).toBe("bundle");
-      expect(open.has(`stripe_payout:${pComplete}`)).toBe(false);
+      expect(doneRow.coverage.state.information.state).toBe("accounting_pending");
 
       expect(completed.has(`stripe_payout:${pIncomplete}`)).toBe(false);
+      expect(linkComplete.has(`stripe_payout:${pIncomplete}`)).toBe(false);
       const openRow = open.get(`stripe_payout:${pIncomplete}`);
       expect(openRow).toBeTruthy();
       expect(openRow.coverage.complete).toBe(false);
@@ -1241,28 +1299,35 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     });
 
     // ── qb_standalone ──────────────────────────────────────────────────────
-    it("qb_standalone: complete gift → completed; confirmed match to incomplete gift → not completed", async () => {
-      // COMPLETE: confirmed match (autoApplied=false default) to CRM-complete gift.
+    it("qb_standalone: complete gift → link_complete + accounting_pending; confirmed match to incomplete gift → not", async () => {
+      // LINK-COMPLETE: confirmed match (autoApplied=false default) to CRM-complete gift.
       const gComplete = await seedCompleteGift();
       const sDone = await seedStaged({ matchedGiftId: gComplete });
 
       // INCOMPLETE: same structure but gift has no coding-form / allocs / grant-letter.
       // The match is still confirmed (status=match_confirmed) — allQbLinkedGiftsComplete
-      // is false because giftComplete=false → f_completed=false.
+      // is false because giftComplete=false → f_link_complete=false.
       const gIncomplete = await seedGift();
       const sPartial = await seedStaged({ matchedGiftId: gIncomplete });
 
       const { map: completed } = await listClusters("completed");
+      const { map: linkComplete } = await listClusters("link_complete");
       const { map: open } = await listClusters("all_open");
 
-      const doneRow = completed.get(`qb_standalone:${sDone}`);
+      expect(completed.has(`qb_standalone:${sDone}`)).toBe(false);
+      const doneRow = linkComplete.get(`qb_standalone:${sDone}`);
       expect(doneRow).toBeTruthy();
-      expect(doneRow.coverage.complete).toBe(true);
+      // Evidence-linked but NOT audit_ready → complete stays false.
+      expect(doneRow.coverage.complete).toBe(false);
       expect(doneRow.coverage.donorPurpose.crmLinkage.grain).toBe("unit");
-      expect(open.has(`qb_standalone:${sDone}`)).toBe(false);
+      expect(doneRow.coverage.state.information.state).toBe("accounting_pending");
+      expect(doneRow.coverage.state.information.crmComplete).toBe(true);
+      expect(doneRow.coverage.state.information.qbEvidenceComplete).toBe(true);
+      expect(doneRow.coverage.state.information.qbComplete).toBe(false);
+      expect(open.has(`qb_standalone:${sDone}`)).toBe(true);
 
-      // Matched but CRM-incomplete → NOT in completed lens, coverage.complete=false.
-      expect(completed.has(`qb_standalone:${sPartial}`)).toBe(false);
+      // Matched but CRM-incomplete → NOT in link_complete, coverage.complete=false.
+      expect(linkComplete.has(`qb_standalone:${sPartial}`)).toBe(false);
       const openRow = open.get(`qb_standalone:${sPartial}`);
       expect(openRow).toBeTruthy();
       expect(openRow.coverage.complete).toBe(false);
@@ -1270,10 +1335,11 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       expect(openRow.coverage.donorPurpose.crmLinkage.complete).toBe(true);
       expect(openRow.coverage.donorPurpose.crmRecordCompleteness.complete).toBe(false);
       expect(openRow.coverage.donorPurpose.complete).toBe(false);
+      expect(openRow.coverage.state.information.state).toBe("incomplete");
     });
 
     // ── grouped qb_standalone ──────────────────────────────────────────────
-    it("grouped qb_standalone: all members matched to CRM-complete gifts → completed", async () => {
+    it("grouped qb_standalone: all members matched to CRM-complete gifts → link_complete", async () => {
       const grp = `grp_inv_${RUN}`;
       const g1 = await seedCompleteGift({ amount: "40.00" });
       const g2 = await seedCompleteGift({ amount: "35.00" });
@@ -1282,13 +1348,14 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       // m1 seeded first → lower seq suffix → m1 < m2 → m1 is the representative (MIN id).
 
       const { map: completed } = await listClusters("completed");
-      const { map: open } = await listClusters("all_open");
+      const { map: linkComplete } = await listClusters("link_complete");
 
-      const doneRow = completed.get(`qb_standalone:${m1}`);
+      expect(completed.has(`qb_standalone:${m1}`)).toBe(false);
+      const doneRow = linkComplete.get(`qb_standalone:${m1}`);
       expect(doneRow).toBeTruthy();
-      expect(doneRow.coverage.complete).toBe(true);
+      expect(doneRow.coverage.complete).toBe(false);
+      expect(doneRow.coverage.state.information.state).toBe("accounting_pending");
       expect(doneRow.group?.memberCount).toBe(2);
-      expect(open.has(`qb_standalone:${m1}`)).toBe(false);
     });
 
     // ── crm_only ───────────────────────────────────────────────────────────
@@ -1323,4 +1390,127 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       expect(completeRow?.coverage.donorPurpose.crmRecordCompleteness.complete).toBe(true);
     });
   });
+
+  // ── CRM completeness paths (§3.2 / §3.3) ─────────────────────────────────
+  describe("CRM record completeness per business rules §3", () => {
+    async function seedAlloc(
+      giftId: string,
+      opts: {
+        usageRestrictionType?: "donor_restricted" | "wf_restricted" | "unrestricted";
+        purposeVerbatim?: string | null;
+      } = {},
+    ): Promise<void> {
+      await db.insert(schema.giftAllocations).values({
+        id: nextId("ga"),
+        giftId,
+        subAmount: "75.00",
+        entityId: "wildflower_foundation",
+        usageRestrictionType: opts.usageRestrictionType ?? "unrestricted",
+        purposeVerbatim: opts.purposeVerbatim ?? null,
+      });
+    }
+
+    it("an applied but INCOMPLETE coding form (missing amount/date) does not satisfy §3.2", async () => {
+      const gBare = await seedGiftWithBareForm();
+      const { map: open } = await listClusters("all_open");
+      const row = open.get(`crm_only:${gBare}`);
+      expect(row).toBeTruthy();
+      expect(row.coverage.donorPurpose.crmRecordCompleteness.complete).toBe(false);
+      expect(row.coverage.state.information.crmComplete).toBe(false);
+      expect(row.coverage.state.information.state).toBe("incomplete");
+    });
+
+    it("restriction-free donor + complete allocation satisfies §3.3 WITHOUT a grant letter", async () => {
+      const gAlloc = await seedGift();
+      await seedAlloc(gAlloc); // unrestricted on all axes
+      const { map: open } = await listClusters("all_open");
+      const row = open.get(`crm_only:${gAlloc}`);
+      expect(row).toBeTruthy();
+      expect(row.coverage.donorPurpose.crmRecordCompleteness.complete).toBe(true);
+      expect(row.coverage.state.crmCards?.[0]?.satisfiedBy).toBe(
+        "donor_allocations_and_supporting_documents",
+      );
+      expect(row.coverage.state.information.crmComplete).toBe(true);
+      expect(row.coverage.state.information.state).toBe("accounting_pending");
+    });
+
+    it("a donor-restricted allocation REQUIRES a grant letter (§3.3 conditional rule)", async () => {
+      // Restricted, alloc fields complete (purpose_verbatim set), NO letter → incomplete.
+      const gNoLetter = await seedGift();
+      await seedAlloc(gNoLetter, {
+        usageRestrictionType: "donor_restricted",
+        purposeVerbatim: "for teacher training only",
+      });
+      // Identical but with a grant letter on the gift → complete.
+      const gWithLetter = nextId("gift");
+      await db.insert(schema.giftsAndPayments).values({
+        id: gWithLetter,
+        organizationId: ORG_ID,
+        ownerUserId: TEST_USER_ID,
+        amount: "75.00",
+        dateReceived: futureDate(),
+        grantLetterUrl: `https://example.invalid/${RUN}-letter.pdf`,
+      });
+      giftIds.push(gWithLetter);
+      await seedAlloc(gWithLetter, {
+        usageRestrictionType: "donor_restricted",
+        purposeVerbatim: "for teacher training only",
+      });
+
+      const { map: open } = await listClusters("all_open");
+
+      const noLetter = open.get(`crm_only:${gNoLetter}`);
+      expect(noLetter).toBeTruthy();
+      expect(noLetter.coverage.donorPurpose.crmRecordCompleteness.complete).toBe(false);
+      expect(noLetter.coverage.state.information.state).toBe("incomplete");
+
+      const withLetter = open.get(`crm_only:${gWithLetter}`);
+      expect(withLetter).toBeTruthy();
+      expect(withLetter.coverage.donorPurpose.crmRecordCompleteness.complete).toBe(true);
+      expect(withLetter.coverage.state.information.state).toBe("accounting_pending");
+    });
+  });
+
+  // ── Lens ↔ canonical-state parity ─────────────────────────────────────────
+  //
+  // The lenses attached to every row are derived from the canonical
+  // WorkbenchRowState via lensFlagsFromState. The SQL f_* twins gate which
+  // page a row appears on — so a fetched row must (a) carry the lens it was
+  // fetched under and (b) agree with the state-derived flags for the
+  // state-backed lenses.
+  it("row.lenses agree with lensFlagsFromState(coverage.state) across lenses", async () => {
+    const { lensFlagsFromState } = await import(
+      "../routes/reconciliation/workbenchRowState"
+    );
+    const STATE_LENSES = [
+      "completed",
+      "excluded",
+      "conflicts",
+      "refunds",
+      "attention_required",
+    ] as const;
+    for (const lens of [
+      "all_open",
+      "link_complete",
+      "excluded",
+      "refunds",
+      "conflicts",
+      "completed",
+    ]) {
+      const { map } = await listClusters(lens);
+      for (const row of map.values()) {
+        if (!String(row.id).includes(RUN)) continue; // only this run's seeds
+        // (a) membership: the row carries the lens it was fetched under.
+        expect(row.lenses).toContain(lens);
+        // (b) state parity for every state-backed lens flag.
+        const flags = lensFlagsFromState(row.coverage.state) as Record<string, boolean>;
+        for (const l of STATE_LENSES) {
+          expect(
+            row.lenses.includes(l),
+            `${row.id} lens=${l} state-derived=${flags[l]} lenses=${row.lenses}`,
+          ).toBe(flags[l]);
+        }
+      }
+    }
+  }, 120_000);
 });

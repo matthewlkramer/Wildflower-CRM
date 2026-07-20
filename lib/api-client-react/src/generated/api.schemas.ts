@@ -5595,6 +5595,30 @@ export interface WorkbenchRowCrmCardEntry {
   satisfiedBy?: WorkbenchRowCrmSatisfiedByCanonical | null;
 }
 
+/**
+ * Canonical per-transaction card state (docs/workbench-business-rules.md §5.1).
+unmatched = live transaction with no CRM/accounting link; partial = some
+linkage but coverage incomplete; amount_mismatch = links exist but amounts
+do not reconcile; info_conflict = amounts reconcile but metadata materially
+conflicts; matched = required links present and amounts reconcile;
+refund_anticipated / refunded apply to the individual transaction only;
+excluded = intentionally excluded from active reconciliation.
+
+ */
+export type WorkbenchRowTransactionCardState = typeof WorkbenchRowTransactionCardState[keyof typeof WorkbenchRowTransactionCardState];
+
+
+export const WorkbenchRowTransactionCardState = {
+  unmatched: 'unmatched',
+  partial: 'partial',
+  amount_mismatch: 'amount_mismatch',
+  info_conflict: 'info_conflict',
+  matched: 'matched',
+  refund_anticipated: 'refund_anticipated',
+  refunded: 'refunded',
+  excluded: 'excluded',
+} as const;
+
 export type WorkbenchRowTransactionEntryRefundStatus = typeof WorkbenchRowTransactionEntryRefundStatus[keyof typeof WorkbenchRowTransactionEntryRefundStatus];
 
 
@@ -5612,6 +5636,7 @@ export interface WorkbenchRowTransactionEntry {
   /** False when the charge is proposed-refunded. */
   livePayment: boolean;
   refundStatus: WorkbenchRowTransactionEntryRefundStatus;
+  state: WorkbenchRowTransactionCardState;
 }
 
 export type WorkbenchRowStateLinkage = {
@@ -5628,8 +5653,10 @@ export type WorkbenchRowStateInformation = {
   state: WorkbenchRowInformationCompleteness;
   /** True when all linked CRM gift records satisfy the record-completeness predicate. */
   crmComplete: boolean;
-  /** True when the accounting evidence is present and settled. */
+  /** QB DOCUMENTATION completeness: finance has filled out the QB record from CRM (fill-out-QB workflow). Always false until that workflow ships — gates audit_ready, so evidence-linked-but-undocumented rows stay accounting_pending. */
   qbComplete: boolean;
+  /** True when the accounting evidence is present and settled (evidence linkage only — does NOT imply documentation completeness). */
+  qbEvidenceComplete: boolean;
 };
 
 export type WorkbenchRowStateFlags = {

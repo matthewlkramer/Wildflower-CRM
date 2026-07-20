@@ -1,0 +1,21 @@
+* **Contract first:** `openapi.yaml` now defines the canonical `WorkbenchRowState`—`linkage`, `information`, `flags`, `qbCards`, `transactions`, and `crmCards`—on `coverage.state`. Generated types and clients were regenerated.
+
+* **Separated accounting linkage from QB documentation:**
+
+  * The `link_complete` lens represents rows for which the accounting evidence and required CRM information are complete.
+  * Rows that meet those requirements but still lack the future QB documentation step remain in `information.state = 'accounting_pending'`.
+  * The `Completed` lens and `audit_ready` state additionally require `QB_DOCUMENTATION_COMPLETE`. That capability is currently gated off until the fill-out-QB work ships, so the `Completed` lens is intentionally and structurally empty.
+
+* **Implemented CRM-completeness rules from `docs/workbench-business-rules.md` §3.2–§3.3:**
+
+  * The coding-form path requires applied status, amount, donation date, and donor, plus a grant letter when conditionally required.
+  * The donor-and-allocations path requires a grant letter only when at least one allocation axis is `donor_restricted`.
+  * `satisfiedBy` and `crmReason` are derived in SQL; there is no parallel TypeScript implementation.
+
+* **Made lenses state-driven:** `lensesOf` now derives `completed`, `excluded`, `conflicts`, `refunds`, and `attention_required` from `lensFlagsFromState`. SQL `f_*` projections drive the rail counts. `f_link_complete` now incorporates linked-gift CRM completeness using the same rules that determine the `accounting_pending` state across both Stripe grains and QB rows.
+
+* **Tests:** Rewrote the Workbench Clusters integration suite for the new semantics, added §3.2–§3.3 completeness cases, and added a lens-to-state parity test.
+
+* **Validation:** Code generation, library checks, API checks, and `test-api` all passed; `test-api` completed with 1,282 passing tests. The full backend validation suite passed. `test-web` still encounters the known code-generation concurrency false positive; frontend work remains outside this task’s scope.
+
+**Out of scope:** frontend implementation and finance-role authorization.

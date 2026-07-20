@@ -8803,14 +8803,26 @@ components:
         recordComplete: { type: boolean }
         state:          { $ref: "#/components/schemas/WorkbenchRowCrmCardState" }
         satisfiedBy:    { $ref: "#/components/schemas/WorkbenchRowCrmSatisfiedByCanonical" }
+    WorkbenchRowTransactionCardState:
+      type: string
+      enum: [unmatched, partial, amount_mismatch, info_conflict, matched, refund_anticipated, refunded, excluded]
+      description: |
+        Canonical per-transaction card state (docs/workbench-business-rules.md §5.1).
+        unmatched = live transaction with no CRM/accounting link; partial = some
+        linkage but coverage incomplete; amount_mismatch = links exist but amounts
+        do not reconcile; info_conflict = amounts reconcile but metadata materially
+        conflicts; matched = required links present and amounts reconcile;
+        refund_anticipated / refunded apply to the individual transaction only;
+        excluded = intentionally excluded from active reconciliation.
     WorkbenchRowTransactionEntry:
       type: object
-      required: [transactionId, livePayment, refundStatus]
+      required: [transactionId, livePayment, refundStatus, state]
       description: "One countable transaction unit (Stripe charge or QB record for qb_standalone)."
       properties:
         transactionId: { type: string }
         livePayment:   { type: boolean, description: "False when the charge is proposed-refunded." }
         refundStatus:  { type: string, enum: [none, anticipated, refunded] }
+        state:         { $ref: "#/components/schemas/WorkbenchRowTransactionCardState" }
     WorkbenchRowState:
       type: object
       required: [linkage, information, flags, qbCards, transactions, crmCards]
@@ -8830,11 +8842,12 @@ components:
             accountingToCrm:         { allOf: [ { $ref: "#/components/schemas/WorkbenchRowCoverageState" } ], description: "QB ↔ CRM: direct accounting-to-CRM link (deposit-grain PAs; missing for the charge-tie path)." }
         information:
           type: object
-          required: [state, crmComplete, qbComplete]
+          required: [state, crmComplete, qbComplete, qbEvidenceComplete]
           properties:
-            state:       { $ref: "#/components/schemas/WorkbenchRowInformationCompleteness" }
-            crmComplete: { type: boolean, description: "True when all linked CRM gift records satisfy the record-completeness predicate." }
-            qbComplete:  { type: boolean, description: "True when the accounting evidence is present and settled." }
+            state:              { $ref: "#/components/schemas/WorkbenchRowInformationCompleteness" }
+            crmComplete:        { type: boolean, description: "True when all linked CRM gift records satisfy the record-completeness predicate." }
+            qbComplete:         { type: boolean, description: "QB DOCUMENTATION completeness: finance has filled out the QB record from CRM (fill-out-QB workflow). Always false until that workflow ships — gates audit_ready, so evidence-linked-but-undocumented rows stay accounting_pending." }
+            qbEvidenceComplete: { type: boolean, description: "True when the accounting evidence is present and settled (evidence linkage only — does NOT imply documentation completeness)." }
         flags:
           type: object
           required: [excluded, conflict, attentionRequired]
