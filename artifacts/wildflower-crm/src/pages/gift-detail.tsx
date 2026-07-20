@@ -622,6 +622,30 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                   </a>
                 </Row>
               ) : null}
+              {gift.codingForm ? (
+                <Row label="Coding form">
+                  <Link
+                    href="/coding-form-import"
+                    className="text-primary hover:underline"
+                    data-testid="gift-coding-form-link"
+                  >
+                    View coding form
+                  </Link>
+                </Row>
+              ) : null}
+              {gift.donorbox ? (
+                <Row label="Donorbox donation">
+                  <a
+                    href={`https://donorbox.org/admin#/donations?id=${gift.donorbox.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary hover:underline font-mono text-sm"
+                    data-testid="gift-donorbox-link"
+                  >
+                    #{gift.donorbox.id}
+                  </a>
+                </Row>
+              ) : null}
             </div>
           </FieldCard>
 
