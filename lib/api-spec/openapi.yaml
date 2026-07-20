@@ -9309,8 +9309,9 @@ components:
         targetType: { type: string, nullable: true, description: "What an apply would write to (task / allocation / address)." }
         targetId:   { type: string, nullable: true, description: "Id of the existing target, when one was resolved." }
         decision:   { type: string, nullable: true, enum: [apply, skip], description: "The reviewer's stored decision for this attribute, if any." }
+        overrideValue: { type: string, nullable: true, description: "Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh." }
         blockedReason: { type: string, nullable: true, description: "Why this attribute can't be auto-applied (e.g. ambiguous allocation, no confirmed match)." }
-        willWrite:   { type: string, nullable: true, description: "EXACT value Apply would write (display form). Null when apply would be a no-op (same / not applicable / blocked)." }
+        willWrite:   { type: string, nullable: true, description: "EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same / not applicable / blocked)." }
         willWriteTo: { type: string, nullable: true, description: "Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op." }
     CodingFormNeedsDecision:
       type: object
@@ -9435,12 +9436,16 @@ components:
     ApplyCodingFormRowBody:
       type: object
       required: [decisions]
-      description: "Per-attribute apply/skip decisions. Only attributes set to 'apply' are written; everything else is left untouched."
+      description: "Per-attribute apply/skip decisions plus optional override values. Only attributes set to 'apply' are written; everything else is left untouched."
       properties:
         decisions:
           type: object
           additionalProperties: { type: string, enum: [apply, skip] }
           description: "Map of cross-check attribute → apply | skip."
+        overrides:
+          type: object
+          additionalProperties: { type: string }
+          description: "Optional per-attribute override values. When set for an attribute, Apply writes the override instead of the sheet-derived value. Persisted on the row alongside decisions so bulk apply-decided can use them."
     CodingFormApplyResult:
       type: object
       required: [row, applied, skipped]

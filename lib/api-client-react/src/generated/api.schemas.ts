@@ -6499,9 +6499,11 @@ export interface CodingFormCrossCheck {
   targetId?: string | null;
   /** The reviewer's stored decision for this attribute, if any. */
   decision?: CodingFormCrossCheckDecision;
+  /** Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh. */
+  overrideValue?: string | null;
   /** Why this attribute can't be auto-applied (e.g. ambiguous allocation, no confirmed match). */
   blockedReason?: string | null;
-  /** EXACT value Apply would write (display form). Null when apply would be a no-op (same / not applicable / blocked). */
+  /** EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same / not applicable / blocked). */
   willWrite?: string | null;
   /** Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op. */
   willWriteTo?: string | null;
@@ -6745,11 +6747,18 @@ export interface SetCodingFormMatchBody {
 export type ApplyCodingFormRowBodyDecisions = {[key: string]: 'apply' | 'skip'};
 
 /**
- * Per-attribute apply/skip decisions. Only attributes set to 'apply' are written; everything else is left untouched.
+ * Optional per-attribute override values. When set for an attribute, Apply writes the override instead of the sheet-derived value. Persisted on the row alongside decisions so bulk apply-decided can use them.
+ */
+export type ApplyCodingFormRowBodyOverrides = {[key: string]: string};
+
+/**
+ * Per-attribute apply/skip decisions plus optional override values. Only attributes set to 'apply' are written; everything else is left untouched.
  */
 export interface ApplyCodingFormRowBody {
   /** Map of cross-check attribute → apply | skip. */
   decisions: ApplyCodingFormRowBodyDecisions;
+  /** Optional per-attribute override values. When set for an attribute, Apply writes the override instead of the sheet-derived value. Persisted on the row alongside decisions so bulk apply-decided can use them. */
+  overrides?: ApplyCodingFormRowBodyOverrides;
 }
 
 export interface CodingFormApplyResult {

@@ -359,7 +359,12 @@ router.post(
     if (!row) return notFound(res, "coding form row");
 
     const user = await getAppUser(req);
-    const outcome = await applyRow(row, body.decisions, user?.id ?? null);
+    const outcome = await applyRow(
+      row,
+      body.decisions,
+      user?.id ?? null,
+      body.overrides as Record<string, string> | undefined,
+    );
 
     // Apply integrity: never silently mark a row "applied" with nothing written.
     // Nothing actionable + not already applied → 409 so the reviewer knows their

@@ -74,8 +74,9 @@ export const ListCodingFormRowsResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
+  "overrideValue": zod.string().nullish().describe('Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh.'),
   "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
-  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
   "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
@@ -208,8 +209,9 @@ export const GetCodingFormRowResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
+  "overrideValue": zod.string().nullish().describe('Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh.'),
   "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
-  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
   "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
@@ -314,8 +316,9 @@ export const SetCodingFormMatchResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
+  "overrideValue": zod.string().nullish().describe('Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh.'),
   "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
-  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
   "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
@@ -412,8 +415,9 @@ export const RematchCodingFormRowResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
+  "overrideValue": zod.string().nullish().describe('Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh.'),
   "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
-  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
   "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
@@ -519,8 +523,9 @@ export const ConfirmCodingFormMatchResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
+  "overrideValue": zod.string().nullish().describe('Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh.'),
   "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
-  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
   "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
@@ -595,8 +600,9 @@ export const ApplyCodingFormRowParams = zod.object({
 })
 
 export const ApplyCodingFormRowBody = zod.object({
-  "decisions": zod.record(zod.string(), zod.enum(['apply', 'skip'])).describe('Map of cross-check attribute → apply | skip.')
-}).describe('Per-attribute apply\/skip decisions. Only attributes set to \'apply\' are written; everything else is left untouched.')
+  "decisions": zod.record(zod.string(), zod.enum(['apply', 'skip'])).describe('Map of cross-check attribute → apply | skip.'),
+  "overrides": zod.record(zod.string(), zod.string()).optional().describe('Optional per-attribute override values. When set for an attribute, Apply writes the override instead of the sheet-derived value. Persisted on the row alongside decisions so bulk apply-decided can use them.')
+}).describe('Per-attribute apply\/skip decisions plus optional override values. Only attributes set to \'apply\' are written; everything else is left untouched.')
 
 export const ApplyCodingFormRowResponse = zod.object({
   "row": zod.object({
@@ -645,8 +651,9 @@ export const ApplyCodingFormRowResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
+  "overrideValue": zod.string().nullish().describe('Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh.'),
   "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
-  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
   "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
@@ -746,8 +753,9 @@ export const SkipCodingFormRowResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
+  "overrideValue": zod.string().nullish().describe('Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh.'),
   "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
-  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
   "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
@@ -849,8 +857,9 @@ export const PullGrantAgreementResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
+  "overrideValue": zod.string().nullish().describe('Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh.'),
   "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
-  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
   "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({
@@ -969,8 +978,9 @@ export const ReinterpretCodingFormRowResponse = zod.object({
   "targetType": zod.string().nullish().describe('What an apply would write to (task \/ allocation \/ address).'),
   "targetId": zod.string().nullish().describe('Id of the existing target, when one was resolved.'),
   "decision": zod.enum(['apply', 'skip']).nullish().describe('The reviewer\'s stored decision for this attribute, if any.'),
+  "overrideValue": zod.string().nullish().describe('Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh.'),
   "blockedReason": zod.string().nullish().describe('Why this attribute can\'t be auto-applied (e.g. ambiguous allocation, no confirmed match).'),
-  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form). Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
+  "willWrite": zod.string().nullish().describe('EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same \/ not applicable \/ blocked).'),
   "willWriteTo": zod.string().nullish().describe('Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.')
 })),
   "needsDecision": zod.array(zod.object({

@@ -19,6 +19,7 @@ import {
   usePullGrantAgreementsBulk,
   useReinterpretCodingFormRow,
   useReinterpretCodingFormRows,
+  useListEntities,
   CodingFormRowStatus,
   CodingFormGrantAgreementStatus,
   ListCodingFormRowsSource,
@@ -42,6 +43,7 @@ import { formatDateShort } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -397,6 +399,19 @@ function RowCard({ row }: { row: CodingFormRow }) {
   // Which applicable cross-checks the reviewer has toggled ON to apply.
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
+  // Per-attribute override values. Initialized from stored overrideValue
+  // returned by the server; reviewer can change them before applying.
+  const [overrides, setOverrides] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const c of row.crossChecks) {
+      if (c.overrideValue != null) init[c.attribute] = c.overrideValue;
+    }
+    return init;
+  });
+
+  // Fund entities for the allocationEntity override picker.
+  const { data: entities } = useListEntities();
+
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: [CODING_KEY_PREFIX] });
 
@@ -476,8 +491,13 @@ function RowCard({ row }: { row: CodingFormRow }) {
     for (const c of applyable) {
       decisions[c.attribute] = selected[c.attribute] ? "apply" : "skip";
     }
+    // Send only non-empty override values; omit the address attribute (no override).
+    const activeOverrides: Record<string, string> = {};
+    for (const [k, v] of Object.entries(overrides)) {
+      if (v && v.trim().length > 0) activeOverrides[k] = v.trim();
+    }
     applyMut.mutate(
-      { id: row.id, data: { decisions } },
+      { id: row.id, data: { decisions, overrides: activeOverrides } },
       {
         onSuccess: (res) => {
           void invalidate();
@@ -733,6 +753,7 @@ function RowCard({ row }: { row: CodingFormRow }) {
                 <th className="py-1 pr-3 font-medium">Status</th>
                 <th className="py-1 pr-3 font-medium">Spreadsheet</th>
                 <th className="py-1 pr-3 font-medium">CRM</th>
+                <th className="py-1 pr-3 font-medium">Override</th>
                 <th className="py-1 pr-3 font-medium">Apply will write…</th>
                 <th className="py-1 pr-3 font-medium">Apply</th>
               </tr>
@@ -744,6 +765,109 @@ function RowCard({ row }: { row: CodingFormRow }) {
                   !c.blockedReason &&
                   (c.status === "new" || c.status === "conflict") &&
                   row.status !== "applied";
+                const canOverride =
+                  c.applicable &&
+                  c.attribute !== "address" &&
+                  row.status !== "applied";
+                const overrideInput = (() => {
+                  if (!canOverride) return null;
+                  if (c.attribute === "allocationEntity") {
+                    return (
+                      <Select
+                        value={overrides[c.attribute] ?? ""}
+                        onValueChange={(v) =>
+                          setOverrides((o) => ({
+                            ...o,
+                            [c.attribute]: v === "__clear__" ? "" : v,
+                          }))
+                        }
+                        disabled={pending}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-[14rem]">
+                          <SelectValue placeholder="Pick entity…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__clear__">
+                            <span className="text-muted-foreground">
+                              — use sheet default —
+                            </span>
+                          </SelectItem>
+                          {(entities ?? []).map((e) => (
+                            <SelectItem key={e.id} value={e.id}>
+                              {e.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    );
+                  }
+                  if (c.attribute === "usageRestriction") {
+                    return (
+                      <Select
+                        value={overrides[c.attribute] ?? ""}
+                        onValueChange={(v) =>
+                          setOverrides((o) => ({
+                            ...o,
+                            [c.attribute]: v === "__clear__" ? "" : v,
+                          }))
+                        }
+                        disabled={pending}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-[12rem]">
+                          <SelectValue placeholder="Pick axis…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__clear__">
+                            <span className="text-muted-foreground">
+                              — use sheet default —
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="donor_restricted">
+                            Donor restricted
+                          </SelectItem>
+                          <SelectItem value="unrestricted">
+                            Unrestricted
+                          </SelectItem>
+                          <SelectItem value="wf_restricted">
+                            WF restricted
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    );
+                  }
+                  if (c.attribute === "reportDeadline") {
+                    return (
+                      <Input
+                        type="date"
+                        className="h-7 text-xs w-[10rem]"
+                        value={overrides[c.attribute] ?? ""}
+                        onChange={(e) =>
+                          setOverrides((o) => ({
+                            ...o,
+                            [c.attribute]: e.target.value,
+                          }))
+                        }
+                        disabled={pending}
+                      />
+                    );
+                  }
+                  // Default: plain text input for purposeVerbatim, circle,
+                  // seriesType, additionalNotes, internalMemo, regionalRestriction.
+                  return (
+                    <Input
+                      className="h-7 text-xs w-[14rem]"
+                      placeholder="Override…"
+                      value={overrides[c.attribute] ?? ""}
+                      onChange={(e) =>
+                        setOverrides((o) => ({
+                          ...o,
+                          [c.attribute]: e.target.value,
+                        }))
+                      }
+                      disabled={pending}
+                    />
+                  );
+                })();
                 return (
                   <tr
                     key={c.attribute}
@@ -761,6 +885,11 @@ function RowCard({ row }: { row: CodingFormRow }) {
                     </td>
                     <td className="py-1.5 pr-3 break-words max-w-[18rem]">
                       {c.crmValue || "—"}
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      {overrideInput ?? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td
                       className="py-1.5 pr-3 break-words max-w-[24rem]"

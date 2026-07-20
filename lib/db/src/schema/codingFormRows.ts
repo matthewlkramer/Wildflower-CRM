@@ -122,6 +122,10 @@ export const codingFormRows = pgTable(
     // { [attribute]: 'apply' | 'skip' } — defaults to {}. The live cross-check
     // (new/same/conflict) is computed on read and NOT stored here.
     decisions: jsonb("decisions").notNull().default({}),
+    // Per-attribute override values: { [attribute]: string }. When set, Apply
+    // writes the override instead of the sheet-derived value. Persisted here so
+    // bulk apply-decided can use stored overrides without re-entering them.
+    overrides: jsonb("overrides").notNull().default({}),
 
     // ── 5. Applied state (idempotency) ─────────────────────────────────────
     status: codingFormRowStatusEnum("status").notNull().default("pending"),

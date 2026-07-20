@@ -75,10 +75,14 @@ export interface CrossCheck {
   targetType: string | null;
   targetId: string | null;
   decision: "apply" | "skip" | null;
+  // Reviewer-entered override value; when set, Apply writes this instead of
+  // the sheet-derived value. Returned so the UI can pre-fill override inputs
+  // after page refresh (the stored value comes from the overrides JSONB column).
+  overrideValue: string | null;
   blockedReason: string | null;
   // What Apply would ACTUALLY do, precomputed here so the review UI shows the
-  // exact pending write and can never drift from applyRow. Both are null when
-  // apply would be a no-op (status same / na / blocked).
+  // exact pending write and can never drift from applyRow. Already reflects any
+  // stored overrideValue. Both are null when apply would be a no-op.
   willWrite: string | null; // the exact value that would be written (display form)
   willWriteTo: string | null; // destination record + field, incl. create vs overwrite
 }
@@ -671,8 +675,9 @@ export async function applyDecidedRows(
     )) {
       if (v === "apply" || v === "skip") decisions[k] = v;
     }
+    const storedOverrides = (row.overrides ?? {}) as Record<string, string>;
     try {
-      const outcome = await applyRow(row, decisions, userId);
+      const outcome = await applyRow(row, decisions, userId, storedOverrides);
       if (outcome.kind === "applied") summary.applied += 1;
       else if (outcome.kind === "noop") summary.alreadyApplied += 1;
       else summary.nothingToApply += 1;
@@ -955,6 +960,11 @@ export async function crossChecksFor(
   const decisions = (row.decisions ?? {}) as Record<string, "apply" | "skip">;
   const dec = (a: CodingFormAttribute): "apply" | "skip" | null =>
     decisions[a] ?? null;
+  // Stored reviewer overrides: { [attribute]: string }. When present, Apply
+  // writes the override value instead of the sheet-derived effective value.
+  const storedOverrides = (row.overrides ?? {}) as Record<string, string>;
+  const ov = (a: CodingFormAttribute): string | null =>
+    storedOverrides[a] ?? null;
 
   const out: CrossCheck[] = [];
 
@@ -962,10 +972,14 @@ export async function crossChecksFor(
   //    when there is one, else on the matched gift (grant reports can govern a
   //    booked gift with no surviving opportunity). AI-reinterpreted report
   //    answer (effectiveReport) wins over the deterministic parse.
+  //    Override: reviewer can enter any ISO date to use instead of the sheet date.
   {
     const rep = effectiveReport(row);
-    const applicable = !!(rep.required && rep.dueDate);
-    const dueDate = rep.dueDate ? String(rep.dueDate) : null;
+    const sheetDueDate = rep.dueDate ? String(rep.dueDate) : null;
+    const deadlineOv = ov("reportDeadline");
+    // Override replaces the sheet date; applicable stays sheet-driven.
+    const applicable = !!(rep.required && sheetDueDate);
+    const dueDate = deadlineOv ?? sheetDueDate;
     let status: CrossCheckStatus = "na";
     let crmValue: string | null = null;
     let targetId: string | null = null;
@@ -1009,11 +1023,12 @@ export async function crossChecksFor(
       label: "Reporting deadline",
       status,
       applicable,
-      sheetValue: dueDate,
+      sheetValue: sheetDueDate,
       crmValue,
       targetType: "task",
       targetId,
       decision: dec("reportDeadline"),
+      overrideValue: deadlineOv,
       blockedReason,
       willWrite: actionable
         ? `"${taskTitle}" due ${dueDate}${duePast ? " (date is in the past — created already completed)" : ""}`
@@ -1034,11 +1049,10 @@ export async function crossChecksFor(
   const circle = effectiveCircle(row);
   const circleRegion = circle?.kind === "hub_region" ? circle : null;
   const circleEntity = circle?.kind === "entity" ? circle : null;
-  const needAlloc =
-    restrictionPresent || intendedPresent || !!circleRegion || !!circleEntity;
-  const { alloc, blockedReason: allocBlocked } = needAlloc
-    ? await resolveAllocation(row)
-    : { alloc: null, blockedReason: null };
+  // Always resolve the allocation: allocationEntity is always present so we
+  // need the alloc regardless of whether other attributes are applicable.
+  const { alloc, blockedReason: allocBlocked } =
+    await resolveAllocation(row);
   // Shared destination phrasing for the three allocation-targeted attributes.
   const allocDest = (field: string, status: CrossCheckStatus): string =>
     `${status === "conflict" ? "overwrites" : "sets"} "${field}" on the matched ${
@@ -1047,6 +1061,8 @@ export async function crossChecksFor(
 
   // 2. Purpose (verbatim restriction language) → allocation.purposeVerbatim.
   {
+    const pvOv = ov("purposeVerbatim");
+    const effectivePurpose = pvOv ?? effRestriction;
     const applicable = restrictionPresent;
     let status: CrossCheckStatus = "na";
     let crmValue: string | null = null;
@@ -1062,7 +1078,7 @@ export async function crossChecksFor(
         else status = "conflict";
       }
     }
-    // Mirrors applyRow: patch.purposeVerbatim = effRestriction.
+    // Mirrors applyRow: writes effectivePurpose (override ?? sheet).
     const actionable =
       !!alloc && (status === "new" || status === "conflict");
     out.push({
@@ -1075,16 +1091,24 @@ export async function crossChecksFor(
       targetType: "allocation",
       targetId: alloc?.id ?? null,
       decision: dec("purposeVerbatim"),
+      overrideValue: pvOv,
       blockedReason,
-      willWrite: actionable ? effRestriction : null,
+      willWrite: actionable ? effectivePurpose : null,
       willWriteTo: actionable
         ? allocDest("Purpose (verbatim)", status)
         : null,
     });
   }
 
-  // 3. Usage restriction axis → allocation.usageRestrictionType=donor_restricted.
+  // 3. Usage restriction axis → allocation.usageRestrictionType.
+  //    Sheet always implies donor_restricted; override lets reviewer pick
+  //    donor_restricted or unrestricted.
   {
+    const usageOv = ov("usageRestriction");
+    const effectiveUsage =
+      usageOv === "donor_restricted" || usageOv === "unrestricted"
+        ? usageOv
+        : "donor_restricted";
     const applicable = restrictionPresent;
     let status: CrossCheckStatus = "na";
     let crmValue: string | null = null;
@@ -1100,7 +1124,7 @@ export async function crossChecksFor(
         else status = "conflict"; // wf_restricted differs from donor intent
       }
     }
-    // Mirrors applyRow: patch.usageRestrictionType = "donor_restricted".
+    // Mirrors applyRow: writes effectiveUsage (override ?? "donor_restricted").
     const actionable =
       !!alloc && (status === "new" || status === "conflict");
     out.push({
@@ -1113,8 +1137,13 @@ export async function crossChecksFor(
       targetType: "allocation",
       targetId: alloc?.id ?? null,
       decision: dec("usageRestriction"),
+      overrideValue: usageOv ?? null,
       blockedReason,
-      willWrite: actionable ? "Donor restricted" : null,
+      willWrite: actionable
+        ? effectiveUsage === "donor_restricted"
+          ? "Donor restricted"
+          : "Unrestricted"
+        : null,
       willWriteTo: actionable
         ? allocDest("Usage restriction (usage axis)", status)
         : null,
@@ -1123,6 +1152,8 @@ export async function crossChecksFor(
 
   // 4. Intended usage → allocation.intendedUsage.
   {
+    const intendedOv = ov("intendedUsage");
+    const effectiveIntended = intendedOv ?? row.intendedUsageSuggested;
     const applicable = intendedPresent;
     let status: CrossCheckStatus = "na";
     let crmValue: string | null = null;
@@ -1138,7 +1169,7 @@ export async function crossChecksFor(
         else status = "conflict";
       }
     }
-    // Mirrors applyRow: patch.intendedUsage = row.intendedUsageSuggested.
+    // Mirrors applyRow: writes effectiveIntended (override ?? sheet).
     const actionable =
       !!alloc && (status === "new" || status === "conflict");
     out.push({
@@ -1156,11 +1187,11 @@ export async function crossChecksFor(
       targetType: "allocation",
       targetId: alloc?.id ?? null,
       decision: dec("intendedUsage"),
+      overrideValue: intendedOv ?? null,
       blockedReason,
       willWrite:
-        actionable && row.intendedUsageSuggested
-          ? (INTENDED_USAGE_LABELS[row.intendedUsageSuggested] ??
-            row.intendedUsageSuggested)
+        actionable && effectiveIntended
+          ? (INTENDED_USAGE_LABELS[effectiveIntended] ?? effectiveIntended)
           : null,
       willWriteTo: actionable ? allocDest("Intended usage", status) : null,
     });
@@ -1170,14 +1201,22 @@ export async function crossChecksFor(
   //     donor_restricted. Append-the-region semantics: existing regions are
   //     kept; conflict only when the allocation already carries a DIFFERENT
   //     regional scope (other regions, or a wf_restricted axis).
+  //     Override: reviewer can enter any region slug to use instead of the
+  //     circle-derived one (text input; full region picker is out of scope).
   if (circleRegion) {
+    const regionOv = ov("regionalRestriction");
+    const effectiveRegionId = regionOv ?? circleRegion.regionId;
     const applicable = true;
     let status: CrossCheckStatus = "na";
     let crmValue: string | null = null;
     let blockedReason: string | null = null;
     // Display names for the target + any existing regions (ids are slugs).
     const idsToName = Array.from(
-      new Set([circleRegion.regionId, ...(alloc?.regionIds ?? [])]),
+      new Set([
+        ...(regionOv ? [regionOv] : []),
+        circleRegion.regionId,
+        ...(alloc?.regionIds ?? []),
+      ]),
     );
     const nameRows = await db
       .select({ id: regions.id, name: regions.name })
@@ -1189,7 +1228,7 @@ export async function crossChecksFor(
       blockedReason = allocBlocked;
     } else {
       const existing = alloc.regionIds ?? [];
-      const hasRegion = existing.includes(circleRegion.regionId);
+      const hasRegion = existing.includes(effectiveRegionId);
       const axisDR = alloc.regionalRestrictionType === "donor_restricted";
       crmValue =
         existing.length > 0
@@ -1203,8 +1242,8 @@ export async function crossChecksFor(
         status = "new";
       else status = "conflict";
     }
-    // Mirrors applyRow: appends the region to allocation.regionIds (existing
-    // regions kept) and sets regionalRestrictionType = donor_restricted.
+    // Mirrors applyRow: appends the effective region to allocation.regionIds
+    // and sets regionalRestrictionType = donor_restricted.
     const actionable =
       !!alloc && (status === "new" || status === "conflict");
     out.push({
@@ -1217,9 +1256,10 @@ export async function crossChecksFor(
       targetType: "allocation",
       targetId: alloc?.id ?? null,
       decision: dec("regionalRestriction"),
+      overrideValue: regionOv ?? null,
       blockedReason,
       willWrite: actionable
-        ? `region "${regionName(circleRegion.regionId)}" + regional axis "Donor restricted"`
+        ? `region "${regionName(effectiveRegionId)}" + regional axis "Donor restricted"`
         : null,
       willWriteTo: actionable
         ? `adds the region and sets the regional-restriction axis on the matched ${
@@ -1229,35 +1269,49 @@ export async function crossChecksFor(
     });
   }
 
-  // 4c. Black Wildflowers Fund circle → allocation fund entity.
-  if (circleEntity) {
-    const applicable = true;
+  // 4c. Fund entity → allocation.entityId.
+  //     Always present so the reviewer can assign a fund entity to ANY row,
+  //     not only rows where the sheet circle implies one.
+  //     Pre-filled with the circle-derived suggestion when one exists;
+  //     override (entity slug) lets the reviewer pick any entity.
+  {
+    const entityOv = ov("allocationEntity");
+    const effectiveEntityId = entityOv ?? circleEntity?.entityId ?? null;
+    // Applicable when the sheet implies an entity OR the reviewer set an override.
+    const applicable = !!(circleEntity || entityOv);
     let status: CrossCheckStatus = "na";
     let crmValue: string | null = null;
     let blockedReason: string | null = null;
-    if (!alloc) {
-      blockedReason = allocBlocked;
-    } else {
-      crmValue = alloc.entityId;
-      if (alloc.entityId === circleEntity.entityId) status = "same";
-      else if (alloc.entityId == null) status = "new";
-      else status = "conflict";
+    if (applicable) {
+      if (!alloc) {
+        blockedReason = allocBlocked;
+      } else {
+        crmValue = alloc.entityId;
+        if (alloc.entityId === effectiveEntityId) status = "same";
+        else if (alloc.entityId == null) status = "new";
+        else status = "conflict";
+      }
     }
-    // Mirrors applyRow: patch.entityId = "black_wildflowers_fund".
+    // willWrite: override slug (display label will be resolved on the client
+    // from useListEntities) or the circle-derived human label.
+    const entityLabel = entityOv ?? circleEntity?.label ?? effectiveEntityId;
+    // Mirrors applyRow: patch.entityId = effectiveEntityId.
     const actionable =
-      !!alloc && (status === "new" || status === "conflict");
+      applicable && !!alloc && !!effectiveEntityId &&
+      (status === "new" || status === "conflict");
     out.push({
       attribute: "allocationEntity",
       label: "Circle → fund entity",
       status,
       applicable,
-      sheetValue: circleEntity.label,
+      sheetValue: circleEntity ? circleEntity.label : null,
       crmValue,
       targetType: "allocation",
       targetId: alloc?.id ?? null,
       decision: dec("allocationEntity"),
-      blockedReason,
-      willWrite: actionable ? "Black Wildflowers Fund" : null,
+      overrideValue: entityOv ?? null,
+      blockedReason: applicable ? blockedReason : null,
+      willWrite: actionable ? entityLabel : null,
       willWriteTo: actionable
         ? allocDest("Fund entity", status)
         : null,
@@ -1312,6 +1366,7 @@ export async function crossChecksFor(
       targetType: "address",
       targetId,
       decision: dec("address"),
+      overrideValue: null, // structured field — no override input
       blockedReason,
       willWrite:
         actionable && effAddr
@@ -1333,6 +1388,7 @@ export async function crossChecksFor(
   //    Appending never overwrites, so these can be "same" (raw value already
   //    somewhere in tags) or "new" — never "conflict". Block when there is no
   //    matched gift to attach them to.
+  //    Override: reviewer can enter any text to use instead of the sheet value.
   {
     // Junk-suppressed effective text (deterministic junk tokens + AI junk
     // flags): junked cells simply aren't applicable, so no tag is appended.
@@ -1375,6 +1431,8 @@ export async function crossChecksFor(
       giftTags = g ?? null;
     }
     for (const s of refSpecs) {
+      const attrOv = ov(s.attribute as CodingFormAttribute);
+      const effectiveSheet = attrOv ?? s.sheet;
       const applicable = !!(s.sheet && s.sheet.trim().length > 0);
       let status: CrossCheckStatus = "na";
       let crmValue: string | null = null;
@@ -1397,8 +1455,8 @@ export async function crossChecksFor(
           status = tagsContain(giftTags.tags, s.sheet!) ? "same" : "new";
         }
       }
-      // Mirrors applyRow: appends the prefixed entry to the matched gift's
-      // tags (existing tags are always kept; nothing is overwritten).
+      // Mirrors applyRow: appends the effective (override ?? sheet) prefixed
+      // entry to the matched gift's tags (existing tags always kept).
       const actionable = !blockedReason && status === "new";
       out.push({
         attribute: s.attribute,
@@ -1410,8 +1468,12 @@ export async function crossChecksFor(
         targetType: "gift",
         targetId: row.matchedGiftId,
         decision: dec(s.attribute),
+        overrideValue: attrOv ?? null,
         blockedReason,
-        willWrite: actionable ? codingTagEntry(s.attribute, s.sheet!) : null,
+        willWrite:
+          actionable && effectiveSheet
+            ? codingTagEntry(s.attribute, effectiveSheet)
+            : null,
         willWriteTo: actionable
           ? 'appends to "Tags" on the matched gift (existing tags kept)'
           : null,
@@ -1540,8 +1602,16 @@ export async function applyRow(
   row: CodingFormRowSelect,
   decisions: Record<string, "apply" | "skip">,
   userId: string | null,
+  overrides?: Record<string, string>,
 ): Promise<ApplyResult> {
-  const checks = await crossChecksFor(row);
+  // Merge the incoming overrides on top of any already stored on the row so
+  // the live cross-check reflects the effective (override ?? sheet) values.
+  const mergedOvForCheck = {
+    ...((row.overrides ?? {}) as Record<string, string>),
+    ...(overrides ?? {}),
+  };
+  const rowForCheck = { ...row, overrides: mergedOvForCheck };
+  const checks = await crossChecksFor(rowForCheck);
   const wanted = new Set(actionableAttributes(checks, decisions));
   if (wanted.size === 0) {
     return { kind: row.status === "applied" ? "noop" : "nothing_to_apply" };
@@ -1567,8 +1637,10 @@ export async function applyRow(
       : row.matchedGiftId
         ? { giftId: row.matchedGiftId }
         : null;
-  if (want("reportDeadline") && repTarget && rep.required && rep.dueDate) {
-    const dueDate = String(rep.dueDate);
+  const sheetRepDueDate = rep.required && rep.dueDate ? String(rep.dueDate) : null;
+  const effectiveRepDueDate = mergedOvForCheck.reportDeadline ?? sheetRepDueDate;
+  if (want("reportDeadline") && repTarget && effectiveRepDueDate) {
+    const dueDate = effectiveRepDueDate;
     const existing = await existingReportingTask(repTarget, dueDate);
     if (existing) {
       appliedTaskId = existing;
@@ -1604,6 +1676,7 @@ export async function applyRow(
 
   // 2-4. Allocation attributes (purpose / usage axis / intended usage /
   //      hub region / fund entity). Mirrors crossChecksFor #2-#4c.
+  //      Uses mergedOvForCheck overrides where present.
   const allocAttrs: CodingFormAttribute[] = [
     "purposeVerbatim",
     "usageRestriction",
@@ -1616,27 +1689,45 @@ export async function applyRow(
     const { alloc } = await resolveAllocation(row);
     if (alloc) {
       const patch: Record<string, unknown> = { updatedAt: new Date() };
-      if (allocToApply.includes("purposeVerbatim"))
-        patch.purposeVerbatim = effectiveText(row, "restrictionLanguage");
-      if (allocToApply.includes("usageRestriction"))
-        patch.usageRestrictionType = "donor_restricted";
-      if (allocToApply.includes("intendedUsage"))
-        patch.intendedUsage = row.intendedUsageSuggested;
+      if (allocToApply.includes("purposeVerbatim")) {
+        const pvOv = mergedOvForCheck.purposeVerbatim;
+        patch.purposeVerbatim =
+          pvOv ?? effectiveText(row, "restrictionLanguage");
+      }
+      if (allocToApply.includes("usageRestriction")) {
+        const usageOv = mergedOvForCheck.usageRestriction;
+        patch.usageRestrictionType =
+          usageOv === "donor_restricted" || usageOv === "unrestricted"
+            ? usageOv
+            : "donor_restricted";
+      }
+      if (allocToApply.includes("intendedUsage")) {
+        const intendedOv = mergedOvForCheck.intendedUsage;
+        patch.intendedUsage = intendedOv ?? row.intendedUsageSuggested;
+      }
       if (allocToApply.includes("regionalRestriction")) {
+        const regionOv = mergedOvForCheck.regionalRestriction;
         const circle = effectiveCircle(row);
-        if (circle?.kind === "hub_region") {
+        const effectiveRegionId =
+          regionOv ?? (circle?.kind === "hub_region" ? circle.regionId : null);
+        if (effectiveRegionId) {
           // Append-the-region semantics: existing regions kept, target region
           // added once; regional axis latched to donor_restricted.
           const existing = alloc.regionIds ?? [];
-          patch.regionIds = existing.includes(circle.regionId)
+          patch.regionIds = existing.includes(effectiveRegionId)
             ? existing
-            : [...existing, circle.regionId];
+            : [...existing, effectiveRegionId];
           patch.regionalRestrictionType = "donor_restricted";
         }
       }
       if (allocToApply.includes("allocationEntity")) {
-        const circle = effectiveCircle(row);
-        if (circle?.kind === "entity") patch.entityId = circle.entityId;
+        const entityOv = mergedOvForCheck.allocationEntity;
+        if (entityOv) {
+          patch.entityId = entityOv;
+        } else {
+          const circle = effectiveCircle(row);
+          if (circle?.kind === "entity") patch.entityId = circle.entityId;
+        }
       }
       if (alloc.kind === "gift") {
         await db
@@ -1697,11 +1788,25 @@ export async function applyRow(
   //    free-text `tags` as prefixed entries. Append-only: existing tags are
   //    always kept, and a raw value already present anywhere in tags (per
   //    tagsContain, same rule as the cross-check) is not appended again.
+  //    Uses overrides where present (override ?? sheet effective value).
   const refApply: Array<{ attr: CodingRefAttr; value: string | null }> = [
-    { attr: "circle", value: effectiveText(row, "circleRaw") },
-    { attr: "seriesType", value: effectiveText(row, "seriesTypeRaw") },
-    { attr: "additionalNotes", value: effectiveText(row, "additionalNotes") },
-    { attr: "internalMemo", value: effectiveText(row, "internalMemo") },
+    {
+      attr: "circle",
+      value: mergedOvForCheck.circle ?? effectiveText(row, "circleRaw"),
+    },
+    {
+      attr: "seriesType",
+      value: mergedOvForCheck.seriesType ?? effectiveText(row, "seriesTypeRaw"),
+    },
+    {
+      attr: "additionalNotes",
+      value:
+        mergedOvForCheck.additionalNotes ?? effectiveText(row, "additionalNotes"),
+    },
+    {
+      attr: "internalMemo",
+      value: mergedOvForCheck.internalMemo ?? effectiveText(row, "internalMemo"),
+    },
   ];
   const refToApply = refApply.filter(
     (r) => want(r.attr) && r.value != null && r.value.trim().length > 0,
@@ -1740,7 +1845,7 @@ export async function applyRow(
     }
   }
 
-  // Persist merged decisions + applied artifact ids + status.
+  // Persist merged decisions + overrides + applied artifact ids + status.
   const mergedDecisions = {
     ...((row.decisions ?? {}) as Record<string, string>),
     ...decisions,
@@ -1749,6 +1854,7 @@ export async function applyRow(
     .update(codingFormRows)
     .set({
       decisions: mergedDecisions,
+      overrides: mergedOvForCheck,
       status: "applied",
       appliedAt: new Date(),
       appliedByUserId: userId,
