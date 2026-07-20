@@ -194,7 +194,12 @@ export default function ReconciliationClustersPage() {
     date: string | null;
   } | null>(null);
   const [qbDetailFor, setQbDetailFor] = useState<WorkbenchClusterQbRecord | null>(null);
-  const [revertSettlementFor, setRevertSettlementFor] = useState<{ payoutId: string; label: string } | null>(null);
+  const [revertSettlementFor, setRevertSettlementFor] = useState<{
+    payoutId: string;
+    label: string;
+    /** When set, this is a "Replace settlement relationship": after a successful revert, re-open the deposit search seeded with these values. */
+    replaceSearch?: { amount: string | null; date: string | null };
+  } | null>(null);
   const [unlinkChooserFor, setUnlinkChooserFor] = useState<{
     giftLabel: string;
     options: UnlinkOption[];
@@ -633,11 +638,19 @@ export default function ReconciliationClustersPage() {
 
   const handleRevertSettlement = async () => {
     if (!revertSettlementFor) return;
+    const { payoutId, replaceSearch } = revertSettlementFor;
     try {
-      await revertStripePayoutReconciliationM.mutateAsync({ id: revertSettlementFor.payoutId });
+      await revertStripePayoutReconciliationM.mutateAsync({ id: payoutId });
       setRevertSettlementFor(null);
       invalidate();
-      toast({ title: "Settlement reverted", description: "The confirmed settlement was reverted to proposed." });
+      if (replaceSearch) {
+        // Replace flow: the wrong settlement is now unwound — go straight into
+        // the deposit search so the right one can be picked and confirmed.
+        setSettlementSearchFor({ payoutId, ...replaceSearch });
+        toast({ title: "Settlement reverted", description: "Pick the correct QuickBooks deposit to complete the replacement." });
+      } else {
+        toast({ title: "Settlement reverted", description: "The confirmed settlement was reverted to proposed." });
+      }
     } catch (err) {
       toast({ title: "Couldn't revert settlement", description: errMessage(err), variant: "destructive" });
     }
@@ -663,6 +676,8 @@ export default function ReconciliationClustersPage() {
     openQbDetail: (record) => setQbDetailFor(record),
     removeSettlementProposal: (payoutId, _label) => void handleRemoveSettlementProposal(payoutId),
     revertSettlement: (payoutId, label) => setRevertSettlementFor({ payoutId, label }),
+    replaceSettlement: (payoutId, label, search) =>
+      setRevertSettlementFor({ payoutId, label, replaceSearch: search }),
     rejectChargeQbTie: (chargeId) => void handleRejectChargeQbTie(chargeId),
     openUnlinkChooser: (giftLabel, options) =>
       setUnlinkChooserFor({ giftLabel, options }),
@@ -1167,11 +1182,19 @@ export default function ReconciliationClustersPage() {
       <AlertDialog open={!!revertSettlementFor} onOpenChange={(v) => { if (!v) setRevertSettlementFor(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Revert confirmed settlement?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {revertSettlementFor?.replaceSearch
+                ? "Replace settlement relationship?"
+                : "Revert confirmed settlement?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This will undo the confirmed payout reconciliation for{" "}
               <strong>{revertSettlementFor?.label ?? "this deposit"}</strong> and return it to a
-              proposed state. The server will refuse if any of the payout’s Stripe charges have
+              proposed state.
+              {revertSettlementFor?.replaceSearch
+                ? " The deposit search will then open so you can pick and confirm the correct QuickBooks deposit."
+                : ""}{" "}
+              The server will refuse if any of the payout’s Stripe charges have
               already been booked into a gift.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1180,8 +1203,9 @@ export default function ReconciliationClustersPage() {
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => void handleRevertSettlement()}
+              data-testid="button-confirm-revert-settlement"
             >
-              Revert settlement
+              {revertSettlementFor?.replaceSearch ? "Revert and re-search" : "Revert settlement"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -66,6 +66,7 @@ function makeActions(): ClusterActions {
     openQbDetail: vi.fn(),
     removeSettlementProposal: vi.fn(),
     revertSettlement: vi.fn(),
+    replaceSettlement: vi.fn(),
     rejectChargeQbTie: vi.fn(),
     openUnlinkChooser: vi.fn(),
   };

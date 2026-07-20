@@ -90,6 +90,12 @@ export interface ClusterActions {
   removeSettlementProposal: (payoutId: string, label: string) => void;
   /** Revert a confirmed payout reconciliation back to proposed state (§6.2 "Unmatch confirmed settlement"). Finance-gated; shows confirm dialog before acting. */
   revertSettlement: (payoutId: string, label: string) => void;
+  /** Revert the confirmed settlement AND re-open the deposit search in one action (§6.2 "Replace settlement relationship"). Finance-gated; shows confirm dialog before acting. */
+  replaceSettlement: (
+    payoutId: string,
+    label: string,
+    search: { amount: string | null; date: string | null },
+  ) => void;
   /** Reject the system-proposed charge↔QB tie for a Stripe charge (§5.2 / §7.2 "Unmatch from QB evidence"). */
   rejectChargeQbTie: (chargeId: string) => void;
   /** Relationship chooser when a gift has MULTIPLE linked evidence records. */
@@ -864,8 +870,13 @@ function QbCard({
         isFinance
           ? {
               label: "Replace settlement relationship",
-              disabledReason:
-                "Not built yet — settlement replacement requires the finance-level settlement-link API",
+              destructive: true,
+              onClick: () =>
+                payoutId &&
+                actions.replaceSettlement(payoutId, qbLabel(record), {
+                  amount: record.amount ?? null,
+                  date: record.dateReceived ?? null,
+                }),
             }
           : { label: "Replace settlement relationship", disabledReason: "Finance team only" },
       );
