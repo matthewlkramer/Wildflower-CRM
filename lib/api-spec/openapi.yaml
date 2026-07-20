@@ -6525,6 +6525,7 @@ components:
         entityIds:                  { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct entity_id values from gift_allocations." }
         displayUsages:              { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct display_usage values from gift_allocations (server-computed labels)." }
         grantYears:                 { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct grant_year values from gift_allocations." }
+        regionIds:                  { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct region IDs from region_ids arrays across all allocations." }
         # ── Restriction aggregates across allocations (column-chooser opt-in) ──
         purposeVerbatims:          { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct non-null purpose_verbatim strings across allocations (the donor's verbatim restriction language)." }
         regionalRestrictionTypes:  { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct regional_restriction_type values across allocations." }

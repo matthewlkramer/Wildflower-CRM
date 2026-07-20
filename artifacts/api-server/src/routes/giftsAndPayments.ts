@@ -84,6 +84,11 @@ const donorJoinSelect = {
     FROM gift_allocations ga
     WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.grant_year IS NOT NULL
   )`.as("grant_years"),
+  regionIds: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT r ORDER BY r)
+    FROM gift_allocations ga, UNNEST(ga.region_ids) AS r
+    WHERE ga.gift_id = ${giftsAndPayments.id}
+  )`.as("region_ids"),
   // ── Restriction aggregates across allocations (column-chooser opt-in). ──
   // All four mirror the per-allocation fields; arrays are de-duplicated.
   // purposeVerbatims: free-text donor restriction language (verbatim).

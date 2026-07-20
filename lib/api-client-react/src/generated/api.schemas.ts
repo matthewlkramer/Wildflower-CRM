@@ -2016,6 +2016,8 @@ export interface GiftOrPayment {
   readonly displayUsages?: readonly string[] | null;
   /** Distinct grant_year values from gift_allocations. */
   readonly grantYears?: readonly string[] | null;
+  /** Distinct region IDs from region_ids arrays across all allocations. */
+  readonly regionIds?: readonly string[] | null;
   /** Distinct non-null purpose_verbatim strings across allocations (the donor's verbatim restriction language). */
   readonly purposeVerbatims?: readonly string[] | null;
   /** Distinct regional_restriction_type values across allocations. */

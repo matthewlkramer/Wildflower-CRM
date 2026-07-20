@@ -28,6 +28,7 @@ import {
   useListEntities,
   getListEntitiesQueryKey,
 } from "@workspace/api-client-react";
+import { useRegionNameMap } from "@/components/region-picker";
 import { useRowSelection } from "@/hooks/use-row-selection";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedViews } from "@/hooks/use-saved-views";
@@ -139,6 +140,7 @@ type InlineCtx = {
 type ColCtx = {
   userNames: Map<string, string>;
   entityNameById: Map<string, string>;
+  regionNames: Map<string, string>;
   isAdmin: boolean;
   inline: InlineCtx;
   onOpen: (g: GiftOrPayment) => void;
@@ -260,6 +262,17 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       cell: (g) => {
         const grantYears = (g.grantYears ?? []).map((y) => y.toUpperCase());
         return grantYears.length === 0 ? "—" : grantYears.join(", ");
+      },
+    },
+    {
+      key: "regions",
+      label: "Regions",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (g) => {
+        const names = (g.regionIds ?? []).map((id) => ctx.regionNames.get(id) ?? id);
+        return names.length === 0 ? "—" : names.join(", ");
       },
     },
     {
@@ -501,6 +514,7 @@ export default function Gifts() {
     () => new Map<string, string>((entitiesQ.data ?? []).map((e) => [e.id, e.name])),
     [entitiesQ.data],
   );
+  const regionNames = useRegionNameMap();
 
   const refreshList = useCallback(
     () =>
@@ -572,6 +586,7 @@ export default function Gifts() {
       buildColumns({
         userNames,
         entityNameById,
+        regionNames,
         isAdmin,
         inline: {
           editingId: inlineEdit.editingId,
@@ -590,7 +605,7 @@ export default function Gifts() {
         onUnarchive: unarchiveGift,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [userNames, entityNameById, isAdmin, inlineEdit, navigate],
+    [userNames, entityNameById, regionNames, isAdmin, inlineEdit, navigate],
   );
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
@@ -908,6 +923,7 @@ export default function Gifts() {
   const startAllocEdit = (a: GiftAllocation) => {
     setEditingAllocId(a.id);
     setAllocDraft({
+      entityId: a.entityId ?? undefined,
       subAmount: a.subAmount ?? undefined,
       grantYear: a.grantYear ?? undefined,
       purposeVerbatim: a.purposeVerbatim ?? undefined,
@@ -1297,7 +1313,7 @@ export default function Gifts() {
                         <TableCell colSpan={visibleCols.length} className="py-2 text-xs text-muted-foreground italic">No allocations</TableCell>
                       </TableRow>
                     );
-                    const EDITABLE_COLS = new Set(["amount", "grantYears", "purposeVerbatims", "regionalRestrictionTypes", "usageRestrictionTypes", "timeRestrictionTypes"]);
+                    const EDITABLE_COLS = new Set(["entities", "amount", "grantYears", "purposeVerbatims", "regionalRestrictionTypes", "usageRestrictionTypes", "timeRestrictionTypes"]);
                     return allocs.map((a) => {
                       const isEditing = editingAllocId === a.id;
                       return (
@@ -1317,6 +1333,20 @@ export default function Gifts() {
                                   <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground" onClick={() => navigate(`/gifts/${g.id}`)}><FolderOpen className="h-3 w-3" /></Button>
                                   <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={async () => { await deleteGiftAllocMut.mutateAsync({ id: a.id }); void queryClient.invalidateQueries({ queryKey: getGetGiftOrPaymentQueryKey(g.id) }); }} disabled={deleteGiftAllocMut.isPending}><Trash2 className="h-3 w-3" /></Button>
                                 </div>
+                              );
+                            } else if (isEditing && c.key === "entities") {
+                              content = (
+                                <select
+                                  className="h-6 text-xs rounded border border-input bg-background px-1 max-w-[180px]"
+                                  value={allocDraft.entityId ?? ""}
+                                  onChange={e => setAllocDraft(d => ({ ...d, entityId: e.target.value || null }))}
+                                  onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }}
+                                >
+                                  <option value="">—</option>
+                                  {[...entityNameById.entries()].map(([id, name]) => (
+                                    <option key={id} value={id}>{name}</option>
+                                  ))}
+                                </select>
                               );
                             } else if (isEditing && c.key === "amount") {
                               content = <Input className="h-6 text-xs w-28" value={allocDraft.subAmount ?? ""} onChange={e => setAllocDraft(d => ({ ...d, subAmount: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
@@ -1344,6 +1374,9 @@ export default function Gifts() {
                               content = a.entityId ? <span className="text-xs text-muted-foreground">{entityNameById.get(a.entityId) ?? a.entityId}</span> : null;
                             } else if (c.key === "grantYears") {
                               content = a.grantYear ? <span className="text-xs text-muted-foreground">{a.grantYear.toUpperCase()}</span> : null;
+                            } else if (c.key === "regions") {
+                              const names = (a.regionIds ?? []).map((id) => regionNames.get(id) ?? id);
+                              content = names.length > 0 ? <span className="text-xs text-muted-foreground">{names.join(", ")}</span> : null;
                             } else if (c.key === "usages") {
                               content = a.displayUsage ? <span className="text-xs text-muted-foreground">{a.displayUsage}</span> : null;
                             } else if (c.key === "purposeVerbatims") {
