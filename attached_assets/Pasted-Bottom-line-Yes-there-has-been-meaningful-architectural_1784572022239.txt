@@ -1,0 +1,357 @@
+Bottom line
+
+Yes, there has been meaningful architectural drift. Some backend cleanup moved in the right direction, but the reconciliation workbench has regressed into a hybrid system:
+
+canonical state model
++ separate lens SQL
++ legacy card statuses
++ old queue mutation endpoints
++ placeholder actions
+
+The cluster page is not entirely nonfunctional, but it is not yet a replacement workbench. Replit retired the working specialized reconciliation pages before the cluster interface reached functional parity.
+
+I reviewed the current head, 1f30bad0. This was a static code review; I did not execute it against your database.
+
+1. What happened to the cluster workbench
+The old workflows were removed too early
+
+Every former reconciliation route now redirects to the cluster page, including:
+
+staged payments
+Stripe staged charges
+Stripe reconciliation
+Donorbox review
+the original reconciliation workbench
+financial corrections
+
+The cluster endpoint itself is explicitly a read-only unified list. The page then stitches actions onto that read model by calling mutation endpoints originally built for the older queue workflows.
+
+So the transition was effectively:
+
+Remove the functioning specialized workbenches
+        ↓
+Redirect everything to the cluster report
+        ↓
+Add menu descriptions for the intended actions
+        ↓
+Implement only a subset of those actions
+
+That is why it feels as though the interface no longer does anything.
+
+What still works
+
+The page does have real handlers for:
+
+Linking a Stripe charge or QB record to a gift
+Creating a gift
+Identifying a donor
+Ex to a gift
+Creating a gift
+Identifying a donor
+Excluding and re-including evidence
+Reverting an existing link
+Confirming or dismissing a refund proposal
+Flagging a QB record or gift
+Marking an associated opportunity lost or dormant
+Sfrn233file0L218-L253 fileciteturn234file0L203-L290
+What is visibly present but does not work
+
+The interface exposes many actions as disabled placeholders:
+
+Match a transaction to QB
+Mark refund anticipated
+Fill out QB from CRM
+Match a QB record to a transaction
+Group QB records
+Split QB records
+-durn230file0L185-L225 fileciteturn231file0L61-L109
+
+Every row-level kebab action is disabled:
+
+Appr View change history
+
+fileciteturn231file0L154-L172
+
+The explanatory copy still says that the row-end menu links back to the queue workbench for bulk work, but the queue worenu does not do that. fileciteturn235file0L106-L110
+
+CRM-only rows are especially inert
+
+On a CRM-only row, the gift menu displays “Match to money evidence,” but disables it and instructs the user to initiate the match from not exist on that row. fileciteturn230file0L32-L47
+
+That means the user cannot:
+
+Search for the possible payment from the CRM-only row
+Search for the possible QB record
+Attach discovered evidence
+Move the gift into another existing cluster
+
+The row can largely be viewed, flagged, or marked lost/dormant. It cannot perform its central reconciliation task.
+
+There is also a concrete grid bug. The standard grid has six columns, but CrmOnlyRow renders only four children and omits placeholders for the transaction and accounting columns. As a result, iuturn245file0L6-L11 fileciteturn244file0L113-L136
+
+2. Architectural drift
+Critical: there are still two independent row-state engines
+
+The canonical state module says state must be computedriteturn251file0L3-L9 fileciteturn251file0L88-L92
+
+That is not what the implementation does.
+
+Before hydrating the rows, buildUniverse() independently calculates:
+
+f_completed
+f_link_complete
+f_needs_gift
+f_needs_acct
+f_conflict
+f_refund
+other lens flags
+
+Those flagsch rows are returned. fileciteturn241file0L148-L219
+
+After the page has been selected, buildClusterCoverage() separately derives the canonical WorkbenchRowState, ange.complete` from it. fileciteturn240file0L107-L128
+
+Therefore:
+
+Lens membership and counts
+    derive from slim SQL flags
+
+Displayed row status
+    derives from hydrated WorkbenchRowState
+
+These can disagree. This directly violates the architecture and makes status bugs difficult to diagnose.
+
+Correction
+
+There must be one authoritative state projection. Lens predicates should select from that projection rather than reimplementing completion logic.
+
+Critical: audit_ready does not mean audit-ready
+
+The business rule says:
+
+audit_ready requires complete CRM information and all required information documented on the relevant QB records.
+
+The current type admits that qbComplete merely means accounting evidence exists and is settled, whferred to the future. fileciteturn251file0L104-L111
+
+The implementation then sets:
+
+const qbComplete = aeComplete;
+
+and makes the row audit_ready wing evidence is linked. fileciteturn240file0L86-L92
+
+At the same from CRM” is not built. fileciteturn231file0L61-L77
+
+So a row can currently become:
+
+audit_ready
+completed
+
+even though the accounting information has not been filled out and the action for doing so does not exist.
+
+This is probably causing rows to disappear into Completed prematurely.
+
+Correction
+
+Separate:
+
+accountingEvidenceComplete
+qbDocumentationComplete
+
+Only qbDocumentationComplete should satisfy audit_ready.
+
+Until that predicate and workflow exist, rows with linked accounting evidence should remain accounting_pending.
+
+Critical: refund behavior directly contradicts the agreed model
+
+Your business rule was:
+
+Refund status belongs to the transaction. The refund removes that transaction from live payment coverage but does not archive, delete, or resize the CRM gift.
+
+The current refund service does the opposite:
+
+Full refund archives the linked gift.
+Chargeback archives the linked gift.
+Partial refund reduces the gift amount and changes its all trn262file0L156-L160 fileciteturn262file0L227-L269
+
+The frontend accurately describes this behavior: couces the linked gift. fileciteturn235file0L252-L276
+
+This is not a minor drift. It destroys the distinction you explicitly established:
+
+CRM gift / donor intent
+versus
+individual payment transaction
+Correction
+
+Refund confirmation should:
+
+Mark the transaction as refunded.
+Retire its counted payment_application, or otherwise exclude it from live coverage.
+Recompute row linkage and payment coverage.
+Leave the CRM gift and gift allocations unchanged.
+Allow a replacement transaction to be attached later.
+Leave marking the opportunity lost/dormant as a separate human decision.
+
+I would disable refund confirmation in the UI until this is corrected.
+
+Critical: CRM completeness no longer matches the business rules
+
+The committed document says a coding-form path requires a completed coding form and supporting grant ltrictions require it. fileciteturn252file0L157-L169
+
+The current implementation defines the coding-form path as merely:
+
+an applied coding_form_rows recorarn238file0L125-L133 fileciteturn238file0L165-L185
+
+The integration test explicitly describes the coding-form path as needing “no alloc/grant-letter” anlied row as complete. fileciteturn246file0L138-L165
+
+The other path has the opposite problem. Donor plus complete allocations **always** requires a grant letter in the SQL, eveich no letter exists. fileciteturn238file0L178-L185
+
+So both pathways have drifted:
+
+| Path | Current behavior | Agreed behavior |
+|---|---|---|
+| Coding form | Applied row alone is sufficient | Form must be complete; grant letter conditional on existence/restrictions |
+| Donor + allocations | Grant letter always required | Letter required when restrictions exist; attach it when one exists |
+
+This also feeds the premature Completed problem.
+
+---
+
+## High: settlement state became an undocumented third row-status signal
+
+The business model specifies:
+
+1. Link completeness
+2. Information completeness
+3. Independent flags
+
+Settlement state is a column/relationship state.
+
+The frontend now combines linkage, information **and settlement** into one “worst tone wins” t the row’s headline. fileciteturn231file0L329-L375
+
+That makes the row model:
+
+```text
+linkage signal
+information signal
+settlement signal
+
+rather than the documented two-signal model.
+
+Correction
+
+Show settlement state within the accounting column. The row-level status should remain the independent linkage and information signals.
+
+High: transaction state remains outside the canonical model
+
+TransactionEntry still contains only:
+
+transactionId
+livePayment
+refundStatus
+
+It lacks the documented transaction state values such as unmat conflict, and matched. fileciteturn251file0L31-L35
+
+The frontend therefore continues to calculate presentation and action availability using legacy values:
+
+`
+
+refundProposed
+
+fileciteturn230file0L152-L166
+
+The QB card likewise uses record.status === "match_confirmed" for relationship beard state is available. fileciteturn231file0L14-L47
+
+CRM cards still fall back to `quickbooksentry is unavailable. fileciteturn229file0L271-L309
+
+This leaves multiple overlapping frontend state machines.
+
+High: finance authorization has not been implemented
+
+The business rules say only finance-team members can create, confirm,unting relationships. fileciteturn252file0L318-L329
+
+The reconciliation router applies authenticationt its composition root. fileciteturn250file0L24-L43
+
+More importantly, the settlement-confirm endpoint checks only whether an application user exists; it does not check that the user is on the finance team before confirming a settlemennciliation treatment. fileciteturn264file0L198-L237
+
+The frontend also has no finance capability or permission field controlling these actions.
+
+This is a direct permissions regression.
+
+High: unlinking remains relationship-ambiguous
+
+When a gift has multiple linked pieces of evidence, giftUnlinkAnchor() selects:
+
+linkedCharggedPaymentIds[0]
+
+fileciteturn229file0L250-L259
+
+The user is shown a generic “Unlink from this match” action, bthe first relationship. fileciteturn230file0L32-L42
+
+That fails the specific-card use case you described and can remove the wrong link.
+
+The UI should list the actual relationships and let the user choose exactly which one to remove.
+
+Medium: migration numbering has become unsafe
+
+Three different new migrations use the 0140 prefix:
+
+gift-header column retirement
+coding-form override column
+fundraising campaigns
+
+The commitstteturn222file5L11-L22 fileciteturn222file6L13-L23
+
+Whether this causes a direct deployment failure depends on how your migration journal identifies files, but it is an operational hazard and makes it much easier for development and production schemas to diverge.
+
+What has improved
+
+Not everything moved backward.
+
+The gift-header retirement is architecturally sound:
+
+Stored quickbooks_tie_status was removed.
+Gift type and QB tie are derived live.
+Deprecated pointer fields were s remain authoritative.
+
+fileciteturn222file2L5-L16
+
+The current workbench query now calls the shared live QB-tie dere retired stored status. fileciteturn238file0L3-L18
+
+The specialized relationship-table architecture also remains intact. Replit has not introduced the generalized relationship-table redesign we previously rejected.
+
+Recommended recovery sequence
+Immediate stabilization
+Disable refund confirmation until it stops altering CRM gifts.
+Remove audit_ready/Completed classification based solely on accounting linkage.
+Add a finance-role guard to all settlement and QB-changing endpoints.
+Restore access to the previous specialized queue pages, at least temporarily, rather than redirecting every route to the incomplete cluster interface.
+Fix the CRM-only grid and add “Find/link payment evidence” and “Find/link accounting evidence” from the CRM card.
+Restore architectural integrity
+Replace slim f_* state derivations with one canonical state projection used for:
+lens membership
+lens counts
+displayed state
+action availability
+Add canonical transaction card state.
+Correct the two CRM-completeness pathways.
+Keep settlement state within the accounting column rather than making it a third row signal.
+Make every unmatch operation relationship-specific.
+Return backend capabilities for each action, including finance permissions and blocking reasons.
+Then finish workbench parity
+Implement the essential currently-disabled actions.
+Add end-to-end tests for each cluster kind:
+CRM-only gift finds and links payment
+Stripe charge links or creates gift
+payout links to QB settlement
+QB-only payment links to gift
+specific link is removed without affecting sibling links
+refunded transaction leaves gift intact
+non-finance user cannot alter accounting relationships
+Overall assessment
+
+The ledger architecture is stronger than it was, but the cluster workbench implementation has fallen to roughly 6/10 architectural fidelity.
+
+The central failure was sequencing:
+
+Replit retired the working reconciliation workflows, presented the cluster report as their replacement, and then filled much of its action surface with disabled placeholders while allowing the backend business rules to drift.
+
+I would not discard the cluster workbench. Its three-column read model remains the right foundation. The recovery is to restore the previous workflows temporarily, repair the canonical state and refund semantics, and then finish the cluster page as a true command surface before removing the old queues again.

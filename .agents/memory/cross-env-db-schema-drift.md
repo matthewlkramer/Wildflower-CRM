@@ -27,6 +27,16 @@ not touch, abort. Apply only the additive bits your task needs via `executeSql`
 in the code_execution sandbox (the standard dev-DB SQL path). The api-server runs
 a built bundle, so after adding a column, a workflow restart picks it up cleanly.
 
+**Check migrations first:** before hand-writing additive SQL, look in
+`lib/db/migrations/` — the merged task that added the schema usually shipped an
+idempotent migration file (repo convention, e.g. the fundraising-campaigns table
++ gifts FK came with a ready `0140_*.sql` pair including seed/backfill). Applying
+that file to dev (`psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f <file>`) beats
+re-deriving the DDL, and gets the backfill for free. After applying: restart
+api-server (built bundle) AND rebuild libs (`pnpm run typecheck:libs`) if codegen
+ran after the last lib build — stale `dist/*.d.ts` makes leaf typechecks report
+"property does not exist" on fields the spec/src already have.
+
 **Refinement (when drift is broad + purely additive):** if a dev DB lags many
 schema columns at once (a frontend-only task can still hit this because the merged
 backend code selects them), `drizzle-kit push` IS safe to run *once you first*
