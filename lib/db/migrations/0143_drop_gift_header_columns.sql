@@ -1,4 +1,6 @@
--- Migration 0140: Drop retired gift header columns (Task #451)
+-- Migration 0143: Drop retired gift header columns
+-- (renumbered from 0140 on 2026-07-20 to resolve a triple-0140 numbering
+-- collision; the drops are already in effect in prod — re-running is a no-op)
 --
 -- Drops columns that have been fully retired:
 --   - gifts_and_payments.type (gift type is now fully DERIVED at query time
@@ -19,7 +21,7 @@
 -- reads or writes any of these columns).
 --
 -- Run against prod:
---   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0140_drop_gift_header_columns.sql
+--   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0143_drop_gift_header_columns.sql
 
 -- Drop the index first (before the column it depends on)
 DROP INDEX IF EXISTS gifts_and_payments_quickbooks_tie_status_idx;
