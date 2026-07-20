@@ -611,7 +611,7 @@ interface AllocationDefaults {
   currentFiscalYearId: string;
 }
 
-function pledgeStateFrom(a: PledgeAllocation | null, defaults?: AllocationDefaults): PledgeFormState {
+export function pledgeStateFrom(a: PledgeAllocation | null, defaults?: AllocationDefaults): PledgeFormState {
   const isNew = a == null;
   return {
     ...restrictionAxisStateFrom(a),
@@ -1177,7 +1177,7 @@ type GiftFormState = RestrictionAxisState & {
   spendingEnd: string;
 };
 
-function giftStateFrom(a: GiftAllocation | null, defaults?: AllocationDefaults): GiftFormState {
+export function giftStateFrom(a: GiftAllocation | null, defaults?: AllocationDefaults): GiftFormState {
   const isNew = a == null;
   return {
     ...restrictionAxisStateFrom(a),
