@@ -4,8 +4,11 @@
 --   1. "Wildflower Schools"                          → wildflower_foundation, all unrestricted, no regions
 --   2. "Invest in the Next Generation of Black Educators!"
 --      "Seeding the Black Wildflowers Fund!"         → black_wildflowers_fund, all unrestricted, no regions
---   3. "Hurricane Relief for Wildflower Puerto Rico" → wildflower_foundation + hurricane_relief project,
---                                                       region=PR, regional=donor_restricted
+--   3. "Hurricane Relief for Wildflower Puerto Rico" → wildflower_foundation,
+--                                                       region=PR, regional=donor_restricted,
+--                                                       purpose_verbatim='Hurricane Relief'
+--                                                       (no fundable_project_id — the hurricane_relief slug
+--                                                        does not exist in prod and should not be seeded here)
 --   4. "Support Wildflower Minnesota Schools + Families" → mn_immigration_family_support project,
 --                                                           region=MN, regional=donor_restricted
 --
@@ -16,7 +19,6 @@
 
 -- Ensure referenced fundable_projects rows exist (prod may not have them yet).
 INSERT INTO fundable_projects (id, name) VALUES
-  ('hurricane_relief',          'Hurricane Relief for Wildflower Puerto Rico'),
   ('mn_immigration_family_support', 'Support for MN families - 2026')
 ON CONFLICT (id) DO NOTHING;
 
@@ -66,9 +68,12 @@ SET
     ELSE ga.entity_id   -- MN families: leave entity unchanged
   END,
   fundable_project_id = CASE gc.campaign_name
-    WHEN 'Hurricane Relief for Wildflower Puerto Rico'            THEN 'hurricane_relief'
-    WHEN 'Support Wildflower Minnesota Schools + Families'        THEN 'mn_immigration_family_support'
+    WHEN 'Support Wildflower Minnesota Schools + Families'     THEN 'mn_immigration_family_support'
     ELSE NULL
+  END,
+  purpose_verbatim = CASE gc.campaign_name
+    WHEN 'Hurricane Relief for Wildflower Puerto Rico'         THEN 'Hurricane Relief'
+    ELSE ga.purpose_verbatim
   END,
   regional_restriction_type = CASE gc.campaign_name
     WHEN 'Hurricane Relief for Wildflower Puerto Rico'            THEN 'donor_restricted'::restriction_axis

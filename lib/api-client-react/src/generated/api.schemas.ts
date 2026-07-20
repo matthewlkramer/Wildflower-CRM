@@ -2008,6 +2008,8 @@ export interface GiftOrPayment {
   readonly quickbooksStagedPaymentId?: string | null;
   /** True when a Donorbox donation backs this gift — a counted cash-application ledger row that is Donorbox-sourced directly, or Stripe-sourced where the charge has a Donorbox donation behind it. Same authority as the workbench Donorbox badge (donorboxBackedExistsSql). LIST-populated; drives the Donorbox badge on the gifts list. */
   readonly donorboxBacked?: boolean;
+  /** True when an APPLIED Donation Revenue Coding Form row is matched to this gift (coding_form_rows.status = 'applied' AND matched_gift_id = this gift). LIST-populated; drives the coding badge on the gifts list. */
+  readonly codingForm?: boolean;
   readonly organizationPriority?: Priority | null;
   readonly individualGiverPersonPriority?: Priority | null;
   /** Distinct entity_id values from gift_allocations. */
@@ -9714,6 +9716,14 @@ canonical definition shared with the dashboard worklist counts:
 
  */
 worklist?: ListGiftsAndPaymentsWorklist;
+/**
+ * When true, return only gifts backed by a Donorbox donation (same authority as the Donorbox badge).
+ */
+donorboxBacked?: boolean;
+/**
+ * When true, return only gifts that have an APPLIED Donation Revenue Coding Form row matched to them.
+ */
+codingForm?: boolean;
 /**
  * Sort order (default date_desc).
  */

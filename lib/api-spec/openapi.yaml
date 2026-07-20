@@ -1733,6 +1733,8 @@ paths:
                                     so a gift with none is uncoded/unattributed
                                     and needs allocation work.
           schema: { type: string, enum: [missing_allocations] }
+        - { name: donorboxBacked, in: query, required: false, description: "When true, return only gifts backed by a Donorbox donation (same authority as the Donorbox badge).", schema: { type: boolean } }
+        - { name: codingForm, in: query, required: false, description: "When true, return only gifts that have an APPLIED Donation Revenue Coding Form row matched to them.", schema: { type: boolean } }
         - { name: sort, in: query, required: false, schema: { $ref: "#/components/schemas/GiftSort" }, description: "Sort order (default date_desc)." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
@@ -6518,6 +6520,7 @@ components:
         paymentIntermediaryName:    { type: string, nullable: true, readOnly: true }
         quickbooksStagedPaymentId:  { type: string, nullable: true, readOnly: true, description: "Id of the QuickBooks staged payment reconciled to / that created this gift, if any. Lets the reconciler show linked status and offer unmatch." }
         donorboxBacked:             { type: boolean, readOnly: true, description: "True when a Donorbox donation backs this gift — a counted cash-application ledger row that is Donorbox-sourced directly, or Stripe-sourced where the charge has a Donorbox donation behind it. Same authority as the workbench Donorbox badge (donorboxBackedExistsSql). LIST-populated; drives the Donorbox badge on the gifts list." }
+        codingForm:                 { type: boolean, readOnly: true, description: "True when an APPLIED Donation Revenue Coding Form row is matched to this gift (coding_form_rows.status = 'applied' AND matched_gift_id = this gift). LIST-populated; drives the coding badge on the gifts list." }
         organizationPriority:                 { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
         individualGiverPersonPriority:  { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true, readOnly: true }
         # Aggregates across this gift's gift_allocations rows. All three

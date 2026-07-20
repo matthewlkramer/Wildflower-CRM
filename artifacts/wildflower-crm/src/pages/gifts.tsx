@@ -422,6 +422,8 @@ export default function Gifts() {
   const [paymentMethods, setPaymentMethods] = usePersistedState<string[]>("wf.list.gifts.paymentMethods", []);
   const [thankYouPresence, setThankYouPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.thankYouSentAt", undefined);
   const [awaitingEvidence, setAwaitingEvidence] = usePersistedState<boolean>("wf.list.gifts.f.awaitingEvidence", false);
+  const [donorboxBacked, setDonorboxBacked] = usePersistedState<boolean>("wf.list.gifts.f.donorboxBacked", false);
+  const [codingForm, setCodingForm] = usePersistedState<boolean>("wf.list.gifts.f.codingForm", false);
   const [dateReceivedPresence, setDateReceivedPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.dateReceived", undefined);
   const [purposeVerbatimPresence, setPurposeVerbatimPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.purposeVerbatim", undefined);
   const [restrictionLabels, setRestrictionLabels] = usePersistedState<string[]>("wf.list.gifts.f.restrictionLabels", []);
@@ -494,6 +496,8 @@ export default function Gifts() {
     ...(paymentMethods.length > 0 ? { paymentMethod: [...paymentMethods].sort() as GiftPaymentMethod[] } : {}),
     ...(thankYouPresence ? { thankYouSentAtPresence: thankYouPresence } : {}),
     ...(awaitingEvidence ? { awaitingEvidence: true } : {}),
+    ...(donorboxBacked ? { donorboxBacked: true } : {}),
+    ...(codingForm ? { codingForm: true } : {}),
     ...(dateReceivedPresence ? { dateReceivedPresence } : {}),
     ...(purposeVerbatimPresence ? { purposeVerbatimPresence } : {}),
     ...(restrictionLabels.length > 0 ? { restrictionLabels: [...restrictionLabels].sort() as ListGiftsAndPaymentsRestrictionLabelsItem[] } : {}),
@@ -765,6 +769,56 @@ export default function Gifts() {
         ),
       },
       {
+        key: "donorboxBacked",
+        label: "Donorbox match",
+        defaultVisible: false,
+        active: donorboxBacked,
+        clear: () => { setDonorboxBacked(false); setPage(1); selection.clear(); },
+        render: () => (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Donorbox match
+            </label>
+            <div className="flex h-9 items-center gap-2">
+              <Checkbox
+                id="filter-donorbox-backed"
+                checked={donorboxBacked}
+                onCheckedChange={(c) => { setDonorboxBacked(c === true); setPage(1); selection.clear(); }}
+                data-testid="filter-donorbox-backed"
+              />
+              <label htmlFor="filter-donorbox-backed" className="text-sm">
+                Only Donorbox-backed
+              </label>
+            </div>
+          </div>
+        ),
+      },
+      {
+        key: "codingForm",
+        label: "Coding form match",
+        defaultVisible: false,
+        active: codingForm,
+        clear: () => { setCodingForm(false); setPage(1); selection.clear(); },
+        render: () => (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Coding form match
+            </label>
+            <div className="flex h-9 items-center gap-2">
+              <Checkbox
+                id="filter-coding-form"
+                checked={codingForm}
+                onCheckedChange={(c) => { setCodingForm(c === true); setPage(1); selection.clear(); }}
+                data-testid="filter-coding-form"
+              />
+              <label htmlFor="filter-coding-form" className="text-sm">
+                Only with applied coding form
+              </label>
+            </div>
+          </div>
+        ),
+      },
+      {
         key: "dateReceived",
         label: "Date received",
         defaultVisible: false,
@@ -863,7 +917,7 @@ export default function Gifts() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [types, owners, fiscalYears, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence, dateReceivedPresence, purposeVerbatimPresence, restrictionLabels, regionalRestrictionTypes, usageRestrictionTypes, timeRestrictionTypes],
+    [types, owners, fiscalYears, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence, donorboxBacked, codingForm, dateReceivedPresence, purposeVerbatimPresence, restrictionLabels, regionalRestrictionTypes, usageRestrictionTypes, timeRestrictionTypes],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -989,6 +1043,8 @@ export default function Gifts() {
     paymentMethods: string[];
     thankYouPresence: PresenceValue;
     awaitingEvidence: boolean;
+    donorboxBacked: boolean;
+    codingForm: boolean;
     dateReceivedPresence: PresenceValue;
     purposeVerbatimPresence: PresenceValue;
     restrictionLabels: string[];
@@ -1010,6 +1066,8 @@ export default function Gifts() {
     paymentMethods,
     thankYouPresence,
     awaitingEvidence,
+    donorboxBacked,
+    codingForm,
     dateReceivedPresence,
     purposeVerbatimPresence,
     restrictionLabels,
@@ -1031,6 +1089,8 @@ export default function Gifts() {
     setPaymentMethods([]);
     setThankYouPresence(undefined);
     setAwaitingEvidence(false);
+    setDonorboxBacked(false);
+    setCodingForm(false);
     setDateReceivedPresence(undefined);
     setPurposeVerbatimPresence(undefined);
     setRestrictionLabels([]);
@@ -1055,6 +1115,8 @@ export default function Gifts() {
       setPaymentMethods(s.paymentMethods ?? []);
       setThankYouPresence(s.thankYouPresence ?? undefined);
       setAwaitingEvidence(s.awaitingEvidence ?? false);
+      setDonorboxBacked(s.donorboxBacked ?? false);
+      setCodingForm(s.codingForm ?? false);
       setDateReceivedPresence(s.dateReceivedPresence ?? undefined);
       setPurposeVerbatimPresence(s.purposeVerbatimPresence ?? undefined);
       setRestrictionLabels(s.restrictionLabels ?? []);
@@ -1078,6 +1140,8 @@ export default function Gifts() {
       (s.paymentMethods?.length ?? 0) === 0 &&
       !s.thankYouPresence &&
       !s.awaitingEvidence &&
+      !s.donorboxBacked &&
+      !s.codingForm &&
       !s.dateReceivedPresence &&
       !s.purposeVerbatimPresence &&
       (s.restrictionLabels?.length ?? 0) === 0 &&
@@ -1099,6 +1163,8 @@ export default function Gifts() {
     paymentMethods.length > 0 ||
     !!thankYouPresence ||
     awaitingEvidence ||
+    donorboxBacked ||
+    codingForm ||
     !!dateReceivedPresence ||
     !!purposeVerbatimPresence ||
     restrictionLabels.length > 0 ||

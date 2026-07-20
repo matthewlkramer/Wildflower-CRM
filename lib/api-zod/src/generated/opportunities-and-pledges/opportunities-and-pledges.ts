@@ -269,6 +269,7 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "paymentIntermediaryName": zod.string().nullish(),
   "quickbooksStagedPaymentId": zod.string().nullish().describe('Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.'),
   "donorboxBacked": zod.boolean().optional().describe('True when a Donorbox donation backs this gift — a counted cash-application ledger row that is Donorbox-sourced directly, or Stripe-sourced where the charge has a Donorbox donation behind it. Same authority as the workbench Donorbox badge (donorboxBackedExistsSql). LIST-populated; drives the Donorbox badge on the gifts list.'),
+  "codingForm": zod.boolean().optional().describe('True when an APPLIED Donation Revenue Coding Form row is matched to this gift (coding_form_rows.status = \'applied\' AND matched_gift_id = this gift). LIST-populated; drives the coding badge on the gifts list.'),
   "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
   "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
   "entityIds": zod.array(zod.string()).nullish().describe('Distinct entity_id values from gift_allocations.'),
