@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Trash2, ChevronDown, Lock } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -142,6 +142,21 @@ function useFiscalYearOptions(): ReadonlyArray<Option> {
     .slice()
     .sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
     .map((fy) => ({ value: fy.id, label: fy.label }));
+}
+
+function useCurrentFiscalYearId(): string {
+  const { data } = useListFiscalYears();
+  if (!data) return "";
+  const today = new Date().toISOString().slice(0, 10);
+  const current = data.find(
+    (fy) =>
+      fy.auditClosedAt == null &&
+      fy.startDate != null &&
+      fy.endDate != null &&
+      fy.startDate <= today &&
+      today <= fy.endDate,
+  );
+  return current?.id ?? "";
 }
 
 // Active fundable projects, plus the currently-selected one even if retired so an
@@ -592,13 +607,18 @@ type PledgeFormState = RestrictionAxisState & {
   notes: string;
 };
 
-function pledgeStateFrom(a: PledgeAllocation | null): PledgeFormState {
+interface AllocationDefaults {
+  currentFiscalYearId: string;
+}
+
+function pledgeStateFrom(a: PledgeAllocation | null, defaults?: AllocationDefaults): PledgeFormState {
+  const isNew = a == null;
   return {
     ...restrictionAxisStateFrom(a),
     subAmount: a?.subAmount ?? "",
     entityId: a?.entityId ?? "",
-    intendedUsage: a?.intendedUsage ?? "",
-    grantYear: a?.grantYear ?? "",
+    intendedUsage: a?.intendedUsage ?? (isNew ? "gen_ops" : ""),
+    grantYear: a?.grantYear ?? (isNew ? (defaults?.currentFiscalYearId ?? "") : ""),
     expectedPaymentDate: a?.expectedPaymentDate ?? "",
     regionIds: a?.regionIds ?? [],
     reimbursementType: a?.reimbursementType ?? "",
@@ -631,8 +651,10 @@ function PledgeAllocationDialog({
 }) {
   const entityOptions = useEntityOptions();
   const fiscalYearOptions = useFiscalYearOptions();
+  const currentFiscalYearId = useCurrentFiscalYearId();
   const fundableProjectOptions = useFundableProjectOptions(initial?.fundableProjectId ?? null);
-  const [s, setS] = useState<PledgeFormState>(() => pledgeStateFrom(initial));
+  const defaults: AllocationDefaults = { currentFiscalYearId };
+  const [s, setS] = useState<PledgeFormState>(() => pledgeStateFrom(initial, defaults));
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -640,11 +662,19 @@ function PledgeAllocationDialog({
   const [seededFor, setSeededFor] = useState<string | null>(null);
   const seedKey = `${mode}:${initial?.id ?? "new"}`;
   if (open && seededFor !== seedKey) {
-    setS(pledgeStateFrom(initial));
+    setS(pledgeStateFrom(initial, defaults));
     setConfirmingDelete(false);
     setSeededFor(seedKey);
   }
   if (!open && seededFor !== null) setSeededFor(null);
+
+  // If FY data arrives after the dialog opened (async), apply the default only
+  // when grantYear is still blank — never overwrite a user edit.
+  useEffect(() => {
+    if (open && mode === "add" && initial == null && currentFiscalYearId) {
+      setS((prev) => (prev.grantYear === "" ? { ...prev, grantYear: currentFiscalYearId } : prev));
+    }
+  }, [open, mode, initial, currentFiscalYearId]);
 
   const set = <K extends keyof PledgeFormState>(k: K, v: PledgeFormState[K]) =>
     setS((prev) => ({ ...prev, [k]: v }));
@@ -1147,13 +1177,14 @@ type GiftFormState = RestrictionAxisState & {
   spendingEnd: string;
 };
 
-function giftStateFrom(a: GiftAllocation | null): GiftFormState {
+function giftStateFrom(a: GiftAllocation | null, defaults?: AllocationDefaults): GiftFormState {
+  const isNew = a == null;
   return {
     ...restrictionAxisStateFrom(a),
     subAmount: a?.subAmount ?? "",
     entityId: a?.entityId ?? "",
-    intendedUsage: a?.intendedUsage ?? "",
-    grantYear: a?.grantYear ?? "",
+    intendedUsage: a?.intendedUsage ?? (isNew ? "gen_ops" : ""),
+    grantYear: a?.grantYear ?? (isNew ? (defaults?.currentFiscalYearId ?? "") : ""),
     regionIds: a?.regionIds ?? [],
     reimbursementType: a?.reimbursementType ?? "",
     countsTowardGoal: a?.countsTowardGoal ?? true,
@@ -1181,19 +1212,29 @@ function GiftAllocationDialog({
 }) {
   const entityOptions = useEntityOptions();
   const fiscalYearOptions = useFiscalYearOptions();
+  const currentFiscalYearId = useCurrentFiscalYearId();
   const fundableProjectOptions = useFundableProjectOptions(initial?.fundableProjectId ?? null);
-  const [s, setS] = useState<GiftFormState>(() => giftStateFrom(initial));
+  const defaults: AllocationDefaults = { currentFiscalYearId };
+  const [s, setS] = useState<GiftFormState>(() => giftStateFrom(initial, defaults));
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const [seededFor, setSeededFor] = useState<string | null>(null);
   const seedKey = `${mode}:${initial?.id ?? "new"}`;
   if (open && seededFor !== seedKey) {
-    setS(giftStateFrom(initial));
+    setS(giftStateFrom(initial, defaults));
     setConfirmingDelete(false);
     setSeededFor(seedKey);
   }
   if (!open && seededFor !== null) setSeededFor(null);
+
+  // If FY data arrives after the dialog opened (async), apply the default only
+  // when grantYear is still blank — never overwrite a user edit.
+  useEffect(() => {
+    if (open && mode === "add" && initial == null && currentFiscalYearId) {
+      setS((prev) => (prev.grantYear === "" ? { ...prev, grantYear: currentFiscalYearId } : prev));
+    }
+  }, [open, mode, initial, currentFiscalYearId]);
 
   const set = <K extends keyof GiftFormState>(k: K, v: GiftFormState[K]) =>
     setS((prev) => ({ ...prev, [k]: v }));
