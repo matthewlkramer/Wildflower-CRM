@@ -12,7 +12,11 @@ import {
   useDismissStripeRefundPropagation,
   useExcludeStagedPayment,
   useExcludeStripeStagedCharge,
+  useGetCurrentUser,
   useLinkStripeChargeToGift,
+  useRejectChargeQbTie,
+  useRejectSettlementProposal,
+  useRevertStripePayoutReconciliation,
   useListWorkbenchClusters,
   useListWorkbenchRecentChanges,
   useReIncludeStagedPayment,
@@ -25,6 +29,7 @@ import {
   useUpdateOpportunityOrPledge,
   type GiftOrPayment,
   type StagedPaymentExclusionReason,
+  type WorkbenchClusterQbRecord,
   type WorkbenchLens,
   type WorkbenchRecentChange,
 } from "@workspace/api-client-react";
@@ -58,6 +63,7 @@ import type { DonorType } from "@/components/entity-picker";
 import {
   DonorResolveDialog,
   ExcludeReasonDialog,
+  QbRecordDetailDialog,
   type EvidencePreview,
 } from "@/components/reconciliation-clusters/dialogs";
 import {
@@ -129,6 +135,7 @@ function donorBody(type: DonorType, id: string) {
 export default function ReconciliationClustersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { data: me } = useGetCurrentUser();
 
   const [lens, setLens] = useState<WorkbenchLens>("all_open");
   const [searchInput, setSearchInput] = useState("");
@@ -184,6 +191,8 @@ export default function ReconciliationClustersPage() {
     amount: string | null;
     date: string | null;
   } | null>(null);
+  const [qbDetailFor, setQbDetailFor] = useState<WorkbenchClusterQbRecord | null>(null);
+  const [revertSettlementFor, setRevertSettlementFor] = useState<{ payoutId: string; label: string } | null>(null);
 
   // Debounce free-text search so we don't refetch per keystroke.
   useEffect(() => {
@@ -231,6 +240,9 @@ export default function ReconciliationClustersPage() {
   const revertStagedM = useRevertStagedPayment();
   const updateOppM = useUpdateOpportunityOrPledge();
   const confirmSettlementM = useConfirmSettlementLink();
+  const rejectChargeQbTieM = useRejectChargeQbTie();
+  const rejectSettlementProposalM = useRejectSettlementProposal();
+  const revertStripePayoutReconciliationM = useRevertStripePayoutReconciliation();
 
   const busy =
     linkChargeM.isPending ||
@@ -248,7 +260,10 @@ export default function ReconciliationClustersPage() {
     reIncludeStagedM.isPending ||
     revertStagedM.isPending ||
     updateOppM.isPending ||
-    confirmSettlementM.isPending;
+    confirmSettlementM.isPending ||
+    rejectChargeQbTieM.isPending ||
+    rejectSettlementProposalM.isPending ||
+    revertStripePayoutReconciliationM.isPending;
 
   const invalidate = useCallback(() => {
     void queryClient.invalidateQueries({
@@ -590,6 +605,38 @@ export default function ReconciliationClustersPage() {
     }
   };
 
+  const handleRejectChargeQbTie = async (chargeId: string) => {
+    try {
+      await rejectChargeQbTieM.mutateAsync({ chargeId });
+      invalidate();
+      toast({ title: "QB tie dismissed", description: "The proposed charge–QB link was cleared." });
+    } catch (err) {
+      toast({ title: "Couldn't dismiss QB tie", description: errMessage(err), variant: "destructive" });
+    }
+  };
+
+  const handleRemoveSettlementProposal = async (payoutId: string) => {
+    try {
+      await rejectSettlementProposalM.mutateAsync({ payoutId });
+      invalidate();
+      toast({ title: "Proposal removed", description: "The settlement proposal was cleared; the payout is back to unlinked." });
+    } catch (err) {
+      toast({ title: "Couldn't remove proposal", description: errMessage(err), variant: "destructive" });
+    }
+  };
+
+  const handleRevertSettlement = async () => {
+    if (!revertSettlementFor) return;
+    try {
+      await revertStripePayoutReconciliationM.mutateAsync({ id: revertSettlementFor.payoutId });
+      setRevertSettlementFor(null);
+      invalidate();
+      toast({ title: "Settlement reverted", description: "The confirmed settlement was reverted to proposed." });
+    } catch (err) {
+      toast({ title: "Couldn't revert settlement", description: errMessage(err), variant: "destructive" });
+    }
+  };
+
   const actions: ClusterActions = {
     busy,
     openLinkGift: (anchor) => setLinkGiftFor(anchor),
@@ -606,6 +653,11 @@ export default function ReconciliationClustersPage() {
     openMarkLoss: (opportunityId, kind, label) =>
       setMarkLossFor({ opportunityId, kind, label }),
     openSettlementSearch: (args) => setSettlementSearchFor(args),
+    isFinanceOrAdmin: me?.role === "finance" || me?.role === "admin",
+    openQbDetail: (record) => setQbDetailFor(record),
+    removeSettlementProposal: (payoutId, _label) => void handleRemoveSettlementProposal(payoutId),
+    revertSettlement: (payoutId, label) => setRevertSettlementFor({ payoutId, label }),
+    rejectChargeQbTie: (chargeId) => void handleRejectChargeQbTie(chargeId),
   };
 
   const toggleExpanded = (id: string) =>
@@ -1083,6 +1135,36 @@ export default function ReconciliationClustersPage() {
           busy={busy}
         />
       ) : null}
+
+      {/* Revert confirmed settlement — confirm before acting (irreversible if charges are booked) */}
+      <AlertDialog open={!!revertSettlementFor} onOpenChange={(v) => { if (!v) setRevertSettlementFor(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revert confirmed settlement?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will undo the confirmed payout reconciliation for{" "}
+              <strong>{revertSettlementFor?.label ?? "this deposit"}</strong> and return it to a
+              proposed state. The server will refuse if any of the payout’s Stripe charges have
+              already been booked into a gift.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => void handleRevertSettlement()}
+            >
+              Revert settlement
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <QbRecordDetailDialog
+        open={!!qbDetailFor}
+        onOpenChange={(v) => { if (!v) setQbDetailFor(null); }}
+        record={qbDetailFor}
+      />
     </div>
   );
 }

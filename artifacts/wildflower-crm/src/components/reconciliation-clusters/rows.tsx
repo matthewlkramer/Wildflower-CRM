@@ -82,6 +82,16 @@ export interface ClusterActions {
     amount: string | null;
     date: string | null;
   }) => void;
+  /** True when the viewer is a finance team member or admin. Finance-gates QB write actions (§7.3). */
+  isFinanceOrAdmin: boolean;
+  /** Open the read-only in-app QB record detail dialog (§7.2). */
+  openQbDetail: (record: WorkbenchClusterQbRecord) => void;
+  /** Reject/dismiss the system-proposed payout→deposit settlement tie (§6.2 "Remove proposal"). Finance-gated. */
+  removeSettlementProposal: (payoutId: string, label: string) => void;
+  /** Revert a confirmed payout reconciliation back to proposed state (§6.2 "Unmatch confirmed settlement"). Finance-gated; shows confirm dialog before acting. */
+  revertSettlement: (payoutId: string, label: string) => void;
+  /** Reject the system-proposed charge↔QB tie for a Stripe charge (§5.2 / §7.2 "Unmatch from QB evidence"). */
+  rejectChargeQbTie: (chargeId: string) => void;
 }
 
 const CLUSTER_STATUS: Record<
@@ -325,6 +335,7 @@ function GiftCard({
   const unmatchedGift =
     crmState === "unmatched_incomplete" || crmState === "unmatched_complete";
   // Actions per §§8.2, gated on the canonical CRM card state.
+  const hasQbLinks = (gift.linkedStagedPaymentIds?.length ?? 0) > 0;
   const menu: MenuItem[] = [
     {
       label: incomplete ? "View & complete gift" : "Open gift record",
@@ -336,15 +347,36 @@ function GiftCard({
   ];
   if (crmState === "conflict") {
     menu.push({
-      label: "Review conflict — compare sources",
-      href: `/gifts/${gift.giftId}`,
+      label: "Compare source documents",
+      disabledReason:
+        "Not built yet — open the gift record to review all sources side by side",
     });
   }
   if (crmState === "pledge_link_broken") {
     menu.push({
-      label: "Repair pledge link",
-      disabledReason: "Not built yet — re-point the pledge from the gift record",
+      label: "Repair pledge allocation link",
+      disabledReason:
+        "Not built yet — open the gift record and re-link from the pledge allocations tab",
     });
+  }
+  if (unmatchedGift || !crmEntry) {
+    menu.push(
+      {
+        label: "Match to Stripe transaction",
+        disabledReason:
+          "Not built yet — link from the charge card using 'Link to existing CRM gift'",
+      },
+      {
+        label: "Match to QuickBooks record",
+        disabledReason:
+          "Not built yet — link from the QB card using 'Match to CRM gift'",
+      },
+      {
+        label: "Confirm proposed match",
+        disabledReason:
+          "Not built yet — proposed matches confirm via the evidence card menus",
+      },
+    );
   }
   menu.push(
     unlinkAnchor
@@ -354,7 +386,7 @@ function GiftCard({
           onClick: () =>
             actions.openRevert(
               unlinkAnchor,
-              `Unlink “${gift.name ?? gift.giftId}” from its evidence. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
+              `Unlink "${gift.name ?? gift.giftId}" from its evidence. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
             ),
         }
       : {
@@ -363,37 +395,63 @@ function GiftCard({
             "No money evidence in this row yet — link from a charge or QB card when it arrives",
         },
   );
-  if (unmatchedGift || !crmEntry) {
-    const oppId = gift.opportunityId;
-    const giftLabel = gift.name ?? gift.giftId;
-    const noOppReason =
-      "No opportunity linked — this gift isn't a pledge payment";
-    menu.push(
-      oppId
-        ? {
-            label: "Mark gift lost",
-            destructive: true,
-            onClick: () => actions.openMarkLoss(oppId, "lost", giftLabel),
-          }
-        : { label: "Mark gift lost", disabledReason: noOppReason },
-      oppId
-        ? {
-            label: "Mark gift dormant",
-            onClick: () => actions.openMarkLoss(oppId, "dormant", giftLabel),
-          }
-        : { label: "Mark gift dormant", disabledReason: noOppReason },
-    );
+  if (hasQbLinks) {
+    menu.push({
+      label: "Unmatch from QuickBooks record",
+      disabledReason:
+        "Not built yet — QB unlink requires the accounting card's unmatch action",
+    });
+  }
+  if (gift.opportunityId) {
+    menu.push({
+      label: "Unmatch from pledge payment",
+      disabledReason:
+        "Not built yet — open the gift record to remove the pledge allocation link",
+    });
   }
   menu.push(
     {
-      label: "Flag for research",
-      onClick: () => actions.openFlagGift(gift.giftId, gift.name ?? gift.giftId),
+      label: "Remove from cluster",
+      disabledReason:
+        "Not built yet — removing a gift card from its cluster requires a planned API",
     },
     {
-      label: "Move to another cluster",
-      disabledReason: "Clusters follow the evidence ties — unlink here, then link from the other row",
+      label: "Move to different cluster",
+      disabledReason:
+        "Not built yet — unlink from current evidence, then link from the target row",
+    },
+    {
+      label: "Group with another gift",
+      disabledReason: "Not built yet — allocation grouping is a planned operation",
+    },
+    {
+      label: "Split into separate gifts",
+      disabledReason: "Not built yet — allocation splitting is a planned operation",
     },
   );
+  if (unmatchedGift || !crmEntry) {
+    const oppId = gift.opportunityId;
+    const giftLabel = gift.name ?? gift.giftId;
+    const noOppReason = "No opportunity linked — this gift isn't a pledge payment";
+    menu.push(
+      oppId
+        ? { label: "Mark gift lost", destructive: true, onClick: () => actions.openMarkLoss(oppId, "lost", giftLabel) }
+        : { label: "Mark gift lost", disabledReason: noOppReason },
+      oppId
+        ? { label: "Mark gift dormant", onClick: () => actions.openMarkLoss(oppId, "dormant", giftLabel) }
+        : { label: "Mark gift dormant", disabledReason: noOppReason },
+    );
+  }
+  menu.push({
+    label: "Fill out QuickBooks from this gift",
+    disabledReason: actions.isFinanceOrAdmin
+      ? "Not built yet — writing QB from the gift record is a planned operation"
+      : "Finance team only",
+  });
+  menu.push({
+    label: "Flag for research",
+    onClick: () => actions.openFlagGift(gift.giftId, gift.name ?? gift.giftId),
+  });
   return (
     <FacetCard
       tone={tone}
@@ -457,10 +515,12 @@ function ChargeCard({
   charge,
   actions,
   rowState,
+  payoutId,
 }: {
   charge: WorkbenchClusterCharge;
   actions: ClusterActions;
   rowState?: WorkbenchRowState | null;
+  payoutId?: string;
 }) {
   const label = chargeLabel(charge);
   const anchor: AnchorRef = { kind: "charge", id: charge.chargeId, label };
@@ -499,6 +559,13 @@ function ChargeCard({
   if (excluded) {
     menu.push({ label: "Re-include", onClick: () => actions.reInclude(anchor) });
   } else if (!refundProposed) {
+    if (charge.status === "match_proposed") {
+      menu.push({
+        label: "Confirm proposed match",
+        disabledReason:
+          "Not built yet — proposed charge matches confirm via the settlement or gift-link flow",
+      });
+    }
     if (!linked) {
       // Unmatched transaction: match / create / identify are the real next steps.
       menu.push(
@@ -514,27 +581,45 @@ function ChargeCard({
           label: donorIdentified ? "Change identified donor" : "Identify donor",
           onClick: () => actions.openIdentify(anchor, chargePreview(charge)),
         },
-        {
-          label: "Match to QuickBooks evidence",
-          disabledReason:
-            "Not built yet — QB deposits tie to the whole payout, not one charge",
-        },
+        payoutId
+          ? {
+              label: "Match to QuickBooks evidence",
+              onClick: () =>
+                actions.openSettlementSearch({
+                  payoutId,
+                  amount: charge.amount ?? null,
+                  date: charge.chargeDate ?? null,
+                }),
+            }
+          : {
+              label: "Match to QuickBooks evidence",
+              disabledReason:
+                "QB deposits tie to the whole payout — use the settlement search on the payout row",
+            },
       );
     } else {
-      menu.push({
-        label: "Unlink from CRM gift",
-        destructive: true,
-        onClick: () =>
-          actions.openRevert(
-            anchor,
-            `Unlink Stripe charge ${label} from its gift. If the gift was minted from this charge it is deleted; a pre-existing gift is kept and just unlinked.`,
-          ),
-      });
+      menu.push(
+        {
+          label: "Unlink from CRM gift",
+          destructive: true,
+          onClick: () =>
+            actions.openRevert(
+              anchor,
+              `Unlink Stripe charge ${label} from its gift. If the gift was minted from this charge it is deleted; a pre-existing gift is kept and just unlinked.`,
+            ),
+        },
+        {
+          label: "Unmatch from QB evidence",
+          destructive: true,
+          onClick: () => actions.rejectChargeQbTie(charge.chargeId),
+        },
+      );
     }
     menu.push(
       {
         label: "Mark refund anticipated",
-        disabledReason: "Not built yet — flag via the cleanup queue for now",
+        disabledReason:
+          "Not built yet — flag via the cleanup queue for now",
       },
       {
         label: "Exclude — not a donation",
@@ -633,10 +718,12 @@ function QbCard({
   record,
   actions,
   rowState,
+  payoutId,
 }: {
   record: WorkbenchClusterQbRecord;
   actions: ClusterActions;
   rowState?: WorkbenchRowState | null;
+  payoutId?: string;
 }) {
   const roleLabel = QB_ROLE_LABEL[record.role];
   const anchor: AnchorRef = { kind: "staged", id: record.stagedPaymentId, label: qbLabel(record) };
@@ -676,6 +763,10 @@ function QbCard({
   // Actions per §§7.2, gated on the canonical QB card state.
   const qbHrefUrl = qbHref(record);
   const isFee = record.role === "fee";
+  const isDeposit = record.role === "deposit";
+  const proposed = record.status === "match_proposed";
+  const isFinance = actions.isFinanceOrAdmin;
+  const settlementState = rowState?.settlementLinkState;
   const menu: MenuItem[] = [];
   if (excluded) {
     menu.push({ label: "Re-include", onClick: () => actions.reInclude(anchor) });
@@ -685,6 +776,87 @@ function QbCard({
       label: "Exclude — not a donation",
       disabledReason: "Fees are accounting detail on the payout, not standalone records",
     });
+  } else if (isDeposit) {
+    // §6.2 settlement-link actions live on the deposit card.
+    if (
+      settlementState === "proposed_full" ||
+      settlementState === "proposed_partial" ||
+      settlementState === "proposed_conflict"
+    ) {
+      menu.push(
+        payoutId && isFinance
+          ? {
+              label: "Confirm settlement",
+              onClick: () =>
+                actions.openSettlementSearch({
+                  payoutId,
+                  amount: record.amount ?? null,
+                  date: record.dateReceived ?? null,
+                }),
+            }
+          : {
+              label: "Confirm settlement",
+              disabledReason: isFinance
+                ? "No payout context — confirm via the settlement gap slot on the row"
+                : "Finance team only",
+            },
+        isFinance
+          ? {
+              label: "Remove proposal",
+              destructive: true,
+              onClick: () => actions.removeSettlementProposal(payoutId!, qbLabel(record)),
+            }
+          : { label: "Remove proposal", disabledReason: "Finance team only" },
+      );
+    }
+    if (settlementState === "confirmed") {
+      menu.push(
+        isFinance
+          ? {
+              label: "Unmatch confirmed settlement",
+              destructive: true,
+              onClick: () => payoutId && actions.revertSettlement(payoutId, qbLabel(record)),
+            }
+          : { label: "Unmatch confirmed settlement", disabledReason: "Finance team only" },
+        isFinance
+          ? {
+              label: "Replace settlement relationship",
+              disabledReason:
+                "Not built yet — settlement replacement requires the finance-level settlement-link API",
+            }
+          : { label: "Replace settlement relationship", disabledReason: "Finance team only" },
+      );
+    }
+    if (linked) {
+      menu.push(
+        {
+          label: "Unlink from CRM gift",
+          destructive: true,
+          onClick: () =>
+            actions.openRevert(
+              anchor,
+              `Unlink QuickBooks deposit from its gift. If the gift was minted from this QB record it is deleted; a pre-existing gift is kept and just unlinked.`,
+            ),
+        },
+        isFinance
+          ? {
+              label: "Fill out QB from CRM",
+              disabledReason: rowState?.information.crmComplete
+                ? "Not built yet — writing back to QuickBooks is planned"
+                : "Complete the CRM gift record first",
+            }
+          : { label: "Fill out QB from CRM", disabledReason: "Finance team only" },
+      );
+    } else {
+      menu.push(
+        { label: "Match to CRM gift", onClick: () => actions.openLinkGift(anchor) },
+        {
+          label: "Create gift from this record",
+          onClick: () => actions.openCreateGift(anchor, qbPreview(record)),
+        },
+        { label: "Exclude — not a donation", onClick: () => actions.openExclude(anchor) },
+      );
+    }
   } else if (linked) {
     menu.push(
       {
@@ -697,19 +869,30 @@ function QbCard({
           ),
       },
       {
-        label: "Fill out QB from CRM",
-        disabledReason: rowState?.information.crmComplete
-          ? "Not built yet — writing back to QuickBooks is planned"
-          : "Complete the CRM gift record first",
+        label: "Unmatch from QB evidence",
+        destructive: true,
+        onClick: () => actions.rejectChargeQbTie(record.stagedPaymentId),
       },
+      isFinance
+        ? {
+            label: "Fill out QB from CRM",
+            disabledReason: rowState?.information.crmComplete
+              ? "Not built yet — writing back to QuickBooks is planned"
+              : "Complete the CRM gift record first",
+          }
+        : { label: "Fill out QB from CRM", disabledReason: "Finance team only" },
     );
   } else {
     // Raw / enriched / partially matched: matching is the real next step.
+    if (proposed) {
+      menu.push({
+        label: "Confirm proposed match",
+        disabledReason:
+          "Not built yet — proposed QB matches confirm via the charge-tie or gift-link flow",
+      });
+    }
     menu.push(
-      {
-        label: "Match to CRM gift",
-        onClick: () => actions.openLinkGift(anchor),
-      },
+      { label: "Match to CRM gift", onClick: () => actions.openLinkGift(anchor) },
       {
         label: "Create gift from this record",
         onClick: () => actions.openCreateGift(anchor, qbPreview(record)),
@@ -718,22 +901,24 @@ function QbCard({
         label: "Match to transaction",
         disabledReason: "Not built yet — charge ties are proposed by the Stripe sync",
       },
-      {
-        label: "Exclude — not a donation",
-        onClick: () => actions.openExclude(anchor),
-      },
+      { label: "Exclude — not a donation", onClick: () => actions.openExclude(anchor) },
     );
   }
   if (!isFee) {
     menu.push(
-      {
-        label: "Group QuickBooks records",
-        disabledReason: "Not built yet — grouping several QB rows into one event",
-      },
-      {
-        label: "Split into reconciliation units",
-        disabledReason: "Not built yet — splitting one QB row into parts",
-      },
+      isFinance
+        ? {
+            label: "Group QuickBooks records",
+            disabledReason: "Not built yet — grouping several QB rows into one event",
+          }
+        : { label: "Group QuickBooks records", disabledReason: "Finance team only" },
+      isFinance
+        ? {
+            label: "Split into reconciliation units",
+            disabledReason: "Not built yet — splitting one QB row into parts",
+          }
+        : { label: "Split into reconciliation units", disabledReason: "Finance team only" },
+      { label: "View QB record", onClick: () => actions.openQbDetail(record) },
     );
   }
   menu.push(
@@ -1101,11 +1286,11 @@ function PayoutBundleRow({
             </>
           )}
         </div>
-        <ChargeCard charge={charge} actions={actions} rowState={cluster.coverage?.state} />
+        <ChargeCard charge={charge} actions={actions} rowState={cluster.coverage?.state} payoutId={cluster.anchorId} />
         <div className="space-y-1.5">
           {cluster.qbRecords.length > 0 ? (
             cluster.qbRecords.map((r) => (
-              <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage?.state} />
+              <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage?.state} payoutId={cluster.anchorId} />
             ))
           ) : (
             <SettlementGapSlot cluster={cluster} actions={actions} />
@@ -1281,9 +1466,9 @@ function PayoutBundleRow({
                     </>
                   )}
                 </div>
-                <ChargeCard charge={charge} actions={actions} rowState={cluster.coverage?.state} />
+                <ChargeCard charge={charge} actions={actions} rowState={cluster.coverage?.state} payoutId={cluster.anchorId} />
                 {tie ? (
-                  <QbCard record={tie} actions={actions} rowState={cluster.coverage?.state} />
+                  <QbCard record={tie} actions={actions} rowState={cluster.coverage?.state} payoutId={cluster.anchorId} />
                 ) : (
                   <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1">
                     ↳ part of the payout bundle above

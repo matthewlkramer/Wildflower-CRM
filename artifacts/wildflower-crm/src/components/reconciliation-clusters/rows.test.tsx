@@ -61,6 +61,11 @@ function makeActions(): ClusterActions {
     openFlagGift: vi.fn(),
     openMarkLoss: vi.fn(),
     openSettlementSearch: vi.fn(),
+    isFinanceOrAdmin: false,
+    openQbDetail: vi.fn(),
+    removeSettlementProposal: vi.fn(),
+    revertSettlement: vi.fn(),
+    rejectChargeQbTie: vi.fn(),
   };
 }
 

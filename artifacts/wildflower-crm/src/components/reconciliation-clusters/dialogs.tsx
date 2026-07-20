@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
-import { Loader2, Lock, Sparkles } from "lucide-react";
-import type { StagedPaymentExclusionReason } from "@workspace/api-client-react";
+import { ExternalLink, Loader2, Lock, Sparkles } from "lucide-react";
+import type {
+  StagedPaymentExclusionReason,
+  WorkbenchClusterQbRecord,
+} from "@workspace/api-client-react";
+import { formatCurrency, formatDateShort } from "@/lib/format";
 import {
   Dialog,
   DialogContent,
@@ -283,6 +287,131 @@ export function ExcludeReasonDialog({
           >
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
             Exclude
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── QB record detail dialog (§7.2 "View QB record") ──────────────────────
+
+function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
+  if (!value) return null;
+  return (
+    <div className="grid grid-cols-[140px_1fr] gap-x-3 py-1 text-xs border-b last:border-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium break-words">{value}</span>
+    </div>
+  );
+}
+
+const QB_ROLE_LABEL: Record<WorkbenchClusterQbRecord["role"], string> = {
+  anchor: "QB record",
+  deposit: "Deposit",
+  fee: "Processor fee",
+  charge_tie: "Charge tie",
+  group_member: "Group member",
+};
+
+export function QbRecordDetailDialog({
+  open,
+  onOpenChange,
+  record,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  record: WorkbenchClusterQbRecord | null;
+}) {
+  if (!record) return null;
+
+  const title = record.lineDescription ?? record.reference ?? record.memo ?? record.stagedPaymentId;
+  const qbHref =
+    record.qbEntityType && record.qbEntityId
+      ? `https://app.qbo.intuit.com/app/${
+          { sales_receipt: "salesreceipt", payment: "recvpayment", deposit: "deposit" }[record.qbEntityType] ?? record.qbEntityType
+        }?txnId=${encodeURIComponent(record.qbEntityId)}`
+      : null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-sm font-semibold leading-snug break-words">
+            {title}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            {QB_ROLE_LABEL[record.role]}
+            {record.amount != null ? ` · ${formatCurrency(record.amount)}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 text-xs py-1">
+          {/* Payer / donor */}
+          <section>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+              Payer
+            </p>
+            <DetailRow label="QB payer" value={record.payerName} />
+            <DetailRow label="Identified donor" value={record.attributedDonor?.donorName ?? (record.attributedDonor ? "(unnamed)" : null)} />
+          </section>
+
+          {/* Transaction */}
+          <section>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+              Transaction
+            </p>
+            <DetailRow
+              label="Amount"
+              value={record.amount != null ? formatCurrency(record.amount) : null}
+            />
+            <DetailRow
+              label="Date received"
+              value={record.dateReceived ? formatDateShort(record.dateReceived) : null}
+            />
+            <DetailRow label="Payment method" value={record.paymentMethod} />
+            <DetailRow label="QB entity type" value={record.qbEntityType} />
+            <DetailRow label="QB entity ID" value={record.qbEntityId} />
+            <DetailRow label="Status" value={record.status} />
+            <DetailRow label="Role" value={QB_ROLE_LABEL[record.role]} />
+          </section>
+
+          {/* Descriptions */}
+          <section>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+              Descriptions
+            </p>
+            <DetailRow label="Reference" value={record.reference} />
+            <DetailRow label="Line description" value={record.lineDescription} />
+            <DetailRow label="Memo" value={record.memo} />
+          </section>
+
+          {/* IDs */}
+          <section>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+              Record
+            </p>
+            <DetailRow label="Staged payment ID" value={record.stagedPaymentId} />
+            {record.linkedChargeId ? (
+              <DetailRow label="Linked charge" value={record.linkedChargeId} />
+            ) : null}
+          </section>
+        </div>
+
+        <DialogFooter className="gap-2">
+          {qbHref ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => window.open(qbHref, "_blank", "noopener")}
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Open in QuickBooks
+            </Button>
+          ) : null}
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            Close
           </Button>
         </DialogFooter>
       </DialogContent>
