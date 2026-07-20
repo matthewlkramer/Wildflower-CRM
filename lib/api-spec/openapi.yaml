@@ -1655,10 +1655,10 @@ paths:
         - name: restrictionLabels
           in: query
           required: false
-          description: "Filter by restriction summary label (OR semantics). `unrestricted` = no donor-restricted axis; `purpose` = regional or usage donor-restricted but not time; `time` = time donor-restricted but not regional/usage; `both` = time AND (regional or usage) donor-restricted."
+          description: "Filter by restriction summary label (OR semantics). `restricted` = at least one allocation has a donor-restricted axis (regional/usage/time), a fundable project, or an entity other than wildflower_foundation; `unrestricted` = none of those conditions hold on any allocation."
           style: form
           explode: false
-          schema: { type: array, items: { type: string, enum: [unrestricted, purpose, time, both] } }
+          schema: { type: array, items: { type: string, enum: [restricted, unrestricted] } }
         - name: regionalRestrictionTypes
           in: query
           required: false
@@ -6530,7 +6530,7 @@ components:
         regionalRestrictionTypes:  { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct regional_restriction_type values across allocations." }
         usageRestrictionTypes:     { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct usage_restriction_type values across allocations." }
         timeRestrictionTypes:      { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct time_restriction_type values across allocations." }
-        restrictionLabel:          { type: string, nullable: true, readOnly: true, description: "Derived restriction summary across allocations: Unrestricted / Purpose / Time / Both. Mirrors GiftAuditReconciliation.restrictionType (regional/usage donor_restricted ⇒ Purpose; time donor_restricted ⇒ Time). Null when the gift has no allocations." }
+        restrictionLabel:          { type: string, nullable: true, readOnly: true, description: "Derived restriction summary across allocations: Restricted / Unrestricted. Restricted when any allocation has a donor-restricted axis (regional/usage/time), a fundable project (fundable_project_id IS NOT NULL), or an entity other than wildflower_foundation. Null when the gift has no allocations." }
         archivedAt:                 { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         donorbox:                   { allOf: [ { $ref: "#/components/schemas/DonorboxEnrichment" } ], nullable: true, readOnly: true, description: "Donorbox donation facts for this gift, joined via its linked Stripe charge (donorbox_donations.stripe_charge_id = the gift's matched/created stripe_staged_charges.id). Populated only on the detail endpoint. Enrichment only — never mints a gift." }
         createdAt:                  { type: string, format: date-time }

@@ -90,9 +90,9 @@ const donorJoinSelect = {
   // *RestrictionTypes: distinct axis enum values — donor_restricted /
   //   wf_restricted / unrestricted. Cast ::text to avoid the pg-enum Drizzle
   //   pitfall (array of unknown enum type → wrong runtime type).
-  // restrictionLabel: Unrestricted / Purpose / Time / Both — mirrors the
-  //   GiftAuditReconciliation.restrictionType derivation (regional/usage ⇒
-  //   Purpose, time ⇒ Time). NULL when the gift has no allocations.
+  // restrictionLabel: Restricted / Unrestricted. Restricted when any allocation
+  //   has a donor-restricted axis (regional/usage/time), a fundable project,
+  //   or an entity other than wildflower_foundation. NULL = no allocations.
   purposeVerbatims: sql<string[] | null>`(
     SELECT ARRAY_AGG(DISTINCT ga.purpose_verbatim ORDER BY ga.purpose_verbatim)
     FROM gift_allocations ga
@@ -115,10 +115,13 @@ const donorJoinSelect = {
   )`.as("time_restriction_types"),
   restrictionLabel: sql<string | null>`(
     SELECT CASE
-      WHEN BOOL_OR(ga.regional_restriction_type = 'donor_restricted' OR ga.usage_restriction_type = 'donor_restricted')
-           AND BOOL_OR(ga.time_restriction_type = 'donor_restricted') THEN 'Both'
-      WHEN BOOL_OR(ga.regional_restriction_type = 'donor_restricted' OR ga.usage_restriction_type = 'donor_restricted') THEN 'Purpose'
-      WHEN BOOL_OR(ga.time_restriction_type = 'donor_restricted') THEN 'Time'
+      WHEN BOOL_OR(
+        ga.regional_restriction_type = 'donor_restricted'
+        OR ga.usage_restriction_type = 'donor_restricted'
+        OR ga.time_restriction_type = 'donor_restricted'
+        OR ga.fundable_project_id IS NOT NULL
+        OR (ga.entity_id IS NOT NULL AND ga.entity_id != 'wildflower_foundation')
+      ) THEN 'Restricted'
       WHEN COUNT(*) > 0 THEN 'Unrestricted'
       ELSE NULL
     END
@@ -390,18 +393,16 @@ router.get(
       filters.push(sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.purposeVerbatim} IS NOT NULL)`);
     }
     {
+      // Shared EXISTS predicate: mirrors the restrictionLabel SQL formula.
+      const RESTRICTED_EXISTS = sql`EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftsAndPayments.id} AND (ga.regional_restriction_type = 'donor_restricted' OR ga.usage_restriction_type = 'donor_restricted' OR ga.time_restriction_type = 'donor_restricted' OR ga.fundable_project_id IS NOT NULL OR (ga.entity_id IS NOT NULL AND ga.entity_id != 'wildflower_foundation')))`;
       const labels = (q.restrictionLabels as string[] | undefined) ?? [];
       if (labels.length > 0) {
         const clauses: SQL[] = [];
         for (const label of labels) {
-          if (label === "unrestricted") {
-            clauses.push(sql`NOT EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftsAndPayments.id} AND (ga.regional_restriction_type = 'donor_restricted' OR ga.usage_restriction_type = 'donor_restricted' OR ga.time_restriction_type = 'donor_restricted'))`);
-          } else if (label === "purpose") {
-            clauses.push(sql`EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftsAndPayments.id} AND (ga.regional_restriction_type = 'donor_restricted' OR ga.usage_restriction_type = 'donor_restricted'))`);
-          } else if (label === "time") {
-            clauses.push(sql`EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.time_restriction_type = 'donor_restricted')`);
-          } else if (label === "both") {
-            clauses.push(sql`EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.time_restriction_type = 'donor_restricted' AND (ga.regional_restriction_type = 'donor_restricted' OR ga.usage_restriction_type = 'donor_restricted'))`);
+          if (label === "restricted") {
+            clauses.push(RESTRICTED_EXISTS);
+          } else if (label === "unrestricted") {
+            clauses.push(sql`NOT ${RESTRICTED_EXISTS}`);
           }
         }
         if (clauses.length > 0) filters.push(or(...clauses)!);

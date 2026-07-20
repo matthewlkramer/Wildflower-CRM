@@ -791,10 +791,8 @@ export default function Gifts() {
             selected={restrictionLabels}
             onChange={(v) => { setRestrictionLabels(v); setPage(1); selection.clear(); }}
             options={[
+              { value: "restricted", label: "Restricted" },
               { value: "unrestricted", label: "Unrestricted" },
-              { value: "purpose", label: "Purpose restricted" },
-              { value: "time", label: "Time restricted" },
-              { value: "both", label: "Purpose + time restricted" },
             ]}
             testId="select-restriction-labels"
           />

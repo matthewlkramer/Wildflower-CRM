@@ -2024,7 +2024,7 @@ export interface GiftOrPayment {
   readonly usageRestrictionTypes?: readonly RestrictionAxis[] | null;
   /** Distinct time_restriction_type values across allocations. */
   readonly timeRestrictionTypes?: readonly RestrictionAxis[] | null;
-  /** Derived restriction summary across allocations: Unrestricted / Purpose / Time / Both. Mirrors GiftAuditReconciliation.restrictionType (regional/usage donor_restricted ⇒ Purpose; time donor_restricted ⇒ Time). Null when the gift has no allocations. */
+  /** Derived restriction summary across allocations: Restricted / Unrestricted. Restricted when any allocation has a donor-restricted axis (regional/usage/time), a fundable project (fundable_project_id IS NOT NULL), or an entity other than wildflower_foundation. Null when the gift has no allocations. */
   readonly restrictionLabel?: string | null;
   /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
   archivedAt?: string | null;
@@ -9643,7 +9643,7 @@ dateReceivedPresence?: ListGiftsAndPaymentsDateReceivedPresence;
  */
 purposeVerbatimPresence?: ListGiftsAndPaymentsPurposeVerbatimPresence;
 /**
- * Filter by restriction summary label (OR semantics). `unrestricted` = no donor-restricted axis; `purpose` = regional or usage donor-restricted but not time; `time` = time donor-restricted but not regional/usage; `both` = time AND (regional or usage) donor-restricted.
+ * Filter by restriction summary label (OR semantics). `restricted` = at least one allocation has a donor-restricted axis (regional/usage/time), a fundable project, or an entity other than wildflower_foundation; `unrestricted` = none of those conditions hold on any allocation.
  */
 restrictionLabels?: ListGiftsAndPaymentsRestrictionLabelsItem[];
 /**
@@ -9779,10 +9779,8 @@ export type ListGiftsAndPaymentsRestrictionLabelsItem = typeof ListGiftsAndPayme
 
 
 export const ListGiftsAndPaymentsRestrictionLabelsItem = {
+  restricted: 'restricted',
   unrestricted: 'unrestricted',
-  purpose: 'purpose',
-  time: 'time',
-  both: 'both',
 } as const;
 
 export type ListGiftsAndPaymentsLinkedToQuickbooks = typeof ListGiftsAndPaymentsLinkedToQuickbooks[keyof typeof ListGiftsAndPaymentsLinkedToQuickbooks];
