@@ -2452,6 +2452,8 @@ export interface CreateGiftOrPaymentBody {
   thankYouLetterUrl?: string;
   thankYouLetterFilename?: string;
   sourceRecordUrl?: string;
+  /** FK to fundraising_campaigns.slug. Optional at creation. */
+  campaignSlug?: string;
   entityId?: string;
   intendedUsage?: IntendedUsage;
   fundableProjectId?: string;
@@ -2480,6 +2482,8 @@ export interface UpdateGiftOrPaymentBody {
   paymentIntermediaryId?: string | null;
   ownerUserId?: string | null;
   tags?: string | null;
+  /** FK to fundraising_campaigns.slug. Null clears the campaign link. */
+  campaignSlug?: string | null;
   grantLetterUrl?: string | null;
   grantLetterFilename?: string | null;
   thankYouLetterUrl?: string | null;

@@ -11,6 +11,7 @@ import {
   useGetGiftStripeChain,
   useGetGiftAuditReconciliation,
   useGetOpportunityOrPledge,
+  useListFundraisingCampaigns,
   getGetOpportunityOrPledgeQueryKey,
   getGetGiftOrPaymentQueryKey,
   getGetOrganizationQueryKey,
@@ -136,6 +137,16 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
       enabled: !!matchedGiftId,
     },
   });
+  const campaignsQ = useListFundraisingCampaigns();
+  const campaignOptions = (campaignsQ.data ?? []).map((c) => ({
+    value: c.slug,
+    label: c.name,
+  }));
+  const campaignDisplay =
+    gift.campaignSlug
+      ? (campaignsQ.data?.find((c) => c.slug === gift.campaignSlug)?.name ?? gift.campaignSlug)
+      : "—";
+
   const userNames = useUserNameMap();
   const ownerDisplay = gift.ownerUserId
     ? (userNames.get(gift.ownerUserId) ?? gift.ownerUserId)
@@ -564,6 +575,17 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
           ) : null}
           <FieldCard title="Classification">
             <div className="space-y-1">
+              <Row label="Campaign">
+                <InlineEditSelect
+                  align="left"
+                  label="Campaign"
+                  testIdBase="gift-campaign"
+                  value={gift.campaignSlug ?? null}
+                  options={campaignOptions}
+                  display={campaignDisplay}
+                  onSave={(next) => patch({ campaignSlug: next })}
+                />
+              </Row>
               <Row label="Off-books">
                 <span data-testid="gift-off-books">
                   {gift.offBooks ? "Yes" : "No"}

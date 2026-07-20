@@ -6833,6 +6833,7 @@ components:
         # ── Non-blocking coding capture (Task #585) ──────────────────────────
         # Threaded onto the seeded starter allocation so a new gift lands with
         # as much bookable coding as the human had at creation. All optional.
+        campaignSlug:               { type: string, description: "FK to fundraising_campaigns.slug. Optional at creation." }
         entityId:                   { type: string }
         intendedUsage:              { $ref: "#/components/schemas/IntendedUsage" }
         fundableProjectId:          { type: string }
@@ -6861,6 +6862,7 @@ components:
         paymentIntermediaryId:      { type: string, nullable: true }
         ownerUserId:                      { type: string, nullable: true }
         tags:                       { type: string, nullable: true }
+        campaignSlug:               { type: string, nullable: true, description: "FK to fundraising_campaigns.slug. Null clears the campaign link." }
         grantLetterUrl:             { type: string, nullable: true }
         grantLetterFilename:        { type: string, nullable: true }
         thankYouLetterUrl:          { type: string, nullable: true }

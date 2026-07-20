@@ -10,6 +10,7 @@ import {
   useListEntities,
   useListFiscalYears,
   useListFundableProjects,
+  useListFundraisingCampaigns,
   useListPledgeAllocations,
   getGetPendingStagedMoneyForDonorQueryKey,
   getListGiftsAndPaymentsQueryKey,
@@ -233,6 +234,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
   const [dateReceived, setDateReceived] = useState("");
   const [titleReference, setTitleReference] = useState("");
   const [memoDescription, setMemoDescription] = useState("");
+  const [campaignSlug, setCampaignSlug] = useState("");
 
   // Opportunity link
   const [linkedOpp, setLinkedOpp] = useState<OpportunityOrPledge | null>(null);
@@ -305,7 +307,11 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  // ── Coding option sources ─────────────────────────────────────────────────
+  // ── Option sources ───────────────────────────────────────────────────────
+  const campaignOptions = (useListFundraisingCampaigns().data ?? []).map((c) => ({
+    value: c.slug,
+    label: c.name,
+  }));
   const entityOptions = (useListEntities().data ?? []).map((e) => ({
     value: e.id,
     label: e.name,
@@ -384,6 +390,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     setDateReceived("");
     setTitleReference("");
     setMemoDescription("");
+    setCampaignSlug("");
     setLinkedOpp(null);
     setDonorMode("auto");
     resetDonor();
@@ -544,6 +551,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
         ...(memoDescription.trim()
           ? { memoDescription: memoDescription.trim() }
           : {}),
+        ...(campaignSlug ? { campaignSlug } : {}),
         ...codingFields,
       },
     });
@@ -760,6 +768,30 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                 data-testid="input-new-gift-memo"
               />
             </div>
+            {campaignOptions.length > 0 ? (
+              <div className="space-y-1.5">
+                <Label>Campaign</Label>
+                <Select
+                  value={campaignSlug || NONE}
+                  onValueChange={(v) => setCampaignSlug(v === NONE ? "" : v)}
+                >
+                  <SelectTrigger
+                    className="h-8 text-sm"
+                    data-testid="select-new-gift-campaign"
+                  >
+                    <SelectValue placeholder="— None —" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    <SelectItem value={NONE}>— None —</SelectItem>
+                    {campaignOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
 
             {/* ── Coding capture (optional, non-blocking) ── */}
             <Collapsible open={codingOpen} onOpenChange={setCodingOpen}>
