@@ -337,4 +337,142 @@ export const useUpdateFundraisingCampaign = <TError = ErrorType<BadRequestRespon
       > => {
       return useMutation(getUpdateFundraisingCampaignMutationOptions(options));
     }
+    /**
+ * @summary Admin only. Soft-delete (archive) a campaign.
+ */
+export const getArchiveFundraisingCampaignUrl = (slug: string,) => {
+
+
+  
+
+  return `/api/fundraising-campaigns/${slug}/archive`
+}
+
+export const archiveFundraisingCampaign = async (slug: string, options?: RequestInit): Promise<FundraisingCampaign> => {
+  
+  return customFetch<FundraisingCampaign>(getArchiveFundraisingCampaignUrl(slug),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getArchiveFundraisingCampaignMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveFundraisingCampaign>>, TError,{slug: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof archiveFundraisingCampaign>>, TError,{slug: string}, TContext> => {
+
+const mutationKey = ['archiveFundraisingCampaign'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveFundraisingCampaign>>, {slug: string}> = (props) => {
+          const {slug} = props ?? {};
+
+          return  archiveFundraisingCampaign(slug,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ArchiveFundraisingCampaignMutationResult = NonNullable<Awaited<ReturnType<typeof archiveFundraisingCampaign>>>
+    
+    export type ArchiveFundraisingCampaignMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Admin only. Soft-delete (archive) a campaign.
+ */
+export const useArchiveFundraisingCampaign = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveFundraisingCampaign>>, TError,{slug: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof archiveFundraisingCampaign>>,
+        TError,
+        {slug: string},
+        TContext
+      > => {
+      return useMutation(getArchiveFundraisingCampaignMutationOptions(options));
+    }
+    /**
+ * @summary Admin only. Restore an archived campaign.
+ */
+export const getUnarchiveFundraisingCampaignUrl = (slug: string,) => {
+
+
+  
+
+  return `/api/fundraising-campaigns/${slug}/unarchive`
+}
+
+export const unarchiveFundraisingCampaign = async (slug: string, options?: RequestInit): Promise<FundraisingCampaign> => {
+  
+  return customFetch<FundraisingCampaign>(getUnarchiveFundraisingCampaignUrl(slug),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getUnarchiveFundraisingCampaignMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unarchiveFundraisingCampaign>>, TError,{slug: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unarchiveFundraisingCampaign>>, TError,{slug: string}, TContext> => {
+
+const mutationKey = ['unarchiveFundraisingCampaign'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveFundraisingCampaign>>, {slug: string}> = (props) => {
+          const {slug} = props ?? {};
+
+          return  unarchiveFundraisingCampaign(slug,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnarchiveFundraisingCampaignMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveFundraisingCampaign>>>
+    
+    export type UnarchiveFundraisingCampaignMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Admin only. Restore an archived campaign.
+ */
+export const useUnarchiveFundraisingCampaign = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unarchiveFundraisingCampaign>>, TError,{slug: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unarchiveFundraisingCampaign>>,
+        TError,
+        {slug: string},
+        TContext
+      > => {
+      return useMutation(getUnarchiveFundraisingCampaignMutationOptions(options));
+    }
     

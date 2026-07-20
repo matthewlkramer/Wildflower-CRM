@@ -935,6 +935,26 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /fundraising-campaigns/{slug}/archive:
+    post:
+      operationId: archiveFundraisingCampaign
+      tags: [fundraising-campaigns]
+      summary: Admin only. Soft-delete (archive) a campaign.
+      parameters: [ { name: slug, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FundraisingCampaign" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /fundraising-campaigns/{slug}/unarchive:
+    post:
+      operationId: unarchiveFundraisingCampaign
+      tags: [fundraising-campaigns]
+      summary: Admin only. Restore an archived campaign.
+      parameters: [ { name: slug, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FundraisingCampaign" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /fundable-projects:
     get:

@@ -111,3 +111,51 @@ export const UpdateFundraisingCampaignResponse = zod.object({
   "updatedAt": zod.string().datetime({})
 })
 
+/**
+ * @summary Admin only. Soft-delete (archive) a campaign.
+ */
+export const ArchiveFundraisingCampaignParams = zod.object({
+  "slug": zod.coerce.string()
+})
+
+export const ArchiveFundraisingCampaignResponse = zod.object({
+  "slug": zod.string().describe('Slug-style PK, e.g. spring-2024.'),
+  "name": zod.string(),
+  "donorboxCampaignId": zod.string().nullish().describe('Donorbox numeric campaign id (stored as text).'),
+  "emailSentAt": zod.string().datetime({}).nullish().describe('Date the campaign fundraising email was sent.'),
+  "entityId": zod.string().nullish().describe('FK to entities.id — the fund entity this campaign raises for.'),
+  "regionalRestriction": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.').nullish(),
+  "usageRestriction": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.').nullish(),
+  "timeRestriction": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.').nullish(),
+  "regionalRestrictionDetail": zod.string().nullish(),
+  "usageRestrictionDetail": zod.string().nullish(),
+  "timeRestrictionDetail": zod.string().nullish(),
+  "archivedAt": zod.string().datetime({}).nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
+/**
+ * @summary Admin only. Restore an archived campaign.
+ */
+export const UnarchiveFundraisingCampaignParams = zod.object({
+  "slug": zod.coerce.string()
+})
+
+export const UnarchiveFundraisingCampaignResponse = zod.object({
+  "slug": zod.string().describe('Slug-style PK, e.g. spring-2024.'),
+  "name": zod.string(),
+  "donorboxCampaignId": zod.string().nullish().describe('Donorbox numeric campaign id (stored as text).'),
+  "emailSentAt": zod.string().datetime({}).nullish().describe('Date the campaign fundraising email was sent.'),
+  "entityId": zod.string().nullish().describe('FK to entities.id — the fund entity this campaign raises for.'),
+  "regionalRestriction": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.').nullish(),
+  "usageRestriction": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.').nullish(),
+  "timeRestriction": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.').nullish(),
+  "regionalRestrictionDetail": zod.string().nullish(),
+  "usageRestrictionDetail": zod.string().nullish(),
+  "timeRestrictionDetail": zod.string().nullish(),
+  "archivedAt": zod.string().datetime({}).nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+

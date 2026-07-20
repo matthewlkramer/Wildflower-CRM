@@ -31,6 +31,7 @@ import {
   CopyCheck,
   ListChecks,
   FileSpreadsheet,
+  Megaphone,
 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
@@ -83,6 +84,7 @@ const navItems: NavEntry[] = [
 
   { section: "Admin" },
   { href: "/admin", label: "Admin", icon: Settings },
+  { href: "/campaigns", label: "Campaigns", icon: Megaphone, adminOnly: true },
   { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
   { href: "/potential-duplicates", label: "Potential Duplicates", icon: CopyCheck, adminOnly: true },
   { href: "/cleanup-queue", label: "Cleanup Queue", icon: ListChecks },

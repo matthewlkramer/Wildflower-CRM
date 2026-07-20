@@ -33,6 +33,7 @@ import CleanupQueue from "@/pages/cleanup-queue";
 import RevenueExtractor from "@/pages/revenue-extractor";
 import CodingFormImport from "@/pages/coding-form-import";
 import FundableProjects from "@/pages/fundable-projects";
+import Campaigns from "@/pages/campaigns";
 import Settings from "@/pages/settings";
 import ReconciliationClusters from "@/pages/reconciliation-clusters";
 import EmailIntelligence from "@/pages/email-intelligence";
@@ -233,6 +234,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/email-intelligence"><ProtectedRoute component={EmailIntelligence} /></Route>
           <Route path="/email-tracking"><ProtectedRoute component={EmailTracking} /></Route>
           <Route path="/fundable-projects"><ProtectedRoute component={FundableProjects} /></Route>
+          <Route path="/campaigns"><ProtectedRoute component={Campaigns} /></Route>
           <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
           <Route path="/admin"><ProtectedRoute component={Admin} /></Route>
           <Route path="/audit-log"><ProtectedRoute component={AuditLog} /></Route>

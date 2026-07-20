@@ -117,6 +117,34 @@ router.put(
   }),
 );
 
+router.post(
+  "/fundraising-campaigns/:slug/archive",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const [row] = await db
+      .update(fundraisingCampaigns)
+      .set({ archivedAt: new Date(), updatedAt: new Date() })
+      .where(eq(fundraisingCampaigns.slug, String(req.params.slug)))
+      .returning();
+    if (!row) return notFound(res, "fundraising campaign");
+    res.json(row);
+  }),
+);
+
+router.post(
+  "/fundraising-campaigns/:slug/unarchive",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const [row] = await db
+      .update(fundraisingCampaigns)
+      .set({ archivedAt: null, updatedAt: new Date() })
+      .where(eq(fundraisingCampaigns.slug, String(req.params.slug)))
+      .returning();
+    if (!row) return notFound(res, "fundraising campaign");
+    res.json(row);
+  }),
+);
+
 router.get(
   "/fundable-projects",
   asyncHandler(async (req, res) => {
