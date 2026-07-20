@@ -59,9 +59,9 @@ Stripe gifts are still BORN with amount=gross (no human figure to overwrite).
 fixed and removed — do not treat any test failure as "pre-existing" without
 re-verifying against the current HEAD count (1278 passing).
 
-## Still header-resident (not yet migrated as of this writing)
-- grant_year + counts_toward_goal header cols: reads ALREADY use allocations
-  (`ga.n`, 0080 moved counts_toward_goal); header cols deprecated, await drop.
+## All gift header cols now fully retired
+
+No header columns remain deprecated-but-present in the Drizzle schema.
 
 ## Completed header retirements
 - `type`, `quickbooks_tie_status`, `final_amount_stripe_charge_id`, four
@@ -70,6 +70,11 @@ re-verifying against the current HEAD count (1278 passing).
   `quickbooks_tie_status` is derived live from payment_applications (no write-back).
   `loanOrGrant` is now the direct write-body field (in Create/Update/Bulk bodies).
   `giftQbTie.ts` no longer writes to DB — it only reads.
+- `gifts_and_payments.grant_year` + `gifts_and_payments.needs_research` —
+  removed from Drizzle schema (Task #598); DROP migration is 0105 (apply to prod).
+- `gifts_and_payments.counts_toward_goal`, `staged_payments.counts_toward_goal`,
+  `staged_payments.sync_gap` — removed from Drizzle schema; dev DB is already
+  clean; DROP migration is 0141 (apply to prod; no Publish step required first).
 
 ## Migrations
 - `0081_gift_scope_fund_dimensions_seed.sql` (+RUNBOOK) — seeds `expects_payment`,
@@ -80,5 +85,13 @@ re-verifying against the current HEAD count (1278 passing).
   flip-guard mirrors `giftIsOffBooksExpr`. Run before `0104`.
 - `0104_drop_gift_offbooks_header_cols.sql` (+RUNBOOK) — DROPs the 3 header columns.
   Publish read-stop code first, then 0103 then 0104 back-to-back, no Publish between.
+- `0105_drop_gift_grant_year_needs_research.sql` (+RUNBOOK) — DROPs
+  `gifts_and_payments.grant_year` and `needs_research`. Publish (schema-removal
+  code) FIRST, then this SQL to prod + dev back-to-back, no Publish between.
+- `0141_drop_counts_toward_goal_sync_gap.sql` (+RUNBOOK) — DROPs the three columns
+  deferred by 0080: `gifts_and_payments.counts_toward_goal`,
+  `staged_payments.counts_toward_goal`, `staged_payments.sync_gap`. No Publish
+  ordering required — code has not read/written these since 0080; dev DB already
+  clean; apply to prod directly.
 - Apply prod DATA files with `psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f
   lib/db/migrations/<file>.sql` (no BEGIN/COMMIT inside a `-1` file).
