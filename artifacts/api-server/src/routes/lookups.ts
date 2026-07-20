@@ -7,6 +7,7 @@ import {
   giftsAndPayments,
   opportunitiesAndPledges,
   pledgeAllocations,
+  fundraisingCampaigns,
 } from "@workspace/db/schema";
 import { and, asc, desc, eq, gte, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import {
@@ -14,6 +15,8 @@ import {
   UpdateFundableProjectBody,
   UpdateFiscalYearBody,
   CloseFiscalYearAuditBody,
+  CreateFundraisingCampaignBody,
+  UpdateFundraisingCampaignBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound, paramId, parseOrBadRequest } from "../lib/helpers";
@@ -25,9 +28,94 @@ import { giftHasNoActiveOverpayChild } from "../lib/auditCloseResolution";
 
 // NOTE: /entities (GET/POST/PATCH) and /fiscal-year-entity-goals routes live
 // in their own files (entities.ts, fiscalYearEntityGoals.ts). This file holds
-// the read-only fiscal-years lookup plus full CRUD for fundable-projects.
+// the read-only fiscal-years lookup plus full CRUD for fundable-projects and
+// fundraising-campaigns.
 const router: IRouter = Router();
 router.use(requireAuth);
+
+// ── Fundraising campaigns ──────────────────────────────────────────────────
+// Slug used as the PK / path param throughout (not a numeric id).
+const CAMPAIGN_SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+router.get(
+  "/fundraising-campaigns",
+  asyncHandler(async (req, res) => {
+    const archivedFilter = activeOnlyUnlessAdmin(req, fundraisingCampaigns.archivedAt);
+    const rows = await db
+      .select()
+      .from(fundraisingCampaigns)
+      .where(archivedFilter)
+      .orderBy(asc(fundraisingCampaigns.name));
+    res.json(rows);
+  }),
+);
+
+router.get(
+  "/fundraising-campaigns/:slug",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const row = await db
+      .select()
+      .from(fundraisingCampaigns)
+      .where(eq(fundraisingCampaigns.slug, String(req.params.slug)))
+      .then((r) => r[0]);
+    if (!row) return notFound(res, "fundraising campaign");
+    res.json(row);
+  }),
+);
+
+router.post(
+  "/fundraising-campaigns",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const body = parseOrBadRequest(CreateFundraisingCampaignBody, req.body, res);
+    if (!body) return;
+    if (!CAMPAIGN_SLUG_RE.test(body.slug)) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Campaign slug must be lowercase letters, digits, and hyphens, starting with a letter or digit.",
+      });
+      return;
+    }
+    try {
+      const [row] = await db
+        .insert(fundraisingCampaigns)
+        .values({ ...body, emailSentAt: body.emailSentAt ? new Date(body.emailSentAt) : null })
+        .returning();
+      res.status(201).json(row);
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "23505") {
+        res.status(409).json({ error: "conflict", message: `Campaign '${body.slug}' already exists.` });
+        return;
+      }
+      throw err;
+    }
+  }),
+);
+
+router.put(
+  "/fundraising-campaigns/:slug",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const body = parseOrBadRequest(UpdateFundraisingCampaignBody, req.body, res);
+    if (!body) return;
+    if (Object.keys(body).length === 0) {
+      res.status(400).json({ error: "validation_error", message: "Empty update body." });
+      return;
+    }
+    const { emailSentAt: rawEmailSentAt, ...restBody } = body;
+    const emailSentAtUpdate = "emailSentAt" in body
+      ? { emailSentAt: rawEmailSentAt ? new Date(rawEmailSentAt) : null }
+      : {};
+    const [row] = await db
+      .update(fundraisingCampaigns)
+      .set({ ...restBody, ...emailSentAtUpdate, updatedAt: new Date() })
+      .where(eq(fundraisingCampaigns.slug, String(req.params.slug)))
+      .returning();
+    if (!row) return notFound(res, "fundraising campaign");
+    res.json(row);
+  }),
+);
 
 router.get(
   "/fundable-projects",

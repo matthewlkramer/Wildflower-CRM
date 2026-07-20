@@ -22,6 +22,7 @@ export * from "./financial-corrections/financial-corrections";
 export * from "./fiscal-year-entity-goals/fiscal-year-entity-goals";
 export * from "./fiscal-years/fiscal-years";
 export * from "./fundable-projects/fundable-projects";
+export * from "./fundraising-campaigns/fundraising-campaigns";
 export * from "./gift-allocations/gift-allocations";
 export * from "./gifts-and-payments/gifts-and-payments";
 export * from "./google-oauth/google-oauth";

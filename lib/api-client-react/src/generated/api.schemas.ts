@@ -760,6 +760,55 @@ export interface UpsertFiscalYearEntityGoalBody {
   goalAmount: string;
 }
 
+export interface FundraisingCampaign {
+  /** Slug-style PK, e.g. spring-2024. */
+  slug: string;
+  name: string;
+  /** Donorbox numeric campaign id (stored as text). */
+  donorboxCampaignId?: string | null;
+  /** Date the campaign fundraising email was sent. */
+  emailSentAt?: string | null;
+  /** FK to entities.id — the fund entity this campaign raises for. */
+  entityId?: string | null;
+  regionalRestriction?: RestrictionAxis | null;
+  usageRestriction?: RestrictionAxis | null;
+  timeRestriction?: RestrictionAxis | null;
+  regionalRestrictionDetail?: string | null;
+  usageRestrictionDetail?: string | null;
+  timeRestrictionDetail?: string | null;
+  archivedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateFundraisingCampaignBody {
+  /** Slug-style PK. Lowercase letters, digits, hyphens only. */
+  slug: string;
+  name: string;
+  donorboxCampaignId?: string | null;
+  emailSentAt?: string | null;
+  entityId?: string | null;
+  regionalRestriction?: RestrictionAxis | null;
+  usageRestriction?: RestrictionAxis | null;
+  timeRestriction?: RestrictionAxis | null;
+  regionalRestrictionDetail?: string | null;
+  usageRestrictionDetail?: string | null;
+  timeRestrictionDetail?: string | null;
+}
+
+export interface UpdateFundraisingCampaignBody {
+  name?: string;
+  donorboxCampaignId?: string | null;
+  emailSentAt?: string | null;
+  entityId?: string | null;
+  regionalRestriction?: RestrictionAxis | null;
+  usageRestriction?: RestrictionAxis | null;
+  timeRestriction?: RestrictionAxis | null;
+  regionalRestrictionDetail?: string | null;
+  usageRestrictionDetail?: string | null;
+  timeRestrictionDetail?: string | null;
+}
+
 export interface FundableProject {
   id: string;
   name: string;
@@ -2034,6 +2083,8 @@ export interface GiftOrPayment {
   readonly timeRestrictionTypes?: readonly RestrictionAxis[] | null;
   /** Derived restriction summary across allocations: Restricted / Unrestricted. Restricted when any allocation has a donor-restricted axis (regional/usage/time), a fundable project (fundable_project_id IS NOT NULL), or an entity other than wildflower_foundation. Null when the gift has no allocations. */
   readonly restrictionLabel?: string | null;
+  /** FK to fundraising_campaigns.slug. Null when the gift isn't linked to a structured campaign record. */
+  campaignSlug?: string | null;
   /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
   archivedAt?: string | null;
   /** Donorbox donation facts for this gift, joined via its linked Stripe charge (donorbox_donations.stripe_charge_id = the gift's matched/created stripe_staged_charges.id). Populated only on the detail endpoint. Enrichment only — never mints a gift. */
@@ -9086,6 +9137,13 @@ entityId?: string;
 category?: GoalCategoryParam;
 };
 
+export type ListFundraisingCampaignsParams = {
+/**
+ * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+ */
+includeArchived?: IncludeArchivedQueryParameter;
+};
+
 export type ListFundableProjectsParams = {
 /**
  * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
@@ -9740,6 +9798,10 @@ donorboxBacked?: boolean;
  * When true, return only gifts that have an APPLIED Donation Revenue Coding Form row matched to them.
  */
 codingForm?: boolean;
+/**
+ * Filter to gifts whose campaign_slug is in the given set (OR). Repeat or comma-separate.
+ */
+campaignSlugs?: string[];
 /**
  * Sort order (default date_desc).
  */

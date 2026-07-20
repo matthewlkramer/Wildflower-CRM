@@ -236,7 +236,7 @@ import { stagedStatusSql } from "../lib/derivedStatus";
 import { inArray } from "drizzle-orm";
 import { personDisplayNameSql } from "../lib/personNameSql";
 
-const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "fundableProjectId", "quickbooksTie", "restrictionLabels", "regionalRestrictionTypes", "usageRestrictionTypes", "timeRestrictionTypes"] as const;
+const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "fundableProjectId", "quickbooksTie", "restrictionLabels", "regionalRestrictionTypes", "usageRestrictionTypes", "timeRestrictionTypes", "campaignSlugs"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -449,6 +449,10 @@ router.get(
     }
     if (q.timeRestrictionTypes && q.timeRestrictionTypes.length > 0) {
       filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.timeRestrictionType, q.timeRestrictionTypes as never[])})`);
+    }
+    // Campaign filter — gifts whose campaign_slug is in the given set (OR).
+    if (q.campaignSlugs && q.campaignSlugs.length > 0) {
+      filters.push(inArray(giftsAndPayments.campaignSlug, q.campaignSlugs as string[]));
     }
     // Donor-lifecycle worklist preset — composite predicate shared verbatim
     // with the dashboard worklist counts (see lib/worklists).

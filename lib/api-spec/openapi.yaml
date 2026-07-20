@@ -15,6 +15,7 @@ tags:
   - { name: entities }
   - { name: fiscal-year-entity-goals }
   - { name: fundable-projects }
+  - { name: fundraising-campaigns }
   - { name: fiscal-years }
 
   - { name: organizations }
@@ -894,6 +895,47 @@ paths:
         "204": { description: Deleted }
 
   # ─── Fundable projects ─────────────────────────────────────────────────────
+  /fundraising-campaigns:
+    get:
+      operationId: listFundraisingCampaigns
+      tags: [fundraising-campaigns]
+      summary: List fundraising campaigns (id/slug/name for pickers). Admins see archived.
+      parameters:
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/FundraisingCampaign" } } } } }
+    post:
+      operationId: createFundraisingCampaign
+      tags: [fundraising-campaigns]
+      summary: Admin only. Create a new fundraising campaign.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateFundraisingCampaignBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/FundraisingCampaign" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Conflict (slug already exists) }
+  /fundraising-campaigns/{slug}:
+    get:
+      operationId: getFundraisingCampaign
+      tags: [fundraising-campaigns]
+      summary: Admin only. Full record for the detail/edit panel.
+      parameters: [ { name: slug, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FundraisingCampaign" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: updateFundraisingCampaign
+      tags: [fundraising-campaigns]
+      summary: Admin only. Update metadata fields on a campaign.
+      parameters: [ { name: slug, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateFundraisingCampaignBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FundraisingCampaign" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /fundable-projects:
     get:
       operationId: listFundableProjects
@@ -1753,6 +1795,13 @@ paths:
           schema: { type: string, enum: [missing_allocations] }
         - { name: donorboxBacked, in: query, required: false, description: "When true, return only gifts backed by a Donorbox donation (same authority as the Donorbox badge).", schema: { type: boolean } }
         - { name: codingForm, in: query, required: false, description: "When true, return only gifts that have an APPLIED Donation Revenue Coding Form row matched to them.", schema: { type: boolean } }
+        - name: campaignSlugs
+          in: query
+          required: false
+          description: "Filter to gifts whose campaign_slug is in the given set (OR). Repeat or comma-separate."
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - { name: sort, in: query, required: false, schema: { $ref: "#/components/schemas/GiftSort" }, description: "Sort order (default date_desc)." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
@@ -5161,6 +5210,52 @@ components:
       required: [goalAmount]
       properties:
         goalAmount: { type: string, description: "Decimal string. Use plain digits with optional decimal, no commas." }
+    FundraisingCampaign:
+      type: object
+      required: [slug, name, createdAt, updatedAt]
+      properties:
+        slug:                       { type: string, description: "Slug-style PK, e.g. spring-2024." }
+        name:                       { type: string }
+        donorboxCampaignId:         { type: string, nullable: true, description: "Donorbox numeric campaign id (stored as text)." }
+        emailSentAt:                { type: string, format: date-time, nullable: true, description: "Date the campaign fundraising email was sent." }
+        entityId:                   { type: string, nullable: true, description: "FK to entities.id — the fund entity this campaign raises for." }
+        regionalRestriction:        { allOf: [ { $ref: "#/components/schemas/RestrictionAxis" } ], nullable: true }
+        usageRestriction:           { allOf: [ { $ref: "#/components/schemas/RestrictionAxis" } ], nullable: true }
+        timeRestriction:            { allOf: [ { $ref: "#/components/schemas/RestrictionAxis" } ], nullable: true }
+        regionalRestrictionDetail:  { type: string, nullable: true }
+        usageRestrictionDetail:     { type: string, nullable: true }
+        timeRestrictionDetail:      { type: string, nullable: true }
+        archivedAt:                 { type: string, format: date-time, nullable: true }
+        createdAt:                  { type: string, format: date-time }
+        updatedAt:                  { type: string, format: date-time }
+    CreateFundraisingCampaignBody:
+      type: object
+      required: [slug, name]
+      properties:
+        slug:                       { type: string, description: "Slug-style PK. Lowercase letters, digits, hyphens only." }
+        name:                       { type: string }
+        donorboxCampaignId:         { type: string, nullable: true }
+        emailSentAt:                { type: string, format: date-time, nullable: true }
+        entityId:                   { type: string, nullable: true }
+        regionalRestriction:        { allOf: [ { $ref: "#/components/schemas/RestrictionAxis" } ], nullable: true }
+        usageRestriction:           { allOf: [ { $ref: "#/components/schemas/RestrictionAxis" } ], nullable: true }
+        timeRestriction:            { allOf: [ { $ref: "#/components/schemas/RestrictionAxis" } ], nullable: true }
+        regionalRestrictionDetail:  { type: string, nullable: true }
+        usageRestrictionDetail:     { type: string, nullable: true }
+        timeRestrictionDetail:      { type: string, nullable: true }
+    UpdateFundraisingCampaignBody:
+      type: object
+      properties:
+        name:                       { type: string }
+        donorboxCampaignId:         { type: string, nullable: true }
+        emailSentAt:                { type: string, format: date-time, nullable: true }
+        entityId:                   { type: string, nullable: true }
+        regionalRestriction:        { allOf: [ { $ref: "#/components/schemas/RestrictionAxis" } ], nullable: true }
+        usageRestriction:           { allOf: [ { $ref: "#/components/schemas/RestrictionAxis" } ], nullable: true }
+        timeRestriction:            { allOf: [ { $ref: "#/components/schemas/RestrictionAxis" } ], nullable: true }
+        regionalRestrictionDetail:  { type: string, nullable: true }
+        usageRestrictionDetail:     { type: string, nullable: true }
+        timeRestrictionDetail:      { type: string, nullable: true }
     FundableProject:
       type: object
       required: [id, name, active, createdAt, updatedAt]
@@ -6555,6 +6650,7 @@ components:
         usageRestrictionTypes:     { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct usage_restriction_type values across allocations." }
         timeRestrictionTypes:      { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct time_restriction_type values across allocations." }
         restrictionLabel:          { type: string, nullable: true, readOnly: true, description: "Derived restriction summary across allocations: Restricted / Unrestricted. Restricted when any allocation has a donor-restricted axis (regional/usage/time), a fundable project (fundable_project_id IS NOT NULL), or an entity other than wildflower_foundation. Null when the gift has no allocations." }
+        campaignSlug:              { type: string, nullable: true, description: "FK to fundraising_campaigns.slug. Null when the gift isn't linked to a structured campaign record." }
         archivedAt:                 { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         donorbox:                   { allOf: [ { $ref: "#/components/schemas/DonorboxEnrichment" } ], nullable: true, readOnly: true, description: "Donorbox donation facts for this gift, joined via its linked Stripe charge (donorbox_donations.stripe_charge_id = the gift's matched/created stripe_staged_charges.id). Populated only on the detail endpoint. Enrichment only — never mints a gift." }
         createdAt:                  { type: string, format: date-time }

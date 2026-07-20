@@ -29,6 +29,7 @@ import { households } from "./households";
 // modules are fully evaluated, so the ESM cycle is safe (same pattern as the
 // self-reference on giftBeingMatchedId).
 import { stripeStagedCharges } from "./stripeStagedCharges";
+import { fundraisingCampaigns } from "./fundraisingCampaigns";
 
 // Header-only row for an actual gift / payment. Like opportunities, all
 // scope (which fund entity, which fiscal year, which regions, which
@@ -42,9 +43,17 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   name: text("name"),
   details: text("details"),
   // The campaign this gift came in through (e.g. a Donorbox campaign name,
-  // stored WITHOUT the "donorbox campaign: " prefix). Plain text for now; a
-  // campaigns table is a possible follow-on if these need management.
+  // stored WITHOUT the "donorbox campaign: " prefix). Plain text provenance
+  // column — retained as-is; the structured FK is campaignSlug below.
   fundraisingCampaign: text("fundraising_campaign"),
+  // FK to fundraising_campaigns.slug — the structured campaign record for
+  // this gift. Nullable: only populated for gifts linked to a known campaign.
+  // SET NULL on delete (deleting a campaign row doesn't delete the gift).
+  // ON UPDATE CASCADE so slug renames propagate automatically.
+  campaignSlug: text("campaign_slug").references(
+    () => fundraisingCampaigns.slug,
+    { onDelete: "set null", onUpdate: "cascade" },
+  ),
   // ── Revenue Extractor capture (Task #607) ────────────────────────────────
   // Fundraiser-captured inputs that finance keys into QuickBooks. Both are
   // additive/nullable free text with NO effect on derivation / analytics /
@@ -299,6 +308,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   index("gifts_and_payments_quickbooks_tie_status_idx").on(t.quickbooksTieStatus),
   index("gifts_and_payments_thank_you_email_msg_idx").on(t.thankYouEmailMessageId),
   index("gifts_and_payments_thank_you_sent_at_idx").on(t.thankYouSentAt),
+  index("gifts_and_payments_campaign_slug_idx").on(t.campaignSlug),
   // Donor exclusivity: exactly one of organization / individual-giver / household.
   check(
     "gifts_and_payments_donor_xor",

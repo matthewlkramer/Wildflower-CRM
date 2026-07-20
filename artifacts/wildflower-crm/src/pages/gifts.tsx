@@ -28,6 +28,7 @@ import {
   useListEntities,
   getListEntitiesQueryKey,
   useListFundableProjects,
+  useListFundraisingCampaigns,
 } from "@workspace/api-client-react";
 import { useRegionNameMap } from "@/components/region-picker";
 import { useRowSelection } from "@/hooks/use-row-selection";
@@ -143,6 +144,7 @@ type ColCtx = {
   entityNameById: Map<string, string>;
   regionNames: Map<string, string>;
   fundableProjectNameById: Map<string, string>;
+  campaignNameBySlug: Map<string, string>;
   isAdmin: boolean;
   inline: InlineCtx;
   onOpen: (g: GiftOrPayment) => void;
@@ -386,6 +388,17 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       },
     },
     {
+      key: "campaign",
+      label: "Campaign",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground",
+      cell: (g) => {
+        if (!g.campaignSlug) return "—";
+        return ctx.campaignNameBySlug.get(g.campaignSlug) ?? g.campaignSlug;
+      },
+    },
+    {
       key: "actions",
       label: "",
       required: true,
@@ -446,6 +459,7 @@ export default function Gifts() {
   const [usageRestrictionTypes, setUsageRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.usageRestrictionTypes", []);
   const [timeRestrictionTypes, setTimeRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.timeRestrictionTypes", []);
   const [fundableProjects, setFundableProjects] = usePersistedState<string[]>("wf.list.gifts.fundableProjects", []);
+  const [campaignSlugs, setCampaignSlugs] = usePersistedState<string[]>("wf.list.gifts.campaignSlugs", []);
   const [page, setPage] = usePersistedState<number>("wf.list.gifts.page", 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     "wf.list.gifts.columns",
@@ -521,6 +535,7 @@ export default function Gifts() {
     ...(usageRestrictionTypes.length > 0 ? { usageRestrictionTypes: [...usageRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
     ...(timeRestrictionTypes.length > 0 ? { timeRestrictionTypes: [...timeRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
     ...(fundableProjects.length > 0 ? { fundableProjectId: [...fundableProjects].sort() } : {}),
+    ...(campaignSlugs.length > 0 ? { campaignSlugs: [...campaignSlugs].sort() } : {}),
   };
 
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {
@@ -540,6 +555,11 @@ export default function Gifts() {
   const fundableProjectNameById = useMemo(
     () => new Map<string, string>((fundableProjectsQ.data ?? []).map((p) => [p.id, p.name])),
     [fundableProjectsQ.data],
+  );
+  const campaignsQ = useListFundraisingCampaigns();
+  const campaignNameBySlug = useMemo(
+    () => new Map<string, string>((campaignsQ.data ?? []).map((c) => [c.slug, c.name])),
+    [campaignsQ.data],
   );
 
   const refreshList = useCallback(
@@ -614,6 +634,7 @@ export default function Gifts() {
         entityNameById,
         regionNames,
         fundableProjectNameById,
+        campaignNameBySlug,
         isAdmin,
         inline: {
           editingId: inlineEdit.editingId,
@@ -632,7 +653,7 @@ export default function Gifts() {
         onUnarchive: unarchiveGift,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [userNames, entityNameById, regionNames, fundableProjectNameById, isAdmin, inlineEdit, navigate],
+    [userNames, entityNameById, regionNames, fundableProjectNameById, campaignNameBySlug, isAdmin, inlineEdit, navigate],
   );
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
@@ -684,6 +705,22 @@ export default function Gifts() {
             selected={fiscalYears}
             onChange={(v) => { setFiscalYears(v); setPage(1); selection.clear(); }}
             testId="select-gift-fiscal-year"
+          />
+        ),
+      },
+      {
+        key: "campaign",
+        label: "Campaign",
+        defaultVisible: false,
+        active: campaignSlugs.length > 0,
+        clear: () => { setCampaignSlugs([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Campaign"
+            selected={campaignSlugs}
+            onChange={(v) => { setCampaignSlugs(v); setPage(1); selection.clear(); }}
+            options={(campaignsQ.data ?? []).map((c) => ({ value: c.slug, label: c.name }))}
+            testId="select-gift-campaign"
           />
         ),
       },
@@ -956,7 +993,7 @@ export default function Gifts() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [types, owners, fiscalYears, fundableProjects, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence, donorboxBacked, codingForm, dateReceivedPresence, purposeVerbatimPresence, restrictionLabels, regionalRestrictionTypes, usageRestrictionTypes, timeRestrictionTypes],
+    [types, owners, fiscalYears, fundableProjects, campaignSlugs, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence, donorboxBacked, codingForm, dateReceivedPresence, purposeVerbatimPresence, restrictionLabels, regionalRestrictionTypes, usageRestrictionTypes, timeRestrictionTypes],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -1091,6 +1128,7 @@ export default function Gifts() {
     usageRestrictionTypes: string[];
     timeRestrictionTypes: string[];
     fundableProjects: string[];
+    campaignSlugs: string[];
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -1115,6 +1153,7 @@ export default function Gifts() {
     usageRestrictionTypes,
     timeRestrictionTypes,
     fundableProjects,
+    campaignSlugs,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -1139,6 +1178,7 @@ export default function Gifts() {
     setUsageRestrictionTypes([]);
     setTimeRestrictionTypes([]);
     setFundableProjects([]);
+    setCampaignSlugs([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -1166,6 +1206,7 @@ export default function Gifts() {
       setUsageRestrictionTypes(s.usageRestrictionTypes ?? []);
       setTimeRestrictionTypes(s.timeRestrictionTypes ?? []);
       setFundableProjects(s.fundableProjects ?? []);
+      setCampaignSlugs(s.campaignSlugs ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
       setFiltersState(s.filters ?? null);
@@ -1192,6 +1233,7 @@ export default function Gifts() {
       (s.usageRestrictionTypes?.length ?? 0) === 0 &&
       (s.timeRestrictionTypes?.length ?? 0) === 0 &&
       (s.fundableProjects?.length ?? 0) === 0 &&
+      (s.campaignSlugs?.length ?? 0) === 0 &&
       (s.sort?.key ?? null) === null &&
       (s.columns ?? null) === null &&
       (s.filters ?? null) === null,
@@ -1215,7 +1257,8 @@ export default function Gifts() {
     regionalRestrictionTypes.length > 0 ||
     usageRestrictionTypes.length > 0 ||
     timeRestrictionTypes.length > 0 ||
-    fundableProjects.length > 0;
+    fundableProjects.length > 0 ||
+    campaignSlugs.length > 0;
 
   return (
     <div className="space-y-6">
