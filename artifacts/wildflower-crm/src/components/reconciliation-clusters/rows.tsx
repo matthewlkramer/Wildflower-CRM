@@ -26,7 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatCurrency, formatDateShort } from "@/lib/format";
-import type { EvidencePreview } from "./dialogs";
+import type { EvidencePreview, UnlinkOption } from "./dialogs";
 import {
   CodingBadge,
   DbBadge,
@@ -92,6 +92,8 @@ export interface ClusterActions {
   revertSettlement: (payoutId: string, label: string) => void;
   /** Reject the system-proposed charge↔QB tie for a Stripe charge (§5.2 / §7.2 "Unmatch from QB evidence"). */
   rejectChargeQbTie: (chargeId: string) => void;
+  /** Relationship chooser when a gift has MULTIPLE linked evidence records. */
+  openUnlinkChooser: (giftLabel: string, options: UnlinkOption[]) => void;
 }
 
 const CLUSTER_STATUS: Record<
@@ -255,24 +257,47 @@ function CardMenu({ items, testId }: { items: MenuItem[]; testId: string }) {
 
 // ── Facet cards ──────────────────────────────────────────────────────────────
 
-/** The evidence anchor whose revert would unlink this gift, if any. */
-function giftUnlinkAnchor(gift: WorkbenchClusterGift): AnchorRef | null {
+/**
+ * EVERY evidence relationship this gift could be unlinked from — one option
+ * per linked charge / staged payment, enriched with identifying info from the
+ * cluster's evidence lists so the chooser can say which is which. Evidence not
+ * present in the (capped) cluster lists falls back to an id-only label.
+ */
+export function giftUnlinkOptions(
+  gift: WorkbenchClusterGift,
+  cluster: WorkbenchCluster,
+): UnlinkOption[] {
   const label = gift.name ?? "this gift";
-  if (gift.linkedChargeIds && gift.linkedChargeIds.length > 0) {
-    return { kind: "charge", id: gift.linkedChargeIds[0], label };
+  const options: UnlinkOption[] = [];
+  for (const id of gift.linkedChargeIds ?? []) {
+    const c = cluster.charges.find((x) => x.chargeId === id);
+    options.push({
+      anchor: { kind: "charge", id, label },
+      source: c ? `Stripe charge · ${chargeLabel(c)}` : `Stripe charge ${id}`,
+      amount: c?.amount != null ? fmt(c.amount) : null,
+      date: c?.chargeDate ? formatDateShort(c.chargeDate) : null,
+    });
   }
-  if (gift.linkedStagedPaymentIds && gift.linkedStagedPaymentIds.length > 0) {
-    return { kind: "staged", id: gift.linkedStagedPaymentIds[0], label };
+  for (const id of gift.linkedStagedPaymentIds ?? []) {
+    const r = cluster.qbRecords.find((x) => x.stagedPaymentId === id);
+    options.push({
+      anchor: { kind: "staged", id, label },
+      source: r ? `QuickBooks · ${qbLabel(r)}` : `QuickBooks record ${id}`,
+      amount: r?.amount != null ? fmt(r.amount) : null,
+      date: r?.dateReceived ? formatDateShort(r.dateReceived) : null,
+    });
   }
-  return null;
+  return options;
 }
 
 function GiftCard({
   gift,
+  cluster,
   actions,
   rowState,
 }: {
   gift: WorkbenchClusterGift;
+  cluster: WorkbenchCluster;
   actions: ClusterActions;
   rowState?: WorkbenchRowState | null;
 }) {
@@ -281,7 +306,8 @@ function GiftCard({
   const crmState = crmEntry?.state;
   const satisfiedBy = crmEntry?.satisfiedBy;
 
-  // Tone from canonical state; fall back to QB-tie heuristic.
+  // Tone from canonical state. LEGACY FALLBACK (no crmEntry): QB-tie
+  // heuristic, only for responses without canonical coverage.state.
   const tone: "green" | "amber" | "slate" =
     crmState === "matched_complete" || crmState === "unmatched_complete"
       ? "green"
@@ -293,7 +319,8 @@ function GiftCard({
             ? "amber"
             : "green";
 
-  // Gap line from canonical state; fall back to QB-tie heuristic.
+  // Gap line from canonical state. LEGACY FALLBACK (qbTieGap below): QB-tie
+  // heuristic, only for responses without canonical coverage.state.
   const stateGap: string | null =
     crmState === "unmatched_incomplete" || crmState === "matched_incomplete"
       ? "CRM record incomplete"
@@ -329,7 +356,7 @@ function GiftCard({
       : null;
 
   const donor = donorHref(gift);
-  const unlinkAnchor = giftUnlinkAnchor(gift);
+  const unlinkOptions = giftUnlinkOptions(gift, cluster);
   const incomplete =
     crmState === "unmatched_incomplete" || crmState === "matched_incomplete";
   const unmatchedGift =
@@ -378,22 +405,32 @@ function GiftCard({
       },
     );
   }
+
+  // Unlink is relationship-specific: one link keeps the one-click revert;
+  // multiple links open a chooser so exactly one relationship is removed.
   menu.push(
-    unlinkAnchor
+    unlinkOptions.length > 1
       ? {
-          label: "Unlink from this match",
+          label: "Unlink from this match…",
           destructive: true,
           onClick: () =>
-            actions.openRevert(
-              unlinkAnchor,
-              `Unlink "${gift.name ?? gift.giftId}" from its evidence. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
-            ),
+            actions.openUnlinkChooser(gift.name ?? gift.giftId, unlinkOptions),
         }
-      : {
-          label: "Match to money evidence",
-          disabledReason:
-            "No money evidence in this row yet — link from a charge or QB card when it arrives",
-        },
+      : unlinkOptions.length === 1
+        ? {
+            label: "Unlink from this match",
+            destructive: true,
+            onClick: () =>
+              actions.openRevert(
+                unlinkOptions[0].anchor,
+                `Unlink “${gift.name ?? gift.giftId}” from its evidence. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
+              ),
+          }
+        : {
+            label: "Match to money evidence",
+            disabledReason:
+              "No money evidence in this row yet — link from a charge or QB card when it arrives",
+          },
   );
   if (hasQbLinks) {
     menu.push({
@@ -526,13 +563,17 @@ function ChargeCard({
   const anchor: AnchorRef = { kind: "charge", id: charge.chargeId, label };
   const excluded = charge.status === "excluded";
 
-  // Canonical transaction facts (§§5.1) — refund status from rowState when present.
+  // Canonical transaction facts (§§5.1) — state comes from rowState when present.
   const txnEntry = rowState?.transactions.find((t) => t.transactionId === charge.chargeId);
   const refundProposed = txnEntry
     ? txnEntry.refundStatus === "anticipated"
-    : !!charge.refundProposed;
+    : // LEGACY FALLBACK: responses without canonical coverage.state only.
+      !!charge.refundProposed;
   const linked = !!charge.linkedGiftId;
-  const matched = linked && charge.status === "match_confirmed";
+  const matched = txnEntry
+    ? txnEntry.state === "matched"
+    : // LEGACY FALLBACK: responses without canonical coverage.state only.
+      linked && charge.status === "match_confirmed";
   const donorIdentified = !!charge.attributedDonor;
   const tone: "green" | "amber" | "slate" = excluded
     ? "slate"
@@ -731,7 +772,9 @@ function QbCard({
   const linked = record.status === "match_confirmed";
   const refNote = qbReferenceNote(record);
 
-  // Tone from canonical QB card state (§§7.1).
+  // Tone from canonical QB card state (§§7.1). LEGACY FALLBACK (qbState
+  // null): match_confirmed heuristic, only for responses without canonical
+  // coverage.state.
   const qbEntry = rowState?.qbCards.find((e) => e.qbRecordId === record.stagedPaymentId);
   const qbState = qbEntry?.state;
   const tone: "green" | "amber" | "slate" =
@@ -1031,6 +1074,50 @@ function chargeStatus(
   word: string;
   detail?: string;
 } {
+  // Canonical per-transaction state (§§5.1) when the server supplies it.
+  const entry = coverage?.state?.transactions.find(
+    (t) => t.transactionId === c.chargeId,
+  );
+  if (entry) {
+    switch (entry.state) {
+      case "excluded":
+        return { tone: "slate", word: "Excluded" };
+      case "refund_anticipated":
+        return {
+          tone: "red",
+          word:
+            c.refundKind === "chargeback"
+              ? "Chargeback proposed"
+              : "Refund proposed",
+          detail: "confirm or dismiss on the charge card",
+        };
+      case "refunded":
+        return { tone: "slate", word: "Refunded" };
+      case "matched":
+        // Per-charge a linked gift is "Gift booked"; only the cluster level says "Complete".
+        return { tone: "green", word: "Gift booked" };
+      case "amount_mismatch":
+        return { tone: "amber", word: "Amount mismatch" };
+      case "info_conflict":
+        return { tone: "amber", word: "Info conflict" };
+      case "partial":
+        return { tone: "blue", word: "Linked", detail: "coverage incomplete" };
+      case "unmatched":
+        if (
+          coverage?.donorPurpose.crmLinkage.grain === "bundle" &&
+          coverage.donorPurpose.crmLinkage.complete
+        ) {
+          return { tone: "green", word: "Covered", detail: "deposit-grain gift" };
+        }
+        return {
+          tone: "amber",
+          word: "Missing donor",
+          detail: "pick an action at left",
+        };
+    }
+  }
+  // LEGACY FALLBACK: only for responses without canonical coverage.state
+  // (older server build). Delete once coverage.state becomes required.
   if (c.status === "excluded") return { tone: "slate", word: "Excluded" };
   if (c.refundProposed) {
     return {
@@ -1041,7 +1128,6 @@ function chargeStatus(
     };
   }
   if (c.linkedGiftId) {
-    // Per-charge a linked gift is "Gift booked"; only the cluster level says "Complete".
     if (c.status === "match_confirmed") return { tone: "green", word: "Gift booked" };
     return { tone: "blue", word: "Linked", detail: "awaiting confirm" };
   }
@@ -1138,6 +1224,37 @@ function SettlementGapSlot({
   );
 }
 
+/** Tone → text color for the small settlement chip in the accounting column. */
+const CHIP_TONE: Record<Tone, string> = {
+  green: "text-emerald-700 dark:text-emerald-400",
+  blue: "text-blue-700 dark:text-blue-400",
+  amber: "text-amber-700 dark:text-amber-400",
+  red: "text-red-700 dark:text-red-400",
+  slate: "text-muted-foreground",
+};
+
+/**
+ * Settlement is a relationship of the accounting column, not a third status
+ * signal — this chip renders the payout↔deposit settlement state inside the
+ * BANK & ACCOUNTING column (row status stays two-signal: linkage + info).
+ * `unlinked` with no QB records is skipped: the SettlementGapSlot already
+ * says "settlement link missing" there.
+ */
+function SettlementChip({ cluster }: { cluster: WorkbenchCluster }) {
+  const s = cluster.coverage?.state?.settlementLinkState;
+  if (!s) return null;
+  if (s === "unlinked" && cluster.qbRecords.length === 0) return null;
+  const meta = SETTLEMENT_META[s];
+  return (
+    <div
+      className={`text-[11px] font-semibold leading-snug pl-1 ${CHIP_TONE[meta.tone]}`}
+      data-testid={`settlement-chip-${cluster.id}`}
+    >
+      {meta.word}
+    </div>
+  );
+}
+
 function StatusForCluster({
   cluster,
   action,
@@ -1149,12 +1266,12 @@ function StatusForCluster({
   // the legacy cluster.status signal.
   const state = cluster.coverage?.state;
   if (state) {
+    // Two-signal status model: the row status derives from linkage +
+    // information ONLY. Settlement is a relationship of the accounting
+    // column and renders there (SettlementChip), never in the row status.
     const lnk = LINKAGE_META[state.linkage.state];
     const inf = INFO_META[state.information.state];
-    const settle = state.settlementLinkState
-      ? SETTLEMENT_META[state.settlementLinkState]
-      : null;
-    // Worst tone wins across linkage, information AND settlement.
+    // Worst tone wins across the two signals.
     const tonePriority: Record<Tone, number> = {
       red: 4,
       amber: 3,
@@ -1162,18 +1279,17 @@ function StatusForCluster({
       green: 1,
       slate: 0,
     };
-    const facets = settle ? [lnk, inf, settle] : [lnk, inf];
+    const facets = [lnk, inf];
     const tone = facets.reduce<Tone>(
       (worst, f) => (tonePriority[f.tone] > tonePriority[worst] ? f.tone : worst),
       "slate",
     );
     // The headline is the facet that CAUSED the tone — the first facet (in
-    // linkage > information > settlement priority) matching the worst tone —
-    // so the word never contradicts the dot color.
+    // linkage > information priority) matching the worst tone — so the word
+    // never contradicts the dot color.
     const headline = facets.find((f) => f.tone === tone) ?? lnk;
     const detailBits = facets
       .filter((f) => f !== headline)
-      .filter((f) => !(f === settle && state.settlementLinkState === "confirmed"))
       .map((f) => f.word)
       .filter((w) => w !== headline.word);
     return (
@@ -1186,7 +1302,9 @@ function StatusForCluster({
       />
     );
   }
-  // Legacy fallback.
+  // LEGACY FALLBACK: coverage.state is still optional in the contract, so a
+  // response without it (older server build) falls back to the coarse
+  // cluster.status word. Delete once coverage.state becomes required.
   const meta = CLUSTER_STATUS[cluster.status];
   return (
     <StatusCell
@@ -1258,7 +1376,7 @@ function PayoutBundleRow({
         <ChevronRight className="w-4 h-4 text-transparent mt-1.5" />
         <div className="space-y-1.5">
           {gift ? (
-            <GiftCard gift={gift} actions={actions} rowState={cluster.coverage?.state} />
+            <GiftCard gift={gift} cluster={cluster} actions={actions} rowState={cluster.coverage?.state} />
           ) : charge.status === "excluded" ? (
             <ExcludedCard />
           ) : cluster.coverage?.donorPurpose.crmLinkage.grain === "bundle" &&
@@ -1295,6 +1413,7 @@ function PayoutBundleRow({
           ) : (
             <SettlementGapSlot cluster={cluster} actions={actions} />
           )}
+          <SettlementChip cluster={cluster} />
         </div>
         <StatusForCluster
           cluster={cluster}
@@ -1367,11 +1486,14 @@ function PayoutBundleRow({
             `${fmt(cluster.grossTotal)} gross · ${fmt(cluster.feeTotal)} fees · ${fmt(cluster.netTotal)} net`,
           ]}
         />
-        {qbLines.length > 0 ? (
-          <SummaryCard lines={qbLines} />
-        ) : (
-          <SettlementGapSlot cluster={cluster} actions={actions} />
-        )}
+        <div className="space-y-1">
+          {qbLines.length > 0 ? (
+            <SummaryCard lines={qbLines} />
+          ) : (
+            <SettlementGapSlot cluster={cluster} actions={actions} />
+          )}
+          <SettlementChip cluster={cluster} />
+        </div>
         <StatusForCluster
           cluster={cluster}
           action={
@@ -1438,7 +1560,7 @@ function PayoutBundleRow({
                 <CornerDownRight className="w-3.5 h-3.5 text-muted-foreground/40 ml-2 mt-2" />
                 <div className="pl-4">
                   {gift ? (
-                    <GiftCard gift={gift} actions={actions} rowState={cluster.coverage?.state} />
+                    <GiftCard gift={gift} cluster={cluster} actions={actions} rowState={cluster.coverage?.state} />
                   ) : charge.status === "excluded" ? (
                     <ExcludedCard />
                   ) : cluster.coverage?.donorPurpose.crmLinkage.grain === "bundle" &&
@@ -1491,7 +1613,7 @@ function PayoutBundleRow({
             >
               <CornerDownRight className="w-3.5 h-3.5 text-muted-foreground/40 ml-2 mt-2" />
               <div className="pl-4">
-                <GiftCard gift={gift} actions={actions} rowState={cluster.coverage?.state} />
+                <GiftCard gift={gift} cluster={cluster} actions={actions} rowState={cluster.coverage?.state} />
               </div>
               <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic">
                 {(gift.linkedChargeIds ?? []).length === 0 &&
@@ -1562,7 +1684,7 @@ function QbStandaloneRow({
       <div className="space-y-1.5">
         {cluster.gifts.length > 0 ? (
           cluster.gifts.map((g) => (
-            <GiftCard key={g.giftId} gift={g} actions={actions} rowState={cluster.coverage?.state} />
+            <GiftCard key={g.giftId} gift={g} cluster={cluster} actions={actions} rowState={cluster.coverage?.state} />
           ))
         ) : cluster.status === "excluded" ? (
           <ExcludedCard reason={cluster.statusDetail} />
@@ -1629,10 +1751,23 @@ function CrmOnlyRow({
       <ChevronRight className="w-4 h-4 text-transparent mt-1.5" />
       <div className="space-y-1.5">
         {cluster.gifts.map((g) => (
-          <GiftCard key={g.giftId} gift={g} actions={actions} rowState={cluster.coverage?.state} />
+          <GiftCard key={g.giftId} gift={g} cluster={cluster} actions={actions} rowState={cluster.coverage?.state} />
         ))}
       </div>
-      
+      {/* Explicit empty slots keep this row on the same six-column grid as
+          every other row — absence of evidence is stated, not skipped. */}
+      <div
+        className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic"
+        data-testid={`crm-only-transaction-slot-${cluster.id}`}
+      >
+        No payment evidence linked yet
+      </div>
+      <div
+        className="text-[11px] text-muted-foreground/70 pt-2 pl-1 italic"
+        data-testid={`crm-only-accounting-slot-${cluster.id}`}
+      >
+        No accounting record linked yet
+      </div>
       <StatusForCluster cluster={cluster} />
       <RowKebab clusterId={cluster.id} />
     </div>

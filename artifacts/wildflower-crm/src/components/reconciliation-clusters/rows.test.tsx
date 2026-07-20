@@ -8,8 +8,9 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { WorkbenchCluster } from "@workspace/api-client-react";
 import { ListWorkbenchClustersResponse } from "@workspace/api-zod";
-import { ClusterRow, type ClusterActions } from "./rows";
+import { ClusterRow, giftUnlinkOptions, type ClusterActions } from "./rows";
 import { DonorActions } from "./primitives";
+import { UnlinkChooserDialog, type UnlinkOption } from "./dialogs";
 
 // Contract guard: fixtures are parsed through the generated Zod schema for a
 // workbench-cluster list item, so a spec/codegen change that renames or
@@ -66,6 +67,7 @@ function makeActions(): ClusterActions {
     removeSettlementProposal: vi.fn(),
     revertSettlement: vi.fn(),
     rejectChargeQbTie: vi.fn(),
+    openUnlinkChooser: vi.fn(),
   };
 }
 
@@ -239,7 +241,7 @@ describe("single-charge payout row (canonical state display)", () => {
     expect(byTestId("button-settlement-menu-stripe_payout:po_1")).toBeTruthy();
   });
 
-  it("status cell derives word + detail from coverage.state (missing/incomplete/unlinked)", () => {
+  it("status cell is two-signal: linkage + information only, never settlement", () => {
     const cluster = makePayoutCluster({ charges: [makeCharge()] });
     render(
       <ClusterRow
@@ -253,10 +255,13 @@ describe("single-charge payout row (canonical state display)", () => {
     expect(status).toBeTruthy();
     expect(status!.textContent).toContain("No linkage");
     expect(status!.textContent).toContain("Record incomplete");
-    expect(status!.textContent).toContain("QB not linked");
+    // Settlement moved out of the status cell into the accounting column.
+    expect(status!.textContent).not.toContain("QB not linked");
+    // unlinked + no QB records → chip suppressed (the gap slot already says it).
+    expect(byTestId("settlement-chip-stripe_payout:po_1")).toBeNull();
   });
 
-  it("settlementLinkState=confirmed is omitted from the status detail", () => {
+  it("settlementLinkState=confirmed never appears in the status cell", () => {
     const cluster = makePayoutCluster({
       charges: [makeCharge()],
       state: makeState({
@@ -286,9 +291,13 @@ describe("single-charge payout row (canonical state display)", () => {
     const status = byTestId("status-cluster-stripe_payout:po_1");
     expect(status!.textContent).toContain("Linked");
     expect(status!.textContent).not.toContain("Settlement confirmed");
+    // The chip in the accounting column carries the settlement word instead.
+    const chip = byTestId("settlement-chip-stripe_payout:po_1");
+    expect(chip).toBeTruthy();
+    expect(chip!.textContent).toContain("Settlement confirmed");
   });
 
-  it("settlementLinkState=proposed_conflict shows in the status detail", () => {
+  it("settlementLinkState=proposed_conflict renders as a chip in the accounting column, not in status", () => {
     const cluster = makePayoutCluster({
       charges: [makeCharge()],
       state: makeState({ settlementLinkState: "proposed_conflict" }),
@@ -302,10 +311,13 @@ describe("single-charge payout row (canonical state display)", () => {
       />,
     );
     const status = byTestId("status-cluster-stripe_payout:po_1");
-    expect(status!.textContent).toContain("Settlement conflict");
+    expect(status!.textContent).not.toContain("Settlement conflict");
+    expect(
+      byTestId("settlement-chip-stripe_payout:po_1")!.textContent,
+    ).toContain("Settlement conflict");
   });
 
-  it("settlementLinkState=proposed_full / proposed_partial show in the status detail", () => {
+  it("settlementLinkState=proposed_full / proposed_partial render as accounting chips, not status", () => {
     const full = makePayoutCluster({
       charges: [makeCharge()],
       state: makeState({ settlementLinkState: "proposed_full" }),
@@ -320,6 +332,9 @@ describe("single-charge payout row (canonical state display)", () => {
     );
     expect(
       byTestId("status-cluster-stripe_payout:po_1")!.textContent,
+    ).not.toContain("Settlement proposed");
+    expect(
+      byTestId("settlement-chip-stripe_payout:po_1")!.textContent,
     ).toContain("Settlement proposed");
 
     const partial = makePayoutCluster({
@@ -336,6 +351,9 @@ describe("single-charge payout row (canonical state display)", () => {
     );
     expect(
       byTestId("status-cluster-stripe_payout:po_1")!.textContent,
+    ).not.toContain("Partial settlement");
+    expect(
+      byTestId("settlement-chip-stripe_payout:po_1")!.textContent,
     ).toContain("Partial settlement");
   });
 
@@ -414,6 +432,202 @@ describe("expanded multi-charge bundle (child-row identified gating)", () => {
     expect(byTestId("status-charge-ch_a")!.textContent).toContain(
       "Missing donor",
     );
+  });
+});
+
+function makeGift(over: Record<string, unknown> = {}) {
+  return {
+    giftId: "g_1",
+    opportunityId: null,
+    name: "Jane Donor gift",
+    donorName: "Jane Donor",
+    donorKind: "person",
+    donorId: "p_1",
+    amount: "100.00",
+    dateReceived: "2099-01-02",
+    quickbooksTie: "exempt",
+    linkedChargeIds: [],
+    linkedStagedPaymentIds: [],
+    ...over,
+  };
+}
+
+function makeCrmOnlyCluster(): WorkbenchCluster {
+  return ClusterItemSchema.parse({
+    id: "crm_only:g_1",
+    kind: "crm_only",
+    anchorId: "g_1",
+    title: "Jane Donor gift",
+    status: "unresolved",
+    statusDetail: null,
+    lenses: [],
+    gifts: [makeGift()],
+    charges: [],
+    qbRecords: [],
+    chargeCount: 0,
+    grossTotal: null,
+    feeTotal: null,
+    netTotal: null,
+    gapAmount: null,
+    bankAmount: null,
+    date: "2099-01-02",
+    resolvedCount: null,
+    totalCount: null,
+    coverage: {
+      complete: false,
+      donorPurpose: {
+        crmLinkage: {
+          grain: "none",
+          complete: false,
+          coveredIds: [],
+          uncoveredIds: [],
+        },
+        crmRecordCompleteness: {
+          complete: false,
+          completeGiftIds: [],
+          incompleteGiftIds: ["g_1"],
+          reasonsByGift: [],
+        },
+        complete: false,
+      },
+      paymentTransaction: {
+        complete: false,
+        grain: "none",
+        coveredIds: [],
+        uncoveredIds: [],
+      },
+      accountingEvidence: {
+        grain: "none",
+        complete: false,
+        coveredIds: [],
+        uncoveredIds: [],
+      },
+      evidenceRecords: [],
+      state: makeState({ settlementLinkState: null }),
+    },
+  }) as unknown as WorkbenchCluster;
+}
+
+describe("CRM-only row grid completeness", () => {
+  it("renders explicit empty transaction + accounting slots so the row fills all six grid columns", () => {
+    render(
+      <ClusterRow
+        cluster={makeCrmOnlyCluster()}
+        expanded={false}
+        onToggle={noopToggle}
+        actions={makeActions()}
+      />,
+    );
+    const row = byTestId("cluster-row-crm_only:g_1");
+    expect(row).toBeTruthy();
+    // Six direct grid children: chevron, gifts, txn slot, accounting slot, status, kebab.
+    expect(row!.children.length).toBe(6);
+    const txnSlot = byTestId("crm-only-transaction-slot-crm_only:g_1");
+    const qbSlot = byTestId("crm-only-accounting-slot-crm_only:g_1");
+    expect(txnSlot!.textContent).toContain("No payment evidence linked yet");
+    expect(qbSlot!.textContent).toContain("No accounting record linked yet");
+    expect(byTestId("status-cluster-crm_only:g_1")).toBeTruthy();
+  });
+});
+
+describe("giftUnlinkOptions (relationship-specific unlink)", () => {
+  it("returns one option per linked evidence record, enriched from the cluster lists", () => {
+    const cluster = makePayoutCluster({
+      charges: [
+        makeCharge({ chargeId: "ch_a", payerName: "Alice", grossAmount: "40.00" }),
+        makeCharge({ chargeId: "ch_b", payerName: "Bob", grossAmount: "60.00" }),
+      ],
+    });
+    const gift = makeGift({
+      linkedChargeIds: ["ch_a", "ch_b"],
+      linkedStagedPaymentIds: ["sp_z"],
+    }) as unknown as WorkbenchCluster["gifts"][number];
+    const options = giftUnlinkOptions(gift, cluster);
+    expect(options).toHaveLength(3);
+    expect(options[0].anchor).toEqual({
+      kind: "charge",
+      id: "ch_a",
+      label: "Jane Donor gift",
+    });
+    expect(options[0].source).toContain("Stripe charge");
+    expect(options[0].source).toContain("Alice");
+    expect(options[1].source).toContain("Bob");
+    // Evidence missing from the (capped) cluster lists falls back to an id label.
+    expect(options[2].anchor.kind).toBe("staged");
+    expect(options[2].source).toContain("sp_z");
+    expect(options[2].amount).toBeNull();
+  });
+
+  it("routes the gift menu: multiple links → chooser payload, single link → direct anchor", () => {
+    const multi = makeGift({
+      linkedChargeIds: ["ch_a", "ch_b"],
+    }) as unknown as WorkbenchCluster["gifts"][number];
+    const single = makeGift({
+      linkedChargeIds: ["ch_a"],
+    }) as unknown as WorkbenchCluster["gifts"][number];
+    const cluster = makePayoutCluster({
+      charges: [makeCharge({ chargeId: "ch_a" }), makeCharge({ chargeId: "ch_b" })],
+    });
+    expect(giftUnlinkOptions(multi, cluster)).toHaveLength(2);
+    expect(giftUnlinkOptions(single, cluster)).toHaveLength(1);
+    expect(giftUnlinkOptions(single, cluster)[0].anchor.id).toBe("ch_a");
+  });
+});
+
+describe("UnlinkChooserDialog", () => {
+  const OPTIONS: UnlinkOption[] = [
+    {
+      anchor: { kind: "charge", id: "ch_a", label: "Jane Donor gift" },
+      source: "Stripe charge · Alice",
+      amount: "$40.00",
+      date: "Jan 1, 2099",
+    },
+    {
+      anchor: { kind: "staged", id: "sp_z", label: "Jane Donor gift" },
+      source: "QuickBooks · Deposit",
+      amount: "$60.00",
+      date: "Jan 2, 2099",
+    },
+  ];
+
+  function byBodyTestId(id: string): HTMLElement | null {
+    return document.body.querySelector(`[data-testid="${id}"]`);
+  }
+
+  it("lists every relationship, disables continue until one is picked, then returns the picked option", () => {
+    const onPick = vi.fn();
+    render(
+      <UnlinkChooserDialog
+        open
+        onOpenChange={() => {}}
+        giftLabel="Jane Donor gift"
+        options={OPTIONS}
+        busy={false}
+        onPick={onPick}
+      />,
+    );
+    // Dialog renders in a portal — query the document body.
+    expect(byBodyTestId("radio-unlink-ch_a")).toBeTruthy();
+    expect(byBodyTestId("radio-unlink-sp_z")).toBeTruthy();
+    expect(document.body.textContent).toContain("Stripe charge · Alice");
+    expect(document.body.textContent).toContain("QuickBooks · Deposit");
+    expect(document.body.textContent).toContain("$40.00");
+
+    const cont = byBodyTestId("button-unlink-chooser-continue") as HTMLButtonElement;
+    expect(cont.disabled).toBe(true);
+
+    act(() => {
+      (byBodyTestId("radio-unlink-sp_z") as HTMLButtonElement).click();
+    });
+    expect(cont.disabled).toBe(false);
+
+    act(() => cont.click());
+    expect(onPick).toHaveBeenCalledTimes(1);
+    expect(onPick.mock.calls[0][0].anchor).toEqual({
+      kind: "staged",
+      id: "sp_z",
+      label: "Jane Donor gift",
+    });
   });
 });
 

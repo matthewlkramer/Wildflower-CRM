@@ -205,6 +205,111 @@ export function DonorResolveDialog({
   );
 }
 
+/** One linked evidence relationship a gift can be unlinked from. */
+export interface UnlinkOption {
+  /** Structurally matches rows.tsx AnchorRef (kept structural to avoid an import cycle). */
+  anchor: { kind: "charge" | "staged"; id: string; label: string };
+  /** e.g. "Stripe charge · Jane Donor" or "QuickBooks · Deposit 4/12" */
+  source: string;
+  /** Preformatted amount ("$99.10") or null when unknown. */
+  amount: string | null;
+  /** Preformatted date ("Dec 26, 2024") or null when unknown. */
+  date: string | null;
+}
+
+/**
+ * Relationship chooser for unlinking a gift that has MULTIPLE linked evidence
+ * records: the user picks exactly which relationship to remove. Single-link
+ * gifts skip this dialog and keep the one-click revert path.
+ */
+export function UnlinkChooserDialog({
+  open,
+  onOpenChange,
+  giftLabel,
+  options,
+  busy,
+  onPick,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  giftLabel: string;
+  options: UnlinkOption[];
+  busy: boolean;
+  onPick: (option: UnlinkOption) => void;
+}) {
+  const [pickedId, setPickedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) setPickedId(null);
+  }, [open]);
+
+  const picked = options.find((o) => `${o.anchor.kind}:${o.anchor.id}` === pickedId) ?? null;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => (!busy ? onOpenChange(v) : null)}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Which link should be removed?</DialogTitle>
+          <DialogDescription>
+            {giftLabel} is linked to more than one piece of money evidence.
+            Pick exactly the relationship to unlink — the others are kept.
+          </DialogDescription>
+        </DialogHeader>
+        <RadioGroup
+          value={pickedId ?? ""}
+          onValueChange={(v) => setPickedId(v)}
+          className="max-h-72 overflow-y-auto pr-2 space-y-1"
+        >
+          {options.map((o) => {
+            const key = `${o.anchor.kind}:${o.anchor.id}`;
+            return (
+              <label
+                key={key}
+                className="flex items-start gap-2 text-xs cursor-pointer rounded border px-2.5 py-2 hover:bg-muted/60"
+              >
+                <RadioGroupItem
+                  value={key}
+                  className="mt-0.5"
+                  data-testid={`radio-unlink-${o.anchor.id}`}
+                />
+                <span className="min-w-0">
+                  <span className="font-medium block">{o.source}</span>
+                  <span className="text-muted-foreground block">
+                    {[o.amount, o.date].filter(Boolean).join(" · ") || "no amount / date on record"}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </RadioGroup>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => onOpenChange(false)}
+            data-testid="button-unlink-chooser-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={busy || !picked}
+            onClick={() => {
+              if (picked) onPick(picked);
+            }}
+            data-testid="button-unlink-chooser-continue"
+          >
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+            Unlink this relationship…
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /**
  * "Exclude — not a donation" reason picker. Inline scrollable radio list (a
  * Select nested in a Dialog can't scroll — see the queue workbench).

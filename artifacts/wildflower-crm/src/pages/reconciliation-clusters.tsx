@@ -64,7 +64,9 @@ import {
   DonorResolveDialog,
   ExcludeReasonDialog,
   QbRecordDetailDialog,
+  UnlinkChooserDialog,
   type EvidencePreview,
+  type UnlinkOption,
 } from "@/components/reconciliation-clusters/dialogs";
 import {
   ClusterRow,
@@ -193,6 +195,10 @@ export default function ReconciliationClustersPage() {
   } | null>(null);
   const [qbDetailFor, setQbDetailFor] = useState<WorkbenchClusterQbRecord | null>(null);
   const [revertSettlementFor, setRevertSettlementFor] = useState<{ payoutId: string; label: string } | null>(null);
+  const [unlinkChooserFor, setUnlinkChooserFor] = useState<{
+    giftLabel: string;
+    options: UnlinkOption[];
+  } | null>(null);
 
   // Debounce free-text search so we don't refetch per keystroke.
   useEffect(() => {
@@ -658,6 +664,8 @@ export default function ReconciliationClustersPage() {
     removeSettlementProposal: (payoutId, _label) => void handleRemoveSettlementProposal(payoutId),
     revertSettlement: (payoutId, label) => setRevertSettlementFor({ payoutId, label }),
     rejectChargeQbTie: (chargeId) => void handleRejectChargeQbTie(chargeId),
+    openUnlinkChooser: (giftLabel, options) =>
+      setUnlinkChooserFor({ giftLabel, options }),
   };
 
   const toggleExpanded = (id: string) =>
@@ -998,6 +1006,25 @@ export default function ReconciliationClustersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Unlink relationship chooser — a gift with MULTIPLE linked evidence
+          records picks exactly one relationship, then falls through to the
+          same revert confirm above. */}
+      <UnlinkChooserDialog
+        open={unlinkChooserFor != null}
+        onOpenChange={(v) => (!v ? setUnlinkChooserFor(null) : null)}
+        giftLabel={unlinkChooserFor?.giftLabel ?? ""}
+        options={unlinkChooserFor?.options ?? []}
+        busy={busy}
+        onPick={(option) => {
+          const giftLabel = unlinkChooserFor?.giftLabel ?? "this gift";
+          setUnlinkChooserFor(null);
+          setRevertFor({
+            anchor: option.anchor,
+            description: `Unlink “${giftLabel}” from ${option.source}. Only this relationship is removed — other links stay. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
+          });
+        }}
+      />
 
       {/* Refund confirm */}
       <AlertDialog
