@@ -48,11 +48,11 @@ const { TEST_USER_ID } = vi.hoisted(() => ({
 
 vi.mock("../middlewares/requireAuth", () => ({
   requireAuth: (
-    req: { appUser?: { id: string } },
+    req: { appUser?: { id: string; role: string } },
     _res: unknown,
     next: () => void,
   ) => {
-    req.appUser = { id: TEST_USER_ID };
+    req.appUser = { id: TEST_USER_ID, role: "admin" };
     next();
   },
 }));

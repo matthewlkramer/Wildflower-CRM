@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { requireFinance } from "../../lib/financeGuard";
 import { db } from "@workspace/db";
 import {
   reconciliationBundleDrafts,
@@ -425,6 +426,7 @@ router.post(
 router.post(
   "/reconciliation/bundle-proposals/:draftId/confirm",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const user = getAppUser(req);
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });
@@ -882,6 +884,7 @@ router.post(
 router.post(
   "/reconciliation/settlement-links/:payoutId/reject",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const params = parseOrBadRequest(
       RejectSettlementProposalParams,
       req.params,
@@ -935,6 +938,7 @@ router.post(
 router.post(
   "/reconciliation/settlement-links/:payoutId/confirm",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const user = getAppUser(req);
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });

@@ -31,6 +31,7 @@ import type {
   ConfirmChargeTiesResult,
   ConfirmSettlementLinkBody,
   ConfirmSettlementLinkResult,
+  FinanceForbiddenResponse,
   GiftMissingQbList,
   IncompleteGiftList,
   ListGiftsMissingQbParams,
@@ -356,7 +357,7 @@ export const confirmBundleCrossProcessorTies = async (stagedPaymentId: string, o
 
 
 
-export const getConfirmBundleCrossProcessorTiesMutationOptions = <TError = ErrorType<NotFoundResponse>,
+export const getConfirmBundleCrossProcessorTiesMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>, TError,{stagedPaymentId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>, TError,{stagedPaymentId: string}, TContext> => {
 
@@ -385,12 +386,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ConfirmBundleCrossProcessorTiesMutationResult = NonNullable<Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>>
     
-    export type ConfirmBundleCrossProcessorTiesMutationError = ErrorType<NotFoundResponse>
+    export type ConfirmBundleCrossProcessorTiesMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>
 
     /**
  * @summary Persist the human-confirmed cross-processor links for one settlement bundle.
  */
-export const useConfirmBundleCrossProcessorTies = <TError = ErrorType<NotFoundResponse>,
+export const useConfirmBundleCrossProcessorTies = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>, TError,{stagedPaymentId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>,
@@ -804,7 +805,7 @@ export const rejectSettlementProposal = async (payoutId: string, options?: Reque
 
 
 
-export const getRejectSettlementProposalMutationOptions = <TError = ErrorType<void>,
+export const getRejectSettlementProposalMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectSettlementProposal>>, TError,{payoutId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof rejectSettlementProposal>>, TError,{payoutId: string}, TContext> => {
 
@@ -833,12 +834,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RejectSettlementProposalMutationResult = NonNullable<Awaited<ReturnType<typeof rejectSettlementProposal>>>
     
-    export type RejectSettlementProposalMutationError = ErrorType<void>
+    export type RejectSettlementProposalMutationError = ErrorType<FinanceForbiddenResponse | void>
 
     /**
  * @summary Dismiss a PROPOSED payout↔deposit settlement tie.
  */
-export const useRejectSettlementProposal = <TError = ErrorType<void>,
+export const useRejectSettlementProposal = <TError = ErrorType<FinanceForbiddenResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectSettlementProposal>>, TError,{payoutId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof rejectSettlementProposal>>,
@@ -901,7 +902,7 @@ export const confirmSettlementLink = async (payoutId: string,
 
 
 
-export const getConfirmSettlementLinkMutationOptions = <TError = ErrorType<BadRequestResponse | void>,
+export const getConfirmSettlementLinkMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmSettlementLink>>, TError,{payoutId: string;data: BodyType<ConfirmSettlementLinkBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof confirmSettlementLink>>, TError,{payoutId: string;data: BodyType<ConfirmSettlementLinkBody>}, TContext> => {
 
@@ -930,12 +931,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ConfirmSettlementLinkMutationResult = NonNullable<Awaited<ReturnType<typeof confirmSettlementLink>>>
     export type ConfirmSettlementLinkMutationBody = BodyType<ConfirmSettlementLinkBody>
-    export type ConfirmSettlementLinkMutationError = ErrorType<BadRequestResponse | void>
+    export type ConfirmSettlementLinkMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | void>
 
     /**
  * @summary Confirm a payout↔deposit settlement tie (Plane 1 only).
  */
-export const useConfirmSettlementLink = <TError = ErrorType<BadRequestResponse | void>,
+export const useConfirmSettlementLink = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmSettlementLink>>, TError,{payoutId: string;data: BodyType<ConfirmSettlementLinkBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof confirmSettlementLink>>,
@@ -1005,7 +1006,7 @@ export const confirmPayoutChargeTies = async (payoutId: string,
 
 
 
-export const getConfirmPayoutChargeTiesMutationOptions = <TError = ErrorType<BadRequestResponse | void>,
+export const getConfirmPayoutChargeTiesMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmPayoutChargeTies>>, TError,{payoutId: string;data: BodyType<ConfirmChargeTiesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof confirmPayoutChargeTies>>, TError,{payoutId: string;data: BodyType<ConfirmChargeTiesBody>}, TContext> => {
 
@@ -1034,12 +1035,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ConfirmPayoutChargeTiesMutationResult = NonNullable<Awaited<ReturnType<typeof confirmPayoutChargeTies>>>
     export type ConfirmPayoutChargeTiesMutationBody = BodyType<ConfirmChargeTiesBody>
-    export type ConfirmPayoutChargeTiesMutationError = ErrorType<BadRequestResponse | void>
+    export type ConfirmPayoutChargeTiesMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | void>
 
     /**
  * @summary Confirm charge-grain Stripe↔QuickBooks ties for one payout (individually-booked payouts).
  */
-export const useConfirmPayoutChargeTies = <TError = ErrorType<BadRequestResponse | void>,
+export const useConfirmPayoutChargeTies = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmPayoutChargeTies>>, TError,{payoutId: string;data: BodyType<ConfirmChargeTiesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof confirmPayoutChargeTies>>,
@@ -1086,7 +1087,7 @@ export const rejectChargeQbTie = async (chargeId: string, options?: RequestInit)
 
 
 
-export const getRejectChargeQbTieMutationOptions = <TError = ErrorType<void>,
+export const getRejectChargeQbTieMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectChargeQbTie>>, TError,{chargeId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof rejectChargeQbTie>>, TError,{chargeId: string}, TContext> => {
 
@@ -1115,12 +1116,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RejectChargeQbTieMutationResult = NonNullable<Awaited<ReturnType<typeof rejectChargeQbTie>>>
     
-    export type RejectChargeQbTieMutationError = ErrorType<void>
+    export type RejectChargeQbTieMutationError = ErrorType<FinanceForbiddenResponse | void>
 
     /**
  * @summary Reject ONE proposed charge-grain Stripe↔QuickBooks tie.
  */
-export const useRejectChargeQbTie = <TError = ErrorType<void>,
+export const useRejectChargeQbTie = <TError = ErrorType<FinanceForbiddenResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectChargeQbTie>>, TError,{chargeId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof rejectChargeQbTie>>,
@@ -1170,7 +1171,7 @@ export const revertChargeQbTie = async (chargeId: string, options?: RequestInit)
 
 
 
-export const getRevertChargeQbTieMutationOptions = <TError = ErrorType<void>,
+export const getRevertChargeQbTieMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertChargeQbTie>>, TError,{chargeId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof revertChargeQbTie>>, TError,{chargeId: string}, TContext> => {
 
@@ -1199,12 +1200,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RevertChargeQbTieMutationResult = NonNullable<Awaited<ReturnType<typeof revertChargeQbTie>>>
     
-    export type RevertChargeQbTieMutationError = ErrorType<void>
+    export type RevertChargeQbTieMutationError = ErrorType<FinanceForbiddenResponse | void>
 
     /**
  * @summary Untie ONE CONFIRMED charge-grain Stripe↔QuickBooks tie.
  */
-export const useRevertChargeQbTie = <TError = ErrorType<void>,
+export const useRevertChargeQbTie = <TError = ErrorType<FinanceForbiddenResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertChargeQbTie>>, TError,{chargeId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof revertChargeQbTie>>,
@@ -1952,7 +1953,7 @@ export const confirmReconciliationBundle = async (draftId: string,
 
 
 
-export const getConfirmReconciliationBundleMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+export const getConfirmReconciliationBundleMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmReconciliationBundle>>, TError,{draftId: string;data: BodyType<BundleConfirmInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof confirmReconciliationBundle>>, TError,{draftId: string;data: BodyType<BundleConfirmInput>}, TContext> => {
 
@@ -1981,12 +1982,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ConfirmReconciliationBundleMutationResult = NonNullable<Awaited<ReturnType<typeof confirmReconciliationBundle>>>
     export type ConfirmReconciliationBundleMutationBody = BodyType<BundleConfirmInput>
-    export type ConfirmReconciliationBundleMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+    export type ConfirmReconciliationBundleMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>
 
     /**
  * @summary Atomically commit the whole settlement bundle.
  */
-export const useConfirmReconciliationBundle = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+export const useConfirmReconciliationBundle = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmReconciliationBundle>>, TError,{draftId: string;data: BodyType<BundleConfirmInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof confirmReconciliationBundle>>,

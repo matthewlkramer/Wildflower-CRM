@@ -25,6 +25,7 @@ import type {
   ConfirmStagedPaymentMatchesResponse,
   DonorSearchList,
   ExcludeStagedPaymentBody,
+  FinanceForbiddenResponse,
   GetPendingStagedMoneyForDonorParams,
   GiftCandidateList,
   GroupReconcileStagedPaymentsBody,
@@ -536,7 +537,7 @@ export const reIncludeStagedPayment = async (id: string, options?: RequestInit):
 
 
 
-export const getReIncludeStagedPaymentMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+export const getReIncludeStagedPaymentMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reIncludeStagedPayment>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof reIncludeStagedPayment>>, TError,{id: string}, TContext> => {
 
@@ -565,12 +566,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ReIncludeStagedPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof reIncludeStagedPayment>>>
     
-    export type ReIncludeStagedPaymentMutationError = ErrorType<NotFoundResponse | void>
+    export type ReIncludeStagedPaymentMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
 
     /**
  * @summary Move an excluded staged payment back to pending (pins classification to manual).
  */
-export const useReIncludeStagedPayment = <TError = ErrorType<NotFoundResponse | void>,
+export const useReIncludeStagedPayment = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reIncludeStagedPayment>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof reIncludeStagedPayment>>,
@@ -772,7 +773,7 @@ export const setStagedPaymentCoding = async (id: string,
 
 
 
-export const getSetStagedPaymentCodingMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+export const getSetStagedPaymentCodingMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStagedPaymentCoding>>, TError,{id: string;data: BodyType<SetStagedPaymentCodingBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof setStagedPaymentCoding>>, TError,{id: string;data: BodyType<SetStagedPaymentCodingBody>}, TContext> => {
 
@@ -801,12 +802,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type SetStagedPaymentCodingMutationResult = NonNullable<Awaited<ReturnType<typeof setStagedPaymentCoding>>>
     export type SetStagedPaymentCodingMutationBody = BodyType<SetStagedPaymentCodingBody>
-    export type SetStagedPaymentCodingMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+    export type SetStagedPaymentCodingMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>
 
     /**
  * @summary Set or clear the revenue-coding snapshot on a staged payment (the QuickBooks payment record).
  */
-export const useSetStagedPaymentCoding = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+export const useSetStagedPaymentCoding = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStagedPaymentCoding>>, TError,{id: string;data: BodyType<SetStagedPaymentCodingBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof setStagedPaymentCoding>>,
@@ -850,7 +851,7 @@ export const excludeStagedPayment = async (id: string,
 
 
 
-export const getExcludeStagedPaymentMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+export const getExcludeStagedPaymentMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof excludeStagedPayment>>, TError,{id: string;data: BodyType<ExcludeStagedPaymentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof excludeStagedPayment>>, TError,{id: string;data: BodyType<ExcludeStagedPaymentBody>}, TContext> => {
 
@@ -879,12 +880,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ExcludeStagedPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof excludeStagedPayment>>>
     export type ExcludeStagedPaymentMutationBody = BodyType<ExcludeStagedPaymentBody>
-    export type ExcludeStagedPaymentMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+    export type ExcludeStagedPaymentMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>
 
     /**
  * @summary Manually file a staged payment under a non-gift exclusion category.
  */
-export const useExcludeStagedPayment = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+export const useExcludeStagedPayment = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof excludeStagedPayment>>, TError,{id: string;data: BodyType<ExcludeStagedPaymentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof excludeStagedPayment>>,
@@ -1371,7 +1372,7 @@ export const groupStagedPayments = async (groupStagedPaymentsBody: GroupStagedPa
 
 
 
-export const getGroupStagedPaymentsMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+export const getGroupStagedPaymentsMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof groupStagedPayments>>, TError,{data: BodyType<GroupStagedPaymentsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof groupStagedPayments>>, TError,{data: BodyType<GroupStagedPaymentsBody>}, TContext> => {
 
@@ -1400,12 +1401,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type GroupStagedPaymentsMutationResult = NonNullable<Awaited<ReturnType<typeof groupStagedPayments>>>
     export type GroupStagedPaymentsMutationBody = BodyType<GroupStagedPaymentsBody>
-    export type GroupStagedPaymentsMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+    export type GroupStagedPaymentsMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>
 
     /**
  * @summary Group separately-entered QuickBooks records that are really ONE physical gift.
  */
-export const useGroupStagedPayments = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+export const useGroupStagedPayments = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof groupStagedPayments>>, TError,{data: BodyType<GroupStagedPaymentsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof groupStagedPayments>>,
@@ -1446,7 +1447,7 @@ export const ungroupStagedPayments = async (ungroupStagedPaymentsBody: UngroupSt
 
 
 
-export const getUngroupStagedPaymentsMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+export const getUngroupStagedPaymentsMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ungroupStagedPayments>>, TError,{data: BodyType<UngroupStagedPaymentsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof ungroupStagedPayments>>, TError,{data: BodyType<UngroupStagedPaymentsBody>}, TContext> => {
 
@@ -1475,12 +1476,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UngroupStagedPaymentsMutationResult = NonNullable<Awaited<ReturnType<typeof ungroupStagedPayments>>>
     export type UngroupStagedPaymentsMutationBody = BodyType<UngroupStagedPaymentsBody>
-    export type UngroupStagedPaymentsMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+    export type UngroupStagedPaymentsMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>
 
     /**
  * @summary Remove staged payments from their "same physical gift" source group.
  */
-export const useUngroupStagedPayments = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+export const useUngroupStagedPayments = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ungroupStagedPayments>>, TError,{data: BodyType<UngroupStagedPaymentsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof ungroupStagedPayments>>,

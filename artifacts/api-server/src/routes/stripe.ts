@@ -1,4 +1,5 @@
 import { Router, type IRouter, type Response } from "express";
+import { requireFinance } from "../lib/financeGuard";
 import { db } from "@workspace/db";
 import {
   stripeStagedCharges,
@@ -1953,6 +1954,7 @@ async function respondReconResult(
 router.post(
   "/stripe-payouts/:id/confirm-exclude",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const user = getAppUser(req);
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });
@@ -1971,6 +1973,7 @@ router.post(
 router.post(
   "/stripe-payouts/:id/confirm-keep",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const user = getAppUser(req);
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });
@@ -1991,6 +1994,7 @@ router.post(
 router.post(
   "/stripe-payouts/:id/confirm-replace",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const user = getAppUser(req);
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });
@@ -2013,6 +2017,7 @@ router.post(
 router.post(
   "/stripe-payouts/:id/revert-reconciliation",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const user = getAppUser(req);
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });

@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { requireFinance } from "../../lib/financeGuard";
 import { db } from "@workspace/db";
 import {
   stripePayouts,
@@ -55,6 +56,7 @@ interface TieIssue {
 router.post(
   "/reconciliation/payouts/:payoutId/charge-ties/confirm",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const user = getAppUser(req);
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });
@@ -502,6 +504,7 @@ router.post(
 router.post(
   "/reconciliation/charges/:chargeId/qb-tie/reject",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const user = getAppUser(req);
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });
@@ -602,6 +605,7 @@ router.post(
 router.post(
   "/reconciliation/charges/:chargeId/qb-tie/revert",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const user = getAppUser(req);
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });

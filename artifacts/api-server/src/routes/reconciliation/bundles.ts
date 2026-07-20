@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { requireFinance } from "../../lib/financeGuard";
 import { db } from "@workspace/db";
 import {
   stagedPayments,
@@ -25,6 +26,7 @@ const router: IRouter = Router();
 router.post(
   "/reconciliation/bundles/:stagedPaymentId/confirm-ties",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const user = getAppUser(req);
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });

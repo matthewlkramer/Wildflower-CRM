@@ -1167,7 +1167,8 @@ export const ListWorkbenchClustersResponse = zod.object({
   "page": zod.number(),
   "limit": zod.number(),
   "total": zod.number()
-})
+}),
+  "viewerCanManageAccounting": zod.boolean().describe('Whether the CALLING user holds the finance (or admin) role and may change accounting relationships \/ QuickBooks treatment (business rules §6.2\/§7.3). The UI grays gated actions with a labeled reason when false; the gated endpoints still enforce with a 403 finance_role_required.')
 })
 
 /**

@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql, type SQL } from "drizzle-orm";
 import { asyncHandler, parsePagination } from "../../lib/helpers";
+import { viewerCanManageAccounting } from "../../lib/financeGuard";
 import { deriveGiftQbTieLiveRaw } from "../../lib/giftQbTie";
 import { getViewer, maskName, type Viewer } from "../../lib/identityVisibility";
 import { escapeLike, parkedFiscallyExpr } from "../quickbooks/shared";
@@ -2252,6 +2253,7 @@ router.get(
         crm_only: lensCounts.crm_only ?? 0,
       },
       pagination: { page, limit, total: lensCounts[lens] ?? 0 },
+      viewerCanManageAccounting: viewerCanManageAccounting(req),
     });
   }),
 );

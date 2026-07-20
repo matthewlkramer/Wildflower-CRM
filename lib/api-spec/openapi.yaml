@@ -2892,6 +2892,7 @@ paths:
       summary: Confirm a proposed payout↔QB-deposit match — exclude the deposit lump (processor_payout, kept and linked, never deleted) and unblock the per-charge Stripe gift queue.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Payout is not in a proposed state" }
@@ -2902,6 +2903,7 @@ paths:
       summary: Resolve a conflict by keeping the already-approved QuickBooks gift — record only the payout linkage, touching no gift or deposit.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Payout is not in a conflict_approved state" }
@@ -2912,6 +2914,7 @@ paths:
       summary: Resolve a conflict by replacing the coarse QB-derived lump gift — archive it (kept, allocations preserved, never deleted), exclude the deposit, and unblock the per-charge Stripe gift queue. Explicit, default-off in the UI.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Payout is not in a conflict_approved state" }
@@ -2922,6 +2925,7 @@ paths:
       summary: Undo a confirmed payout reconciliation back to its prior proposal state. Refused once any of the payout's Stripe charges have been booked into a gift.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Payout cannot be reverted from its current state, or its charges are already booked" }
@@ -3114,6 +3118,7 @@ paths:
       summary: Move an excluded staged payment back to pending (pins classification to manual).
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment is not excluded" }
@@ -3176,6 +3181,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/SetStagedPaymentCodingBody" } } }
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -3196,6 +3202,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ExcludeStagedPaymentBody" } } }
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -3349,6 +3356,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/GroupStagedPaymentsBody" } } }
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GroupStagedPaymentsResponse" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -3367,6 +3375,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/UngroupStagedPaymentsBody" } } }
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/UngroupStagedPaymentsResponse" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -4417,6 +4426,7 @@ paths:
       parameters:
         - { name: stagedPaymentId, in: path, required: true, schema: { type: string } }
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BundleTieResult" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
   /reconciliation/search/{nodeType}:
@@ -4549,6 +4559,7 @@ paths:
       parameters:
         - { name: payoutId, in: path, required: true, schema: { type: string } }
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RejectSettlementProposalResult" } } } }
         "409": { description: "The settlement link is confirmed (use revert, not reject)." }
   /reconciliation/settlement-links/{payoutId}/confirm:
@@ -4590,6 +4601,7 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/ConfirmSettlementLinkBody" }
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConfirmSettlementLinkResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { description: "The payout (or the chosen deposit) no longer exists." }
@@ -4640,6 +4652,7 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/ConfirmChargeTiesBody" }
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConfirmChargeTiesResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { description: "The payout no longer exists." }
@@ -4664,6 +4677,7 @@ paths:
       parameters:
         - { name: chargeId, in: path, required: true, schema: { type: string } }
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RejectChargeQbTieResult" } } } }
         "404": { description: "The charge no longer exists." }
         "409": { description: "No proposed tie to reject, or the tie is already confirmed." }
@@ -4690,6 +4704,7 @@ paths:
       parameters:
         - { name: chargeId, in: path, required: true, schema: { type: string } }
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RevertChargeQbTieResult" } } } }
         "404": { description: "The charge no longer exists." }
         "409": { description: "No confirmed tie to revert (an unconfirmed proposal is rejected via the reject endpoint)." }
@@ -4901,6 +4916,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/BundleConfirmInput" } } }
       responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ReconciliationBundleConfirmResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -4922,6 +4938,9 @@ components:
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     Forbidden:
       description: Forbidden (admin access required)
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    FinanceForbidden:
+      description: "Forbidden — finance-team or admin role required (error code finance_role_required)."
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
 
   schemas:
@@ -9046,11 +9065,12 @@ components:
         crm_only:                  { type: integer, description: "On-books CRM gifts with no counted QB or Stripe ledger row." }
     WorkbenchClusterListResponse:
       type: object
-      required: [data, lensCounts, pagination]
+      required: [data, lensCounts, pagination, viewerCanManageAccounting]
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/WorkbenchCluster" } }
         lensCounts: { $ref: "#/components/schemas/WorkbenchLensCounts" }
         pagination: { $ref: "#/components/schemas/Pagination" }
+        viewerCanManageAccounting: { type: boolean, description: "Whether the CALLING user holds the finance (or admin) role and may change accounting relationships / QuickBooks treatment (business rules §6.2/§7.3). The UI grays gated actions with a labeled reason when false; the gated endpoints still enforce with a 403 finance_role_required." }
     WorkbenchRecentChangeUndo:
       type: object
       required: [kind, targetId]

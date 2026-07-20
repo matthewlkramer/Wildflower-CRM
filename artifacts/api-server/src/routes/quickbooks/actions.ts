@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { requireFinance } from "../../lib/financeGuard";
 import { db } from "@workspace/db";
 import {
   stagedPayments,
@@ -313,6 +314,7 @@ router.post(
 router.post(
   "/staged-payments/:id/re-include",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const id = paramId(req);
     const existing = await db
       .select({ status: stagedStatusSql.as("status") })
@@ -364,6 +366,7 @@ router.post(
 router.post(
   "/staged-payments/:id/exclude",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const id = paramId(req);
     const parsed = ExcludeStagedPaymentBody.safeParse(req.body);
     if (!parsed.success) {
@@ -534,6 +537,7 @@ router.post(
 router.post(
   "/staged-payments/:id/set-coding",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const id = paramId(req);
     const parsed = SetStagedPaymentCodingBody.safeParse(req.body);
     if (!parsed.success) {
@@ -590,6 +594,7 @@ router.post(
 router.post(
   "/staged-payments/group",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const parsed = GroupStagedPaymentsBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -795,6 +800,7 @@ router.post(
 router.post(
   "/staged-payments/ungroup",
   asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
     const parsed = UngroupStagedPaymentsBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({

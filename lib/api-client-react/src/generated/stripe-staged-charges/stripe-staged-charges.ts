@@ -22,6 +22,7 @@ import type {
 import type {
   BadRequestResponse,
   ExcludeStagedPaymentBody,
+  FinanceForbiddenResponse,
   ListStripePayoutReconciliationsParams,
   ListStripeStagedChargesParams,
   NotFoundResponse,
@@ -854,7 +855,7 @@ export const confirmStripePayoutExclude = async (id: string, options?: RequestIn
 
 
 
-export const getConfirmStripePayoutExcludeMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+export const getConfirmStripePayoutExcludeMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmStripePayoutExclude>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof confirmStripePayoutExclude>>, TError,{id: string}, TContext> => {
 
@@ -883,12 +884,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ConfirmStripePayoutExcludeMutationResult = NonNullable<Awaited<ReturnType<typeof confirmStripePayoutExclude>>>
     
-    export type ConfirmStripePayoutExcludeMutationError = ErrorType<NotFoundResponse | void>
+    export type ConfirmStripePayoutExcludeMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
 
     /**
  * @summary Confirm a proposed payout↔QB-deposit match — exclude the deposit lump (processor_payout, kept and linked, never deleted) and unblock the per-charge Stripe gift queue.
  */
-export const useConfirmStripePayoutExclude = <TError = ErrorType<NotFoundResponse | void>,
+export const useConfirmStripePayoutExclude = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmStripePayoutExclude>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof confirmStripePayoutExclude>>,
@@ -923,7 +924,7 @@ export const confirmStripePayoutKeep = async (id: string, options?: RequestInit)
 
 
 
-export const getConfirmStripePayoutKeepMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+export const getConfirmStripePayoutKeepMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmStripePayoutKeep>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof confirmStripePayoutKeep>>, TError,{id: string}, TContext> => {
 
@@ -952,12 +953,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ConfirmStripePayoutKeepMutationResult = NonNullable<Awaited<ReturnType<typeof confirmStripePayoutKeep>>>
     
-    export type ConfirmStripePayoutKeepMutationError = ErrorType<NotFoundResponse | void>
+    export type ConfirmStripePayoutKeepMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
 
     /**
  * @summary Resolve a conflict by keeping the already-approved QuickBooks gift — record only the payout linkage, touching no gift or deposit.
  */
-export const useConfirmStripePayoutKeep = <TError = ErrorType<NotFoundResponse | void>,
+export const useConfirmStripePayoutKeep = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmStripePayoutKeep>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof confirmStripePayoutKeep>>,
@@ -992,7 +993,7 @@ export const confirmStripePayoutReplace = async (id: string, options?: RequestIn
 
 
 
-export const getConfirmStripePayoutReplaceMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+export const getConfirmStripePayoutReplaceMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmStripePayoutReplace>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof confirmStripePayoutReplace>>, TError,{id: string}, TContext> => {
 
@@ -1021,12 +1022,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ConfirmStripePayoutReplaceMutationResult = NonNullable<Awaited<ReturnType<typeof confirmStripePayoutReplace>>>
     
-    export type ConfirmStripePayoutReplaceMutationError = ErrorType<NotFoundResponse | void>
+    export type ConfirmStripePayoutReplaceMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
 
     /**
  * @summary Resolve a conflict by replacing the coarse QB-derived lump gift — archive it (kept, allocations preserved, never deleted), exclude the deposit, and unblock the per-charge Stripe gift queue. Explicit, default-off in the UI.
  */
-export const useConfirmStripePayoutReplace = <TError = ErrorType<NotFoundResponse | void>,
+export const useConfirmStripePayoutReplace = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmStripePayoutReplace>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof confirmStripePayoutReplace>>,
@@ -1061,7 +1062,7 @@ export const revertStripePayoutReconciliation = async (id: string, options?: Req
 
 
 
-export const getRevertStripePayoutReconciliationMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+export const getRevertStripePayoutReconciliationMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertStripePayoutReconciliation>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof revertStripePayoutReconciliation>>, TError,{id: string}, TContext> => {
 
@@ -1090,12 +1091,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RevertStripePayoutReconciliationMutationResult = NonNullable<Awaited<ReturnType<typeof revertStripePayoutReconciliation>>>
     
-    export type RevertStripePayoutReconciliationMutationError = ErrorType<NotFoundResponse | void>
+    export type RevertStripePayoutReconciliationMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
 
     /**
  * @summary Undo a confirmed payout reconciliation back to its prior proposal state. Refused once any of the payout's Stripe charges have been booked into a gift.
  */
-export const useRevertStripePayoutReconciliation = <TError = ErrorType<NotFoundResponse | void>,
+export const useRevertStripePayoutReconciliation = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertStripePayoutReconciliation>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof revertStripePayoutReconciliation>>,
