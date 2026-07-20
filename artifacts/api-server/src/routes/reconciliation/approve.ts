@@ -22,7 +22,6 @@ import {
   type LinkDonor,
 } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
-import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import {
   groupMemberIdsFor,
   isQbGroupMemberSql,
@@ -625,9 +624,6 @@ async function mintGiftFromEvidence(
   if (opportunityId) {
     await applyDerivedOppFieldsMany(opportunityId);
   }
-  // The newly minted gift now carries QB linkage — persist its tie status.
-  // Supersede-affected gifts (coarse QB rows demoted/promoted) re-derive too.
-  await applyGiftQbTieMany(newGiftId, ...supersedeGiftIds);
 
   res.status(201).json({
     ok: true as const,
@@ -1382,10 +1378,6 @@ router.post(
     // Re-derive affected pledges from the committed gift amounts (mirrors the
     // gift create/PATCH paths; runs outside the tx on its own connection).
     await applyDerivedOppFieldsMany(...rederivePledgeIds);
-    // The linked gift now carries QB linkage — persist its tie status. When the
-    // payment was moved off another gift, that gift just LOST its QB evidence
-    // (likely → missing) — recompute it too, plus any supersede-affected gifts.
-    await applyGiftQbTieMany(giftId, movedFromGiftId, ...supersedeGiftIds);
 
     res.json({
       ok: true as const,

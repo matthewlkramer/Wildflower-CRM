@@ -634,7 +634,7 @@ function DerivationHealthSection() {
               <div>
                 <dt className="text-muted-foreground">Checked</dt>
                 <dd className="font-medium" data-testid="derivation-health-checked">
-                  {r.checkedOpportunities} opportunities · {r.checkedGifts} gifts
+                  {r.checkedOpportunities} opportunities
                 </dd>
               </div>
               <div>

@@ -11,6 +11,7 @@ import {
   tasks,
 } from "@workspace/db/schema";
 import { and, arrayContains, eq, inArray } from "drizzle-orm";
+import { deriveGiftTypeExpr } from "./giftTypeDerived";
 import {
   deriveRevenueCoding,
   type CodingInput,
@@ -91,7 +92,7 @@ async function loadGiftDonor(giftId: string): Promise<ParentDonor | null> {
       organizationId: giftsAndPayments.organizationId,
       individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
       householdId: giftsAndPayments.householdId,
-      type: giftsAndPayments.type,
+      type: deriveGiftTypeExpr(),
       loanOrGrant: giftsAndPayments.loanOrGrant,
       grantLetterUrl: giftsAndPayments.grantLetterUrl,
       opportunityId: giftsAndPayments.opportunityId,
@@ -107,7 +108,7 @@ async function loadGiftDonor(giftId: string): Promise<ParentDonor | null> {
   return {
     donorKind: donorKindOf(row),
     organizationId: row.organizationId ?? null,
-    giftType: row.type ?? null,
+    giftType: row.type,
     loanOrGrant: row.loanOrGrant ?? null,
     hasGrantLetter: !!(row.grantLetterUrl || row.oppGrantLetterUrl),
     hasReportingRequirement: await oppHasReportingRequirement(row.opportunityId),

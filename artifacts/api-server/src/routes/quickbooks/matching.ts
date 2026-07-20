@@ -28,7 +28,6 @@ import {
   validateGiftInvariants,
 } from "@workspace/api-zod";
 import { donorOf, hasExactlyOneDonor } from "../../lib/quickbooksLink";
-import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import {
   seedInitialGiftAllocation,
@@ -289,9 +288,6 @@ router.post(
       });
       return;
     }
-
-    // The gift now carries QB linkage — persist its tie status.
-    await applyGiftQbTieMany(giftId);
 
     // Direct match to an existing gift — the staged revert safely undoes it.
     await reconAudit(req, {
@@ -648,9 +644,6 @@ router.post(
       throw e;
     }
 
-    // The grouped gift now carries QB linkage — persist its tie status.
-    await applyGiftQbTieMany(giftId);
-
     res.json({
       gift,
       stagedPaymentIds: ids,
@@ -986,10 +979,7 @@ router.post(
       throw e;
     }
 
-    // The split now ties each gift to part of this QB record — persist ties for
-    // every linked gift, including the freshly minted remainder gift.
     const allGiftIds = createdGiftId ? [...giftIds, createdGiftId] : giftIds;
-    await applyGiftQbTieMany(...allGiftIds);
 
     res.json({
       stagedPaymentId: id,

@@ -140,7 +140,6 @@ async function seedGift(o: GiftOpts): Promise<string> {
     id,
     amount: o.amount,
     dateReceived: o.dateReceived,
-    type: "standard_gift",
     organizationId: o.organizationId ?? null,
     individualGiverPersonId: o.individualGiverPersonId ?? null,
     householdId: o.householdId ?? null,

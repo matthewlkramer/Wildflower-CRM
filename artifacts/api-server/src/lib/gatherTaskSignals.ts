@@ -11,6 +11,7 @@ import {
   emailMessages,
 } from "@workspace/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { deriveGiftTypeExpr } from "./giftTypeDerived";
 
 /**
  * Read-only relationship snapshot for a single CRM entity (a person or an
@@ -88,7 +89,7 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
         .select({
           date: giftsAndPayments.dateReceived,
           amount: giftsAndPayments.amount,
-          type: giftsAndPayments.type,
+          type: deriveGiftTypeExpr(),
           name: giftsAndPayments.name,
         })
         .from(giftsAndPayments)
@@ -228,7 +229,7 @@ async function gatherOrganizationSignals(
         .select({
           date: giftsAndPayments.dateReceived,
           amount: giftsAndPayments.amount,
-          type: giftsAndPayments.type,
+          type: deriveGiftTypeExpr(),
           name: giftsAndPayments.name,
         })
         .from(giftsAndPayments)

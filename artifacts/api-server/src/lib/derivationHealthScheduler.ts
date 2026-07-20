@@ -62,7 +62,6 @@ async function runNightlyDerivationHealth(): Promise<void> {
             driftCount: report.driftCount,
             byField: report.byField,
             checkedOpportunities: report.checkedOpportunities,
-            checkedGifts: report.checkedGifts,
             durationMs: report.durationMs,
             // First few rows for immediate context; the full list is one
             // admin-endpoint call away.
@@ -74,7 +73,6 @@ async function runNightlyDerivationHealth(): Promise<void> {
         logger.info(
           {
             checkedOpportunities: report.checkedOpportunities,
-            checkedGifts: report.checkedGifts,
             durationMs: report.durationMs,
           },
           "Derivation health check clean — all persisted derived fields match",

@@ -125,7 +125,6 @@ const GIFT_WORKLIST_LABELS: Record<ListGiftsAndPaymentsWorklist, string> = {
 
 const NONE = "__none__";
 type GiftDraft = {
-  type: string;
   paymentMethod: string;
 };
 
@@ -202,32 +201,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
     {
       key: "type",
       label: "Type",
-      cell: (g) =>
-        ctx.inline.isEditing(g.id) ? (
-          <Select
-            value={ctx.inline.draft?.type ?? NONE}
-            onValueChange={(v) => ctx.inline.patch({ type: v })}
-          >
-            <SelectTrigger
-              className="h-8"
-              aria-label="Type"
-              onClick={(e) => e.stopPropagation()}
-              data-testid={`select-inline-type-gift-${g.id}`}
-            >
-              <SelectValue placeholder="Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>None</SelectItem>
-              {TYPES.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {formatEnum(t)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          formatEnum(g.type)
-        ),
+      cell: (g) => formatEnum(g.type),
     },
     {
       key: "amount",
@@ -573,14 +547,12 @@ export default function Gifts() {
   const inlineEdit = useInlineRowEdit<GiftOrPayment, GiftDraft>({
     getId: (g) => g.id,
     toDraft: (g) => ({
-      type: g.type ?? NONE,
       paymentMethod: g.paymentMethod ?? NONE,
     }),
     onSave: async (id, d) => {
       await updateGift.mutateAsync({
         id,
         data: {
-          type: d.type === NONE ? null : (d.type as GiftType),
           paymentMethod:
             d.paymentMethod === NONE
               ? null

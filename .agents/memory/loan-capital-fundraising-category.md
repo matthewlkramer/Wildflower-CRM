@@ -20,9 +20,11 @@ and `fiscal_year_entity_goals.category` columns have been **physically dropped**
 - `grant` means "all non-loan money" (including individual donations), NOT literally
   grant-maker grants — keep this caveat when naming UI options.
 
-**Gift `type` is still live** (not deprecated). `type = 'loan_fund_investment'` derives
-`loan_or_grant = 'loan'` via `giftTypeToLoanOrGrant()` on every gift write. Do not treat
-gift `type` as a legacy field.
+**Gift `type` column is DROPPED** (migration 0140, 2026-07). It was derived from payment
+links at read time and is no longer written or stored. `loanOrGrant` is now the direct
+field in `CreateGiftOrPaymentBody`, `UpdateGiftOrPaymentBody`, and `BulkUpdateGiftsPatch`.
+`giftTypeToLoanOrGrant()` in `@workspace/api-zod` is retained as a helper but `type` is
+no longer a DB column — treat any reference to `gifts_and_payments.type` as stale.
 
 **Goals PK:** `(fiscal_year_id, entity_id, loan_or_grant)`. Goals routes take a
 `:category` path param that normalizes both token families — both `loan`/`grant` AND

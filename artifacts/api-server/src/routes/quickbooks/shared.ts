@@ -32,7 +32,6 @@ import {
   unstampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
 } from "../../lib/giftFinalAmount";
-import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import {
   removePaymentApplicationsForGift,
   removePaymentApplicationsForPayment,
@@ -724,10 +723,6 @@ export async function revertOneStagedPayment(
       return { ok: false, reason: "not_revertible" };
     }
     throw e;
-  }
-  // Surviving gifts lost their QB linkage — recompute their persisted tie.
-  if (affectedGiftIds.size > 0) {
-    await applyGiftQbTieMany(...affectedGiftIds);
   }
   return { ok: true, row: result };
 }

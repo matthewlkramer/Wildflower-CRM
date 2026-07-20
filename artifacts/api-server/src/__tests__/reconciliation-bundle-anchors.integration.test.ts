@@ -422,7 +422,6 @@ afterAll(async () => {
       .update(schema.giftsAndPayments)
       .set({
         finalAmountSource: "human",
-        finalAmountStripeChargeId: null,
       })
       .where(inArrayFn(schema.giftsAndPayments.id, allGiftIds));
   if (allGiftIds.length)

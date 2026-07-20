@@ -41,6 +41,7 @@ import {
   paymentApplications,
 } from "@workspace/db/schema";
 import { and, asc, eq } from "drizzle-orm";
+import { deriveGiftQbTieLiveExpr } from "../lib/giftQbTie";
 import {
   computeProposedMatch,
   crossChecksFor,
@@ -272,7 +273,7 @@ async function main(): Promise<void> {
           amount: giftsAndPayments.amount,
           dateReceived: giftsAndPayments.dateReceived,
           method: giftsAndPayments.paymentMethod,
-          tie: giftsAndPayments.quickbooksTieStatus,
+          tie: deriveGiftQbTieLiveExpr(),
         })
         .from(giftsAndPayments)
         .where(eq(giftsAndPayments.id, match.matchedGiftId))

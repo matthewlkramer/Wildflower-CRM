@@ -31,7 +31,6 @@ import {
   UngroupStagedPaymentsBody,
 } from "@workspace/api-zod";
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
-import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import { applyPaymentApplication } from "../../lib/paymentApplications";
 import {
   respondInvariantFailure,
@@ -288,9 +287,6 @@ router.post(
       }
       throw e;
     }
-
-    // The newly minted gift now carries QB linkage — persist its tie status.
-    await applyGiftQbTieMany(giftId);
 
     const [gift] = await db
       .select(giftHeaderColumns)

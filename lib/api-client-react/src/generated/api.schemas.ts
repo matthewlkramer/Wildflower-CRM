@@ -2010,15 +2010,11 @@ export interface GiftOrPayment {
    * @deprecated
    */
   readonly finalAmountSource: GiftFinalAmountSource;
-  /**
-   * DEPRECATED — never returned by the API. Stripe gift linkage is authoritative on payment_applications (evidenceSource=stripe, linkRole=counted). Column retained in DB until a reviewed DROP migration ships.
-   * @deprecated
-   */
-  readonly finalAmountStripeChargeId?: string | null;
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
-  type?: GiftType | null;
+  /** Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity/advisor/matched-gift links. */
+  readonly type?: GiftType;
   opportunityId?: string | null;
   advisorPersonId?: string | null;
   giftBeingMatchedId?: string | null;
@@ -2029,10 +2025,10 @@ export interface GiftOrPayment {
   ownerUserId?: string | null;
   /** DERIVED (Task #594): true when the gift is off-books / payment-exempt — it has at least one allocation and EVERY allocation sits on a no-payment entity (entities.expectsPayment = false: "Direct to School" / "Wildflower Foundation TSNE"). Replaces the retired header booleans (designatedToSchool / offBooksFiscalSponsor / paymentExpected). Off-books gifts still count toward revenue goals but are exempt from the QuickBooks-tie requirement and excluded from audit reconciliation. Never settable; make a gift off-books by putting its allocations on a no-payment entity. */
   readonly offBooks: boolean;
-  /** Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update. */
+  /** Live-derived (never persisted) QuickBooks-tie signal computed from counted payment_applications ledger rows. Never set via create/update. */
   readonly quickbooksTieStatus: GiftQuickbooksTie;
-  /** Authoritative loan-vs-grant classification. Derived-but-persisted from the gift `type` on every write ('loan_fund_investment' → loan, everything else → grant) — the gift type IS the user input for loan-ness. */
-  readonly loanOrGrant?: LoanOrGrant;
+  /** Authoritative loan-vs-grant classification. Set explicitly on create/update; gift type badge follows from this flag (loan_or_grant=loan ⇒ loan_fund_investment). */
+  loanOrGrant?: LoanOrGrant;
   /** Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses. */
   readonly reconciliationLanes?: ReconciliationLanes;
   /** Comma-separated free-text tags. The coding-form apply step appends its reference attributes (circle, series, notes, memo) here as prefixed entries — there are no dedicated coding-form columns. */
@@ -2438,7 +2434,7 @@ export interface CreateGiftOrPaymentBody {
   organizationId?: string;
   individualGiverPersonId?: string;
   householdId?: string;
-  type?: GiftType;
+  loanOrGrant?: LoanOrGrant;
   opportunityId?: string;
   advisorPersonId?: string;
   grantYear?: string;
@@ -2474,7 +2470,7 @@ export interface UpdateGiftOrPaymentBody {
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
-  type?: GiftType | null;
+  loanOrGrant?: LoanOrGrant;
   opportunityId?: string | null;
   advisorPersonId?: string | null;
   giftBeingMatchedId?: string | null;
@@ -7359,7 +7355,6 @@ export interface DerivationHealthReport {
   ranAt: string;
   durationMs: number;
   checkedOpportunities: number;
-  checkedGifts: number;
   /** Total drifting fields found (uncapped) */
   driftCount: number;
   /** Per-field drift totals (uncapped) */
@@ -8734,7 +8729,7 @@ export const BulkUpdateGiftsPatchGrantYearsMode = {
 
 export interface BulkUpdateGiftsPatch {
   ownerUserId?: string | null;
-  type?: GiftType | null;
+  loanOrGrant?: LoanOrGrant;
   paymentMethod?: GiftPaymentMethod | null;
   /** Date the gift/payment was received. */
   dateReceived?: string | null;

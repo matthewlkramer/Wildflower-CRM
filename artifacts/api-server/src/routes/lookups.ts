@@ -24,6 +24,7 @@ import { activeOnlyUnlessAdmin, archiveOne, requireAdmin, unarchiveOne } from ".
 import { safeRecordAudit } from "../lib/audit";
 import { getAppUser } from "../lib/appRequest";
 import { unresolvedGiftAmountCondition } from "../lib/giftAmountResolution";
+import { deriveGiftQbTieLiveExpr } from "../lib/giftQbTie";
 import { giftHasNoActiveOverpayChild } from "../lib/auditCloseResolution";
 
 // NOTE: /entities (GET/POST/PATCH) and /fiscal-year-entity-goals routes live
@@ -429,7 +430,7 @@ router.get(
             id: giftsAndPayments.id,
             amount: giftsAndPayments.amount,
             dateReceived: giftsAndPayments.dateReceived,
-            quickbooksTieStatus: giftsAndPayments.quickbooksTieStatus,
+            quickbooksTieStatus: sql<string>`(${deriveGiftQbTieLiveExpr()})`,
           })
           .from(giftsAndPayments)
           .where(giftUnresolved)

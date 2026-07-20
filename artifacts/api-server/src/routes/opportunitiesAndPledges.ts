@@ -2,7 +2,7 @@ import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
 import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, giftAllocations, organizations, households, people, tasks, type NewPledgeAllocation } from "@workspace/db/schema";
-import { giftHeaderColumns } from "./giftsAndPayments";
+import { giftSelectWithDerived } from "./giftsAndPayments";
 import { oppWorklistConds, type OppWorklist } from "../lib/worklists";
 import { alias } from "drizzle-orm/pg-core";
 import { and, asc, count, desc, eq, exists, getTableColumns, ilike, inArray, isNull, notExists, or, sql, type SQL } from "drizzle-orm";
@@ -106,7 +106,6 @@ import {
   assertGiftHasAllocations,
 } from "../lib/giftAllocationSeed";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
-import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { resolvePledgeFreeze, resolvePledgeFreezeById, respondFrozen } from "../lib/freezeGuard";
@@ -438,7 +437,7 @@ router.get(
     ] = await Promise.all([
       db.select().from(pledgeAllocations).where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
       // Named gift-header projection for the nested `payments` array.
-      db.select(giftHeaderColumns).from(giftsAndPayments).where(eq(giftsAndPayments.opportunityId, id)),
+      db.select(giftSelectWithDerived).from(giftsAndPayments).where(eq(giftsAndPayments.opportunityId, id)),
       // Derived audit-close resolution state (never persisted — see the
       // PledgeAuditCloseResolution schema). Drives the "write off remainder"
       // action; the amount reuses the write-off route's shared helper.
@@ -1024,10 +1023,8 @@ router.post(
     // Re-derive the opportunity's calculated lifecycle (a linked gift moves it
     // toward cash_in) and stamp the new gift's QuickBooks tie status.
     await applyDerivedOppFieldsMany(opp.id);
-    await applyGiftQbTieMany(giftId);
-
     const gift = await db
-      .select(giftHeaderColumns)
+      .select(giftSelectWithDerived)
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, giftId))
       .then((r) => r[0]);

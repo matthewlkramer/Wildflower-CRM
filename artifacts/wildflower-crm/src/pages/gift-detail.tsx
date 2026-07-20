@@ -484,15 +484,9 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
     {
       label: "Type",
       value: (
-        <InlineEditSelect
-          align="left"
-          label="Type"
-          testIdBase="gift-type"
-          value={gift.type ?? null}
-          options={GIFT_TYPE_OPTIONS}
-          display={formatEnum(gift.type) || "—"}
-          onSave={(next) => patch({ type: next })}
-        />
+        <span data-testid="gift-type-display">
+          {formatEnum(gift.type) || "—"}
+        </span>
       ),
     },
     {

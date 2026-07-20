@@ -22,6 +22,7 @@ import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound } from "../lib/helpers";
 import { personDisplayNameSql as personNameSqlFor } from "../lib/personNameSql";
+import { deriveGiftTypeExpr } from "../lib/giftTypeDerived";
 
 // Person display name — the canonical chain shared with the rest of the
 // API (see lib/personNameSql.ts).
@@ -534,7 +535,7 @@ router.get(
           displayUsage: giftAllocations.displayUsage,
           fundableProjectId: giftAllocations.fundableProjectId,
           giftId: giftAllocations.giftId,
-          giftType: sql<string | null>`${giftsAndPayments.type}::text`,
+          giftType: sql<string | null>`(${deriveGiftTypeExpr()})::text`,
           dateReceived: sql<string | null>`${giftsAndPayments.dateReceived}::text`,
           giftAmount: sql<string | null>`${giftsAndPayments.amount}::text`,
           organizationId: giftsAndPayments.organizationId,
@@ -753,7 +754,7 @@ router.get(
           displayUsage: giftAllocations.displayUsage,
           fundableProjectId: giftAllocations.fundableProjectId,
           giftId: giftAllocations.giftId,
-          giftType: sql<string | null>`${giftsAndPayments.type}::text`,
+          giftType: sql<string | null>`(${deriveGiftTypeExpr()})::text`,
           dateReceived: sql<string | null>`${giftsAndPayments.dateReceived}::text`,
           organizationId: giftsAndPayments.organizationId,
           organizationName: organizations.name,

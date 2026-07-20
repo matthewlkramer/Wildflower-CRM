@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql, type SQL } from "drizzle-orm";
 import { asyncHandler, parsePagination } from "../../lib/helpers";
+import { deriveGiftQbTieLiveRaw } from "../../lib/giftQbTie";
 import { getViewer, maskName, type Viewer } from "../../lib/identityVisibility";
 import { escapeLike, parkedFiscallyExpr } from "../quickbooks/shared";
 import { reimbursablePledgeExistsSql } from "../../lib/reimbursablePlaceholder";
@@ -396,7 +397,7 @@ const allQbLinkedGiftsComplete = `NOT EXISTS (
 const crmEligibleBase = `
   g.archived_at IS NULL
   AND g.awaiting_settlement = false
-  AND (g.quickbooks_tie_status IS NULL OR g.quickbooks_tie_status <> 'exempt')
+  AND (${deriveGiftQbTieLiveRaw("g.id", "g.amount")}) <> 'exempt'
   AND NOT EXISTS (
     SELECT 1 FROM payment_applications pa_g
     WHERE pa_g.gift_id = g.id AND pa_g.link_role = 'counted'
@@ -1424,7 +1425,7 @@ router.get(
         g.name AS gift_name,
         g.amount::text AS amount,
         g.date_received::text AS date_received,
-        g.quickbooks_tie_status::text AS quickbooks_tie,
+        (${deriveGiftQbTieLiveRaw("g.id", "g.amount")}) AS quickbooks_tie,
         ${sql.raw(donorFields)},
         ${sql.raw(donorboxBacked)} AS donorbox,
         ${sql.raw(giftGrantLetter)} AS grant_letter,
@@ -1539,7 +1540,7 @@ router.get(
         g.name AS gift_name,
         g.amount::text AS amount,
         g.date_received::text AS date_received,
-        g.quickbooks_tie_status::text AS quickbooks_tie,
+        (${deriveGiftQbTieLiveRaw("g.id", "g.amount")}) AS quickbooks_tie,
         ${sql.raw(donorFields)},
         ${sql.raw(donorboxBacked)} AS donorbox,
         ${sql.raw(giftGrantLetter)} AS grant_letter,
@@ -1575,7 +1576,7 @@ router.get(
         g.name AS gift_name,
         g.amount::text AS amount,
         g.date_received::text AS date_received,
-        g.quickbooks_tie_status::text AS quickbooks_tie,
+        (${deriveGiftQbTieLiveRaw("g.id", "g.amount")}) AS quickbooks_tie,
         ${sql.raw(donorFields)},
         ${sql.raw(donorboxBacked)} AS donorbox,
         ${sql.raw(giftGrantLetter)} AS grant_letter,
@@ -1601,7 +1602,7 @@ router.get(
         g.name AS title_gift_name,
         g.amount::text AS amount,
         g.date_received::text AS date_received,
-        g.quickbooks_tie_status::text AS quickbooks_tie,
+        (${deriveGiftQbTieLiveRaw("g.id", "g.amount")}) AS quickbooks_tie,
         ${sql.raw(donorFields)},
         ${sql.raw(donorboxBacked)} AS donorbox,
         ${sql.raw(giftGrantLetter)} AS grant_letter,

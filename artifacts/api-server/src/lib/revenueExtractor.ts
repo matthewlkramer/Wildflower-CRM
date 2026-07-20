@@ -37,6 +37,7 @@ import { maskName, type Viewer } from "./identityVisibility";
 import { loadEntityCodingRules } from "./revenueCoding";
 import { derivedProcessorFeeForGift } from "./giftPaymentSummary";
 import { qbLedgerSoleGiftIdForPayment } from "./paymentApplications";
+import { deriveGiftTypeExpr } from "./giftTypeDerived";
 import { personDisplayNameSql } from "./personNameSql";
 
 // ── Revenue Extractor report (Task #607) ─────────────────────────────────────
@@ -146,7 +147,7 @@ export async function buildRevenueExtractorReport(
       householdId: giftsAndPayments.householdId,
       opportunityId: giftsAndPayments.opportunityId,
       loanOrGrant: giftsAndPayments.loanOrGrant,
-      giftType: giftsAndPayments.type,
+      giftType: deriveGiftTypeExpr(),
       processorFee: derivedProcessorFeeForGift(),
       oppGrantLetterUrl: opportunitiesAndPledges.grantLetterUrl,
       oppWrittenPledge: opportunitiesAndPledges.writtenPledge,

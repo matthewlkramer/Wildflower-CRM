@@ -12,10 +12,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
-  giftTypeEnum,
   giftPaymentMethodEnum,
   giftFinalAmountSourceEnum,
-  giftQuickbooksTieEnum,
   loanOrGrantEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
@@ -28,7 +26,6 @@ import { households } from "./households";
 // `(): AnyPgColumn =>` lazy callbacks below defer the access until after both
 // modules are fully evaluated, so the ESM cycle is safe (same pattern as the
 // self-reference on giftBeingMatchedId).
-import { stripeStagedCharges } from "./stripeStagedCharges";
 import { fundraisingCampaigns } from "./fundraisingCampaigns";
 
 // Header-only row for an actual gift / payment. Like opportunities, all
@@ -89,20 +86,12 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   finalAmountSource: giftFinalAmountSourceEnum("final_amount_source")
     .notNull()
     .default("human"),
-  /**
-   * @deprecated NEVER READ, NEVER WRITTEN. Stripe linkage lives on the counted
-   * `payment_applications` ledger (`evidenceSource='stripe'`, `linkRole='counted'`).
-   * Backfilled by migration 0130. FK + column kept physical until the reviewed
-   * DROP migration ships. Never return this from the API.
-   */
-  finalAmountStripeChargeId: text("final_amount_stripe_charge_id").references(
-    (): AnyPgColumn => stripeStagedCharges.id,
-    { onDelete: "restrict" },
-  ),
   // NOTE: gifts_and_payments.final_amount_qb_staged_payment_id was DROPPED
-  // (migration 0130). QB amount provenance is derived from the counted
-  // `payment_applications` ledger (the minting/stamping payment's
-  // `created_the_gift` row). Do not reintroduce a gift-pointer column here.
+  // (migration 0130). final_amount_stripe_charge_id was DROPPED (Task #451, migration
+  // 0132). QB amount provenance is derived from the counted `payment_applications`
+  // ledger (the minting/stamping payment's `created_the_gift` row). Stripe linkage
+  // lives on the same ledger (evidenceSource='stripe', linkRole='counted').
+  // Do not reintroduce gift-pointer columns here.
 
   // RESTRICT: the organization is the giver of record.
   organizationId: text("organization_id").references(() => organizations.id, {
@@ -119,22 +108,13 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   householdId: text("household_id").references(() => households.id, {
     onDelete: "restrict",
   }),
-  // TRANSITIONAL (intended for eventual retirement, but STILL LIVE — do NOT
-  // drop). The design goal is that a gift's classification is DERIVED (pledge
-  // payment ⇐ opportunity_id, directed ⇐ advisor_person_id, matching ⇐
-  // gift_being_matched_id, loan ⇐ loan_or_grant='loan', else standard — see
-  // deriveGiftType in @workspace/api-zod), but the physical column has NOT been
-  // retired: it is still READ by the gifts list `type` filter, analytics
-  // (routes/analytics.ts), revenueCoding.ts and gatherTaskSignals.ts, and still
-  // WRITTEN — copied onto each new row when a gift is split. Retained so dev push
-  // stays additive and prod Publish never auto-drops it; a physical DROP must wait
-  // until those readers/writers are removed and ships as a reviewed SQL file.
-  type: giftTypeEnum("type"),
-  // Authoritative loan-vs-grant flag (see loanOrGrantEnum). Backfilled from
-  // `type` (loan_fund_investment→loan, else grant) plus explicit data
-  // corrections, and dual-written whenever `type` changes during the
-  // transition. Becomes the single loan signal (replacing the
-  // type='loan_fund_investment' read) once the parity-gated read cutover lands.
+  // NOTE: gifts_and_payments.type was DROPPED (Task #451, migration 0132).
+  // Gift type is now fully DERIVED at read time by deriveGiftTypeExpr() in
+  // api-server: loan_fund_investment (loan_or_grant=loan) > matching_gift
+  // (gift_being_matched_id) > directed_gift (advisor_person_id) >
+  // reimbursement (opportunity reimbursable) > pledge_payment (opportunity_id)
+  // > standard_gift. `loan_or_grant` is the sole loan authority.
+  // Authoritative loan-vs-grant flag (see loanOrGrantEnum).
   // Default 'grant' (non-destructive); auto-minted QB/Stripe/Donorbox gifts are
   // never loans so the default is correct for them.
   loanOrGrant: loanOrGrantEnum("loan_or_grant").notNull().default("grant"),
@@ -214,18 +194,11 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // Additive/nullable-defaulted; no side effects on status / QB-tie derivation.
   // It naturally becomes moot once real payment evidence ties the gift.
   awaitingSettlement: boolean("awaiting_settlement").default(false).notNull(),
-  // TRANSITIONAL (intended for eventual retirement, but STILL LIVE — do NOT
-  // drop). The design goal is to express reconciliation state through the
-  // settled-vs-entered queue + the lane model instead of this "tie" signal, but
-  // that has NOT happened yet: `applyGiftQbTieMany` (lib/giftQbTie.ts) still
-  // RECOMPUTES this column on every gift link/amount/merge/reconcile mutation, and
-  // `deriveGiftLanes` (lib/reconciliationLanes.ts) + the gifts list filter still
-  // READ it. Retained so dev push stays additive and prod Publish never auto-drops
-  // it; a physical DROP must wait until the lane model no longer reads it and ships
-  // as a reviewed SQL file.
-  quickbooksTieStatus: giftQuickbooksTieEnum("quickbooks_tie_status")
-    .default("missing")
-    .notNull(),
+  // NOTE: gifts_and_payments.quickbooks_tie_status was DROPPED (Task #451,
+  // migration 0132). QB tie status is now fully DERIVED at read time by
+  // deriveGiftQbTieLiveExpr() in api-server from counted payment_applications
+  // ledger rows (qb > stripe > donorbox precedence; off-books ⇒ exempt).
+  // No applier, no backfill, no staleness.
   tags: text("tags"),
   // Set when an outbound staff email is linked as the thank-you note for
   // this gift — either via the email-intelligence proposal accept flow
@@ -264,20 +237,9 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   thankYouLetterUploadedAt: timestamp("thank_you_letter_uploaded_at", { mode: "string" }),
   createdAtFromAirtable: timestamp("created_at_from_airtable"),
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
-  // ── @deprecated coding-form reference columns (RETIRED 2026-07) ──────────
-  // The coding-form apply step now appends these values to `tags` as prefixed
-  // entries ("Circle: …" / "Series: …" / "Notes: …" / "Memo: …"); existing
-  // values were folded into tags by migration 0131. Physical-only: never
-  // written, read, or returned. Kept so drizzle push doesn't propose a drop
-  // (see post-merge push-abort precedent); do not revive.
-  /** @deprecated folded into gifts.tags (0131); physical-only. */
-  codingFormCircle: text("coding_form_circle"),
-  /** @deprecated folded into gifts.tags (0131); physical-only. */
-  codingFormSeries: text("coding_form_series"),
-  /** @deprecated folded into gifts.tags (0131); physical-only. */
-  codingFormAdditionalNotes: text("coding_form_additional_notes"),
-  /** @deprecated folded into gifts.tags (0131); physical-only. */
-  codingFormMemo: text("coding_form_memo"),
+  // NOTE: coding_form_circle, coding_form_series, coding_form_additional_notes,
+  // coding_form_memo were DROPPED (Task #451, migration 0132). Values were folded
+  // into gifts_and_payments.tags as prefixed entries by migration 0131.
   // Soft-delete: non-null = archived (hidden from non-admins). Financial
   // records aren't hard-deleted; archiving hides them from default views.
   archivedAt: timestamp("archived_at"),
@@ -303,9 +265,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // index on staged_payments(date_received).
   index("gifts_and_payments_date_received_idx").on(t.dateReceived),
   index("gifts_and_payments_archived_at_idx").on(t.archivedAt),
-  // @deprecated index on the retired quickbooks_tie_status column. Kept while the
-  // column lingers (deprecate-then-drop); dropped with the column's reviewed SQL.
-  index("gifts_and_payments_quickbooks_tie_status_idx").on(t.quickbooksTieStatus),
+  // NOTE: gifts_and_payments_quickbooks_tie_status_idx was DROPPED with the column.
   index("gifts_and_payments_thank_you_email_msg_idx").on(t.thankYouEmailMessageId),
   index("gifts_and_payments_thank_you_sent_at_idx").on(t.thankYouSentAt),
   index("gifts_and_payments_campaign_slug_idx").on(t.campaignSlug),

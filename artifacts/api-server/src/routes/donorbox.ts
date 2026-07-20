@@ -60,7 +60,6 @@ import {
   donorboxLedgerCountedExistsForDonation,
   stripeLedgerGiftIdForCharge,
 } from "../lib/paymentApplications";
-import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { giftHeaderColumns } from "./giftsAndPayments";
 
 /**
@@ -683,10 +682,6 @@ router.post(
       }
       throw e;
     }
-
-    // Donorbox is not a QuickBooks/Stripe money source — a plain CRM gift ties
-    // to 'missing' until reconciled, surfacing it in the QB-tie worklist.
-    await applyGiftQbTieMany(giftId);
 
     const [gift] = await db
       .select(giftHeaderColumns)

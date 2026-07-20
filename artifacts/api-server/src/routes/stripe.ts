@@ -73,7 +73,6 @@ import {
   unstampGiftFinalAmount,
   adjustSingleAllocationOrFlag,
 } from "../lib/giftFinalAmount";
-import { applyGiftQbTieMany } from "../lib/giftQbTie";
 import { applySupersedeForPayoutInTx } from "../lib/settlementSupersede";
 import {
   reconAudit,
@@ -795,7 +794,6 @@ router.post(
       if (rederivePledgeIds.length) {
         await applyDerivedOppFieldsMany(...rederivePledgeIds);
       }
-      await applyGiftQbTieMany(giftId, ...supersedeGiftIds);
     }
 
     const [row] = await db
@@ -1006,12 +1004,6 @@ router.post(
     }
 
     // Stripe-sourced gift (no direct QB link) ties at the payout level — persist
-    // its tie status. The deriver is source-agnostic: it ties via the dual-written
-    // Stripe counted payment_applications row (per-source precedence), not the
-    // legacy finalAmountSource shortcut. Supersede-affected gifts (coarse QB
-    // rows demoted by this charge's booking) re-derive too.
-    await applyGiftQbTieMany(giftId, ...supersedeGiftIds);
-
     const [gift] = await db
       .select(giftHeaderColumns)
       .from(giftsAndPayments)
@@ -1412,11 +1404,6 @@ router.post(
         return;
       }
       throw e;
-    }
-    // A surviving (reconciled-to) gift lost its Stripe evidence — recompute
-    // tie; supersede-promoted gifts (coarse QB rows restored) re-derive too.
-    if (survivingGiftId || supersedeGiftIds.length > 0) {
-      await applyGiftQbTieMany(survivingGiftId, ...supersedeGiftIds);
     }
     if (cascadedQbStagedIds.length > 0) {
       req.log.warn(
@@ -1947,9 +1934,6 @@ async function respondReconResult(
   result: ConfirmRevertResult,
 ): Promise<void> {
   if (result.ok) {
-    if (result.rederiveGiftIds.length > 0) {
-      await applyGiftQbTieMany(...result.rederiveGiftIds);
-    }
     res.json(result);
     return;
   }

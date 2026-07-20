@@ -6607,11 +6607,10 @@ components:
         # ── model only during deprecate-then-drop; superseded by derivedSettledAmount.
         originalHumanCrmAmount:     { type: string, nullable: true, readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount." }
         finalAmountSource:          { allOf: [ { $ref: "#/components/schemas/GiftFinalAmountSource" } ], readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — `amount` is always the human-entered amount now; settled money is derivedSettledAmount." }
-        finalAmountStripeChargeId:  { type: string, nullable: true, readOnly: true, deprecated: true, description: "DEPRECATED — never returned by the API. Stripe gift linkage is authoritative on payment_applications (evidenceSource=stripe, linkRole=counted). Column retained in DB until a reviewed DROP migration ships." }
         organizationId:                   { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
-        type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
+        type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], readOnly: true, description: "Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity/advisor/matched-gift links." }
         opportunityId:          { type: string, nullable: true }
         advisorPersonId:            { type: string, nullable: true }
         giftBeingMatchedId:         { type: string, nullable: true }
@@ -6622,8 +6621,8 @@ components:
         paymentIntermediaryId:      { type: string, nullable: true }
         ownerUserId:                      { type: string, nullable: true }
         offBooks:                   { type: boolean, readOnly: true, description: "DERIVED (Task #594): true when the gift is off-books / payment-exempt — it has at least one allocation and EVERY allocation sits on a no-payment entity (entities.expectsPayment = false: \"Direct to School\" / \"Wildflower Foundation TSNE\"). Replaces the retired header booleans (designatedToSchool / offBooksFiscalSponsor / paymentExpected). Off-books gifts still count toward revenue goals but are exempt from the QuickBooks-tie requirement and excluded from audit reconciliation. Never settable; make a gift off-books by putting its allocations on a no-payment entity." }
-        quickbooksTieStatus:        { allOf: [ { $ref: "#/components/schemas/GiftQuickbooksTie" } ], readOnly: true, description: "Derived (persisted) signal of whether this on-books gift reconciles to a QuickBooks record. Never set via create/update." }
-        loanOrGrant:                { allOf: [ { $ref: "#/components/schemas/LoanOrGrant" } ], readOnly: true, description: "Authoritative loan-vs-grant classification. Derived-but-persisted from the gift `type` on every write ('loan_fund_investment' → loan, everything else → grant) — the gift type IS the user input for loan-ness." }
+        quickbooksTieStatus:        { allOf: [ { $ref: "#/components/schemas/GiftQuickbooksTie" } ], readOnly: true, description: "Live-derived (never persisted) QuickBooks-tie signal computed from counted payment_applications ledger rows. Never set via create/update." }
+        loanOrGrant:                { allOf: [ { $ref: "#/components/schemas/LoanOrGrant" } ], description: "Authoritative loan-vs-grant classification. Set explicitly on create/update; gift type badge follows from this flag (loan_or_grant=loan ⇒ loan_fund_investment)." }
         reconciliationLanes:        { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses." }
         tags:                       { type: string, nullable: true, description: "Comma-separated free-text tags. The coding-form apply step appends its reference attributes (circle, series, notes, memo) here as prefixed entries — there are no dedicated coding-form columns." }
         thankYouSentAt:             { type: string, format: date, nullable: true, description: "Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time." }
@@ -6814,7 +6813,7 @@ components:
         organizationId:                   { type: string }
         individualGiverPersonId:    { type: string }
         householdId:                { type: string }
-        type:                       { $ref: "#/components/schemas/GiftType" }
+        loanOrGrant:                { $ref: "#/components/schemas/LoanOrGrant" }
         opportunityId:          { type: string }
         advisorPersonId:            { type: string }
         grantYear:                  { type: string }
@@ -6854,7 +6853,7 @@ components:
         organizationId:                   { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
-        type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
+        loanOrGrant:                { $ref: "#/components/schemas/LoanOrGrant" }
         opportunityId:          { type: string, nullable: true }
         advisorPersonId:            { type: string, nullable: true }
         giftBeingMatchedId:         { type: string, nullable: true }
@@ -10085,12 +10084,11 @@ components:
         derived: { type: string, nullable: true, description: "Value the derivation computes from the row's inputs" }
     DerivationHealthReport:
       type: object
-      required: [ranAt, durationMs, checkedOpportunities, checkedGifts, driftCount, byField, drift, truncated]
+      required: [ranAt, durationMs, checkedOpportunities, driftCount, byField, drift, truncated]
       properties:
         ranAt:                { type: string, format: date-time }
         durationMs:           { type: integer }
         checkedOpportunities: { type: integer }
-        checkedGifts:         { type: integer }
         driftCount:           { type: integer, description: "Total drifting fields found (uncapped)" }
         byField:
           type: object
@@ -11257,7 +11255,7 @@ components:
       type: object
       properties:
         ownerUserId: { type: string, nullable: true }
-        type:        { allOf: [ { $ref: "#/components/schemas/GiftType" } ], nullable: true }
+        loanOrGrant: { $ref: "#/components/schemas/LoanOrGrant" }
         paymentMethod: { allOf: [ { $ref: "#/components/schemas/GiftPaymentMethod" } ], nullable: true }
         dateReceived:  { type: string, format: date, nullable: true, description: "Date the gift/payment was received." }
         entityIds:

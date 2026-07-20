@@ -24,6 +24,7 @@ import { payoutStatusFromLink } from "../lib/settlementLink";
 import { proposeSettlementLink } from "../lib/settlementWriter";
 import { chargeStatusSql, stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
+import { deriveGiftQbTieLiveExpr } from "../lib/giftQbTie";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -346,7 +347,10 @@ async function readStaged(id: string) {
 }
 async function readGift(id: string) {
   const [row] = await db
-    .select()
+    .select({
+      ...getTableColumns(schema.giftsAndPayments),
+      quickbooksTieStatus: deriveGiftQbTieLiveExpr(),
+    })
     .from(schema.giftsAndPayments)
     .where(eqFn(schema.giftsAndPayments.id, id));
   return row;
@@ -470,15 +474,12 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-  // Release the gift→evidence final-amount pointers (RESTRICT FKs) before
-  // deleting the charges/staged rows; reset source to `human` to keep the
-  // source↔pointer XOR CHECK satisfied.
+  // Reset finalAmountSource before deleting charges/staged rows.
   if (giftIds.length)
     await db
       .update(schema.giftsAndPayments)
       .set({
         finalAmountSource: "human",
-        finalAmountStripeChargeId: null,
       })
       .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
   // Clear the cash-application ledger BEFORE deleting charges/gifts. Stripe
@@ -635,12 +636,9 @@ describe.skipIf(!HAS_DB)(
     async function sourceGiftFromCharge(giftId: string, oldChargeId: string) {
       await db
         .update(schema.giftsAndPayments)
-        // finalAmountStripeChargeId is @deprecated; the ledger row seeded below
-        // is the authoritative link.  The column write keeps the source XOR
-        // CHECK happy for test cleanup, which resets it to null explicitly.
+        // Mark sourced from stripe; ledger row below is the authoritative link.
         .set({
           finalAmountSource: "stripe",
-          finalAmountStripeChargeId: oldChargeId,
         })
         .where(eqFn(schema.giftsAndPayments.id, giftId));
       await db
@@ -964,7 +962,6 @@ describe.skipIf(!HAS_DB)(
         .update(schema.giftsAndPayments)
         .set({
           finalAmountSource: "stripe",
-          finalAmountStripeChargeId: oldChargeId,
         })
         .where(eqFn(schema.giftsAndPayments.id, giftId));
       await db
@@ -1106,10 +1103,8 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)",
     const gift = await readGift(newGiftId);
     expect(gift.amount).toBe("250.00");
     expect(gift.finalAmountSource).toBe("quickbooks");
-    // QB amount provenance lives on the counted ledger row (the legacy gift
-    // pointer column is @deprecated and never written).
+    // QB amount provenance lives on the counted ledger row.
     expect(await qbPaymentIdForGift(newGiftId)).toBe(stagedId);
-    expect(gift.finalAmountStripeChargeId).toBeNull();
     expect(gift.originalHumanCrmAmount).toBeNull();
 
     const staged = await readStaged(stagedId);

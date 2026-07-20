@@ -56,16 +56,23 @@ const maskGiftDonorRow = maskDonorDisplayFields;
 // from the schema (grant_year, needs_research, processor_fee,
 // final_amount_qb_staged_payment_id) simply fall out of getTableColumns and
 // never reach a response.
-// finalAmountStripeChargeId is @deprecated NEVER READ / NEVER WRITTEN (the
-// counted payment_applications ledger is the sole gift-link source for Stripe),
-// so it is scrubbed here ahead of its physical drop.
-const {
-  finalAmountStripeChargeId: _finalAmountStripeChargeId,
-  ...giftHeaderColumns
-} = getTableColumns(giftsAndPayments);
+// NOTE: finalAmountStripeChargeId, type, and quickbooksTieStatus were DROPPED
+// from the schema (Task #451). getTableColumns now excludes them automatically;
+// the live-derived fields are added in giftSelectWithDerived below.
+const giftHeaderColumns = getTableColumns(giftsAndPayments);
 export { giftHeaderColumns };
-const donorJoinSelect = {
+
+// Extended gift select that adds live-derived read-only fields (type and
+// quickbooksTieStatus) alongside the static header columns. Use instead of
+// giftHeaderColumns for SELECT (non-mutation) queries that need these fields.
+export const giftSelectWithDerived = {
   ...giftHeaderColumns,
+  type: deriveGiftTypeExpr().as("type"),
+  quickbooksTieStatus: deriveGiftQbTieLiveExpr().as("quickbooks_tie_status"),
+};
+
+const donorJoinSelect = {
+  ...giftSelectWithDerived,
   // Shared donor display names + priorities + anonymous/owner helpers
   // (see lib/donorJoinSelect.ts) — identical to the opportunities route.
   ...donorDisplayColumns,
@@ -194,7 +201,6 @@ import {
   ResolveGiftOverpayBody,
   validateGiftInvariants,
   validateOppInvariants,
-  giftTypeToLoanOrGrant,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -214,7 +220,8 @@ import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
-import { applyGiftQbTieMany } from "../lib/giftQbTie";
+import { deriveGiftQbTieLiveExpr, type GiftQbTie } from "../lib/giftQbTie";
+import { deriveGiftTypeExpr } from "../lib/giftTypeDerived";
 import { payoutStatusFromLink } from "../lib/settlementLink";
 import { absorbGiftEvidenceIntoSurvivor } from "../lib/giftCombine";
 import {
@@ -300,7 +307,7 @@ router.get(
     } else if (q.linkedToQuickbooks === "unlinked") {
       filters.push(sql`NOT ${qbLedgerExistsForGift()}`);
     }
-    // Persisted QuickBooks-tie status filter. The synthetic value `untied`
+    // QuickBooks-tie status filter (live-derived). The synthetic value `untied`
     // expands to the on-books gifts that don't tie to QuickBooks
     // (missing + amount_mismatch) — the audit "off-books / doesn't tie" list.
     {
@@ -316,9 +323,8 @@ router.get(
           }
         }
         if (wanted.size > 0) {
-          filters.push(
-            inArray(giftsAndPayments.quickbooksTieStatus, [...wanted] as never[]),
-          );
+          const vals = [...wanted].map((v) => sql`${v}`);
+          filters.push(sql<boolean>`(${deriveGiftQbTieLiveExpr()}) IN (${sql.join(vals, sql`, `)})`);
         }
       }
     }
@@ -331,7 +337,7 @@ router.get(
     // Read raw — `zod.coerce.boolean()` would coerce the string "false" to true.
     if (req.query.awaitingEvidence === "true") {
       filters.push(eq(giftsAndPayments.finalAmountSource, "human"));
-      filters.push(eq(giftsAndPayments.quickbooksTieStatus, "missing"));
+      filters.push(sql<boolean>`(${deriveGiftQbTieLiveExpr()}) = 'missing'`);
     }
     // Donorbox-backed filter — keeps only gifts where a counted ledger row is
     // Donorbox-sourced directly or Stripe-sourced via a Donorbox donation.
@@ -344,9 +350,12 @@ router.get(
     }
     {
       const f = splitBlank(q.type as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(giftsAndPayments.type), inArray(giftsAndPayments.type, f.values as never[]))!);
-      else if (f.wantsBlank) filters.push(isNull(giftsAndPayments.type));
-      else if (f.values.length > 0) filters.push(inArray(giftsAndPayments.type, f.values as never[]));
+      // Type is now live-derived (always non-null) — blank values are ignored;
+      // value filter uses the derived expression.
+      if (f.values.length > 0) {
+        const vals = (f.values as string[]).map((v) => sql`${v}`);
+        filters.push(sql<boolean>`(${deriveGiftTypeExpr()}) IN (${sql.join(vals, sql`, `)})`);
+      }
     }
     if (q.organizationId) filters.push(eq(giftsAndPayments.organizationId, q.organizationId));
     if (q.householdId) filters.push(eq(giftsAndPayments.householdId, q.householdId));
@@ -496,7 +505,7 @@ router.get(
       const masked = maskGiftDonorRow(r, viewer);
       return {
         ...masked,
-        reconciliationLanes: deriveGiftLanes(masked.quickbooksTieStatus),
+        reconciliationLanes: deriveGiftLanes(masked.quickbooksTieStatus as GiftQbTie),
       };
     });
     res.json({ data, pagination: { page, limit, total: Number(total) } });
@@ -578,7 +587,7 @@ async function buildGiftDetail(id: string, viewer: Viewer) {
   ]);
   return {
     ...masked,
-    reconciliationLanes: deriveGiftLanes(masked.quickbooksTieStatus),
+    reconciliationLanes: deriveGiftLanes(masked.quickbooksTieStatus as GiftQbTie),
     reimbursablePlaceholderWarning,
     flaggedForResearch,
     allocations,
@@ -617,14 +626,7 @@ router.post(
           (existing as Record<string, unknown>).dateReceived as string | null | undefined,
           (cleanPatch as Record<string, unknown>).dateReceived as string | null | undefined,
         ),
-      allowedFields: ["ownerUserId", "type", "paymentMethod", "dateReceived"],
-      // Mirror the authoritative loan_or_grant flag whenever a bulk edit
-      // changes the gift `type` (legacy `type` stays the read source this
-      // phase); written atomically in the same per-row UPDATE.
-      deriveColumns: (p) =>
-        "type" in p
-          ? { loanOrGrant: giftTypeToLoanOrGrant((p as { type?: string | null }).type) }
-          : {},
+      allowedFields: ["ownerUserId", "loanOrGrant", "paymentMethod", "dateReceived"],
       // Allocation-set reconciliation fields — managed via extraApply
       // rather than as columns on gifts_and_payments.
       virtualFields: [
@@ -779,9 +781,6 @@ router.post(
         .values({
           id: newId(),
           ...headerBody,
-          // Dual-write the authoritative loan_or_grant flag from the gift type
-          // (legacy `type` stays the read source this phase).
-          loanOrGrant: giftTypeToLoanOrGrant(headerBody.type),
         })
         .returning(giftHeaderColumns);
       const created = inserted[0];
@@ -807,7 +806,6 @@ router.post(
       return inserted;
     });
     await applyDerivedOppFieldsMany(row?.opportunityId);
-    await applyGiftQbTieMany(row?.id);
     if (row) {
       // New gift is a fresh relationship signal — refresh the donor's
       // cached next-step suggestion (debounced + priority-gated downstream).
@@ -904,8 +902,7 @@ router.post(
           householdId: original.householdId,
           amount: surplus.toFixed(2),
           dateReceived: todayInChicago(),
-          type: original.type,
-          loanOrGrant: giftTypeToLoanOrGrant(original.type),
+          loanOrGrant: original.loanOrGrant,
           overpayOfGiftId: id,
           details: body.reason ?? null,
         })
@@ -930,7 +927,6 @@ router.post(
         message: "This gift is not over-paid — there is no surplus to book.",
       });
     }
-    await applyGiftQbTieMany(row?.id);
     if (row) {
       await auditCreate(
         req,
@@ -971,16 +967,11 @@ router.patch(
     const freeze = await resolveGiftFreeze(existing.dateReceived, merged.dateReceived);
     if (freeze.frozen) return respondFrozen(res, freeze);
 
-    // Mirror loan_or_grant whenever the legacy `type` is touched (derive from
-    // the merged state so an explicit type change maps correctly).
     const giftWrite: typeof body & {
       loanOrGrant?: "loan" | "grant";
       grantLetterUploadedAt?: string | null;
       thankYouLetterUploadedAt?: string | null;
     } = { ...body };
-    if (body.type !== undefined) {
-      giftWrite.loanOrGrant = giftTypeToLoanOrGrant(merged.type);
-    }
     // Stamp the file-upload timestamps server-side: set to now when a URL is
     // provided, cleared to null when the URL is removed. Never client-settable.
     if (body.grantLetterUrl !== undefined) {
@@ -998,14 +989,6 @@ router.patch(
     // PATCH may re-point opportunity_id — recompute on both the
     // old and the new pledge so a newly-covered target advances.
     await applyDerivedOppFieldsMany(existing.opportunityId, row.opportunityId);
-    // A gift amount edit changes the QB-tie status. Off-books is now derived
-    // from the allocation entities, so allocation/entity edits recompute the tie
-    // on their own endpoints; a header PATCH only needs to react to `amount`.
-    // Only recompute when amount actually changed so a pure-annotation edit
-    // (e.g. the needs-research flag) is a no-op for derivation.
-    if (existing.amount !== row.amount) {
-      await applyGiftQbTieMany(row.id);
-    }
     // Revenue coding is no longer a persisted snapshot on the allocation
     // (Task #449) — it's derived on demand from the allocation's scope + the
     // gift donor/type, so a donor or gift-type change needs no allocation rewrite.
@@ -1283,9 +1266,6 @@ router.post(
     }
 
     await applyDerivedOppFieldsMany(...outcome.pledges);
-    // The survivor absorbs the losers' payment evidence and the losers are now
-    // archived tombstones with none — recompute the tie status on all of them.
-    await applyGiftQbTieMany(primaryId, ...loserIds);
     if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
     res.json({ primaryId, mergedIds: loserIds });
   }),
@@ -1509,9 +1489,6 @@ router.post(
     }
 
     await applyDerivedOppFieldsMany(...outcome.pledges);
-    // Attaching gifts as pledge payments doesn't change their own QB linkage,
-    // but recompute defensively in case allocation/amount shifted.
-    await applyGiftQbTieMany(...giftIds);
     res.json({ pledgeId: outcome.pledgeId, giftIds, created: outcome.created });
   }),
 );
@@ -1750,7 +1727,6 @@ router.post(
           organizationId: gift.organizationId,
           individualGiverPersonId: gift.individualGiverPersonId,
           householdId: gift.householdId,
-          type: gift.type,
           // Carry the authoritative loan_or_grant flag onto every split row so
           // it isn't silently reset to the column default.
           loanOrGrant: gift.loanOrGrant,
@@ -1792,9 +1768,6 @@ router.post(
     }
 
     await applyDerivedOppFieldsMany(outcome.pledgeId);
-    // The split mints new payment-gifts and re-points the original — recompute
-    // the QB tie for every resulting gift (new ones default to 'missing').
-    await applyGiftQbTieMany(...outcome.giftIds);
     if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
     res.json({ pledgeId: outcome.pledgeId, giftIds: outcome.giftIds, created: true });
   }),
@@ -1967,9 +1940,6 @@ router.post(
 
     // Recompute the new opportunity's derived status/stage (never written by hand).
     await applyDerivedOppFieldsMany(outcome.opportunityId);
-    // The source gift is now archived; recompute its QB tie so it drops out of
-    // the on-books reconciliation surfaces.
-    await applyGiftQbTieMany(id);
     if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
     res.json({ opportunityId: outcome.opportunityId, asPledge });
   }),
@@ -2349,7 +2319,7 @@ router.get(
         name: giftsAndPayments.name,
         amount: giftsAndPayments.amount,
         dateReceived: giftsAndPayments.dateReceived,
-        quickbooksTieStatus: giftsAndPayments.quickbooksTieStatus,
+        quickbooksTieStatus: deriveGiftQbTieLiveExpr(),
         // Off-books is derived ONLY from allocation entities (a gift is off-books
         // when every allocation sits on a no-payment entity) — no header flags.
         offBooks: giftIsOffBooksExpr(),
@@ -2370,7 +2340,7 @@ router.get(
         giftId: gift.id,
         name: gift.name,
         quickbooksTieStatus: gift.quickbooksTieStatus,
-        reconciliationLanes: deriveGiftLanes(gift.quickbooksTieStatus),
+        reconciliationLanes: deriveGiftLanes(gift.quickbooksTieStatus as GiftQbTie),
         offBooks: true,
         auditExcluded: true,
         amount: gift.amount,
@@ -2587,7 +2557,7 @@ router.get(
       giftId: gift.id,
       name: gift.name,
       quickbooksTieStatus: gift.quickbooksTieStatus,
-      reconciliationLanes: deriveGiftLanes(gift.quickbooksTieStatus),
+      reconciliationLanes: deriveGiftLanes(gift.quickbooksTieStatus as GiftQbTie),
       offBooks: gift.offBooks,
       auditExcluded: gift.offBooks,
       amount: gift.amount,

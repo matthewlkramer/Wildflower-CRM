@@ -127,7 +127,6 @@ async function seedGift(
     id,
     amount,
     organizationId: ORG_ID,
-    type: loanOrGrant === "loan" ? "loan_fund_investment" : "standard_gift",
     loanOrGrant,
   });
   for (const sub of allocs) {
@@ -152,7 +151,6 @@ async function seedGift(
 /** Seed a goal-counting gift + allocation with type ⟂ loan_or_grant. */
 async function seedGiftDesynced(
   subAmount: string,
-  type: "standard_gift" | "loan_fund_investment",
   loanOrGrant: "loan" | "grant",
 ): Promise<string> {
   const id = nextId("rs_gift");
@@ -160,7 +158,6 @@ async function seedGiftDesynced(
     id,
     amount: subAmount,
     organizationId: ORG_ID,
-    type,
     loanOrGrant,
   });
   await db.insert(schema.giftAllocations).values({
@@ -264,84 +261,82 @@ beforeEach(() => {
 });
 
 describe.skipIf(!HAS_DB)("loan_or_grant authoritative writes", () => {
-  it("gift create mirrors loan_or_grant from type", async () => {
+  it("gift create sets loan_or_grant directly", async () => {
+    // With type dropped from schema, loanOrGrant is set explicitly at create time.
     const loan = await send("POST", "/api/gifts-and-payments", {
       amount: "100.00",
       organizationId: ORG_ID,
-      type: "loan_fund_investment",
+      loanOrGrant: "loan",
     });
     expect(loan.status).toBe(201);
-    expect(loan.json.loanOrGrant).toBe("loan");
     seededGiftIds.push(loan.json.id);
+    expect(loan.json.loanOrGrant).toBe("loan");
 
     const grant = await send("POST", "/api/gifts-and-payments", {
       amount: "50.00",
       organizationId: ORG_ID,
-      type: "standard_gift",
+      loanOrGrant: "grant",
     });
     expect(grant.status).toBe(201);
-    expect(grant.json.loanOrGrant).toBe("grant");
     seededGiftIds.push(grant.json.id);
+    expect(grant.json.loanOrGrant).toBe("grant");
 
-    const noType = await send("POST", "/api/gifts-and-payments", {
+    const noLorG = await send("POST", "/api/gifts-and-payments", {
       amount: "25.00",
       organizationId: ORG_ID,
     });
-    expect(noType.status).toBe(201);
-    expect(noType.json.loanOrGrant).toBe("grant");
-    seededGiftIds.push(noType.json.id);
+    expect(noLorG.status).toBe(201);
+    seededGiftIds.push(noLorG.json.id);
+    expect(noLorG.json.loanOrGrant).toBe("grant");
   });
 
-  it("gift patch flips loan_or_grant only when type changes", async () => {
+  it("gift patch flips loan_or_grant when loanOrGrant changes", async () => {
     const created = await send("POST", "/api/gifts-and-payments", {
       amount: "100.00",
       organizationId: ORG_ID,
-      type: "standard_gift",
     });
     const id = created.json.id as string;
     seededGiftIds.push(id);
     expect(created.json.loanOrGrant).toBe("grant");
 
     const toLoan = await send("PATCH", `/api/gifts-and-payments/${id}`, {
-      type: "loan_fund_investment",
+      loanOrGrant: "loan",
     });
     expect(toLoan.status).toBe(200);
     expect(toLoan.json.loanOrGrant).toBe("loan");
 
-    // A non-type patch must not reset the flag.
+    // A non-loanOrGrant patch must not reset the flag.
     const annotate = await send("PATCH", `/api/gifts-and-payments/${id}`, { amount: "120.00" });
     expect(annotate.status).toBe(200);
     expect(annotate.json.loanOrGrant).toBe("loan");
 
     const backToGrant = await send("PATCH", `/api/gifts-and-payments/${id}`, {
-      type: "standard_gift",
+      loanOrGrant: "grant",
     });
     expect(backToGrant.json.loanOrGrant).toBe("grant");
   });
 
-  it("gift bulk-update mirrors loan_or_grant from a type change", async () => {
+  it("gift bulk-update sets loan_or_grant directly", async () => {
     const a = await send("POST", "/api/gifts-and-payments", {
       amount: "10.00",
       organizationId: ORG_ID,
-      type: "standard_gift",
     });
     const b = await send("POST", "/api/gifts-and-payments", {
       amount: "20.00",
       organizationId: ORG_ID,
-      type: "standard_gift",
     });
     const ids = [a.json.id as string, b.json.id as string];
     seededGiftIds.push(...ids);
 
     const bulk = await send("POST", "/api/gifts-and-payments/bulk-update", {
       ids,
-      patch: { type: "loan_fund_investment" },
+      patch: { loanOrGrant: "loan" },
     });
     expect(bulk.status).toBe(200);
     expect(await readGiftLoanOrGrant(ids[0])).toBe("loan");
     expect(await readGiftLoanOrGrant(ids[1])).toBe("loan");
 
-    // An owner-only bulk patch must leave the mirrored flag untouched.
+    // An owner-only bulk patch must leave the flag untouched.
     const ownerOnly = await send("POST", "/api/gifts-and-payments/bulk-update", {
       ids: [ids[0]],
       patch: { ownerUserId: TEST_USER_ID },
@@ -473,10 +468,10 @@ describe.skipIf(!HAS_DB)(
   "loan_or_grant read source (A002) — analytics bucket by the flag, not the legacy signal",
   () => {
     it("buckets a gift by loan_or_grant even when the legacy `type` disagrees", async () => {
-      // type=standard_gift (→ legacy grant) but flag=loan ⇒ must land in loan capital.
-      const flagLoan = await seedGiftDesynced("1000.00", "standard_gift", "loan");
-      // type=loan_fund_investment (→ legacy loan) but flag=grant ⇒ must land in revenue.
-      const flagGrant = await seedGiftDesynced("2000.00", "loan_fund_investment", "grant");
+      // flag=loan ⇒ must land in loan capital (type is now derived from links, not stored).
+      const flagLoan = await seedGiftDesynced("1000.00", "loan");
+      // flag=grant ⇒ must land in revenue.
+      const flagGrant = await seedGiftDesynced("2000.00", "grant");
 
       const body = await readSourceBreakdown();
       const loanIds = body.loanCapital.received.rows.map((r: { giftId: string }) => r.giftId);

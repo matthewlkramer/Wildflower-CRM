@@ -218,7 +218,6 @@ afterAll(async () => {
       .update(schema.giftsAndPayments)
       .set({
         finalAmountSource: "human",
-        finalAmountStripeChargeId: null,
       })
       .where(inArrayFn(schema.giftsAndPayments.id, createdGiftIds));
   // `payment_applications` (Plane-2 ledger booked by the per-charge mint) FKs the

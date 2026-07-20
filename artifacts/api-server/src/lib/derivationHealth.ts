@@ -10,19 +10,17 @@ import {
   canonicalWinProbability,
   rollupConditional,
 } from "./pledgeStage";
-import { computeGiftQbTieMany } from "./giftQbTie";
 
 /**
  * Derivation health check (REPORT-ONLY — never writes).
  *
  * Persisted-derived fields are correct only if every write path that touches
  * their inputs remembers to re-run the derivation applier
- * (`applyDerivedOppFieldsMany` / `applyGiftQbTieMany`). That is convention,
- * not enforcement. This check re-derives every persisted-derived field from
- * its inputs — through the SAME pure functions and queries the appliers use,
- * never a mirrored reimplementation — and reports any row where
- * stored ≠ derived. Silent drift becomes a visible report and a tripwire for
- * any future forgotten applier call.
+ * (`applyDerivedOppFieldsMany`). That is convention, not enforcement. This
+ * check re-derives every persisted-derived field from its inputs — through the
+ * SAME pure functions and queries the appliers use, never a mirrored
+ * reimplementation — and reports any row where stored ≠ derived. Silent drift
+ * becomes a visible report and a tripwire for any future forgotten applier call.
  *
  * Checked fields:
  *  - opportunities_and_pledges: status, stage, written_pledge, paid,
@@ -31,7 +29,9 @@ import { computeGiftQbTieMany } from "./giftQbTie";
  *    value differing from the stage weight is a legitimate user override,
  *    not drift — but a NULL is never an override: every row must carry a
  *    weight, so a NULL on an open row IS reported as drift.)
- *  - gifts_and_payments: quickbooks_tie_status
+ *
+ * NOTE: quickbooks_tie_status is no longer checked here — it is now derived
+ * LIVE at query time (Task #451) and has no stored value to validate.
  *
  * Scope: non-archived rows only (archived rows are logically deleted; their
  * derived fields are inert).
@@ -50,7 +50,6 @@ export interface DerivationHealthReport {
   ranAt: string;
   durationMs: number;
   checkedOpportunities: number;
-  checkedGifts: number;
   driftCount: number;
   /** Per-field drift totals, e.g. { status: 3, paid: 1 } (uncapped). */
   byField: Record<string, number>;
@@ -199,34 +198,11 @@ async function checkOpportunities(): Promise<{
   return { checked: opps.length, drift };
 }
 
-async function checkGifts(): Promise<{
-  checked: number;
-  drift: DerivationDriftRow[];
-}> {
-  // Same query + pure deriver the applier uses (computeGiftQbTieMany), so the
-  // checker can never disagree with applyGiftQbTieMany by construction.
-  const rows = await computeGiftQbTieMany();
-  const drift: DerivationDriftRow[] = [];
-  for (const r of rows) {
-    if (r.stored !== r.derived) {
-      drift.push({
-        table: "gifts_and_payments",
-        id: r.id,
-        name: r.name,
-        field: "quickbooks_tie_status",
-        stored: r.stored,
-        derived: r.derived,
-      });
-    }
-  }
-  return { checked: rows.length, drift };
-}
-
 /** Run the full report-only health check. Safe against any DB (read-only). */
 export async function runDerivationHealthCheck(): Promise<DerivationHealthReport> {
   const started = Date.now();
-  const [opps, gifts] = await Promise.all([checkOpportunities(), checkGifts()]);
-  const all = [...opps.drift, ...gifts.drift];
+  const opps = await checkOpportunities();
+  const all = opps.drift;
   const byField: Record<string, number> = {};
   for (const d of all) {
     byField[d.field] = (byField[d.field] ?? 0) + 1;
@@ -235,7 +211,6 @@ export async function runDerivationHealthCheck(): Promise<DerivationHealthReport
     ranAt: new Date().toISOString(),
     durationMs: Date.now() - started,
     checkedOpportunities: opps.checked,
-    checkedGifts: gifts.checked,
     driftCount: all.length,
     byField,
     drift: all.slice(0, MAX_REPORT_ROWS),

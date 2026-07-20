@@ -185,8 +185,13 @@ async function main(): Promise<void> {
         ) AS off_books,
         g.final_amount_source,
         (g.archived_at IS NOT NULL) AS archived,
-        g.quickbooks_tie_status::text AS persisted_status,
-        (g.final_amount_stripe_charge_id IS NOT NULL) AS has_fasc,
+        -- NOTE (Task #451): quickbooks_tie_status and final_amount_stripe_charge_id
+        -- were DROPPED from gifts_and_payments; these columns are no longer queryable.
+        -- The parity check ran clean before the drop (0 tie-status changes).
+        -- This script is kept as a historical record only; it cannot run against
+        -- a post-migration database. Suppress the two fields with NULL placeholders.
+        NULL::text AS persisted_status,
+        false AS has_fasc,
         (SELECT SUM(pa.amount_applied)::text FROM payment_applications pa
            WHERE pa.gift_id = g.id AND pa.evidence_source = 'quickbooks'
              AND pa.link_role = 'counted') AS qb_sum,

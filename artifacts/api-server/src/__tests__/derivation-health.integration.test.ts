@@ -3,18 +3,19 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
 /**
- * Derivation health check (GET /api/admin/derivation-health + the underlying
- * runDerivationHealthCheck / computeGiftQbTieMany):
+ * Derivation health check (GET /api/admin/derivation-health):
  *
  *  - seeds an opportunity whose STORED derived fields deliberately disagree
  *    with their derivation (loss_type='lost' but status='open' + a stale
  *    win_probability) and asserts the report flags exactly those fields;
  *  - seeds a clean opportunity and asserts it is NOT flagged;
- *  - seeds a gift stamped 'tied' with no cash-application ledger rows and
- *    asserts the shared compute path derives 'missing' (stored ≠ derived);
  *  - asserts the check is REPORT-ONLY (stored values are untouched after it
  *    runs);
  *  - asserts the endpoint is admin-gated (403 for team_member).
+ *
+ * NOTE: quickbooks_tie_status is no longer a persisted column (Task #451) —
+ * it is derived LIVE at query time. There is no stored value to drift, so
+ * gift-level drift seeding / assertions are removed from this test.
  *
  * Only the Clerk auth gate (requireAuth) is mocked. Skips when no real
  * DATABASE_URL.
@@ -30,7 +31,6 @@ const MEMBER_ID = `${RUN}_member`;
 const ORG_ID = `${RUN}_org`;
 const DRIFT_OPP_ID = `${RUN}_opp_drift`;
 const CLEAN_OPP_ID = `${RUN}_opp_clean`;
-const DRIFT_GIFT_ID = `${RUN}_gift_drift`;
 
 const auth = vi.hoisted(() => ({
   current: { id: "", role: "" } as { id: string; role: string },
@@ -54,7 +54,6 @@ let schema: {
   users: Db["users"];
   organizations: Db["organizations"];
   opportunitiesAndPledges: Db["opportunitiesAndPledges"];
-  giftsAndPayments: Db["giftsAndPayments"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let server: Server;
@@ -72,7 +71,6 @@ interface Report {
   byField: Record<string, number>;
   drift: DriftRow[];
   checkedOpportunities: number;
-  checkedGifts: number;
 }
 
 async function getReport(): Promise<{ status: number; json: Report }> {
@@ -95,7 +93,6 @@ beforeAll(async () => {
     users: dbMod.users,
     organizations: dbMod.organizations,
     opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
-    giftsAndPayments: dbMod.giftsAndPayments,
   };
   eqFn = drizzle.eq;
 
@@ -143,16 +140,6 @@ beforeAll(async () => {
     paid: "0",
   });
 
-  // DRIFT gift: stamped 'tied' but it has NO cash-application ledger rows
-  // (and no allocations → not off-books), so the derivation says 'missing'.
-  await db.insert(schema.giftsAndPayments).values({
-    id: DRIFT_GIFT_ID,
-    amount: "500.00",
-    dateReceived: "2026-02-01",
-    organizationId: ORG_ID,
-    quickbooksTieStatus: "tied",
-  });
-
   auth.current = { id: ADMIN_ID, role: "admin" };
 
   const { default: app } = await import("../app");
@@ -167,9 +154,6 @@ afterAll(async () => {
   if (!HAS_DB) return;
   if (server)
     await new Promise<void>((resolve) => server.close(() => resolve()));
-  await db
-    .delete(schema.giftsAndPayments)
-    .where(eqFn(schema.giftsAndPayments.id, DRIFT_GIFT_ID));
   for (const id of [DRIFT_OPP_ID, CLEAN_OPP_ID]) {
     await db
       .delete(schema.opportunitiesAndPledges)
@@ -209,14 +193,6 @@ describe.skipIf(!HAS_DB)("derivation health check", () => {
     expect(json.drift.some((d) => d.id === CLEAN_OPP_ID)).toBe(false);
   });
 
-  it("derives 'missing' for the tied-with-no-ledger gift via the shared compute path", async () => {
-    const { computeGiftQbTieMany } = await import("../lib/giftQbTie");
-    const rows = await computeGiftQbTieMany([DRIFT_GIFT_ID]);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.stored).toBe("tied");
-    expect(rows[0]!.derived).toBe("missing");
-  });
-
   it("is report-only: stored values are untouched after a run", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
     await getReport();
@@ -230,12 +206,6 @@ describe.skipIf(!HAS_DB)("derivation health check", () => {
       .then((r) => r[0]);
     expect(opp?.status).toBe("open");
     expect(Number(opp?.winProbability)).toBeCloseTo(0.5);
-    const gift = await db
-      .select({ tie: schema.giftsAndPayments.quickbooksTieStatus })
-      .from(schema.giftsAndPayments)
-      .where(eqFn(schema.giftsAndPayments.id, DRIFT_GIFT_ID))
-      .then((r) => r[0]);
-    expect(gift?.tie).toBe("tied");
   });
 
   it("rejects non-admins with 403", async () => {

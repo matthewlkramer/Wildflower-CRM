@@ -1867,10 +1867,6 @@ export async function applyRow(
 
   // Re-derive through the derive-aware paths so opportunity status / QB tie stay
   // correct even though restriction edits don't change those today.
-  if (touchedGiftId) {
-    const { applyGiftQbTieMany } = await import("./giftQbTie");
-    await applyGiftQbTieMany(touchedGiftId);
-  }
   if (touchedPledgeOppId) {
     const { applyDerivedOppFields } = await import("./pledgeStage");
     await applyDerivedOppFields(touchedPledgeOppId);

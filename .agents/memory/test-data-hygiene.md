@@ -85,6 +85,11 @@ O(N²) cross-run pairs at `PHONE_ONLY_SCORE`. The queue sorts by score and slice
 **Symptom:** exactly two phone-signal tests fail ("unsafe pair" / "shared phone") while
 the other 21 pass.
 
+**Permanent fix (2026-07):** the `potentialDuplicates.integration.test.ts` `beforeAll`
+now purges ALL phone_numbers rows with the constant phone values at the start of each
+run, so this pattern no longer compounds across runs. The cleanup SQL below is still
+useful for clearing non-phone stale rows (orgs, people, users).
+
 **Cleanup** (in FK order, all rows matching `id LIKE 'dupspec%'`):
 ```sql
 DELETE FROM duplicate_dismissals

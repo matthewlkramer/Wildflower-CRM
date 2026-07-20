@@ -95,10 +95,8 @@ const EXPECTED: Record<string, FileClass> = {
   },
 
   // ── EXEMPT — derived appliers, grant-letter artifacts, system money writers ──
-  "lib/giftQbTie.ts": {
-    classification: "exempt",
-    reason: "Derived-column applier: writes only the derived quickbooks_tie_status.",
-  },
+  // NOTE: lib/giftQbTie.ts was removed from EXPECTED (Task #451) — it is now a
+  // pure SQL-expression builder with NO DB writes (quickbooks_tie_status was DROPPED).
   "lib/pledgeStage.ts": {
     classification: "exempt",
     reason:

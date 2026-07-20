@@ -77,7 +77,6 @@ async function seedGift(subAmount: string, share: Share): Promise<string> {
     id,
     amount: subAmount,
     organizationId: ORG_ID,
-    type: "standard_gift",
   });
   await db.insert(schema.giftAllocations).values({
     id: nextId("galloc"),
@@ -268,7 +267,6 @@ describe.skipIf(!HAS_DB)("reimbursable share — goal analytics exclusion", () =
       id: payId,
       amount: "1500.00",
       organizationId: ORG_ID,
-      type: "standard_gift",
       opportunityId: oppId,
     });
     seededGiftIds.push(payId);

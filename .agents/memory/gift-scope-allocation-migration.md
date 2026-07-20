@@ -54,30 +54,22 @@ pointer and returns `changed:false`, so every caller's
 surface in the reconciliation queue, not silently rescale allocations. Auto-minted
 Stripe gifts are still BORN with amount=gross (no human figure to overwrite).
 
-**Stale-red integration tests (NOT a regression — pre-existing on HEAD):** two
-api-server integration cases assert behavior that current code intentionally
-contradicts, so they fail regardless of your change:
-- `reimbursable-share-analytics.integration.test.ts` "does NOT change ... cash_in
-  derivation" asserts `stage='cash_in'`, but `pledgeStage.ts` derives ANY won
-  pledge (status pledge|cash_in) to `stage='complete'`.
-- `quickbooks-split-staged-payment.integration.test.ts` "rejects fewer than two
-  gifts at the schema layer → validation_error" expects a Zod reject, but the spec
-  sets `giftIds` `minItems: 1` by design (a remainder gift can be the 2nd link);
-  the "≥2 links" rule is a business check returning `split_too_small`.
-**Why:** the full api-server suite is NOT green on HEAD; these two mislead you into
-thinking a gift/off-books/derivation change broke something.
-**How to apply:** unit suite (`--exclude '**/*.integration.test.ts'`) is fully
-green; treat only NEW failures beyond these two as yours.
+**Stale-red integration tests:** as of 2026-07 the full api-server suite (99 files,
+1278 tests) is GREEN. The two formerly-pre-existing failures mentioned here were
+fixed and removed — do not treat any test failure as "pre-existing" without
+re-verifying against the current HEAD count (1278 passing).
 
 ## Still header-resident (not yet migrated as of this writing)
-- `type` (giftTypeEnum) — still read/written in giftsAndPayments routes via
-  `giftTypeToLoanOrGrant`; intended to be DERIVED (pledge_payment⇐opportunityId,
-  directed⇐advisorPersonId, matching⇐giftBeingMatchedId, loan⇐loanOrGrant='loan',
-  else standard).
-- `quickbooks_tie_status` + `giftQbTie.ts` applier + lanes/audit/list-filter/detail
-  badge — intended for full removal (re-derive lanes without it).
 - grant_year + counts_toward_goal header cols: reads ALREADY use allocations
   (`ga.n`, 0080 moved counts_toward_goal); header cols deprecated, await drop.
+
+## Completed header retirements
+- `type`, `quickbooks_tie_status`, `final_amount_stripe_charge_id`, four
+  `coding_form_*` cols — DROPPED in migration 0140 (2026-07). `type` is now fully
+  derived from payment_applications links at read time via `giftTypeDerived.ts`;
+  `quickbooks_tie_status` is derived live from payment_applications (no write-back).
+  `loanOrGrant` is now the direct write-body field (in Create/Update/Bulk bodies).
+  `giftQbTie.ts` no longer writes to DB — it only reads.
 
 ## Migrations
 - `0081_gift_scope_fund_dimensions_seed.sql` (+RUNBOOK) — seeds `expects_payment`,

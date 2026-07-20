@@ -242,7 +242,6 @@ export const AdminGetDerivationHealthResponse = zod.object({
   "ranAt": zod.string().datetime({}),
   "durationMs": zod.number(),
   "checkedOpportunities": zod.number(),
-  "checkedGifts": zod.number(),
   "driftCount": zod.number().describe('Total drifting fields found (uncapped)'),
   "byField": zod.record(zod.string(), zod.number()).describe('Per-field drift totals (uncapped)'),
   "drift": zod.array(zod.object({

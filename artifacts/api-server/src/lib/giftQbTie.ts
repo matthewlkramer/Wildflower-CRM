@@ -1,6 +1,4 @@
-import { db } from "@workspace/db";
-import { giftsAndPayments } from "@workspace/db/schema";
-import { eq, inArray, isNull, sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { amountWithinFeeBand } from "./reconciliationGate";
 import {
   qbLedgerExistsForGift,
@@ -15,14 +13,12 @@ import { giftIsOffBooksExpr } from "./giftPaymentSummary";
 /**
  * Per-gift QuickBooks-tie derivation (INV-2 / INV-3 / INV-10).
  *
- * `quickbooks_tie_status` is a DERIVED but PERSISTED signal on each gift,
- * recomputed by `applyGiftQbTieMany` at every gift link/amount mutation (and
- * backfilled / repaired by the catch-all in the sync worker + the backfill
- * script). It is never hand-set. Mirrors the established "derive + persist with
- * an applier" pattern used for opportunity status (`applyDerivedOppFields`).
+ * `quickbooks_tie_status` is now a LIVE-DERIVED signal computed at query time
+ * by `deriveGiftQbTieLiveExpr` (Task #451). There is no stored column to update
+ * and no applier to call after mutations — the status is always fresh.
  *
  * The derivation reads the same gross-vs-net fee tolerance the reconciler uses
- * (`amountWithinFeeBand`) so the persisted flag agrees with the gate.
+ * (`amountWithinFeeBand`) so the computed value agrees with the gate.
  */
 
 export type GiftQbTie = "exempt" | "tied" | "amount_mismatch" | "missing";
@@ -46,7 +42,7 @@ export interface GiftQbTieInput {
   /**
    * The per-source-PRECEDENCE-resolved evidence amount to compare against (QB
    * sum wins, else Stripe, else Donorbox), or null when unlinked. Precedence,
-   * not a cross-source SUM — see `applyGiftQbTieMany` / the ledger readers.
+   * not a cross-source SUM — see the ledger readers.
    */
   linkAmount: string | null;
 }
@@ -75,116 +71,83 @@ export function deriveGiftQbTie(input: GiftQbTieInput): GiftQbTie {
     : "amount_mismatch";
 }
 
-interface TieRow {
-  id: string;
-  name: string | null;
-  stored: GiftQbTie | null;
-  giftAmount: string | null;
-  offBooks: boolean;
-  qbSum: string | null;
-  hasQb: boolean;
-  stripeSum: string | null;
-  hasStripe: boolean;
-  donorboxSum: string | null;
-  hasDonorbox: boolean;
-}
-
-/** One gift's stored vs freshly-derived tie status (shared by the applier and
- * the derivation health check so there is exactly ONE query + derivation
- * path — never two mirrored implementations that can drift apart). */
-export interface GiftQbTieComputation {
-  id: string;
-  name: string | null;
-  stored: GiftQbTie | null;
-  derived: GiftQbTie;
-}
-
 /**
- * READ-ONLY bulk derivation of `quickbooks_tie_status`.
+ * Live Drizzle SQL CASE expression that computes the QB-tie status for each
+ * gift row at query time, replacing the retired stored `quickbooks_tie_status`
+ * column (Task #451). Compose into any SELECT or WHERE that runs against
+ * the un-aliased `gifts_and_payments` table (the default column qualifiers
+ * are "gifts_and_payments"."id" / "gifts_and_payments"."amount").
  *
- *  - `giftIds` given   → exactly those gifts (applier semantics; archived
- *                        included, same as before — an archive path may still
- *                        need its tie recomputed).
- *  - `giftIds` omitted → every NON-archived gift (health-check semantics;
- *                        archived gifts are logically deleted and their tie
- *                        status is inert, so drift there is not a finding).
+ * Precedence is identical to the retired `applyGiftQbTieMany` applier:
+ *   exempt         — every allocation on a no-payment entity (off-books).
+ *   missing        — on-books, no counted ledger row of any source.
+ *   tied           — linked and amount within the processor fee band.
+ *   amount_mismatch— linked but amount outside the fee band.
+ *
+ * Source precedence (never cross-source SUM): QB > Stripe > Donorbox.
+ * Fee band: gift >= evidence − ½¢  AND  gift ≤ evidence × 1.1 + 1.
  */
-export async function computeGiftQbTieMany(
-  giftIds?: string[],
-): Promise<GiftQbTieComputation[]> {
-  if (giftIds && giftIds.length === 0) return [];
+export function deriveGiftQbTieLiveExpr(): SQL<string> {
+  const hasQb = qbLedgerExistsForGift();
+  const sumQb = qbLedgerSumForGift();
+  const hasStripe = stripeLedgerExistsForGift();
+  const sumStripe = stripeLedgerSumForGift();
+  const hasDonorbox = donorboxLedgerExistsForGift();
+  const sumDonorbox = donorboxLedgerSumForGift();
+  const offBooks = giftIsOffBooksExpr();
+  const amount = sql.raw('"gifts_and_payments"."amount"');
 
-  // Gather, per gift, the off-books exemption inputs plus the counted
-  // cash-application figures from the ledger — SUM(amount_applied) + existence,
-  // ONE per evidence source (QB / Stripe / Donorbox). The ledger correlations
-  // live in the shared helpers, which take a literal, pre-qualified gift-id
-  // expression so they never hit the drizzle bare-column footgun (see
-  // paymentApplications.ts). The off-books expression is top-level (single FROM
-  // table), so column interpolation is safe there.
-  const rows = (await db
-    .select({
-      id: giftsAndPayments.id,
-      name: giftsAndPayments.name,
-      stored: giftsAndPayments.quickbooksTieStatus,
-      giftAmount: giftsAndPayments.amount,
-      offBooks: giftIsOffBooksExpr(),
-      qbSum: qbLedgerSumForGift(),
-      hasQb: qbLedgerExistsForGift(),
-      stripeSum: stripeLedgerSumForGift(),
-      hasStripe: stripeLedgerExistsForGift(),
-      donorboxSum: donorboxLedgerSumForGift(),
-      hasDonorbox: donorboxLedgerExistsForGift(),
-    })
-    .from(giftsAndPayments)
-    .where(
-      giftIds
-        ? inArray(giftsAndPayments.id, giftIds)
-        : isNull(giftsAndPayments.archivedAt),
-    )) as TieRow[];
-
-  return rows.map((r) => {
-    // PER-SOURCE PRECEDENCE (not a cross-source SUM): QB sum wins, else Stripe,
-    // else Donorbox. A gift settled by both a coarse QB deposit line and its
-    // per-charge Stripe rows carries a counted row of EACH source; summing them
-    // would double-count (§4.3). Precedence counts exactly one source. Presence
-    // is any counted row of any source.
-    const hasLink = r.hasQb || r.hasStripe || r.hasDonorbox;
-    const linkAmount = r.hasQb
-      ? r.qbSum
-      : r.hasStripe
-        ? r.stripeSum
-        : r.hasDonorbox
-          ? r.donorboxSum
-          : null;
-    const derived = deriveGiftQbTie({
-      offBooks: r.offBooks,
-      giftAmount: r.giftAmount,
-      hasLink,
-      linkAmount,
-    });
-    return { id: r.id, name: r.name, stored: r.stored, derived };
-  });
+  return sql<string>`CASE
+    WHEN ${offBooks} THEN 'exempt'
+    WHEN NOT (${hasQb} OR ${hasStripe} OR ${hasDonorbox}) THEN 'missing'
+    WHEN ${amount} IS NULL THEN 'tied'
+    WHEN ${amount}::numeric >= (CASE
+          WHEN ${hasQb} THEN ${sumQb}::numeric
+          WHEN ${hasStripe} THEN ${sumStripe}::numeric
+          ELSE ${sumDonorbox}::numeric
+        END) - 0.01
+      AND ${amount}::numeric <= (CASE
+          WHEN ${hasQb} THEN ${sumQb}::numeric
+          WHEN ${hasStripe} THEN ${sumStripe}::numeric
+          ELSE ${sumDonorbox}::numeric
+        END) * 1.1 + 1
+      THEN 'tied'
+    ELSE 'amount_mismatch'
+  END`;
 }
 
 /**
- * Recompute and persist `quickbooks_tie_status` for the given gift ids. Reads
- * the gift + its authoritative cash-application ledger (`payment_applications`,
- * all counted evidence sources) via the global `db`, so call it AFTER the
- * mutating transaction commits (same contract as `applyDerivedOppFieldsMany`).
- * De-dupes and ignores null/undefined ids.
+ * Raw-SQL string version of the QB-tie live derivation for contexts where the
+ * gifts_and_payments table is referenced through an alias (e.g. in raw-SQL
+ * strings passed to db.execute / sql.raw). Uses `pa_qbt` as the internal
+ * alias prefix to avoid clashing with surrounding `pa` aliases.
+ *
+ * @param giftIdRef   SQL expression for the gift id, e.g. "g.id".
+ * @param amountRef   SQL expression for the gift amount, e.g. "g.amount".
  */
-export async function applyGiftQbTieMany(
-  ...ids: Array<string | null | undefined>
-): Promise<void> {
-  const giftIds = [...new Set(ids.filter((x): x is string => !!x))];
-  if (giftIds.length === 0) return;
+export function deriveGiftQbTieLiveRaw(
+  giftIdRef: string,
+  amountRef: string,
+): string {
+  const qbWhere = `pa_qbt.gift_id = ${giftIdRef} AND pa_qbt.evidence_source = 'quickbooks' AND pa_qbt.link_role = 'counted'`;
+  const stripeWhere = `pa_qbt.gift_id = ${giftIdRef} AND pa_qbt.evidence_source = 'stripe' AND pa_qbt.link_role = 'counted'`;
+  const donorboxWhere = `pa_qbt.gift_id = ${giftIdRef} AND pa_qbt.evidence_source = 'donorbox' AND pa_qbt.link_role = 'counted'`;
+  const qbEx = `EXISTS (SELECT 1 FROM payment_applications pa_qbt WHERE ${qbWhere})`;
+  const stripeEx = `EXISTS (SELECT 1 FROM payment_applications pa_qbt WHERE ${stripeWhere})`;
+  const donorboxEx = `EXISTS (SELECT 1 FROM payment_applications pa_qbt WHERE ${donorboxWhere})`;
+  const qbSum = `(SELECT COALESCE(SUM(pa_qbt.amount_applied), 0) FROM payment_applications pa_qbt WHERE ${qbWhere})`;
+  const stripeSum = `(SELECT COALESCE(SUM(pa_qbt.amount_applied), 0) FROM payment_applications pa_qbt WHERE ${stripeWhere})`;
+  const donorboxSum = `(SELECT COALESCE(SUM(pa_qbt.amount_applied), 0) FROM payment_applications pa_qbt WHERE ${donorboxWhere})`;
+  const linkAmt = `CASE WHEN ${qbEx} THEN ${qbSum}::numeric WHEN ${stripeEx} THEN ${stripeSum}::numeric ELSE ${donorboxSum}::numeric END`;
+  const offBooks = `(EXISTS (SELECT 1 FROM gift_allocations ga_qbt WHERE ga_qbt.gift_id = ${giftIdRef}) AND NOT EXISTS (SELECT 1 FROM gift_allocations ga_qbt LEFT JOIN entities e_qbt ON e_qbt.id = ga_qbt.entity_id WHERE ga_qbt.gift_id = ${giftIdRef} AND (ga_qbt.entity_id IS NULL OR COALESCE(e_qbt.expects_payment, true) = true)))`;
 
-  const rows = await computeGiftQbTieMany(giftIds);
-  for (const r of rows) {
-    if (r.stored === r.derived) continue; // idempotent — only write real changes
-    await db
-      .update(giftsAndPayments)
-      .set({ quickbooksTieStatus: r.derived })
-      .where(eq(giftsAndPayments.id, r.id));
-  }
+  return `(CASE
+    WHEN ${offBooks} THEN 'exempt'
+    WHEN NOT (${qbEx} OR ${stripeEx} OR ${donorboxEx}) THEN 'missing'
+    WHEN ${amountRef} IS NULL THEN 'tied'
+    WHEN ${amountRef}::numeric >= (${linkAmt}) - 0.01
+      AND ${amountRef}::numeric <= (${linkAmt}) * 1.1 + 1
+      THEN 'tied'
+    ELSE 'amount_mismatch'
+  END)`;
 }

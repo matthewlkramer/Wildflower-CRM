@@ -56,7 +56,6 @@ import { isSettlementLump } from "../../lib/settlementLump";
 import { stagedStatusWhere } from "../../lib/derivedStatus";
 import { donorOf, donorsMatch, type LinkDonor } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
-import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 import {
   deleteSettlementLink,
   upsertSettlementLink,
@@ -869,7 +868,6 @@ router.post(
     // Post-commit appliers (skipped on an idempotent replay — nothing booked).
     if (!committed.alreadyConfirmed) {
       await applyDerivedOppFieldsMany(...pledgeRederiveIds);
-      await applyGiftQbTieMany(...giftTieIds);
     }
 
     res.json(committed);
@@ -1153,11 +1151,6 @@ router.post(
           depositStagedPaymentId: r.stagedPaymentId,
         };
       });
-      // Supersede-affected gifts changed counted evidence — recompute their QB
-      // tie status post-commit (own connection, mirrors the other route tails).
-      if (supersedeGiftIds.length > 0) {
-        await applyGiftQbTieMany(...supersedeGiftIds);
-      }
       res.json(result);
     } catch (e) {
       if (e instanceof ReconcileAbort) {

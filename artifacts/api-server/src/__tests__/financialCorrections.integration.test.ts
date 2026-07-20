@@ -337,17 +337,9 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
     expect(await corrLedgerCount()).toBe(2);
 
     // Book-once preserved: the gifts' counted stripe pointer stays null
-    // (corroborating links never become the counted source)...
-    const gifts = await db
-      .select({
-        id: schema.giftsAndPayments.id,
-        stripe: schema.giftsAndPayments.finalAmountStripeChargeId,
-      })
-      .from(schema.giftsAndPayments)
-      .where(inArrayFn(schema.giftsAndPayments.id, [GIFT_A1, GIFT_A2]));
-    for (const g of gifts) {
-      expect(g.stripe).toBeNull();
-    }
+    // (corroborating links never become the counted source —
+    // finalAmountStripeChargeId was DROPPED in Task #451; source is verified
+    // via payment_applications ledger in other integration tests).
   }, 30_000);
 
   it("corroborating links stay out of the settled read model (link_role='counted' guard)", async () => {

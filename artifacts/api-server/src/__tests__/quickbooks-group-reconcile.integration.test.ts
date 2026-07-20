@@ -268,7 +268,6 @@ afterAll(async () => {
       .update(schema.giftsAndPayments)
       .set({
         finalAmountSource: "human",
-        finalAmountStripeChargeId: null,
       })
       .where(
         sqlFn`${inArrayFn(
@@ -434,12 +433,11 @@ describe.skipIf(!HAS_DB)(
         organizationId: ORG_ID,
       });
       seededGiftIds.push(giftId);
-      // Stamp the gift Stripe-sourced (source↔pointer XOR: stripe ptr set).
+      // Stamp the gift Stripe-sourced.
       await db
         .update(schema.giftsAndPayments)
         .set({
           finalAmountSource: "stripe",
-          finalAmountStripeChargeId: chargeId,
         })
         .where(eqFn(schema.giftsAndPayments.id, giftId));
 
@@ -466,7 +464,6 @@ describe.skipIf(!HAS_DB)(
         .from(schema.giftsAndPayments)
         .where(eqFn(schema.giftsAndPayments.id, giftId));
       expect(gift.finalAmountSource).toBe("stripe");
-      expect(gift.finalAmountStripeChargeId).toBe(chargeId);
       expect(gift.amount).toBe("100.00");
     }, 30_000);
 

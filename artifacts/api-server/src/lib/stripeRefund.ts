@@ -6,7 +6,6 @@ import {
 } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { adjustSingleAllocationOrFlag } from "./giftFinalAmount";
-import { applyGiftQbTieMany } from "./giftQbTie";
 import { applyDerivedOppFieldsMany } from "./pledgeStage";
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -290,10 +289,6 @@ export async function confirmRefundPropagation(
   });
 
   if (result.code === "ok" && result.giftId) {
-    // Post-commit: a reversed/reduced payment changes the pledge's paid-amount
-    // and the gift's QuickBooks tie status. Mirror the appliers used on every
-    // other gift-amount mutation.
-    await applyGiftQbTieMany(result.giftId);
     if (result.pledgeId) await applyDerivedOppFieldsMany(result.pledgeId);
   }
 

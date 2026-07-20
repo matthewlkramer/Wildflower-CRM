@@ -228,6 +228,22 @@ beforeAll(async () => {
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
 
+  // Purge any stale phone records with constant test phone numbers left by
+  // previous failed runs whose afterAll never executed. Without this,
+  // cross-run pairs accumulate and exhaust the MAX_LIMIT=200 cap, hiding the
+  // current run's ORG_U1/ORG_U2 pair from the results.
+  await db
+    .delete(schema.phoneNumbers)
+    .where(
+      inArrayFn(schema.phoneNumbers.phoneNumber, [
+        PHONE_P,
+        PHONE_D,
+        PHONE_PE,
+        PHONE_S,
+        PHONE_U,
+      ]),
+    );
+
   await db.insert(schema.users).values([
     {
       id: OWNER_ID,

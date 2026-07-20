@@ -23,7 +23,6 @@ import {
 } from "../../lib/derivedStatus";
 import { sweepRefundedQbStagedPayments } from "../../lib/refundedChargeSweep";
 import { applyChargeTieSupersedePairs } from "../../lib/chargeTieSupersede";
-import { applyGiftQbTieMany } from "../../lib/giftQbTie";
 
 /**
  * Charge-grain settlement confirm for "individually-booked" payouts — payouts
@@ -481,12 +480,6 @@ router.post(
       // all-refunded money — sweep so it lands in Excluded immediately.
       await sweepRefundedQbStagedPayments();
 
-      // Ledger rows moved QB→charge: re-derive each touched gift's persisted
-      // quickbooks_tie_status (post-commit, non-throwing by design of the
-      // derivation — the amounts were copied so the status should not move,
-      // but the recompute keeps the invariant mechanical).
-      await applyGiftQbTieMany(...result.supersededGiftIds);
-
       const { supersededGiftIds: _superseded, ...response } = result;
       res.json(response);
     } catch (e) {
@@ -698,10 +691,6 @@ router.post(
         },
         "Reverted a confirmed charge-grain Stripe↔QB tie",
       );
-
-      // Ledger rows moved back charge→QB: re-derive the touched gifts'
-      // persisted quickbooks_tie_status post-commit.
-      await applyGiftQbTieMany(...result.supersededGiftIds);
 
       const { supersededGiftIds: _superseded, ...response } = result;
       res.json(response);

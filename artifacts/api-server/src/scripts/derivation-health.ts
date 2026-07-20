@@ -2,9 +2,10 @@
  * Derivation health check — REPORT-ONLY, never writes.
  *
  * Re-derives every persisted-derived field (opportunity status / stage /
- * written_pledge / paid / win_probability, gift quickbooks_tie_status) through
- * the same pure functions the write-path appliers use, and reports any row
- * where stored ≠ derived. Exit code 0 = clean, 1 = drift found, 2 = crashed.
+ * written_pledge / paid / win_probability) through the same pure functions the
+ * write-path appliers use, and reports any row where stored ≠ derived.
+ * NOTE: quickbooks_tie_status is now LIVE-DERIVED (never persisted, Task #451)
+ * and is no longer checked. Exit code 0 = clean, 1 = drift found, 2 = crashed.
  *
  * Safe to run against PRODUCTION (read-only):
  *   DATABASE_URL="$PROD_DATABASE_URL" pnpm --filter @workspace/api-server run health:derivations
@@ -16,7 +17,7 @@ import { runDerivationHealthCheck } from "../lib/derivationHealth";
 async function main(): Promise<void> {
   const report = await runDerivationHealthCheck();
   console.log(
-    `Checked ${report.checkedOpportunities} opportunities + ${report.checkedGifts} gifts in ${report.durationMs}ms.`,
+    `Checked ${report.checkedOpportunities} opportunities in ${report.durationMs}ms.`,
   );
   if (report.driftCount === 0) {
     console.log("No drift — every stored derived field matches its derivation.");
