@@ -487,7 +487,8 @@ export default function ReconciliationClustersPage() {
       invalidate();
       toast({
         title: refundFor.kind === "chargeback" ? "Chargeback confirmed" : "Refund confirmed",
-        description: "The reversal was propagated to the linked gift.",
+        description:
+          "The transaction no longer counts as live payment evidence. The linked gift is unchanged.",
       });
     } catch (err) {
       toast({
@@ -957,9 +958,10 @@ export default function ReconciliationClustersPage() {
               Confirm {refundFor?.kind === "chargeback" ? "chargeback" : "refund"}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This books the reversal on {refundFor?.label}: the linked gift is
-              archived (or reduced) to match the money that actually stayed.
-              This is the same action as the refunds queue in the workbench.
+              This marks {refundFor?.label} as refunded: the transaction stops
+              counting as live payment evidence. The linked gift and its
+              allocations are not changed — link a replacement payment later,
+              or mark the opportunity lost or dormant as a separate decision.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -970,7 +972,7 @@ export default function ReconciliationClustersPage() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               data-testid="button-confirm-refund"
             >
-              Confirm reversal
+              Mark refunded
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

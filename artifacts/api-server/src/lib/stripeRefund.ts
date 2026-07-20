@@ -4,26 +4,37 @@ import {
   stripeStagedCharges,
   paymentApplications,
 } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
-import { adjustSingleAllocationOrFlag } from "./giftFinalAmount";
+import { and, eq, ne } from "drizzle-orm";
 import { applyDerivedOppFieldsMany } from "./pledgeStage";
 
 /* ────────────────────────────────────────────────────────────────────────
  * Stripe refund / chargeback propagation (INV-13).
  *
  * When a refund or dispute lands on a Stripe charge whose money is ALREADY
- * booked into a CRM gift, we propagate it to that gift — but never silently.
- * The sync worker only ever RAISES a `proposed` (see `stripeSync.ts`); a human
- * then confirms (reverse/reduce the gift) or dismisses it here.
+ * booked into a CRM gift, we surface it — but never silently. The sync worker
+ * only ever RAISES a `proposed` (see `stripeSync.ts`); a human then confirms
+ * or dismisses it here.
  *
- *   full refund     → reverse: archive the linked gift (soft-delete).
- *   partial refund  → reduce the gift amount to gross − amount_refunded.
- *   chargeback      → reverse: archive the linked gift.
+ * Confirm is TRANSACTION-LEVEL (workbench business rules §2.1 "Refunded
+ * transactions"): the refund belongs to the individual transaction. The CRM
+ * gift and its allocations are NEVER archived or resized here.
  *
- * On confirm, the gift is updated and any linked pledge re-derives its
- * paid-amount / status. The evidence row (stripe_staged_charges) is retained,
- * marked applied. Idempotency lives in `deriveRefundProposal`: a re-sync of the
- * same refund state never re-raises an already-handled proposal.
+ *   full refund   → the charge stops counting as live payment evidence: its
+ *                   counted cash-application row is demoted to `corroborating`
+ *                   (audit trail retained, out of the money-trail SUM).
+ *   chargeback    → same as a full refund.
+ *   partial refund→ the refunded portion is recorded against the transaction
+ *                   only: the counted row's amount_applied is capped at
+ *                   gross − amount_refunded (demoted entirely when nothing
+ *                   remains). The gift amount is untouched.
+ *
+ * On confirm, any linked pledge re-derives its paid-amount / status against
+ * the (unchanged) gift, and the gift's QB-tie status — live-derived from the
+ * counted ledger — reflects the reduced coverage automatically. The evidence
+ * row (stripe_staged_charges) is retained, marked applied. Whether the money
+ * will be replaced or the opportunity is lost/dormant stays a separate,
+ * explicit human decision. Idempotency lives in `deriveRefundProposal`: a
+ * re-sync of the same refund state never re-raises a handled proposal.
  * ──────────────────────────────────────────────────────────────────────── */
 
 export type StripeRefundKind = "full_refund" | "partial_refund" | "chargeback";
@@ -147,15 +158,21 @@ export interface RefundConfirmResult {
   giftId?: string;
   pledgeId?: string | null;
   kind?: StripeRefundKind;
-  newGiftAmount?: string | null;
-  archivedGift?: boolean;
+  /** True when the charge's counted application was demoted out of coverage. */
+  retiredFromCoverage?: boolean;
+  /** For a partial refund, the counted amount still applied (null if demoted). */
+  remainingApplied?: string | null;
 }
 
 /**
- * Human-confirm a proposed refund/chargeback: reverse (archive) or reduce the
- * linked gift in a transaction, then mark the staged charge `applied`. Re-runs
- * the linked pledge's derivation and the gift's QuickBooks tie status after
- * commit. Guarded so only a `proposed` row can be confirmed (409 otherwise).
+ * Human-confirm a proposed refund/chargeback at the TRANSACTION level: retire
+ * (full refund / chargeback) or reduce (partial refund) the charge's counted
+ * cash-application row so the refunded money leaves live payment coverage,
+ * then mark the staged charge `applied`. The linked gift and its allocations
+ * are never archived or resized. Re-runs the linked pledge's derivation after
+ * commit; the gift's QB-tie status is live-derived from the counted ledger, so
+ * it reflects the reduced coverage without a recompute call. Guarded so only a
+ * `proposed` row can be confirmed (409 otherwise).
  */
 export async function confirmRefundPropagation(
   chargeId: string,
@@ -181,8 +198,13 @@ export async function confirmRefundPropagation(
 
     // Ledger fallback: the gift this charge is counted against (the legacy
     // matched/created gift-pointer columns are retired, never read).
-    const ledgerRow = await tx
-      .select({ giftId: paymentApplications.giftId })
+    const countedRow = await tx
+      .select({
+        id: paymentApplications.id,
+        giftId: paymentApplications.giftId,
+        amountApplied: paymentApplications.amountApplied,
+        note: paymentApplications.note,
+      })
       .from(paymentApplications)
       .where(
         and(
@@ -191,25 +213,26 @@ export async function confirmRefundPropagation(
           eq(paymentApplications.linkRole, "counted"),
         ),
       )
+      .for("update")
       .limit(1)
       .then((r) => r[0]);
-    const giftId = locked.refundPropagationGiftId ?? ledgerRow?.giftId ?? null;
+    const giftId = locked.refundPropagationGiftId ?? countedRow?.giftId ?? null;
     if (!giftId) {
       result = { code: "no_linked_gift", chargeId };
       return;
     }
 
+    // Read-only sanity check + pledge pointer — the gift itself is NEVER
+    // archived or resized by a refund confirm (§2.1: the refund belongs to
+    // the transaction; whether the money is replaced or the opportunity is
+    // lost/dormant is a separate explicit human decision).
     const gift = await tx
       .select({
         id: giftsAndPayments.id,
-        amount: giftsAndPayments.amount,
-        archivedAt: giftsAndPayments.archivedAt,
         opportunityId: giftsAndPayments.opportunityId,
-        details: giftsAndPayments.details,
       })
       .from(giftsAndPayments)
       .where(eq(giftsAndPayments.id, giftId))
-      .for("update")
       .then((r) => r[0]);
     if (!gift) {
       result = { code: "gift_missing", chargeId };
@@ -219,50 +242,63 @@ export async function confirmRefundPropagation(
     const kind = locked.refundPropagationKind as StripeRefundKind;
     const pledgeId = gift.opportunityId ?? null;
     const now = new Date();
-    let newGiftAmount: string | null = gift.amount;
-    let archivedGift = false;
+    let retiredFromCoverage = false;
+    let remainingApplied: string | null = null;
 
-    if (kind === "partial_refund") {
-      const reduced = Math.max(
-        0,
-        num(locked.grossAmount) - num(locked.amountRefunded),
-      );
-      newGiftAmount = reduced.toFixed(2);
-      const oldAmount = gift.amount;
+    // Retire the charge's counted application from live coverage — the same
+    // demote convention as chargeTieSupersede: linkRole → 'corroborating'
+    // (audit crumb retained, out of every counted SUM). Clear a colliding
+    // corroborating row for the (charge, gift) pair first (partial UNIQUE).
+    const demoteCounted = async (rowId: string, rowGiftId: string) => {
       await tx
-        .update(giftsAndPayments)
+        .delete(paymentApplications)
+        .where(
+          and(
+            eq(paymentApplications.stripeChargeId, chargeId),
+            eq(paymentApplications.giftId, rowGiftId),
+            eq(paymentApplications.linkRole, "corroborating"),
+            ne(paymentApplications.id, rowId),
+          ),
+        );
+      await tx
+        .update(paymentApplications)
         .set({
-          amount: newGiftAmount,
-          details: appendAudit(
-            gift.details,
-            `Stripe partial refund applied: gift reduced from ${oldAmount ?? "—"} to ${newGiftAmount} (charge ${locked.id}).`,
+          linkRole: "corroborating",
+          note: appendAudit(
+            countedRow?.note ?? null,
+            `Retired from live coverage by Stripe ${kind === "chargeback" ? "chargeback" : "refund"} confirm (charge ${chargeId}).`,
           ),
           updatedAt: now,
         })
-        .where(eq(giftsAndPayments.id, giftId));
-      // Rebalance the single allocation (or flag a multi-allocation mismatch).
-      await adjustSingleAllocationOrFlag(
-        tx,
-        giftId,
-        oldAmount,
-        newGiftAmount,
-        "stripe",
-      );
-    } else {
-      // full_refund or chargeback — reverse by archiving (non-destructive).
-      archivedGift = true;
-      if (!gift.archivedAt) {
-        await tx
-          .update(giftsAndPayments)
-          .set({
-            archivedAt: now,
-            details: appendAudit(
-              gift.details,
-              `Stripe ${kind === "chargeback" ? "chargeback" : "full refund"} reversed this gift (charge ${locked.id}).`,
-            ),
-            updatedAt: now,
-          })
-          .where(eq(giftsAndPayments.id, giftId));
+        .where(eq(paymentApplications.id, rowId));
+      retiredFromCoverage = true;
+    };
+
+    if (countedRow) {
+      if (kind === "partial_refund") {
+        // Cap the counted application at what actually stayed after the
+        // refund (gross − amount_refunded); demote entirely when nothing
+        // remains. The gift amount is untouched.
+        const remaining = Math.max(
+          0,
+          num(locked.grossAmount) - num(locked.amountRefunded),
+        );
+        const applied = num(countedRow.amountApplied);
+        if (remaining <= TOLERANCE) {
+          await demoteCounted(countedRow.id, countedRow.giftId);
+        } else if (applied > remaining + TOLERANCE) {
+          remainingApplied = remaining.toFixed(2);
+          await tx
+            .update(paymentApplications)
+            .set({ amountApplied: remainingApplied, updatedAt: now })
+            .where(eq(paymentApplications.id, countedRow.id));
+        } else {
+          remainingApplied = countedRow.amountApplied;
+        }
+      } else {
+        // full_refund or chargeback — the whole transaction stops counting
+        // as live payment evidence.
+        await demoteCounted(countedRow.id, countedRow.giftId);
       }
     }
 
@@ -283,8 +319,8 @@ export async function confirmRefundPropagation(
       giftId,
       pledgeId,
       kind,
-      newGiftAmount: kind === "partial_refund" ? newGiftAmount : null,
-      archivedGift,
+      retiredFromCoverage,
+      remainingApplied: kind === "partial_refund" ? remainingApplied : null,
     };
   });
 

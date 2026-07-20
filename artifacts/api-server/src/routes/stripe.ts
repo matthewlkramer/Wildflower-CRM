@@ -1426,9 +1426,11 @@ router.post(
 );
 
 // ─── POST /stripe-staged-charges/:id/confirm-refund ────────────────────────
-// Human-confirm a proposed Stripe refund/chargeback (INV-13): reverse (archive)
-// or reduce the linked gift, then re-derive the linked pledge + the gift's QB
-// tie status. Guarded so only a `proposed` row applies (409 otherwise).
+// Human-confirm a proposed Stripe refund/chargeback (INV-13) at the
+// TRANSACTION level (§2.1): the charge stops counting as live payment
+// evidence (its counted application is retired/reduced); the linked gift and
+// its allocations stay untouched. The linked pledge re-derives after commit.
+// Guarded so only a `proposed` row applies (409 otherwise).
 router.post(
   "/stripe-staged-charges/:id/confirm-refund",
   asyncHandler(async (req, res) => {
@@ -1460,8 +1462,9 @@ router.post(
         break;
     }
 
-    // Refund application archives/reduces the linked gift — a money change
-    // with no single-call inverse, so no undo pointer.
+    // Refund confirm retires the charge's counted application from live
+    // coverage — a ledger change with no single-call inverse, so no undo
+    // pointer. The gift itself is never archived or resized.
     const [confirmedCharge] = await db
       .select({
         payerName: stripeStagedCharges.payerName,
@@ -1473,7 +1476,7 @@ router.post(
       action: "update",
       entityType: "stripe_staged_charge",
       entityId: id,
-      summary: `Applied the refund on the Stripe charge from ${payerLabel(confirmedCharge?.payerName)} (${fmtMoney(confirmedCharge?.grossAmount)}) to its linked gift`,
+      summary: `Confirmed the refund on the Stripe charge from ${payerLabel(confirmedCharge?.payerName)} (${fmtMoney(confirmedCharge?.grossAmount)}) — the charge no longer counts as live payment evidence; the linked gift is unchanged`,
       undo: null,
     });
     const row = await withJoins(

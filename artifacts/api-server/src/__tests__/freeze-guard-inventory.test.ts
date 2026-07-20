@@ -130,11 +130,6 @@ const EXPECTED: Record<string, FileClass> = {
     classification: "exempt",
     reason: "QuickBooks pull-sync: system money writer creating new staged records.",
   },
-  "lib/stripeRefund.ts": {
-    classification: "exempt",
-    reason:
-      "Stripe refund/chargeback propagation (system, forward-only). FOLLOW-UP: re-yearing a refund that reduces a closed-FY gift is not handled yet.",
-  },
   "lib/applyProposalActions.ts": {
     classification: "exempt",
     reason:
