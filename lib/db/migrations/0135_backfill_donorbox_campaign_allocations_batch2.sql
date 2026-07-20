@@ -9,9 +9,15 @@
 --   "Wildflower Pollinator Fund"             → wildflower_foundation, intended_usage=school_startup,
 --                                              usage=donor_restricted, seed_fund=true
 --
--- Idempotent: pure UPDATE, safe to re-run.
+-- Idempotent: safe to re-run. Seeds any missing fundable_projects rows first,
+-- then updates gift_allocations.
 -- Applied with: psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 \
 --               -f lib/db/migrations/0135_backfill_donorbox_campaign_allocations_batch2.sql
+
+-- Ensure referenced fundable_projects rows exist (prod may not have them yet).
+INSERT INTO fundable_projects (id, name) VALUES
+  ('medical_masks', 'Medical Masks')
+ON CONFLICT (id) DO NOTHING;
 
 WITH donorbox_campaign AS (
   -- Direct donorbox path
