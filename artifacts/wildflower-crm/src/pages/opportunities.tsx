@@ -15,6 +15,7 @@ import {
   useUpdatePledgeAllocation,
   useDeletePledgeAllocation,
   useListEntities,
+  useListFundableProjects,
   ListOpportunitiesAndPledgesWorklist,
   type ListOpportunitiesAndPledgesParams,
   type UpdatePledgeAllocationBody,
@@ -138,6 +139,7 @@ type ColCtx = {
   basePath: string;
   userNames: Map<string, string>;
   entityNameById: Map<string, string>;
+  fundableProjectNameById: Map<string, string>;
   isAdmin: boolean;
   inline: InlineCtx;
   onOpen: (o: OpportunityOrPledge) => void;
@@ -230,6 +232,19 @@ function buildColumns(ctx: ColCtx): ColumnDef<OpportunityOrPledge>[] {
           (id) => ctx.entityNameById.get(id) ?? id,
         );
         return entities.length === 0 ? "—" : entities.join(", ");
+      },
+    },
+    {
+      key: "fundableProjects",
+      label: "Fundable projects",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (o) => {
+        const names = (o.fundableProjectIds ?? []).map(
+          (id) => ctx.fundableProjectNameById.get(id) ?? id,
+        );
+        return names.length === 0 ? "—" : names.join(", ");
       },
     },
     {
@@ -389,6 +404,7 @@ export default function Opportunities({
   const [projectedCloseDatePresence, setProjectedCloseDatePresence] = usePersistedState<PresenceValue>(`${persistNs}.f.projectedClose`, undefined);
   const [applicationDeadlinePresence, setApplicationDeadlinePresence] = usePersistedState<PresenceValue>(`${persistNs}.f.appDeadline`, undefined);
   const [winProbabilityPresence, setWinProbabilityPresence] = usePersistedState<PresenceValue>(`${persistNs}.f.winProb`, undefined);
+  const [fundableProjects, setFundableProjects] = usePersistedState<string[]>(`${persistNs}.fundableProjects`, []);
   const [expandedOppIds, setExpandedOppIds] = useState<Set<string>>(new Set());
   const [page, setPage] = usePersistedState<number>(`${persistNs}.page`, 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
@@ -442,6 +458,11 @@ export default function Opportunities({
     () => new Map((entitiesQ.data ?? []).map((e) => [e.id, e.name])),
     [entitiesQ.data],
   );
+  const fundableProjectsQ = useListFundableProjects();
+  const fundableProjectNameById = useMemo(
+    () => new Map<string, string>((fundableProjectsQ.data ?? []).map((p) => [p.id, p.name])),
+    [fundableProjectsQ.data],
+  );
   // Global entity filter (header dropdown). When the user has narrowed
   // to one or more entities we forward that into the list query so the
   // server only returns opps with at least one pledge_allocation on
@@ -487,6 +508,7 @@ export default function Opportunities({
     ...(projectedCloseDatePresence ? { projectedCloseDatePresence } : {}),
     ...(applicationDeadlinePresence ? { applicationDeadlinePresence } : {}),
     ...(winProbabilityPresence ? { winProbabilityPresence } : {}),
+    ...(fundableProjects.length > 0 ? { fundableProjectId: [...fundableProjects].sort() } : {}),
   };
 
   const { data, isLoading, isError, error } = useListOpportunitiesAndPledges(params, {
@@ -560,6 +582,7 @@ export default function Opportunities({
         basePath,
         userNames,
         entityNameById,
+        fundableProjectNameById,
         isAdmin,
         inline: {
           editingId: inlineEdit.editingId,
@@ -581,7 +604,7 @@ export default function Opportunities({
       return isPledgeView ? cols.filter((c) => c.key !== "stage") : cols;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isPledgeView, basePath, userNames, entityNameById, isAdmin, inlineEdit, navigate],
+    [isPledgeView, basePath, userNames, entityNameById, fundableProjectNameById, isAdmin, inlineEdit, navigate],
   );
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
@@ -694,6 +717,22 @@ export default function Opportunities({
           <FiscalYearMultiSelect
             selected={fiscalYears}
             onChange={(v) => { setFiscalYears(v); setPage(1); selection.clear(); }}
+          />
+        ),
+      },
+      {
+        key: "fundableProject",
+        label: "Fundable project",
+        defaultVisible: false,
+        active: fundableProjects.length > 0,
+        clear: () => { setFundableProjects([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Fundable project"
+            selected={fundableProjects}
+            onChange={(v) => { setFundableProjects(v); setPage(1); selection.clear(); }}
+            options={(fundableProjectsQ.data ?? []).map((p) => ({ value: p.id, label: p.name }))}
+            testId="select-opp-fundable-project"
           />
         ),
       },
@@ -813,7 +852,7 @@ export default function Opportunities({
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [statuses, stages, types, fiscalYears, owners, paidPresence, coveredFysPresence, entitiesPresence, projectedCloseDatePresence, applicationDeadlinePresence, winProbabilityPresence, sameDefaultStatus, defaultStatusArr, isPledgeView, effectiveViewMode],
+    [statuses, stages, types, fiscalYears, owners, fundableProjects, paidPresence, coveredFysPresence, entitiesPresence, projectedCloseDatePresence, applicationDeadlinePresence, winProbabilityPresence, sameDefaultStatus, defaultStatusArr, isPledgeView, effectiveViewMode],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -880,7 +919,8 @@ export default function Opportunities({
     !!entitiesPresence ||
     !!projectedCloseDatePresence ||
     !!applicationDeadlinePresence ||
-    !!winProbabilityPresence;
+    !!winProbabilityPresence ||
+    fundableProjects.length > 0;
 
   // ─── Saved views ─────────────────────────────────────────────────
   // /opportunities and /pledges share this component but should not
@@ -898,6 +938,7 @@ export default function Opportunities({
     projectedCloseDatePresence: PresenceValue;
     applicationDeadlinePresence: PresenceValue;
     winProbabilityPresence: PresenceValue;
+    fundableProjects: string[];
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -916,6 +957,7 @@ export default function Opportunities({
     projectedCloseDatePresence,
     applicationDeadlinePresence,
     winProbabilityPresence,
+    fundableProjects,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -933,6 +975,7 @@ export default function Opportunities({
     setProjectedCloseDatePresence(undefined);
     setApplicationDeadlinePresence(undefined);
     setWinProbabilityPresence(undefined);
+    setFundableProjects([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -953,6 +996,7 @@ export default function Opportunities({
       setProjectedCloseDatePresence(s.projectedCloseDatePresence ?? undefined);
       setApplicationDeadlinePresence(s.applicationDeadlinePresence ?? undefined);
       setWinProbabilityPresence(s.winProbabilityPresence ?? undefined);
+      setFundableProjects(s.fundableProjects ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
       setFiltersState(s.filters ?? null);
@@ -975,6 +1019,7 @@ export default function Opportunities({
         !s.projectedCloseDatePresence &&
         !s.applicationDeadlinePresence &&
         !s.winProbabilityPresence &&
+        (s.fundableProjects?.length ?? 0) === 0 &&
         (s.sort?.key ?? null) === null &&
         (s.columns ?? null) === null &&
         (s.filters ?? null) === null

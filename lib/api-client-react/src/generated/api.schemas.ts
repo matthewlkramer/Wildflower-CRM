@@ -1849,6 +1849,8 @@ export interface OpportunityOrPledge {
   readonly fiscalYear?: string | null;
   readonly coveredFiscalYears?: readonly string[] | null;
   readonly entityIds?: readonly string[] | null;
+  /** Distinct fundable_project_id values from pledge_allocations. */
+  readonly fundableProjectIds?: readonly string[] | null;
   /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
   archivedAt?: string | null;
   createdAt: string;
@@ -2020,6 +2022,8 @@ export interface GiftOrPayment {
   readonly grantYears?: readonly string[] | null;
   /** Distinct region IDs from region_ids arrays across all allocations. */
   readonly regionIds?: readonly string[] | null;
+  /** Distinct fundable_project_id values from gift_allocations. */
+  readonly fundableProjectIds?: readonly string[] | null;
   /** Distinct non-null purpose_verbatim strings across allocations (the donor's verbatim restriction language). */
   readonly purposeVerbatims?: readonly string[] | null;
   /** Distinct regional_restriction_type values across allocations. */
@@ -9514,6 +9518,12 @@ years.
  */
 fiscalYear?: string[];
 /**
+ * Filter to opportunities/pledges that have at least one pledge_allocation
+with fundable_project_id in the given set. Comma-separated form supported.
+
+ */
+fundableProjectId?: string[];
+/**
  * When true, the response includes `stageAskTotals` — SUM(ask_amount)
 per stage over ALL rows matching the filters, not just the
 returned page. Used by the pipeline board so column totals stay
@@ -9677,6 +9687,12 @@ fiscal years.
 
  */
 fiscalYear?: string[];
+/**
+ * Filter to gifts that have at least one gift_allocation with
+fundable_project_id in the given set. Comma-separated form supported.
+
+ */
+fundableProjectId?: string[];
 /**
  * Keep gifts with dateReceived on/after this date (inclusive).
  */

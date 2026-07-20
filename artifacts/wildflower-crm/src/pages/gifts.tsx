@@ -27,6 +27,7 @@ import {
   type GiftOrPaymentDetail,
   useListEntities,
   getListEntitiesQueryKey,
+  useListFundableProjects,
 } from "@workspace/api-client-react";
 import { useRegionNameMap } from "@/components/region-picker";
 import { useRowSelection } from "@/hooks/use-row-selection";
@@ -141,6 +142,7 @@ type ColCtx = {
   userNames: Map<string, string>;
   entityNameById: Map<string, string>;
   regionNames: Map<string, string>;
+  fundableProjectNameById: Map<string, string>;
   isAdmin: boolean;
   inline: InlineCtx;
   onOpen: (g: GiftOrPayment) => void;
@@ -262,6 +264,19 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       cell: (g) => {
         const grantYears = (g.grantYears ?? []).map((y) => y.toUpperCase());
         return grantYears.length === 0 ? "—" : grantYears.join(", ");
+      },
+    },
+    {
+      key: "fundableProjects",
+      label: "Fundable projects",
+      defaultVisible: false,
+      sortable: false,
+      tdClassName: "text-xs text-muted-foreground max-w-[200px]",
+      cell: (g) => {
+        const names = (g.fundableProjectIds ?? []).map(
+          (id) => ctx.fundableProjectNameById.get(id) ?? id,
+        );
+        return names.length === 0 ? "—" : names.join(", ");
       },
     },
     {
@@ -430,6 +445,7 @@ export default function Gifts() {
   const [regionalRestrictionTypes, setRegionalRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.regionalRestrictionTypes", []);
   const [usageRestrictionTypes, setUsageRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.usageRestrictionTypes", []);
   const [timeRestrictionTypes, setTimeRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.timeRestrictionTypes", []);
+  const [fundableProjects, setFundableProjects] = usePersistedState<string[]>("wf.list.gifts.fundableProjects", []);
   const [page, setPage] = usePersistedState<number>("wf.list.gifts.page", 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
     "wf.list.gifts.columns",
@@ -504,6 +520,7 @@ export default function Gifts() {
     ...(regionalRestrictionTypes.length > 0 ? { regionalRestrictionTypes: [...regionalRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
     ...(usageRestrictionTypes.length > 0 ? { usageRestrictionTypes: [...usageRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
     ...(timeRestrictionTypes.length > 0 ? { timeRestrictionTypes: [...timeRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
+    ...(fundableProjects.length > 0 ? { fundableProjectId: [...fundableProjects].sort() } : {}),
   };
 
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {
@@ -519,6 +536,11 @@ export default function Gifts() {
     [entitiesQ.data],
   );
   const regionNames = useRegionNameMap();
+  const fundableProjectsQ = useListFundableProjects();
+  const fundableProjectNameById = useMemo(
+    () => new Map<string, string>((fundableProjectsQ.data ?? []).map((p) => [p.id, p.name])),
+    [fundableProjectsQ.data],
+  );
 
   const refreshList = useCallback(
     () =>
@@ -591,6 +613,7 @@ export default function Gifts() {
         userNames,
         entityNameById,
         regionNames,
+        fundableProjectNameById,
         isAdmin,
         inline: {
           editingId: inlineEdit.editingId,
@@ -609,7 +632,7 @@ export default function Gifts() {
         onUnarchive: unarchiveGift,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [userNames, entityNameById, regionNames, isAdmin, inlineEdit, navigate],
+    [userNames, entityNameById, regionNames, fundableProjectNameById, isAdmin, inlineEdit, navigate],
   );
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
@@ -661,6 +684,22 @@ export default function Gifts() {
             selected={fiscalYears}
             onChange={(v) => { setFiscalYears(v); setPage(1); selection.clear(); }}
             testId="select-gift-fiscal-year"
+          />
+        ),
+      },
+      {
+        key: "fundableProject",
+        label: "Fundable project",
+        defaultVisible: false,
+        active: fundableProjects.length > 0,
+        clear: () => { setFundableProjects([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Fundable project"
+            selected={fundableProjects}
+            onChange={(v) => { setFundableProjects(v); setPage(1); selection.clear(); }}
+            options={(fundableProjectsQ.data ?? []).map((p) => ({ value: p.id, label: p.name }))}
+            testId="select-gift-fundable-project"
           />
         ),
       },
@@ -917,7 +956,7 @@ export default function Gifts() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [types, owners, fiscalYears, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence, donorboxBacked, codingForm, dateReceivedPresence, purposeVerbatimPresence, restrictionLabels, regionalRestrictionTypes, usageRestrictionTypes, timeRestrictionTypes],
+    [types, owners, fiscalYears, fundableProjects, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence, donorboxBacked, codingForm, dateReceivedPresence, purposeVerbatimPresence, restrictionLabels, regionalRestrictionTypes, usageRestrictionTypes, timeRestrictionTypes],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -1051,6 +1090,7 @@ export default function Gifts() {
     regionalRestrictionTypes: string[];
     usageRestrictionTypes: string[];
     timeRestrictionTypes: string[];
+    fundableProjects: string[];
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -1074,6 +1114,7 @@ export default function Gifts() {
     regionalRestrictionTypes,
     usageRestrictionTypes,
     timeRestrictionTypes,
+    fundableProjects,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -1097,6 +1138,7 @@ export default function Gifts() {
     setRegionalRestrictionTypes([]);
     setUsageRestrictionTypes([]);
     setTimeRestrictionTypes([]);
+    setFundableProjects([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -1123,6 +1165,7 @@ export default function Gifts() {
       setRegionalRestrictionTypes(s.regionalRestrictionTypes ?? []);
       setUsageRestrictionTypes(s.usageRestrictionTypes ?? []);
       setTimeRestrictionTypes(s.timeRestrictionTypes ?? []);
+      setFundableProjects(s.fundableProjects ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
       setFiltersState(s.filters ?? null);
@@ -1148,6 +1191,7 @@ export default function Gifts() {
       (s.regionalRestrictionTypes?.length ?? 0) === 0 &&
       (s.usageRestrictionTypes?.length ?? 0) === 0 &&
       (s.timeRestrictionTypes?.length ?? 0) === 0 &&
+      (s.fundableProjects?.length ?? 0) === 0 &&
       (s.sort?.key ?? null) === null &&
       (s.columns ?? null) === null &&
       (s.filters ?? null) === null,
@@ -1170,7 +1214,8 @@ export default function Gifts() {
     restrictionLabels.length > 0 ||
     regionalRestrictionTypes.length > 0 ||
     usageRestrictionTypes.length > 0 ||
-    timeRestrictionTypes.length > 0;
+    timeRestrictionTypes.length > 0 ||
+    fundableProjects.length > 0;
 
   return (
     <div className="space-y-6">

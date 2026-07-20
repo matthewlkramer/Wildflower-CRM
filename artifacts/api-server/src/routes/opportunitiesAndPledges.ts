@@ -63,6 +63,12 @@ const donorJoinSelect = {
     WHERE pa.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}
       AND pa.entity_id IS NOT NULL
   )`.as("entity_ids"),
+  fundableProjectIds: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT pa.fundable_project_id ORDER BY pa.fundable_project_id)
+    FROM pledge_allocations pa
+    WHERE pa.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}
+      AND pa.fundable_project_id IS NOT NULL
+  )`.as("fundable_project_ids"),
   // Total received against this pledge — SUM(amount) of every
   // gifts_and_payments row whose opportunity_id points at this
   // opp. Returned as a numeric string ("0" when no payments). Lets the
@@ -159,7 +165,7 @@ function maskOppDonorRow<
   };
 }
 
-const OPP_ARRAY_PARAMS = ["fiscalYear", "status", "stage", "type", "ownerUserId", "entityId"] as const;
+const OPP_ARRAY_PARAMS = ["fiscalYear", "status", "stage", "type", "ownerUserId", "entityId", "fundableProjectId"] as const;
 
 function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void {
   res.status(400).json({
@@ -295,6 +301,22 @@ router.get(
               and(
                 eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id),
                 inArray(pledgeAllocations.entityId, entitySelected),
+              ),
+            ),
+        ),
+      );
+    }
+    const fundableProjectSelected = (q.fundableProjectId as string[] | undefined) ?? [];
+    if (fundableProjectSelected.length > 0) {
+      filters.push(
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(pledgeAllocations)
+            .where(
+              and(
+                eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id),
+                inArray(pledgeAllocations.fundableProjectId, fundableProjectSelected),
               ),
             ),
         ),

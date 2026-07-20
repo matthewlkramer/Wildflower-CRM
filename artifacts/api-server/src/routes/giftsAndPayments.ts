@@ -89,6 +89,11 @@ const donorJoinSelect = {
     FROM gift_allocations ga, UNNEST(ga.region_ids) AS r
     WHERE ga.gift_id = ${giftsAndPayments.id}
   )`.as("region_ids"),
+  fundableProjectIds: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT ga.fundable_project_id ORDER BY ga.fundable_project_id)
+    FROM gift_allocations ga
+    WHERE ga.gift_id = ${giftsAndPayments.id} AND ga.fundable_project_id IS NOT NULL
+  )`.as("fundable_project_ids"),
   // ── Restriction aggregates across allocations (column-chooser opt-in). ──
   // All four mirror the per-allocation fields; arrays are de-duplicated.
   // purposeVerbatims: free-text donor restriction language (verbatim).
@@ -231,7 +236,7 @@ import { stagedStatusSql } from "../lib/derivedStatus";
 import { inArray } from "drizzle-orm";
 import { personDisplayNameSql } from "../lib/personNameSql";
 
-const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "quickbooksTie", "restrictionLabels", "regionalRestrictionTypes", "usageRestrictionTypes", "timeRestrictionTypes"] as const;
+const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "fundableProjectId", "quickbooksTie", "restrictionLabels", "regionalRestrictionTypes", "usageRestrictionTypes", "timeRestrictionTypes"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -365,6 +370,11 @@ router.get(
     if (q.entityId && q.entityId.length > 0) {
       filters.push(
         sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.entityId, q.entityId)})`,
+      );
+    }
+    if (q.fundableProjectId && q.fundableProjectId.length > 0) {
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.fundableProjectId, q.fundableProjectId)})`,
       );
     }
     // Fiscal-year filter — supports the "(Blank)" sentinel meaning "no

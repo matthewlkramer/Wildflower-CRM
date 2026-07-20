@@ -1535,6 +1535,15 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
+        - name: fundableProjectId
+          in: query
+          required: false
+          description: |
+            Filter to opportunities/pledges that have at least one pledge_allocation
+            with fundable_project_id in the given set. Comma-separated form supported.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
         - name: includeStageAskTotals
           in: query
           required: false
@@ -1702,6 +1711,15 @@ paths:
             `grant_year` in the given set (e.g. `fy2026`). Multi-value:
             repeat the param or comma-separate. Omit to include all
             fiscal years.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
+        - name: fundableProjectId
+          in: query
+          required: false
+          description: |
+            Filter to gifts that have at least one gift_allocation with
+            fundable_project_id in the given set. Comma-separated form supported.
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
@@ -6251,6 +6269,7 @@ components:
         # opp, sorted ascending. Empty array if no allocations have an
         # entity set.
         entityIds:                  { type: array, items: { type: string }, nullable: true, readOnly: true }
+        fundableProjectIds:         { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct fundable_project_id values from pledge_allocations." }
         archivedAt:                 { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:                  { type: string, format: date-time }
         updatedAt:                  { type: string, format: date-time }
@@ -6529,6 +6548,7 @@ components:
         displayUsages:              { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct display_usage values from gift_allocations (server-computed labels)." }
         grantYears:                 { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct grant_year values from gift_allocations." }
         regionIds:                  { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct region IDs from region_ids arrays across all allocations." }
+        fundableProjectIds:         { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct fundable_project_id values from gift_allocations." }
         # ── Restriction aggregates across allocations (column-chooser opt-in) ──
         purposeVerbatims:          { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct non-null purpose_verbatim strings across allocations (the donor's verbatim restriction language)." }
         regionalRestrictionTypes:  { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct regional_restriction_type values across allocations." }
