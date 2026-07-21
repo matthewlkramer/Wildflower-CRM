@@ -520,7 +520,9 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     expect(openPayout).toBeTruthy();
     expect(openPayout.lenses).toContain("needs_donor_or_gift");
     expect(openPayout.lenses).toContain("needs_accounting");
-    expect(openPayout.status).toBe("unresolved");
+    expect(openPayout.coverage.complete).toBe(false);
+    expect(openPayout.coverage.state.flags.conflict).toBe(false);
+    expect(openPayout.coverage.state.flags.excluded).toBe(false);
     expect(openPayout.charges.length).toBe(2);
     const roles = openPayout.qbRecords.map((r: any) => r.role).sort();
     expect(roles).toEqual(["charge_tie", "fee"]);
@@ -537,7 +539,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     // crm_only: present, unlinked, needs accounting; QB-matched gift is not.
     const crm = open.get(`crm_only:${gCrm}`);
     expect(crm).toBeTruthy();
-    expect(crm.status).toBe("unlinked");
+    expect(crm.coverage.complete).toBe(false);
     expect(crm.lenses).toContain("needs_accounting");
     expect(crm.gifts[0]?.donorName).toBe(ORG_NAME);
     expect(open.has(`crm_only:${gQb}`)).toBe(false);
@@ -598,7 +600,8 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     expect(gift.linkedStagedPaymentIds).toEqual([m2]);
     // Still open: the representative itself is unmatched.
     expect(rep.lenses).toContain("needs_donor_or_gift");
-    expect(rep.status).toBe("partial");
+    expect(rep.resolvedCount).toBe(1);
+    expect(rep.coverage.complete).toBe(false);
   });
 
   it("flags refunds, conflicts and excluded rows into their lenses", async () => {
@@ -623,18 +626,21 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
 
     const r = refunds.get(`stripe_payout:${pRefund}`);
     expect(r).toBeTruthy();
-    expect(r.status).toBe("refund");
-    expect(r.charges.some((c: any) => c.refundProposed)).toBe(true);
+    expect(
+      r.coverage.state.transactions.some(
+        (t: any) => t.state === "refund_anticipated",
+      ),
+    ).toBe(true);
 
     const c = conflicts.get(`stripe_payout:${pConflict}`);
     expect(c).toBeTruthy();
-    expect(c.status).toBe("conflict");
+    expect(c.coverage.state.flags.conflict).toBe(true);
     expect(c.settlement?.lifecycle).toBe("proposed");
     expect(c.settlement?.conflictGiftId).toBe(gConf);
 
     const x = excluded.get(`qb_standalone:${sExcluded}`);
     expect(x).toBeTruthy();
-    expect(x.status).toBe("excluded");
+    expect(x.coverage.state.flags.excluded).toBe(true);
     expect(open.has(`qb_standalone:${sExcluded}`)).toBe(false);
 
     // Counts + pagination agree with the lens the page was fetched under.
@@ -649,7 +655,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     const { map } = await listClusters("needs_donor_or_gift");
     const row = map.get(`qb_standalone:${sMp}`);
     expect(row).toBeTruthy();
-    expect(row.status).toBe("unresolved");
+    expect(row.coverage.complete).toBe(false);
     expect(row.qbRecords[0]?.status).toBe("match_proposed");
     const { map: completed } = await listClusters("completed");
     expect(completed.has(`qb_standalone:${sMp}`)).toBe(false);
@@ -663,7 +669,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     const row = map.get(`crm_only:${gDbx}`);
     expect(row).toBeTruthy();
     expect(row.gifts[0]?.donorbox).toBe(true);
-    expect(row.status).toBe("unlinked");
+    expect(row.coverage.complete).toBe(false);
   });
 
   it("folds processor fee lines into their donation line's cluster", async () => {

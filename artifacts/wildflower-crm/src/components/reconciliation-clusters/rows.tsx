@@ -369,13 +369,31 @@ function evidenceStatusBlock(status: string): string | null {
  * unpickable ones grayed WITH the blocking reason (never hidden).
  */
 export function giftChargeMatchOptions(cluster: WorkbenchCluster): EvidencePickOption[] {
-  return (cluster.charges ?? []).map((c) => ({
-    anchor: { kind: "charge" as const, id: c.chargeId, label: chargeLabel(c) },
-    source: `Stripe charge · ${chargeLabel(c)}`,
-    amount: c.amount != null ? fmt(c.amount) : null,
-    date: c.chargeDate ? formatDateShort(c.chargeDate) : null,
-    disabledReason: evidenceStatusBlock(c.status),
-  }));
+  const txns = cluster.coverage?.state?.transactions ?? [];
+  return (cluster.charges ?? []).map((c) => {
+    const txn = txns.find((t) => t.transactionId === c.chargeId);
+    const tieProposed = (cluster.qbRecords ?? []).some(
+      (r) =>
+        r.role === "charge_tie" &&
+        r.linkedChargeId === c.chargeId &&
+        r.status === "match_proposed",
+    );
+    const disabledReason =
+      txn?.state === "excluded"
+        ? evidenceStatusBlock("excluded")
+        : c.linkedGiftId
+          ? evidenceStatusBlock("match_confirmed")
+          : tieProposed
+            ? evidenceStatusBlock("match_proposed")
+            : null;
+    return {
+      anchor: { kind: "charge" as const, id: c.chargeId, label: chargeLabel(c) },
+      source: `Stripe charge · ${chargeLabel(c)}`,
+      amount: c.amount != null ? fmt(c.amount) : null,
+      date: c.chargeDate ? formatDateShort(c.chargeDate) : null,
+      disabledReason,
+    };
+  });
 }
 
 /**
@@ -711,6 +729,7 @@ function ChargeCard({
   rowState,
   payoutId,
   depositStagedPaymentId,
+  chargeTieProposed,
 }: {
   charge: WorkbenchClusterCharge;
   actions: ClusterActions;
@@ -718,13 +737,15 @@ function ChargeCard({
   payoutId?: string;
   /** The QB deposit staged payment this charge settles into, when the cluster has one — enables graph-based proposal confirm. */
   depositStagedPaymentId?: string | null;
+  /** True when a charge_tie QB record proposing a match for this charge is awaiting confirm. */
+  chargeTieProposed?: boolean;
 }) {
   const label = chargeLabel(charge);
   const anchor: AnchorRef = { kind: "charge", id: charge.chargeId, label };
-  const excluded = charge.status === "excluded";
 
   // Canonical transaction facts (§§5.1) — state comes from rowState when present.
   const txnEntry = rowState?.transactions.find((t) => t.transactionId === charge.chargeId);
+  const excluded = txnEntry?.state === "excluded";
   const refundProposed = txnEntry?.refundStatus === "anticipated";
   const linked = !!charge.linkedGiftId;
   const matched = txnEntry?.state === "matched";
@@ -754,7 +775,7 @@ function ChargeCard({
   if (excluded) {
     menu.push({ label: "Re-include", onClick: () => actions.reInclude(anchor) });
   } else if (!refundProposed) {
-    if (charge.status === "match_proposed") {
+    if (chargeTieProposed) {
       menu.push(
         depositStagedPaymentId
           ? {
@@ -1254,6 +1275,22 @@ function RowKebab({ clusterId }: { clusterId: string }) {
 
 // ── Per-charge status (child rows of an expanded payout bundle) ─────────────
 
+/** Canonical per-transaction entry for a charge (coverage.state is the one
+ * source of truth for per-charge exclusion / refund / match state). */
+function txnEntryFor(
+  coverage: WorkbenchCluster["coverage"],
+  chargeId: string,
+) {
+  return coverage.state.transactions.find((t) => t.transactionId === chargeId);
+}
+
+function isExcludedTxn(
+  coverage: WorkbenchCluster["coverage"],
+  chargeId: string,
+): boolean {
+  return txnEntryFor(coverage, chargeId)?.state === "excluded";
+}
+
 function chargeStatus(
   c: WorkbenchClusterCharge,
   coverage: WorkbenchCluster["coverage"],
@@ -1504,7 +1541,7 @@ function PayoutBundleRow({
   const chargeTotal = cluster.chargeCount ?? cluster.charges.length;
   const hiddenCount = chargeTotal - cluster.charges.length;
   const unmatched = cluster.charges.filter(
-    (c) => !c.linkedGiftId && c.status !== "excluded",
+    (c) => !c.linkedGiftId && !isExcludedTxn(cluster.coverage, c.chargeId),
   );
   const deposit = cluster.qbRecords.find((r) => r.role === "deposit");
   const fees = cluster.qbRecords.filter((r) => r.role === "fee");
@@ -1537,7 +1574,7 @@ function PayoutBundleRow({
         <div className="space-y-1.5">
           {gift ? (
             <GiftCard gift={gift} cluster={cluster} actions={actions} rowState={cluster.coverage.state} />
-          ) : charge.status === "excluded" ? (
+          ) : isExcludedTxn(cluster.coverage, charge.chargeId) ? (
             <ExcludedCard />
           ) : cluster.coverage.donorPurpose.crmLinkage.grain === "bundle" &&
             cluster.coverage.donorPurpose.crmLinkage.complete ? (
@@ -1570,6 +1607,12 @@ function PayoutBundleRow({
           rowState={cluster.coverage.state}
           payoutId={cluster.anchorId}
           depositStagedPaymentId={deposit?.stagedPaymentId ?? null}
+          chargeTieProposed={cluster.qbRecords.some(
+            (r) =>
+              r.role === "charge_tie" &&
+              r.linkedChargeId === charge.chargeId &&
+              r.status === "match_proposed",
+          )}
         />
         <div className="space-y-1.5">
           {cluster.qbRecords.length > 0 ? (
@@ -1584,7 +1627,9 @@ function PayoutBundleRow({
         <StatusForCluster
           cluster={cluster}
           action={
-            !gift && charge.status !== "excluded" && !charge.refundProposed ? (
+            !gift &&
+            txnEntryFor(cluster.coverage, charge.chargeId)?.state !== "excluded" &&
+            txnEntryFor(cluster.coverage, charge.chargeId)?.refundStatus !== "anticipated" ? (
               donorIdentified ? (
                 <StatusAction
                   label="Create gift"
@@ -1663,15 +1708,15 @@ function PayoutBundleRow({
         <StatusForCluster
           cluster={cluster}
           action={
-            cluster.status === "conflict" ? (
+            cluster.coverage.state.flags.conflict ? (
               <StatusAction
                 label="Expand to see the conflict"
                 onClick={() => onToggle()}
                 testId={`button-resolve-conflict-${cluster.id}`}
               />
             ) : !expanded &&
-              cluster.status !== "complete" &&
-              cluster.status !== "excluded" ? (
+              !cluster.coverage.complete &&
+              !cluster.coverage.state.flags.excluded ? (
               <StatusAction
                 label="Expand to resolve"
                 onClick={onToggle}
@@ -1727,7 +1772,7 @@ function PayoutBundleRow({
                 <div className="pl-4">
                   {gift ? (
                     <GiftCard gift={gift} cluster={cluster} actions={actions} rowState={cluster.coverage.state} />
-                  ) : charge.status === "excluded" ? (
+                  ) : isExcludedTxn(cluster.coverage, charge.chargeId) ? (
                     <ExcludedCard />
                   ) : cluster.coverage.donorPurpose.crmLinkage.grain === "bundle" &&
                     cluster.coverage.donorPurpose.crmLinkage.complete ? (
@@ -1760,6 +1805,7 @@ function PayoutBundleRow({
                   rowState={cluster.coverage.state}
                   payoutId={cluster.anchorId}
                   depositStagedPaymentId={deposit?.stagedPaymentId ?? null}
+                  chargeTieProposed={tie?.status === "match_proposed"}
                 />
                 {tie ? (
                   <QbCard record={tie} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} grouped={cluster.group != null && (tie.role === "anchor" || tie.role === "group_member")} />
@@ -1849,7 +1895,7 @@ function QbStandaloneRow({
   };
   return (
     <div
-      className={`${GRID} py-2.5 border-b hover:bg-muted/40 ${cluster.status === "excluded" ? "opacity-90" : ""}`}
+      className={`${GRID} py-2.5 border-b hover:bg-muted/40 ${cluster.coverage.state.flags.excluded ? "opacity-90" : ""}`}
       data-testid={`cluster-row-${cluster.id}`}
     >
       <ChevronRight className="w-4 h-4 text-transparent mt-1.5" />
@@ -1858,7 +1904,7 @@ function QbStandaloneRow({
           cluster.gifts.map((g) => (
             <GiftCard key={g.giftId} gift={g} cluster={cluster} actions={actions} rowState={cluster.coverage.state} />
           ))
-        ) : cluster.status === "excluded" ? (
+        ) : cluster.coverage.state.flags.excluded ? (
           <ExcludedCard reason={cluster.statusDetail} />
         ) : cluster.group ? (
           <div className="text-[11px] text-muted-foreground italic pt-1">

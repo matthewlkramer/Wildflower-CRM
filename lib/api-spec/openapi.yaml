@@ -8681,15 +8681,7 @@ components:
     WorkbenchRecordStatus:
       type: string
       enum: [pending, match_proposed, match_confirmed, excluded]
-      description: "Derived per-record linkage status (shared vocabulary for QB staged rows and Stripe charges): pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation."
-    WorkbenchClusterStatus:
-      type: string
-      enum: [complete, partial, unresolved, conflict, refund, excluded, unlinked]
-      description: |
-        Server-derived calm rollup for the cluster's STATUS column. Precedence:
-        conflict > refund > unresolved (nothing resolved yet) / partial (some
-        resolved) > excluded (all evidence excluded) > complete. unlinked is the
-        crm_only kind's open state (gift exists, no accounting evidence yet).
+      description: "Derived per-record linkage status for QB staged rows: pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation. (Stripe charges no longer carry this field — per-charge state lives in coverage.state.transactions.)"
     WorkbenchClusterGift:
       type: object
       required: [giftId]
@@ -8712,8 +8704,8 @@ components:
         linkedStagedPaymentIds: { type: array, items: { type: string }, description: "staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only." }
     WorkbenchClusterCharge:
       type: object
-      required: [chargeId, status]
-      description: "One Stripe charge in the cluster's payment-evidence facet."
+      required: [chargeId]
+      description: "One Stripe charge in the cluster's payment-evidence facet. Per-charge status/exclusion/refund state is NOT carried here — read the matching coverage.state.transactions entry (keyed by chargeId), the one source of truth."
       properties:
         chargeId:       { type: string, description: "stripe_staged_charges.id (ch_...)." }
         payerName:      { type: string, nullable: true, description: "Raw processor payer name (external Stripe evidence, not a CRM name — never anonymous-masked, matching the bundle workbench)." }
@@ -8724,10 +8716,8 @@ components:
         feeAmount:      { type: string, nullable: true, description: "Processor fee, major units." }
         netAmount:      { type: string, nullable: true, description: "Net (gross − fee), major units." }
         chargeDate:     { type: string, format: date, nullable: true }
-        status:         { $ref: "#/components/schemas/WorkbenchRecordStatus" }
         linkedGiftId:   { type: string, nullable: true, description: "The gift this charge's counted ledger row feeds, if any." }
-        refundProposed: { type: boolean, description: "True when a refund/chargeback propagation proposal awaits a human decision (drives the refunds lens)." }
-        refundKind:     { type: string, enum: [full_refund, partial_refund, chargeback], nullable: true, description: "The kind of proposed reversal; null when refundProposed is false." }
+        refundKind:     { type: string, enum: [full_refund, partial_refund, chargeback], nullable: true, description: "The kind of proposed reversal; null when no reversal is proposed (whether one is pending comes from the charge's coverage.state.transactions entry: refundStatus = anticipated)." }
         attributedDonor:
           nullable: true
           description: "Donor identified on this specific charge via the Identify action. Null when no donor has been identified on this charge."
@@ -9061,8 +9051,7 @@ components:
         resolvedCount: { type: integer, nullable: true, description: "Evidence rows confirmed into gifts (excluded rows don't count toward the denominator). Null for crm_only." }
         totalCount:    { type: integer, nullable: true, description: "Non-excluded evidence rows in the cluster. Null for crm_only." }
         chargeCount:   { type: integer, nullable: true, description: "TRUE total charges behind a payout (charges[] is capped, mirrors bundle-anchors)." }
-        status:        { $ref: "#/components/schemas/WorkbenchClusterStatus" }
-        statusDetail:  { type: string, nullable: true, description: "Server-composed one-line diagnostic under the status word (e.g. '3 of 4 complete · $99.10 unresolved')." }
+        statusDetail:  { type: string, nullable: true, description: "Server-composed one-line diagnostic (e.g. '3 of 4 charges matched · no deposit tie yet'). Still needed: the UI shows it as the reason on an excluded cluster's card. Row STATUS words themselves derive from coverage.state, not from this field." }
         lenses:        { type: array, items: { $ref: "#/components/schemas/WorkbenchLens" }, description: "Every lens this cluster belongs to (drives dots; agrees with lensCounts by construction)." }
         gifts:         { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterGift" } }
         charges:       { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterCharge" }, description: "Capped and ordered by amount desc; chargeCount carries the true total. Empty outside stripe_payout." }

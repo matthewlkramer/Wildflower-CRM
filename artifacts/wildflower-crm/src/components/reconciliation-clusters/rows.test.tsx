@@ -118,7 +118,6 @@ function makeState(over: Record<string, unknown> = {}) {
 function makeCharge(over: Record<string, unknown> = {}) {
   return {
     chargeId: "ch_1",
-    status: "pending",
     grossAmount: "100.00",
     feeAmount: "3.20",
     netAmount: "96.80",
@@ -126,7 +125,6 @@ function makeCharge(over: Record<string, unknown> = {}) {
     payerEmail: null,
     dateReceived: "2099-01-01",
     linkedGiftId: null,
-    refundProposed: false,
     attributedDonor: null,
     ...over,
   };
@@ -146,7 +144,6 @@ function makePayoutCluster(opts: {
     anchorId: opts.anchorId ?? "po_1",
     group: opts.group ?? null,
     title: "Test Payer",
-    status: "unresolved",
     statusDetail: null,
     lenses: [],
     gifts: [],
@@ -567,7 +564,6 @@ function makeCrmOnlyCluster(): WorkbenchCluster {
     kind: "crm_only",
     anchorId: "g_1",
     title: "Jane Donor gift",
-    status: "unresolved",
     statusDetail: null,
     lenses: [],
     gifts: [makeGift()],
@@ -842,22 +838,36 @@ describe("gift-side match builders (Match to Stripe / QuickBooks)", () => {
     };
   }
 
-  it("giftChargeMatchOptions lists EVERY charge; non-pending statuses stay visible with a reason", () => {
+  it("giftChargeMatchOptions lists EVERY charge; blocked charges stay visible with a reason", () => {
     const cluster = makePayoutCluster({
       charges: [
-        makeCharge({ chargeId: "ch_ok", payerName: "Alice", status: "pending" }),
+        makeCharge({ chargeId: "ch_ok", payerName: "Alice" }),
         makeCharge({
           chargeId: "ch_taken",
           payerName: "Bob",
-          status: "match_confirmed",
+          linkedGiftId: "g_1",
         }),
-        makeCharge({
-          chargeId: "ch_prop",
-          payerName: "Cara",
+        makeCharge({ chargeId: "ch_prop", payerName: "Cara" }),
+        makeCharge({ chargeId: "ch_ex", payerName: "Dan" }),
+      ],
+      qbRecords: [
+        matchQbRecord({
+          stagedPaymentId: "sp_tie_prop",
+          role: "charge_tie",
+          linkedChargeId: "ch_prop",
           status: "match_proposed",
         }),
-        makeCharge({ chargeId: "ch_ex", payerName: "Dan", status: "excluded" }),
       ],
+      state: makeState({
+        transactions: [
+          {
+            transactionId: "ch_ex",
+            livePayment: false,
+            refundStatus: "none",
+            state: "excluded",
+          },
+        ],
+      }),
     });
     const options = giftChargeMatchOptions(cluster);
     expect(options).toHaveLength(4);

@@ -1087,20 +1087,26 @@ function buildClusterCoverage(
     return { giftId: g.giftId, recordComplete: g.recordComplete, state: cardState, satisfiedBy: mapSatisfiedBy(g.satisfiedBy) };
   });
 
-  // Transaction entries (non-excluded charges) with the canonical §5.1 card state
+  // Transaction entries — one per charge, INCLUDING excluded ones (the UI
+  // reads exclusion from coverage.state, not a per-charge status field).
+  // Excluded entries never bleed into row-level flags: lensFlagsFromState
+  // keys refunds off state === "refund_anticipated", which excluded wins over.
   const bundleCoversAll = dpGrain === "bundle" && dpLinkageComplete;
   const bundlePartial = dpGrain === "bundle" && !dpLinkageComplete;
-  const transactions: TransactionEntry[] = nonExcluded.map((c) => {
-    const state: TransactionCardState = c.refundProposed
-      ? "refund_anticipated"
-      : chargeGiftMap.has(c.chargeId) || bundleCoversAll
-        ? "matched"
-        : bundlePartial || dpGrain === "mixed"
-          ? "partial"
-          : "unmatched";
+  const transactions: TransactionEntry[] = charges.map((c) => {
+    const excluded = c.status === "excluded";
+    const state: TransactionCardState = excluded
+      ? "excluded"
+      : c.refundProposed
+        ? "refund_anticipated"
+        : chargeGiftMap.has(c.chargeId) || bundleCoversAll
+          ? "matched"
+          : bundlePartial || dpGrain === "mixed"
+            ? "partial"
+            : "unmatched";
     return {
       transactionId: c.chargeId,
-      livePayment: !c.refundProposed,
+      livePayment: !excluded && !c.refundProposed,
       refundStatus: c.refundProposed ? ("anticipated" as const) : ("none" as const),
       state,
     };
@@ -1198,15 +1204,6 @@ function lensesOf(r: SlimRow, state: WorkbenchRowState): Lens[] {
   if (f.attention_required) out.push("attention_required");
   if (r.kind === "crm_only") out.push("crm_only");
   return out;
-}
-
-function statusOf(r: SlimRow, resolvedCount: number | null): string {
-  if (r.kind === "crm_only") return "unlinked";
-  if (r.f_conflict) return "conflict";
-  if (r.f_refund) return "refund";
-  if (r.f_excluded) return "excluded";
-  if (r.f_completed) return "complete";
-  return (resolvedCount ?? 0) > 0 ? "partial" : "unresolved";
 }
 
 function giftOut(g: GiftRowBase, viewer: Viewer): GiftOut {
@@ -1915,10 +1912,13 @@ router.get(
           resolvedCount: resolved,
           totalCount: total,
           chargeCount: h?.charge_count ?? null,
-          status: statusOf(r, resolved),
           statusDetail,
           gifts,
-          charges: h?.charges ?? [],
+          // Contract shape: per-charge status/refundProposed are retired — the
+          // UI reads exclusion + refund state from coverage.state.transactions.
+          charges: (h?.charges ?? []).map(
+            ({ status: _status, refundProposed: _refundProposed, ...rest }) => rest,
+          ),
           qbRecords: qbRecords.map((rec) =>
             rec.role === "deposit" ? { ...rec, attributedDonor: depAttributedDonor } : rec,
           ),
@@ -2124,7 +2124,6 @@ router.get(
           resolvedCount: resolved,
           totalCount: total,
           chargeCount: null,
-          status: statusOf(r, resolved),
           statusDetail,
           gifts,
           charges: [],
@@ -2187,7 +2186,6 @@ router.get(
         resolvedCount: null,
         totalCount: null,
         chargeCount: null,
-        status: statusOf(r, null),
         statusDetail: "no accounting record yet",
         gifts: crmOnlyGift ? [crmOnlyGift] : [],
         charges: [],

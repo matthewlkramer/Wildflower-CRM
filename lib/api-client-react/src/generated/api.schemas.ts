@@ -5218,7 +5218,7 @@ export const WorkbenchClusterKind = {
 } as const;
 
 /**
- * Derived per-record linkage status (shared vocabulary for QB staged rows and Stripe charges): pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation.
+ * Derived per-record linkage status for QB staged rows: pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation. (Stripe charges no longer carry this field — per-charge state lives in coverage.state.transactions.)
  */
 export type WorkbenchRecordStatus = typeof WorkbenchRecordStatus[keyof typeof WorkbenchRecordStatus];
 
@@ -5228,26 +5228,6 @@ export const WorkbenchRecordStatus = {
   match_proposed: 'match_proposed',
   match_confirmed: 'match_confirmed',
   excluded: 'excluded',
-} as const;
-
-/**
- * Server-derived calm rollup for the cluster's STATUS column. Precedence:
-conflict > refund > unresolved (nothing resolved yet) / partial (some
-resolved) > excluded (all evidence excluded) > complete. unlinked is the
-crm_only kind's open state (gift exists, no accounting evidence yet).
-
- */
-export type WorkbenchClusterStatus = typeof WorkbenchClusterStatus[keyof typeof WorkbenchClusterStatus];
-
-
-export const WorkbenchClusterStatus = {
-  complete: 'complete',
-  partial: 'partial',
-  unresolved: 'unresolved',
-  conflict: 'conflict',
-  refund: 'refund',
-  excluded: 'excluded',
-  unlinked: 'unlinked',
 } as const;
 
 export type WorkbenchClusterGiftDonorKind = typeof WorkbenchClusterGiftDonorKind[keyof typeof WorkbenchClusterGiftDonorKind] | null;
@@ -5294,7 +5274,7 @@ export interface WorkbenchClusterGift {
 }
 
 /**
- * The kind of proposed reversal; null when refundProposed is false.
+ * The kind of proposed reversal; null when no reversal is proposed (whether one is pending comes from the charge's coverage.state.transactions entry: refundStatus = anticipated).
  */
 export type WorkbenchClusterChargeRefundKind = typeof WorkbenchClusterChargeRefundKind[keyof typeof WorkbenchClusterChargeRefundKind] | null;
 
@@ -5315,7 +5295,7 @@ export type WorkbenchClusterChargeAttributedDonor = ({
 }) | null;
 
 /**
- * One Stripe charge in the cluster's payment-evidence facet.
+ * One Stripe charge in the cluster's payment-evidence facet. Per-charge status/exclusion/refund state is NOT carried here — read the matching coverage.state.transactions entry (keyed by chargeId), the one source of truth.
  */
 export interface WorkbenchClusterCharge {
   /** stripe_staged_charges.id (ch_...). */
@@ -5335,12 +5315,9 @@ export interface WorkbenchClusterCharge {
   /** Net (gross − fee), major units. */
   netAmount?: string | null;
   chargeDate?: string | null;
-  status: WorkbenchRecordStatus;
   /** The gift this charge's counted ledger row feeds, if any. */
   linkedGiftId?: string | null;
-  /** True when a refund/chargeback propagation proposal awaits a human decision (drives the refunds lens). */
-  refundProposed?: boolean;
-  /** The kind of proposed reversal; null when refundProposed is false. */
+  /** The kind of proposed reversal; null when no reversal is proposed (whether one is pending comes from the charge's coverage.state.transactions entry: refundStatus = anticipated). */
   refundKind?: WorkbenchClusterChargeRefundKind;
   /** Donor identified on this specific charge via the Identify action. Null when no donor has been identified on this charge. */
   attributedDonor?: WorkbenchClusterChargeAttributedDonor;
@@ -5889,8 +5866,7 @@ export interface WorkbenchCluster {
   totalCount?: number | null;
   /** TRUE total charges behind a payout (charges[] is capped, mirrors bundle-anchors). */
   chargeCount?: number | null;
-  status: WorkbenchClusterStatus;
-  /** Server-composed one-line diagnostic under the status word (e.g. '3 of 4 complete · $99.10 unresolved'). */
+  /** Server-composed one-line diagnostic (e.g. '3 of 4 charges matched · no deposit tie yet'). Still needed: the UI shows it as the reason on an excluded cluster's card. Row STATUS words themselves derive from coverage.state, not from this field. */
   statusDetail?: string | null;
   /** Every lens this cluster belongs to (drives dots; agrees with lensCounts by construction). */
   lenses: WorkbenchLens[];
