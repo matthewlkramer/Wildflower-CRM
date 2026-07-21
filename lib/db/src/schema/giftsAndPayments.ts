@@ -72,7 +72,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // payment_applications ledger (giftPaymentSummary.ts / derivedStatus.ts).
   // NOTE: gifts_and_payments.final_amount_qb_staged_payment_id was DROPPED
   // (migration 0130). final_amount_stripe_charge_id was DROPPED (Task #451, migration
-  // 0132). QB amount provenance is derived from the counted `payment_applications`
+  // 0143_drop_gift_header_columns). QB amount provenance is derived from the counted `payment_applications`
   // ledger (the minting/stamping payment's `created_the_gift` row). Stripe linkage
   // lives on the same ledger (evidenceSource='stripe', linkRole='counted').
   // Do not reintroduce gift-pointer columns here.
@@ -92,7 +92,8 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   householdId: text("household_id").references(() => households.id, {
     onDelete: "restrict",
   }),
-  // NOTE: gifts_and_payments.type was DROPPED (Task #451, migration 0132).
+  // NOTE: gifts_and_payments.type was DROPPED (Task #451, migration
+  // 0143_drop_gift_header_columns).
   // Gift type is now fully DERIVED at read time by deriveGiftTypeExpr() in
   // api-server: loan_fund_investment (loan_or_grant=loan) > matching_gift
   // (gift_being_matched_id) > directed_gift (advisor_person_id) >
@@ -179,7 +180,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   // It naturally becomes moot once real payment evidence ties the gift.
   awaitingSettlement: boolean("awaiting_settlement").default(false).notNull(),
   // NOTE: gifts_and_payments.quickbooks_tie_status was DROPPED (Task #451,
-  // migration 0132). QB tie status is now fully DERIVED at read time by
+  // migration 0143_drop_gift_header_columns). QB tie status is now fully DERIVED at read time by
   // deriveGiftQbTieLiveExpr() in api-server from counted payment_applications
   // ledger rows (qb > stripe > donorbox precedence; off-books ⇒ exempt).
   // No applier, no backfill, no staleness.
@@ -222,7 +223,7 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   createdAtFromAirtable: timestamp("created_at_from_airtable"),
   updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
   // NOTE: coding_form_circle, coding_form_series, coding_form_additional_notes,
-  // coding_form_memo were DROPPED (Task #451, migration 0132). Values were folded
+  // coding_form_memo were DROPPED (Task #451, migration 0143_drop_gift_header_columns). Values were folded
   // into gifts_and_payments.tags as prefixed entries by migration 0131.
   // Soft-delete: non-null = archived (hidden from non-admins). Financial
   // records aren't hard-deleted; archiving hides them from default views.

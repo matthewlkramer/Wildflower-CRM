@@ -81,4 +81,5 @@
 - [Coding-form gift matching](coding-form-gift-matching.md) — bulk rematch must stay pending+unconfirmed (rematch clears human decisions); exact ±1¢ band ≠ ingest fee band; auto-propose only on exactly-one candidate.
 - [Donor-intent restriction policy](donor-restriction-policy.md) — owner rules beat form text: Yield/Arthur Rock never restricted; BWF always; hubs geo-restrict; Donorbox authoritative.
 - [Router self-prefix + 401 mask](router-self-prefix-401-mask.md) — reconciliation routers self-prefix full paths; requireAuth-before-routing makes curl 401 mask an unregistered route (verify authed, not bare curl).
+- [Migration "already applied" claims can be false](migration-applied-claims.md) — probe dev+prod information_schema before writing a "missing" drop; header comments and task briefs both lied once.
 - [Playwright e2e Clerk setup](playwright-e2e-clerk-setup.md) — 4 hard constraints to run committed e2e specs directly; the testing subagent bypasses all of them.

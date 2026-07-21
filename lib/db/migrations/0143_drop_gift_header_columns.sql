@@ -1,6 +1,12 @@
 -- Migration 0143: Drop retired gift header columns
 -- (renumbered from 0140 on 2026-07-20 to resolve a triple-0140 numbering
--- collision; the drops are already in effect in prod — re-running is a no-op)
+-- collision)
+--
+-- STATUS (verified 2026-07-21): despite an earlier claim that these drops were
+-- "already in effect in prod", ALL SEVEN columns still existed in BOTH dev and
+-- prod on 2026-07-21. Applied to dev 2026-07-21; prod apply is PENDING — see
+-- 0143_drop_gift_header_columns_RUNBOOK.md (apply together with the also-
+-- pending-in-dev-history 0130 file, which is a no-op in prod).
 --
 -- Drops columns that have been fully retired:
 --   - gifts_and_payments.type (gift type is now fully DERIVED at query time
@@ -22,6 +28,15 @@
 --
 -- Run against prod:
 --   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0143_drop_gift_header_columns.sql
+--
+-- Safety probe (optional, run first): confirm no non-null Stripe pointers
+-- remain (verified 0 in prod on 2026-07-21 — linkage moved to the counted
+-- payment_applications ledger by 0130_backfill_stripe_gift_link_ledger.sql):
+--   SELECT count(*) FROM gifts_and_payments
+--    WHERE final_amount_stripe_charge_id IS NOT NULL;
+-- Count must be 0. The type / quickbooks_tie_status / coding_form_* columns
+-- DO still hold values in prod — expected; all are derived at read time or
+-- folded into tags (0131), and no deployed code reads the physical columns.
 
 -- Drop the index first (before the column it depends on)
 DROP INDEX IF EXISTS gifts_and_payments_quickbooks_tie_status_idx;
