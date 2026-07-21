@@ -48,6 +48,18 @@ args = "test-web"
 task = "workflow.run"
 args = "full"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "test-api-unit"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "test-api-changed"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "test-web-changed"
+
 [[workflows.workflow]]
 name = "typecheck"
 author = "agent"
@@ -132,6 +144,39 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "pnpm run typecheck"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "test-api-unit"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm check:test-api-unit"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "test-api-changed"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm check:test-api-changed"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "test-web-changed"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm check:test-web-changed"
 
 [workflows.workflow.metadata]
 isValidation = true

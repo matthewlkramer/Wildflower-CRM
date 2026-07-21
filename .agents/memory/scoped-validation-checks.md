@@ -1,66 +1,39 @@
 ---
 name: scoped validation checks
-description: The fast per-package verification checks and a concurrency trap between codegen and web checks.
+description: The fast per-package verification checks, the changed-scope defaults, and the (now mostly fixed) codegen concurrency trap.
 ---
 
 # Fast scoped verification checks
 
 Named validation checks (also root `check:*` scripts) verify just the touched
 package instead of a full monorepo rebuild: `libs`, `api`, `web`, `codegen`,
-`test-api`, `test-web`, `full`. Mapping + "which check when" lives in the
-replit.md "Fast scoped checks" table — that is the source of truth.
+`test-api`, `test-api-unit`, `test-api-changed`, `test-web`, `test-web-changed`,
+`full`. Mapping + "which check when" lives in the replit.md "Fast scoped
+checks" table — that is the source of truth. Default loop: scoped typecheck +
+`*-changed` tests; `full` + full `test-api` once before finishing.
 
-## Don't run `codegen` concurrently with `web` / `test-web` / `test-api`
+## The `codegen` CHECK is now non-mutating and concurrency-safe (2026-07)
 
-**Rule:** never run the `codegen` check in the same validation run (or shell) as
-`web` / `test-web` / `test-api`.
+`codegen:check` regenerates into a TEMP mirror of the repo layout
+(`CODEGEN_OUT_ROOT` env honored by orval.config.ts + gen-index.mjs), diffs
+against the committed generated dirs, and compiles only the two generated libs.
+It never touches shared source, so running it concurrently with any other check
+(including the mark_task_complete all-checks-at-once storm) is safe — verified
+by running all 7 checks simultaneously, all green.
 
-**Why:** `codegen` (orval) wipes and regenerates
-`lib/api-client-react/src/generated` AND `lib/api-zod/src/generated`. Anything
-importing them (`lib/api-client-react/src/index.ts` and `lib/api-zod/src/index.ts`
-re-export `./generated`; the api-server imports api-zod) sees a transient
-missing-file window mid-regen. Symptoms: a false "Vite could not resolve
-'./generated'" failure in `test-web`, or a whole `test-api` file failing at import
-with "Cannot find module './generated' imported from lib/api-zod/src/index.ts" —
-both pass cleanly when re-run alone.
+**The regen SCRIPT still mutates.** `pnpm --filter @workspace/api-spec run
+codegen` wipes and rewrites `lib/*/src/generated` in place. Run it ALONE —
+never while tests/typechecks/the api-server build are running. If a check fails
+with "Cannot find module './generated'" right after a regen, that's the
+transient window: re-run codegen alone, then re-run the failed check. An
+`EADDRINUSE:8080` in the same storm is an orphaned server process — restart the
+workflow.
 
-**How to apply:** sequence codegen before, not alongside, the web/test checks; if
-a check fails with a missing-`generated` import right after codegen, just re-run it.
+## `test-api` runs on a dedicated test DB (2026-07)
 
-The `mark_task_complete` validation run fires all checks CONCURRENTLY, so it can
-hit this race by itself (`test-web` fails on './generated', `test-api` fails a
-whole file at import, `libs`/`typecheck`/`web` fail on TS6053 missing generated
-files). Verify the failed checks sequentially in a shell; if they pass, the
-validation failure is the race — safe to complete with a skip reason.
-
-## `test-api` needs a current dev DB
-
-`test-api` includes DB-backed HTTP integration tests. A stale dev DB surfaces as
-`column X does not exist` (e.g. `g.grant_year`) — that is cross-env schema drift
-(see cross-env-db-schema-drift.md), not a code bug in the check.
-
-## Recovery when codegen overlapped anyway
-
-If codegen runs concurrently with other checks (e.g. checkpoint validation fires
-all workflows at once), orval can die mid-clean and leave a
-`lib/api-client-react/src/generated/<tag>` subdir EMPTY. Every downstream check
-then fails with `Cannot find module './generated'` — that cascade is corrupt
-generated output, not real type errors.
-
-**Recovery:** re-run `pnpm --filter @workspace/api-spec run codegen` alone first,
-then re-run the failed checks (they'll pass unchanged). An `EADDRINUSE:8080` on
-the api-server workflow in the same storm is an orphaned server process — just
-restart the workflow (it usually clears itself).
-
-## The api-server DEV workflow build hits the same race
-
-The api-server workflow runs `pnpm run build && pnpm run start` (esbuild bundles
-api-zod), so restarting it while the `codegen` validation workflow is mid-clean
-fails the build with esbuild `Could not resolve "./generated"` in
-`lib/api-zod/src/index.ts` — the server then serves nothing (proxy 502, e2e
-"unable"). The validation storm can restart `codegen` MORE THAN ONCE, so a retry
-can lose the race twice in a row. **How to apply:** after any validation storm,
-confirm the codegen workflow is FINISHED before restarting the api-server
-workflow, then verify with a curl through `localhost:80` (401 = up).
-
-**Platform validation runner (mark_task_complete) runs ALL registered checks concurrently** — codegen:check cleans/regenerates the generated dirs mid-run, so full/web/test-web can FAIL with "Cannot find module ./generated" as a false positive. Repair: re-run codegen + typecheck:libs sequentially, verify locally, and skip validation with an explanation.
+vitest provisions and targets `<devdb>_test` — see dedicated-test-db.md. A
+"column X does not exist" in tests now means the TEST DB schema stamp predates
+your schema change only if you bypassed the hash (it hashes lib/db/src/schema);
+for the dev SERVER the cross-env-db-schema-drift.md note still applies.
+Concurrent vitest invocations (test-api + test-api-changed) serialize their
+setup on an advisory lock by design.

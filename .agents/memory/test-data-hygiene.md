@@ -3,6 +3,12 @@ name: Test-data hygiene (dev DB pollution)
 description: Four recurring patterns that leave orphan rows in the dev DB after killed test runs, and the cleanup recipe for each. All look like code regressions but are data contamination.
 ---
 
+**Scope update (2026-07):** api-server vitest now runs against a dedicated
+`<devdb>_test` DB (see dedicated-test-db.md), so killed VITEST runs no longer
+pollute the dev DB — the patterns below now apply to the TEST DB (self-healing:
+drop it or clear `test_meta.schema_stamp` to re-provision) and to browser E2E
+runs, which still go through the dev server → dev DB.
+
 Killed vitest / e2e runs (CPU throttling is the primary cause in this environment) abort
 before `afterAll` cleanup runs. Check these four patterns whenever a test fails
 "for no reason" after a previous interrupted run.

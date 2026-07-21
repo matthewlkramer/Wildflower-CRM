@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "codegen": "orval --config ./orval.config.ts && node ./gen-index.mjs",
-    "codegen:check": "pnpm run codegen && pnpm -w run typecheck:libs"
+    "codegen:check": "bash ./codegen-check.sh"
   },
   "devDependencies": {
     "orval": "^8.5.2"

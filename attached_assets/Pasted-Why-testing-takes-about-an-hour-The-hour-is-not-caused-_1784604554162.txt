@@ -1,0 +1,132 @@
+Why testing takes about an hour
+
+The hour is not caused by one unusually slow test. It is the cumulative effect of a poorly structured validation loop.
+
+1. “Scoped” tests still run the entire package suite
+
+Both API and frontend scripts are simply:
+
+"test": "vitest run"
+
+The root test-api and test-web commands therefore run every test in their respective packages.
+
+Running 1,282 API tests after every small UI or query change is not a fast inner loop.
+
+2. Integration tests use a real shared development database
+
+The Workbench integration suite explicitly runs production SQL against DATABASE_URL. It starts an HTTP server, inserts users and records, and deletes them afterward.
+
+That creates:
+
+Database network latency
+Connection-pool contention
+Many individual inserts and deletes
+Potential interference between concurrently running test files
+Schema-drift failures unrelated to the code being tested
+3. Every Workbench request runs the large universe query twice
+
+The route computes:
+
+All lens counts from the entire universe
+The filtered, ordered page from the same entire universe
+
+Those run as two separate database statements.
+
+The integration tests call the endpoint repeatedly for different lenses. Each call reruns both large SQL statements plus hydration queries.
+
+This is probably contributing both to test time and eventual production-page latency.
+
+4. Code generation races with the tests
+
+The repository already documents the main validation problem:
+
+codegen deletes and regenerates shared generated directories.
+The platform starts all registered checks concurrently.
+API, frontend, and typecheck processes see the generated directories while they are temporarily missing.
+Checks fail with false missing-module errors.
+The agent reruns codegen and the failed checks.
+Server restarts can produce EADDRINUSE.
+A single validation attempt can hit the race more than once.
+
+In other words, the repository knows that the default completion process is unsafe, but the workflow has not been corrected. Much of the hour may be failed concurrent checks and repeated runs rather than useful validation.
+
+Recommended testing structure
+Immediate agent instruction
+
+During implementation:
+
+Do not run mark_task_complete after each edit.
+
+When OpenAPI did not change:
+1. Run the affected package typecheck.
+2. Run only the relevant test files.
+3. Do not run codegen.
+
+When OpenAPI changed:
+1. Run codegen alone.
+2. Wait for it to finish.
+3. Run the affected package typechecks and targeted tests sequentially.
+
+Run the full API and web suites once, only after the task is otherwise complete.
+Add explicit Workbench commands
+
+For example:
+
+{
+  "test:workbench:api": "vitest run src/__tests__/workbench-clusters.integration.test.ts",
+  "test:workbench:web": "vitest run src/components/reconciliation-clusters/rows.test.tsx",
+  "test:unit": "vitest run --exclude '**/*.integration.test.ts'",
+  "test:integration": "vitest run '**/*.integration.test.ts'"
+}
+
+The exact API command should include the small set of reconciliation mutation suites affected by the change, not every API test.
+
+Fix codegen:check
+
+A check should not modify shared source directories while other checks are running.
+
+Better options:
+
+Generate into a temporary directory and diff against committed output.
+Put an exclusive filesystem lock around generation and every dependent check.
+Run codegen as a prerequisite stage, then start dependent checks only after it completes.
+
+The first option is the cleanest.
+
+Use a dedicated test database
+
+DB-backed tests should use:
+
+A dedicated test database
+A known migrated schema
+One global application server
+Transaction rollback or schema isolation for each test
+No shared development data
+
+That will also eliminate many elaborate unique IDs and cleanup routines.
+
+Stop recomputing the workbench universe twice
+
+Use one SQL statement with a materialized CTE:
+
+WITH universe AS MATERIALIZED (...),
+counts AS (... FROM universe),
+page AS (... FROM universe WHERE ...)
+SELECT
+  (SELECT row_to_json(counts) FROM counts),
+  (SELECT json_agg(page) FROM page);
+
+Then hydrate only the returned page IDs.
+
+Lens counts could also be cached briefly because they do not need to be recomputed for every search keystroke and page transition.
+
+Recommended sequence
+Fix refund projection and add full/proposed/partial-refund integration cases.
+Fix the staged-payment-ID/charge-ID bug.
+Remove attentionRequired from information-state derivation.
+Derive settlement full/partial from amounts.
+Choose SQL as the actual canonical row-state projection and retire parallel derivations.
+Simplify the UI menus and hide structurally unavailable features.
+Restructure the validation loop before adding more Workbench capabilities.
+
+The underlying workbench idea is good. The risk now is not that the model is wrong; it is that continued feature-by-feature additions will make the parallel derivations and action pathways too difficult to bring back together.

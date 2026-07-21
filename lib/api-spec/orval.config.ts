@@ -1,9 +1,16 @@
 import { defineConfig, InputTransformerFn } from "orval";
 import path from "path";
 
-const root = path.resolve(__dirname, "..", "..");
-const apiClientReactSrc = path.resolve(root, "lib", "api-client-react", "src");
-const apiZodSrc = path.resolve(root, "lib", "api-zod", "src");
+const repoRoot = path.resolve(__dirname, "..", "..");
+// CODEGEN_OUT_ROOT lets codegen-check.sh generate into a temp mirror of the
+// repo layout (same relative paths, so generated imports are byte-identical)
+// and diff against the committed output without ever mutating shared source
+// while other checks run. Default (unset) writes into the real workspace.
+const outRoot = process.env.CODEGEN_OUT_ROOT
+  ? path.resolve(process.env.CODEGEN_OUT_ROOT)
+  : repoRoot;
+const apiClientReactSrc = path.resolve(outRoot, "lib", "api-client-react", "src");
+const apiZodSrc = path.resolve(outRoot, "lib", "api-zod", "src");
 
 // Our exports make assumptions about the title of the API being "Api" (i.e. generated output is `api.ts`).
 const titleTransformer: InputTransformerFn = (config) => {

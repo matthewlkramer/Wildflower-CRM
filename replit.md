@@ -120,7 +120,7 @@ tools/
 ```bash
 pnpm run typecheck                                       # Full typecheck (builds libs first)
 pnpm --filter @workspace/api-spec run codegen           # Regenerate hooks/Zod from spec (orval + barrel)
-pnpm --filter @workspace/api-spec run codegen:check      # codegen + verify generated code compiles
+pnpm --filter @workspace/api-spec run codegen:check      # NON-MUTATING: regen to temp dir, diff vs committed, compile the 2 generated libs
 pnpm --filter @workspace/db run push                    # Push DB schema changes (dev only)
 cd lib/db && pnpm exec tsc -p tsconfig.json             # Rebuild DB declarations after schema changes
 pnpm --filter @workspace/api-server run test            # API server vitest
@@ -144,21 +144,68 @@ also exist as root `check:*` scripts for a plain shell:
 | `libs`     | `pnpm check:libs`    | Build the shared libs (run before leaf checks)          |
 | `api`      | `pnpm check:api`     | Typecheck only the API server                           |
 | `web`      | `pnpm check:web`     | Typecheck only the CRM frontend                         |
-| `codegen`  | `pnpm check:codegen` | Regenerate hooks/Zod from the spec + verify they compile |
-| `test-api` | `pnpm check:test-api`| Run only the API server tests                           |
-| `test-web` | `pnpm check:test-web`| Run only the frontend tests                             |
+| `codegen`  | `pnpm check:codegen` | NON-MUTATING spec check: regenerates into a temp dir, diffs against the committed generated dirs, compiles only the two generated libs. Safe to run concurrently with anything. |
+| `test-api` | `pnpm check:test-api`| Full API server test suite (unit + integration, parallel, dedicated test DB) |
+| `test-api-unit` | `pnpm check:test-api-unit` | Only the fast API unit tier (no `*.integration` files) |
+| `test-api-changed` | `pnpm check:test-api-changed` | Only API tests related to files changed since the git baseline |
+| `test-web` | `pnpm check:test-web`| Full frontend test suite                                |
+| `test-web-changed` | `pnpm check:test-web-changed` | Only frontend tests related to changed files |
 | `full`     | `pnpm check:full`    | The complete `pnpm run typecheck` (unchanged safety net)|
 
-**Which check after which change:**
+**Which check after which change (default loop = scoped typecheck + changed-scope tests):**
 
-- Edited `lib/api-spec/openapi.yaml` (the contract) → run `codegen`.
-- Edited API server code → run `api` (+ `test-api` if logic changed).
-- Edited CRM frontend code → run `web` (+ `test-web` if logic changed).
+- Edited `lib/api-spec/openapi.yaml` (the contract) → run
+  `pnpm --filter @workspace/api-spec run codegen` to regenerate (this mutates the
+  generated dirs — run it alone, never while tests/typechecks are running), then
+  the `codegen` check verifies committed output matches the spec. The check
+  itself is non-mutating and concurrency-safe.
+- Edited API server code → run `api` + `test-api-changed`.
+- Edited CRM frontend code → run `web` + `test-web-changed`.
+- Edited a shared lib → the changed-scope checks trace imports across the
+  workspace (libs export TS source), so `test-api-changed` / `test-web-changed`
+  still pick up affected tests.
 - A leaf check reports missing `@workspace/*` types → run `libs` first, then re-run
   the leaf check (stale lib declarations, not a real error).
-- Before finishing / when unsure → run `full`.
+- Before finishing → run `full` + the full `test-api` (and `test-web` if the
+  frontend changed) once. Reserve browser e2e for genuinely changed UI flows —
+  it costs 10+ minutes per run.
+- The changed-scope baseline is `git merge-base HEAD origin/main`; both checks
+  pass with no tests when nothing relevant changed.
 
-The first run of a check warms the incremental cache (slow); subsequent runs are fast.
+The API suite runs unit and `*.integration` files as separate vitest projects
+with 6 parallel forks (the tests are DB-bound, not CPU-bound) against a
+**dedicated test database** — full-suite wall time dropped ~4x (measured 384s
+on the old serial/dev-DB setup → 99–105s across two consecutive clean runs,
+1299/1299 passing, zero flakes).
+The first run of a check warms the incremental cache (slow); subsequent runs are
+fast. Fresh environments warm the tsc + vitest caches in the background right
+after post-merge setup (`scripts/post-merge.sh`), so the first verify shouldn't
+pay the cold build.
+
+### Dedicated test database (vitest never touches the dev DB)
+
+Every api-server vitest run auto-provisions and targets `<devdb>_test` (e.g.
+`heliumdb_test`) via `artifacts/api-server/src/test/global-setup.ts`:
+
+- Creates the DB if missing, and re-pushes the Drizzle schema only when the
+  schema files' content hash changes (stamp in the `test_meta` schema, which
+  drizzle-kit never introspects). On schema change it drops + recreates
+  `public` and pushes into the EMPTY schema — a pure-CREATE push that can't hit
+  drizzle-kit's interactive rename prompt (which exits 0 applying nothing
+  without a TTY). Warm-path setup cost is ~1s.
+- On the warm path it TRUNCATEs every non-reference table so each run starts
+  from a clean slate (killed runs can't leave crowding leftovers), then
+  re-mirrors the small reference tables (`entities`, `regions`,
+  `fiscal_years`) from the dev DB — some tests key FKs to real ids like
+  `wildflower_foundation`; everything else is test-seeded.
+- A Postgres advisory lock is held for the ENTIRE run, fully serializing
+  concurrent vitest invocations (e.g. `test-api` and `test-api-changed`
+  firing together) — two suites sharing the DB otherwise crowd each other's
+  date-proximity LIMIT'd searches. A killed process releases the lock with
+  its session.
+- Consequences: tests no longer race the dev API server's schedulers, no
+  longer pollute dev data, and killed runs can't corrupt dev. Browser e2e
+  still goes through the dev server → dev DB, so e2e hygiene rules still apply.
 
 ## Database
 

@@ -9,7 +9,8 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "test:changed": "vitest run --passWithNoTests --changed $(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
   },
   "devDependencies": {
     "@clerk/testing": "^2.2.8",

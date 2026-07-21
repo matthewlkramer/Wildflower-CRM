@@ -12,7 +12,10 @@
     "check:web": "pnpm --filter @workspace/wildflower-crm run typecheck",
     "check:codegen": "pnpm --filter @workspace/api-spec run codegen:check",
     "check:test-api": "pnpm --filter @workspace/api-server run test",
+    "check:test-api-unit": "pnpm --filter @workspace/api-server run test:unit",
+    "check:test-api-changed": "pnpm --filter @workspace/api-server run test:changed",
     "check:test-web": "pnpm --filter @workspace/wildflower-crm run test",
+    "check:test-web-changed": "pnpm --filter @workspace/wildflower-crm run test:changed",
     "check:full": "pnpm run typecheck"
   },
   "private": true,
