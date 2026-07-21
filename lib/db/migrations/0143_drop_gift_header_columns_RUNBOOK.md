@@ -1,6 +1,11 @@
 # Runbook: 0143 — Drop retired gift header columns (incl. final_amount_stripe_charge_id)
 
-## Real environment state (verified 2026-07-21)
+> **STATUS: APPLIED to prod and dev on 2026-07-21** (after the Publish that
+> shipped the FY27 sync / pointer-retirement code). Verified via
+> `information_schema.columns`: all seven columns absent in both environments.
+> The section below is the historical pre-apply state.
+
+## Real environment state (verified 2026-07-21, pre-apply)
 
 The 0143 file's original header claimed the drops were "already in effect in
 prod". That was **false**: on 2026-07-21 all seven 0143 columns still existed

@@ -1,5 +1,8 @@
 # 0149 — Drop deprecated source-link pointer columns
 
+> **STATUS: APPLIED to prod and dev on 2026-07-21** (after Publish). Verified:
+> all 5 pointer columns absent in both environments.
+
 ## What this does
 
 Drops the 5 retired cross-processor pointer columns now that the
