@@ -1217,10 +1217,10 @@ export default function ReconciliationWorkbench() {
   const bulkApproveSelected = useCallback(async () => {
     const isChargeLinkCard = (c: ReconciliationCard) =>
       !!c.stripeChargeId &&
-      // card.status is the DEPOSIT's derived status even on a per-charge card,
-      // so "match_confirmed" here means the deposit itself is already closed —
-      // only the per-charge link can book this money.
-      ((c.stripeChargeCount ?? 1) > 1 || c.status === "match_confirmed");
+      // card.qbCardState is the DEPOSIT's derived QB card state even on a
+      // per-charge card, so "matched_complete" here means the deposit itself
+      // is already closed — only the per-charge link can book this money.
+      ((c.stripeChargeCount ?? 1) > 1 || c.qbCardState === "matched_complete");
     const multiChargeCards = selectedReviewCards.filter(isChargeLinkCard);
     const trayCards = selectedReviewCards.filter(
       (c) => !isChargeLinkCard(c) && !stagedIds.has(c.stagedPaymentId),
@@ -1246,7 +1246,7 @@ export default function ReconciliationWorkbench() {
       // the charge to B blind (that would count the same physical money on
       // two gifts). The single-card confirm dialog owns that guarded move.
       if (
-        c.status === "match_confirmed" &&
+        c.qbCardState === "matched_complete" &&
         c.proposedGiftId != null &&
         c.resolvedGiftId != null &&
         c.proposedGiftId !== c.resolvedGiftId
@@ -1521,9 +1521,9 @@ export default function ReconciliationWorkbench() {
       }
       const isMultiCharge =
         graph.evidence.stripe != null && graph.evidence.stripe.chargeId == null;
-      // card.status is the DEPOSIT's derived status even on a per-charge card
-      // (the charge's own lifecycle is carried separately).
-      const depositConfirmed = card.status === "match_confirmed";
+      // card.qbCardState is the DEPOSIT's derived QB card state even on a
+      // per-charge card (the charge's own lifecycle is carried separately).
+      const depositConfirmed = card.qbCardState === "matched_complete";
       if (!isMultiCharge && !depositConfirmed) return false;
 
       // The deposit's own linked gift: the graph locks its gift node to the

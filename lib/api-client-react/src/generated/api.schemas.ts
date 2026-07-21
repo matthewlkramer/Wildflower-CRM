@@ -4132,8 +4132,7 @@ export interface ReconciliationCardGroupMember {
  */
 export interface ReconciliationCard {
   stagedPaymentId: string;
-  status: StagedPaymentStatus;
-  /** The QB row's linkage status expressed in the ONE derived per-record QB card vocabulary (same as coverage.state.qbCards on workbench-clusters). New UI reads this, not the raw staged-payment status. */
+  /** The QB row's linkage status expressed in the ONE derived per-record QB card vocabulary (same as coverage.state.qbCards on workbench-clusters). The raw staged-payment status is server-internal and no longer on this contract. */
   qbCardState: WorkbenchRowQbCardState;
   queue: QuickbooksStagedPaymentQueue;
   amount?: string | null;

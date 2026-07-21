@@ -818,10 +818,10 @@ router.get(
       const card = {
         stagedPaymentId: row.id,
         stripeChargeId: isCharge ? row.chargeId : null,
-        status: row.status,
         // The QB ROW's linkage status in the ONE derived per-record QB card
         // vocabulary (same mapping the workbench-clusters endpoint uses for
-        // coverage.state.qbCards). New UI reads this, not raw status.
+        // coverage.state.qbCards). The raw staged-payment status stays
+        // server-internal (laneStatus/derivations below) and is NOT on the wire.
         qbCardState: qbCardStateOfStatus(row.status),
         queue: row.queue,
         // A charge card reconciles for the charge's own gross, not the QB lump.

@@ -3,6 +3,10 @@ set -e
 pnpm install --frozen-lockfile
 pnpm --filter db push
 
+# Regenerate the API client/zod code from the merged openapi.yaml so parallel
+# tasks that both touched the contract don't leave stale generated dirs.
+pnpm --filter @workspace/api-spec run codegen
+
 # Warm the incremental-build + vitest caches in the background so the first
 # real verify in a fresh environment doesn't pay the cold tsc --build.
 # Detached (nohup + &) so it never counts against the post-merge timeout.

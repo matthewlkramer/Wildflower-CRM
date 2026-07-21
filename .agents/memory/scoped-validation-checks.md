@@ -37,3 +37,14 @@ your schema change only if you bypassed the hash (it hashes lib/db/src/schema);
 for the dev SERVER the cross-env-db-schema-drift.md note still applies.
 Concurrent vitest invocations (test-api + test-api-changed) serialize their
 setup on an advisory lock by design.
+
+## Merge-time generated-dir clobbering (parallel contract tasks)
+
+When two parallel tasks both touch `lib/api-spec/openapi.yaml`, each regenerates
+`lib/api-client-react`/`lib/api-zod` from its own spec. At merge, one side's
+generated dirs win and the other side's frontend/server code fails typecheck
+with TS2305 "no exported member" / TS2339 on fields it added. Fix: the
+post-merge script (`scripts/post-merge.sh`) runs
+`pnpm --filter @workspace/api-spec run codegen` to regenerate from the merged
+spec. If a completion-time validation fails with errors referencing code that
+does not exist in your tree, it is this merge artifact, not your change.
