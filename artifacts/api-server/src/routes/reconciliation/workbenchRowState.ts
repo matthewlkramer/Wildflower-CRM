@@ -119,7 +119,10 @@ export type SettlementLinkState =
   | "proposed_full"
   | "proposed_partial"
   | "proposed_conflict"
-  | "confirmed";
+  | "confirmed"
+  // Human-resolved Stripe withdrawal (negative payout): no QB deposit will
+  // ever exist, so the payout is exempt from settlement matching.
+  | "exempt";
 
 /**
  * Canonical row-level state per docs/workbench-business-rules.md §10.

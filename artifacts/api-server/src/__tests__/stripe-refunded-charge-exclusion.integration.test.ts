@@ -404,12 +404,39 @@ describe.skipIf(!HAS_DB)(
           exclusionReason: "refunded_charge",
         }),
       } as UpsertValues);
-      await seedTie(chId, spId);
+      // Proposed tie: enough for the sweep's trace, but NOT a settlement
+      // claim — the row stays derived-pending so the SWEEP is the actor here.
+      await seedTie(chId, spId, "proposed");
 
       await sweepRefundedQbStagedPayments();
       const row = await readStaged(spId);
       expect(row.status).toBe("excluded");
       expect(row.exclusionReason).toBe("refunded_charge");
+    });
+
+    it("a CONFIRMED tie already derives the row excluded (settlement claim) — the sweep has nothing to stamp", async () => {
+      // Since the settlement-claim arm of the derived-status authority, a
+      // CONFIRMED charge tie settles the QB row out of the donation queue by
+      // derivation alone. The sweep only targets derived-PENDING rows, so it
+      // leaves the stored exclusion_reason null — the excluded status comes
+      // from the claim, not from a stored column.
+      const spId = await seedQbRow({ amount: "248.19" });
+      const chId = nextId("ch");
+      chargeIds.push(chId);
+      await db.insert(schema.stripeStagedCharges).values({
+        ...upsertValues(chId, {
+          refunded: true,
+          amountRefunded: "259.11",
+          exclusionReason: "refunded_charge",
+        }),
+        linkedQbStagedPaymentId: spId,
+      } as UpsertValues);
+      await seedTie(chId, spId);
+
+      await sweepRefundedQbStagedPayments();
+      const row = await readStaged(spId);
+      expect(row.status).toBe("excluded");
+      expect(row.exclusionReason).toBeNull();
     });
 
     it("a deposit mixing refunded and LIVE charges stays in the queue", async () => {
@@ -429,7 +456,8 @@ describe.skipIf(!HAS_DB)(
           ...upsertValues(liveId, { grossAmount: "251.81", netAmount: "251.81" }),
         },
       ] as UpsertValues[]);
-      await seedTie(refundedId, spId);
+      // Both ties proposed: a confirmed tie would settle the row by claim.
+      await seedTie(refundedId, spId, "proposed");
       await seedTie(liveId, spId, "proposed");
 
       await sweepRefundedQbStagedPayments();
@@ -458,7 +486,7 @@ describe.skipIf(!HAS_DB)(
           }),
         },
       ] as UpsertValues[]);
-      await seedTie(refundedId, spId);
+      await seedTie(refundedId, spId, "proposed");
       await seedTie(failedId, spId, "proposed");
 
       await sweepRefundedQbStagedPayments();
@@ -481,7 +509,9 @@ describe.skipIf(!HAS_DB)(
           exclusionReason: "refunded_charge",
         }),
       } as UpsertValues);
-      await seedTie(chId, spId);
+      // Proposed tie: keeps the row derived-pending (no settlement claim) so
+      // the pin is what the sweep must respect.
+      await seedTie(chId, spId, "proposed");
 
       await sweepRefundedQbStagedPayments();
       const row = await readStaged(spId);

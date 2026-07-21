@@ -22,6 +22,8 @@ import {
   useLinkStripeChargeToGift,
   useRejectChargeQbTie,
   useRejectSettlementProposal,
+  useResolveStripePayoutWithdrawal,
+  useRevertStripePayoutWithdrawal,
   useRevertStripePayoutReconciliation,
   useListWorkbenchClusters,
   useListWorkbenchRecentChanges,
@@ -297,6 +299,8 @@ export default function ReconciliationClustersPage() {
   const rejectChargeQbTieM = useRejectChargeQbTie();
   const rejectSettlementProposalM = useRejectSettlementProposal();
   const revertStripePayoutReconciliationM = useRevertStripePayoutReconciliation();
+  const resolveWithdrawalM = useResolveStripePayoutWithdrawal();
+  const revertWithdrawalM = useRevertStripePayoutWithdrawal();
   const splitM = useSplitStagedPayment();
   const groupM = useGroupStagedPayments();
   const approveCardM = useApproveReconciliationCard();
@@ -981,6 +985,41 @@ export default function ReconciliationClustersPage() {
     }
   };
 
+  const handleResolveWithdrawal = async (payoutId: string) => {
+    try {
+      await resolveWithdrawalM.mutateAsync({ id: payoutId });
+      invalidate();
+      toast({
+        title: "Resolved as withdrawal",
+        description:
+          "This negative payout is marked as a Stripe withdrawal — no QuickBooks deposit is expected.",
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't resolve as withdrawal",
+        description: apiErrorMessage(err) ?? errMessage(err),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRevertWithdrawal = async (payoutId: string) => {
+    try {
+      await revertWithdrawalM.mutateAsync({ id: payoutId });
+      invalidate();
+      toast({
+        title: "Withdrawal resolution reverted",
+        description: "The payout is back to needing a settlement decision.",
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't revert withdrawal resolution",
+        description: apiErrorMessage(err) ?? errMessage(err),
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleRevertSettlement = async () => {
     if (!revertSettlementFor) return;
     const { payoutId, replaceSearch } = revertSettlementFor;
@@ -1021,6 +1060,8 @@ export default function ReconciliationClustersPage() {
     isFinanceOrAdmin: me?.role === "finance" || me?.role === "admin",
     openQbDetail: (record, linkage) => setQbDetailFor({ record, linkage }),
     removeSettlementProposal: (payoutId, _label) => void handleRemoveSettlementProposal(payoutId),
+    resolveWithdrawal: (payoutId) => void handleResolveWithdrawal(payoutId),
+    revertWithdrawal: (payoutId) => void handleRevertWithdrawal(payoutId),
     revertSettlement: (payoutId, label) => setRevertSettlementFor({ payoutId, label }),
     replaceSettlement: (payoutId, label, search) =>
       setRevertSettlementFor({ payoutId, label, replaceSearch: search }),

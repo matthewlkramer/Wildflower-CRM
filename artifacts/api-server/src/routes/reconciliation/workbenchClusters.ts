@@ -291,6 +291,13 @@ const payoutSettled: SQL = sql`(EXISTS (
   SELECT 1 FROM settlement_links sl_s
   WHERE sl_s.payout_id = sp.id AND sl_s.lifecycle = 'confirmed'
 ) OR ${fullyChargeTied})`;
+// Human-resolved Stripe withdrawal: an EXEMPT settlement link (no deposit).
+// Such a payout no longer needs accounting and parks in the excluded lens —
+// SQL twin of the JS flags.excluded || settlementLinkState === 'exempt'.
+const payoutExemptLink = `EXISTS (
+  SELECT 1 FROM settlement_links sl_x
+  WHERE sl_x.payout_id = sp.id AND sl_x.lifecycle = 'exempt'
+)`;
 // Settlement gap: Stripe's reported net (gross − fees) disagrees with the
 // amount that actually arrived at the bank. Lockstep twin of gapOf() in the
 // hydration (which coalesces a NULL net_total to the bank amount ⇒ no gap),
@@ -477,12 +484,12 @@ function buildUniverse(q: string | null): SQL {
       sp.id::text AS anchor_id,
       sp.arrival_date::text AS anchor_date,
       ${sql.raw(payoutAnyOpenCharge)} AS f_needs_gift,
-      (NOT ${payoutSettled} AND NOT ${sql.raw(payoutAllExcluded)}) AS f_needs_acct,
+      (NOT ${payoutSettled} AND NOT ${sql.raw(payoutAllExcluded)} AND NOT ${sql.raw(payoutExemptLink)}) AS f_needs_acct,
       ${sql.raw(payoutGap)} AS f_gap,
       ${sql.raw(payoutConflict)} AS f_conflict,
       ${sql.raw(payoutRefund)} AS f_refund,
       false AS f_qb_says_donation,
-      ${sql.raw(payoutAllExcluded)} AS f_excluded,
+      (${sql.raw(payoutAllExcluded)} OR ${sql.raw(payoutExemptLink)}) AS f_excluded,
       (${sql.raw(payoutHasNonExcluded)}
         AND ${payoutSettled}
         AND NOT ${sql.raw(payoutConflict)}
@@ -637,6 +644,7 @@ interface PayoutRow {
   sl_deposit_id: string | null;
   sl_conflict_gift_id: string | null;
   settled: boolean;
+  qb_candidate_exists: boolean;
   total_count: number;
   resolved_count: number;
   charges: ChargeJson[];
@@ -1158,7 +1166,10 @@ function buildClusterCoverage(
   // Settlement link state — always present for payout clusters so the UI can
   // distinguish "no settlement yet" (unlinked) from "not applicable" (absent).
   let settlementLinkState: SettlementLinkState;
-  if (slLifecycle === "confirmed") {
+  if (slLifecycle === "exempt") {
+    // Human-resolved Stripe withdrawal: no QB deposit will ever exist.
+    settlementLinkState = "exempt";
+  } else if (slLifecycle === "confirmed") {
     settlementLinkState = "confirmed";
   } else if (slLifecycle === "proposed") {
     settlementLinkState = isConflict ? "proposed_conflict" : "proposed_full";
@@ -1177,7 +1188,11 @@ function buildClusterCoverage(
     },
     information: { state: informationState, crmComplete, qbComplete, qbEvidenceComplete },
     flags: {
-      excluded: nonExcluded.length === 0 && charges.length > 0,
+      // An exempt link (resolved withdrawal) parks the row in the excluded
+      // lens — mirrored by the SQL f_excluded twin for rail-count parity.
+      excluded:
+        (nonExcluded.length === 0 && charges.length > 0) ||
+        slLifecycle === "exempt",
       conflict: isConflict,
       attentionRequired: hasPendingRefund,
     },
@@ -1349,6 +1364,29 @@ router.get(
         sl.deposit_staged_payment_id AS sl_deposit_id,
         sl.conflict_gift_id AS sl_conflict_gift_id,
         ${payoutSettled} AS settled,
+        -- Does ANY plausible QB settlement-lump candidate exist for this payout?
+        -- Same envelope as the matcher (stripeReconcile.ts): lump-eligible row
+        -- (settlementLump.ts predicate), amount within $5 of the bank amount,
+        -- dated within ±45 days of arrival. FALSE ⇒ the lump is likely not
+        -- booked in QuickBooks yet — the UI renders "not booked yet" instead of
+        -- an actionable gap.
+        EXISTS (
+          SELECT 1 FROM staged_payments qc_cand
+          WHERE (
+              qc_cand.qb_entity_type = 'deposit'
+              OR lower(
+                coalesce(qc_cand.payer_name, '') || ' ' ||
+                coalesce(qc_cand.line_description, '') || ' ' ||
+                coalesce(qc_cand.qb_transaction_memo, '') || ' ' ||
+                coalesce(qc_cand.raw_reference, '') || ' ' ||
+                coalesce(qc_cand.qb_deposit_to_account_name, '')
+              ) LIKE '%stripe%'
+              OR lower(coalesce(qc_cand.payer_name, '')) LIKE '%misc%'
+            )
+            AND ABS(qc_cand.amount - COALESCE(sp.amount, sp.net_total)) <= 5.00
+            AND sp.arrival_date IS NOT NULL
+            AND qc_cand.date_received BETWEEN sp.arrival_date - 45 AND sp.arrival_date + 45
+        ) AS qb_candidate_exists,
         (SELECT count(*)::int FROM stripe_staged_charges tc
           WHERE tc.stripe_payout_id = sp.id AND tc.exclusion_reason IS NULL) AS total_count,
         (SELECT count(*)::int FROM stripe_staged_charges vc
@@ -1913,6 +1951,7 @@ router.get(
           if (h?.settled) parts.push("deposit settled");
           else if (r.f_conflict) parts.push("deposit tie conflicts with an approved gift");
           else if (h?.sl_lifecycle === "proposed") parts.push("deposit tie proposed");
+          else if (h?.sl_lifecycle === "exempt") parts.push("resolved as Stripe withdrawal");
           else parts.push("no deposit tie yet");
           if (r.f_refund) parts.push("refund awaiting review");
           statusDetail = parts.join(" · ");
@@ -1936,6 +1975,7 @@ router.get(
           netTotal: h?.net_total ?? null,
           bankAmount: h?.bank_amount ?? null,
           gapAmount: gapOf(h?.net_total ?? null, h?.bank_amount ?? null),
+          qbCandidateExists: h?.qb_candidate_exists ?? null,
           resolvedCount: resolved,
           totalCount: total,
           chargeCount: h?.charge_count ?? null,

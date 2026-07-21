@@ -22,10 +22,10 @@ canonical boundary first (see `replit.md`).
 | Relationship | Authority today |
 |---|---|
 | Payment/evidence unit → CRM gift | `payment_applications` (`link_role='counted'`); QB reads flipped to the ledger; Stripe/Donorbox still read their row-level pointer columns while the ledger dual-writes |
-| Stripe payout → QuickBooks deposit | `settlement_links` |
+| Stripe payout → QuickBooks deposit | `settlement_links` (`lifecycle`: `proposed`/`confirmed`/`exempt`; `exempt` = human-confirmed "no deposit expected" — Stripe balance withdrawal / negative or failed payout — with a NULL deposit pointer) |
 | Evidence ↔ evidence (cross-source) | **Not implemented.** `source_links` is an approved ADR only ([`adr-source-link-ledger.md`](adr-source-link-ledger.md)); the existing source-specific claim pointers are FROZEN — never add a sibling pointer |
 | Gift ↔ QB tie signal | Live-derived at read time (`deriveGiftQbTieLiveExpr` in `giftQbTie.ts`); the stored `quickbooks_tie_status` column and its applier were retired — there is no recompute call site |
-| Staged/charge statuses | Derived from facts via the shared builders in `derivedStatus.ts`; no stored status columns (Donorbox's stored lifecycle is mapped to the shared vocabulary at every emit point) |
+| Staged/charge statuses | Derived from facts via the shared builders in `derivedStatus.ts`; no stored status columns (Donorbox's stored lifecycle is mapped to the shared vocabulary at every emit point). A QB deposit claimed by a confirmed settlement link or confirmed charge tie derives `excluded` (settled by the Stripe side; no stored `exclusion_reason`). A stored exclusion does NOT disqualify a deposit from settlement matching — exclusion and settlement eligibility are independent facts |
 | Workbench UI | The cluster view is the current design, superseding the older six-queue workbench described in earlier documents |
 
 ## Ratified rules with known or suspected implementation gaps

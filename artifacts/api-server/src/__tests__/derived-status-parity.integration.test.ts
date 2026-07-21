@@ -403,10 +403,14 @@ describe.skipIf(!HAS_DB)("QB staged-payment derived-status parity", () => {
     await expectQbStatus(id, "pending");
   });
 
-  it("RAW charge tie WITHOUT the charge's booking is a claim, not evidence → pending", async () => {
+  it("RAW charge tie WITHOUT the charge's booking is a settlement claim → excluded (never match_confirmed)", async () => {
+    // A confirmed tie settles the QB row out of the donation review queue by
+    // derivation (settlement-claim arm), but it is NOT booking evidence: the
+    // row derives `excluded`, not `match_confirmed` — the donor/gift work
+    // lives on the Stripe charge.
     const id = await seedQbRow();
     await seedCharge(await seedPayout(), { linkedQbStagedPaymentId: id });
-    await expectQbStatus(id, "pending");
+    await expectQbStatus(id, "excluded");
   });
 
   it("BOOKED charge tie (tied charge carries a counted row) → match_confirmed", async () => {

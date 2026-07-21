@@ -181,3 +181,21 @@ stored lifecycle (`status` column); map to shared derived vocab via
 - [Coding-form gift matching](coding-form-gift-matching.md) — bulk rematch must stay pending+unconfirmed (rematch clears human decisions); exact ±1¢ band ≠ ingest fee band; auto-propose only on exactly-one candidate.
 - [Reconciliation cross-check prod verification](reconciliation-crosscheck-prod-verification.md) — prod read-only pass: Stripe 39/39 solid, QBO trustworthy except 45d window too tight (false-negative), amount-only path unreliable (zero/neg/wrong-donor), sheet self-dupes double-count.
 - [Grant-agreement Drive backfill](grant-agreement-drive-backfill.md) — pull coding_form_rows.drive_link PDFs onto matched OPPS (never gifts) via grant-letter flow; per-row idempotent, conflict never auto-overwrites, status derived; Drive client = connector-token proxy (no googleapis pkg).
+
+## Settlement claims and exclusion independence (2026-07)
+
+- Exclusion and settlement eligibility are INDEPENDENT facts: a stored
+  `exclusion_reason` removes a QB deposit from the donation queue but does NOT
+  disqualify it as a payout-settlement candidate. Never re-add an
+  excluded-filter to settlement candidate queries.
+- A QB deposit claimed by a confirmed settlement link or confirmed charge tie
+  DERIVES `excluded` (settlement-claim arm in `derivedStatus.ts`, no stored
+  exclusion_reason). The QB status CASE therefore consults the tie twice:
+  booked form → match_confirmed; raw claim form → excluded.
+- Negative/failed payouts resolve as Stripe withdrawals via an `exempt`
+  settlement link (NULL deposit pointer, finance-gated, undoable). Exempt =
+  "no deposit expected", never a synonym for confirmed_excluded.
+- Test gotcha: `reclassifyStagedPayments` runs under the QB sync lock; when
+  another vitest file holds that lock concurrently the pass silently skips and
+  entity re-attribution assertions fail — a lock-contention flake, rerun before
+  debugging.

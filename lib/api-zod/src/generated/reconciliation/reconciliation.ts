@@ -977,6 +977,7 @@ export const ListWorkbenchClustersResponse = zod.object({
   "netTotal": zod.string().nullish().describe('True Stripe-ledger net for a payout (gross − fees − refunds + adjustments; equals bank amount when Stripe\'s books balance); the staged amount for QB money; the gift amount for crm_only.'),
   "bankAmount": zod.string().nullish().describe('What hit the bank: the raw Stripe payout amount, or the settlement-linked\/standalone QB deposit amount.'),
   "gapAmount": zod.string().nullish().describe('netTotal − bankAmount when both sides exist (the money-math gap line); null when either side is unknown.'),
+  "qbCandidateExists": zod.boolean().nullish().describe('For stripe_payout clusters with NO linked QB record: whether any lump-eligible QB candidate exists in the ingested data inside the matcher\'s amount\/date window. False = likely not booked in QuickBooks yet (waiting on bookkeeping). Null for other cluster kinds or when a QB record is already linked.'),
   "resolvedCount": zod.number().nullish().describe('Evidence rows confirmed into gifts (excluded rows don\'t count toward the denominator). Null for crm_only.'),
   "totalCount": zod.number().nullish().describe('Non-excluded evidence rows in the cluster. Null for crm_only.'),
   "chargeCount": zod.number().nullish().describe('TRUE total charges behind a payout (charges[] is capped, mirrors bundle-anchors).'),
@@ -1125,7 +1126,7 @@ export const ListWorkbenchClustersResponse = zod.object({
   "conflict": zod.boolean(),
   "attentionRequired": zod.boolean().describe('True when a pending refund blocks audit_ready status.')
 }),
-  "settlementLinkState": zod.enum(['unlinked', 'proposed_full', 'proposed_partial', 'proposed_conflict', 'confirmed']).describe('State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only.').nullish().describe('Present for all stripe_payout clusters (\'unlinked\' when no settlement relationship exists); absent for other cluster kinds.'),
+  "settlementLinkState": zod.enum(['unlinked', 'proposed_full', 'proposed_partial', 'proposed_conflict', 'confirmed', 'exempt']).describe('State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only. `exempt` = human-resolved as needing no QB deposit (e.g. a negative payout \/ Stripe withdrawal).').nullish().describe('Present for all stripe_payout clusters (\'unlinked\' when no settlement relationship exists); absent for other cluster kinds.'),
   "qbCards": zod.array(zod.object({
   "qbRecordId": zod.string(),
   "state": zod.enum(['raw', 'enriched', 'match_proposed', 'matched_complete', 'matched_partial_qb_surplus', 'matched_partial_external_surplus', 'matched_conflict', 'excluded']).describe('Derived display state for one QB evidence card. Also carries the record\'s linkage vocabulary: raw = no candidate gift yet (pending); match_proposed = candidate awaiting human confirm; matched_\* = counted into a gift; excluded = marked not-a-donation. enriched is reserved for the future fill-out-QB documentation workflow.'),

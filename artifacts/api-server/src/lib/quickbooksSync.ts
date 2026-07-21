@@ -30,6 +30,8 @@ import {
 } from "./quickbooksRules";
 import { buildGiftValuesFromStaged } from "./quickbooksGift";
 import { refreshOpenBundleDrafts } from "./reconciliationBundleSync";
+import { proposePayoutMatches } from "./stripeReconcile";
+import { proposeChargeQbTies } from "./chargeQbTie";
 import {
   applyPaymentApplication,
   qbLedgerExistsForGiftExcludingPayment,
@@ -826,6 +828,24 @@ export async function syncQuickbooks(
   if (!outcome.ran) {
     return { ran: false, pulled: 0, staged: 0, matched: 0, autoApplied: 0 };
   }
+
+  // QuickBooks bookings often land days/weeks AFTER their Stripe payout was
+  // synced, and the Stripe sync alone would never revisit those payouts. Run
+  // the FULL (unscoped) Stripe↔QB matching passes after every QB ingest so
+  // late-booked rows get proposed without an admin button. The public wrappers
+  // take the per-account "stripe" advisory lock themselves (we released the
+  // QB lock above), are idempotent, and no-op when Stripe is not connected.
+  // Best-effort: a matching failure must not fail the QB sync itself.
+  try {
+    await proposePayoutMatches();
+    await proposeChargeQbTies();
+  } catch (e) {
+    logger.error(
+      { err: e },
+      "Post-QB-ingest Stripe matching passes failed (QB sync itself succeeded)",
+    );
+  }
+
   return { ran: true, ...outcome.result! };
 }
 

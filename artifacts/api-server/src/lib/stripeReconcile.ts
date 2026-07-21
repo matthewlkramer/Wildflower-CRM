@@ -292,9 +292,12 @@ export async function runProposalPass(
             looksLikeLump,
             // A booked deposit (derived match_confirmed — already bound to a
             // gift as evidence) remains a valid Stripe-payout candidate so the
-            // payout can be reconciled against that same gift (as a conflict);
-            // only excluded noise is out.
-            sql`NOT ${stagedStatusWhere.excluded}`,
+            // payout can be reconciled against that same gift (as a conflict).
+            // EXCLUDED rows are eligible too (task-774 ratified decision): an
+            // exclusion (fiscally_sponsored / earned_income / …) classifies the
+            // row out of the DONATION review queue, but the row can still be
+            // the payout's true QB settlement lump — exclusion must not block
+            // matching. The already-spoken-for guards below still apply.
             gte(stagedPayments.dateReceived, fromStr),
             lte(stagedPayments.dateReceived, toStr),
             sql`abs(${stagedPayments.amount} - ${target}::numeric) <= 5.00`,

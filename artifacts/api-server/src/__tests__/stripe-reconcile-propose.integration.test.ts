@@ -351,15 +351,15 @@ describe.skipIf(!HAS_DB)("runProposalPass (DB)", () => {
 
   it("clears a stale proposal back to unmatched when no candidate is eligible", async () => {
     // A stale proposed link whose deposit is no longer an eligible candidate
-    // (`excluded` is outside the pending/approved/reconciled candidate set), so
-    // the pass finds no `best` and must clear the link. In the settlement_links
+    // (its date sits outside the ±window around the payout's arrival — note an
+    // exclusion reason alone no longer disqualifies a candidate), so the
+    // pass finds no `best` and must clear the link. In the settlement_links
     // model a `proposed` payout ALWAYS carries a proposed link with a deposit
-    // pointer (a null-pointer `proposed` is not representable), so we anchor the
-    // stale link on a real-but-ineligible deposit.
+    // pointer (a null-pointer `proposed` is not representable), so we anchor
+    // the stale link on a real-but-ineligible deposit.
     const dep = await seedDeposit({
       amount: "6543.21",
-      dateReceived: "2026-06-01",
-      exclusionReason: "other_revenue",
+      dateReceived: "2026-01-02",
     });
     const po = await seedPayout({
       amount: "6543.21",
@@ -382,10 +382,10 @@ describe.skipIf(!HAS_DB)("runProposalPass (DB)", () => {
     const gift = await seedGift("3131.31");
     const dep = await seedDeposit({
       amount: "3131.31",
-      dateReceived: "2026-09-01",
-      // An exclusion reason derives `excluded` (it wins over the gift link),
-      // which is outside the candidate set, so the pass takes the clear branch.
-      exclusionReason: "other_revenue",
+      // Outside the ±window around the payout's arrival, so the deposit is no
+      // longer an eligible candidate and the pass takes the clear branch.
+      // (An exclusion reason no longer disqualifies a candidate.)
+      dateReceived: "2026-01-02",
       createdGiftId: gift,
     });
     const po = await seedPayout({

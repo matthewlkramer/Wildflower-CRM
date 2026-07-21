@@ -1168,6 +1168,65 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     expect(crmRow.coverage.state.settlementLinkState ?? null).toBeNull();
   }, 60_000);
 
+  // ── Withdrawal resolution: exempt settlement link (negative payouts) ────
+  //
+  // A NEGATIVE payout resolved as a Stripe withdrawal carries a deposit-less
+  // EXEMPT settlement link. Contract: settlementLinkState = "exempt", the row
+  // parks in the EXCLUDED lens (not open, not conflicts), and statusDetail
+  // says why.
+  it("exempt settlement link → settlementLinkState 'exempt', excluded lens, withdrawal statusDetail", async () => {
+    const po = await seedPayout({ amount: "-256.00", netTotal: "-256.00" });
+    await db.insert(schema.settlementLinks).values({
+      id: `sl_${po}`,
+      payoutId: po,
+      depositStagedPaymentId: null,
+      conflictGiftId: null,
+      lifecycle: "exempt",
+      provenance: "human",
+      confirmedByUserId: TEST_USER_ID,
+      confirmedAt: new Date(),
+    });
+
+    const [{ map: open }, { map: excluded }] = await Promise.all([
+      listClusters("all_open"),
+      listClusters("excluded"),
+    ]);
+    const key = `stripe_payout:${po}`;
+    expect(open.has(key)).toBe(false);
+    const row = excluded.get(key);
+    expect(row).toBeTruthy();
+    expect(row.coverage.state.settlementLinkState).toBe("exempt");
+    expect(row.coverage.state.flags.excluded).toBe(true);
+    expect(String(row.statusDetail ?? "")).toContain(
+      "resolved as Stripe withdrawal",
+    );
+  }, 60_000);
+
+  // ── qbCandidateExists: "not booked in QuickBooks yet" signal ────────────
+  //
+  // For an UNLINKED payout the hydration reports whether ANY lump-eligible QB
+  // row exists inside the matcher's amount/date envelope. FALSE ⇒ the UI says
+  // "not booked yet" instead of an actionable settlement gap.
+  it("qbCandidateExists: false with no plausible QB lump, true when one exists in-window", async () => {
+    // No QB rows anywhere near this amount → false.
+    const poNone = await seedPayout({ amount: "7777.77", netTotal: "7777.77" });
+    await seedCharge(poNone, {});
+    // A lump-eligible deposit within $5 / ±45d → true (NOT linked — candidate
+    // existence is independent of any settlement link).
+    const poCand = await seedPayout({ amount: "8888.88", netTotal: "8888.88" });
+    await seedCharge(poCand, {});
+    await seedStaged({ entityType: "deposit", amount: "8888.88" });
+
+    const { map: open } = await listClusters("all_open");
+    const rowNone = open.get(`stripe_payout:${poNone}`);
+    const rowCand = open.get(`stripe_payout:${poCand}`);
+    expect(rowNone?.qbCandidateExists).toBe(false);
+    expect(rowCand?.qbCandidateExists).toBe(true);
+    // Both are still unlinked — candidate existence is informational only.
+    expect(rowNone?.coverage?.state?.settlementLinkState).toBe("unlinked");
+    expect(rowCand?.coverage?.state?.settlementLinkState).toBe("unlinked");
+  }, 60_000);
+
   // ── Invariant: Completed ⟺ audit_ready ⟺ coverage.complete ──────────────
   //
   // Since the QB-documentation predicate is a constant FALSE until the

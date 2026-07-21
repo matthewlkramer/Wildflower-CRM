@@ -320,6 +320,14 @@ It is distinct from the state of the QuickBooks record itself.
 | `proposed_partial`  | The proposed relationship covers only part of the payout or contains an unexplained amount variance |
 | `proposed_conflict` | The proposal overlaps or contradicts another accounting relationship                                |
 | `confirmed`         | The payout-to-QuickBooks settlement relationship has been confirmed                                 |
+| `exempt`            | A human confirmed the payout has no expected QuickBooks deposit (e.g. a Stripe balance withdrawal or a negative/failed payout) |
+
+An `exempt` settlement link carries no QuickBooks deposit pointer. It is the
+canonical "resolved as Stripe withdrawal" fact: the payout is settled and leaves
+the attention queue without accounting evidence. Negative and failed payouts are
+the typical candidates; resolving one as a withdrawal requires the same finance
+permission as confirming a settlement, and it can be undone (unmatched) like any
+other settlement relationship.
 
 A bundle-level QuickBooks deposit connected to multiple individual Stripe charges is not inherently a conflict. It is a normal bundle-to-unit mapping when amounts reconcile and no competing accounting relationship exists.
 
@@ -331,8 +339,21 @@ A bundle-level QuickBooks deposit connected to multiple individual Stripe charge
 | Confirm settlement                         | Proposed full or proposed partial, subject to validation     |
 | Remove proposal                            | Any proposed state                                           |
 | View QuickBooks record                     | Any proposed or confirmed relationship                       |
-| Unmatch confirmed settlement               | Confirmed, subject to permissions and safeguards             |
+| Unmatch confirmed settlement               | Confirmed or exempt, subject to permissions and safeguards   |
 | Replace settlement relationship            | Confirmed or proposed, subject to permissions and safeguards |
+| Resolve as Stripe withdrawal (exempt)      | Unlinked payout, subject to finance permission               |
+
+An excluded QuickBooks record is still a legitimate settlement candidate: a
+stored `exclusion_reason` (e.g. `other_revenue`) removes the record from the
+donation review queue, but it does not disqualify the record from being
+proposed or confirmed as the deposit that settles a Stripe payout. Exclusion
+and settlement eligibility are independent facts.
+
+A QuickBooks record claimed by a **confirmed** settlement link (or a confirmed
+charge tie) derives `excluded` from that claim — its money story is told by the
+Stripe side, so it needs no separate donation review. This derived exclusion
+carries no stored `exclusion_reason` and disappears if the settlement claim is
+removed.
 
 Only authorized finance-team members may create, confirm, remove, replace, or unmatch accounting relationships when the action changes or controls QuickBooks treatment.
 

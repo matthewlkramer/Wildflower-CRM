@@ -2929,6 +2929,28 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Payout cannot be reverted from its current state, or its charges are already booked" }
+  /stripe-payouts/{id}/resolve-withdrawal:
+    post:
+      operationId: resolveStripePayoutWithdrawal
+      tags: [stripe-staged-charges]
+      summary: Resolve a NEGATIVE Stripe payout (a withdrawal back to Stripe — no money reached the bank as a deposit) as exempt from QB deposit settlement. Writes an exempt settlement link (no deposit); finance-gated, human-explicit, idempotent.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Payout is not a negative withdrawal, or it already has a proposed/confirmed settlement link" }
+  /stripe-payouts/{id}/revert-withdrawal:
+    post:
+      operationId: revertStripePayoutWithdrawal
+      tags: [stripe-staged-charges]
+      summary: Undo a withdrawal resolution — remove the exempt settlement link so the payout returns to the unlinked state.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Payout has no exempt settlement link to revert" }
 
   # ─── QuickBooks handling rules (admin-editable ingest classifier) ─────────
   /admin/quickbooks-rules:
@@ -7708,7 +7730,7 @@ components:
       description: "Outcome of a payout reconciliation confirm/revert transition."
       properties:
         ok:               { type: boolean, enum: [true] }
-        kind:             { type: string, enum: [confirmed_reconciled, confirmed_linkage_only, confirmed_excluded, confirmed_keep, confirmed_replace, reverted] }
+        kind:             { type: string, enum: [confirmed_reconciled, confirmed_linkage_only, confirmed_excluded, confirmed_keep, confirmed_replace, reverted, resolved_withdrawal] }
         payoutId:         { type: string }
         stagedPaymentId:  { type: string, nullable: true, description: "The QB deposit lump that was excluded/relinked, when applicable." }
         archivedGiftId:   { type: string, nullable: true, description: "The QB-derived gift archived by a confirm-replace (kept, never deleted)." }
@@ -8782,8 +8804,8 @@ components:
         incomplete — one or more CRM gift records lack required donor / allocation information.
     WorkbenchRowSettlementLinkState:
       type: string
-      enum: [unlinked, proposed_full, proposed_partial, proposed_conflict, confirmed]
-      description: "State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only."
+      enum: [unlinked, proposed_full, proposed_partial, proposed_conflict, confirmed, exempt]
+      description: "State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only. `exempt` = human-resolved as needing no QB deposit (e.g. a negative payout / Stripe withdrawal)."
     WorkbenchRowCoverageState:
       type: object
       required: [state, grain, relationshipCount]
@@ -9034,6 +9056,7 @@ components:
         netTotal:      { type: string, nullable: true, description: "True Stripe-ledger net for a payout (gross − fees − refunds + adjustments; equals bank amount when Stripe's books balance); the staged amount for QB money; the gift amount for crm_only." }
         bankAmount:    { type: string, nullable: true, description: "What hit the bank: the raw Stripe payout amount, or the settlement-linked/standalone QB deposit amount." }
         gapAmount:     { type: string, nullable: true, description: "netTotal − bankAmount when both sides exist (the money-math gap line); null when either side is unknown." }
+        qbCandidateExists: { type: boolean, nullable: true, description: "For stripe_payout clusters with NO linked QB record: whether any lump-eligible QB candidate exists in the ingested data inside the matcher's amount/date window. False = likely not booked in QuickBooks yet (waiting on bookkeeping). Null for other cluster kinds or when a QB record is already linked." }
         resolvedCount: { type: integer, nullable: true, description: "Evidence rows confirmed into gifts (excluded rows don't count toward the denominator). Null for crm_only." }
         totalCount:    { type: integer, nullable: true, description: "Non-excluded evidence rows in the cluster. Null for crm_only." }
         chargeCount:   { type: integer, nullable: true, description: "TRUE total charges behind a payout (charges[] is capped, mirrors bundle-anchors)." }

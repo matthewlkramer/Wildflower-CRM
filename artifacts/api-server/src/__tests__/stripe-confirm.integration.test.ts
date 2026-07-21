@@ -69,13 +69,16 @@ async function seedPayout(over: {
   // `unmatched` payout (no link row); a built link (proposeSettlementLink) seeds
   // the authoritative reconciliation state that confirm/revert read + mutate.
   link?: SettlementLinkFields | null;
+  /** Bank amount override — negative models a Stripe withdrawal. */
+  amount?: string;
+  netTotal?: string | null;
 }): Promise<string> {
   const id = nextId("po");
   await db.insert(schema.stripePayouts).values({
     id,
     stripeAccountId: ACCOUNT_ID,
-    amount: "1000.00",
-    netTotal: "1000.00",
+    amount: over.amount ?? "1000.00",
+    netTotal: over.netTotal === undefined ? "1000.00" : over.netTotal,
     arrivalDate: "2026-03-15",
   });
   payoutIds.push(id);
@@ -514,5 +517,76 @@ describe.skipIf(!HAS_DB)("stripeConfirm transitions (DB)", () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.code).toBe("invalid_transition");
+  });
+});
+
+// ── Withdrawal resolution (negative payouts → exempt settlement link) ──────
+//
+// A NEGATIVE payout is money pulled BACK to Stripe — no QB deposit will ever
+// exist, so a human resolves it as exempt (deposit-less settlement link,
+// allowed only for lifecycle='exempt' by settlement_links_deposit_required_chk).
+describe.skipIf(!HAS_DB)("withdrawal resolution (DB)", () => {
+  it("RESOLVE: negative payout → exempt link (no deposit, human provenance)", async () => {
+    const po = await seedPayout({ amount: "-256.00", netTotal: "-256.00" });
+    const r = await confirm.resolvePayoutAsWithdrawal({ payoutId: po, userId: USER_ID });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.kind).toBe("resolved_withdrawal");
+    const link = await readLink(po);
+    expect(link?.lifecycle).toBe("exempt");
+    expect(link?.depositStagedPaymentId).toBeNull();
+    expect(link?.conflictGiftId).toBeNull();
+    expect(link?.provenance).toBe("human");
+    expect(link?.confirmedByUserId).toBe(USER_ID);
+  });
+
+  it("RESOLVE is idempotent on an already-exempt payout", async () => {
+    const po = await seedPayout({ amount: "-0.45", netTotal: "-0.45" });
+    const first = await confirm.resolvePayoutAsWithdrawal({ payoutId: po, userId: USER_ID });
+    expect(first.ok).toBe(true);
+    const again = await confirm.resolvePayoutAsWithdrawal({ payoutId: po, userId: USER_ID });
+    expect(again.ok).toBe(true);
+    if (again.ok) expect(again.kind).toBe("resolved_withdrawal");
+    expect((await readLink(po))?.lifecycle).toBe("exempt");
+  });
+
+  it("RESOLVE: rejects a positive payout", async () => {
+    const po = await seedPayout({});
+    const r = await confirm.resolvePayoutAsWithdrawal({ payoutId: po, userId: USER_ID });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("invalid_transition");
+  });
+
+  it("RESOLVE: rejects when a proposed/confirmed settlement link exists", async () => {
+    const dep = await seedDeposit({});
+    const po = await seedPayout({
+      amount: "-10.00",
+      netTotal: "-10.00",
+      link: proposeSettlementLink(dep, null),
+    });
+    const r = await confirm.resolvePayoutAsWithdrawal({ payoutId: po, userId: USER_ID });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("invalid_transition");
+    // The existing proposal was NOT clobbered.
+    expect((await readLink(po))?.lifecycle).toBe("proposed");
+  });
+
+  it("REVERT WITHDRAWAL: exempt link deleted → payout back to unlinked", async () => {
+    const po = await seedPayout({ amount: "-1023.21", netTotal: "-1023.21" });
+    await confirm.resolvePayoutAsWithdrawal({ payoutId: po, userId: USER_ID });
+    const r = await confirm.revertWithdrawalResolution({ payoutId: po, userId: USER_ID });
+    expect(r.ok).toBe(true);
+    expect(await readLink(po)).toBeUndefined();
+  });
+
+  it("REVERT WITHDRAWAL: rejects when the link is not exempt", async () => {
+    const dep = await seedDeposit({});
+    const po = await seedPayout({ link: proposeSettlementLink(dep, null) });
+    const r = await confirm.revertWithdrawalResolution({ payoutId: po, userId: USER_ID });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("invalid_transition");
+    expect((await readLink(po))?.lifecycle).toBe("proposed");
   });
 });

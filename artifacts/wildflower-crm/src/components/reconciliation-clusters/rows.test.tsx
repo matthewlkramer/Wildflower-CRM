@@ -56,6 +56,8 @@ function allByTestIdPrefix(prefix: string): HTMLElement[] {
 function makeActions(): ClusterActions {
   return {
     busy: false,
+    resolveWithdrawal: vi.fn(),
+    revertWithdrawal: vi.fn(),
     openLinkGift: vi.fn(),
     openCreateGift: vi.fn(),
     openIdentify: vi.fn(),

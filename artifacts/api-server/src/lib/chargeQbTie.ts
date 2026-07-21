@@ -11,7 +11,7 @@ import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { getUncachableStripeClient } from "./stripeClient";
-import { chargeStatusWhere, stagedStatusWhere } from "./derivedStatus";
+import { chargeStatusWhere } from "./derivedStatus";
 import { sweepRefundedQbStagedPayments } from "./refundedChargeSweep";
 import {
   upsertProposedChargeTie,
@@ -51,6 +51,13 @@ export const CHARGE_TIE_WINDOW_DAYS = 20;
 /** Minimum payer-name similarity required to disambiguate when MULTIPLE
  * same-amount candidates compete (never assign on amount alone in that case). */
 export const NAME_SIM_THRESHOLD = 0.5;
+
+/** Wrong-donor guard for the 1×1 amount-group shortcut: when BOTH payer names
+ * are present (tokenizable) and their similarity is below this, the pair flatly
+ * contradicts itself — a coincidental same-amount row from a different donor.
+ * Never propose it, even though amount + window alone would otherwise suffice.
+ * A missing name on either side keeps the shortcut (no contradiction exists). */
+export const WRONG_DONOR_NAME_SIM = 0.1;
 
 /** Normalize a payer name into a token set: lowercase, strip punctuation, drop
  * empty tokens. "Beard, Hilary" → {beard, hilary}. */
@@ -165,6 +172,8 @@ export function assignChargeQbTies(
     kind: TieKind;
     sim: number;
     dd: number;
+    /** BOTH payer names tokenizable — the similarity is a real comparison. */
+    bothNamed: boolean;
   }
   const candsByAmount = new Map<number, QbRowForTie[]>();
   for (const q of candidates) {
@@ -192,6 +201,9 @@ export function assignChargeQbTies(
           kind,
           sim: nameSimilarity(chargeName(c), q.payerName),
           dd,
+          bothNamed:
+            nameTokens(chargeName(c)).size > 0 &&
+            nameTokens(q.payerName).size > 0,
         });
         (groupChargeIds.get(cents) ??
           groupChargeIds.set(cents, new Set()).get(cents)!).add(c.id);
@@ -224,6 +236,16 @@ export function assignChargeQbTies(
   for (const p of pairs) {
     if (assigned.has(p.chargeId) || usedQb.has(p.qbId)) continue;
     if (!unambiguousCents.has(p.cents) && p.sim < NAME_SIM_THRESHOLD) continue;
+    // Wrong-donor guard: even an unambiguous 1×1 amount group is NOT proposed
+    // when both payer names are present and flatly contradict each other —
+    // a coincidental same-amount row from a different donor.
+    if (
+      unambiguousCents.has(p.cents) &&
+      p.bothNamed &&
+      p.sim < WRONG_DONOR_NAME_SIM
+    ) {
+      continue;
+    }
     assigned.set(p.chargeId, p.qbId);
     usedQb.add(p.qbId);
   }
@@ -470,8 +492,11 @@ export async function runChargeTiePass(
         .where(
           and(
             inArray(stagedPayments.amount, amounts),
-            // Active = anything not excluded (status is DERIVED).
-            sql`NOT ${stagedStatusWhere.excluded}`,
+            // EXCLUDED rows stay eligible (task-774 ratified decision): an
+            // exclusion classifies the row out of the DONATION review queue,
+            // but it can still be the QB booking of this charge's money —
+            // exclusion must not block matching. Refund-swept rows are safe:
+            // a swept row's tie already exists (confirmed → filtered below).
             sql`${stagedPayments.dateReceived} >= ${fromStr}`,
             sql`${stagedPayments.dateReceived} <= ${toStr}`,
             sql`NOT EXISTS (

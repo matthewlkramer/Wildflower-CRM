@@ -1106,4 +1106,142 @@ export const useRevertStripePayoutReconciliation = <TError = ErrorType<FinanceFo
       > => {
       return useMutation(getRevertStripePayoutReconciliationMutationOptions(options));
     }
+    /**
+ * @summary Resolve a NEGATIVE Stripe payout (a withdrawal back to Stripe — no money reached the bank as a deposit) as exempt from QB deposit settlement. Writes an exempt settlement link (no deposit); finance-gated, human-explicit, idempotent.
+ */
+export const getResolveStripePayoutWithdrawalUrl = (id: string,) => {
+
+
+  
+
+  return `/api/stripe-payouts/${id}/resolve-withdrawal`
+}
+
+export const resolveStripePayoutWithdrawal = async (id: string, options?: RequestInit): Promise<StripePayoutReconciliationResult> => {
+  
+  return customFetch<StripePayoutReconciliationResult>(getResolveStripePayoutWithdrawalUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getResolveStripePayoutWithdrawalMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveStripePayoutWithdrawal>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resolveStripePayoutWithdrawal>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['resolveStripePayoutWithdrawal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveStripePayoutWithdrawal>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  resolveStripePayoutWithdrawal(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResolveStripePayoutWithdrawalMutationResult = NonNullable<Awaited<ReturnType<typeof resolveStripePayoutWithdrawal>>>
+    
+    export type ResolveStripePayoutWithdrawalMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Resolve a NEGATIVE Stripe payout (a withdrawal back to Stripe — no money reached the bank as a deposit) as exempt from QB deposit settlement. Writes an exempt settlement link (no deposit); finance-gated, human-explicit, idempotent.
+ */
+export const useResolveStripePayoutWithdrawal = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveStripePayoutWithdrawal>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resolveStripePayoutWithdrawal>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getResolveStripePayoutWithdrawalMutationOptions(options));
+    }
+    /**
+ * @summary Undo a withdrawal resolution — remove the exempt settlement link so the payout returns to the unlinked state.
+ */
+export const getRevertStripePayoutWithdrawalUrl = (id: string,) => {
+
+
+  
+
+  return `/api/stripe-payouts/${id}/revert-withdrawal`
+}
+
+export const revertStripePayoutWithdrawal = async (id: string, options?: RequestInit): Promise<StripePayoutReconciliationResult> => {
+  
+  return customFetch<StripePayoutReconciliationResult>(getRevertStripePayoutWithdrawalUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getRevertStripePayoutWithdrawalMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertStripePayoutWithdrawal>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revertStripePayoutWithdrawal>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['revertStripePayoutWithdrawal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revertStripePayoutWithdrawal>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  revertStripePayoutWithdrawal(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevertStripePayoutWithdrawalMutationResult = NonNullable<Awaited<ReturnType<typeof revertStripePayoutWithdrawal>>>
+    
+    export type RevertStripePayoutWithdrawalMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Undo a withdrawal resolution — remove the exempt settlement link so the payout returns to the unlinked state.
+ */
+export const useRevertStripePayoutWithdrawal = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertStripePayoutWithdrawal>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revertStripePayoutWithdrawal>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRevertStripePayoutWithdrawalMutationOptions(options));
+    }
     

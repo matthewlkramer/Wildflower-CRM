@@ -94,6 +94,8 @@ import {
   confirmKeepApprovedQbGift,
   confirmReplaceApprovedQbGift,
   revertPayoutQbConfirmation,
+  resolvePayoutAsWithdrawal,
+  revertWithdrawalResolution,
   type ConfirmRevertResult,
 } from "../lib/stripeConfirm";
 import { proposePayoutMatches } from "../lib/stripeReconcile";
@@ -1988,6 +1990,45 @@ router.post(
         payoutId: paramId(req),
         userId: user.id,
       }),
+    );
+  }),
+);
+
+// ─── POST /stripe-payouts/:id/resolve-withdrawal ───────────────────────────
+// Human-gated terminal state for a NEGATIVE payout (a Stripe withdrawal — no
+// deposit ever reaches QuickBooks): write an EXEMPT settlement link (no
+// deposit) so the payout stops rendering as a missing settlement link. The
+// state derives entirely from that link — no stored status.
+router.post(
+  "/stripe-payouts/:id/resolve-withdrawal",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    await respondReconResult(
+      res,
+      await resolvePayoutAsWithdrawal({ payoutId: paramId(req), userId: user.id }),
+    );
+  }),
+);
+
+// ─── POST /stripe-payouts/:id/revert-withdrawal ────────────────────────────
+// Undo a withdrawal resolution: remove the exempt settlement link.
+router.post(
+  "/stripe-payouts/:id/revert-withdrawal",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    await respondReconResult(
+      res,
+      await revertWithdrawalResolution({ payoutId: paramId(req), userId: user.id }),
     );
   }),
 );

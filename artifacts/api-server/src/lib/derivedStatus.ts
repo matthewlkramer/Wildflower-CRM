@@ -33,19 +33,28 @@ import { sql, type SQL } from "drizzle-orm";
  *                         linked_qb_staged_payment_id AND that charge itself
  *                         carries a counted ledger row; the gift booking lives
  *                         on the CHARGE, moved there by chargeTieSupersede.ts)
+ *   excluded (derived) ⇐ no stronger arm matched AND the row is CLAIMED as
+ *                       confirmed Stripe settlement evidence (a confirmed
+ *                       charge-grain tie names it, booked or not, or a
+ *                       confirmed fee-row claim marks it a charge's sibling
+ *                       Stripe-fee line). Its money is tracked at the STRIPE
+ *                       charge grain, so it is settled OUT of the donation
+ *                       review queue — without a stored exclusion_reason.
  *   pending         ⇐ none of the above — open work awaiting review.
  *
  * `match_proposed` is checked BEFORE `match_confirmed` because a proposed row
  * also carries a gift link; human confirmation (match_confirmed_at) or
  * autoApplied=false is what promotes it.
  *
- * TIE ≠ STATUS. A charge-grain tie (linked_qb_staged_payment_id) is a SOURCE
- * LINK — a claim that a charge and a QB row are the same money. The claim
- * alone NEVER produces match_confirmed: only the booking on the tied charge
- * (its counted ledger row) is status evidence. The raw-linkage predicate
- * (`qbChargeTieLinkExistsText` / `stagedChargeTieLinkExists`) exists solely
- * for claim semantics — pick-list blockers and eligibility filters — and must
- * never be folded into the status CASE.
+ * TIE ≠ match_confirmed. A charge-grain tie (linked_qb_staged_payment_id) is
+ * a SOURCE LINK — a claim that a charge and a QB row are the same money. The
+ * claim alone NEVER produces match_confirmed: only the booking on the tied
+ * charge (its counted ledger row) is that evidence. A confirmed-but-unbooked
+ * tie DOES derive `excluded` (see the derived-excluded arm above): the row is
+ * settled evidence, not review work, and it promotes to match_confirmed when
+ * the tied charge books. The raw-linkage predicate
+ * (`qbChargeTieLinkExistsText` / `stagedChargeTieLinkExists`) additionally
+ * serves claim semantics — pick-list blockers and eligibility filters.
  *
  * TWO REPRESENTATIONS, ONE SOURCE:
  *
@@ -163,13 +172,31 @@ export function qbConfirmedEvidenceText(alias: string): string {
   return `(${qbCountedExistsText(alias)} OR ${qbSettledExistsText(alias)} OR ${qbChargeTieBookedExistsText(alias)})`;
 }
 
-/** The full derived-status CASE for QB row `alias` (parenthesized, no cast). */
+/** EXISTS: QB row `alias` is CLAIMED as confirmed Stripe settlement evidence —
+ *  a confirmed charge-grain tie names it (booked or not), or a confirmed
+ *  fee-row claim names it as a charge's sibling "Stripe fee" line. Such a row
+ *  is the QB-side record of money whose donor/gift work lives on the STRIPE
+ *  charge, so it is settled OUT of the donation review queue (derives
+ *  `excluded` below) even without its own exclusion_reason. The confirmed
+ *  settlement-link deposit case is deliberately absent here — it already
+ *  derives match_confirmed via {@link qbConfirmedEvidenceText}. */
+export function qbSettlementClaimedText(alias: string): string {
+  const a = quotedSqlAlias(alias);
+  return `(${qbChargeTieLinkExistsText(alias)} OR EXISTS (SELECT 1 FROM "source_links" "srcl_ds" WHERE "srcl_ds"."link_type" = 'charge_fee_row' AND "srcl_ds"."lifecycle" = 'confirmed' AND "srcl_ds"."qb_staged_payment_id" = ${a}."id"))`;
+}
+
+/** The full derived-status CASE for QB row `alias` (parenthesized, no cast).
+ *  The settlement-claimed arm sits AFTER match_confirmed on purpose: a tied
+ *  row whose charge is already booked stays match_confirmed (the booking is
+ *  the stronger fact); an unbooked-but-confirmed tie (or a claimed fee
+ *  sibling) derives `excluded` — settled evidence, not donation review work. */
 export function qbStatusCaseText(alias: string): string {
   const a = quotedSqlAlias(alias);
   return `(CASE
   WHEN ${a}."exclusion_reason" IS NOT NULL THEN 'excluded'
   WHEN ${qbProposedText(alias)} THEN 'match_proposed'
   WHEN ${qbConfirmedEvidenceText(alias)} THEN 'match_confirmed'
+  WHEN ${qbSettlementClaimedText(alias)} THEN 'excluded'
   ELSE 'pending'
 END)`;
 }
@@ -178,7 +205,7 @@ END)`;
 export function qbOpenText(alias: string): string {
   const a = quotedSqlAlias(alias);
   return `(${a}."exclusion_reason" IS NULL AND (
-  NOT ${qbConfirmedEvidenceText(alias)}
+  (NOT ${qbConfirmedEvidenceText(alias)} AND NOT ${qbSettlementClaimedText(alias)})
   OR ${qbProposedText(alias)}
 ))`;
 }
@@ -252,7 +279,9 @@ export const stagedStatusSql: SQL<DerivedStatus> = sql
 
 /** Per-status WHERE predicates (mutually exclusive, exhaustive). */
 export const stagedStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
-  excluded: sql.raw(`${QBA}."exclusion_reason" IS NOT NULL`) as SQL<boolean>,
+  excluded: sql.raw(
+    `(${QBA}."exclusion_reason" IS NOT NULL OR (NOT ${qbProposedText(QB)} AND NOT ${qbConfirmedEvidenceText(QB)} AND ${qbSettlementClaimedText(QB)}))`,
+  ) as SQL<boolean>,
   match_proposed: sql.raw(
     `(${QBA}."exclusion_reason" IS NULL AND ${qbProposedText(QB)})`,
   ) as SQL<boolean>,
@@ -260,7 +289,7 @@ export const stagedStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
     `(${QBA}."exclusion_reason" IS NULL AND NOT ${qbProposedText(QB)} AND ${qbConfirmedEvidenceText(QB)})`,
   ) as SQL<boolean>,
   pending: sql.raw(
-    `(${QBA}."exclusion_reason" IS NULL AND NOT ${qbConfirmedEvidenceText(QB)})`,
+    `(${QBA}."exclusion_reason" IS NULL AND NOT ${qbConfirmedEvidenceText(QB)} AND NOT ${qbSettlementClaimedText(QB)})`,
   ) as SQL<boolean>,
 };
 
@@ -326,6 +355,12 @@ export interface StagedStatusFacts {
    * counted ledger row). Mere linkage is NOT evidence — pass true only when
    * the tied charge's booking is known-counted; default false. */
   hasConfirmedChargeTie?: boolean;
+  /** EXISTS arm — the row is CLAIMED as confirmed Stripe settlement evidence:
+   * a confirmed charge-grain tie names it (booked or not) OR a confirmed
+   * fee-row claim names it as a charge's sibling fee line. Derives `excluded`
+   * (settled out of the donation review queue) when no stronger booking
+   * evidence exists — mirrors qbSettlementClaimedText; default false. */
+  hasSettlementClaim?: boolean;
 }
 
 export function deriveStagedPaymentStatus(f: StagedStatusFacts): DerivedStatus {
@@ -340,6 +375,7 @@ export function deriveStagedPaymentStatus(f: StagedStatusFacts): DerivedStatus {
   ) {
     return "match_confirmed";
   }
+  if (f.hasSettlementClaim === true) return "excluded";
   return "pending";
 }
 

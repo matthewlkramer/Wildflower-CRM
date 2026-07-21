@@ -14,11 +14,14 @@ import {
 } from "./derivedStatus";
 import { isSettlementLump } from "./settlementLump";
 import {
+  deleteSettlementLink,
   payoutStatusFromLink,
   transitionSettlementLink,
+  upsertSettlementLink,
 } from "./settlementLink";
 import {
   confirmSettlementLink,
+  exemptSettlementLink,
   proposeSettlementLink,
 } from "./settlementWriter";
 
@@ -90,7 +93,10 @@ export type ConfirmRevertKind =
   // or a split whose money lives in counted payment_applications rows), so the
   // confirm stamped the settlement link only and left the deposit untouched.
   | "confirmed_linkage_only"
-  | "reverted";
+  | "reverted"
+  // A negative payout (Stripe withdrawal) explicitly resolved as needing no QB
+  // deposit — an EXEMPT settlement link with no deposit.
+  | "resolved_withdrawal";
 
 export type ConfirmRevertOk = {
   ok: true;
@@ -753,5 +759,109 @@ export function revertPayoutQbConfirmation(
       "invalid_transition",
       "This payout is not in a confirmed state and has nothing to revert.",
     );
+  });
+}
+
+// ─── RESOLVE / REVERT WITHDRAWAL (negative payout, no QB deposit expected) ──
+// A NEGATIVE payout is money Stripe pulled BACK from the bank (a withdrawal /
+// debit, e.g. a balance clawback or a failed payout reversal) — no deposit ever
+// lands in QuickBooks, so there is nothing to settle against. The QB ingest
+// carries no withdrawal-type rows at all, so these payouts would otherwise sit
+// as "missing settlement link" forever. A human with finance permission
+// explicitly resolves one here: the canonical state is an EXEMPT settlement
+// link with NO deposit (settlement_links_deposit_required_chk) — no stored
+// status column, and every reader (lanes, workbench settlementLinkState)
+// derives from that one link. Never automatic: humans confirm every terminal
+// settlement state (docs/workbench-business-rules.md).
+
+/**
+ * Resolve a NEGATIVE payout as a Stripe withdrawal — write the exempt
+ * settlement link. Idempotent: re-resolving an already-exempt payout succeeds.
+ * Refused (409) for a non-negative payout or one holding a proposed/confirmed
+ * link (revert that first — a real deposit tie is a stronger fact).
+ */
+export function resolvePayoutAsWithdrawal(
+  args: ConfirmRevertArgs,
+): Promise<ConfirmRevertResult> {
+  const { payoutId, userId } = args;
+  return runTransition(async (tx) => {
+    const payout = await tx
+      .select()
+      .from(stripePayouts)
+      .where(eq(stripePayouts.id, payoutId))
+      .for("update")
+      .then((r) => r[0]);
+    if (!payout) throw new TransitionError("not_found", "Payout not found.");
+    const amount = Number(payout.amount ?? payout.netTotal ?? 0);
+    if (!(amount < 0)) {
+      throw new TransitionError(
+        "invalid_transition",
+        "Only a negative payout (a Stripe withdrawal) can be resolved as a withdrawal.",
+      );
+    }
+    const priorLink = await readSettlementLink(tx, payoutId);
+    if (priorLink?.lifecycle === "exempt") {
+      // Already resolved — idempotent success.
+      return {
+        ok: true,
+        kind: "resolved_withdrawal",
+        payoutId,
+        stagedPaymentId: null,
+        rederiveGiftIds: [],
+      };
+    }
+    if (priorLink) {
+      throw new TransitionError(
+        "invalid_transition",
+        "This payout already has a proposed or confirmed settlement link — remove that link before resolving it as a withdrawal.",
+      );
+    }
+    await upsertSettlementLink(
+      tx,
+      payoutId,
+      exemptSettlementLink({ confirmedByUserId: userId, confirmedAt: new Date() }),
+    );
+    return {
+      ok: true,
+      kind: "resolved_withdrawal",
+      payoutId,
+      stagedPaymentId: null,
+      rederiveGiftIds: [],
+    };
+  });
+}
+
+/**
+ * Undo a withdrawal resolution: delete the EXEMPT settlement link so the payout
+ * returns to the unlinked state. Refused (409) when the payout's link is not
+ * exempt (a proposed/confirmed link has its own revert paths).
+ */
+export function revertWithdrawalResolution(
+  args: ConfirmRevertArgs,
+): Promise<ConfirmRevertResult> {
+  const { payoutId } = args;
+  return runTransition(async (tx) => {
+    const payout = await tx
+      .select()
+      .from(stripePayouts)
+      .where(eq(stripePayouts.id, payoutId))
+      .for("update")
+      .then((r) => r[0]);
+    if (!payout) throw new TransitionError("not_found", "Payout not found.");
+    const priorLink = await readSettlementLink(tx, payoutId);
+    if (priorLink?.lifecycle !== "exempt") {
+      throw new TransitionError(
+        "invalid_transition",
+        "This payout is not resolved as a withdrawal — nothing to revert.",
+      );
+    }
+    await deleteSettlementLink(tx, payoutId);
+    return {
+      ok: true,
+      kind: "reverted",
+      payoutId,
+      stagedPaymentId: null,
+      rederiveGiftIds: [],
+    };
   });
 }

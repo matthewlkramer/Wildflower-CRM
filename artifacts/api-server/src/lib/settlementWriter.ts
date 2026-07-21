@@ -61,3 +61,23 @@ export function confirmSettlementLink(args: {
     confirmedAt: args.confirmedAt,
   };
 }
+
+/**
+ * Build the EXEMPT settlement link for a payout that needs no QB deposit at all
+ * — a negative payout (Stripe withdrawal / failed payout) explicitly resolved by
+ * a human. Carries NO deposit (settlement_links_deposit_required_chk allows a
+ * null deposit only here) and records who resolved it and when.
+ */
+export function exemptSettlementLink(args: {
+  confirmedByUserId: string | null;
+  confirmedAt: Date;
+}): SettlementLinkFields {
+  return {
+    lifecycle: "exempt",
+    provenance: args.confirmedByUserId ? "human" : "system_confirmed",
+    depositStagedPaymentId: null,
+    conflictGiftId: null,
+    confirmedByUserId: args.confirmedByUserId,
+    confirmedAt: args.confirmedAt,
+  };
+}

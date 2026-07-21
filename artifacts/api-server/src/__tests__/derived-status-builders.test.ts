@@ -10,6 +10,7 @@ import {
   qbChargeTieLinkExistsText,
   qbProposedText,
   qbConfirmedEvidenceText,
+  qbSettlementClaimedText,
   qbStatusCaseText,
   qbOpenText,
   chargeCountedExistsText,
@@ -38,9 +39,11 @@ import {
  *      drizzle renders identifiers.
  *   3. The base-table drizzle fragments are the SAME text the builders emit
  *      for the base-table alias — one derivation, two entry points.
- *   4. Tie ≠ status: the QB status CASE may consult the BOOKED tie predicate
- *      only; the raw tie-linkage predicate (claim fact) must never appear in
- *      any status/open derivation.
+ *   4. Tie roles: the QB status CASE consults the BOOKED tie predicate for
+ *      match_confirmed, and the raw tie-linkage predicate ONLY inside the
+ *      settlement-claim arm (a confirmed tie settles the row out of the
+ *      donation queue → derives `excluded`). Charge derivations never
+ *      consult the tie at all.
  *
  * Execution parity against live PostgreSQL lives in
  * derived-status-parity.integration.test.ts.
@@ -141,11 +144,18 @@ describe("builders emit consistently quoted identifiers", () => {
 });
 
 describe("status CASE shape", () => {
-  it("enumerates every derived status exactly once (QB and charge)", () => {
-    for (const caseText of [qbStatusCaseText("s"), chargeStatusCaseText("s")]) {
-      for (const status of DERIVED_STATUSES) {
-        expect(caseText.split(`'${status}'`).length - 1, status).toBe(1);
-      }
+  it("enumerates every derived status (QB: excluded twice — exclusion_reason + settlement claim)", () => {
+    for (const status of DERIVED_STATUSES) {
+      // QB CASE: `excluded` appears twice by design — the stored
+      // exclusion_reason arm AND the settlement-claim arm.
+      expect(
+        qbStatusCaseText("s").split(`'${status}'`).length - 1,
+        `qb ${status}`,
+      ).toBe(status === "excluded" ? 2 : 1);
+      expect(
+        chargeStatusCaseText("s").split(`'${status}'`).length - 1,
+        `charge ${status}`,
+      ).toBe(1);
     }
   });
 });
@@ -161,7 +171,7 @@ describe("base-table drizzle fragments render the builders' text (one source)", 
     expect(render(stagedChargeTieLinkExists)).toBe(qbChargeTieLinkExistsText(QB));
 
     expect(render(stagedStatusWhere.excluded)).toBe(
-      `"${QB}"."exclusion_reason" IS NOT NULL`,
+      `("${QB}"."exclusion_reason" IS NOT NULL OR (NOT ${qbProposedText(QB)} AND NOT ${qbConfirmedEvidenceText(QB)} AND ${qbSettlementClaimedText(QB)}))`,
     );
     expect(render(stagedStatusWhere.match_proposed)).toBe(
       `("${QB}"."exclusion_reason" IS NULL AND ${qbProposedText(QB)})`,
@@ -170,7 +180,7 @@ describe("base-table drizzle fragments render the builders' text (one source)", 
       `("${QB}"."exclusion_reason" IS NULL AND NOT ${qbProposedText(QB)} AND ${qbConfirmedEvidenceText(QB)})`,
     );
     expect(render(stagedStatusWhere.pending)).toBe(
-      `("${QB}"."exclusion_reason" IS NULL AND NOT ${qbConfirmedEvidenceText(QB)})`,
+      `("${QB}"."exclusion_reason" IS NULL AND NOT ${qbConfirmedEvidenceText(QB)} AND NOT ${qbSettlementClaimedText(QB)})`,
     );
   });
 
@@ -194,23 +204,24 @@ describe("base-table drizzle fragments render the builders' text (one source)", 
   });
 });
 
-describe("tie is a claim, never status evidence", () => {
-  it("the QB status CASE consults the tie ONLY through the booked predicate", () => {
+describe("tie consultation: booked = evidence, raw link = settlement claim", () => {
+  it("the QB status CASE consults the tie exactly twice — booked (match_confirmed) and claim (excluded)", () => {
     const caseText = qbStatusCaseText("s");
-    // Exactly one tie reference in the whole CASE (the source_links claim) …
+    // Two tie references in the whole CASE: the BOOKED form inside the
+    // confirmed-evidence arm, and the RAW-link form inside the
+    // settlement-claim arm (which derives `excluded`, never confirmed).
     expect(
       caseText.split("'charge_qb_tie'").length - 1,
-    ).toBe(1);
-    // … and it is the BOOKED form (tie AND counted ledger row on the charge).
+    ).toBe(2);
     expect(caseText).toContain(qbChargeTieBookedExistsText("s"));
-    // The raw-linkage claim predicate never appears verbatim.
-    expect(caseText).not.toContain(qbChargeTieLinkExistsText("s"));
+    expect(caseText).toContain(qbSettlementClaimedText("s"));
   });
 
   it("open/confirmed derivations follow the same rule", () => {
     const openText = qbOpenText("s");
     expect(openText).toContain(qbChargeTieBookedExistsText("s"));
-    expect(openText).not.toContain(qbChargeTieLinkExistsText("s"));
+    // Open must also carve out settlement-claimed rows (they derive excluded).
+    expect(openText).toContain(qbSettlementClaimedText("s"));
     // Charge derivations never consult the tie at all — a charge's own status
     // comes from its own ledger row, not from what it claims about a QB row.
     for (const t of [

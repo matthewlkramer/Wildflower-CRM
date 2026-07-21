@@ -3713,6 +3713,7 @@ export const StripePayoutReconciliationResultKind = {
   confirmed_keep: 'confirmed_keep',
   confirmed_replace: 'confirmed_replace',
   reverted: 'reverted',
+  resolved_withdrawal: 'resolved_withdrawal',
 } as const;
 
 /**
@@ -5435,7 +5436,7 @@ export const WorkbenchRowInformationCompleteness = {
 } as const;
 
 /**
- * State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only.
+ * State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only. `exempt` = human-resolved as needing no QB deposit (e.g. a negative payout / Stripe withdrawal).
  */
 export type WorkbenchRowSettlementLinkState = typeof WorkbenchRowSettlementLinkState[keyof typeof WorkbenchRowSettlementLinkState];
 
@@ -5446,6 +5447,7 @@ export const WorkbenchRowSettlementLinkState = {
   proposed_partial: 'proposed_partial',
   proposed_conflict: 'proposed_conflict',
   confirmed: 'confirmed',
+  exempt: 'exempt',
 } as const;
 
 export type WorkbenchRowCoverageStateState = typeof WorkbenchRowCoverageStateState[keyof typeof WorkbenchRowCoverageStateState];
@@ -5823,6 +5825,8 @@ export interface WorkbenchCluster {
   bankAmount?: string | null;
   /** netTotal − bankAmount when both sides exist (the money-math gap line); null when either side is unknown. */
   gapAmount?: string | null;
+  /** For stripe_payout clusters with NO linked QB record: whether any lump-eligible QB candidate exists in the ingested data inside the matcher's amount/date window. False = likely not booked in QuickBooks yet (waiting on bookkeeping). Null for other cluster kinds or when a QB record is already linked. */
+  qbCandidateExists?: boolean | null;
   /** Evidence rows confirmed into gifts (excluded rows don't count toward the denominator). Null for crm_only. */
   resolvedCount?: number | null;
   /** Non-excluded evidence rows in the cluster. Null for crm_only. */

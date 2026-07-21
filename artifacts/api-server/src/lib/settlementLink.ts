@@ -22,7 +22,10 @@ type DbLike = typeof db | Tx;
 export type SettlementLinkFields = {
   lifecycle: "proposed" | "confirmed" | "exempt";
   provenance: "system" | "system_confirmed" | "human";
-  depositStagedPaymentId: string;
+  // The QB deposit lump this payout settled as. Null ONLY on an `exempt` link
+  // (e.g. a negative payout resolved as a Stripe withdrawal — no deposit is
+  // expected); enforced by settlement_links_deposit_required_chk.
+  depositStagedPaymentId: string | null;
   // The already-approved QB gift the proposal collided with (legacy
   // `conflict_approved`) — mirrors `stripe_payouts.qb_conflict_gift_id`. Non-null
   // on a proposed link marks a conflict; retained on the resulting confirmed link
@@ -37,9 +40,11 @@ export type SettlementLinkFields = {
  * expose / gate on the enum shape (all now sourced from `settlement_links`, never
  * the retired legacy `stripe_payouts.qb_reconciliation_status` mirror).
  *
- * Emits only the four states the authoritative writer produces and NEVER throws:
- * it is a read path, so an `exempt` link (which no payout link is in this model)
- * degrades to `unmatched` rather than 500-ing an evidence view.
+ * Emits only the four states of the legacy enum shape and NEVER throws: it is a
+ * read path. An `exempt` link (a human-resolved withdrawal — no QB deposit
+ * expected) has no legacy-enum equivalent and degrades to `unmatched` here;
+ * lane/workbench readers use `derivePayoutLanes` / the workbench
+ * settlementLinkState, which surface `exempt` faithfully.
  */
 export function payoutStatusFromLink(
   link: { lifecycle: SettlementLinkFields["lifecycle"]; conflictGiftId: string | null } | null,

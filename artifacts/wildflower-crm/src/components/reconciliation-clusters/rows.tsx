@@ -89,6 +89,10 @@ export interface ClusterActions {
   openQbDetail: (record: WorkbenchClusterQbRecord, linkage: string) => void;
   /** Reject/dismiss the system-proposed payout→deposit settlement tie (§6.2 "Remove proposal"). Finance-gated. */
   removeSettlementProposal: (payoutId: string, label: string) => void;
+  /** Resolve a NEGATIVE payout as a Stripe withdrawal — no QB deposit expected. Finance-gated. */
+  resolveWithdrawal: (payoutId: string) => void;
+  /** Undo a withdrawal resolution (remove the exempt settlement link). Finance-gated. */
+  revertWithdrawal: (payoutId: string) => void;
   /** Revert a confirmed payout reconciliation back to proposed state (§6.2 "Unmatch confirmed settlement"). Finance-gated; shows confirm dialog before acting. */
   revertSettlement: (payoutId: string, label: string) => void;
   /** Revert the confirmed settlement AND re-open the deposit search in one action (§6.2 "Replace settlement relationship"). Finance-gated; shows confirm dialog before acting. */
@@ -146,6 +150,7 @@ const SETTLEMENT_META: Record<WorkbenchRowSettlementLinkState, { tone: Tone; wor
   proposed_partial: { tone: "blue", word: "Partial settlement" },
   proposed_conflict: { tone: "amber", word: "Settlement conflict" },
   confirmed: { tone: "green", word: "Settlement confirmed" },
+  exempt: { tone: "green", word: "Resolved as withdrawal" },
 };
 
 const QB_ROLE_LABEL: Record<WorkbenchClusterQbRecord["role"], string> = {
@@ -1409,30 +1414,58 @@ function SettlementGapMenu({
   cluster: WorkbenchCluster;
   actions: ClusterActions;
 }) {
+  // Negative payout ⇒ money went BACK to Stripe (a withdrawal); no QB deposit
+  // will ever exist, so the finance-gated escape hatch is offered here.
+  const isNegative = Number(cluster.bankAmount ?? cluster.netTotal ?? 0) < 0;
+  const isExempt = cluster.coverage.state.settlementLinkState === "exempt";
+  const items = [
+    {
+      label: "Search QuickBooks for this deposit",
+      onClick: () =>
+        actions.openSettlementSearch({
+          payoutId: cluster.anchorId,
+          amount: cluster.bankAmount ?? cluster.netTotal ?? null,
+          date: cluster.date ?? null,
+        }),
+    },
+    {
+      label: "Confirm settlement link",
+      disabledReason: "Nothing proposed yet — needs a QB deposit first",
+    },
+  ];
+  if (isNegative) {
+    items.push(
+      isExempt
+        ? actions.isFinanceOrAdmin
+          ? {
+              label: "Undo withdrawal resolution",
+              onClick: () => actions.revertWithdrawal(cluster.anchorId),
+            }
+          : {
+              label: "Undo withdrawal resolution",
+              disabledReason: "Finance team only",
+            }
+        : actions.isFinanceOrAdmin
+          ? {
+              label: "Resolve as Stripe withdrawal",
+              onClick: () => actions.resolveWithdrawal(cluster.anchorId),
+            }
+          : {
+              label: "Resolve as Stripe withdrawal",
+              disabledReason: "Finance team only",
+            },
+    );
+  }
   return (
-    <CardMenu
-      items={[
-        {
-          label: "Search QuickBooks for this deposit",
-          onClick: () =>
-            actions.openSettlementSearch({
-              payoutId: cluster.anchorId,
-              amount: cluster.bankAmount ?? cluster.netTotal ?? null,
-              date: cluster.date ?? null,
-            }),
-        },
-        {
-          label: "Confirm settlement link",
-          disabledReason: "Nothing proposed yet — needs a QB deposit first",
-        },
-      ]}
-      testId={`button-settlement-menu-${cluster.id}`}
-    />
+    <CardMenu items={items} testId={`button-settlement-menu-${cluster.id}`} />
   );
 }
 
 /** Cardless "no QB deposit yet" slot — absence isn't evidence, so it renders
- * as plain text (no card chrome), keeping the settlement-gap ⋯ menu. */
+ * as plain text (no card chrome), keeping the settlement-gap ⋯ menu. Three
+ * variants: resolved-withdrawal (exempt link — settled, green), "not booked
+ * yet" (no plausible QB candidate exists — informational, not actionable),
+ * and the default actionable "settlement link missing". */
 function SettlementGapSlot({
   cluster,
   actions,
@@ -1440,14 +1473,33 @@ function SettlementGapSlot({
   cluster: WorkbenchCluster;
   actions: ClusterActions;
 }) {
+  const isExempt = cluster.coverage.state.settlementLinkState === "exempt";
+  if (isExempt) {
+    return (
+      <div className="flex items-start justify-between gap-1 px-1 pt-1.5">
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] leading-snug text-muted-foreground italic">
+            Money returned to Stripe — no QB deposit expected
+          </div>
+          <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 leading-snug">
+            resolved as withdrawal
+          </div>
+        </div>
+        <SettlementGapMenu cluster={cluster} actions={actions} />
+      </div>
+    );
+  }
+  const notBookedYet = cluster.qbCandidateExists === false;
   return (
     <div className="flex items-start justify-between gap-1 px-1 pt-1.5">
       <div className="min-w-0 flex-1">
         <div className="text-[11px] leading-snug text-muted-foreground italic">
-          No QB deposit linked yet
+          {notBookedYet
+            ? "No QB record found yet — likely not booked in QuickBooks"
+            : "No QB deposit linked yet"}
         </div>
         <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 leading-snug">
-          settlement link missing
+          {notBookedYet ? "awaiting QuickBooks booking" : "settlement link missing"}
         </div>
       </div>
       <SettlementGapMenu cluster={cluster} actions={actions} />
@@ -1485,6 +1537,9 @@ function SettlementChip({ cluster }: { cluster: WorkbenchCluster }) {
     if (cluster.qbRecords.length === 0) return null;
     if (cluster.coverage.accountingEvidence.complete) return null;
   }
+  // Exempt with no QB records: the SettlementGapSlot already renders the
+  // "resolved as withdrawal" word — don't duplicate it as a chip.
+  if (s === "exempt" && cluster.qbRecords.length === 0) return null;
   const meta = SETTLEMENT_META[s];
   return (
     <div

@@ -12,6 +12,7 @@ import { chargeStatusIn, chargeStatusWhere } from "./derivedStatus";
 import { getUncachableStripeClient } from "./stripeClient";
 import { scoreStripeCharge } from "./stripeMatch";
 import { runProposalPass } from "./stripeReconcile";
+import { runChargeTiePass } from "./chargeQbTie";
 import { deriveRefundProposal, isFullyRefunded } from "./stripeRefund";
 import { sweepRefundedQbStagedPayments } from "./refundedChargeSweep";
 import { ensureBundleDraftsForAnchors } from "./reconciliationBundleSync";
@@ -889,6 +890,15 @@ export async function syncStripe(
       // its ties/links already exist — sweep pending QB rows whose full Stripe
       // trace is now refunded money (idempotent, one guarded UPDATE).
       await sweepRefundedQbStagedPayments();
+
+      // FULL (unscoped) matching passes on every scheduled run — not just for
+      // the payouts seen this run. QuickBooks bookings lag Stripe payouts by
+      // days/weeks, so older payouts only get their lump / charge-tie
+      // proposals when the passes re-run over everything. Both passes are
+      // idempotent and lock-free (we already hold the per-account "stripe"
+      // advisory lock here).
+      await runProposalPass();
+      await runChargeTiePass();
 
       return { payouts: payoutsSeen, staged, matched, autoApplied, refundProposals };
     } catch (e) {
