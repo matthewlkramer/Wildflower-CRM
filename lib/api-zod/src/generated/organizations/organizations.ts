@@ -67,7 +67,6 @@ export const ListOrganizationsResponse = zod.object({
   "interestsGovModels": zod.array(zod.string()).nullish(),
   "regionIds": zod.array(zod.string()).nullish(),
   "parentOrganizationId": zod.string().nullish(),
-  "paymentIntermediaryId": zod.string().nullish().describe('Payment intermediary (e.g. a DAF) this organization gives through.'),
   "anonymous": zod.boolean().describe('When true, hide the organization\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lastContacted": zod.string().date().nullish(),
   "x": zod.string().nullish(),
@@ -120,7 +119,6 @@ export const CreateOrganizationBody = zod.object({
   "interestsGovModels": zod.array(zod.string()).optional(),
   "regionIds": zod.array(zod.string()).optional(),
   "parentOrganizationId": zod.string().optional(),
-  "paymentIntermediaryId": zod.string().optional(),
   "x": zod.string().optional(),
   "linkedin": zod.string().optional(),
   "facebook": zod.string().optional(),
@@ -163,7 +161,6 @@ export const GetOrganizationResponse = zod.object({
   "interestsGovModels": zod.array(zod.string()).nullish(),
   "regionIds": zod.array(zod.string()).nullish(),
   "parentOrganizationId": zod.string().nullish(),
-  "paymentIntermediaryId": zod.string().nullish().describe('Payment intermediary (e.g. a DAF) this organization gives through.'),
   "anonymous": zod.boolean().describe('When true, hide the organization\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lastContacted": zod.string().date().nullish(),
   "x": zod.string().nullish(),
@@ -242,15 +239,6 @@ export const GetOrganizationResponse = zod.object({
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })).optional(),
-  "paymentIntermediary": zod.object({
-  "id": zod.string(),
-  "name": zod.string(),
-  "type": zod.enum(['daf', 'giving_platform', 'private_wealth_manager']).nullish(),
-  "quickbooksCustomerId": zod.string().nullish().describe('QuickBooks Online Customer Id this payment intermediary maps to.'),
-  "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
-  "createdAt": zod.string().datetime({}),
-  "updatedAt": zod.string().datetime({})
-}).nullish(),
   "flaggedForResearch": zod.boolean().optional().describe('Derived (never persisted): true when an OPEN Cleanup Queue item with reason_code=\'needs_research\' targets this record. Drives the passive \'Needs research\' detail-page badge; set only via the Cleanup Queue, never writable here.')
 }))
 
@@ -284,7 +272,6 @@ export const UpdateOrganizationBody = zod.object({
   "interestsGovModels": zod.array(zod.string()).nullish(),
   "regionIds": zod.array(zod.string()).nullish(),
   "parentOrganizationId": zod.string().nullish(),
-  "paymentIntermediaryId": zod.string().nullish(),
   "x": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
   "facebook": zod.string().nullish(),
@@ -323,7 +310,6 @@ export const UpdateOrganizationResponse = zod.object({
   "interestsGovModels": zod.array(zod.string()).nullish(),
   "regionIds": zod.array(zod.string()).nullish(),
   "parentOrganizationId": zod.string().nullish(),
-  "paymentIntermediaryId": zod.string().nullish().describe('Payment intermediary (e.g. a DAF) this organization gives through.'),
   "anonymous": zod.boolean().describe('When true, hide the organization\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lastContacted": zod.string().date().nullish(),
   "x": zod.string().nullish(),
@@ -460,7 +446,6 @@ export const ArchiveOrganizationResponse = zod.object({
   "interestsGovModels": zod.array(zod.string()).nullish(),
   "regionIds": zod.array(zod.string()).nullish(),
   "parentOrganizationId": zod.string().nullish(),
-  "paymentIntermediaryId": zod.string().nullish().describe('Payment intermediary (e.g. a DAF) this organization gives through.'),
   "anonymous": zod.boolean().describe('When true, hide the organization\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lastContacted": zod.string().date().nullish(),
   "x": zod.string().nullish(),
@@ -512,7 +497,6 @@ export const UnarchiveOrganizationResponse = zod.object({
   "interestsGovModels": zod.array(zod.string()).nullish(),
   "regionIds": zod.array(zod.string()).nullish(),
   "parentOrganizationId": zod.string().nullish(),
-  "paymentIntermediaryId": zod.string().nullish().describe('Payment intermediary (e.g. a DAF) this organization gives through.'),
   "anonymous": zod.boolean().describe('When true, hide the organization\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lastContacted": zod.string().date().nullish(),
   "x": zod.string().nullish(),

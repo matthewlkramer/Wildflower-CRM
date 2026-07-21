@@ -474,14 +474,6 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-  // Reset finalAmountSource before deleting charges/staged rows.
-  if (giftIds.length)
-    await db
-      .update(schema.giftsAndPayments)
-      .set({
-        finalAmountSource: "human",
-      })
-      .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
   // Clear the cash-application ledger BEFORE deleting charges/gifts. Stripe
   // evidence rows anchor on (stripe_charge_id, gift_id) with a NULL payment_id,
   // so clearing by staged id alone misses them — and the charge's ON DELETE SET
@@ -579,7 +571,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — link existing gift (integra
     // Gift FINAL amount stamped from the Stripe GROSS; provenance recorded in
     // the ledger (finalAmountStripeChargeId is @deprecated, never written).
     const gift = await readGift(giftId);
-    expect(gift.finalAmountSource).toBe("stripe");
     expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
   }, 30_000);
 
@@ -630,17 +621,11 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — link existing gift (integra
 describe.skipIf(!HAS_DB)(
   "Reconciliation approve — switch Stripe source (integration)",
   () => {
-    // Stamp a gift so it is already sourced from an OLD Stripe charge, and
-    // reconcile that charge to the gift, mirroring a prior link. This is the
-    // state the switch override must safely re-point away from.
+    // Source a gift from an OLD Stripe charge by reconciling that charge to
+    // the gift (the counted ledger row IS the authoritative link), mirroring a
+    // prior link. This is the state the switch override must safely re-point
+    // away from.
     async function sourceGiftFromCharge(giftId: string, oldChargeId: string) {
-      await db
-        .update(schema.giftsAndPayments)
-        // Mark sourced from stripe; ledger row below is the authoritative link.
-        .set({
-          finalAmountSource: "stripe",
-        })
-        .where(eqFn(schema.giftsAndPayments.id, giftId));
       await db
         .update(schema.stripeStagedCharges)
         .set({
@@ -726,7 +711,6 @@ describe.skipIf(!HAS_DB)(
 
       // The gift is now sourced from the NEW charge (via ledger).
       const gift = await readGift(giftId);
-      expect(gift.finalAmountSource).toBe("stripe");
       expect(await stripeGiftIdForCharge(newChargeId)).toBe(giftId);
 
       // New charge carries the gift linkage (counted ledger row).
@@ -951,19 +935,14 @@ describe.skipIf(!HAS_DB)(
       const giftId = await seedGift("100.00");
       // Incumbent QB link on the gift (creates the ledger row) …
       const incumbentId = await bookIncumbentLink(giftId, "100.00");
-      // … and additionally re-point the gift's final amount at an OLD Stripe
-      // charge so it is ALSO Stripe-sourced. Both conflicts now coexist.
+      // … and additionally tie the gift to an OLD Stripe charge via the
+      // counted ledger so it is ALSO Stripe-sourced. Both conflicts now
+      // coexist.
       const oldPayoutId = await seedPayout(await seedStaged("100.00"));
       const oldChargeId = await seedCharge({
         payoutId: oldPayoutId,
         grossAmount: "100.00",
       });
-      await db
-        .update(schema.giftsAndPayments)
-        .set({
-          finalAmountSource: "stripe",
-        })
-        .where(eqFn(schema.giftsAndPayments.id, giftId));
       await db
         .update(schema.stripeStagedCharges)
         .set({
@@ -1055,9 +1034,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)",
     const gift = await readGift(newGiftId);
     expect(gift.organizationId).toBe(ORG_ID);
     expect(gift.amount).toBe("100.00");
-    expect(gift.finalAmountSource).toBe("stripe");
     expect(await stripeGiftIdForCharge(chargeId)).toBe(newGiftId);
-    expect(gift.originalHumanCrmAmount).toBeNull();
     // processor_fee header column is dropped; the fee now lives on the linked charge
     // (derivedProcessorFee sums exactly this) — assert it at the source.
     expect((await readCharge(chargeId)).feeAmount).toBe("3.00");
@@ -1102,10 +1079,8 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)",
 
     const gift = await readGift(newGiftId);
     expect(gift.amount).toBe("250.00");
-    expect(gift.finalAmountSource).toBe("quickbooks");
     // QB amount provenance lives on the counted ledger row.
     expect(await qbPaymentIdForGift(newGiftId)).toBe(stagedId);
-    expect(gift.originalHumanCrmAmount).toBeNull();
 
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
@@ -1380,7 +1355,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     expect(gift.opportunityId).toBe(oppId);
     expect(gift.organizationId).toBe(ORG_ID);
     expect(gift.amount).toBe("100.00");
-    expect(gift.finalAmountSource).toBe("stripe");
     expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
 
     // The CHARGE owns the mint (a counted ledger row with created_the_gift,
@@ -1525,7 +1499,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     expect(gift.opportunityId).toBe(oppId);
     expect(gift.organizationId).toBe(ORG_ID);
     expect(gift.amount).toBe("100.00");
-    expect(gift.finalAmountSource).toBe("stripe");
     expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
 
     // The CHARGE owns the mint (a counted ledger row with created_the_gift,
@@ -1604,7 +1577,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     expect(gift.opportunityId).toBe(oppId);
     expect(gift.organizationId).toBe(ORG_ID);
     expect(gift.amount).toBe("100.00");
-    expect(gift.finalAmountSource).toBe("quickbooks");
     // QB amount provenance lives on the counted ledger row.
     expect(await qbPaymentIdForGift(giftId)).toBe(stagedId);
 
@@ -1783,7 +1755,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
 
     const gift = await readGift(giftId);
     expect(gift.opportunityId).toBe(oppId);
-    expect(gift.finalAmountSource).toBe("stripe");
     // Ledger row records the charge link (finalAmountStripeChargeId @deprecated).
     expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
 
@@ -2072,11 +2043,9 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
     // The human amount is preserved (no overwrite); Stripe precedence is recorded
     // via provenance (source + charge pointer), not by rewriting `amount`.
     expect(gift.amount).toBe("98.50");
-    expect(gift.finalAmountSource).toBe("stripe");
     // Ledger row records the charge link (finalAmountStripeChargeId @deprecated).
     expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
     // No overwrite ⇒ nothing snapshotted, no allocation rescale, no review flag.
-    expect(gift.originalHumanCrmAmount).toBeNull();
     expect((await readAlloc(allocId)).subAmount).toBe("98.50");
     expect(await readOpenReviews(giftId)).toHaveLength(0);
     // The QB staged row stays as reconciled evidence at its own coarse figure.
@@ -2119,10 +2088,8 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
     expect(ok.status).toBe(200);
     const gift = await readGift(giftId);
     expect(gift.amount).toBe("105.00"); // human figure preserved, not overwritten
-    expect(gift.finalAmountSource).toBe("stripe");
     // Ledger row records the charge link (finalAmountStripeChargeId @deprecated).
     expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
-    expect(gift.originalHumanCrmAmount).toBeNull();
     expect((await readAlloc(allocId)).subAmount).toBe("105.00");
     expect(await readOpenReviews(giftId)).toHaveLength(0);
   }, 30_000);

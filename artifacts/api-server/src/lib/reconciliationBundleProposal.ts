@@ -97,7 +97,6 @@ export type StagedPaymentExclusionReason =
   | "government_reimbursement"
   | "fiscally_sponsored";
 
-export type GiftFinalAmountSource = "human" | "stripe" | "quickbooks";
 export type GiftPaymentMethod =
   | "ach"
   | "check"
@@ -163,7 +162,6 @@ export interface BundleGiftMintDraft {
   amount: string | null;
   dateReceived?: string | null;
   paymentMethod?: GiftPaymentMethod | null;
-  finalAmountSource?: GiftFinalAmountSource | null;
 }
 
 export interface BundleGiftProposal {
@@ -322,7 +320,6 @@ export interface BaseChargeRow {
   autoGiftKind: "match" | "mint" | "research" | "exclude";
   autoGiftId: string | null;
   autoMintAmount: string | null;
-  autoMintFinalSource: GiftFinalAmountSource | null;
   autoExclusionReason: StagedPaymentExclusionReason | null;
   autoGiftConfidence: number | null;
   autoGiftSource: CandidateSource | null;
@@ -630,7 +627,6 @@ function resolveRow(
         amount: amount ?? null,
         dateReceived: base.dateReceived,
         paymentMethod: null,
-        finalAmountSource: base.autoMintFinalSource,
       },
       confidence: override?.mintAmount ? null : base.autoGiftConfidence,
       confidenceTier: tierFromScore(override?.mintAmount ? null : base.autoGiftConfidence),
@@ -1030,7 +1026,6 @@ export function baseRowFrom(src: ScoredSourceRow): BaseChargeRow {
   // Gift outcome.
   let autoGiftKind: "match" | "mint" | "research" | "exclude";
   let autoGiftId: string | null = null;
-  let autoMintFinalSource: GiftFinalAmountSource | null = null;
   let autoGiftSource: CandidateSource | null = null;
   let autoExclusionReason: StagedPaymentExclusionReason | null = null;
 
@@ -1046,7 +1041,6 @@ export function baseRowFrom(src: ScoredSourceRow): BaseChargeRow {
     autoGiftSource = "amount_date";
   } else if (autoDonorKind !== "unresolved" && m.giftCandidateCount === 0) {
     autoGiftKind = "mint";
-    autoMintFinalSource = src.stripeChargeId ? "stripe" : "quickbooks";
     autoGiftSource = methodToSource(m.method);
   } else {
     // Either the donor is unresolved, or plausible existing gifts exist but none
@@ -1075,7 +1069,6 @@ export function baseRowFrom(src: ScoredSourceRow): BaseChargeRow {
     autoGiftKind,
     autoGiftId,
     autoMintAmount: src.amount,
-    autoMintFinalSource,
     autoExclusionReason,
     autoGiftConfidence: autoGiftKind === "match" ? m.score : null,
     autoGiftSource,

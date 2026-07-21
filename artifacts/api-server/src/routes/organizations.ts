@@ -6,7 +6,6 @@ import {
   emails,
   phoneNumbers,
   addresses,
-  paymentIntermediaries,
   connectionEnthusiasmHistory,
 } from "@workspace/db/schema";
 import { getAppUser } from "../lib/appRequest";
@@ -123,8 +122,14 @@ const orgsMostRecentGiftExpr = sql`(
 
 // Shared column set used by every org response projection (list/detail spread
 // and `.returning()` on POST/PATCH). The retired `otherNames` column has been
-// physically dropped (migration 0107), so no scrubbing is needed.
-const orgColumns = getTableColumns(organizations);
+// physically dropped (migration 0107). The deprecated-but-still-physical
+// payment_intermediary_id column (Task #757, superseded by
+// donor_payment_intermediaries; pending drop) is explicitly scrubbed so no org
+// response echoes it.
+const {
+  paymentIntermediaryId: _retiredPaymentIntermediaryId,
+  ...orgColumns
+} = getTableColumns(organizations);
 
 const orgsListSelect = {
   ...orgColumns,
@@ -330,7 +335,6 @@ router.get(
       emailRows,
       phoneRows,
       addressRows,
-      paymentIntermediary,
       flaggedForResearch,
     ] = await Promise.all([
         peopleEntityRolesQuery().where(
@@ -339,15 +343,6 @@ router.get(
         db.select().from(emails).where(eq(emails.organizationId, id)),
         db.select().from(phoneNumbers).where(eq(phoneNumbers.organizationId, id)),
         db.select().from(addresses).where(eq(addresses.organizationId, id)),
-        row.paymentIntermediaryId
-          ? db
-              .select()
-              .from(paymentIntermediaries)
-              .where(
-                eq(paymentIntermediaries.id, row.paymentIntermediaryId),
-              )
-              .then((r) => r[0] ?? null)
-          : Promise.resolve(null),
         // Passive "Needs research" badge — driven solely by the Cleanup Queue.
         isFlaggedForResearch(id),
       ]);
@@ -358,7 +353,6 @@ router.get(
       emails: emailRows,
       phoneNumbers: phoneRows,
       addresses: addressRows,
-      paymentIntermediary,
       flaggedForResearch,
     });
   }),

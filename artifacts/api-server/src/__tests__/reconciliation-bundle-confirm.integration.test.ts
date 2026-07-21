@@ -211,15 +211,6 @@ afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
 
-  // Release the gift→charge final-amount pointers (RESTRICT FK) before deleting
-  // the charges; reset source to `human` to keep the source↔pointer XOR CHECK.
-  if (createdGiftIds.length)
-    await db
-      .update(schema.giftsAndPayments)
-      .set({
-        finalAmountSource: "human",
-      })
-      .where(inArrayFn(schema.giftsAndPayments.id, createdGiftIds));
   // `payment_applications` (Plane-2 ledger booked by the per-charge mint) FKs the
   // gift ON DELETE RESTRICT, so clear it before the gifts. (`settlement_links`
   // needs no explicit cleanup: its payout FK cascades on the stripePayouts delete
@@ -362,7 +353,6 @@ describe.skipIf(!HAS_DB)("Reconciliation bundle confirm (integration)", () => {
     const gift = await readGift(giftId);
     expect(gift?.organizationId).toBe(ORG_ID);
     expect(Number(gift?.amount)).toBeCloseTo(100, 2);
-    expect(gift?.finalAmountSource).toBe("stripe");
 
     const charge = await readCharge(chargeId);
     expect(charge?.status).toBe("match_confirmed");

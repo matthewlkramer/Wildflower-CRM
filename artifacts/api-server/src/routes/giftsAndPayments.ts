@@ -51,16 +51,17 @@ const maskGiftDonorRow = maskDonorDisplayFields;
 // (matching.ts, actions.ts) that echo a gift row directly, plus the opportunities
 // payments projection and the archive/unarchive routes.
 // This is the single named column set every full-row gift select flows through
-// (see deprecated-column-response-leak). Deprecated-but-physical columns still
-// present in the schema (e.g. originalHumanCrmAmount) are intentionally echoed
-// here to match their deprecated OpenAPI response fields; columns fully retired
-// from the schema (grant_year, needs_research, processor_fee,
-// final_amount_qb_staged_payment_id) simply fall out of getTableColumns and
-// never reach a response.
-// NOTE: finalAmountStripeChargeId, type, and quickbooksTieStatus were DROPPED
-// from the schema (Task #451). getTableColumns now excludes them automatically;
-// the live-derived fields are added in giftSelectWithDerived below.
-const giftHeaderColumns = getTableColumns(giftsAndPayments);
+// (see deprecated-column-response-leak). Columns fully retired from the schema
+// (grant_year, needs_research, processor_fee, final_amount_qb_staged_payment_id,
+// finalAmountStripeChargeId) simply fall out of getTableColumns and never reach
+// a response. The deprecated-but-still-physical final_amount_source /
+// original_human_crm_amount columns (Task #757, pending drop) are explicitly
+// scrubbed here so no full-row select echoes them.
+const {
+  finalAmountSource: _retiredFinalAmountSource,
+  originalHumanCrmAmount: _retiredOriginalHumanCrmAmount,
+  ...giftHeaderColumns
+} = getTableColumns(giftsAndPayments);
 export { giftHeaderColumns };
 
 // Extended gift select that adds live-derived read-only fields (type and
@@ -330,14 +331,12 @@ router.get(
       }
     }
     // Awaiting-funding-evidence queue (edge case B4): CRM-first gifts a
-    // fundraiser logged before any funding evidence arrived. The "pending
-    // funding" state is a human-entered amount (`final_amount_source = 'human'`,
-    // which the DB CHECK guarantees has null QuickBooks/Stripe evidence
-    // pointers) AND no QuickBooks tie yet (`quickbooks_tie_status = 'missing'`,
-    // which also excludes off-books/exempt and Stripe-sourced/tied gifts).
+    // fundraiser logged before any funding evidence arrived. Answered entirely
+    // by the ledger-derived tie: `quickbooks_tie_status = 'missing'` (which
+    // already excludes off-books/exempt and Stripe-sourced/tied gifts). The
+    // retired final_amount_source column is no longer consulted (Task #757).
     // Read raw — `zod.coerce.boolean()` would coerce the string "false" to true.
     if (req.query.awaitingEvidence === "true") {
-      filters.push(eq(giftsAndPayments.finalAmountSource, "human"));
       filters.push(sql<boolean>`(${deriveGiftQbTieLiveExpr()}) = 'missing'`);
     }
     // Donorbox-backed filter — keeps only gifts where a counted ledger row is

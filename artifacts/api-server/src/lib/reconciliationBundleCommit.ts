@@ -18,10 +18,6 @@ import { recordAudit } from "./audit";
 import { APPROVABLE_STAGED_STATUSES } from "./reconciliationGate";
 import { chargeStatusWhere, stagedStatusIn } from "./derivedStatus";
 import {
-  stampGiftFinalAmount,
-  adjustSingleAllocationOrFlag,
-} from "./giftFinalAmount";
-import {
   ReconcileAbort,
   copyPledgeAllocationsToGift,
   type Tx,
@@ -344,26 +340,8 @@ export async function linkChargeToGiftInTx(
       .where(eq(giftsAndPayments.id, giftId));
   }
 
-  // Stamp the gift's FINAL amount to the Stripe GROSS + rebalance its single
-  // allocation (or flag a multi-allocation gift whose splits no longer sum).
-  const stamp = await stampGiftFinalAmount(tx, giftId, {
-    source: "stripe",
-    stripeChargeId: charge.id,
-    amount: charge.grossAmount,
-  });
-  if (!stamp.skipped) {
-    await adjustSingleAllocationOrFlag(
-      tx,
-      giftId,
-      stamp.oldAmount,
-      stamp.newAmount,
-      "stripe",
-    );
-  }
-  // A changed gift amount shifts the paid total of the pledge it's on (if any).
-  if (stamp.changed && gift.opportunityId) {
-    rederivePledgeIds.push(gift.opportunityId);
-  }
+  // The gift's `amount` is never overwritten by reconciliation (Task #757) —
+  // settled money is derived from the counted ledger row booked below.
 
   // Dual-write (Phase 2): book the charge → existing-gift ledger row (GROSS
   // source, createdTheGift:false). Delete-by-anchor keeps re-links idempotent.

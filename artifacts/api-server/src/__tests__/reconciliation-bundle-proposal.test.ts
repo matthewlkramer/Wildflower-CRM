@@ -41,7 +41,6 @@ const baseRow = (over: Partial<BaseChargeRow> = {}): BaseChargeRow => ({
   autoGiftKind: "research",
   autoGiftId: null,
   autoMintAmount: "100.00",
-  autoMintFinalSource: "stripe",
   autoExclusionReason: null,
   autoGiftConfidence: null,
   autoGiftSource: null,
@@ -100,7 +99,6 @@ describe("deriveProposal — auto derivation", () => {
         autoNewDonor: { kind: "person", name: "Jane Donor", firstName: "Jane", lastName: "Donor" },
         autoDonorSource: "email",
         autoGiftKind: "mint",
-        autoMintFinalSource: "stripe",
       }),
     ]);
     const { proposal, commit } = deriveProposal(base, {});
@@ -108,7 +106,6 @@ describe("deriveProposal — auto derivation", () => {
     expect(proposal.rows[0].gift.kind).toBe("mint");
     expect(proposal.rows[0].gift.mintDraft).toMatchObject({
       amount: "100.00",
-      finalAmountSource: "stripe",
     });
     expect(proposal.rows[0].ready).toBe(true);
     expect(proposal.summary).toMatchObject({ mintCount: 1, newDonorCount: 1, ready: true });

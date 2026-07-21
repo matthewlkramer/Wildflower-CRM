@@ -637,7 +637,6 @@ router.get(
             FROM gifts_and_payments g
             WHERE g.id = ${qbLedgerSoleGiftIdForPayment()}
           )`,
-          finalAmountSource: resolvedGift.finalAmountSource,
           autoGiftCount: autoGiftCountExpr,
           autoGiftPick: autoGiftPickExpr,
           cardReady: readyExpr,
@@ -890,7 +889,6 @@ router.get(
         resolvedGiftAllocations: isCharge
           ? (row.chargeResolvedGiftAllocations ?? null)
           : (row.resolvedGiftAllocations ?? null),
-        finalAmountSource: row.finalAmountSource ?? null,
         fundingSource: isSourceGroup
           ? (groupAgg?.commonFundingSource ?? null)
           : (row.fundingSource ?? null),

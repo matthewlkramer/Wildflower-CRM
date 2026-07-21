@@ -81,9 +81,13 @@ export const organizations = pgTable("organizations", {
     (): AnyPgColumn => organizations.id,
     { onDelete: "set null" },
   ),
-  // Payment intermediary (e.g. a DAF) this org gives through. Relevant
-  // only when issuesGrants = true. SET NULL: removing the intermediary
-  // leaves the org intact.
+  // @deprecated RETIRED (Task #757) — superseded by the
+  // donor_payment_intermediaries join table (a donor can give through many
+  // intermediaries); existing values were backfilled there. No code reads,
+  // writes, or echoes this column. Physically retained ONLY so dev push stays
+  // additive and prod Publish never auto-drops it; the physical DROP (column +
+  // organizations_payment_intermediary_id_idx) ships as reviewed SQL
+  // (migration 0146). Do not reintroduce readers or writers.
   paymentIntermediaryId: text("payment_intermediary_id").references(
     () => paymentIntermediaries.id,
     { onDelete: "set null" },

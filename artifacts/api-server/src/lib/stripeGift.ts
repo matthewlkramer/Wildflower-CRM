@@ -49,10 +49,7 @@ export function buildGiftValuesFromStripeCharge(
     ownerUserId,
     // This gift is BORN from a Stripe charge; the provenance is the ledger row
     // booked by the caller (evidence_source='stripe', created_the_gift=true).
-    // finalAmountStripeChargeId is @deprecated and never written — the ledger
-    // is the sole source. originalHumanCrmAmount stays null (there was never a
-    // human-entered figure to snapshot).
-    finalAmountSource: "stripe",
-    originalHumanCrmAmount: null,
+    // The transitional final_amount_source / original_human_crm_amount columns
+    // are retired (Task #757) and never written.
   };
 }

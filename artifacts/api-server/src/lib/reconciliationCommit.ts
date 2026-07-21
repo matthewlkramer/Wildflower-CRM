@@ -25,11 +25,6 @@ import {
 import { recordAudit } from "./audit";
 import { APPROVABLE_STAGED_STATUSES } from "./reconciliationGate";
 import { stagedStatusIn } from "./derivedStatus";
-import {
-  stampGiftFinalAmount,
-  adjustSingleAllocationOrFlag,
-  unstampGiftFinalAmount,
-} from "./giftFinalAmount";
 import { donorOf, type LinkDonor } from "./quickbooksLink";
 import { isFullyRefunded } from "./stripeRefund";
 import { upsertSettlementLink } from "./settlementLink";
@@ -276,14 +271,9 @@ export async function mintGiftInTx(
     ),
     amount: evidenceAmount,
     ...(opportunityId ? { opportunityId } : {}),
-    // The legacy final_amount_qb_staged_payment_id and
-    // final_amount_stripe_charge_id pointer columns are @deprecated and never
-    // written — WHICH payment stamped the gift is answered by the counted
-    // ledger row(s) booked below (created_the_gift = true).
-    ...(charge
-      ? { finalAmountSource: "stripe" as const }
-      : { finalAmountSource: "quickbooks" as const }),
-    originalHumanCrmAmount: null,
+    // Provenance is the counted ledger row(s) booked below
+    // (created_the_gift = true); the transitional final-amount columns are
+    // retired (Task #757) and never written.
   });
 
   // Forward gift intake: seed the gift's allocations from the pledge it pays
@@ -661,26 +651,11 @@ export async function linkGiftInTx(
   const movedOwnApplication =
     moveOwnApplication && !!oldAppliedGift && oldAppliedGift.id !== giftId;
   if (movedOwnApplication && oldAppliedGift) {
-    // Unstamp BEFORE removing the ledger rows — the unstamp guard verifies
-    // provenance via the counted QB application (the legacy pointer column is
-    // no longer written), so the row must still exist when it runs.
-    const un = await unstampGiftFinalAmount(tx, oldAppliedGift.id, {
-      source: "quickbooks",
-      qbStagedPaymentId: stagedPaymentId,
-    });
-    if (un.restored) {
-      await adjustSingleAllocationOrFlag(
-        tx,
-        oldAppliedGift.id,
-        un.oldAmount,
-        un.newAmount,
-        "quickbooks",
-      );
-    }
+    // The old gift's `amount` was never overwritten by reconciliation
+    // (Task #757) — removing the ledger rows is the whole unwind.
     await removePaymentApplicationsForPayment(tx, stagedPaymentId);
-    // The old gift's pledge paid-total shifts when its amount was restored; the
-    // target-gift stamp below never touches the OLD gift, so re-derive it here.
-    if (un.restored && oldAppliedGift.opportunityId) {
+    // The old gift's pledge paid-total shifts with its ledger evidence.
+    if (oldAppliedGift.opportunityId) {
       rederivePledgeIds.push(oldAppliedGift.opportunityId);
     }
     // If a settlement link on this deposit pins the OLD gift as its conflict
@@ -751,21 +726,8 @@ export async function linkGiftInTx(
           "That gift is linked to another payment through a group or split. Revert that reconciliation first, then re-target.",
       });
     }
-    // Unstamp BEFORE removing the incumbent's ledger rows — the unstamp guard
-    // verifies provenance via the counted QB application.
-    const un = await unstampGiftFinalAmount(tx, giftId, {
-      source: "quickbooks",
-      qbStagedPaymentId: incumbentStagedPayment.id,
-    });
-    if (un.restored) {
-      await adjustSingleAllocationOrFlag(
-        tx,
-        giftId,
-        un.oldAmount,
-        un.newAmount,
-        "quickbooks",
-      );
-    }
+    // The gift's `amount` was never overwritten by reconciliation (Task #757)
+    // — removing the incumbent's ledger rows is the whole disconnect.
     await removePaymentApplicationsForPayment(tx, incumbentStagedPayment.id);
     await tx
       .update(stagedPayments)
@@ -868,28 +830,8 @@ export async function linkGiftInTx(
     });
   }
 
-  // Stamp the gift's FINAL amount + rebalance its single allocation (or flag a
-  // multi-allocation gift whose splits no longer sum).
-  const stamp = charge
-    ? await stampGiftFinalAmount(tx, giftId, {
-        source: "stripe",
-        stripeChargeId: charge.id,
-        amount: charge.grossAmount,
-      })
-    : await stampGiftFinalAmount(tx, giftId, {
-        source: "quickbooks",
-        qbStagedPaymentId: stagedPaymentId,
-        amount: staged.amount,
-      });
-  if (!stamp.skipped) {
-    await adjustSingleAllocationOrFlag(
-      tx,
-      giftId,
-      stamp.oldAmount,
-      stamp.newAmount,
-      charge ? "stripe" : "quickbooks",
-    );
-  }
+  // The gift's `amount` is never overwritten by reconciliation (Task #757) —
+  // settled money is derived from the counted ledger rows booked below.
 
   // Dual-write (Phase 2): book the QB cash-application ledger row. The QB staged
   // payment settles this EXISTING gift (links, never mints). A selected Stripe
@@ -987,11 +929,6 @@ export async function linkGiftInTx(
     });
   }
 
-  // A changed gift amount shifts the paid total of the pledge it's already on
-  // (if any) — re-derive that pledge after commit.
-  if (stamp.changed && gift.opportunityId) {
-    rederivePledgeIds.push(gift.opportunityId);
-  }
   // Optionally tie the gift to the chosen opportunity (payment-on-pledge),
   // without clobbering an existing link; the newly linked pledge also needs
   // re-derivation (a payment was attached to it).
@@ -1088,22 +1025,11 @@ export async function orphanStripeSourceChargeInTx(
   },
 ): Promise<void> {
   const { oldCharge, giftId } = args;
-  // Unstamp BEFORE removing the ledger row — the Stripe guard inside
-  // unstampGiftFinalAmount verifies the counted PA row is still present.
-  const unstamped = await unstampGiftFinalAmount(tx, giftId, {
-    source: "stripe",
-    stripeChargeId: oldCharge.id,
-  });
+  // The gift's `amount` was never overwritten by reconciliation (Task #757) —
+  // removing the old charge's ledger row is the whole unwind. giftId stays in
+  // the signature: callers must still hold the gift lock while orphaning.
+  void giftId;
   await removePaymentApplicationsForStripeCharge(tx, oldCharge.id);
-  if (unstamped.restored) {
-    await adjustSingleAllocationOrFlag(
-      tx,
-      giftId,
-      unstamped.oldAmount,
-      unstamped.newAmount,
-      "stripe",
-    );
-  }
   const oldHasDonor =
     !!oldCharge.organizationId ||
     !!oldCharge.individualGiverPersonId ||

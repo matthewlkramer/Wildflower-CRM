@@ -1800,7 +1800,7 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string, enum: [exempt, tied, amount_mismatch, missing, untied] } }
-        - { name: awaitingEvidence, in: query, required: false, description: "When true, list only gifts awaiting funding evidence (edge case B4): CRM-first gifts logged by a fundraiser before any funding evidence arrived. The state is human-entered amount (`finalAmountSource = human`, which the DB CHECK guarantees has null QuickBooks/Stripe evidence pointers) AND no QuickBooks tie yet (`quickbooksTieStatus = missing`). Off-books/exempt and processor-sourced (tied) gifts are excluded.", schema: { type: boolean } }
+        - { name: awaitingEvidence, in: query, required: false, description: "When true, list only gifts awaiting funding evidence (edge case B4): CRM-first gifts logged by a fundraiser before any funding evidence arrived. Answered entirely from the ledger-derived tie: `quickbooksTieStatus = missing` (no counted payment-application row from any source). Off-books/exempt and processor-sourced (tied) gifts are excluded.", schema: { type: boolean } }
         - name: worklist
           in: query
           required: false
@@ -5100,7 +5100,6 @@ components:
         transition it accepts BOTH the new authoritative loan/grant tokens AND
         the legacy revenue/loan_capital tokens (loan↔loan_capital, grant↔revenue).
     GiftPaymentMethod: { type: string, enum: [ach, check, wire, stock, donor_box, daf_ach, daf_check, daf_bill_com] }
-    GiftFinalAmountSource: { type: string, enum: [human, stripe, quickbooks], description: "Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields." }
     GiftQuickbooksTie: { type: string, enum: [exempt, tied, amount_mismatch, missing], description: "Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence." }
     ReconciliationLaneStatus:
       type: string
@@ -5769,7 +5768,6 @@ components:
         interestsGovModels:    { type: array, items: { type: string }, nullable: true }
         regionIds:             { type: array, items: { type: string }, nullable: true }
         parentOrganizationId:  { type: string, nullable: true }
-        paymentIntermediaryId: { type: string, nullable: true, description: "Payment intermediary (e.g. a DAF) this organization gives through." }
         anonymous:             { type: boolean, description: "When true, hide the organization's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned." }
         lastContacted:         { type: string, format: date, nullable: true }
         x:                     { type: string, nullable: true }
@@ -5798,7 +5796,6 @@ components:
             emails:       { type: array, items: { $ref: "#/components/schemas/Email" } }
             phoneNumbers: { type: array, items: { $ref: "#/components/schemas/PhoneNumber" } }
             addresses:    { type: array, items: { $ref: "#/components/schemas/Address" } }
-            paymentIntermediary: { allOf: [ { $ref: "#/components/schemas/PaymentIntermediary" } ], nullable: true, readOnly: true }
             flaggedForResearch: { type: boolean, readOnly: true, description: "Derived (never persisted): true when an OPEN Cleanup Queue item with reason_code='needs_research' targets this record. Drives the passive 'Needs research' detail-page badge; set only via the Cleanup Queue, never writable here." }
     OrganizationList:
       type: object
@@ -5845,7 +5842,6 @@ components:
         interestsGovModels:    { type: array, items: { type: string } }
         regionIds:             { type: array, items: { type: string } }
         parentOrganizationId:  { type: string }
-        paymentIntermediaryId: { type: string }
         x:                     { type: string }
         linkedin:              { type: string }
         facebook:              { type: string }
@@ -5883,7 +5879,6 @@ components:
         interestsGovModels:    { type: array, items: { type: string }, nullable: true }
         regionIds:             { type: array, items: { type: string }, nullable: true }
         parentOrganizationId:  { type: string, nullable: true }
-        paymentIntermediaryId: { type: string, nullable: true }
         x:                     { type: string, nullable: true }
         linkedin:              { type: string, nullable: true }
         facebook:              { type: string, nullable: true }
@@ -6630,7 +6625,7 @@ components:
     # ─── Gifts & payments ──────────────────────────────────────────────────────
     GiftOrPayment:
       type: object
-      required: [id, offBooks, quickbooksTieStatus, finalAmountSource, createdAt, updatedAt]
+      required: [id, offBooks, quickbooksTieStatus, createdAt, updatedAt]
       properties:
         id:                         { type: string }
         legacyGiftId:               { type: string, nullable: true }
@@ -6644,14 +6639,10 @@ components:
         # ── Derived settled amount + fees (Task #448 Step 2/3). ──
         # Computed at read time from the payments LINKED to the gift (QuickBooks
         # payment_applications + Stripe charges + non-stripe Donorbox), via the one
-        # shared {settledGross, totalFees} helper. Replaces the deprecated header
-        # final_amount_* / originalHumanCrmAmount columns (processorFee already dropped).
+        # shared {settledGross, totalFees} helper. The transitional header
+        # final_amount_* / originalHumanCrmAmount columns are RETIRED (Task #757).
         derivedSettledAmount:       { type: string, nullable: true, readOnly: true, description: "Settled GROSS actually landed for this gift, derived from all linked payments (QuickBooks + Stripe + non-stripe Donorbox). Null when no payment is linked yet. The UI shows 'you entered $X, settled $Y' by comparing with `amount`." }
         derivedProcessorFee:        { type: string, nullable: true, readOnly: true, description: "Total processor fees withheld across the gift's linked payments (Stripe + Donorbox; QuickBooks carries none). Donor is credited the GROSS `amount`; net = derivedSettledAmount − derivedProcessorFee. Null when no fee-bearing payment is linked." }
-        # ── DEPRECATED final-amount provenance (Task #448). Retained on the read
-        # ── model only during deprecate-then-drop; superseded by derivedSettledAmount.
-        originalHumanCrmAmount:     { type: string, nullable: true, readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount." }
-        finalAmountSource:          { allOf: [ { $ref: "#/components/schemas/GiftFinalAmountSource" } ], readOnly: true, deprecated: true, description: "DEPRECATED (Task #448) — `amount` is always the human-entered amount now; settled money is derivedSettledAmount." }
         organizationId:                   { type: string, nullable: true }
         individualGiverPersonId:    { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
@@ -8013,7 +8004,6 @@ components:
           nullable: true
           description: "Intended-usage rollup of the linked gift's allocation lines (entity, usage label, restriction) — shown on the card's CRM-gift side so a reviewer can judge what the money is for. Null when no gift is linked or the gift has no allocations."
           items: { $ref: "#/components/schemas/ReconciliationCardGiftAllocation" }
-        finalAmountSource:  { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
         ready:              { type: boolean, description: "Auto-proposal satisfies the consistency gate (one-click approve)." }
         exclusionReason:    { allOf: [ { $ref: "#/components/schemas/StagedPaymentExclusionReason" } ], nullable: true, description: "Why this money was filed as a non-gift; set only when status='excluded'. Drives the Excluded queue's reason label." }
         reconciliationLanes: { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor/gift state: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge." }
@@ -8220,7 +8210,6 @@ components:
         schoolRecipientId:   { type: string, nullable: true }
         schoolRecipientName: { type: string, nullable: true }
         grantYear:     { type: string, nullable: true, description: "The allocation's fiscal year (grant_year) id." }
-        finalAmountSource: { $ref: "#/components/schemas/GiftFinalAmountSource", nullable: true }
         opportunityId:   { type: string, nullable: true, description: "The linked opportunity/pledge (gifts_and_payments.opportunity_id) this gift books against, if any." }
         opportunityName: { type: string, nullable: true, description: "Display name of the linked opportunity/pledge." }
         proposedPayment:
@@ -8433,7 +8422,6 @@ components:
         amount:            { type: string, nullable: true, description: "Final amount to credit the donor (Stripe GROSS when a charge backs it, else the QB amount), major units." }
         dateReceived:      { type: string, format: date, nullable: true }
         paymentMethod:     { allOf: [ { $ref: "#/components/schemas/GiftPaymentMethod" } ], nullable: true }
-        finalAmountSource: { allOf: [ { $ref: "#/components/schemas/GiftFinalAmountSource" } ], nullable: true }
     BundleGiftProposal:
       type: object
       required: [kind, confidenceTier, candidates]

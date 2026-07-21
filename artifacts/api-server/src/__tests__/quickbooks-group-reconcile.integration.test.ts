@@ -259,25 +259,8 @@ afterAll(async () => {
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   // D4: a reconciled gift references its QB staged evidence via
   // final_amount_qb_staged_payment_id (RESTRICT), so the gift→staged pointer
-  // must be cleared before the staged rows can be deleted. Reset the seeded
-  // gifts back to 'human' (both pointers null) first, then delete the staged
+  // must be cleared before the staged rows can be deleted. Delete the staged
   // rows, then the gifts (which cascade-clears any allocation-review rows).
-  // Scope to reconciled gifts only (source <> 'human'): the no-donor seed leaves
-  // the donor-XOR constraint NOT VALID, and touching that zero-donor 'human' row
-  // would re-trigger the check — it has no pointer to clear anyway.
-  if (seededGiftIds.length) {
-    await db
-      .update(schema.giftsAndPayments)
-      .set({
-        finalAmountSource: "human",
-      })
-      .where(
-        sqlFn`${inArrayFn(
-          schema.giftsAndPayments.id,
-          seededGiftIds,
-        )} AND ${schema.giftsAndPayments.finalAmountSource} <> 'human'`,
-      );
-  }
   await clearPaymentApplicationsForRealm(REALM_ID);
   await db
     .delete(schema.stagedPayments)
@@ -435,13 +418,6 @@ describe.skipIf(!HAS_DB)(
         organizationId: ORG_ID,
       });
       seededGiftIds.push(giftId);
-      // Stamp the gift Stripe-sourced.
-      await db
-        .update(schema.giftsAndPayments)
-        .set({
-          finalAmountSource: "stripe",
-        })
-        .where(eqFn(schema.giftsAndPayments.id, giftId));
 
       const repId = await seedStaged(giftId, "a", "50.00");
       const memberId = await seedStaged(giftId, "b", "50.00");
@@ -465,7 +441,6 @@ describe.skipIf(!HAS_DB)(
         .select()
         .from(schema.giftsAndPayments)
         .where(eqFn(schema.giftsAndPayments.id, giftId));
-      expect(gift.finalAmountSource).toBe("stripe");
       expect(gift.amount).toBe("100.00");
     }, 30_000);
 
@@ -669,7 +644,6 @@ describe.skipIf(!HAS_DB)(
         .from(schema.giftsAndPayments)
         .where(eqFn(schema.giftsAndPayments.id, giftId));
       expect(gift.amount).toBe("90.00");
-      expect(gift.finalAmountSource).toBe("quickbooks");
     }, 30_000);
 
     it("ejecting from a 2-member group dissolves the group; the survivor stays reconciled as a direct match", async () => {

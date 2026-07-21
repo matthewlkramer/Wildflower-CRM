@@ -134,8 +134,7 @@ router.post(
 
 // ─── POST /staged-payments/:id/create-gift ─────────────────────────────────
 // Mint a real gifts_and_payments row from the staged payment (donor XOR). The
-// minted gift's amount IS this QB evidence, so it is stamped at insert
-// (final_amount_source='quickbooks', no original human amount to snapshot).
+// minted gift's amount IS this QB evidence.
 // The staged row becomes permanent EVIDENCE tied to the gift via the counted
 // payment_applications ledger row (created_the_gift = true; derived status
 // match_confirmed — never archived, never a second gift).
@@ -225,13 +224,9 @@ router.post(
             },
             user.id,
           ),
-          // Stamp provenance at insert: the gift's amount IS this QB evidence
-          // (no prior human figure to snapshot). The legacy
-          // final_amount_qb_staged_payment_id and final_amount_stripe_charge_id
-          // pointer columns are @deprecated and never written — the counted
-          // ledger row (created_the_gift = true, booked below) carries the tie.
-          finalAmountSource: "quickbooks",
-          originalHumanCrmAmount: null,
+          // Provenance is the counted ledger row (created_the_gift = true,
+          // booked below); the transitional final-amount columns are retired
+          // (Task #757) and never written.
         });
         // Every gift needs at least one allocation (the sole home of money
         // scope). Seed a default full-amount line carrying the staged row's

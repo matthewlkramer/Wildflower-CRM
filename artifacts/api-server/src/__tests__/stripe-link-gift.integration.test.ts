@@ -243,7 +243,6 @@ describe.skipIf(!HAS_DB)(
       // the settled GROSS is derived at read time from the linked charge
       // (see giftPaymentSummary). No fee-band gate.
       const gift = await readGift(giftId);
-      expect(gift.finalAmountSource).toBe("stripe");
       expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
     });
 
@@ -399,7 +398,6 @@ describe.skipIf(!HAS_DB)(
 
       // The gift's Stripe provenance moved to the new charge (via ledger).
       const gift = await readGift(giftId);
-      expect(gift.finalAmountSource).toBe("stripe");
       expect(await stripeGiftIdForCharge(chargeB)).toBe(giftId);
     });
 

@@ -70,10 +70,6 @@ import {
   stripeLedgerGiftIdForCharge,
   chargeCountedLedgerRow,
 } from "../lib/paymentApplications";
-import {
-  unstampGiftFinalAmount,
-  adjustSingleAllocationOrFlag,
-} from "../lib/giftFinalAmount";
 import { applySupersedeForPayoutInTx } from "../lib/settlementSupersede";
 import {
   reconAudit,
@@ -1153,12 +1149,8 @@ router.post(
 // can immediately re-link them. Mint-owned (createdGiftId) and group-reconciled
 // rows are excluded — those must be reverted through their own explicit paths.
 async function cascadeResetLinkedQbStagedRows(
-  tx: Parameters<typeof unstampGiftFinalAmount>[0],
+  tx: Parameters<typeof removePaymentApplicationsForPayment>[0],
   giftId: string,
-  opts: {
-    /** False when the gift is being deleted — there's no stamp left to unwind. */
-    unstampGift: boolean;
-  },
 ): Promise<string[]> {
   const rows = await tx
     .select({ id: stagedPayments.id })
@@ -1179,21 +1171,6 @@ async function cascadeResetLinkedQbStagedRows(
   const ids: string[] = [];
   for (const qb of rows) {
     await removePaymentApplicationsForPayment(tx, qb.id);
-    if (opts.unstampGift) {
-      const un = await unstampGiftFinalAmount(tx, giftId, {
-        source: "quickbooks",
-        qbStagedPaymentId: qb.id,
-      });
-      if (un.restored) {
-        await adjustSingleAllocationOrFlag(
-          tx,
-          giftId,
-          un.oldAmount,
-          un.newAmount,
-          "quickbooks",
-        );
-      }
-    }
     await tx
       .update(stagedPayments)
       .set({
@@ -1278,9 +1255,7 @@ router.post(
           // deleting it — the FK would SET NULL silently, stranding them as
           // reconciled-to-nothing with no revert path.
           cascadedQbStagedIds.push(
-            ...(await cascadeResetLinkedQbStagedRows(tx, mintedGiftId, {
-              unstampGift: false,
-            })),
+            ...(await cascadeResetLinkedQbStagedRows(tx, mintedGiftId)),
           );
           // This row minted the gift — remove it. Clear allocations first
           // (gift_allocations FK is RESTRICT; every gift has >= 1 only after a
@@ -1295,37 +1270,21 @@ router.post(
             .delete(giftsAndPayments)
             .where(eq(giftsAndPayments.id, mintedGiftId));
         } else if (lockedLedger) {
-          // This row reconciled to an EXISTING gift — leave the gift in place but
-          // undo any final-amount stamp THIS charge applied to it (strict no-op
-          // unless the gift is still sourced from this exact charge), then
-          // rebalance its allocations to the restored amount.
+          // This row reconciled to an EXISTING gift — leave the gift in place.
+          // The gift's `amount` is never overwritten by reconciliation, so
+          // there is no final-amount stamp to unwind (Task #757).
           const giftId = lockedLedger.giftId;
           // The surviving matched gift loses this Stripe evidence — recompute.
           survivingGiftId = giftId;
           // Drop this charge's ledger row by ANCHOR (leave any parallel QB row
           // for the same gift intact).
           await removePaymentApplicationsForStripeCharge(tx, locked.id);
-          const unstamped = await unstampGiftFinalAmount(tx, giftId, {
-            source: "stripe",
-            stripeChargeId: locked.id,
-          });
-          if (unstamped.restored) {
-            await adjustSingleAllocationOrFlag(
-              tx,
-              giftId,
-              unstamped.oldAmount,
-              unstamped.newAmount,
-              "stripe",
-            );
-          }
           // The Nneka case: a QB staged row reconciled to the same gift stays
           // locked to it after this Stripe revert, blocking any re-link with a
           // hard 409. A manual revert should fully undo the match — reset the
           // QB side to pending too.
           cascadedQbStagedIds.push(
-            ...(await cascadeResetLinkedQbStagedRows(tx, giftId, {
-              unstampGift: true,
-            })),
+            ...(await cascadeResetLinkedQbStagedRows(tx, giftId)),
           );
         } else {
           // Approved/reconciled with no gift linkage of its own — nothing to revert.

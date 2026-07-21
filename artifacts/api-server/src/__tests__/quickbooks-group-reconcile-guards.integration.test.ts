@@ -218,19 +218,8 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-  // D4: a reconciled gift references its QB staged evidence via
-  // final_amount_qb_staged_payment_id (RESTRICT), so the gift→staged pointer
-  // must be cleared before the staged rows can be deleted. Reset the seeded
-  // gifts back to 'human' (both pointers null) first, then delete the staged
-  // rows, then the gifts (which cascade-clears any allocation-review rows).
-  if (seededGiftIds.length) {
-    await db
-      .update(schema.giftsAndPayments)
-      .set({
-        finalAmountSource: "human",
-      })
-      .where(inArrayFn(schema.giftsAndPayments.id, seededGiftIds));
-  }
+  // Clear the ledger first, then delete the staged rows, then the gifts
+  // (which cascade-clears any allocation-review rows).
   await clearPaymentApplicationsForRealm(REALM_ID);
   await db
     .delete(schema.stagedPayments)

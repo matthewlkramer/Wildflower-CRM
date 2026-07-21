@@ -364,7 +364,6 @@ describe("runConsistencyGate", () => {
           stagedPayoutIds: ["po1"],
           gift: {
             ...baseInput().gift,
-            finalAmountSource: "stripe",
             currentStripeChargeId: "c-old",
           },
         }),
@@ -380,7 +379,6 @@ describe("runConsistencyGate", () => {
           stagedPayoutIds: ["po1"],
           gift: {
             ...baseInput().gift,
-            finalAmountSource: "stripe",
             currentStripeChargeId: "c1",
           },
         }),
@@ -397,7 +395,6 @@ describe("runConsistencyGate", () => {
           switchStripeSource: true,
           gift: {
             ...baseInput().gift,
-            finalAmountSource: "stripe",
             currentStripeChargeId: "c-old",
           },
         }),
@@ -418,7 +415,6 @@ describe("runConsistencyGate", () => {
         },
         gift: {
           ...baseInput().gift,
-          finalAmountSource: "stripe",
           currentStripeChargeId: "c-old",
         },
       }),
@@ -437,7 +433,6 @@ describe("runConsistencyGate", () => {
           stagedPayoutIds: ["po1"],
           gift: {
             ...baseInput().gift,
-            finalAmountSource: "quickbooks",
             currentStripeChargeId: null,
           },
         }),
@@ -498,7 +493,6 @@ describe("runConsistencyGate", () => {
       qbLinkedPaymentId: "sp-old",
       gift: {
         ...baseInput().gift,
-        finalAmountSource: "stripe",
         currentStripeChargeId: "c-old",
       },
     });

@@ -278,16 +278,8 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-  // Delete order matters (RESTRICT FKs): release the gifts' final-amount
-  // pointers first (approve stamps source=quickbooks + staged pointer), then
-  // ledger rows, allocations, staged rows, charges, gifts, org, user.
-  if (giftIds.length)
-    await db
-      .update(schema.giftsAndPayments)
-      .set({
-        finalAmountSource: "human",
-      })
-      .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
+  // Delete order matters (RESTRICT FKs): clear ledger rows first, then
+  // allocations, staged rows, charges, gifts, org, user.
   await clearPaymentApplicationsForGiftIds(giftIds);
   await clearPaymentApplicationsForStagedIds(stagedIds);
   if (stagedIds.length)

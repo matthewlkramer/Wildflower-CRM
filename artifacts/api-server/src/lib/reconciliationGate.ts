@@ -115,8 +115,6 @@ export interface GateGift {
   organizationId: string | null;
   individualGiverPersonId: string | null;
   householdId: string | null;
-  /** Current final-amount provenance, to guard Stripe precedence + re-pointing. */
-  finalAmountSource?: string | null;
   /**
    * The Stripe charge currently counted against this gift in the ledger, or
    * null. Replaces the retired finalAmountStripeChargeId pointer column — the

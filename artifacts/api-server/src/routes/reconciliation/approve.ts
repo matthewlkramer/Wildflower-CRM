@@ -541,7 +541,6 @@ async function mintGiftFromEvidence(
           organizationId: donor.organizationId,
           individualGiverPersonId: donor.individualGiverPersonId,
           householdId: donor.householdId,
-          finalAmountSource: null,
           // New gift has no existing Stripe ledger row yet — no current charge.
           currentStripeChargeId: null,
         },
@@ -1270,7 +1269,6 @@ router.post(
             organizationId: effectiveGiftDonor.organizationId,
             individualGiverPersonId: effectiveGiftDonor.individualGiverPersonId,
             householdId: effectiveGiftDonor.householdId,
-            finalAmountSource: gift.finalAmountSource,
             // Ledger-sourced (finalAmountStripeChargeId is @deprecated).
             currentStripeChargeId: currentChargeId,
           },

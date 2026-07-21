@@ -64,25 +64,21 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   dateReceived: date("date_received"),
   paymentMethod: giftPaymentMethodEnum("payment_method"),
   amount: numeric("amount", { precision: 14, scale: 2 }),
-  // TRANSITIONAL (intended for eventual retirement, but STILL LIVE — do NOT
-  // drop). The design goal: the human-entered `amount` stays the authoritative
-  // donor credit and what actually settled is DERIVED at read time from the
-  // gift's linked payments (Stripe / QuickBooks payment_applications / Donorbox)
-  // via giftPaymentSummary.ts (`derivedSettledAmount`). That derivation exists,
-  // but these provenance columns have NOT been retired yet: QuickBooks matching
-  // (routes/quickbooks/matching.ts + actions.ts) still WRITES them when it sets a
-  // gift's amount from a staged payment; `finalAmountSource` is still READ by the
-  // gifts list filter ("still funding" = final_amount_source = 'human'); and
-  // `finalAmountStripeChargeId` is still READ by financialCorrections.ts. Retained
-  // so dev push stays additive and prod Publish never auto-drops them; a physical
-  // DROP must wait until those readers/writers are removed and ships as a reviewed
-  // SQL file.
+  // @deprecated RETIRED (Task #757) — no code reads, writes, or echoes these
+  // two transitional provenance columns anymore. The human-entered `amount` is
+  // the authoritative donor credit; settled amounts and provenance are DERIVED
+  // at read time from the counted payment_applications ledger
+  // (giftPaymentSummary.ts / derivedStatus.ts). Physically retained ONLY so dev
+  // push stays additive and prod Publish never auto-drops them; the physical
+  // DROP ships as reviewed SQL (migration 0146). Do not reintroduce readers or
+  // writers.
   originalHumanCrmAmount: numeric("original_human_crm_amount", {
     precision: 14,
     scale: 2,
   }),
-  // TRANSITIONAL — still READ by the gifts list filter and still WRITTEN
-  // ('quickbooks') by QB matching/actions. See originalHumanCrmAmount above.
+  // @deprecated RETIRED (Task #757) — see originalHumanCrmAmount above. The
+  // gift_final_amount_source enum type is dropped together with this column in
+  // migration 0146.
   finalAmountSource: giftFinalAmountSourceEnum("final_amount_source")
     .notNull()
     .default("human"),

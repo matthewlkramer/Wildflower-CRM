@@ -96,7 +96,6 @@ async function run() {
       ["interests_gov_models", "text[]"],
       ["region_ids",           "text[]"],
       ["parent_organization_id", "text"],
-      ["payment_intermediary_id", "text"],
       ["priority",             "text"],
       ["anonymous",            "boolean NOT NULL DEFAULT false"],
     ];
@@ -153,7 +152,7 @@ async function run() {
         x, linkedin, facebook, instagram, youtube, crunchbase, website,
         connection_status, enthusiasm, strategic_alignment,
         interests_thematic, interests_ages, interests_gov_models, region_ids,
-        parent_organization_id, payment_intermediary_id, priority, anonymous,
+        parent_organization_id, priority, anonymous,
         created_at, updated_at
       )
       SELECT
@@ -187,7 +186,6 @@ async function run() {
         interests_thematic, interests_ages, interests_gov_models, region_ids,
         -- parent_funder_id stays as-is; the parent funder will also be migrated
         parent_funder_id AS parent_organization_id,
-        payment_intermediary_id,
         priority::text,
         anonymous,
         created_at, updated_at

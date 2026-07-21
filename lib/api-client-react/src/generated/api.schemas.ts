@@ -510,18 +510,6 @@ export const GiftPaymentMethod = {
 } as const;
 
 /**
- * Where a gift's final `amount` was last sourced from. human: hand-entered, never reconciled. stripe: stamped from a Stripe charge (gross). quickbooks: stamped from a QuickBooks staged row. XOR with the two final_amount pointer fields.
- */
-export type GiftFinalAmountSource = typeof GiftFinalAmountSource[keyof typeof GiftFinalAmountSource];
-
-
-export const GiftFinalAmountSource = {
-  human: 'human',
-  stripe: 'stripe',
-  quickbooks: 'quickbooks',
-} as const;
-
-/**
  * Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.
  */
 export type GiftQuickbooksTie = typeof GiftQuickbooksTie[keyof typeof GiftQuickbooksTie];
@@ -1287,8 +1275,6 @@ export interface Organization {
   interestsGovModels?: string[] | null;
   regionIds?: string[] | null;
   parentOrganizationId?: string | null;
-  /** Payment intermediary (e.g. a DAF) this organization gives through. */
-  paymentIntermediaryId?: string | null;
   /** When true, hide the organization's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned. */
   anonymous: boolean;
   lastContacted?: string | null;
@@ -1380,27 +1366,14 @@ export interface Address {
   updatedAt: string;
 }
 
-export interface PaymentIntermediary {
-  id: string;
-  name: string;
-  type?: PaymentIntermediaryType | null;
-  /** QuickBooks Online Customer Id this payment intermediary maps to. */
-  quickbooksCustomerId?: string | null;
-  /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
-  archivedAt?: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type OrganizationDetail = Organization & ({
+export type OrganizationDetail = Organization & {
   people?: PeopleEntityRole[];
   emails?: Email[];
   phoneNumbers?: PhoneNumber[];
   addresses?: Address[];
-  readonly paymentIntermediary?: PaymentIntermediary | null;
   /** Derived (never persisted): true when an OPEN Cleanup Queue item with reason_code='needs_research' targets this record. Drives the passive 'Needs research' detail-page badge; set only via the Cleanup Queue, never writable here. */
   readonly flaggedForResearch?: boolean;
-});
+};
 
 export interface OrganizationList {
   data: Organization[];
@@ -1443,7 +1416,6 @@ export interface CreateOrganizationBody {
   interestsGovModels?: string[];
   regionIds?: string[];
   parentOrganizationId?: string;
-  paymentIntermediaryId?: string;
   x?: string;
   linkedin?: string;
   facebook?: string;
@@ -1481,7 +1453,6 @@ export interface UpdateOrganizationBody {
   interestsGovModels?: string[] | null;
   regionIds?: string[] | null;
   parentOrganizationId?: string | null;
-  paymentIntermediaryId?: string | null;
   x?: string | null;
   linkedin?: string | null;
   facebook?: string | null;
@@ -1491,6 +1462,18 @@ export interface UpdateOrganizationBody {
   quickbooksCustomerId?: string | null;
   priority?: Priority | null;
   anonymous?: boolean;
+}
+
+export interface PaymentIntermediary {
+  id: string;
+  name: string;
+  type?: PaymentIntermediaryType | null;
+  /** QuickBooks Online Customer Id this payment intermediary maps to. */
+  quickbooksCustomerId?: string | null;
+  /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */
+  archivedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface DonorPaymentIntermediary {
@@ -2000,16 +1983,6 @@ export interface GiftOrPayment {
   readonly derivedSettledAmount?: string | null;
   /** Total processor fees withheld across the gift's linked payments (Stripe + Donorbox; QuickBooks carries none). Donor is credited the GROSS `amount`; net = derivedSettledAmount − derivedProcessorFee. Null when no fee-bearing payment is linked. */
   readonly derivedProcessorFee?: string | null;
-  /**
-   * DEPRECATED (Task #448) — `amount` is now never overwritten, so the human-entered amount is just `amount`. Compare with derivedSettledAmount.
-   * @deprecated
-   */
-  readonly originalHumanCrmAmount?: string | null;
-  /**
-   * DEPRECATED (Task #448) — `amount` is always the human-entered amount now; settled money is derivedSettledAmount.
-   * @deprecated
-   */
-  readonly finalAmountSource: GiftFinalAmountSource;
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
@@ -4204,7 +4177,6 @@ export interface ReconciliationCard {
   resolvedGiftFiscalYear?: string | null;
   /** Intended-usage rollup of the linked gift's allocation lines (entity, usage label, restriction) — shown on the card's CRM-gift side so a reviewer can judge what the money is for. Null when no gift is linked or the gift has no allocations. */
   resolvedGiftAllocations?: ReconciliationCardGiftAllocation[] | null;
-  finalAmountSource?: GiftFinalAmountSource | null;
   /** Auto-proposal satisfies the consistency gate (one-click approve). */
   ready: boolean;
   /** Why this money was filed as a non-gift; set only when status='excluded'. Drives the Excluded queue's reason label. */
@@ -4503,7 +4475,6 @@ export interface GiftMissingQb {
   schoolRecipientName?: string | null;
   /** The allocation's fiscal year (grant_year) id. */
   grantYear?: string | null;
-  finalAmountSource?: GiftFinalAmountSource | null;
   /** The linked opportunity/pledge (gifts_and_payments.opportunity_id) this gift books against, if any. */
   opportunityId?: string | null;
   /** Display name of the linked opportunity/pledge. */
@@ -4841,7 +4812,6 @@ export interface BundleGiftMintDraft {
   amount: string | null;
   dateReceived?: string | null;
   paymentMethod?: GiftPaymentMethod | null;
-  finalAmountSource?: GiftFinalAmountSource | null;
 }
 
 export type BundleGiftProposalKind = typeof BundleGiftProposalKind[keyof typeof BundleGiftProposalKind];
@@ -9797,7 +9767,7 @@ should tie to a QuickBooks record but don't.
  */
 quickbooksTie?: ListGiftsAndPaymentsQuickbooksTieItem[];
 /**
- * When true, list only gifts awaiting funding evidence (edge case B4): CRM-first gifts logged by a fundraiser before any funding evidence arrived. The state is human-entered amount (`finalAmountSource = human`, which the DB CHECK guarantees has null QuickBooks/Stripe evidence pointers) AND no QuickBooks tie yet (`quickbooksTieStatus = missing`). Off-books/exempt and processor-sourced (tied) gifts are excluded.
+ * When true, list only gifts awaiting funding evidence (edge case B4): CRM-first gifts logged by a fundraiser before any funding evidence arrived. Answered entirely from the ledger-derived tie: `quickbooksTieStatus = missing` (no counted payment-application row from any source). Off-books/exempt and processor-sourced (tied) gifts are excluded.
  */
 awaitingEvidence?: boolean;
 /**

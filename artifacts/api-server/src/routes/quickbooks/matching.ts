@@ -35,8 +35,6 @@ import {
 } from "../../lib/giftAllocationSeed";
 import { isGovernmentReimbursement } from "../../lib/quickbooksExclusionRules";
 import {
-  stampGiftFinalAmount,
-  adjustSingleAllocationOrFlag,
 } from "../../lib/giftFinalAmount";
 import {
   applyPaymentApplication,
@@ -226,26 +224,10 @@ router.post(
           )
           .returning({ id: stagedPayments.id });
 
-        // Tie succeeded → this QB evidence is now the gift's final-amount source
-        // (unless the gift is already Stripe-sourced, in which case the stamp is
-        // a no-op: Stripe GROSS wins). Rebalance the single allocation, or flag
-        // a multi-allocation gift whose splits no longer sum.
+        // Tie succeeded. The gift's `amount` is never overwritten by
+        // reconciliation (Task #757) — settled money is derived from the
+        // counted ledger row booked below.
         if (updated.length > 0) {
-          const stamp = await stampGiftFinalAmount(tx, giftId, {
-            source: "quickbooks",
-            qbStagedPaymentId: id,
-            amount: existing.amount,
-          });
-          if (!stamp.skipped) {
-            await adjustSingleAllocationOrFlag(
-              tx,
-              giftId,
-              stamp.oldAmount,
-              stamp.newAmount,
-              "quickbooks",
-            );
-          }
-
           // Book the QB cash-application ledger row — the SOLE resolution record.
           // This staged payment fully applies to the matched gift (1:1 link).
           if (existing.amount && Number(existing.amount) > 0) {
@@ -559,26 +541,9 @@ router.post(
           })
           .where(inArray(stagedPayments.id, ids));
 
-        // The group's combined QB net total is the gift's final amount, sourced
-        // from the representative member's evidence (pointer = representativeId).
-        // Skipped as a no-op if the gift is already Stripe-sourced (GROSS wins).
-        // A multi-allocation gift whose splits no longer sum is flagged for human
-        // re-apportionment rather than silently rescaled.
-        const groupStamp = await stampGiftFinalAmount(tx, giftId, {
-          source: "quickbooks",
-          qbStagedPaymentId: representativeId,
-          amount: sum.toFixed(2),
-        });
-        if (!groupStamp.skipped) {
-          await adjustSingleAllocationOrFlag(
-            tx,
-            giftId,
-            groupStamp.oldAmount,
-            groupStamp.newAmount,
-            "quickbooks",
-          );
-        }
-
+        // The gift's `amount` is never overwritten by reconciliation
+        // (Task #757) — the group's settled money is derived from the counted
+        // ledger rows booked below.
         // Book one QB cash-application ledger row (the SOLE resolution record) PER member
         // payment → the group's gift (each payment fully applies to it; the
         // per-member amounts SUM to the group total).
@@ -843,13 +808,9 @@ router.post(
               user.id,
             ),
             amount: remainder.amount,
-            // Provenance stamped at insert: the gift's amount IS this QB
-            // evidence. The legacy final_amount_qb_staged_payment_id and
-            // final_amount_stripe_charge_id pointer columns are @deprecated and
-            // never written — the counted ledger row (created_the_gift = true,
-            // booked below) carries the tie.
-            finalAmountSource: "quickbooks" as const,
-            originalHumanCrmAmount: null,
+            // Provenance is the counted ledger row (created_the_gift = true,
+            // booked below); the transitional final-amount columns are retired
+            // (Task #757) and never written.
           });
           // Every gift needs at least one allocation (the sole home of money
           // scope). The payment_applications rows below are QB link records, NOT

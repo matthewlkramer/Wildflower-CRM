@@ -31,10 +31,6 @@ import { alias, type PgSelect } from "drizzle-orm/pg-core";
 import { getAppUser } from "../../lib/appRequest";
 import { type InvariantIssue } from "@workspace/api-zod";
 import {
-  unstampGiftFinalAmount,
-  adjustSingleAllocationOrFlag,
-} from "../../lib/giftFinalAmount";
-import {
   removePaymentApplicationsForGift,
   removePaymentApplicationsForPayment,
   qbLedgerExistsForGift,
@@ -593,24 +589,8 @@ export async function revertOneStagedPayment(
           .from(stagedPayments)
           .where(inArray(stagedPayments.id, memberIds))
           .for("update");
-        // Reverse the group gift's final-amount stamp BEFORE deleting the
-        // ledger rows (the unstamp guard verifies provenance via the ledger —
-        // any member payment passes, and the whole group's evidence is being
-        // removed). Then rebalance the gift's single allocation (or flag a
-        // multi-alloc gift). No-op if a later Stripe stamp superseded it.
-        const un = await unstampGiftFinalAmount(tx, gid, {
-          source: "quickbooks",
-          qbStagedPaymentId: id,
-        });
-        if (un.restored) {
-          await adjustSingleAllocationOrFlag(
-            tx,
-            gid,
-            un.oldAmount,
-            un.newAmount,
-            "quickbooks",
-          );
-        }
+        // The gift's `amount` was never overwritten by reconciliation, so
+        // there is no final-amount stamp to unwind (Task #757).
         // Ledger cleanup: undo every member payment's QB cash-application to
         // the group gift (the gift is pre-existing, not deleted).
         await removePaymentApplicationsForGift(tx, gid);
@@ -671,26 +651,11 @@ export async function revertOneStagedPayment(
       // revertible — deleting it would orphan a fundraiser-created gift.
       if (!isReconcile && !isAutoMint) throw new Error(REVERT_NOT_REVERTIBLE);
 
-      // Reconcile (matched a pre-existing gift): reverse the final-amount stamp
-      // BEFORE deleting the ledger row (the unstamp guard verifies provenance
-      // via the ledger) so the gift falls back to its original human amount,
-      // then rebalance allocations. No-op if a later Stripe stamp superseded it.
+      // Reconcile (matched a pre-existing gift): the gift's `amount` was never
+      // overwritten by reconciliation, so there is no stamp to unwind (Task #757).
       if (isReconcile) {
         // The pre-existing matched gift loses this evidence — recompute.
         affectedGiftIds.add(gid);
-        const un = await unstampGiftFinalAmount(tx, gid, {
-          source: "quickbooks",
-          qbStagedPaymentId: id,
-        });
-        if (un.restored) {
-          await adjustSingleAllocationOrFlag(
-            tx,
-            gid,
-            un.oldAmount,
-            un.newAmount,
-            "quickbooks",
-          );
-        }
         // Ledger cleanup: undo this payment's cash-application to the matched
         // gift (the gift is pre-existing and is never deleted).
         await removePaymentApplicationsForPayment(tx, id);

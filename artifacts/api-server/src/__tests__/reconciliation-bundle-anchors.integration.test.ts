@@ -432,15 +432,6 @@ afterAll(async () => {
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
 
   const allGiftIds = [...createdGiftIds, ...seededGiftIds];
-  // Release gift→charge/staged final-amount pointers (RESTRICT FK) before deleting
-  // the evidence rows; reset source to `human` to keep the source↔pointer XOR.
-  if (allGiftIds.length)
-    await db
-      .update(schema.giftsAndPayments)
-      .set({
-        finalAmountSource: "human",
-      })
-      .where(inArrayFn(schema.giftsAndPayments.id, allGiftIds));
   if (allGiftIds.length)
     await db
       .delete(schema.giftAllocations)
