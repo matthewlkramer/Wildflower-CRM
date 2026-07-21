@@ -160,23 +160,21 @@ export const donorboxDonations = pgTable(
     // `payment_applications` ledger row (`donorbox_donation_id` anchor); a mint
     // is `created_the_gift = true`. Do not reintroduce gift-pointer columns.
 
-    // ── Cross-processor link (human-confirmed, additive) ────────────────
-    // Reviewer-confirmed ties to the SAME money recorded elsewhere, so the
-    // Reconciliation Workbench can persist a confirmed cross-processor tie
-    // WITHOUT re-deriving the settlement lineage each time. Purely additive
-    // provenance — never mints/mutates a gift, never written back to any
-    // processor.
-    //   linkedQbStagedPaymentId — the QuickBooks staged_payments row recording
-    //     this donation (covers non-Stripe Donorbox money — PayPal/ACH — that
-    //     lands in a QB bank deposit and has no pulled processor join).
-    //   linkedStripeChargeId — the human-CONFIRMED Stripe charge counterpart
-    //     (complements the read-only PULLED `stripeChargeId` join key above;
-    //     lets a reviewer override/affirm the derived 1:1 Stripe match).
-    // Both SET NULL if the referenced row is removed.
+    // ── Cross-processor link pointers — RETIRED (source_links is authority) ──
+    // The donation's confirmed QB / Stripe counterparts now live in the
+    // `source_links` ledger (docs/adr-source-link-ledger.md): `donorbox_qb`
+    // and `donorbox_charge`. These pointer columns stay physical as dual-write
+    // mirrors during the transition (never approve the interactive-push drop;
+    // scrub from response projections). Do not add new readers.
+    /** @deprecated Read `source_links` (link_type='donorbox_qb') instead.
+     * Dual-write mirror only. */
     linkedQbStagedPaymentId: text("linked_qb_staged_payment_id").references(
       () => stagedPayments.id,
       { onDelete: "set null" },
     ),
+    /** @deprecated Read `source_links` (link_type='donorbox_charge') instead.
+     * Dual-write mirror only. (The read-only PULLED `stripeChargeId` join key
+     * above is NOT deprecated — it is sync-derived enrichment, not a claim.) */
     linkedStripeChargeId: text("linked_stripe_charge_id").references(
       () => stripeStagedCharges.id,
       { onDelete: "set null" },

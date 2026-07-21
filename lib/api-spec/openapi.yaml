@@ -7884,7 +7884,7 @@ components:
       description: "Outcome of persisting a settlement bundle's cross-processor ties — counts of link fields newly filled (idempotent: re-running yields zeros)."
       properties:
         ok:               { type: boolean, enum: [true] }
-        chargesLinked:    { type: integer, description: "Stripe charges whose linkedQbStagedPaymentId was newly set to the deposit." }
+        chargesLinked:    { type: integer, description: "Always 0. Charge↔deposit membership is carried by the settlement link + the charge's payout, not per-charge QB ties (a bundle's many charges may share one deposit; confirmed charge_qb_tie is unique per QB row). Field retained for contract stability." }
         donationsLinked:  { type: integer, description: "Donorbox donations whose linkedStripeChargeId/linkedQbStagedPaymentId were newly set." }
     SettlementLineageDonation:
       type: object

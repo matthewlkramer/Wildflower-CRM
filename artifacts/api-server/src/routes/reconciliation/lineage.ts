@@ -88,7 +88,15 @@ router.get(
 
     // ── Stripe charges: those settled in the payout (pulled) + any per-charge
     // reviewer-confirmed ties to this QB row (qb_confirmed). ────────────────
-    const chargeFilters = [eq(stripeStagedCharges.linkedQbStagedPaymentId, id)];
+    const chargeFilters = [
+      sql`EXISTS (
+        SELECT 1 FROM source_links srcl_ct
+        WHERE srcl_ct.link_type = 'charge_qb_tie'
+          AND srcl_ct.lifecycle = 'confirmed'
+          AND srcl_ct.stripe_charge_id = "stripe_staged_charges"."id"
+          AND srcl_ct.qb_staged_payment_id = ${id}
+      )`,
+    ];
     if (payoutRow) {
       chargeFilters.push(eq(stripeStagedCharges.stripePayoutId, payoutRow.id));
     }
@@ -164,11 +172,26 @@ router.get(
     // stripeChargeId or reviewer-confirmed linkedStripeChargeId) + any
     // non-Stripe new money the reviewer tied directly to this QB deposit. ───
     const chargeIds = charges.map((c) => c.chargeId);
-    const donationFilters = [eq(donorboxDonations.linkedQbStagedPaymentId, id)];
+    const donationFilters = [
+      sql`EXISTS (
+        SELECT 1 FROM source_links srcl_dq
+        WHERE srcl_dq.link_type = 'donorbox_qb'
+          AND srcl_dq.donorbox_donation_id = "donorbox_donations"."id"
+          AND srcl_dq.qb_staged_payment_id = ${id}
+      )`,
+    ];
     if (chargeIds.length > 0) {
       donationFilters.push(inArray(donorboxDonations.stripeChargeId, chargeIds));
       donationFilters.push(
-        inArray(donorboxDonations.linkedStripeChargeId, chargeIds),
+        sql`EXISTS (
+          SELECT 1 FROM source_links srcl_dc
+          WHERE srcl_dc.link_type = 'donorbox_charge'
+            AND srcl_dc.donorbox_donation_id = "donorbox_donations"."id"
+            AND srcl_dc.stripe_charge_id IN (${sql.join(
+              chargeIds.map((cid) => sql`${cid}`),
+              sql`, `,
+            )})
+        )`,
       );
     }
     const donationRows = await db
@@ -183,8 +206,16 @@ router.get(
         designation: donorboxDonations.designation,
         refunded: donorboxDonations.refunded,
         stripeChargeId: donorboxDonations.stripeChargeId,
-        linkedStripeChargeId: donorboxDonations.linkedStripeChargeId,
-        linkedQbStagedPaymentId: donorboxDonations.linkedQbStagedPaymentId,
+        linkedStripeChargeId: sql<string | null>`(
+          SELECT srcl_lc.stripe_charge_id FROM source_links srcl_lc
+          WHERE srcl_lc.link_type = 'donorbox_charge'
+            AND srcl_lc.donorbox_donation_id = "donorbox_donations"."id"
+        )`,
+        linkedQbStagedPaymentId: sql<string | null>`(
+          SELECT srcl_lq.qb_staged_payment_id FROM source_links srcl_lq
+          WHERE srcl_lq.link_type = 'donorbox_qb'
+            AND srcl_lq.donorbox_donation_id = "donorbox_donations"."id"
+        )`,
       })
       .from(donorboxDonations)
       .where(

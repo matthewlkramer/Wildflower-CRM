@@ -285,7 +285,7 @@ export const ConfirmBundleCrossProcessorTiesParams = zod.object({
 
 export const ConfirmBundleCrossProcessorTiesResponse = zod.object({
   "ok": zod.literal(true),
-  "chargesLinked": zod.number().describe('Stripe charges whose linkedQbStagedPaymentId was newly set to the deposit.'),
+  "chargesLinked": zod.number().describe('Always 0. Charge↔deposit membership is carried by the settlement link + the charge\'s payout, not per-charge QB ties (a bundle\'s many charges may share one deposit; confirmed charge_qb_tie is unique per QB row). Field retained for contract stability.'),
   "donationsLinked": zod.number().describe('Donorbox donations whose linkedStripeChargeId\/linkedQbStagedPaymentId were newly set.')
 }).describe('Outcome of persisting a settlement bundle\'s cross-processor ties — counts of link fields newly filled (idempotent: re-running yields zeros).')
 

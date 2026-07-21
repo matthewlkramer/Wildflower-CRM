@@ -44,8 +44,11 @@ let schema: {
   stripeStagedCharges: Db["stripeStagedCharges"];
   stagedPayments: Db["stagedPayments"];
   settlementLinks: Db["settlementLinks"];
+  sourceLinks: Db["sourceLinks"];
+  sourceLinkId: Db["sourceLinkId"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
+let andFn: (typeof import("drizzle-orm"))["and"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let runChargeTiePass: (typeof import("../lib/chargeQbTie"))["runChargeTiePass"];
 
@@ -92,6 +95,18 @@ async function seedCharge(over: {
     linkedQbStagedPaymentId: over.linkedQbStagedPaymentId ?? null,
     proposedQbStagedPaymentId: over.proposedQbStagedPaymentId ?? null,
   });
+  // Ledger mirror — the tie pass reads/writes source_links as the authority.
+  const tieQb = over.linkedQbStagedPaymentId ?? over.proposedQbStagedPaymentId;
+  if (tieQb) {
+    await db.insert(schema.sourceLinks).values({
+      id: schema.sourceLinkId("charge_qb_tie", id),
+      linkType: "charge_qb_tie",
+      stripeChargeId: id,
+      qbStagedPaymentId: tieQb,
+      lifecycle: over.linkedQbStagedPaymentId ? "confirmed" : "proposed",
+      provenance: over.linkedQbStagedPaymentId ? "human" : "system",
+    });
+  }
   chargeIds.push(id);
   return id;
 }
@@ -115,15 +130,39 @@ async function seedQbRow(over: {
   return id;
 }
 
+/**
+ * Read the tie state from the LEDGER (the authority) and assert the deprecated
+ * pointer mirrors agree — every dual-write drift shows up here.
+ */
 async function readCharge(id: string) {
-  const [row] = await db
+  const [pointers] = await db
     .select({
       proposed: schema.stripeStagedCharges.proposedQbStagedPaymentId,
       linked: schema.stripeStagedCharges.linkedQbStagedPaymentId,
     })
     .from(schema.stripeStagedCharges)
     .where(eqFn(schema.stripeStagedCharges.id, id));
-  return row!;
+  const ties = await db
+    .select({
+      lifecycle: schema.sourceLinks.lifecycle,
+      qb: schema.sourceLinks.qbStagedPaymentId,
+    })
+    .from(schema.sourceLinks)
+    .where(
+      andFn(
+        eqFn(schema.sourceLinks.linkType, "charge_qb_tie"),
+        eqFn(schema.sourceLinks.stripeChargeId, id),
+      ),
+    );
+  const tie = ties[0] ?? null;
+  const row = {
+    proposed: tie?.lifecycle === "proposed" ? tie.qb : null,
+    linked: tie?.lifecycle === "confirmed" ? tie.qb : null,
+  };
+  expect(ties.length).toBeLessThanOrEqual(1);
+  expect(pointers!.proposed).toBe(row.proposed);
+  expect(pointers!.linked).toBe(row.linked);
+  return row;
 }
 
 beforeAll(async () => {
@@ -136,7 +175,10 @@ beforeAll(async () => {
     stripeStagedCharges: dbMod.stripeStagedCharges,
     stagedPayments: dbMod.stagedPayments,
     settlementLinks: dbMod.settlementLinks,
+    sourceLinks: dbMod.sourceLinks,
+    sourceLinkId: dbMod.sourceLinkId,
   };
+  andFn = drizzle.and;
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
   ({ runChargeTiePass } = await import("../lib/chargeQbTie"));

@@ -24,6 +24,32 @@ import {
 } from "../../lib/derivedStatus";
 import { sweepRefundedQbStagedPayments } from "../../lib/refundedChargeSweep";
 import { applyChargeTieSupersedePairs } from "../../lib/chargeTieSupersede";
+import {
+  upsertConfirmedChargeTie,
+  clearProposedChargeTie,
+  deleteChargeTie,
+  deleteChargeFeeRowLink,
+} from "../../lib/sourceLinkWrites";
+
+/** The charge's current tie from the source_links ledger (the authority),
+ * split by lifecycle, as correlated subselects for a charge row query. */
+const ledgerConfirmedTieSql = sql<string | null>`(
+  SELECT srcl.qb_staged_payment_id FROM source_links srcl
+  WHERE srcl.link_type = 'charge_qb_tie'
+    AND srcl.lifecycle = 'confirmed'
+    AND srcl.stripe_charge_id = "stripe_staged_charges"."id"
+)`;
+const ledgerProposedTieSql = sql<string | null>`(
+  SELECT srcl.qb_staged_payment_id FROM source_links srcl
+  WHERE srcl.link_type = 'charge_qb_tie'
+    AND srcl.lifecycle = 'proposed'
+    AND srcl.stripe_charge_id = "stripe_staged_charges"."id"
+)`;
+const ledgerFeeRowSql = sql<string | null>`(
+  SELECT srcl.qb_staged_payment_id FROM source_links srcl
+  WHERE srcl.link_type = 'charge_fee_row'
+    AND srcl.stripe_charge_id = "stripe_staged_charges"."id"
+)`;
 
 /**
  * Charge-grain settlement confirm for "individually-booked" payouts — payouts
@@ -131,14 +157,12 @@ router.post(
             description: stripeStagedCharges.description,
             // DERIVED lifecycle status (no stored column) — lib/derivedStatus.ts.
             status: chargeStatusSql.as("status"),
-            linkedQbStagedPaymentId:
-              stripeStagedCharges.linkedQbStagedPaymentId,
-            proposedQbStagedPaymentId:
-              stripeStagedCharges.proposedQbStagedPaymentId,
+            linkedQbStagedPaymentId: ledgerConfirmedTieSql,
+            proposedQbStagedPaymentId: ledgerProposedTieSql,
           })
           .from(stripeStagedCharges)
           .where(eq(stripeStagedCharges.stripePayoutId, payoutId))
-          .for("update");
+          .for("update", { of: stripeStagedCharges });
 
         const openCharges = charges.filter(
           (c) =>
@@ -355,8 +379,10 @@ router.post(
           .select({
             qbId: stagedPayments.id,
             tiedCharge: sql<string | null>`(
-              SELECT cc.id FROM stripe_staged_charges cc
-              WHERE cc.linked_qb_staged_payment_id = ${stagedPayments.id}
+              SELECT srcl.stripe_charge_id FROM source_links srcl
+              WHERE srcl.link_type = 'charge_qb_tie'
+                AND srcl.lifecycle = 'confirmed'
+                AND srcl.qb_staged_payment_id = "staged_payments"."id"
               LIMIT 1
             )`,
             settlementLinked: sql<boolean>`EXISTS (
@@ -391,12 +417,31 @@ router.post(
           });
         }
 
-        // Stamp every tie, each guarded on the charge still being untied (the
-        // FOR UPDATE lock makes drift impossible, but the guard keeps the
-        // write self-defending if this code is ever called without it).
+        // Stamp every tie: the source_links ledger row flips (or is created)
+        // as CONFIRMED — guarded on it not already being confirmed (the FOR
+        // UPDATE lock makes drift impossible, but the guard keeps the write
+        // self-defending). The pointer mirror is stamped in lockstep
+        // (dual-write window).
         let tied = 0;
         for (const [chargeId, qbId] of ties) {
-          const upd = await tx
+          const already = await tx.execute<{ exists: boolean }>(sql`
+            SELECT EXISTS (
+              SELECT 1 FROM source_links srcl
+              WHERE srcl.link_type = 'charge_qb_tie'
+                AND srcl.lifecycle = 'confirmed'
+                AND srcl.stripe_charge_id = ${chargeId}
+            ) AS exists
+          `);
+          if (already.rows[0]?.exists) {
+            throw new ReconcileAbort(409, {
+              error: "charge_tie_drift",
+              message:
+                "A charge's tie changed mid-confirm. Reload and retry.",
+              details: { issues: [{ chargeId, reason: "already tied" }] },
+            });
+          }
+          await upsertConfirmedChargeTie(tx, chargeId, qbId, user.id, now);
+          await tx
             .update(stripeStagedCharges)
             .set({
               linkedQbStagedPaymentId: qbId,
@@ -405,21 +450,7 @@ router.post(
               crossProcessorLinkedAt: now,
               updatedAt: now,
             })
-            .where(
-              and(
-                eq(stripeStagedCharges.id, chargeId),
-                isNull(stripeStagedCharges.linkedQbStagedPaymentId),
-              ),
-            )
-            .returning({ id: stripeStagedCharges.id });
-          if (upd.length === 0) {
-            throw new ReconcileAbort(409, {
-              error: "charge_tie_drift",
-              message:
-                "A charge's tie changed mid-confirm. Reload and retry.",
-              details: { issues: [{ chargeId, reason: "already tied" }] },
-            });
-          }
+            .where(eq(stripeStagedCharges.id, chargeId));
           tied += 1;
         }
 
@@ -517,14 +548,12 @@ router.post(
         const [charge] = await tx
           .select({
             id: stripeStagedCharges.id,
-            linkedQbStagedPaymentId:
-              stripeStagedCharges.linkedQbStagedPaymentId,
-            proposedQbStagedPaymentId:
-              stripeStagedCharges.proposedQbStagedPaymentId,
+            linkedQbStagedPaymentId: ledgerConfirmedTieSql,
+            proposedQbStagedPaymentId: ledgerProposedTieSql,
           })
           .from(stripeStagedCharges)
           .where(eq(stripeStagedCharges.id, chargeId))
-          .for("update");
+          .for("update", { of: stripeStagedCharges });
         if (!charge) {
           throw new ReconcileAbort(404, {
             error: "not_found",
@@ -546,29 +575,18 @@ router.post(
           });
         }
 
-        // Clear the proposal — guarded on the exact proposal we read still
-        // being in place (the FOR UPDATE lock makes drift impossible; the
-        // guard keeps the write self-defending).
-        const upd = await tx
+        // Clear the proposal: delete the PROPOSED ledger row (confirmed rows
+        // are untouched by the helper's lifecycle guard) and clear the
+        // pointer mirror in lockstep (dual-write window). The FOR UPDATE
+        // lock above makes drift impossible.
+        await clearProposedChargeTie(tx, chargeId);
+        await tx
           .update(stripeStagedCharges)
           .set({
             proposedQbStagedPaymentId: null,
             updatedAt: new Date(),
           })
-          .where(
-            and(
-              eq(stripeStagedCharges.id, chargeId),
-              eq(stripeStagedCharges.proposedQbStagedPaymentId, qbId),
-              isNull(stripeStagedCharges.linkedQbStagedPaymentId),
-            ),
-          )
-          .returning({ id: stripeStagedCharges.id });
-        if (upd.length === 0) {
-          throw new ReconcileAbort(409, {
-            error: "charge_tie_drift",
-            message: "The charge's tie changed mid-reject. Reload and retry.",
-          });
-        }
+          .where(eq(stripeStagedCharges.id, chargeId));
 
         return { rejected: true, chargeId, qbStagedPaymentId: qbId };
       });
@@ -618,14 +636,12 @@ router.post(
         const [charge] = await tx
           .select({
             id: stripeStagedCharges.id,
-            linkedQbStagedPaymentId:
-              stripeStagedCharges.linkedQbStagedPaymentId,
-            linkedFeeQbStagedPaymentId:
-              stripeStagedCharges.linkedFeeQbStagedPaymentId,
+            linkedQbStagedPaymentId: ledgerConfirmedTieSql,
+            linkedFeeQbStagedPaymentId: ledgerFeeRowSql,
           })
           .from(stripeStagedCharges)
           .where(eq(stripeStagedCharges.id, chargeId))
-          .for("update");
+          .for("update", { of: stripeStagedCharges });
         if (!charge) {
           throw new ReconcileAbort(404, {
             error: "not_found",
@@ -642,10 +658,12 @@ router.post(
         }
         const feeQbId = charge.linkedFeeQbStagedPaymentId;
 
-        // Clear the tie — guarded on the exact link we read still being in
-        // place (the FOR UPDATE lock makes drift impossible; the guard keeps
-        // the write self-defending).
-        const upd = await tx
+        // Clear the tie: delete the charge's tie ledger row and its fee-row
+        // claim, and clear the pointer mirrors in lockstep (dual-write
+        // window). The FOR UPDATE lock above makes drift impossible.
+        await deleteChargeTie(tx, chargeId);
+        await deleteChargeFeeRowLink(tx, chargeId);
+        await tx
           .update(stripeStagedCharges)
           .set({
             linkedQbStagedPaymentId: null,
@@ -654,19 +672,7 @@ router.post(
             crossProcessorLinkedAt: null,
             updatedAt: new Date(),
           })
-          .where(
-            and(
-              eq(stripeStagedCharges.id, chargeId),
-              eq(stripeStagedCharges.linkedQbStagedPaymentId, qbId),
-            ),
-          )
-          .returning({ id: stripeStagedCharges.id });
-        if (upd.length === 0) {
-          throw new ReconcileAbort(409, {
-            error: "charge_tie_drift",
-            message: "The charge's tie changed mid-revert. Reload and retry.",
-          });
-        }
+          .where(eq(stripeStagedCharges.id, chargeId));
 
         // Undo the charge-tie supersede: delete the tie-derived (marked)
         // stripe counted rows and promote the demoted QB rows back to

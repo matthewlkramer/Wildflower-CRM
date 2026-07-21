@@ -21,7 +21,10 @@ export type PaymentApplicationEvidenceSource =
 export type PaymentApplicationMatchMethod =
   | "system"
   | "system_confirmed"
-  | "human";
+  | "human"
+  // Row was MOVED onto a Stripe charge by charge-tie supersede — the
+  // first-class discriminator (replaces the retired note-marker parse).
+  | "charge_tie_supersede";
 
 /** Default headroom above a payment's amount: just enough to absorb float
  * noise. Split callers (gross per-gift sub-amounts sum slightly above the net

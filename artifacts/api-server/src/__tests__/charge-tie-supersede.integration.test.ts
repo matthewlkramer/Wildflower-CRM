@@ -49,6 +49,8 @@ let schema: {
   paymentApplications: Db["paymentApplications"];
   organizations: Db["organizations"];
   users: Db["users"];
+  sourceLinks: Db["sourceLinks"];
+  sourceLinkId: Db["sourceLinkId"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let andFn: (typeof import("drizzle-orm"))["and"];
@@ -133,6 +135,19 @@ async function seedCharge(over?: {
     crossProcessorLinkedByUserId: over?.linkedTo ? USER_ID : null,
     crossProcessorLinkedAt: over?.linkedTo ? new Date() : null,
   });
+  // Ledger mirror — tie reads are ledger-authoritative (source_links).
+  if (over?.linkedTo) {
+    await db.insert(schema.sourceLinks).values({
+      id: schema.sourceLinkId("charge_qb_tie", id),
+      linkType: "charge_qb_tie",
+      stripeChargeId: id,
+      qbStagedPaymentId: over.linkedTo,
+      lifecycle: "confirmed",
+      provenance: "human",
+      confirmedByUserId: USER_ID,
+      confirmedAt: new Date(),
+    });
+  }
   chargeIds.push(id);
   return id;
 }
@@ -202,6 +217,9 @@ async function untie(charge: string) {
       crossProcessorLinkedAt: null,
     })
     .where(eqFn(schema.stripeStagedCharges.id, charge));
+  await db
+    .delete(schema.sourceLinks)
+    .where(eqFn(schema.sourceLinks.id, schema.sourceLinkId("charge_qb_tie", charge)));
 }
 
 beforeAll(async () => {
@@ -217,6 +235,8 @@ beforeAll(async () => {
     paymentApplications: dbMod.paymentApplications,
     organizations: dbMod.organizations,
     users: dbMod.users,
+    sourceLinks: dbMod.sourceLinks,
+    sourceLinkId: dbMod.sourceLinkId,
   };
   eqFn = drizzle.eq;
   andFn = drizzle.and;
@@ -349,6 +369,17 @@ describe.skipIf(!HAS_DB)("charge-tie supersede (DB)", () => {
       .update(schema.stripeStagedCharges)
       .set({ linkedQbStagedPaymentId: sp })
       .where(eqFn(schema.stripeStagedCharges.id, ch));
+    // Ledger mirror — the supersede pass reads the tie from source_links.
+    await db.insert(schema.sourceLinks).values({
+      id: schema.sourceLinkId("charge_qb_tie", ch),
+      linkType: "charge_qb_tie",
+      stripeChargeId: ch,
+      qbStagedPaymentId: sp,
+      lifecycle: "confirmed",
+      provenance: "human",
+      confirmedByUserId: USER_ID,
+      confirmedAt: new Date(),
+    });
 
     let affected = await apply([{ chargeId: ch, qbStagedPaymentId: sp }]);
     expect(affected).toEqual([gift]);

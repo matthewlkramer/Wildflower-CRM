@@ -59,6 +59,8 @@ let schema: {
   stripePayouts: Db["stripePayouts"];
   settlementLinks: Db["settlementLinks"];
   paymentApplications: Db["paymentApplications"];
+  sourceLinks: Db["sourceLinks"];
+  sourceLinkId: Db["sourceLinkId"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let andFn: (typeof import("drizzle-orm"))["and"];
@@ -186,6 +188,17 @@ async function seedCharge(
       ? { linkedQbStagedPaymentId: over.linkedQbStagedPaymentId }
       : {}),
   });
+  // Ledger mirror — reads are ledger-authoritative (source_links).
+  if (over.linkedQbStagedPaymentId) {
+    await db.insert(schema.sourceLinks).values({
+      id: schema.sourceLinkId("charge_qb_tie", id),
+      linkType: "charge_qb_tie",
+      stripeChargeId: id,
+      qbStagedPaymentId: over.linkedQbStagedPaymentId,
+      lifecycle: "confirmed",
+      provenance: "human",
+    });
+  }
   chargeIds.push(id);
   return id;
 }
@@ -297,6 +310,8 @@ beforeAll(async () => {
     stripePayouts: dbMod.stripePayouts,
     settlementLinks: dbMod.settlementLinks,
     paymentApplications: dbMod.paymentApplications,
+    sourceLinks: dbMod.sourceLinks,
+    sourceLinkId: dbMod.sourceLinkId,
   };
   eqFn = drizzle.eq;
   andFn = drizzle.and as typeof andFn;

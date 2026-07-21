@@ -218,14 +218,16 @@ async function proposeStripeChargeForGift(opts: {
     // confirmed this money settled through QB. Never let the ±30d window hide
     // it: a gift is routinely booked well after (or before) the charge date.
     conds.push(
-      sql`(${stripeStagedCharges.linkedQbStagedPaymentId} IS NOT NULL OR (${stripeStagedCharges.dateReceived} IS NOT NULL AND ${stripeStagedCharges.dateReceived} BETWEEN (${opts.date}::date - 30) AND (${opts.date}::date + 30)))`,
+      sql`(EXISTS (SELECT 1 FROM source_links srcl_gt WHERE srcl_gt.link_type = 'charge_qb_tie' AND srcl_gt.lifecycle = 'confirmed' AND srcl_gt.stripe_charge_id = "stripe_staged_charges"."id") OR (${stripeStagedCharges.dateReceived} IS NOT NULL AND ${stripeStagedCharges.dateReceived} BETWEEN (${opts.date}::date - 30) AND (${opts.date}::date + 30)))`,
     );
   }
 
   const orderBy: SQL[] = [
     // Settlement-tied charges first — the confirmed payout↔deposit link is
     // stronger evidence than raw amount/date proximity.
-    desc(sql`(${stripeStagedCharges.linkedQbStagedPaymentId} IS NOT NULL)`),
+    desc(
+      sql`EXISTS (SELECT 1 FROM source_links srcl_ot WHERE srcl_ot.link_type = 'charge_qb_tie' AND srcl_ot.lifecycle = 'confirmed' AND srcl_ot.stripe_charge_id = "stripe_staged_charges"."id")`,
+    ),
   ];
   if (hasAmount) {
     orderBy.push(
@@ -350,7 +352,12 @@ function stripeProposalExistsSql(name: SQL, amount: SQL, date: SQL): SQL {
           )}
         ))
         AND (${date} IS NULL
-          OR ${stripeStagedCharges.linkedQbStagedPaymentId} IS NOT NULL
+          OR EXISTS (
+            SELECT 1 FROM source_links srcl_ht
+            WHERE srcl_ht.link_type = 'charge_qb_tie'
+              AND srcl_ht.lifecycle = 'confirmed'
+              AND srcl_ht.stripe_charge_id = "stripe_staged_charges"."id"
+          )
           OR (
           ${stripeStagedCharges.dateReceived} IS NOT NULL
           AND ${stripeStagedCharges.dateReceived}

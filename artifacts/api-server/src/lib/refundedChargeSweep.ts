@@ -39,8 +39,12 @@ export async function sweepRefundedQbStagedPayments(): Promise<number> {
   // Union trace: does charge `c` (the base stripe_staged_charges table inside
   // the EXISTS subqueries below) record money behind this staged_payments row?
   const tracedToRow: SQL<boolean> = sql`(
-    ${stripeStagedCharges.linkedQbStagedPaymentId} = ${stagedPayments.id}
-    OR ${stripeStagedCharges.proposedQbStagedPaymentId} = ${stagedPayments.id}
+    EXISTS (
+      SELECT 1 FROM source_links srcl_tr
+      WHERE srcl_tr.link_type = 'charge_qb_tie'
+        AND srcl_tr.stripe_charge_id = "stripe_staged_charges"."id"
+        AND srcl_tr.qb_staged_payment_id = "staged_payments"."id"
+    )
     OR ${stripeStagedCharges.stripePayoutId} IN (
       SELECT ${settlementLinks.payoutId} FROM ${settlementLinks}
       WHERE ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id}

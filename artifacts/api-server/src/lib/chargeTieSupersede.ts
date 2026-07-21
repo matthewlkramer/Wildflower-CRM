@@ -46,19 +46,27 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *     NULL) are NEVER touched. Settlement supersede's demoted rows live on
  *     settlement-link DEPOSITS, which can never be charge-tied (the confirm
  *     route 409s them), so the two modules never manage the same row.
- *   - Stripe side: a MOVED row is stamped `note = 'charge_tie_supersede:<qbId>'`.
- *     Only marked rows are deleted on revert — a pre-existing human/system
- *     charge booking (e.g. the gift was booked from the charge BEFORE the tie)
- *     is never destroyed by an untie.
+ *   - Stripe side: a MOVED row carries the first-class
+ *     `match_method = 'charge_tie_supersede'` (the note keeps the
+ *     `charge_tie_supersede:<qbId>` text purely as a human-readable trail —
+ *     it is never machine-parsed). Only supersede-derived rows are deleted on
+ *     revert — a pre-existing human/system charge booking (e.g. the gift was
+ *     booked from the charge BEFORE the tie) is never destroyed by an untie.
+ *     A charge holds at most ONE confirmed tie at a time (source_links
+ *     partial unique), so every supersede-derived row on the charge belongs
+ *     to the tie being reverted.
  *
  * Idempotent + re-runnable: every decision is a pure function of current
  * facts, so re-applying on a converged pair is a no-op.
  */
 
-/** note-marker prefix stamped on tie-derived stripe counted rows. */
+/** Human-readable note prefix stamped on tie-derived stripe counted rows.
+ * Audit-trail text ONLY — the machine discriminator is
+ * `match_method = 'charge_tie_supersede'` (never parse the note). */
 export const CHARGE_TIE_SUPERSEDE_NOTE_PREFIX = "charge_tie_supersede:";
 
-/** The marker for one specific tie (revert only removes ITS rows). */
+/** The audit-trail note for one specific tie (records WHICH QB row the
+ * booking was moved from — display/debugging only, never parsed). */
 export function chargeTieSupersedeMarker(qbStagedPaymentId: string): string {
   return `${CHARGE_TIE_SUPERSEDE_NOTE_PREFIX}${qbStagedPaymentId}`;
 }
@@ -103,6 +111,7 @@ export interface TieChargeLedgerRow {
   /** payment_applications.id */
   id: string;
   giftId: string;
+  matchMethod: PaymentApplicationMatchMethod;
   note: string | null;
 }
 
@@ -148,8 +157,9 @@ export type TieSupersedeDecision =
  *   tie confirmed + INEXACT amount (override tie) → nothing (conservative:
  *     the booking stays on the QB row)
  *   tie absent (reverted):
- *     marked stripe counted row (this tie's marker) → remove_charge_row
- *     corroborating QB row (amount NOT NULL)        → promote
+ *     supersede-derived stripe counted row
+ *       (match_method = 'charge_tie_supersede')   → remove_charge_row
+ *     corroborating QB row (amount NOT NULL)      → promote
  */
 export function decideChargeTieSupersede(args: {
   tieConfirmed: boolean;
@@ -189,10 +199,11 @@ export function decideChargeTieSupersede(args: {
     return decisions;
   }
 
-  // Tie reverted.
-  const marker = chargeTieSupersedeMarker(args.qbStagedPaymentId);
+  // Tie reverted. Every supersede-derived counted row on the charge belongs
+  // to this (single-per-charge) tie — discriminated by the first-class
+  // match_method, never by parsing the note.
   for (const row of args.chargeCountedRows) {
-    if (row.note != null && row.note.startsWith(marker)) {
+    if (row.matchMethod === "charge_tie_supersede") {
       decisions.push({ action: "remove_charge_row", chargeRow: row });
     }
   }
@@ -241,11 +252,17 @@ export async function applyChargeTieSupersedePairs(
         id: stripeStagedCharges.id,
         grossAmount: stripeStagedCharges.grossAmount,
         netAmount: stripeStagedCharges.netAmount,
-        linkedQbStagedPaymentId: stripeStagedCharges.linkedQbStagedPaymentId,
+        // The CONFIRMED tie from the source_links ledger (the authority).
+        linkedQbStagedPaymentId: sql<string | null>`(
+          SELECT srcl.qb_staged_payment_id FROM source_links srcl
+          WHERE srcl.link_type = 'charge_qb_tie'
+            AND srcl.lifecycle = 'confirmed'
+            AND srcl.stripe_charge_id = "stripe_staged_charges"."id"
+        )`,
       })
       .from(stripeStagedCharges)
       .where(eq(stripeStagedCharges.id, pair.chargeId))
-      .for("update")
+      .for("update", { of: stripeStagedCharges })
       .then((r) => r[0]);
     if (!charge) continue;
 
@@ -287,8 +304,8 @@ export async function applyChargeTieSupersedePairs(
       .select({
         id: paymentApplications.id,
         giftId: paymentApplications.giftId,
+        matchMethod: paymentApplications.matchMethod,
         note: paymentApplications.note,
-        amountApplied: paymentApplications.amountApplied,
       })
       .from(paymentApplications)
       .where(
@@ -297,9 +314,6 @@ export async function applyChargeTieSupersedePairs(
           eq(paymentApplications.evidenceSource, "stripe"),
           eq(paymentApplications.linkRole, "counted"),
         ),
-      )
-      .then((rows) =>
-        rows.map((r) => ({ id: r.id, giftId: r.giftId, note: r.note })),
       );
 
     const decisions = decideChargeTieSupersede({
@@ -350,7 +364,9 @@ export async function applyChargeTieSupersedePairs(
         // COPY the human-ratified amount (exact-cents contract: it equals the
         // charge gross or net) — never re-stamp the gross over a net booking.
         amountApplied: row.amountApplied as string,
-        matchMethod: row.matchMethod,
+        // First-class supersede discriminator (revert deletes by it); the
+        // note below keeps the source QB row id as human-readable trail.
+        matchMethod: "charge_tie_supersede",
         confirmedByUserId: row.confirmedByUserId,
         confirmedAt: row.confirmedAt,
         note: marker,

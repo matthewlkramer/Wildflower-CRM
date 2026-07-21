@@ -91,8 +91,11 @@ let schema: {
   paymentApplications: Db["paymentApplications"];
   reconciliationBundleDrafts: Db["reconciliationBundleDrafts"];
   settlementLinks: Db["settlementLinks"];
+  sourceLinks: Db["sourceLinks"];
+  sourceLinkId: Db["sourceLinkId"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
+let andFn: (typeof import("drizzle-orm"))["and"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let server: Server;
 let baseUrl = "";
@@ -231,6 +234,17 @@ async function seedCharge(
     exclusionReason: (opts.exclusionReason ?? null) as never,
     linkedQbStagedPaymentId: opts.linkedQbStagedPaymentId ?? null,
   });
+  // Ledger mirror — reads are ledger-authoritative (source_links).
+  if (opts.linkedQbStagedPaymentId) {
+    await db.insert(schema.sourceLinks).values({
+      id: schema.sourceLinkId("charge_qb_tie", id),
+      linkType: "charge_qb_tie",
+      stripeChargeId: id,
+      qbStagedPaymentId: opts.linkedQbStagedPaymentId,
+      lifecycle: "confirmed",
+      provenance: "human",
+    });
+  }
   if (opts.matchedGiftId) {
     await seedStripeApplication({
       stripeChargeId: id,
@@ -387,8 +401,11 @@ beforeAll(async () => {
     paymentApplications: dbMod.paymentApplications,
     reconciliationBundleDrafts: dbMod.reconciliationBundleDrafts,
     settlementLinks: dbMod.settlementLinks,
+    sourceLinks: dbMod.sourceLinks,
+    sourceLinkId: dbMod.sourceLinkId,
   };
   eqFn = drizzle.eq;
+  andFn = drizzle.and;
   inArrayFn = drizzle.inArray;
 
   await db.insert(schema.users).values({
@@ -1333,7 +1350,9 @@ describe.skipIf(!HAS_DB)("Revert confirmed charge↔QB tie (integration)", () =>
     const po = await seedPayout({ status: "unmatched" });
     const chargeId = await seedCharge(po, { linkedQbStagedPaymentId: qb });
     // The confirm path also stamps the claimed sibling fee row + who/when —
-    // seed those directly so the revert must clear ALL of it.
+    // seed those directly so the revert must clear ALL of it. Fee reads are
+    // ledger-authoritative (source_links), so seed the ledger row alongside
+    // the deprecated pointer mirror.
     await db
       .update(schema.stripeStagedCharges)
       .set({
@@ -1342,6 +1361,16 @@ describe.skipIf(!HAS_DB)("Revert confirmed charge↔QB tie (integration)", () =>
         crossProcessorLinkedAt: new Date(),
       })
       .where(eqFn(schema.stripeStagedCharges.id, chargeId));
+    await db.insert(schema.sourceLinks).values({
+      id: schema.sourceLinkId("charge_fee_row", chargeId),
+      linkType: "charge_fee_row",
+      stripeChargeId: chargeId,
+      qbStagedPaymentId: feeQb,
+      lifecycle: "confirmed",
+      provenance: "human",
+      confirmedByUserId: TEST_USER_ID,
+      confirmedAt: new Date(),
+    });
 
     // Sanity: while tied, the QB row is labeled unpickable in the search.
     const before = await getJson(
@@ -1833,3 +1862,61 @@ describe.skipIf(!HAS_DB)("Conflict-approved payout double-book gate", () => {
     expect(a.json.tie?.status).toBe("proposed");
   });
 });
+
+describe.skipIf(!HAS_DB)(
+  "Bundle confirm-ties with a multi-charge payout (integration)",
+  () => {
+    it("succeeds without minting per-charge QB ties (deposit membership rides the settlement link, not charge_qb_tie)", async () => {
+      // A normal settlement-bundle shape: MANY charges settle into ONE QB
+      // deposit lump. source_links enforces at most one confirmed
+      // charge_qb_tie per QB row, so this route must never stamp per-charge
+      // deposit ties — doing so for >1 charge would abort the transaction.
+      const deposit = await seedStaged({ amount: "200.00" });
+      const payout = await seedPayout({
+        status: "confirmed_matched",
+        matched: deposit,
+      });
+      const chargeA = await seedCharge(payout);
+      const chargeB = await seedCharge(payout);
+
+      const r = await post(
+        `/api/reconciliation/bundles/${deposit}/confirm-ties`,
+        {},
+      );
+      expect(r.status).toBe(200);
+      expect(r.json.ok).toBe(true);
+      expect(r.json.chargesLinked).toBe(0);
+
+      // No charge_qb_tie ledger rows and no pointer mirrors were minted.
+      const ties = await db
+        .select({ id: schema.sourceLinks.id })
+        .from(schema.sourceLinks)
+        .where(
+          andFn(
+            eqFn(schema.sourceLinks.linkType, "charge_qb_tie"),
+            inArrayFn(schema.sourceLinks.stripeChargeId, [chargeA, chargeB]),
+          ),
+        );
+      expect(ties).toHaveLength(0);
+      const charges = await db
+        .select({
+          id: schema.stripeStagedCharges.id,
+          linkedQb: schema.stripeStagedCharges.linkedQbStagedPaymentId,
+        })
+        .from(schema.stripeStagedCharges)
+        .where(
+          inArrayFn(schema.stripeStagedCharges.id, [chargeA, chargeB]),
+        );
+      expect(charges).toHaveLength(2);
+      for (const c of charges) expect(c.linkedQb).toBeNull();
+
+      // Idempotent: re-running is a no-op 200.
+      const again = await post(
+        `/api/reconciliation/bundles/${deposit}/confirm-ties`,
+        {},
+      );
+      expect(again.status).toBe(200);
+      expect(again.json.chargesLinked).toBe(0);
+    });
+  },
+);

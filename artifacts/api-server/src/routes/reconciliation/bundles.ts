@@ -8,19 +8,22 @@ import {
   donorboxDonations,
   settlementLinks,
 } from "@workspace/db/schema";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { asyncHandler, notFound } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { sweepRefundedQbStagedPayments } from "../../lib/refundedChargeSweep";
+import { upsertDonorboxCounterpartLink } from "../../lib/sourceLinkWrites";
 
 // ─── POST /reconciliation/bundles/:stagedPaymentId/confirm-ties ────────────
 // Persist the human-confirmed cross-processor links for one settlement bundle
 // anchored on a QB staged-payment deposit. Additive + idempotent: it only ever
-// fills NULL link fields (never overwrites), mints no gifts (enrich, don't
+// fills missing links (never overwrites), mints no gifts (enrich, don't
 // mint), and writes nothing back to QuickBooks / Stripe / Donorbox. The pulled
 // join keys already drive the lineage display; this stamps the reviewer's
-// affirmation onto the dedicated link columns so the three sources are directly
-// tied with who/when provenance.
+// affirmation onto the Donorbox counterpart links so the three sources are
+// directly tied with who/when provenance. Charge↔deposit membership is
+// already authoritative via settlement_links + stripe_payout_id (see NOTE in
+// the handler) — no charge_qb_tie rows are minted here.
 const router: IRouter = Router();
 
 router.post(
@@ -51,37 +54,21 @@ router.post(
       .where(eq(settlementLinks.depositStagedPaymentId, id))
       .limit(1);
 
-    let chargesLinked = 0;
+    // NOTE: this route deliberately does NOT mint `charge_qb_tie` ledger rows.
+    // Per the source-link ADR, `charge_qb_tie` means "charge ↔ individually-
+    // booked QB row" and is DB-unique per QB row (confirmed) — a settlement
+    // bundle's many charges settling into ONE deposit lump is a different
+    // fact, already carried authoritatively by the settlement link
+    // (payout ↔ deposit) plus each charge's `stripe_payout_id`. Stamping
+    // per-charge deposit ties here would violate the QB-side uniqueness for
+    // any multi-charge payout. `chargesLinked` stays in the response contract
+    // and is always 0 now.
+    const chargesLinked = 0;
     let donationsLinked = 0;
 
     if (payout) {
       await db.transaction(async (tx) => {
         const now = new Date();
-
-        // Stripe charges settled in this payout that aren't yet tied to a QB
-        // deposit → stamp the deposit + reviewer + timestamp.
-        const unlinkedCharges = await tx
-          .select({ id: stripeStagedCharges.id })
-          .from(stripeStagedCharges)
-          .where(
-            and(
-              eq(stripeStagedCharges.stripePayoutId, payout.id),
-              isNull(stripeStagedCharges.linkedQbStagedPaymentId),
-            ),
-          )
-          .for("update");
-        const unlinkedChargeIds = unlinkedCharges.map((c) => c.id);
-        if (unlinkedChargeIds.length > 0) {
-          await tx
-            .update(stripeStagedCharges)
-            .set({
-              linkedQbStagedPaymentId: id,
-              crossProcessorLinkedByUserId: user.id,
-              crossProcessorLinkedAt: now,
-            })
-            .where(inArray(stripeStagedCharges.id, unlinkedChargeIds));
-          chargesLinked = unlinkedChargeIds.length;
-        }
 
         // Every charge in this payout (newly + previously linked) is a tie
         // candidate for its enrichment Donorbox donation.
@@ -101,11 +88,32 @@ router.post(
             .where(
               and(
                 inArray(donorboxDonations.stripeChargeId, allChargeIds),
-                isNull(donorboxDonations.linkedStripeChargeId),
+                sql`NOT EXISTS (
+                  SELECT 1 FROM source_links srcl
+                  WHERE srcl.link_type = 'donorbox_charge'
+                    AND srcl.donorbox_donation_id = "donorbox_donations"."id"
+                )`,
               ),
             )
-            .for("update");
+            .for("update", { of: donorboxDonations });
           for (const d of unlinkedDonations) {
+            await upsertDonorboxCounterpartLink(
+              tx,
+              "donorbox_charge",
+              d.id,
+              d.stripeChargeId as string,
+              user.id,
+              now,
+            );
+            await upsertDonorboxCounterpartLink(
+              tx,
+              "donorbox_qb",
+              d.id,
+              id,
+              user.id,
+              now,
+            );
+            // Pointer mirror (dual-write window).
             await tx
               .update(donorboxDonations)
               .set({

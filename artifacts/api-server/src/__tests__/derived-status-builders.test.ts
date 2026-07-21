@@ -135,7 +135,7 @@ describe("builders emit consistently quoted identifiers", () => {
       'FROM "settlement_links" "sl_ds"',
     );
     expect(qbChargeTieBookedExistsText("s")).toContain(
-      'FROM "stripe_staged_charges" "cc_ds"',
+      'FROM "source_links" "srcl_ds"',
     );
   });
 });
@@ -197,9 +197,9 @@ describe("base-table drizzle fragments render the builders' text (one source)", 
 describe("tie is a claim, never status evidence", () => {
   it("the QB status CASE consults the tie ONLY through the booked predicate", () => {
     const caseText = qbStatusCaseText("s");
-    // Exactly one tie reference in the whole CASE …
+    // Exactly one tie reference in the whole CASE (the source_links claim) …
     expect(
-      caseText.split('"linked_qb_staged_payment_id"').length - 1,
+      caseText.split("'charge_qb_tie'").length - 1,
     ).toBe(1);
     // … and it is the BOOKED form (tie AND counted ledger row on the charge).
     expect(caseText).toContain(qbChargeTieBookedExistsText("s"));
@@ -218,13 +218,15 @@ describe("tie is a claim, never status evidence", () => {
       chargeOpenText("s"),
       chargeConfirmedText("s"),
     ]) {
-      expect(t).not.toContain("linked_qb_staged_payment_id");
+      expect(t).not.toContain("charge_qb_tie");
     }
   });
 
   it("the booked predicate requires the tied charge's own counted booking", () => {
     const booked = qbChargeTieBookedExistsText("s");
-    expect(booked).toContain(`"pa_ct_ds"."stripe_charge_id" = "cc_ds"."id"`);
+    expect(booked).toContain(
+      `"pa_ct_ds"."stripe_charge_id" = "srcl_ds"."stripe_charge_id"`,
+    );
     expect(booked).toContain(`"pa_ct_ds"."link_role" = 'counted'`);
     expect(booked).toContain(`"pa_ct_ds"."evidence_source" = 'stripe'`);
   });

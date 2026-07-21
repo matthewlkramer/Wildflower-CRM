@@ -343,8 +343,10 @@ const feePairedAnchorExpr = (fee: string) => `(
 const qbEligible = `
   NOT EXISTS (SELECT 1 FROM settlement_links sl_e WHERE sl_e.deposit_staged_payment_id = s.id)
   AND NOT EXISTS (
-    SELECT 1 FROM stripe_staged_charges cc_e
-    WHERE cc_e.linked_qb_staged_payment_id = s.id OR cc_e.linked_fee_qb_staged_payment_id = s.id
+    SELECT 1 FROM source_links srcl_e
+    WHERE srcl_e.link_type IN ('charge_qb_tie', 'charge_fee_row')
+      AND srcl_e.lifecycle = 'confirmed'
+      AND srcl_e.qb_staged_payment_id = s.id
   )
   AND NOT EXISTS (
     SELECT 1 FROM unit_group_members ugm
@@ -1429,7 +1431,10 @@ router.get(
                    fq.payer_name,
                    fq.qb_entity_type::text AS qb_entity_type, fq.qb_entity_id
             FROM stripe_staged_charges fc
-            JOIN staged_payments fq ON fq.id = fc.linked_fee_qb_staged_payment_id
+            JOIN source_links srcl_fee
+              ON srcl_fee.link_type = 'charge_fee_row'
+             AND srcl_fee.stripe_charge_id = fc.id
+            JOIN staged_payments fq ON fq.id = srcl_fee.qb_staged_payment_id
             WHERE fc.stripe_payout_id = sp.id
             UNION ALL
             SELECT tq.id, 'charge_tie'::text, tq.raw_reference, tq.line_description,
@@ -1440,7 +1445,11 @@ router.get(
                    tq.payer_name,
                    tq.qb_entity_type::text, tq.qb_entity_id
             FROM stripe_staged_charges tc2
-            JOIN staged_payments tq ON tq.id = tc2.linked_qb_staged_payment_id
+            JOIN source_links srcl_tie
+              ON srcl_tie.link_type = 'charge_qb_tie'
+             AND srcl_tie.lifecycle = 'confirmed'
+             AND srcl_tie.stripe_charge_id = tc2.id
+            JOIN staged_payments tq ON tq.id = srcl_tie.qb_staged_payment_id
             WHERE tc2.stripe_payout_id = sp.id
             UNION ALL
             SELECT nf2.id, 'fee'::text, nf2.raw_reference, nf2.line_description,
@@ -1460,9 +1469,10 @@ router.get(
               AND nf2.amount < 0
             WHERE sl_f.payout_id = sp.id
               AND NOT EXISTS (
-                SELECT 1 FROM stripe_staged_charges xfc
-                WHERE xfc.linked_fee_qb_staged_payment_id = nf2.id
-                   OR xfc.linked_qb_staged_payment_id = nf2.id
+                SELECT 1 FROM source_links srcl_x
+                WHERE srcl_x.link_type IN ('charge_qb_tie', 'charge_fee_row')
+                  AND srcl_x.lifecycle = 'confirmed'
+                  AND srcl_x.qb_staged_payment_id = nf2.id
               )
           ) f
         ), '[]'::json) AS linked_qb_rows,

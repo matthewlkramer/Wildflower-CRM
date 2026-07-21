@@ -62,6 +62,8 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   stagedPayments: Db["stagedPayments"];
+  sourceLinks: Db["sourceLinks"];
+  sourceLinkId: Db["sourceLinkId"];
 };
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -135,6 +137,25 @@ async function seedQbRow(over: {
   return id;
 }
 
+/** Ledger mirror for a charge↔QB tie — reads are ledger-authoritative. */
+async function seedTie(
+  chargeId: string,
+  qbStagedPaymentId: string,
+  // Only ONE confirmed tie may claim a QB row (partial unique index) — extra
+  // charges tracing to the same row are seeded as proposals; the sweep's
+  // trace predicate accepts any lifecycle.
+  lifecycle: "confirmed" | "proposed" = "confirmed",
+) {
+  await db.insert(schema.sourceLinks).values({
+    id: schema.sourceLinkId("charge_qb_tie", chargeId),
+    linkType: "charge_qb_tie",
+    stripeChargeId: chargeId,
+    qbStagedPaymentId,
+    lifecycle,
+    provenance: lifecycle === "confirmed" ? "human" : "system",
+  });
+}
+
 async function readCharge(id: string) {
   const [row] = await db
     .select({
@@ -169,6 +190,8 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     stagedPayments: dbMod.stagedPayments,
+    sourceLinks: dbMod.sourceLinks,
+    sourceLinkId: dbMod.sourceLinkId,
   };
   inArrayFn = drizzle.inArray;
   eqFn = drizzle.eq;
@@ -382,6 +405,7 @@ describe.skipIf(!HAS_DB)(
         }),
         linkedQbStagedPaymentId: spId,
       } as UpsertValues);
+      await seedTie(chId, spId);
 
       await sweepRefundedQbStagedPayments();
       const row = await readStaged(spId);
@@ -408,6 +432,8 @@ describe.skipIf(!HAS_DB)(
           linkedQbStagedPaymentId: spId,
         },
       ] as UpsertValues[]);
+      await seedTie(refundedId, spId);
+      await seedTie(liveId, spId, "proposed");
 
       await sweepRefundedQbStagedPayments();
       const row = await readStaged(spId);
@@ -437,6 +463,8 @@ describe.skipIf(!HAS_DB)(
           linkedQbStagedPaymentId: spId,
         },
       ] as UpsertValues[]);
+      await seedTie(refundedId, spId);
+      await seedTie(failedId, spId, "proposed");
 
       await sweepRefundedQbStagedPayments();
       const row = await readStaged(spId);
@@ -459,6 +487,7 @@ describe.skipIf(!HAS_DB)(
         }),
         linkedQbStagedPaymentId: spId,
       } as UpsertValues);
+      await seedTie(chId, spId);
 
       await sweepRefundedQbStagedPayments();
       const row = await readStaged(spId);

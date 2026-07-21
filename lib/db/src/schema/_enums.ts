@@ -434,9 +434,16 @@ export const paymentApplicationEvidenceSourceEnum = pgEnum(
 //   system           — booked automatically by a sync / reconcile worker
 //   system_confirmed — auto-booked, then confirmed by a human
 //   human            — a human created the application in the reconciler
+//   charge_tie_supersede — the row was MOVED onto a Stripe charge by a
+//                      charge↔QB tie confirm superseding an exact-cents
+//                      QB-grain counted booking (docs/adr-source-link-ledger.md;
+//                      replaces the retired `note = 'charge_tie_supersede:<qbId>'`
+//                      string-marker protocol — `note` is human text only).
+//                      Which tie minted the row is a pure join: the row's charge
+//                      has exactly one confirmed `charge_qb_tie` source link.
 export const paymentApplicationMatchMethodEnum = pgEnum(
   "payment_application_match_method",
-  ["system", "system_confirmed", "human"],
+  ["system", "system_confirmed", "human", "charge_tie_supersede"],
 );
 
 // Whether a ledger row COUNTS toward donor credit or merely corroborates it.
@@ -494,6 +501,46 @@ export const settlementLinkProvenanceEnum = pgEnum(
   "settlement_link_provenance",
   ["system", "system_confirmed", "human"],
 );
+
+// ---- Source links (unit-grain evidence ↔ evidence claims) ----
+// docs/adr-source-link-ledger.md. One ledger for "these two rows in two money
+// systems are the same money" claims (NO gift involved) — replaces the five
+// scattered pointer columns on stripe_staged_charges / donorbox_donations.
+//
+// Which two evidence FKs a row carries is pinned per type by CHECKs:
+//   charge_qb_tie   — Stripe charge ↔ individually-booked QB donor row
+//   charge_fee_row  — Stripe charge ↔ its negative QB "Stripe fee" sibling row
+//   donorbox_qb     — Donorbox donation ↔ QB row counterpart
+//   donorbox_charge — Donorbox donation ↔ Stripe charge counterpart
+export const sourceLinkTypeEnum = pgEnum("source_link_type", [
+  "charge_qb_tie",
+  "charge_fee_row",
+  "donorbox_qb",
+  "donorbox_charge",
+]);
+
+// The claim's lifecycle (shares the settlement_links vocabulary; no `exempt`
+// state exists on the unit-grain claim plane).
+//   proposed  — system-proposed claim awaiting a human confirm (today only
+//               `charge_qb_tie` rows are ever proposed).
+//   confirmed — the claim stands (human-confirmed or auto-claimed, e.g. the
+//               fee-row sibling detection on tie confirm).
+export const sourceLinkLifecycleEnum = pgEnum("source_link_lifecycle", [
+  "proposed",
+  "confirmed",
+]);
+
+// Who established the claim (mirrors settlement_link_provenance).
+//   system           — a system-proposed/system-derived claim.
+//   system_confirmed — confirmed programmatically / without an attributable
+//                      human (e.g. the pointer backfill of legacy confirmed
+//                      links that predate audit-column capture).
+//   human            — a person confirmed it (confirmed_by_user_id populated).
+export const sourceLinkProvenanceEnum = pgEnum("source_link_provenance", [
+  "system",
+  "system_confirmed",
+  "human",
+]);
 
 // ---- Schools enums (mirrored from Airtable "Schools" base) ----
 export const schoolStatusEnum = pgEnum("school_status", [

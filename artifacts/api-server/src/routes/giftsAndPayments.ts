@@ -20,6 +20,7 @@ import {
   settlementLinks,
   donorboxDonations,
   paymentApplications,
+  sourceLinks,
   type NewGiftAllocation,
 } from "@workspace/db/schema";
 import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, or, sql, type SQL } from "drizzle-orm";
@@ -2526,9 +2527,13 @@ router.get(
       })
       .from(stripeStagedCharges)
       .innerJoin(
-        stagedPayments,
-        eq(stagedPayments.id, stripeStagedCharges.linkedFeeQbStagedPaymentId),
+        sourceLinks,
+        and(
+          eq(sourceLinks.linkType, "charge_fee_row"),
+          eq(sourceLinks.stripeChargeId, stripeStagedCharges.id),
+        ),
       )
+      .innerJoin(stagedPayments, eq(stagedPayments.id, sourceLinks.qbStagedPaymentId))
       .where(
         sql`EXISTS (
           SELECT 1 FROM payment_applications pa

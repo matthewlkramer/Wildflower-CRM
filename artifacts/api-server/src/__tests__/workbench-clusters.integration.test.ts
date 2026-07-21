@@ -77,6 +77,8 @@ let schema: {
   settlementLinks: Db["settlementLinks"];
   donorboxDonations: Db["donorboxDonations"];
   codingFormRows: Db["codingFormRows"];
+  sourceLinks: Db["sourceLinks"];
+  sourceLinkId: Db["sourceLinkId"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -274,6 +276,27 @@ async function seedCharge(
     refundPropagationKind: (opts.refundProposed ? "full_refund" : null) as never,
     organizationId: opts.organizationId ?? null,
   });
+  // Ledger mirror — reads are ledger-authoritative (source_links).
+  if (opts.linkedQbStagedPaymentId) {
+    await db.insert(schema.sourceLinks).values({
+      id: schema.sourceLinkId("charge_qb_tie", id),
+      linkType: "charge_qb_tie",
+      stripeChargeId: id,
+      qbStagedPaymentId: opts.linkedQbStagedPaymentId,
+      lifecycle: "confirmed",
+      provenance: "human",
+    });
+  }
+  if (opts.linkedFeeQbStagedPaymentId) {
+    await db.insert(schema.sourceLinks).values({
+      id: schema.sourceLinkId("charge_fee_row", id),
+      linkType: "charge_fee_row",
+      stripeChargeId: id,
+      qbStagedPaymentId: opts.linkedFeeQbStagedPaymentId,
+      lifecycle: "confirmed",
+      provenance: "system_confirmed",
+    });
+  }
   if (opts.matchedGiftId) {
     await seedStripeApplication({
       stripeChargeId: id,
@@ -409,6 +432,8 @@ beforeAll(async () => {
     settlementLinks: dbMod.settlementLinks,
     donorboxDonations: dbMod.donorboxDonations,
     codingFormRows: dbMod.codingFormRows,
+    sourceLinks: dbMod.sourceLinks,
+    sourceLinkId: dbMod.sourceLinkId,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;

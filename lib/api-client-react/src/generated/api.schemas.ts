@@ -4013,7 +4013,7 @@ export interface SettlementLineageCharge {
  */
 export interface BundleTieResult {
   ok: boolean;
-  /** Stripe charges whose linkedQbStagedPaymentId was newly set to the deposit. */
+  /** Always 0. Charge↔deposit membership is carried by the settlement link + the charge's payout, not per-charge QB ties (a bundle's many charges may share one deposit; confirmed charge_qb_tie is unique per QB row). Field retained for contract stability. */
   chargesLinked: number;
   /** Donorbox donations whose linkedStripeChargeId/linkedQbStagedPaymentId were newly set. */
   donationsLinked: number;

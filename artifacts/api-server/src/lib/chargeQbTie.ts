@@ -4,6 +4,8 @@ import {
   stagedPayments,
   settlementLinks,
   stripeStagedCharges,
+  sourceLinks,
+  sourceLinkId,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { logger } from "./logger";
@@ -11,6 +13,10 @@ import { withSyncLock } from "./syncLock";
 import { getUncachableStripeClient } from "./stripeClient";
 import { chargeStatusWhere, stagedStatusWhere } from "./derivedStatus";
 import { sweepRefundedQbStagedPayments } from "./refundedChargeSweep";
+import {
+  upsertProposedChargeTie,
+  clearProposedChargeTie,
+} from "./sourceLinkWrites";
 
 /**
  * Charge-grain Stripe ↔ QuickBooks tie proposals ("individually-booked
@@ -357,8 +363,21 @@ export async function runChargeTiePass(
 
   // Scope exit: a charge whose payout HAS a settlement link (the lump path owns
   // it) must not keep a stale charge-grain proposal around. Confirmed ties are
-  // untouched — only the proposal column clears.
-  const scopeExit = await db
+  // untouched — only PROPOSED claims clear. The ledger is the authority; the
+  // pointer mirror clears in lockstep (dual-write window).
+  const scopeExitLedger = await db.execute<{ charge_id: string }>(sql`
+    DELETE FROM source_links srcl
+    USING stripe_staged_charges c
+    WHERE srcl.link_type = 'charge_qb_tie'
+      AND srcl.lifecycle = 'proposed'
+      AND srcl.stripe_charge_id = c.id
+      AND EXISTS (
+        SELECT 1 FROM settlement_links sl
+        WHERE sl.payout_id = c.stripe_payout_id
+      )
+    RETURNING c.id AS charge_id
+  `);
+  const scopeExitPointer = await db
     .update(stripeStagedCharges)
     .set({ proposedQbStagedPaymentId: null, updatedAt: new Date() })
     .where(
@@ -371,7 +390,10 @@ export async function runChargeTiePass(
       ),
     )
     .returning({ id: stripeStagedCharges.id });
-  cleared += scopeExit.length;
+  cleared += new Set([
+    ...scopeExitLedger.rows.map((r) => r.charge_id),
+    ...scopeExitPointer.map((r) => r.id),
+  ]).size;
 
   // Payouts with NO settlement link at all (the "Missing deposit" pool).
   const noLink = sql`NOT EXISTS (
@@ -400,14 +422,24 @@ export async function runChargeTiePass(
         dateReceived: stripeStagedCharges.dateReceived,
         payerName: stripeStagedCharges.payerName,
         description: stripeStagedCharges.description,
-        proposedQbStagedPaymentId:
-          stripeStagedCharges.proposedQbStagedPaymentId,
+        // Current PROPOSED tie from the source_links ledger (the authority).
+        proposedQbStagedPaymentId: sql<string | null>`(
+          SELECT srcl.qb_staged_payment_id FROM source_links srcl
+          WHERE srcl.link_type = 'charge_qb_tie'
+            AND srcl.lifecycle = 'proposed'
+            AND srcl.stripe_charge_id = "stripe_staged_charges"."id"
+        )`,
       })
       .from(stripeStagedCharges)
       .where(
         and(
           eq(stripeStagedCharges.stripePayoutId, p.id),
-          isNull(stripeStagedCharges.linkedQbStagedPaymentId),
+          sql`NOT EXISTS (
+            SELECT 1 FROM source_links srcl
+            WHERE srcl.link_type = 'charge_qb_tie'
+              AND srcl.lifecycle = 'confirmed'
+              AND srcl.stripe_charge_id = "stripe_staged_charges"."id"
+          )`,
           sql`NOT ${chargeStatusWhere.excluded}`,
         ),
       );
@@ -465,12 +497,17 @@ export async function runChargeTiePass(
               WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
             )`,
             sql`NOT EXISTS (
-              SELECT 1 FROM stripe_staged_charges cc
-              WHERE cc.linked_qb_staged_payment_id = ${stagedPayments.id}
+              SELECT 1 FROM source_links srcl
+              WHERE srcl.link_type = 'charge_qb_tie'
+                AND srcl.lifecycle = 'confirmed'
+                AND srcl.qb_staged_payment_id = "staged_payments"."id"
             )`,
             sql`NOT EXISTS (
-              SELECT 1 FROM stripe_staged_charges cc
-              WHERE cc.proposed_qb_staged_payment_id = ${stagedPayments.id}
+              SELECT 1 FROM source_links srcl
+              JOIN stripe_staged_charges cc ON cc.id = srcl.stripe_charge_id
+              WHERE srcl.link_type = 'charge_qb_tie'
+                AND srcl.lifecycle = 'proposed'
+                AND srcl.qb_staged_payment_id = "staged_payments"."id"
                 AND cc.stripe_payout_id IS DISTINCT FROM ${p.id}
             )`,
           ),
@@ -480,12 +517,18 @@ export async function runChargeTiePass(
     }
 
     // Persist this payout's proposals in ONE transaction: clear stale ones,
-    // then stamp the fresh assignment. Every write is guarded on the confirmed
-    // tie still being NULL so a racing human approve wins.
+    // then stamp the fresh assignment. Ledger writes are guarded on the tie
+    // row not being CONFIRMED (a racing human approve wins); the pointer
+    // mirror is guarded the same way and written in lockstep (dual-write).
     await db.transaction(async (tx) => {
       for (const c of charges) {
         const want = assignment.get(c.id) ?? null;
         if (c.proposedQbStagedPaymentId === want) continue;
+        if (want == null) {
+          await clearProposedChargeTie(tx, c.id);
+        } else {
+          await upsertProposedChargeTie(tx, c.id, want);
+        }
         const upd = await tx
           .update(stripeStagedCharges)
           .set({ proposedQbStagedPaymentId: want, updatedAt: new Date() })
@@ -493,6 +536,12 @@ export async function runChargeTiePass(
             and(
               eq(stripeStagedCharges.id, c.id),
               isNull(stripeStagedCharges.linkedQbStagedPaymentId),
+              sql`NOT EXISTS (
+                SELECT 1 FROM source_links srcl
+                WHERE srcl.link_type = 'charge_qb_tie'
+                  AND srcl.lifecycle = 'confirmed'
+                  AND srcl.stripe_charge_id = "stripe_staged_charges"."id"
+              )`,
             ),
           )
           .returning({ id: stripeStagedCharges.id });
@@ -688,13 +737,14 @@ export async function claimSiblingFeeRows(
           OR ${stagedPayments.lineDescription} ILIKE '%stripe%'
           OR ${stagedPayments.lineDescription} ILIKE '%fee%')`,
         sql`NOT EXISTS (
-          SELECT 1 FROM stripe_staged_charges fc
-          WHERE fc.linked_fee_qb_staged_payment_id = ${stagedPayments.id}
+          SELECT 1 FROM source_links srcl
+          WHERE srcl.link_type = 'charge_fee_row'
+            AND srcl.qb_staged_payment_id = "staged_payments"."id"
         )`,
         sql`NOT EXISTS (
-          SELECT 1 FROM stripe_staged_charges fc
-          WHERE fc.linked_qb_staged_payment_id = ${stagedPayments.id}
-             OR fc.proposed_qb_staged_payment_id = ${stagedPayments.id}
+          SELECT 1 FROM source_links srcl
+          WHERE srcl.link_type = 'charge_qb_tie'
+            AND srcl.qb_staged_payment_id = "staged_payments"."id"
         )`,
         sql`NOT EXISTS (
           SELECT 1 FROM settlement_links sl
@@ -726,17 +776,34 @@ export async function claimSiblingFeeRows(
     // link is best-effort evidence and must never abort the confirm.
     await tx.execute(sql`SAVEPOINT fee_claim_stamp`);
     try {
-      const upd = await tx
-        .update(stripeStagedCharges)
-        .set({ linkedFeeQbStagedPaymentId: feeRowId, updatedAt: now })
-        .where(
-          and(
-            eq(stripeStagedCharges.id, chargeId),
-            isNull(stripeStagedCharges.linkedFeeQbStagedPaymentId),
-          ),
-        )
-        .returning({ id: stripeStagedCharges.id });
-      claimed += upd.length;
+      // Ledger first (the authority): claim only if no fee link exists yet
+      // for this charge — deterministic id makes the insert the guard.
+      const inserted = await tx
+        .insert(sourceLinks)
+        .values({
+          id: sourceLinkId("charge_fee_row", chargeId),
+          linkType: "charge_fee_row",
+          stripeChargeId: chargeId,
+          qbStagedPaymentId: feeRowId,
+          lifecycle: "confirmed",
+          provenance: "system_confirmed",
+          confirmedAt: now,
+        })
+        .onConflictDoNothing()
+        .returning({ id: sourceLinks.id });
+      if (inserted.length) {
+        // Pointer mirror in lockstep (dual-write window).
+        await tx
+          .update(stripeStagedCharges)
+          .set({ linkedFeeQbStagedPaymentId: feeRowId, updatedAt: now })
+          .where(
+            and(
+              eq(stripeStagedCharges.id, chargeId),
+              isNull(stripeStagedCharges.linkedFeeQbStagedPaymentId),
+            ),
+          );
+        claimed += inserted.length;
+      }
       await tx.execute(sql`RELEASE SAVEPOINT fee_claim_stamp`);
     } catch (err) {
       await tx.execute(sql`ROLLBACK TO SAVEPOINT fee_claim_stamp`);

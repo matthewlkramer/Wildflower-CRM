@@ -195,38 +195,27 @@ export const stripeStagedCharges = pgTable(
     ),
     refundConfirmedAt: timestamp("refund_confirmed_at", { withTimezone: true }),
 
-    // ── Cross-processor link (human-confirmed, additive) ────────────────
-    // A reviewer-confirmed tie from this Stripe charge to the QuickBooks
-    // staged_payments row that records the SAME money (a per-charge QB↔Stripe
-    // link, finer than the payout-level `stripe_payouts.matched_qb_staged_payment_id`).
-    // Purely additive provenance so the Reconciliation Workbench can persist a
-    // confirmed cross-processor tie WITHOUT re-deriving the settlement lineage
-    // every time. Never mints/mutates a gift and never written back to any
-    // processor. SET NULL if the QB staged row is removed.
+    // ── Cross-processor link pointers — RETIRED (source_links is authority) ──
+    // The charge↔QB tie / fee-row claims now live in the `source_links` ledger
+    // (docs/adr-source-link-ledger.md): `charge_qb_tie` (lifecycle proposed |
+    // confirmed) and `charge_fee_row`. These pointer columns stay physical as
+    // dual-write mirrors during the transition (never approve the interactive-
+    // push drop; scrub from response projections). Do not add new readers.
+    /** @deprecated Read `source_links` (link_type='charge_qb_tie',
+     * lifecycle='confirmed') instead. Dual-write mirror only. */
     linkedQbStagedPaymentId: text("linked_qb_staged_payment_id").references(
       () => stagedPayments.id,
       { onDelete: "set null" },
     ),
-    // A SYSTEM-PROPOSED (not yet confirmed) charge↔QB tie awaiting a human
-    // approve on the Settlement report — the charge-grain analogue of a
-    // `proposed` settlement link, for payouts the bookkeeper booked as
-    // individual QB rows instead of one deposit lump. Written ONLY by the
-    // idempotent charge-grain proposal pass (never while a confirmed
-    // `linkedQbStagedPaymentId` exists); approve moves it into
-    // `linkedQbStagedPaymentId` + provenance and clears it. SET NULL if the QB
-    // staged row is removed.
+    /** @deprecated Read `source_links` (link_type='charge_qb_tie',
+     * lifecycle='proposed') instead. Dual-write mirror only. */
     proposedQbStagedPaymentId: text("proposed_qb_staged_payment_id").references(
       () => stagedPayments.id,
       { onDelete: "set null" },
     ),
-    // The sibling NEGATIVE QuickBooks "Stripe fee" row auto-detected and
-    // claimed when this charge's donor-line tie is CONFIRMED: same QB deposit
-    // (realm + entity type + entity id) as the tied donor line, amount equal
-    // to −(gross − net) exactly. Plane-1 settlement evidence ONLY — fees NEVER
-    // enter payment_applications (design doc: intentional and permanent), so
-    // this column is how a fee row is accounted for without touching plane 2.
-    // At most one charge may claim a given fee row (UNIQUE below). SET NULL if
-    // the QB staged row is removed.
+    /** @deprecated Read `source_links` (link_type='charge_fee_row') instead.
+     * Dual-write mirror only. Fee rows remain Plane-1 evidence ONLY — they
+     * never enter payment_applications. */
     linkedFeeQbStagedPaymentId: text(
       "linked_fee_qb_staged_payment_id",
     ).references(() => stagedPayments.id, { onDelete: "set null" }),

@@ -55,12 +55,22 @@ export const fullyChargeTied = sql`(
   AND EXISTS (
     SELECT 1 FROM stripe_staged_charges c
     WHERE c.stripe_payout_id = sp.id
-      AND c.linked_qb_staged_payment_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM source_links srcl_ct
+        WHERE srcl_ct.link_type = 'charge_qb_tie'
+          AND srcl_ct.lifecycle = 'confirmed'
+          AND srcl_ct.stripe_charge_id = c.id
+      )
   )
   AND NOT EXISTS (
     SELECT 1 FROM stripe_staged_charges c
     WHERE c.stripe_payout_id = sp.id
-      AND c.linked_qb_staged_payment_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM source_links srcl_ct
+        WHERE srcl_ct.link_type = 'charge_qb_tie'
+          AND srcl_ct.lifecycle = 'confirmed'
+          AND srcl_ct.stripe_charge_id = c.id
+      )
       AND c.exclusion_reason IS NULL
   )
 )`;
@@ -98,8 +108,12 @@ function stripeWhere(queue: AnchorQueue): SQL {
             OR EXISTS (
               SELECT 1 FROM stripe_staged_charges c
               WHERE c.stripe_payout_id = sp.id
-                AND c.proposed_qb_staged_payment_id IS NOT NULL
-                AND c.linked_qb_staged_payment_id IS NULL
+                AND EXISTS (
+                  SELECT 1 FROM source_links srcl_pt
+                  WHERE srcl_pt.link_type = 'charge_qb_tie'
+                    AND srcl_pt.lifecycle = 'proposed'
+                    AND srcl_pt.stripe_charge_id = c.id
+                )
             )
           )
         )
@@ -130,8 +144,10 @@ function qbWhere(queue: AnchorQueue): SQL {
       -- A QB row confirmed-tied to a Stripe charge reconciles THROUGH that
       -- charge's payout (charge-grain twin of the settlement-link omission
       -- above) — it no longer "needs a payout tie".
-      SELECT 1 FROM stripe_staged_charges cc
-      WHERE cc.linked_qb_staged_payment_id = s.id
+      SELECT 1 FROM source_links srcl_qt
+      WHERE srcl_qt.link_type = 'charge_qb_tie'
+        AND srcl_qt.lifecycle = 'confirmed'
+        AND srcl_qt.qb_staged_payment_id = s.id
     )`;
   const plausiblyStripe = sql`(
       s.funding_source IS NULL
@@ -300,15 +316,26 @@ router.get(
             SELECT cc.id, cc.payer_name, cc.description, cc.statement_descriptor,
                    cc.gross_amount, cc.fee_amount, cc.net_amount, cc.date_received,
                    ${sql.raw(chargeStatusCaseText("cc"))} AS status,
-                   cc.exclusion_reason, cc.linked_qb_staged_payment_id,
-                   cc.linked_fee_qb_staged_payment_id,
+                   cc.exclusion_reason,
+                   srcl_conf.qb_staged_payment_id AS linked_qb_staged_payment_id,
+                   srcl_fee.qb_staged_payment_id AS linked_fee_qb_staged_payment_id,
                    pq.id AS pq_id, pq.payer_name AS pq_payer_name,
                    pq.amount::text AS pq_amount, pq.date_received::text AS pq_date,
                    COALESCE(pq.qb_transaction_memo, pq.line_description) AS pq_memo
             FROM stripe_staged_charges cc
+            LEFT JOIN source_links srcl_conf
+              ON srcl_conf.link_type = 'charge_qb_tie'
+             AND srcl_conf.lifecycle = 'confirmed'
+             AND srcl_conf.stripe_charge_id = cc.id
+            LEFT JOIN source_links srcl_fee
+              ON srcl_fee.link_type = 'charge_fee_row'
+             AND srcl_fee.stripe_charge_id = cc.id
+            LEFT JOIN source_links srcl_prop
+              ON srcl_prop.link_type = 'charge_qb_tie'
+             AND srcl_prop.lifecycle = 'proposed'
+             AND srcl_prop.stripe_charge_id = cc.id
             LEFT JOIN staged_payments pq
-              ON pq.id = cc.proposed_qb_staged_payment_id
-             AND cc.linked_qb_staged_payment_id IS NULL
+              ON pq.id = srcl_prop.qb_staged_payment_id
             WHERE cc.stripe_payout_id = sp.id
             ORDER BY cc.gross_amount DESC NULLS LAST
             LIMIT 50
@@ -333,12 +360,17 @@ router.get(
           ELSE 'orphan'
         END)::text AS batch_status,
         (SELECT count(*)::int FROM stripe_staged_charges cc
-          WHERE cc.stripe_payout_id = sp.id
-            AND cc.proposed_qb_staged_payment_id IS NOT NULL
-            AND cc.linked_qb_staged_payment_id IS NULL) AS charge_ties_proposed,
+          JOIN source_links srcl_p
+            ON srcl_p.link_type = 'charge_qb_tie'
+           AND srcl_p.lifecycle = 'proposed'
+           AND srcl_p.stripe_charge_id = cc.id
+          WHERE cc.stripe_payout_id = sp.id) AS charge_ties_proposed,
         (SELECT count(*)::int FROM stripe_staged_charges cc
-          WHERE cc.stripe_payout_id = sp.id
-            AND cc.linked_qb_staged_payment_id IS NOT NULL) AS charge_ties_confirmed,
+          JOIN source_links srcl_c
+            ON srcl_c.link_type = 'charge_qb_tie'
+           AND srcl_c.lifecycle = 'confirmed'
+           AND srcl_c.stripe_charge_id = cc.id
+          WHERE cc.stripe_payout_id = sp.id) AS charge_ties_confirmed,
         -- Proposed counterpart = the deposit of a PROPOSED (not confirmed) link.
         (CASE WHEN sl.lifecycle = 'proposed' THEN 'qb_staged_payment' END)::text AS proposed_counterpart_type,
         (CASE WHEN sl.lifecycle = 'proposed' THEN ad.id END)::text AS proposed_counterpart_id,

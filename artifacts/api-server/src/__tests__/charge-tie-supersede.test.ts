@@ -32,6 +32,7 @@ const qbRow = (over: Partial<TieQbLedgerRow> = {}): TieQbLedgerRow => ({
 const chargeRow = (over: Partial<TieChargeLedgerRow> = {}): TieChargeLedgerRow => ({
   id: "pa_ch_1",
   giftId: "gift_1",
+  matchMethod: "human",
   note: null,
   ...over,
 });
@@ -211,8 +212,14 @@ describe("decideChargeTieSupersede — tie REVERTED", () => {
   const reverted = { ...base, tieConfirmed: false };
 
   it("removes ONLY this tie's marked stripe rows and promotes the demoted QB row", () => {
-    const marked = chargeRow({ id: "pa_marked", note: MARKER });
+    const marked = chargeRow({
+      id: "pa_marked",
+      note: MARKER,
+      matchMethod: "charge_tie_supersede",
+    });
     const preexisting = chargeRow({ id: "pa_manual", giftId: "gift_2" });
+    // A note that LOOKS like a supersede marker is ignored — the machine
+    // discriminator is match_method, never the note text.
     const otherTie = chargeRow({
       id: "pa_other",
       giftId: "gift_3",
