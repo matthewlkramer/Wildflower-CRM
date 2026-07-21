@@ -47,7 +47,7 @@ function undoOf(
 }
 
 router.get(
-  "/workbench-recent-changes",
+  "/reconciliation/workbench-recent-changes",
   asyncHandler(async (_req, res) => {
     const rows = await db
       .select({
