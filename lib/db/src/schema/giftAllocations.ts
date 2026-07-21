@@ -51,7 +51,7 @@ export const giftAllocations = pgTable("gift_allocations", {
   regionalRestrictionType: restrictionAxisEnum("regional_restriction_type")
     .default("unrestricted")
     .notNull(),
-  usageRestrictionType: restrictionAxisEnum("usage_restriction_type")
+  otherRestrictionType: restrictionAxisEnum("other_restriction_type")
     .default("unrestricted")
     .notNull(),
   timeRestrictionType: restrictionAxisEnum("time_restriction_type")
@@ -96,9 +96,13 @@ export const giftAllocations = pgTable("gift_allocations", {
   //     " - <region names>". Triggers on schools/regions/fundable_projects
   //     keep this in sync when names change.
   displayUsage: text("display_usage"),
-  // The donor's restriction language, verbatim. Still active — the only
-  // free-text restriction evidence the allocation keeps.
+  // The donor's restriction language, VERBATIM — exact source language only
+  // (grant letter, Donorbox designation, check memo). Plain-language summaries
+  // belong in restrictionDescription instead.
   purposeVerbatim: text("purpose_verbatim"),
+  // Optional plain-language summary of the restriction (e.g. "grants to
+  // schools only"). Free text; never affects revenue coding.
+  restrictionDescription: text("restriction_description"),
   // ── Human-reviewed dimensions (edited-tables import) ──────────────────────
   // The charter legal recipient this allocation is earmarked for (parallel to
   // schoolRecipientId, which points at an individual school site).

@@ -267,7 +267,7 @@ export interface CodingInput {
   // axis is donor_restricted; wf_restricted / unrestricted both count as
   // unrestricted for revenue-account coding.
   regionalRestrictionType?: RestrictionAxis | string | null;
-  usageRestrictionType?: RestrictionAxis | string | null;
+  otherRestrictionType?: RestrictionAxis | string | null;
   timeRestrictionType?: RestrictionAxis | string | null;
   // gifts_and_payments.type — 'loan_fund_investment' was the LEGACY loan signal.
   // Prefer `loanOrGrant` when present; this stays only as the fallback.
@@ -360,7 +360,7 @@ export function deriveRevenueCoding(
     rule?.forceRestricted === true ||
     anyDonorRestricted(
       input.regionalRestrictionType,
-      input.usageRestrictionType,
+      input.otherRestrictionType,
       input.timeRestrictionType,
     );
 
@@ -464,7 +464,7 @@ export function deriveRestrictionLabel(
     rule?.forceRestricted === true ||
     anyDonorRestricted(
       input.regionalRestrictionType,
-      input.usageRestrictionType,
+      input.otherRestrictionType,
     );
   const time = anyDonorRestricted(input.timeRestrictionType);
   if (purpose && time) return "Both";

@@ -3015,8 +3015,8 @@ function ReconCard({
                         a.regionalRestrictionType !== "unrestricted"
                           ? `regional: ${a.regionalRestrictionType}`
                           : null,
-                        a.usageRestrictionType !== "unrestricted"
-                          ? `usage: ${a.usageRestrictionType}`
+                        a.otherRestrictionType !== "unrestricted"
+                          ? `other: ${a.otherRestrictionType}`
                           : null,
                         a.timeRestrictionType !== "unrestricted"
                           ? `time: ${a.timeRestrictionType}`

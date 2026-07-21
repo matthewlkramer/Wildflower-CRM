@@ -1737,10 +1737,10 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" } }
-        - name: usageRestrictionTypes
+        - name: otherRestrictionTypes
           in: query
           required: false
-          description: "Filter to gifts with at least one allocation whose usage_restriction_type is in the given set (OR). Repeat or comma-separate."
+          description: "Filter to gifts with at least one allocation whose other_restriction_type is in the given set (OR). Repeat or comma-separate."
           style: form
           explode: false
           schema: { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" } }
@@ -6560,7 +6560,7 @@ components:
     # ─── Pledge allocations ────────────────────────────────────────────────────
     PledgeAllocation:
       type: object
-      required: [id, directToSchool, regionalRestrictionType, usageRestrictionType, timeRestrictionType, conditionsMet, createdAt, updatedAt]
+      required: [id, directToSchool, regionalRestrictionType, otherRestrictionType, timeRestrictionType, conditionsMet, createdAt, updatedAt]
       properties:
         id:                     { type: string }
         pledgeOrOpportunityId:  { type: string, nullable: true }
@@ -6572,7 +6572,7 @@ components:
         directToSchool:         { type: boolean }
         schoolRecipientId:      { type: string, nullable: true }
         regionalRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
-        usageRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
+        otherRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
         timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
         reimbursementType:      { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true, description: "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count." }
         conditional:            { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true, description: "Per-allocation grant condition (moved off the opportunity header in Task #449). Drives the pledge's derived conditionalRollup / win-probability." }
@@ -6583,7 +6583,8 @@ components:
         expectedPaymentDate:    { type: string, format: date, nullable: true, description: "Date this allocation's payment is expected. Per-row (a grant year may hold multiple payments); allocations sharing a date roll up into one expected payment. Drives overdue detection. Null = unscheduled." }
         notes:                  { type: string, nullable: true }
         regionIds:              { type: array, items: { type: string }, nullable: true }
-        purposeVerbatim:        { type: string, nullable: true }
+        purposeVerbatim:        { type: string, nullable: true, description: "Exact restriction source language only (grant letter / Donorbox designation / check memo). Plain-language summaries belong in restrictionDescription." }
+        restrictionDescription: { type: string, nullable: true, description: "Optional plain-language summary of the restriction (e.g. 'grants to schools only'). Never affects revenue coding." }
         # @deprecated (Task #449) — superseded by reimbursementType. Spec-only
         # alias; the backing column was renamed, not retained. Read-only.
         reimbursableShare:      { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true, deprecated: true, description: "@deprecated — renamed to reimbursementType." }
@@ -6607,7 +6608,7 @@ components:
         directToSchool:        { type: boolean }
         schoolRecipientId:     { type: string }
         regionalRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
-        usageRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
+        otherRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
         timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
         reimbursementType:     { $ref: "#/components/schemas/ReimbursementType" }
         conditional:           { $ref: "#/components/schemas/OpportunityConditional" }
@@ -6619,6 +6620,7 @@ components:
         notes:                 { type: string }
         regionIds:             { type: array, items: { type: string } }
         purposeVerbatim:       { type: string }
+        restrictionDescription: { type: string }
     UpdatePledgeAllocationBody:
       type: object
       properties:
@@ -6631,7 +6633,7 @@ components:
         directToSchool:        { type: boolean }
         schoolRecipientId:     { type: string, nullable: true }
         regionalRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
-        usageRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
+        otherRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
         timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
         reimbursementType:     { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true }
         conditional:           { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true }
@@ -6643,6 +6645,7 @@ components:
         notes:                 { type: string, nullable: true }
         regionIds:             { type: array, items: { type: string }, nullable: true }
         purposeVerbatim:       { type: string, nullable: true }
+        restrictionDescription: { type: string, nullable: true }
 
     # ─── Gifts & payments ──────────────────────────────────────────────────────
     GiftOrPayment:
@@ -6724,7 +6727,7 @@ components:
         # ── Restriction aggregates across allocations (column-chooser opt-in) ──
         purposeVerbatims:          { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Distinct non-null purpose_verbatim strings across allocations (the donor's verbatim restriction language)." }
         regionalRestrictionTypes:  { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct regional_restriction_type values across allocations." }
-        usageRestrictionTypes:     { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct usage_restriction_type values across allocations." }
+        otherRestrictionTypes:     { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct other_restriction_type values across allocations." }
         timeRestrictionTypes:      { type: array, items: { $ref: "#/components/schemas/RestrictionAxis" }, nullable: true, readOnly: true, description: "Distinct time_restriction_type values across allocations." }
         restrictionLabel:          { type: string, nullable: true, readOnly: true, description: "Derived restriction summary across allocations: Restricted / Unrestricted. Restricted when any allocation has a donor-restricted axis (regional/usage/time), a fundable project (fundable_project_id IS NOT NULL), or an entity other than wildflower_foundation. Null when the gift has no allocations." }
         campaignSlug:              { type: string, nullable: true, description: "FK to fundraising_campaigns.slug. Null when the gift isn't linked to a structured campaign record." }
@@ -6783,11 +6786,11 @@ components:
         dateReceived:         { type: string, format: date, nullable: true }
     GiftAuditReconciliationRestriction:
       type: object
-      required: [allocationId, regionalRestrictionType, usageRestrictionType, timeRestrictionType]
+      required: [allocationId, regionalRestrictionType, otherRestrictionType, timeRestrictionType]
       properties:
         allocationId:    { type: string }
         regionalRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
-        usageRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
+        otherRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
         timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
         purposeVerbatim: { type: string, nullable: true }
         subAmount:       { type: string, nullable: true }
@@ -6895,7 +6898,7 @@ components:
         intendedUsage:              { $ref: "#/components/schemas/IntendedUsage" }
         fundableProjectId:          { type: string }
         regionalRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
-        usageRestrictionType:       { $ref: "#/components/schemas/RestrictionAxis" }
+        otherRestrictionType:       { $ref: "#/components/schemas/RestrictionAxis" }
         timeRestrictionType:        { $ref: "#/components/schemas/RestrictionAxis" }
     UpdateGiftOrPaymentBody:
       type: object
@@ -7963,13 +7966,13 @@ components:
           description: "Donorbox donations tied to the chain — enrichment for the Stripe charges, or non-Stripe new money the reviewer linked to this deposit. Empty when none apply."
     ReconciliationCardGiftAllocation:
       type: object
-      required: [regionalRestrictionType, usageRestrictionType, timeRestrictionType]
+      required: [regionalRestrictionType, otherRestrictionType, timeRestrictionType]
       description: "Compact intended-usage summary of one allocation line on a reconciler card's linked CRM gift, so a reviewer can judge what the money is for."
       properties:
         entityName:      { type: string, nullable: true, description: "Wildflower legal entity the allocation is attributed to." }
         usageLabel:      { type: string, nullable: true, description: "Human-readable intended-usage label (display_usage, falling back to the intended_usage code) — e.g. 'Gen Ops', 'School Startup', or a project name." }
         regionalRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
-        usageRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
+        otherRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
         timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
     ReconciliationCard:
       type: object
@@ -9875,7 +9878,7 @@ components:
     # ─── Gift allocations ──────────────────────────────────────────────────────
     GiftAllocation:
       type: object
-      required: [id, regionalRestrictionType, usageRestrictionType, timeRestrictionType, countsTowardGoal, createdAt, updatedAt]
+      required: [id, regionalRestrictionType, otherRestrictionType, timeRestrictionType, countsTowardGoal, createdAt, updatedAt]
       properties:
         id:                          { type: string }
         giftId:                      { type: string, nullable: true }
@@ -9885,7 +9888,7 @@ components:
         intendedUsage:               { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
         fundableProjectId:           { type: string, nullable: true }
         regionalRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
-        usageRestrictionType:        { $ref: "#/components/schemas/RestrictionAxis" }
+        otherRestrictionType:        { $ref: "#/components/schemas/RestrictionAxis" }
         timeRestrictionType:         { $ref: "#/components/schemas/RestrictionAxis" }
         reimbursementType:           { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true, description: "Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count." }
         countsTowardGoal:            { type: boolean, description: "When false, this allocation's money is excluded from goal/received analytics rollups (e.g. government reimbursement that doesn't advance the fundraising goal). Per-allocation; defaults true." }
@@ -9894,7 +9897,8 @@ components:
         spendingEnd:                 { type: string, format: date, nullable: true }
         regionIds:                   { type: array, items: { type: string }, nullable: true }
         displayUsage:                { type: string, nullable: true, readOnly: true, description: "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only." }
-        purposeVerbatim:             { type: string, nullable: true }
+        purposeVerbatim:             { type: string, nullable: true, description: "Exact restriction source language only (grant letter / Donorbox designation / check memo). Plain-language summaries belong in restrictionDescription." }
+        restrictionDescription:      { type: string, nullable: true, description: "Optional plain-language summary of the restriction (e.g. 'grants to schools only'). Never affects revenue coding." }
         # @deprecated (Task #449) — superseded by reimbursementType. Spec-only
         # alias; the backing column was renamed, not retained. Read-only.
         reimbursableShare:           { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true, deprecated: true, description: "@deprecated — renamed to reimbursementType." }
@@ -9914,7 +9918,7 @@ components:
         grantYear:                   { type: string }
         entityId:                    { type: string }
         regionalRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
-        usageRestrictionType:        { $ref: "#/components/schemas/RestrictionAxis" }
+        otherRestrictionType:        { $ref: "#/components/schemas/RestrictionAxis" }
         timeRestrictionType:         { $ref: "#/components/schemas/RestrictionAxis" }
         intendedUsage:               { $ref: "#/components/schemas/IntendedUsage" }
         fundableProjectId:           { type: string }
@@ -9925,6 +9929,7 @@ components:
         spendingEnd:                 { type: string, format: date }
         regionIds:                   { type: array, items: { type: string } }
         purposeVerbatim:             { type: string }
+        restrictionDescription:      { type: string }
     UpdateGiftAllocationBody:
       type: object
       properties:
@@ -9933,7 +9938,7 @@ components:
         grantYear:                   { type: string, nullable: true }
         entityId:                    { type: string, nullable: true }
         regionalRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
-        usageRestrictionType:        { $ref: "#/components/schemas/RestrictionAxis" }
+        otherRestrictionType:        { $ref: "#/components/schemas/RestrictionAxis" }
         timeRestrictionType:         { $ref: "#/components/schemas/RestrictionAxis" }
         intendedUsage:               { allOf: [ { $ref: "#/components/schemas/IntendedUsage" } ], nullable: true }
         fundableProjectId:           { type: string, nullable: true }
@@ -9944,6 +9949,7 @@ components:
         spendingEnd:                 { type: string, format: date, nullable: true }
         regionIds:                   { type: array, items: { type: string }, nullable: true }
         purposeVerbatim:             { type: string, nullable: true }
+        restrictionDescription:      { type: string, nullable: true }
 
     # ─── Interactions ─────────────────────────────────────────────────────────
     InteractionKind:

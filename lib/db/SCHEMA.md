@@ -158,7 +158,7 @@ in older notes is stale.
 - `pledge_allocations` — line items within an opportunity/pledge. All per-row scope
   (entity, fiscal year `grant_year`, `region_ids text[]`, `intended_usage`,
   `fundable_project_id`) lives here, plus the **same three restriction axes as
-  `gift_allocations`** (`regional_restriction_type` / `usage_restriction_type` /
+  `gift_allocations`** (`regional_restriction_type` / `other_restriction_type` /
   `time_restriction_type` — see Restriction taxonomy below) and revenue-coding
   capture (below). `status`
   enum `pledge_allocation_status`: `working` (internal draft), `committed` /
@@ -185,7 +185,7 @@ in older notes is stale.
   `fundable_project_id` → `fundable_projects` (when project usage),
   `school_recipient_id` → `schools`, `grant_year`, `region_ids text[]`. Restriction
   is captured on **three independent axes** —
-  `regional_restriction_type` / `usage_restriction_type` / `time_restriction_type`,
+  `regional_restriction_type` / `other_restriction_type` / `time_restriction_type`,
   each a `restriction_axis` (`donor_restricted` / `wf_restricted` / `unrestricted`),
   NOT NULL default `unrestricted` (see below); `pledge_allocations` carries the
   same three axes. `display_usage` is a
@@ -228,8 +228,10 @@ are header-only and do not carry these. NOTE: WE NEED TO CLEAN THIS UP VS. THE R
 
 ## Restriction taxonomy (three axes)
 
-Each allocation row carries **three independent restriction axes** — regional, fund-use
-(`usage`), and time — each a `restriction_axis` enum: `donor_restricted` /
+Each allocation row carries **three independent restriction axes** — regional, **other
+restriction** (`other_restriction_type`, renamed from the widely-misread "usage" axis:
+restrictions beyond region, time, school, and project, e.g. "grants to schools only"),
+and time — each a `restriction_axis` enum: `donor_restricted` /
 `wf_restricted` / `unrestricted`, NOT NULL default `unrestricted`. A line codes as
 *restricted* (→ 4100.x object code) when **ANY** axis is `donor_restricted`;
 `wf_restricted` (an internal Wildflower designation) and `unrestricted` both code as
@@ -239,6 +241,13 @@ unrestricted (4000.x). This replaces the coarse `formal_*` booleans and the old
 and the now-orphaned `restriction_type` pg **type** is retired by migration 0096.
 Because the axes default `unrestricted`, there is no longer an `unclear` review-flag
 path from restriction.
+
+Two free-text fields accompany the axes on both allocation tables:
+`restriction_description` (nullable; plain-language summary of the restriction, e.g.
+"Salaries for RGL and Ops Guide only") and `purpose_verbatim` (nullable; **exact
+source language only** — grant letter, Donorbox designation, check memo). Migration
+0150 renamed the axis column, added `restriction_description`, and sorted polluted
+`purpose_verbatim` content into description/verbatim/cleared.
 
 ## Revenue-accounting coding capture (CFO "Revenue Extractor")
 

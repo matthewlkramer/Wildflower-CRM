@@ -10,7 +10,7 @@ QB memos, manual entry), these rules OVERRIDE what the form/source text says:
 
 1. **Yield gift + anything from Arthur Rock: NEVER donor_restricted** — always
    unrestricted or Wildflower-designated, whatever the paperwork says.
-2. **Anything for BWF / Black Wildflowers Fund: usage axis donor_restricted**,
+2. **Anything for BWF / Black Wildflowers Fund: "Other restriction" axis donor_restricted**,
    even when the answer says gen-ops/unrestricted ("intended for BWF but not
    restricted" still restricts).
 3. **Anything for a regional hub: geo-restricted to its region** regardless of
@@ -31,10 +31,18 @@ holds.
 confirms, applyRow decision payloads) must check these rules BEFORE trusting
 the restriction answer text. CAVEAT — stamped decisions only act if the
 cross-check is emitted at apply time: applyRow gates every decision through
-`actionableAttributes` (applicable && !blockedReason). `usageRestriction` is
+`actionableAttributes` (applicable && !blockedReason). The `usageRestriction`
+attribute key (stored-decision compat; writes `other_restriction_type`) is
 applicable only when live restriction text exists — an AI `junkFields` flag on
 `restrictionLanguage` suppresses it and the stamped 'apply' is SILENTLY
 dropped (row still exits as 'applied'); un-junk the field first when a rule-2
 flip must act. `regionalRestriction` needs a mappable circle AND a resolvable
 single allocation; unmappable circles no-op safely. Stray decision keys never
 break the endpoint (counted as nothing_to_apply).
+
+**Vocabulary (2026-07):** the "usage" axis was renamed to **"Other restriction"**
+(`other_restriction_type` / `otherRestrictionType`) — restrictions beyond region,
+time, school, and project. Plain-language restriction summaries live in the new
+`restriction_description` column; `purpose_verbatim` holds exact source language
+only. The coding-form attribute key `usageRestriction` and stored decision
+payloads keep the old name for compatibility.

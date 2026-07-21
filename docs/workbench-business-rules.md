@@ -194,8 +194,8 @@ Applicable allocation information may include:
 * Recipient entity, project, or school
 * Time restriction type
 * Spending start and end dates when time-restricted
-* Usage restriction type
-* Purpose or restriction description when usage-restricted
+* Other restriction type (restrictions beyond region, time, school, and project)
+* Purpose or restriction description when other-restricted
 * Regional restriction type
 * Regions when regionally restricted
 * Reporting obligations or other required terms

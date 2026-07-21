@@ -157,7 +157,7 @@ const giftDonorRestricted = `EXISTS (
   SELECT 1 FROM gift_allocations ga_dr
   WHERE ga_dr.gift_id = g.id
     AND (ga_dr.time_restriction_type = 'donor_restricted'
-      OR ga_dr.usage_restriction_type = 'donor_restricted'
+      OR ga_dr.other_restriction_type = 'donor_restricted'
       OR ga_dr.regional_restriction_type = 'donor_restricted')
 )`;
 
@@ -174,7 +174,7 @@ const giftLetterOk = `(NOT ${giftDonorRestricted} OR ${giftGrantLetter})`;
  * all conditional restriction-field requirements are met:
  *   - NULL restriction type         → incomplete (field not yet filled in)
  *   - time = donor/wf restricted    → spending_start + spending_end both set
- *   - usage = donor/wf restricted   → purpose_verbatim set
+ *   - other = donor/wf restricted   → restriction_description OR purpose_verbatim set
  *   - regional = donor/wf restricted → region_ids non-empty
  *   - unrestricted on any axis      → no supplemental fields required
  */
@@ -186,11 +186,12 @@ const fullAllocComplete = `(
       AND (
         ga_x.entity_id IS NULL
         OR ga_x.time_restriction_type IS NULL
-        OR ga_x.usage_restriction_type IS NULL
+        OR ga_x.other_restriction_type IS NULL
         OR ga_x.regional_restriction_type IS NULL
         OR (ga_x.time_restriction_type <> 'unrestricted'
             AND (ga_x.spending_start IS NULL OR ga_x.spending_end IS NULL))
-        OR (ga_x.usage_restriction_type <> 'unrestricted'
+        OR (ga_x.other_restriction_type <> 'unrestricted'
+            AND ga_x.restriction_description IS NULL
             AND ga_x.purpose_verbatim IS NULL)
         OR (ga_x.regional_restriction_type <> 'unrestricted'
             AND (ga_x.region_ids IS NULL OR cardinality(ga_x.region_ids) = 0))

@@ -115,11 +115,11 @@ const donorJoinSelect = {
     FROM gift_allocations ga
     WHERE ga.gift_id = ${giftsAndPayments.id}
   )`.as("regional_restriction_types"),
-  usageRestrictionTypes: sql<string[] | null>`(
-    SELECT ARRAY_AGG(DISTINCT ga.usage_restriction_type::text ORDER BY ga.usage_restriction_type::text)
+  otherRestrictionTypes: sql<string[] | null>`(
+    SELECT ARRAY_AGG(DISTINCT ga.other_restriction_type::text ORDER BY ga.other_restriction_type::text)
     FROM gift_allocations ga
     WHERE ga.gift_id = ${giftsAndPayments.id}
-  )`.as("usage_restriction_types"),
+  )`.as("other_restriction_types"),
   timeRestrictionTypes: sql<string[] | null>`(
     SELECT ARRAY_AGG(DISTINCT ga.time_restriction_type::text ORDER BY ga.time_restriction_type::text)
     FROM gift_allocations ga
@@ -129,7 +129,7 @@ const donorJoinSelect = {
     SELECT CASE
       WHEN BOOL_OR(
         ga.regional_restriction_type = 'donor_restricted'
-        OR ga.usage_restriction_type = 'donor_restricted'
+        OR ga.other_restriction_type = 'donor_restricted'
         OR ga.time_restriction_type = 'donor_restricted'
         OR ga.fundable_project_id IS NOT NULL
         OR (ga.entity_id IS NOT NULL AND ga.entity_id != 'wildflower_foundation')
@@ -238,7 +238,7 @@ import { stagedStatusSql } from "../lib/derivedStatus";
 import { inArray } from "drizzle-orm";
 import { personDisplayNameSql } from "../lib/personNameSql";
 
-const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "fundableProjectId", "quickbooksTie", "restrictionLabels", "regionalRestrictionTypes", "usageRestrictionTypes", "timeRestrictionTypes", "campaignSlugs"] as const;
+const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "fundableProjectId", "quickbooksTie", "restrictionLabels", "regionalRestrictionTypes", "otherRestrictionTypes", "timeRestrictionTypes", "campaignSlugs"] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -427,7 +427,7 @@ router.get(
     }
     {
       // Shared EXISTS predicate: mirrors the restrictionLabel SQL formula.
-      const RESTRICTED_EXISTS = sql`EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftsAndPayments.id} AND (ga.regional_restriction_type = 'donor_restricted' OR ga.usage_restriction_type = 'donor_restricted' OR ga.time_restriction_type = 'donor_restricted' OR ga.fundable_project_id IS NOT NULL OR (ga.entity_id IS NOT NULL AND ga.entity_id != 'wildflower_foundation')))`;
+      const RESTRICTED_EXISTS = sql`EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = ${giftsAndPayments.id} AND (ga.regional_restriction_type = 'donor_restricted' OR ga.other_restriction_type = 'donor_restricted' OR ga.time_restriction_type = 'donor_restricted' OR ga.fundable_project_id IS NOT NULL OR (ga.entity_id IS NOT NULL AND ga.entity_id != 'wildflower_foundation')))`;
       const labels = (q.restrictionLabels as string[] | undefined) ?? [];
       if (labels.length > 0) {
         const clauses: SQL[] = [];
@@ -446,8 +446,8 @@ router.get(
     if (q.regionalRestrictionTypes && q.regionalRestrictionTypes.length > 0) {
       filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.regionalRestrictionType, q.regionalRestrictionTypes as never[])})`);
     }
-    if (q.usageRestrictionTypes && q.usageRestrictionTypes.length > 0) {
-      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.usageRestrictionType, q.usageRestrictionTypes as never[])})`);
+    if (q.otherRestrictionTypes && q.otherRestrictionTypes.length > 0) {
+      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.otherRestrictionType, q.otherRestrictionTypes as never[])})`);
     }
     if (q.timeRestrictionTypes && q.timeRestrictionTypes.length > 0) {
       filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.timeRestrictionType, q.timeRestrictionTypes as never[])})`);
@@ -763,7 +763,7 @@ router.post(
       intendedUsage: captureIntendedUsage,
       fundableProjectId: captureFundableProjectId,
       regionalRestrictionType: captureRegionalRestrictionType,
-      usageRestrictionType: captureUsageRestrictionType,
+      otherRestrictionType: captureOtherRestrictionType,
       timeRestrictionType: captureTimeRestrictionType,
       grantYear: captureGrantYear,
       ...headerBody
@@ -791,7 +791,7 @@ router.post(
           intendedUsage: captureIntendedUsage,
           fundableProjectId: captureFundableProjectId,
           regionalRestrictionType: captureRegionalRestrictionType,
-          usageRestrictionType: captureUsageRestrictionType,
+          otherRestrictionType: captureOtherRestrictionType,
           timeRestrictionType: captureTimeRestrictionType,
         });
         await assertGiftHasAllocations(tx, created.id);
@@ -1680,7 +1680,7 @@ router.post(
           // Carry the 3-axis restriction coding across the gift→pledge split so
           // the pledge allocation keeps the same restriction picture (Task #449).
           regionalRestrictionType: a.regionalRestrictionType,
-          usageRestrictionType: a.usageRestrictionType,
+          otherRestrictionType: a.otherRestrictionType,
           timeRestrictionType: a.timeRestrictionType,
           // Carry the direct/indirect reimbursement tag onto the pledge allocation
           // so the goal-analytics exclusion survives a gift→pledge split.
@@ -1897,7 +1897,7 @@ router.post(
           regionIds: a.regionIds,
           directToSchool: a.schoolRecipientId != null,
           regionalRestrictionType: a.regionalRestrictionType,
-          usageRestrictionType: a.usageRestrictionType,
+          otherRestrictionType: a.otherRestrictionType,
           timeRestrictionType: a.timeRestrictionType,
           reimbursementType: a.reimbursementType,
         });
@@ -2541,7 +2541,7 @@ router.get(
       .select({
         allocationId: giftAllocations.id,
         regionalRestrictionType: giftAllocations.regionalRestrictionType,
-        usageRestrictionType: giftAllocations.usageRestrictionType,
+        otherRestrictionType: giftAllocations.otherRestrictionType,
         timeRestrictionType: giftAllocations.timeRestrictionType,
         purposeVerbatim: giftAllocations.purposeVerbatim,
         subAmount: giftAllocations.subAmount,

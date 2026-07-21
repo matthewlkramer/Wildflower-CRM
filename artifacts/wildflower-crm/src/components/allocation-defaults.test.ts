@@ -9,7 +9,7 @@ function makePledgeAlloc(overrides: Partial<PledgeAllocation> = {}): PledgeAlloc
     id: "pa-1",
     directToSchool: false,
     regionalRestrictionType: "unrestricted",
-    usageRestrictionType: "unrestricted",
+    otherRestrictionType: "unrestricted",
     timeRestrictionType: "unrestricted",
     conditionsMet: "no",
     createdAt: "2024-01-01T00:00:00Z",
@@ -22,7 +22,7 @@ function makeGiftAlloc(overrides: Partial<GiftAllocation> = {}): GiftAllocation 
   return {
     id: "ga-1",
     regionalRestrictionType: "unrestricted",
-    usageRestrictionType: "unrestricted",
+    otherRestrictionType: "unrestricted",
     timeRestrictionType: "unrestricted",
     countsTowardGoal: true,
     createdAt: "2024-01-01T00:00:00Z",

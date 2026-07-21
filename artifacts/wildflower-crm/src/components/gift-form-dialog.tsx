@@ -83,7 +83,7 @@ type CodingState = {
   intendedUsage: string;
   fundableProjectId: string;
   regionalRestrictionType: string;
-  usageRestrictionType: string;
+  otherRestrictionType: string;
   timeRestrictionType: string;
   sourceRecordUrl: string;
 };
@@ -94,7 +94,7 @@ const EMPTY_CODING: CodingState = {
   intendedUsage: "",
   fundableProjectId: "",
   regionalRestrictionType: "unrestricted",
-  usageRestrictionType: "unrestricted",
+  otherRestrictionType: "unrestricted",
   timeRestrictionType: "unrestricted",
   sourceRecordUrl: "",
 };
@@ -353,8 +353,8 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
       fundableProjectId: firstOppAlloc.fundableProjectId ?? c.fundableProjectId,
       regionalRestrictionType:
         firstOppAlloc.regionalRestrictionType ?? c.regionalRestrictionType,
-      usageRestrictionType:
-        firstOppAlloc.usageRestrictionType ?? c.usageRestrictionType,
+      otherRestrictionType:
+        firstOppAlloc.otherRestrictionType ?? c.otherRestrictionType,
       timeRestrictionType:
         firstOppAlloc.timeRestrictionType ?? c.timeRestrictionType,
     }));
@@ -531,8 +531,8 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
       ...(coding.regionalRestrictionType !== "unrestricted"
         ? { regionalRestrictionType: coding.regionalRestrictionType as RestrictionAxis }
         : {}),
-      ...(coding.usageRestrictionType !== "unrestricted"
-        ? { usageRestrictionType: coding.usageRestrictionType as RestrictionAxis }
+      ...(coding.otherRestrictionType !== "unrestricted"
+        ? { otherRestrictionType: coding.otherRestrictionType as RestrictionAxis }
         : {}),
       ...(coding.timeRestrictionType !== "unrestricted"
         ? { timeRestrictionType: coding.timeRestrictionType as RestrictionAxis }
@@ -913,7 +913,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                   {(
                     [
                       ["regionalRestrictionType", "Regional"],
-                      ["usageRestrictionType", "Fund use"],
+                      ["otherRestrictionType", "Other restriction"],
                       ["timeRestrictionType", "Time"],
                     ] as const
                   ).map(([key, label]) => (

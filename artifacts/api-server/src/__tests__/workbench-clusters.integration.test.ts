@@ -1495,8 +1495,9 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     async function seedAlloc(
       giftId: string,
       opts: {
-        usageRestrictionType?: "donor_restricted" | "wf_restricted" | "unrestricted";
+        otherRestrictionType?: "donor_restricted" | "wf_restricted" | "unrestricted";
         purposeVerbatim?: string | null;
+        restrictionDescription?: string | null;
       } = {},
     ): Promise<void> {
       await db.insert(schema.giftAllocations).values({
@@ -1504,8 +1505,9 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
         giftId,
         subAmount: "75.00",
         entityId: "wildflower_foundation",
-        usageRestrictionType: opts.usageRestrictionType ?? "unrestricted",
+        otherRestrictionType: opts.otherRestrictionType ?? "unrestricted",
         purposeVerbatim: opts.purposeVerbatim ?? null,
+        restrictionDescription: opts.restrictionDescription ?? null,
       });
     }
 
@@ -1537,7 +1539,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       // Restricted, alloc fields complete (purpose_verbatim set), NO letter → incomplete.
       const gNoLetter = await seedGift();
       await seedAlloc(gNoLetter, {
-        usageRestrictionType: "donor_restricted",
+        otherRestrictionType: "donor_restricted",
         purposeVerbatim: "for teacher training only",
       });
       // Identical but with a grant letter on the gift → complete.
@@ -1552,7 +1554,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       });
       giftIds.push(gWithLetter);
       await seedAlloc(gWithLetter, {
-        usageRestrictionType: "donor_restricted",
+        otherRestrictionType: "donor_restricted",
         purposeVerbatim: "for teacher training only",
       });
 
@@ -1567,6 +1569,51 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       expect(withLetter).toBeTruthy();
       expect(withLetter.coverage.donorPurpose.crmRecordCompleteness.complete).toBe(true);
       expect(withLetter.coverage.state.information.state).toBe("accounting_pending");
+    });
+
+    it("other-restricted allocation with ONLY restriction_description (no verbatim) is field-complete", async () => {
+      // Description filled, verbatim intentionally blank → alloc fields complete.
+      // With a grant letter, the whole §3.3 path is satisfied.
+      const gDescOnly = nextId("gift");
+      await db.insert(schema.giftsAndPayments).values({
+        id: gDescOnly,
+        organizationId: ORG_ID,
+        ownerUserId: TEST_USER_ID,
+        amount: "75.00",
+        dateReceived: futureDate(),
+        grantLetterUrl: `https://example.invalid/${RUN}-desc-letter.pdf`,
+      });
+      giftIds.push(gDescOnly);
+      await seedAlloc(gDescOnly, {
+        otherRestrictionType: "donor_restricted",
+        restrictionDescription: "Salaries for RGL and Ops Guide only",
+        purposeVerbatim: null,
+      });
+
+      // Same shape but with NEITHER description nor verbatim → incomplete.
+      const gNeither = nextId("gift");
+      await db.insert(schema.giftsAndPayments).values({
+        id: gNeither,
+        organizationId: ORG_ID,
+        ownerUserId: TEST_USER_ID,
+        amount: "75.00",
+        dateReceived: futureDate(),
+        grantLetterUrl: `https://example.invalid/${RUN}-neither-letter.pdf`,
+      });
+      giftIds.push(gNeither);
+      await seedAlloc(gNeither, { otherRestrictionType: "donor_restricted" });
+
+      const { map: open } = await listClusters("all_open");
+
+      const descOnly = open.get(`crm_only:${gDescOnly}`);
+      expect(descOnly).toBeTruthy();
+      expect(descOnly.coverage.donorPurpose.crmRecordCompleteness.complete).toBe(true);
+      expect(descOnly.coverage.state.information.state).toBe("accounting_pending");
+
+      const neither = open.get(`crm_only:${gNeither}`);
+      expect(neither).toBeTruthy();
+      expect(neither.coverage.donorPurpose.crmRecordCompleteness.complete).toBe(false);
+      expect(neither.coverage.state.information.state).toBe("incomplete");
     });
   });
 

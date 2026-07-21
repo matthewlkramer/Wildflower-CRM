@@ -324,25 +324,28 @@ function MoreDetails({ children }: { children: React.ReactNode }) {
 // capture moved off allocations onto staged_payments in Task #449.
 type RestrictionAxisState = {
   regionalRestrictionType: string;
-  usageRestrictionType: string;
+  otherRestrictionType: string;
   timeRestrictionType: string;
   purposeVerbatim: string;
+  restrictionDescription: string;
 };
 
 function restrictionAxisStateFrom(
   a: Pick<
     PledgeAllocation | GiftAllocation,
     | "regionalRestrictionType"
-    | "usageRestrictionType"
+    | "otherRestrictionType"
     | "timeRestrictionType"
     | "purposeVerbatim"
+    | "restrictionDescription"
   > | null,
 ): RestrictionAxisState {
   return {
     regionalRestrictionType: a?.regionalRestrictionType ?? "unrestricted",
-    usageRestrictionType: a?.usageRestrictionType ?? "unrestricted",
+    otherRestrictionType: a?.otherRestrictionType ?? "unrestricted",
     timeRestrictionType: a?.timeRestrictionType ?? "unrestricted",
     purposeVerbatim: a?.purposeVerbatim ?? "",
+    restrictionDescription: a?.restrictionDescription ?? "",
   };
 }
 
@@ -350,14 +353,14 @@ function restrictionAxisStateFrom(
 // update bodies, so they are always sent.
 type RestrictionAxisBody = {
   regionalRestrictionType: RestrictionAxis;
-  usageRestrictionType: RestrictionAxis;
+  otherRestrictionType: RestrictionAxis;
   timeRestrictionType: RestrictionAxis;
 };
 
 function restrictionAxisBody(s: RestrictionAxisState): RestrictionAxisBody {
   return {
     regionalRestrictionType: s.regionalRestrictionType as RestrictionAxis,
-    usageRestrictionType: s.usageRestrictionType as RestrictionAxis,
+    otherRestrictionType: s.otherRestrictionType as RestrictionAxis,
     timeRestrictionType: s.timeRestrictionType as RestrictionAxis,
   };
 }
@@ -408,12 +411,18 @@ function RestrictionAxisFields({
           onValueChange={(v) => setAxis("regionalRestrictionType", v)}
         />
       </DialogField>
-      <DialogField label="Fund use" htmlFor="ra-usage">
-        <AxisSelect
-          id="ra-usage"
-          value={s.usageRestrictionType}
-          onValueChange={(v) => setAxis("usageRestrictionType", v)}
-        />
+      <DialogField label="Other restriction" htmlFor="ra-other">
+        <div className="space-y-1">
+          <AxisSelect
+            id="ra-other"
+            value={s.otherRestrictionType}
+            onValueChange={(v) => setAxis("otherRestrictionType", v)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Restrictions beyond region, time, school, and project — e.g.
+            &ldquo;grants to schools only&rdquo;.
+          </p>
+        </div>
       </DialogField>
       <DialogField label="Time" htmlFor="ra-time">
         <AxisSelect
@@ -422,13 +431,23 @@ function RestrictionAxisFields({
           onValueChange={(v) => setAxis("timeRestrictionType", v)}
         />
       </DialogField>
-      <DialogField label="Purpose (verbatim)" htmlFor="ra-purpose">
+      <DialogField label="Restriction description" htmlFor="ra-description">
+        <Textarea
+          id="ra-description"
+          className="text-sm min-h-[48px]"
+          value={s.restrictionDescription}
+          onChange={(e) => setAxis("restrictionDescription", e.target.value)}
+          placeholder="Plain-language summary of the restriction"
+          rows={2}
+        />
+      </DialogField>
+      <DialogField label="Restriction language (verbatim)" htmlFor="ra-purpose">
         <Textarea
           id="ra-purpose"
           className="text-sm min-h-[48px]"
           value={s.purposeVerbatim}
           onChange={(e) => setAxis("purposeVerbatim", e.target.value)}
-          placeholder="Donor's stated purpose, copied verbatim"
+          placeholder="Exact source language only (grant letter, designation, memo)"
           rows={2}
         />
       </DialogField>
@@ -444,11 +463,11 @@ function RestrictionBadges({
 }: {
   a: Pick<
     PledgeAllocation | GiftAllocation,
-    "regionalRestrictionType" | "usageRestrictionType" | "timeRestrictionType"
+    "regionalRestrictionType" | "otherRestrictionType" | "timeRestrictionType"
   >;
 }) {
   const labels: string[] = [];
-  if (a.usageRestrictionType === "donor_restricted") labels.push("Use");
+  if (a.otherRestrictionType === "donor_restricted") labels.push("Other");
   if (a.regionalRestrictionType === "donor_restricted") labels.push("Region");
   if (a.timeRestrictionType === "donor_restricted") labels.push("Time");
   if (!labels.length) return <span className="text-muted-foreground">Intent</span>;
@@ -698,6 +717,7 @@ function PledgeAllocationDialog({
         conditions: emptyToNull(s.conditions),
         notes: emptyToNull(s.notes),
         purposeVerbatim: emptyToNull(s.purposeVerbatim),
+        restrictionDescription: emptyToNull(s.restrictionDescription),
       };
       return body;
     }
@@ -721,6 +741,7 @@ function PledgeAllocationDialog({
     if (emptyToNull(s.conditions)) body.conditions = s.conditions.trim();
     if (emptyToNull(s.notes)) body.notes = s.notes.trim();
     if (emptyToNull(s.purposeVerbatim)) body.purposeVerbatim = s.purposeVerbatim.trim();
+    if (emptyToNull(s.restrictionDescription)) body.restrictionDescription = s.restrictionDescription.trim();
     return body;
   }
 
@@ -1254,6 +1275,7 @@ function GiftAllocationDialog({
         spendingStart: emptyToNull(s.spendingStart),
         spendingEnd: emptyToNull(s.spendingEnd),
         purposeVerbatim: emptyToNull(s.purposeVerbatim),
+        restrictionDescription: emptyToNull(s.restrictionDescription),
       };
       return body;
     }
@@ -1272,6 +1294,7 @@ function GiftAllocationDialog({
     if (emptyToNull(s.spendingStart)) body.spendingStart = s.spendingStart;
     if (emptyToNull(s.spendingEnd)) body.spendingEnd = s.spendingEnd;
     if (emptyToNull(s.purposeVerbatim)) body.purposeVerbatim = s.purposeVerbatim.trim();
+    if (emptyToNull(s.restrictionDescription)) body.restrictionDescription = s.restrictionDescription.trim();
     return body;
   }
 

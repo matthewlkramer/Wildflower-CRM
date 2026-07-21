@@ -35,7 +35,7 @@ const baseInput: CodingInput = {
   orgEntityType: null,
   entityId: null,
   regionalRestrictionType: "unrestricted",
-  usageRestrictionType: "unrestricted",
+  otherRestrictionType: "unrestricted",
   timeRestrictionType: "unrestricted",
 };
 
@@ -66,7 +66,7 @@ describe("three-axis restriction taxonomy", () => {
       deriveRevenueCoding({ ...baseInput, regionalRestrictionType: "donor_restricted" }).objectCode,
     ).toBe("4100.1");
     expect(
-      deriveRevenueCoding({ ...baseInput, usageRestrictionType: "donor_restricted" }).objectCode,
+      deriveRevenueCoding({ ...baseInput, otherRestrictionType: "donor_restricted" }).objectCode,
     ).toBe("4100.1");
     expect(
       deriveRevenueCoding({ ...baseInput, timeRestrictionType: "donor_restricted" }).objectCode,
@@ -86,7 +86,7 @@ describe("on-demand coding preview derives from allocation scope", () => {
       orgEntityType: "institutional_foundation",
       entityId: null,
       regionalRestrictionType: "unrestricted",
-      usageRestrictionType: "donor_restricted",
+      otherRestrictionType: "donor_restricted",
       timeRestrictionType: "unrestricted",
     });
     // foundation payer (.2) + donor_restricted ⇒ 4100.2.
@@ -154,7 +154,7 @@ describe("Revenue Extractor derivation helpers", () => {
     expect(deriveRestrictionLabel(baseInput, undefined)).toBe("Unrestricted");
     expect(
       deriveRestrictionLabel(
-        { ...baseInput, usageRestrictionType: "donor_restricted" },
+        { ...baseInput, otherRestrictionType: "donor_restricted" },
         undefined,
       ),
     ).toBe("Purpose");
@@ -174,7 +174,7 @@ describe("Revenue Extractor derivation helpers", () => {
       deriveRestrictionLabel(
         {
           ...baseInput,
-          usageRestrictionType: "donor_restricted",
+          otherRestrictionType: "donor_restricted",
           timeRestrictionType: "donor_restricted",
         },
         undefined,
@@ -183,7 +183,7 @@ describe("Revenue Extractor derivation helpers", () => {
     // wf_restricted is treated as unrestricted for revenue coding.
     expect(
       deriveRestrictionLabel(
-        { ...baseInput, usageRestrictionType: "wf_restricted" },
+        { ...baseInput, otherRestrictionType: "wf_restricted" },
         undefined,
       ),
     ).toBe("Unrestricted");

@@ -1901,7 +1901,7 @@ export interface PledgeAllocation {
   directToSchool: boolean;
   schoolRecipientId?: string | null;
   regionalRestrictionType: RestrictionAxis;
-  usageRestrictionType: RestrictionAxis;
+  otherRestrictionType: RestrictionAxis;
   timeRestrictionType: RestrictionAxis;
   /** Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count. */
   reimbursementType?: ReimbursementType | null;
@@ -1917,7 +1917,10 @@ export interface PledgeAllocation {
   expectedPaymentDate?: string | null;
   notes?: string | null;
   regionIds?: string[] | null;
+  /** Exact restriction source language only (grant letter / Donorbox designation / check memo). Plain-language summaries belong in restrictionDescription. */
   purposeVerbatim?: string | null;
+  /** Optional plain-language summary of the restriction (e.g. 'grants to schools only'). Never affects revenue coding. */
+  restrictionDescription?: string | null;
   /**
    * @deprecated — renamed to reimbursementType.
    * @deprecated
@@ -2046,8 +2049,8 @@ export interface GiftOrPayment {
   readonly purposeVerbatims?: readonly string[] | null;
   /** Distinct regional_restriction_type values across allocations. */
   readonly regionalRestrictionTypes?: readonly RestrictionAxis[] | null;
-  /** Distinct usage_restriction_type values across allocations. */
-  readonly usageRestrictionTypes?: readonly RestrictionAxis[] | null;
+  /** Distinct other_restriction_type values across allocations. */
+  readonly otherRestrictionTypes?: readonly RestrictionAxis[] | null;
   /** Distinct time_restriction_type values across allocations. */
   readonly timeRestrictionTypes?: readonly RestrictionAxis[] | null;
   /** Derived restriction summary across allocations: Restricted / Unrestricted. Restricted when any allocation has a donor-restricted axis (regional/usage/time), a fundable project (fundable_project_id IS NOT NULL), or an entity other than wildflower_foundation. Null when the gift has no allocations. */
@@ -2188,7 +2191,7 @@ export interface CreatePledgeAllocationBody {
   directToSchool?: boolean;
   schoolRecipientId?: string;
   regionalRestrictionType?: RestrictionAxis;
-  usageRestrictionType?: RestrictionAxis;
+  otherRestrictionType?: RestrictionAxis;
   timeRestrictionType?: RestrictionAxis;
   reimbursementType?: ReimbursementType;
   conditional?: OpportunityConditional;
@@ -2200,6 +2203,7 @@ export interface CreatePledgeAllocationBody {
   notes?: string;
   regionIds?: string[];
   purposeVerbatim?: string;
+  restrictionDescription?: string;
 }
 
 export interface UpdatePledgeAllocationBody {
@@ -2212,7 +2216,7 @@ export interface UpdatePledgeAllocationBody {
   directToSchool?: boolean;
   schoolRecipientId?: string | null;
   regionalRestrictionType?: RestrictionAxis;
-  usageRestrictionType?: RestrictionAxis;
+  otherRestrictionType?: RestrictionAxis;
   timeRestrictionType?: RestrictionAxis;
   reimbursementType?: ReimbursementType | null;
   conditional?: OpportunityConditional | null;
@@ -2224,6 +2228,7 @@ export interface UpdatePledgeAllocationBody {
   notes?: string | null;
   regionIds?: string[] | null;
   purposeVerbatim?: string | null;
+  restrictionDescription?: string | null;
 }
 
 export interface GiftAllocation {
@@ -2235,7 +2240,7 @@ export interface GiftAllocation {
   intendedUsage?: IntendedUsage | null;
   fundableProjectId?: string | null;
   regionalRestrictionType: RestrictionAxis;
-  usageRestrictionType: RestrictionAxis;
+  otherRestrictionType: RestrictionAxis;
   timeRestrictionType: RestrictionAxis;
   /** Direct vs indirect share on a reimbursable grant. DIRECT is excluded from goal analytics; null (untagged) and indirect both count. */
   reimbursementType?: ReimbursementType | null;
@@ -2247,7 +2252,10 @@ export interface GiftAllocation {
   regionIds?: string[] | null;
   /** Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only. */
   readonly displayUsage?: string | null;
+  /** Exact restriction source language only (grant letter / Donorbox designation / check memo). Plain-language summaries belong in restrictionDescription. */
   purposeVerbatim?: string | null;
+  /** Optional plain-language summary of the restriction (e.g. 'grants to schools only'). Never affects revenue coding. */
+  restrictionDescription?: string | null;
   /**
    * @deprecated — renamed to reimbursementType.
    * @deprecated
@@ -2327,7 +2335,7 @@ export interface GiftAuditReconciliationRecord {
 export interface GiftAuditReconciliationRestriction {
   allocationId: string;
   regionalRestrictionType: RestrictionAxis;
-  usageRestrictionType: RestrictionAxis;
+  otherRestrictionType: RestrictionAxis;
   timeRestrictionType: RestrictionAxis;
   purposeVerbatim?: string | null;
   subAmount?: string | null;
@@ -2427,7 +2435,7 @@ export interface CreateGiftOrPaymentBody {
   intendedUsage?: IntendedUsage;
   fundableProjectId?: string;
   regionalRestrictionType?: RestrictionAxis;
-  usageRestrictionType?: RestrictionAxis;
+  otherRestrictionType?: RestrictionAxis;
   timeRestrictionType?: RestrictionAxis;
 }
 
@@ -4071,7 +4079,7 @@ export interface ReconciliationCardGiftAllocation {
   /** Human-readable intended-usage label (display_usage, falling back to the intended_usage code) — e.g. 'Gen Ops', 'School Startup', or a project name. */
   usageLabel?: string | null;
   regionalRestrictionType: RestrictionAxis;
-  usageRestrictionType: RestrictionAxis;
+  otherRestrictionType: RestrictionAxis;
   timeRestrictionType: RestrictionAxis;
 }
 
@@ -7091,7 +7099,7 @@ export interface CreateGiftAllocationBody {
   grantYear?: string;
   entityId?: string;
   regionalRestrictionType?: RestrictionAxis;
-  usageRestrictionType?: RestrictionAxis;
+  otherRestrictionType?: RestrictionAxis;
   timeRestrictionType?: RestrictionAxis;
   intendedUsage?: IntendedUsage;
   fundableProjectId?: string;
@@ -7102,6 +7110,7 @@ export interface CreateGiftAllocationBody {
   spendingEnd?: string;
   regionIds?: string[];
   purposeVerbatim?: string;
+  restrictionDescription?: string;
 }
 
 export interface UpdateGiftAllocationBody {
@@ -7110,7 +7119,7 @@ export interface UpdateGiftAllocationBody {
   grantYear?: string | null;
   entityId?: string | null;
   regionalRestrictionType?: RestrictionAxis;
-  usageRestrictionType?: RestrictionAxis;
+  otherRestrictionType?: RestrictionAxis;
   timeRestrictionType?: RestrictionAxis;
   intendedUsage?: IntendedUsage | null;
   fundableProjectId?: string | null;
@@ -7121,6 +7130,7 @@ export interface UpdateGiftAllocationBody {
   spendingEnd?: string | null;
   regionIds?: string[] | null;
   purposeVerbatim?: string | null;
+  restrictionDescription?: string | null;
 }
 
 export type InteractionKind = typeof InteractionKind[keyof typeof InteractionKind];
@@ -9724,9 +9734,9 @@ restrictionLabels?: ListGiftsAndPaymentsRestrictionLabelsItem[];
  */
 regionalRestrictionTypes?: RestrictionAxis[];
 /**
- * Filter to gifts with at least one allocation whose usage_restriction_type is in the given set (OR). Repeat or comma-separate.
+ * Filter to gifts with at least one allocation whose other_restriction_type is in the given set (OR). Repeat or comma-separate.
  */
-usageRestrictionTypes?: RestrictionAxis[];
+otherRestrictionTypes?: RestrictionAxis[];
 /**
  * Filter to gifts with at least one allocation whose time_restriction_type is in the given set (OR). Repeat or comma-separate.
  */

@@ -33,7 +33,7 @@ import {
 /** Restriction axes read off the allocation being coded. */
 export interface AllocationCodingFields {
   regionalRestrictionType?: string | null;
-  usageRestrictionType?: string | null;
+  otherRestrictionType?: string | null;
   timeRestrictionType?: string | null;
   entityId?: string | null;
   intendedUsage?: string | null;
@@ -195,7 +195,7 @@ async function computeFromDonor(
     donorKind: donor?.donorKind ?? null,
     orgEntityType: entityType,
     regionalRestrictionType: fields.regionalRestrictionType ?? null,
-    usageRestrictionType: fields.usageRestrictionType ?? null,
+    otherRestrictionType: fields.otherRestrictionType ?? null,
     timeRestrictionType: fields.timeRestrictionType ?? null,
     giftType: donor?.giftType ?? null,
     loanOrGrant: donor?.loanOrGrant ?? null,
@@ -244,7 +244,7 @@ export async function giftAllocationCodingPreview(
   if (!a) return null;
   return deriveGiftAllocationCoding(a.giftId, {
     regionalRestrictionType: a.regionalRestrictionType,
-    usageRestrictionType: a.usageRestrictionType,
+    otherRestrictionType: a.otherRestrictionType,
     timeRestrictionType: a.timeRestrictionType,
     entityId: a.entityId,
     intendedUsage: a.intendedUsage,
@@ -269,7 +269,7 @@ export async function pledgeAllocationCodingPreview(
   return derivePledgeAllocationCoding(a.pledgeOrOpportunityId, {
     purposeVerbatim: a.purposeVerbatim,
     regionalRestrictionType: a.regionalRestrictionType,
-    usageRestrictionType: a.usageRestrictionType,
+    otherRestrictionType: a.otherRestrictionType,
     timeRestrictionType: a.timeRestrictionType,
     entityId: a.entityId,
     intendedUsage: a.intendedUsage,

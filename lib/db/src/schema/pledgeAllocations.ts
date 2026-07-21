@@ -62,7 +62,7 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   regionalRestrictionType: restrictionAxisEnum("regional_restriction_type")
     .default("unrestricted")
     .notNull(),
-  usageRestrictionType: restrictionAxisEnum("usage_restriction_type")
+  otherRestrictionType: restrictionAxisEnum("other_restriction_type")
     .default("unrestricted")
     .notNull(),
   timeRestrictionType: restrictionAxisEnum("time_restriction_type")
@@ -99,8 +99,12 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   // Array of regions.id values. Array columns can't carry native FK
   // constraints; the API layer is responsible for validating writes.
   regionIds: text("region_ids").array(),
-  // The donor's restriction language, verbatim. Still active.
+  // The donor's restriction language, VERBATIM — exact source language only.
+  // Plain-language summaries belong in restrictionDescription instead.
   purposeVerbatim: text("purpose_verbatim"),
+  // Optional plain-language summary of the restriction (e.g. "grants to
+  // schools only"). Free text; never affects revenue coding.
+  restrictionDescription: text("restriction_description"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

@@ -536,7 +536,7 @@ router.get(
               entityName: string | null;
               usageLabel: string | null;
               regionalRestrictionType: string;
-              usageRestrictionType: string;
+              otherRestrictionType: string;
               timeRestrictionType: string;
             }[]
           | null
@@ -546,7 +546,7 @@ router.get(
               'entityName', e.name,
               'usageLabel', COALESCE(NULLIF(ga.display_usage, ''), ga.intended_usage::text),
               'regionalRestrictionType', ga.regional_restriction_type::text,
-              'usageRestrictionType', ga.usage_restriction_type::text,
+              'otherRestrictionType', ga.other_restriction_type::text,
               'timeRestrictionType', ga.time_restriction_type::text
             ) ORDER BY ga.created_at, ga.id
           )

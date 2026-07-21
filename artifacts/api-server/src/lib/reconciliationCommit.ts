@@ -136,7 +136,7 @@ export async function copyPledgeAllocationsToGift(
       fundableProjectId: a.fundableProjectId,
       schoolRecipientId: a.schoolRecipientId,
       regionalRestrictionType: a.regionalRestrictionType,
-      usageRestrictionType: a.usageRestrictionType,
+      otherRestrictionType: a.otherRestrictionType,
       timeRestrictionType: a.timeRestrictionType,
       reimbursementType: a.reimbursementType,
       regionIds: a.regionIds,

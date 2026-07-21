@@ -340,13 +340,13 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       },
     },
     {
-      key: "usageRestrictionTypes",
-      label: "Usage restriction",
+      key: "otherRestrictionTypes",
+      label: "Other restriction",
       defaultVisible: false,
       sortable: false,
       tdClassName: "text-xs text-muted-foreground",
       cell: (g) => {
-        const vals = g.usageRestrictionTypes ?? [];
+        const vals = g.otherRestrictionTypes ?? [];
         return vals.length === 0 ? "—" : vals.map(formatEnum).join(", ");
       },
     },
@@ -430,7 +430,7 @@ export default function Gifts() {
   const [purposeVerbatimPresence, setPurposeVerbatimPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.purposeVerbatim", undefined);
   const [restrictionLabels, setRestrictionLabels] = usePersistedState<string[]>("wf.list.gifts.f.restrictionLabels", []);
   const [regionalRestrictionTypes, setRegionalRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.regionalRestrictionTypes", []);
-  const [usageRestrictionTypes, setUsageRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.usageRestrictionTypes", []);
+  const [otherRestrictionTypes, setOtherRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.otherRestrictionTypes", []);
   const [timeRestrictionTypes, setTimeRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.timeRestrictionTypes", []);
   const [fundableProjects, setFundableProjects] = usePersistedState<string[]>("wf.list.gifts.fundableProjects", []);
   const [campaignSlugs, setCampaignSlugs] = usePersistedState<string[]>("wf.list.gifts.campaignSlugs", []);
@@ -506,7 +506,7 @@ export default function Gifts() {
     ...(purposeVerbatimPresence ? { purposeVerbatimPresence } : {}),
     ...(restrictionLabels.length > 0 ? { restrictionLabels: [...restrictionLabels].sort() as ListGiftsAndPaymentsRestrictionLabelsItem[] } : {}),
     ...(regionalRestrictionTypes.length > 0 ? { regionalRestrictionTypes: [...regionalRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
-    ...(usageRestrictionTypes.length > 0 ? { usageRestrictionTypes: [...usageRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
+    ...(otherRestrictionTypes.length > 0 ? { otherRestrictionTypes: [...otherRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
     ...(timeRestrictionTypes.length > 0 ? { timeRestrictionTypes: [...timeRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
     ...(fundableProjects.length > 0 ? { fundableProjectId: [...fundableProjects].sort() } : {}),
     ...(campaignSlugs.length > 0 ? { campaignSlugs: [...campaignSlugs].sort() } : {}),
@@ -883,13 +883,13 @@ export default function Gifts() {
       },
       {
         key: "purposeVerbatim",
-        label: "Purpose (verbatim)",
+        label: "Restriction language (verbatim)",
         defaultVisible: false,
         active: !!purposeVerbatimPresence,
         clear: () => { setPurposeVerbatimPresence(undefined); setPage(1); selection.clear(); },
         render: () => (
           <PresenceFilter
-            label="Purpose (verbatim)"
+            label="Restriction language (verbatim)"
             value={purposeVerbatimPresence}
             onChange={(v) => { setPurposeVerbatimPresence(v); setPage(1); selection.clear(); }}
             testId="filter-purpose-verbatim"
@@ -932,16 +932,16 @@ export default function Gifts() {
         ),
       },
       {
-        key: "usageRestrictionTypes",
-        label: "Usage restriction",
+        key: "otherRestrictionTypes",
+        label: "Other restriction",
         defaultVisible: false,
-        active: usageRestrictionTypes.length > 0,
-        clear: () => { setUsageRestrictionTypes([]); setPage(1); selection.clear(); },
+        active: otherRestrictionTypes.length > 0,
+        clear: () => { setOtherRestrictionTypes([]); setPage(1); selection.clear(); },
         render: () => (
           <MultiFilterSelect
-            label="Usage restriction"
-            selected={usageRestrictionTypes}
-            onChange={(v) => { setUsageRestrictionTypes(v); setPage(1); selection.clear(); }}
+            label="Other restriction"
+            selected={otherRestrictionTypes}
+            onChange={(v) => { setOtherRestrictionTypes(v); setPage(1); selection.clear(); }}
             options={Object.values(RestrictionAxis).map((v) => ({ value: v, label: formatEnum(v) }))}
             testId="select-usage-restriction-types"
           />
@@ -965,7 +965,7 @@ export default function Gifts() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [types, owners, fiscalYears, fundableProjects, campaignSlugs, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence, donorboxBacked, codingForm, dateReceivedPresence, purposeVerbatimPresence, restrictionLabels, regionalRestrictionTypes, usageRestrictionTypes, timeRestrictionTypes],
+    [types, owners, fiscalYears, fundableProjects, campaignSlugs, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence, donorboxBacked, codingForm, dateReceivedPresence, purposeVerbatimPresence, restrictionLabels, regionalRestrictionTypes, otherRestrictionTypes, timeRestrictionTypes],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -1030,7 +1030,7 @@ export default function Gifts() {
       grantYear: a.grantYear ?? undefined,
       purposeVerbatim: a.purposeVerbatim ?? undefined,
       regionalRestrictionType: a.regionalRestrictionType,
-      usageRestrictionType: a.usageRestrictionType,
+      otherRestrictionType: a.otherRestrictionType,
       timeRestrictionType: a.timeRestrictionType,
     });
   };
@@ -1097,7 +1097,9 @@ export default function Gifts() {
     purposeVerbatimPresence: PresenceValue;
     restrictionLabels: string[];
     regionalRestrictionTypes: string[];
-    usageRestrictionTypes: string[];
+    otherRestrictionTypes: string[];
+    /** Legacy saved-view key (pre-rename); read-only fallback. */
+    usageRestrictionTypes?: string[];
     timeRestrictionTypes: string[];
     fundableProjects: string[];
     campaignSlugs: string[];
@@ -1122,7 +1124,7 @@ export default function Gifts() {
     purposeVerbatimPresence,
     restrictionLabels,
     regionalRestrictionTypes,
-    usageRestrictionTypes,
+    otherRestrictionTypes,
     timeRestrictionTypes,
     fundableProjects,
     campaignSlugs,
@@ -1147,7 +1149,7 @@ export default function Gifts() {
     setPurposeVerbatimPresence(undefined);
     setRestrictionLabels([]);
     setRegionalRestrictionTypes([]);
-    setUsageRestrictionTypes([]);
+    setOtherRestrictionTypes([]);
     setTimeRestrictionTypes([]);
     setFundableProjects([]);
     setCampaignSlugs([]);
@@ -1175,7 +1177,7 @@ export default function Gifts() {
       setPurposeVerbatimPresence(s.purposeVerbatimPresence ?? undefined);
       setRestrictionLabels(s.restrictionLabels ?? []);
       setRegionalRestrictionTypes(s.regionalRestrictionTypes ?? []);
-      setUsageRestrictionTypes(s.usageRestrictionTypes ?? []);
+      setOtherRestrictionTypes(s.otherRestrictionTypes ?? s.usageRestrictionTypes ?? []);
       setTimeRestrictionTypes(s.timeRestrictionTypes ?? []);
       setFundableProjects(s.fundableProjects ?? []);
       setCampaignSlugs(s.campaignSlugs ?? []);
@@ -1202,7 +1204,7 @@ export default function Gifts() {
       !s.purposeVerbatimPresence &&
       (s.restrictionLabels?.length ?? 0) === 0 &&
       (s.regionalRestrictionTypes?.length ?? 0) === 0 &&
-      (s.usageRestrictionTypes?.length ?? 0) === 0 &&
+      ((s.otherRestrictionTypes ?? s.usageRestrictionTypes)?.length ?? 0) === 0 &&
       (s.timeRestrictionTypes?.length ?? 0) === 0 &&
       (s.fundableProjects?.length ?? 0) === 0 &&
       (s.campaignSlugs?.length ?? 0) === 0 &&
@@ -1227,7 +1229,7 @@ export default function Gifts() {
     !!purposeVerbatimPresence ||
     restrictionLabels.length > 0 ||
     regionalRestrictionTypes.length > 0 ||
-    usageRestrictionTypes.length > 0 ||
+    otherRestrictionTypes.length > 0 ||
     timeRestrictionTypes.length > 0 ||
     fundableProjects.length > 0 ||
     campaignSlugs.length > 0;
@@ -1439,7 +1441,7 @@ export default function Gifts() {
                         <TableCell colSpan={visibleCols.length} className="py-2 text-xs text-muted-foreground italic">No allocations</TableCell>
                       </TableRow>
                     );
-                    const EDITABLE_COLS = new Set(["entities", "amount", "grantYears", "purposeVerbatims", "regionalRestrictionTypes", "usageRestrictionTypes", "timeRestrictionTypes"]);
+                    const EDITABLE_COLS = new Set(["entities", "amount", "grantYears", "purposeVerbatims", "regionalRestrictionTypes", "otherRestrictionTypes", "timeRestrictionTypes"]);
                     return allocs.map((a) => {
                       const isEditing = editingAllocId === a.id;
                       return (
@@ -1480,8 +1482,8 @@ export default function Gifts() {
                               content = <Input className="h-6 text-xs w-24" value={allocDraft.grantYear ?? ""} onChange={e => setAllocDraft(d => ({ ...d, grantYear: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
                             } else if (isEditing && c.key === "purposeVerbatims") {
                               content = <Input className="h-6 text-xs w-48" value={allocDraft.purposeVerbatim ?? ""} onChange={e => setAllocDraft(d => ({ ...d, purposeVerbatim: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
-                            } else if (isEditing && (c.key === "regionalRestrictionTypes" || c.key === "usageRestrictionTypes" || c.key === "timeRestrictionTypes")) {
-                              const draftKey = c.key === "regionalRestrictionTypes" ? "regionalRestrictionType" : c.key === "usageRestrictionTypes" ? "usageRestrictionType" : "timeRestrictionType";
+                            } else if (isEditing && (c.key === "regionalRestrictionTypes" || c.key === "otherRestrictionTypes" || c.key === "timeRestrictionTypes")) {
+                              const draftKey = c.key === "regionalRestrictionTypes" ? "regionalRestrictionType" : c.key === "otherRestrictionTypes" ? "otherRestrictionType" : "timeRestrictionType";
                               content = (
                                 <select
                                   className="h-6 text-xs rounded border border-input bg-background px-1"
@@ -1509,13 +1511,13 @@ export default function Gifts() {
                               content = a.purposeVerbatim ? <span className="text-xs text-muted-foreground max-w-[200px] truncate block">{a.purposeVerbatim}</span> : null;
                             } else if (c.key === "regionalRestrictionTypes") {
                               content = <span className="text-xs text-muted-foreground">{formatEnum(a.regionalRestrictionType)}</span>;
-                            } else if (c.key === "usageRestrictionTypes") {
-                              content = <span className="text-xs text-muted-foreground">{formatEnum(a.usageRestrictionType)}</span>;
+                            } else if (c.key === "otherRestrictionTypes") {
+                              content = <span className="text-xs text-muted-foreground">{formatEnum(a.otherRestrictionType)}</span>;
                             } else if (c.key === "timeRestrictionTypes") {
                               content = <span className="text-xs text-muted-foreground">{formatEnum(a.timeRestrictionType)}</span>;
                             }
                             const canStartEdit = !isEditing && EDITABLE_COLS.has(c.key) && !updateGiftAllocMut.isPending;
-                            const isSelectCol = c.key === "regionalRestrictionTypes" || c.key === "usageRestrictionTypes" || c.key === "timeRestrictionTypes";
+                            const isSelectCol = c.key === "regionalRestrictionTypes" || c.key === "otherRestrictionTypes" || c.key === "timeRestrictionTypes";
                             return (
                               <TableCell key={c.key} className={`${c.tdClassName ?? ""} py-0.5`} onClick={canStartEdit ? () => startAllocEdit(a) : undefined} style={canStartEdit ? { cursor: isSelectCol ? "pointer" : "text" } : undefined}>
                                 {content}

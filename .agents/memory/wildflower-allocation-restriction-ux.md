@@ -7,9 +7,15 @@ description: Domain rules and gotchas for the opportunity/pledge & gift allocati
 
 ## Restriction model is THREE AXES (replaced the old flags)
 - Both `pledge_allocations` AND `gift_allocations` now carry three independent
-  `restriction_axis` columns: `regionalRestrictionType` / `usageRestrictionType` /
+  `restriction_axis` columns: `regionalRestrictionType` / `otherRestrictionType` /
   `timeRestrictionType`, each `donor_restricted | wf_restricted | unrestricted`
-  (NOT NULL default `unrestricted`).
+  (NOT NULL default `unrestricted`). The middle axis was renamed from "usage"
+  to **"Other restriction"** (`other_restriction_type`, 2026-07): restrictions
+  beyond region, time, school, and project (e.g. "grants to schools only").
+- Free-text fields: `restriction_description` (plain-language summary, new
+  2026-07) vs `purpose_verbatim` (EXACT source language only — grant letter,
+  designation, memo). UI labels: "Restriction description" and "Restriction
+  language (verbatim)".
 - A line codes as restricted (→ 4100.x object code) when **ANY** axis is
   `donor_restricted`; `wf_restricted` (internal WF designation) and `unrestricted`
   both code unrestricted (`anyDonorRestricted` in `@workspace/api-zod`).

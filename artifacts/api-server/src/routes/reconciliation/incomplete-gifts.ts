@@ -160,7 +160,7 @@ router.get(
             intendedUsage: giftAllocations.intendedUsage,
             fundableProjectId: giftAllocations.fundableProjectId,
             regionalRestrictionType: giftAllocations.regionalRestrictionType,
-            usageRestrictionType: giftAllocations.usageRestrictionType,
+            otherRestrictionType: giftAllocations.otherRestrictionType,
             timeRestrictionType: giftAllocations.timeRestrictionType,
           })
           .from(giftAllocations)
@@ -177,7 +177,7 @@ router.get(
         intendedUsage: a.intendedUsage,
         fundableProjectId: a.fundableProjectId,
         regionalRestrictionType: a.regionalRestrictionType,
-        usageRestrictionType: a.usageRestrictionType,
+        otherRestrictionType: a.otherRestrictionType,
         timeRestrictionType: a.timeRestrictionType,
       });
       allocsByGift.set(a.giftId, list);

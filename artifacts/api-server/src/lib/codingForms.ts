@@ -699,7 +699,8 @@ interface AllocationRef {
   kind: "gift" | "pledge";
   id: string;
   purposeVerbatim: string | null;
-  usageRestrictionType: string;
+  restrictionDescription: string | null;
+  otherRestrictionType: string;
   intendedUsage: string | null;
   regionIds: string[] | null;
   regionalRestrictionType: string;
@@ -720,7 +721,8 @@ async function resolveAllocation(
       .select({
         id: giftAllocations.id,
         purposeVerbatim: giftAllocations.purposeVerbatim,
-        usageRestrictionType: giftAllocations.usageRestrictionType,
+        restrictionDescription: giftAllocations.restrictionDescription,
+        otherRestrictionType: giftAllocations.otherRestrictionType,
         intendedUsage: giftAllocations.intendedUsage,
         regionIds: giftAllocations.regionIds,
         regionalRestrictionType: giftAllocations.regionalRestrictionType,
@@ -743,7 +745,8 @@ async function resolveAllocation(
       .select({
         id: pledgeAllocations.id,
         purposeVerbatim: pledgeAllocations.purposeVerbatim,
-        usageRestrictionType: pledgeAllocations.usageRestrictionType,
+        restrictionDescription: pledgeAllocations.restrictionDescription,
+        otherRestrictionType: pledgeAllocations.otherRestrictionType,
         intendedUsage: pledgeAllocations.intendedUsage,
         regionIds: pledgeAllocations.regionIds,
         regionalRestrictionType: pledgeAllocations.regionalRestrictionType,
@@ -1059,7 +1062,12 @@ export async function crossChecksFor(
       alloc?.kind === "gift" ? "gift" : "pledge"
     } allocation`;
 
-  // 2. Purpose (verbatim restriction language) → allocation.purposeVerbatim.
+  // 2. Restriction answer text → allocation.restrictionDescription.
+  //    The sheet answer is the reviewer's plain-language description of the
+  //    restriction, NOT quoted source language — so it lands in the new
+  //    restriction_description field. purpose_verbatim is reserved for exact
+  //    source language only. The attribute key stays "purposeVerbatim" for
+  //    stored-decision compatibility.
   {
     const pvOv = ov("purposeVerbatim");
     const effectivePurpose = pvOv ?? effRestriction;
@@ -1072,7 +1080,7 @@ export async function crossChecksFor(
         blockedReason = allocBlocked;
         status = "na";
       } else {
-        crmValue = alloc.purposeVerbatim;
+        crmValue = alloc.restrictionDescription;
         if (!crmValue || crmValue.trim().length === 0) status = "new";
         else if (eqText(crmValue, effRestriction)) status = "same";
         else status = "conflict";
@@ -1083,7 +1091,7 @@ export async function crossChecksFor(
       !!alloc && (status === "new" || status === "conflict");
     out.push({
       attribute: "purposeVerbatim",
-      label: "Restriction language (purpose)",
+      label: "Restriction description",
       status,
       applicable,
       sheetValue: effRestriction,
@@ -1095,12 +1103,12 @@ export async function crossChecksFor(
       blockedReason,
       willWrite: actionable ? effectivePurpose : null,
       willWriteTo: actionable
-        ? allocDest("Purpose (verbatim)", status)
+        ? allocDest("Restriction description", status)
         : null,
     });
   }
 
-  // 3. Usage restriction axis → allocation.usageRestrictionType.
+  // 3. Usage restriction axis → allocation.otherRestrictionType.
   //    Sheet always implies donor_restricted; override lets reviewer pick
   //    donor_restricted or unrestricted.
   {
@@ -1118,7 +1126,7 @@ export async function crossChecksFor(
         blockedReason = allocBlocked;
         status = "na";
       } else {
-        crmValue = alloc.usageRestrictionType;
+        crmValue = alloc.otherRestrictionType;
         if (crmValue === "donor_restricted") status = "same";
         else if (crmValue === "unrestricted") status = "new";
         else status = "conflict"; // wf_restricted differs from donor intent
@@ -1129,7 +1137,7 @@ export async function crossChecksFor(
       !!alloc && (status === "new" || status === "conflict");
     out.push({
       attribute: "usageRestriction",
-      label: "Usage restriction",
+      label: "Other restriction",
       status,
       applicable,
       sheetValue: applicable ? "donor_restricted" : null,
@@ -1145,7 +1153,7 @@ export async function crossChecksFor(
           : "Unrestricted"
         : null,
       willWriteTo: actionable
-        ? allocDest("Usage restriction (usage axis)", status)
+        ? allocDest("Other restriction", status)
         : null,
     });
   }
@@ -1690,13 +1698,15 @@ export async function applyRow(
     if (alloc) {
       const patch: Record<string, unknown> = { updatedAt: new Date() };
       if (allocToApply.includes("purposeVerbatim")) {
+        // Plain-language reviewer answer → restriction_description (NOT
+        // purpose_verbatim, which holds exact source language only).
         const pvOv = mergedOvForCheck.purposeVerbatim;
-        patch.purposeVerbatim =
+        patch.restrictionDescription =
           pvOv ?? effectiveText(row, "restrictionLanguage");
       }
       if (allocToApply.includes("usageRestriction")) {
         const usageOv = mergedOvForCheck.usageRestriction;
-        patch.usageRestrictionType =
+        patch.otherRestrictionType =
           usageOv === "donor_restricted" || usageOv === "unrestricted"
             ? usageOv
             : "donor_restricted";

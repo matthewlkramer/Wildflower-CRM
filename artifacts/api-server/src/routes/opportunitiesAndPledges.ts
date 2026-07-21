@@ -907,7 +907,7 @@ router.post(
           schoolRecipientId: b.schoolRecipientId,
           directToSchool: b.directToSchool,
           regionalRestrictionType: b.regionalRestrictionType,
-          usageRestrictionType: b.usageRestrictionType,
+          otherRestrictionType: b.otherRestrictionType,
           timeRestrictionType: b.timeRestrictionType,
           reimbursementType: b.reimbursementType,
           regionIds: b.regionIds,

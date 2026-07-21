@@ -59,7 +59,7 @@ export async function seedInitialGiftAllocation(
     fundableProjectId?: string | null;
     countsTowardGoal?: boolean;
     regionalRestrictionType?: (typeof giftAllocations.$inferInsert)["regionalRestrictionType"];
-    usageRestrictionType?: (typeof giftAllocations.$inferInsert)["usageRestrictionType"];
+    otherRestrictionType?: (typeof giftAllocations.$inferInsert)["otherRestrictionType"];
     timeRestrictionType?: (typeof giftAllocations.$inferInsert)["timeRestrictionType"];
   },
 ): Promise<void> {
@@ -94,8 +94,8 @@ export async function seedInitialGiftAllocation(
     ...(args.regionalRestrictionType
       ? { regionalRestrictionType: args.regionalRestrictionType }
       : {}),
-    ...(args.usageRestrictionType
-      ? { usageRestrictionType: args.usageRestrictionType }
+    ...(args.otherRestrictionType
+      ? { otherRestrictionType: args.otherRestrictionType }
       : {}),
     ...(args.timeRestrictionType
       ? { timeRestrictionType: args.timeRestrictionType }

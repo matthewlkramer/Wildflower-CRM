@@ -73,7 +73,7 @@ export interface BookableGiftAllocationInput {
   intendedUsage: string | null;
   fundableProjectId: string | null;
   regionalRestrictionType: string | null;
-  usageRestrictionType: string | null;
+  otherRestrictionType: string | null;
   timeRestrictionType: string | null;
 }
 
@@ -142,7 +142,7 @@ export function deriveGiftBookable(input: BookableGiftInput): {
   const restricted = allocs.some((a) =>
     anyDonorRestricted(
       a.regionalRestrictionType,
-      a.usageRestrictionType,
+      a.otherRestrictionType,
       a.timeRestrictionType,
     ),
   );
@@ -218,7 +218,7 @@ export function giftIsIncompleteExpr(
                 WHERE gar.gift_id = ${giftIdSql}
                   AND (
                     gar.regional_restriction_type = 'donor_restricted'
-                    OR gar.usage_restriction_type = 'donor_restricted'
+                    OR gar.other_restriction_type = 'donor_restricted'
                     OR gar.time_restriction_type = 'donor_restricted'
                   )
               )
