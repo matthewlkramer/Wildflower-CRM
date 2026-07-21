@@ -550,6 +550,72 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/:id/resolve-overpay", () => {
   });
 });
 
+// Both the write-off route's cap (computePledgeUncollectedRemainder) and the
+// pre-close checklist's underpaid-pledge remainder derive from the SAME
+// canonical formula (pledgeCapacity.ts: committed + writtenOff − paid, cents-
+// rounded, archived write-off children excluded). This asserts the two routes
+// actually agree for the same pledge — including after a partial write-off.
+describe.skipIf(!HAS_DB)("write-off cap and pre-close checklist agree on capacity", () => {
+  async function checklistPledge(
+    pledgeId: string,
+  ): Promise<{ remainder: string } | undefined> {
+    const res = await fetch(
+      `${baseUrl}/api/fiscal-years/${CLOSED_FY_ID}/pre-close-checklist`,
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      samplePledges: { id: string; remainder: string }[];
+    };
+    return json.samplePledges.find((p) => p.id === pledgeId);
+  }
+
+  /** The write-off route's enforced cap, read via its 409 details.maxAmount. */
+  async function writeOffCap(pledgeId: string): Promise<string> {
+    const res = await api(`/api/opportunities-and-pledges/${pledgeId}/write-off`, {
+      amount: "9999999.00",
+    });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("amount_exceeds_remainder");
+    return res.json.details?.maxAmount as string;
+  }
+
+  it("returns the identical cents-rounded remainder from both routes", async () => {
+    const id = await seedPledge({
+      writtenPledge: true,
+      actualCompletionDate: CLOSED_DATE,
+    });
+    // Odd-cent amounts exercise the cents-rounding edge: 1000.33 − 600.66.
+    await seedPledgeAlloc(id, "1000.33");
+    await seedGift({ amount: "600.66", opportunityId: id });
+    // The checklist reads the PERSISTED `paid` rollup (API-created gifts keep
+    // it in sync via applyDerivedOppFields; raw test seeds don't) — stamp it
+    // to mirror the seeded gift, exactly as production writes would.
+    await db
+      .update(schema.opportunitiesAndPledges)
+      .set({ paid: "600.66" })
+      .where(eqFn(schema.opportunitiesAndPledges.id, id));
+
+    expect(await writeOffCap(id)).toBe("399.67");
+    expect((await checklistPledge(id))?.remainder).toBe("399.67");
+
+    // A partial write-off shrinks BOTH figures in lockstep.
+    const partial = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
+      amount: "100.00",
+    });
+    expect(partial.status).toBe(201);
+    childOppIds.push(partial.json.id);
+    // Freeze the first write-off so the route allows sizing a second one
+    // (the cap 409 still reports the NET remainder either way).
+    await db
+      .update(schema.opportunitiesAndPledges)
+      .set({ actualCompletionDate: CLOSED_DATE })
+      .where(eqFn(schema.opportunitiesAndPledges.id, partial.json.id));
+
+    expect(await writeOffCap(id)).toBe("299.67");
+    expect((await checklistPledge(id))?.remainder).toBe("299.67");
+  });
+});
+
 // A surplus gift minted to resolve an overpayment (overpay_of_gift_id set) has no
 // counted accounting evidence, so it is stamped quickbooks_tie_status='missing' by
 // default. It is the RESOLUTION, not a new problem, and has no resolution path of

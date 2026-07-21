@@ -111,11 +111,11 @@ import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, 
 import { resolvePledgeFreeze, resolvePledgeFreezeById, respondFrozen } from "../lib/freezeGuard";
 import { getCurrentOpenFiscalYear, todayInChicago } from "../lib/governingFiscalYear";
 import {
-  computePledgeUncollectedRemainder,
   findActiveEditableWriteOffChild,
   findActiveWriteOffChildPledgeId,
   proRataNegativeShares,
 } from "../lib/auditCloseResolution";
+import { computePledgeUncollectedRemainder } from "../lib/pledgeCapacity";
 import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";

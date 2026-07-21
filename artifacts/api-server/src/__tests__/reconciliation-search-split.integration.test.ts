@@ -78,7 +78,13 @@ type Candidate = {
 async function searchNode(
   qs: string,
 ): Promise<{ status: number; json: { data?: Candidate[] } }> {
-  const res = await fetch(`${baseUrl}/api/reconciliation/search/gift?${qs}`);
+  // Always request the max limit: split-mode candidates sort by date
+  // proximity, so SMALL_GIFT_B (deliberately booked months early) ranks LAST
+  // and gets crowded out of the default 25 when other parallel test forks'
+  // 2099-dated gift seeds land in the amount band.
+  const res = await fetch(
+    `${baseUrl}/api/reconciliation/search/gift?limit=100&${qs}`,
+  );
   let json: unknown = null;
   try {
     json = await res.json();

@@ -26,6 +26,7 @@ import { getAppUser } from "../lib/appRequest";
 import { unresolvedGiftAmountCondition } from "../lib/giftAmountResolution";
 import { deriveGiftQbTieLiveExpr } from "../lib/giftQbTie";
 import { giftHasNoActiveOverpayChild } from "../lib/auditCloseResolution";
+import { pledgeCapacity, pledgeWrittenOffSumText } from "../lib/pledgeCapacity";
 
 // NOTE: /entities (GET/POST/PATCH) and /fiscal-year-entity-goals routes live
 // in their own files (entities.ts, fiscalYearEntityGoals.ts). This file holds
@@ -445,26 +446,22 @@ router.get(
     // the GROUP BY / HAVING explicit and avoids the drizzle bare-column footgun.
     // `paid` is the persisted linked-gift rollup.
     //
-    // "Resolved" is CAPACITY-based, mirroring computePledgeUncollectedRemainder:
-    // committed + active write-off children's (NEGATIVE) allocation totals must
-    // exceed paid to flag. A partially written-off pledge with real remaining
+    // "Resolved" is CAPACITY-based: the written-off bucket comes from the
+    // shared pledgeWrittenOffSumText builder (pledgeCapacity.ts — the same
+    // derivation computePledgeUncollectedRemainder uses), so committed +
+    // active write-off children's (NEGATIVE) allocation totals must exceed
+    // paid to flag. A partially written-off pledge with real remaining
     // uncollected money keeps flagging on a re-close; a fully written-off pledge
     // excludes itself naturally. The write-off child rows themselves are skipped
     // (is_write_off = false) — they are the resolution, not a new problem.
+    const writtenOffSum = sql.raw(pledgeWrittenOffSumText("o"));
     const pledgeRows = hasRange
       ? ((
           await db.execute(sql`
             SELECT o.id AS id,
                    COALESCE(SUM(pa.sub_amount), 0)::text AS expected,
                    COALESCE(o.paid, 0)::text AS paid,
-                   COALESCE((
-                     SELECT SUM(cpa.sub_amount)
-                     FROM ${pledgeAllocations} cpa
-                     JOIN ${opportunitiesAndPledges} c
-                       ON cpa.pledge_or_opportunity_id = c.id
-                     WHERE c.write_off_of_pledge_id = o.id
-                       AND c.archived_at IS NULL
-                   ), 0)::text AS written_off
+                   ${writtenOffSum}::text AS written_off
             FROM ${opportunitiesAndPledges} o
             JOIN ${pledgeAllocations} pa ON pa.pledge_or_opportunity_id = o.id
             WHERE o.written_pledge = true
@@ -475,24 +472,10 @@ router.get(
               AND o.is_write_off = false
             GROUP BY o.id, o.paid
             HAVING COALESCE(SUM(pa.sub_amount), 0)
-                 + COALESCE((
-                     SELECT SUM(cpa.sub_amount)
-                     FROM ${pledgeAllocations} cpa
-                     JOIN ${opportunitiesAndPledges} c
-                       ON cpa.pledge_or_opportunity_id = c.id
-                     WHERE c.write_off_of_pledge_id = o.id
-                       AND c.archived_at IS NULL
-                   ), 0)
+                 + ${writtenOffSum}
                  > COALESCE(o.paid, 0)
             ORDER BY (COALESCE(SUM(pa.sub_amount), 0)
-                    + COALESCE((
-                        SELECT SUM(cpa.sub_amount)
-                        FROM ${pledgeAllocations} cpa
-                        JOIN ${opportunitiesAndPledges} c
-                          ON cpa.pledge_or_opportunity_id = c.id
-                        WHERE c.write_off_of_pledge_id = o.id
-                          AND c.archived_at IS NULL
-                      ), 0)
+                    + ${writtenOffSum}
                     - COALESCE(o.paid, 0)) DESC
           `)
         ).rows as unknown as {
@@ -506,10 +489,12 @@ router.get(
       id: r.id,
       expectedAmount: r.expected,
       paidAmount: r.paid,
-      // NET remainder — the same figure the write-off dialog prefills and caps at.
+      // NET remainder via the canonical capacity formula (pledgeCapacity.ts) —
+      // the same figure the write-off dialog prefills and caps at, clamped at
+      // 0 for display.
       remainder: Math.max(
         0,
-        Number(r.expected) + Number(r.written_off) - Number(r.paid),
+        pledgeCapacity(r.expected, r.written_off, r.paid),
       ).toFixed(2),
     }));
 

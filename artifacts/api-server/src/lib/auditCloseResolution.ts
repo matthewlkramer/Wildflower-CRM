@@ -4,7 +4,6 @@ import { db } from "@workspace/db";
 import {
   giftsAndPayments,
   opportunitiesAndPledges,
-  pledgeAllocations,
 } from "@workspace/db/schema";
 import { getGiftPaymentSummary } from "./giftPaymentSummary";
 import { resolvePledgeFreeze } from "./freezeGuard";
@@ -105,60 +104,9 @@ export function giftHasNoActiveOverpayChild(): SQL {
   );
 }
 
-/**
- * A pledge's uncollected remainder, DERIVED server-side: committed (sum of the
- * pledge's allocation sub-amounts) minus paid (sum of non-archived linked gift
- * amounts), NET of active write-offs (their children's allocation totals are
- * negative, so adding them shrinks the remainder), rounded to whole cents.
- * This is both the dialog prefill and the server-enforced CAP on a write-off's
- * chosen amount. It is NOT clamped — the write-off route treats `<= 0` as
- * "nothing to write off"; the detail view clamps at 0 for display. Single
- * source of truth for all callers so the display, the prefill, and the cap can
- * never diverge. Pass the open transaction from the write-off route so the cap
- * is computed under its row lock.
- */
-export async function computePledgeUncollectedRemainder(
-  pledgeId: string,
-  dbc: Dbc = db,
-): Promise<number> {
-  const [{ committed } = { committed: "0" }] = await dbc
-    .select({
-      committed: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
-    })
-    .from(pledgeAllocations)
-    .where(eq(pledgeAllocations.pledgeOrOpportunityId, pledgeId));
-  const [{ paid } = { paid: "0" }] = await dbc
-    .select({
-      paid: sql<string>`COALESCE(SUM(${giftsAndPayments.amount}), 0)::text`,
-    })
-    .from(giftsAndPayments)
-    .where(
-      and(
-        eq(giftsAndPayments.opportunityId, pledgeId),
-        isNull(giftsAndPayments.archivedAt),
-      ),
-    );
-  const writeOffChild = alias(opportunitiesAndPledges, "write_off_child");
-  const [{ writtenOff } = { writtenOff: "0" }] = await dbc
-    .select({
-      writtenOff: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
-    })
-    .from(pledgeAllocations)
-    .innerJoin(
-      writeOffChild,
-      eq(pledgeAllocations.pledgeOrOpportunityId, writeOffChild.id),
-    )
-    .where(
-      and(
-        eq(writeOffChild.writeOffOfPledgeId, pledgeId),
-        isNull(writeOffChild.archivedAt),
-      ),
-    );
-  return (
-    Math.round((Number(committed) + Number(writtenOff) - Number(paid)) * 100) /
-    100
-  );
-}
+// NOTE: computePledgeUncollectedRemainder (the pledge-capacity derivation)
+// moved to ./pledgeCapacity.ts — the single source of truth for the
+// committed + writtenOff − paid formula shared with the lookups route.
 
 /**
  * The active (non-archived) surplus gift that resolves an over-paid audited

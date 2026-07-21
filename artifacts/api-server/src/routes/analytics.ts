@@ -274,6 +274,16 @@ async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
     // NEGATIVE sub_amount, so this sums to a negative "written off" line per
     // category. Keyed on is_write_off (not status) so it's independent of the
     // derived pledge status.
+    //
+    // NOT unified with pledgeCapacity.ts on purpose: capacity is a PER-PLEDGE
+    // figure (a pledge's own allocations + its write-off children's, netted
+    // against ITS paid rollup, no FY/goal scoping), while this is a fiscal-
+    // year GOAL bucket — write-off rows selected by their OWN grant_year /
+    // countsTowardGoal / entity filters, grouped by category, and never
+    // combined with committed or paid into a remainder. Same rows, different
+    // aggregation semantics; folding this into the capacity helper would
+    // force FY/goal parameters onto a per-pledge derivation that must stay
+    // scope-free.
     db
       .select({
         category: oppCategorySql,
