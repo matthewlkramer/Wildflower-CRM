@@ -1,0 +1,300 @@
+Revised model
+Award / pledge
+├── legal commitment or award ceiling
+├── annual fundraising and collection plan
+├── optional fixed installment schedule
+└── actual payments created from QB evidence
+
+Do not add:
+
+Eligible-expense tracking
+Drawdown availability
+Claim preparation or approval workflow
+Submitted/approved reimbursement balances
+Reimbursement-period accounting
+
+Finance can continue managing those details outside this CRM.
+
+1. Keep the disbursement distinction
+
+Add a pledge-level field:
+
+disbursementModel:
+  | "fixed_commitment"
+  | "cost_reimbursement";
+
+This controls how future cash is represented and how actual payments are created.
+
+reimbursable should eventually stop being treated as a kind of grant condition. It is a payment mechanism, while conditions are a separate concept. The existing code already treats reimbursable as nonconditional for probability weighting, which reinforces that separation.
+
+2. Use pledge allocations as the annual reimbursement forecast
+
+The existing pledge allocations already contain most of what is needed:
+
+Fiscal year
+Planned amount
+Entity
+Purpose and restrictions
+Direct/indirect reimbursement classification
+
+For a cost-reimbursement award, define the fields this way:
+
+awarded_amount
+    = legal maximum or award ceiling
+
+sum(pledge allocation sub_amount)
+    = amount Wildflower currently expects to collect
+
+allocation fiscal year
+    = year in which Wildflower expects that amount to contribute
+      to fundraising planning and projections
+
+reimbursement_type
+    = direct or indirect share
+
+This allows an award to look like:
+
+Fiscal year	Share	Expected collections	Counts toward fundraising goal
+FY27	Direct	$600,000	$0
+FY27	Indirect	$150,000	$150,000
+FY28	Direct	$900,000	$0
+FY28	Indirect	$225,000	$225,000
+
+The current rule already excludes direct reimbursement allocations from goal analytics while counting indirect and untagged allocations.
+
+For a cost_reimbursement pledge, I would require every allocation to have reimbursement_type populated. A null value should mean incomplete planning, not “count it by default.”
+
+3. Allow planned collections to differ from the award ceiling
+
+This distinction is important.
+
+For a conventional fixed pledge:
+
+sum of committed pledge allocations
+≈ awarded amount
+
+For a reimbursement award:
+
+awarded amount
+= maximum available award
+
+sum of pledge allocations
+= current forecast of collections
+
+The forecast can be below the ceiling and can be revised as plans change.
+
+For example:
+
+Federal award ceiling:             $3,000,000
+Current expected collections:      $2,550,000
+Expected indirect goal credit:       $425,000
+
+This means the system should not enforce a universal rule that pledge allocations must sum to awarded_amount.
+
+Instead, expose derived values such as:
+
+plannedCollectionAmount
+plannedGoalCreditAmount
+unplannedAwardCapacity
+
+Where:
+
+plannedCollectionAmount
+= sum of active pledge allocations
+
+plannedGoalCreditAmount
+= sum of goal-counting pledge allocations
+
+unplannedAwardCapacity
+= awarded amount − planned collection amount
+
+The last value is informational only. It is not a drawdown balance and should not create tasks or accounting workflow.
+
+4. Expected-payment records are still useful, but only for fixed commitments
+
+The existing expected_payment_date lives on pledge allocations, with allocations sharing a date intended to represent one logical payment.
+
+I would still replace that with a real expected-payment table, but use it differently by disbursement model.
+
+Fixed commitment
+
+Create explicit installments:
+
+September 1, 2026 — $100,000
+January 1, 2027 — $100,000
+April 1, 2027 — $100,000
+
+These support:
+
+Cash forecasting
+Due-soon and overdue reminders
+Matching incoming QB payments
+Partial installment fulfillment
+Cost reimbursement
+
+Do not require individual expected-payment records.
+
+The annual pledge allocations are the collection forecast. The CRM does not need to know the individual claims or anticipated reimbursement checks.
+
+An optional expected-payment record could be created only when the fundraising team happens to know that a particular payment is imminent, but it should not be necessary for the model to work.
+
+So the primary distinction becomes:
+
+Model	Annual forecast source	Specific cash schedule
+Fixed commitment	Pledge allocations	Expected-payment records
+Cost reimbursement	Pledge allocations	Usually none
+5. Separate fundraising projection from cash timing
+
+The system should produce two related but distinct projections.
+
+Fundraising progress and projection
+
+Derived from pledge allocations:
+
+Expected fundraising by fiscal year
+Expected direct reimbursement share
+Expected indirect reimbursement share
+Amount counting toward fundraising goal
+
+This is the principal forecast for reimbursable awards.
+
+Cash timing forecast
+
+Derived from:
+
+Expected installments for fixed commitments
+Annual allocation forecast for reimbursements
+Actual payments received
+
+For reimbursement awards without installment dates, the system can place the projected collections into the relevant fiscal year without pretending to know the month or exact receipt date.
+
+6. Winning a pledge should require the collection plan
+
+After a pledge is won, the workflow should be:
+
+Fixed commitment
+Record awarded_amount.
+Set disbursement_model = fixed_commitment.
+Complete pledge allocations by fiscal year, purpose, and restriction.
+Enter expected installment dates and amounts.
+System displays expected cash and goal contribution by year.
+Cost reimbursement
+Record the award ceiling in awarded_amount.
+Set disbursement_model = cost_reimbursement.
+Enter the amount expected to be collected in each fiscal year through pledge allocations.
+Split each year between direct and indirect.
+System derives annual collections and fundraising-goal credit.
+No reimbursement-claim or drawdown records are required.
+
+A reimbursable pledge should not be considered planning-complete until its annual allocations contain:
+
+Fiscal year
+Expected amount
+Direct/indirect classification
+Required entity, purpose, and restriction information
+7. Actual payments should still be evidence-created
+
+For both pledge models, users should not manually create gifts against pledges.
+
+When QB money appears:
+
+The system identifies or proposes the pledge.
+It creates the gift/payment from the actual evidence amount and date.
+It links the payment to the pledge.
+It creates the counted payment relationship.
+It copies applicable pledge allocations into editable gift allocations.
+It recalculates actual received amounts and remaining forecasts.
+
+The current reconciliation path already creates payments from evidence and can seed gift allocations from pledge allocations.
+
+8. Improve the allocation inheritance algorithm
+
+The current implementation proportionally copies all pledge allocations into each payment.
+
+That may be too crude once pledge allocations represent a multiyear collection plan.
+
+A better default is to allocate against the remaining planned allocations, in this order:
+
+An explicitly selected expected installment, for fixed commitments.
+The fiscal year associated with the payment or reviewer selection.
+Remaining pledge allocations for that year.
+Proportional distribution across those remaining allocations.
+
+For a reimbursement payment, the system could initially suggest:
+
+Apply this $200,000 payment against:
+FY27 direct:   $160,000
+FY27 indirect:  $40,000
+
+based on the remaining FY27 plan.
+
+The reviewer could accept or adjust it. Once created, those gift allocations become actual history and do not change when the pledge plan is later revised.
+
+9. Preserve plan-versus-actual provenance
+
+Add to gift_allocations:
+
+sourcePledgeAllocationId: string | null;
+varianceReason: string | null;
+
+Then the system can show:
+
+Planned FY27 indirect amount: $150,000
+Actual payments allocated:    $135,000
+Remaining planned:             $15,000
+
+or:
+
+Actual payment allocation differs from pledge plan
+Reason: Funder approved use for FY28 instead of FY27
+
+The source pointer records inheritance. The gift allocation remains independently editable and authoritative for actual received money.
+
+10. Reimbursement completion
+
+Because the CRM will not track eligible expenses or remaining draw capacity, a reimbursement award should not derive completion solely from:
+
+payments received >= award ceiling
+
+It needs a simple explicit closure fact:
+
+awardClosedAt: date | null;
+awardCloseReason:
+  | "fully_collected"
+  | "award_period_ended"
+  | "unused_balance"
+  | "terminated"
+  | null;
+
+When closed:
+
+Remaining projected pledge allocations should be resolved, reduced, or removed through an explicit plan revision.
+The award should leave the active collection forecast.
+The system should preserve the original award ceiling and actual payments.
+
+This is enough for fundraising reporting without tracking the underlying reimbursement administration.
+
+Revised architecture
+Pledge header
+├── award ceiling
+├── disbursement model
+└── grant letter
+
+Pledge allocations
+├── expected collection amount
+├── fiscal year
+├── direct / indirect
+├── purpose and restrictions
+└── fundraising-goal treatment
+
+Expected payments
+└── fixed installments only
+
+Actual gifts/payments
+├── created from QB/Stripe evidence
+├── linked to pledge
+└── editable allocation snapshots from the pledge plan
+
+The central rule should be:
+
+For a reimbursable award, the header records the legal award ceiling, while pledge allocations record Wildflower’s current annual collection forecast and direct/indirect fundraising treatment.
