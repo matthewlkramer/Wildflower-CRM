@@ -124,6 +124,7 @@ function makePayoutCluster(opts: {
   qbRecords?: Array<Record<string, unknown>>;
   anchorId?: string;
   group?: Record<string, unknown> | null;
+  aeComplete?: boolean;
 }): WorkbenchCluster {
   return ClusterItemSchema.parse({
     id: "stripe_payout:po_1",
@@ -169,12 +170,19 @@ function makePayoutCluster(opts: {
         coveredIds: [],
         uncoveredIds: [],
       },
-      accountingEvidence: {
-        grain: "none",
-        complete: false,
-        coveredIds: [],
-        uncoveredIds: [],
-      },
+      accountingEvidence: opts.aeComplete
+        ? {
+            grain: "unit",
+            complete: true,
+            coveredIds: opts.charges.map((c) => c.chargeId),
+            uncoveredIds: [],
+          }
+        : {
+            grain: "none",
+            complete: false,
+            coveredIds: [],
+            uncoveredIds: [],
+          },
       evidenceRecords: [],
       state: opts.state ?? makeState(),
     },
@@ -263,6 +271,89 @@ describe("single-charge payout row (canonical state display)", () => {
     expect(status!.textContent).not.toContain("QB not linked");
     // unlinked + no QB records → chip suppressed (the gap slot already says it).
     expect(byTestId("settlement-chip-stripe_payout:po_1")).toBeNull();
+  });
+
+  function makeChipQbRecord(over: Record<string, unknown> = {}) {
+    return {
+      stagedPaymentId: "sp_tie",
+      role: "charge_tie",
+      reference: null,
+      lineDescription: null,
+      memo: null,
+      amount: "100.00",
+      dateReceived: "2099-01-01",
+      paymentMethod: null,
+      status: "match_confirmed",
+      linkedChargeId: "ch_1",
+      payerName: null,
+      qbEntityType: null,
+      qbEntityId: null,
+      attributedDonor: null,
+      ...over,
+    };
+  }
+
+  it("unlinked + FULLY charge-tied accounting evidence → settlement chip suppressed (tie card carries the linkage)", () => {
+    const cluster = makePayoutCluster({
+      charges: [makeCharge()],
+      aeComplete: true,
+      qbRecords: [
+        makeChipQbRecord(),
+        makeChipQbRecord({ stagedPaymentId: "sp_fee", role: "fee", amount: "-3.20", linkedChargeId: null }),
+      ],
+    });
+    render(
+      <ClusterRow
+        cluster={cluster}
+        expanded={false}
+        onToggle={noopToggle}
+        actions={makeActions()}
+      />,
+    );
+    expect(byTestId("settlement-chip-stripe_payout:po_1")).toBeNull();
+    expect(container.textContent).not.toContain("QB not linked");
+    expect(container.textContent).not.toContain("No deposit settlement");
+  });
+
+  it("unlinked + QB records WITHOUT full tie coverage → chip says 'No deposit settlement', never 'QB not linked'", () => {
+    const cluster = makePayoutCluster({
+      charges: [makeCharge()],
+      qbRecords: [
+        makeChipQbRecord({ stagedPaymentId: "sp_fee", role: "fee", amount: "-3.20", linkedChargeId: null }),
+      ],
+    });
+    render(
+      <ClusterRow
+        cluster={cluster}
+        expanded={false}
+        onToggle={noopToggle}
+        actions={makeActions()}
+      />,
+    );
+    const chip = byTestId("settlement-chip-stripe_payout:po_1");
+    expect(chip).toBeTruthy();
+    expect(chip!.textContent).toContain("No deposit settlement");
+    expect(container.textContent).not.toContain("QB not linked");
+  });
+
+  it("unlinked + PARTIALLY charge-tied payout keeps the chip (deposit-settlement gap is still real)", () => {
+    const cluster = makePayoutCluster({
+      charges: [makeCharge(), makeCharge({ chargeId: "ch_2" })],
+      aeComplete: false,
+      qbRecords: [makeChipQbRecord()],
+    });
+    render(
+      <ClusterRow
+        cluster={cluster}
+        expanded={false}
+        onToggle={noopToggle}
+        actions={makeActions()}
+      />,
+    );
+    const chip = byTestId("settlement-chip-stripe_payout:po_1");
+    expect(chip).toBeTruthy();
+    expect(chip!.textContent).toContain("No deposit settlement");
+    expect(container.textContent).not.toContain("QB not linked");
   });
 
   it("settlementLinkState=confirmed never appears in the status cell", () => {

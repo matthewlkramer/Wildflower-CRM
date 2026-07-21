@@ -118,7 +118,7 @@ const INFO_META: Record<WorkbenchRowInformationCompleteness, { tone: Tone; word:
 };
 
 const SETTLEMENT_META: Record<WorkbenchRowSettlementLinkState, { tone: Tone; word: string }> = {
-  unlinked: { tone: "amber", word: "QB not linked" },
+  unlinked: { tone: "amber", word: "No deposit settlement" },
   proposed_full: { tone: "blue", word: "Settlement proposed" },
   proposed_partial: { tone: "blue", word: "Partial settlement" },
   proposed_conflict: { tone: "amber", word: "Settlement conflict" },
@@ -1220,13 +1220,23 @@ const CHIP_TONE: Record<Tone, string> = {
  * Settlement is a relationship of the accounting column, not a third status
  * signal — this chip renders the payout↔deposit settlement state inside the
  * BANK & ACCOUNTING column (row status stays two-signal: linkage + info).
- * `unlinked` with no QB records is skipped: the SettlementGapSlot already
- * says "settlement link missing" there.
+ * `unlinked` is skipped in two cases: no QB records at all (the
+ * SettlementGapSlot already says "settlement link missing" there), and when
+ * accounting evidence is COMPLETE at charge grain (every countable charge
+ * has a QB tie — the server's aeComplete) — linkage then lives on the tie
+ * cards themselves, and an amber "not linked" word directly under a linked
+ * tie misreads as the QB record being unlinked (§6: settlement state is the
+ * payout↔deposit relationship only, distinct from the QB record's own
+ * state). A PARTIALLY tied payout keeps the chip: the deposit-settlement
+ * gap is still real and actionable there.
  */
 function SettlementChip({ cluster }: { cluster: WorkbenchCluster }) {
   const s = cluster.coverage.state.settlementLinkState;
   if (!s) return null;
-  if (s === "unlinked" && cluster.qbRecords.length === 0) return null;
+  if (s === "unlinked") {
+    if (cluster.qbRecords.length === 0) return null;
+    if (cluster.coverage.accountingEvidence.complete) return null;
+  }
   const meta = SETTLEMENT_META[s];
   return (
     <div
