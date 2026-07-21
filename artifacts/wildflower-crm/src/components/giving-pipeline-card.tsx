@@ -22,6 +22,7 @@ import {
   formatDateShort,
   formatEnum,
 } from "@/lib/format";
+import { opportunityStatusLabel } from "@/lib/opportunity-status";
 import {
   Tooltip,
   TooltipContent,
@@ -189,11 +190,7 @@ function OppThread({
   // /pledges so breadcrumbs stay consistent; everything else routes through
   // /opportunities — same rule as the legacy linked cards.
   const href = o.writtenPledge ? `/pledges/${o.id}` : `/opportunities/${o.id}`;
-  const statusLabel = o.status
-    ? o.status === "pledge"
-      ? "Waiting for payment"
-      : formatEnum(o.status)
-    : null;
+  const statusLabel = opportunityStatusLabel(o.status);
   const fy = o.fiscalYear?.toUpperCase();
   const sub = [formatEnum(o.stage), statusLabel, fy].filter(Boolean).join(" · ");
 

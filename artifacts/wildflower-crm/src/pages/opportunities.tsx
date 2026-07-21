@@ -88,17 +88,13 @@ import { FiscalYearMultiSelect } from "@/components/fiscal-year-multi-select";
 import { useUserNameMap } from "@/components/user-picker";
 import { LayoutList, Columns3, X, ChevronDown, ChevronRight, FolderOpen, Trash2, Check } from "lucide-react";
 import { OpportunityKanban } from "@/components/opportunity-kanban";
+import {
+  OPPORTUNITY_STATUS_LABEL,
+  opportunityStatusLabel,
+} from "@/lib/opportunity-status";
 
 const KANBAN_LIMIT = 500;
 const STATUSES: OpportunityStatus[] = ["open", "pledge", "cash_in", "dormant", "lost"];
-// `pledge` is stored as-is but surfaced to fundraisers as "Waiting for payment".
-const STATUS_LABEL: Record<string, string> = {
-  open: "Open",
-  pledge: "Waiting for payment",
-  cash_in: "Cash in",
-  dormant: "Dormant",
-  lost: "Lost",
-};
 const STAGES: OpportunityStage[] = [
   "cold_lead",
   "warm_lead",
@@ -193,7 +189,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<OpportunityOrPledge>[] {
       cell: (o) =>
         o.status ? (
           <Badge variant={o.status === "cash_in" || o.status === "pledge" ? "default" : "outline"}>
-            {STATUS_LABEL[o.status] ?? formatEnum(o.status)}
+            {opportunityStatusLabel(o.status)}
           </Badge>
         ) : (
           "—"
@@ -671,7 +667,7 @@ export default function Opportunities({
             label="Status"
             selected={statuses}
             onChange={(v) => { setStatuses(v); setPage(1); selection.clear(); }}
-            options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] ?? formatEnum(s) }))}
+            options={STATUSES.map((s) => ({ value: s, label: OPPORTUNITY_STATUS_LABEL[s] }))}
             testId="select-opp-status"
           />
         ),

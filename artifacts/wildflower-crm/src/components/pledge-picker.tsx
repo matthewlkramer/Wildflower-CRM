@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RelatedRow } from "@/components/record-layout";
 import { cn } from "@/lib/utils";
-import { formatEnum } from "@/lib/format";
+import { opportunityStatusLabel } from "@/lib/opportunity-status";
 
 /**
  * Donor scope for the pledge picker. A gift always has exactly one donor
@@ -59,7 +59,7 @@ function PledgeStatusBadge({ status }: { status?: string | null }) {
     status === "open" ? "default" : status === "pledge" ? "secondary" : "outline";
   return (
     <Badge variant={variant} className="shrink-0 text-xs font-normal">
-      {formatEnum(status)}
+      {opportunityStatusLabel(status)}
     </Badge>
   );
 }

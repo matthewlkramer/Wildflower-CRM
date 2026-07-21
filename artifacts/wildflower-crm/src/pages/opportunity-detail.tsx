@@ -67,6 +67,7 @@ import {
 } from "@/components/record-layout";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate, formatEnum, formatPercent } from "@/lib/format";
+import { opportunityStatusLabel } from "@/lib/opportunity-status";
 import { useToast } from "@/hooks/use-toast";
 
 const STAGE_OPTIONS = [
@@ -78,14 +79,6 @@ const STAGE_OPTIONS = [
   { value: "verbal_confirmation", label: "Verbal confirmation" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityStage>>;
 
-// `pledge` is stored as-is but surfaced to fundraisers as "Waiting for payment".
-const STATUS_LABEL: Record<string, string> = {
-  open: "Open",
-  pledge: "Waiting for payment",
-  cash_in: "Cash in",
-  dormant: "Dormant",
-  lost: "Lost",
-};
 
 const TYPE_OPTIONS = [
   { value: "solicitation", label: "Solicitation" },
@@ -614,7 +607,7 @@ function OppView({
       <Badge
         variant={status === "cash_in" || status === "pledge" ? "default" : "outline"}
       >
-        {STATUS_LABEL[status] ?? formatEnum(status)}
+        {opportunityStatusLabel(status)}
       </Badge>
     ) : (
       <span className="text-muted-foreground">—</span>

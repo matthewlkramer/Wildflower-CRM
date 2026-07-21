@@ -22,7 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { formatEnum } from "@/lib/format";
+import { opportunityStatusLabel } from "@/lib/opportunity-status";
 
 function useDebounced<T>(value: T, ms = 250): T {
   const [debounced, setDebounced] = useState(value);
@@ -43,7 +43,7 @@ export function OppStatusBadge({ status }: { status?: string | null }) {
         : "outline";
   return (
     <Badge variant={variant} className="shrink-0 text-xs font-normal">
-      {formatEnum(status)}
+      {opportunityStatusLabel(status)}
     </Badge>
   );
 }

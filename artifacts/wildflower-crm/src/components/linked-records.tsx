@@ -32,6 +32,7 @@ import {
 import { useUserNameMap } from "@/components/user-picker";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate, formatDateShort, formatEnum } from "@/lib/format";
+import { opportunityStatusLabel } from "@/lib/opportunity-status";
 
 // Cap each card at this many rows. Donor-scoped lists rarely exceed
 // this in practice; the header still shows the true total. We do not
@@ -174,11 +175,7 @@ export function LinkedOpportunitiesCard({
             const href = o.writtenPledge
               ? `/pledges/${o.id}`
               : `/opportunities/${o.id}`;
-            const statusLabel = o.status
-              ? o.status === "pledge"
-                ? "Waiting for payment"
-                : formatEnum(o.status)
-              : null;
+            const statusLabel = opportunityStatusLabel(o.status);
             const fy = o.fiscalYear?.toUpperCase();
             const sub = [formatEnum(o.stage), statusLabel, fy]
               .filter(Boolean)
