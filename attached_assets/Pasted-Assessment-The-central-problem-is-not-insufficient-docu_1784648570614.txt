@@ -1,0 +1,167 @@
+Assessment
+
+The central problem is not insufficient documentation. It is that the documentation no longer has a reliable hierarchy.
+
+Agents currently encounter:
+
+A 336-line replit.md combining permanent principles, volatile implementation details, operational troubleshooting, feature descriptions, and test benchmarks.
+208 memory files totaling roughly 80,000 words.
+A flat MEMORY.md with 84 entries, where canonical architecture and one-off incidents receive equal prominence.
+36 memory files with no incoming link from the memory index or another memory file.
+Several incompatible descriptions of the same system state.
+
+The uploaded replit.md, for example, still says that gift type derives loan_or_grant and that quickbooks_tie_status is persisted and maintained by applyGiftQbTieMany, although both were subsequently retired. It also includes exact test counts and timing measurements that will inevitably become stale.
+
+Most important findings
+1. replit.md should be an operating contract, not a system encyclopedia
+
+Its strongest content is:
+
+Contract-first development
+Header-plus-allocation modeling
+Derived-status discipline
+Donor XOR
+Production safeguards
+Architecture-before-patching
+Reduction as the success criterion
+
+Those belong in replit.md.
+
+These do not:
+
+Exact passing-test counts
+Historical performance measurements
+Detailed feature descriptions
+Migration-phase status
+Names of transitional fields and functions
+Long dedicated-test-database implementation details
+
+Those should be linked documents.
+
+2. MEMORY.md should route, not catalog
+
+The current file encourages an agent to scan dozens of highly specific notes before understanding which ones remain authoritative.
+
+It also contains summaries that disagree with their linked files. One prominent example says gift type is still live, while the linked memory file says the column was dropped.
+
+The replacement index groups memory into:
+
+Canonical orientation
+Domain indexes
+Core data-model invariants
+Delivery and testing
+Frontend conventions
+High-risk operational notes
+Historical context
+3. Reconciliation documentation needs three distinct layers
+
+At present, reconciliation-design.md mixes:
+
+Normative architecture
+Obsolete “current state”
+Migration history
+Abandoned UI designs
+Current cluster-workbench decisions
+
+It contains statements that the six-queue workbench is the accepted final design and other statements that the cluster workbench supersedes it.
+
+The clean division should be:
+
+Business rules: what the system must mean.
+Target architecture: how those rules should be represented.
+Current implementation status: what is actually implemented and where it drifts.
+
+workbench-business-rules.md is the strongest normative document and should remain so. The new proposed reconciliation-status.md prevents agents from treating current bugs as intended behavior.
+
+4. Memory lacks a retirement policy
+
+Many notes describe fields, routes, and workbench surfaces that no longer exist. All 207 topic files have frontmatter, but almost none have an explicit machine-readable status such as:
+
+status: current | transitional | historical
+last_verified: 2026-07-21
+
+The proposed policy requires:
+
+Current code and test anchors
+A retirement condition for transitional notes
+Historical files under legacy/ or archive/
+Reachability from a domain index
+Same-change cleanup when a field or architecture is retired
+5. Several specific files require immediate correction
+File	Recommended action
+replit.md	Replace
+.agents/memory/MEMORY.md	Replace with routing index
+.agents/memory/architecture-canon.md	Rewrite around the new authority hierarchy
+.agents/memory/money-sync-reconciliation.md	Rewrite opening as a current relationship-authority matrix
+.agents/memory/gift-qb-tie-status.md	Archive
+.agents/memory/stripe-refund-propagation.md	Mark as current implementation drift, not normative guidance
+.agents/memory/reconciliation-target-design.md	Archive or rewrite; it retains an obsolete two-report UI decision
+.agents/memory/recon-three-facet-model.md	Retain distilled final decisions; move mockup chronology to history
+docs/reconciliation-design.md	Split canonical design from migration history
+docs/workbench-business-rules.md	Keep canonical; add metadata and current-status link
+docs/change-recipes.md	Remove persisted quickbooks_tie_status and applyGiftQbTieMany guidance
+docs/adr-source-link-ledger.md	Keep as proposed until shipped
+agent_assets_metadata.toml	Treat as generated output metadata, not agent context
+Proposed files
+
+I prepared a documentation-only revision package. It does not alter the repository.
+
+Complete proposal package
+REVIEW.md
+replit.md
+MEMORY.md
+README.md
+README.md
+reconciliation-status.md
+AGENTS.md
+What the proposed replit.md changes
+
+The replacement is about 55% shorter and adds:
+
+A required task-start procedure
+An explicit authority order
+Current facts about retired type, fundraising_category, and stored QB-tie status
+A concise reconciliation guard
+A clear distinction between intended behavior and existing implementation
+Scoped validation instructions without volatile benchmark numbers
+Documentation and memory maintenance rules
+Production, publishing, and main protections
+Recommended rollout
+Phase 1: documentation entry points
+
+A single documentation-only commit should:
+
+Replace replit.md.
+Replace MEMORY.md.
+Add AGENTS.md.
+Add docs/README.md.
+Add .agents/memory/README.md.
+Add docs/reconciliation-status.md.
+Update architecture-canon.md.
+Add metadata and a status link to workbench-business-rules.md.
+Phase 2: reconciliation cleanup
+
+Then:
+
+Extract migration history from reconciliation-design.md.
+Remove contradictory six-queue statements.
+Rewrite money-sync-reconciliation.md.
+Correct change-recipes.md.
+Archive stale pointer, QB-tie, refund, and retired-workbench notes.
+Phase 3: memory pruning
+
+Finally:
+
+Merge the individual Drizzle notes into drizzle-pitfalls.md.
+Merge Orval notes into orval-guide.md.
+Merge test-pollution notes into test-data-hygiene.md.
+Consolidate queue-specific reconciliation notes around the cluster workbench.
+Archive or delete the 36 unreachable files.
+Add a small documentation lint for required frontmatter, broken links, and unreachable current memory.
+
+The intended end state is that an agent normally reads four things, not 200:
+
+replit.md
+→ docs/README.md
+→ one subsystem status/design document
+→ a few selected memory notes
