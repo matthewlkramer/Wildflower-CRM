@@ -2039,8 +2039,14 @@ router.get(
         // Folded fee lines are accounting plumbing, not donor work — they
         // never count toward the matched/total progress of the cluster.
         const countable = qbRecordsWithDonor.filter((x) => x.role !== "fee");
-        const total = countable.filter((x) => x.status !== "excluded").length;
-        const resolved = countable.filter((x) => x.status === "match_confirmed").length;
+        // All per-record status comparisons below go through the ONE shared
+        // mapping (qbCardStateOfStatus) — never raw status strings.
+        const total = countable.filter(
+          (x) => qbCardStateOfStatus(x.status) !== "excluded",
+        ).length;
+        const resolved = countable.filter(
+          (x) => qbCardStateOfStatus(x.status) === "matched_complete",
+        ).length;
         const isGroup = h?.group_id != null;
         const statusDetail = isGroup
           ? `${resolved} of ${total} group rows matched`
@@ -2054,12 +2060,14 @@ router.get(
         // accounting evidence (dual-role, appears once in evidenceRecords).
         // Only donorPurpose may be incomplete (when no gift has been booked yet).
         const qbExpectedAmount = isGroup ? (h?.group_total ?? null) : (h?.amount ?? null);
-        const nonExcludedQb = countable.filter((x) => x.status !== "excluded");
+        const nonExcludedQb = countable.filter(
+          (x) => qbCardStateOfStatus(x.status) !== "excluded",
+        );
         const coveredQbIds = nonExcludedQb
-          .filter((r) => r.status === "match_confirmed")
+          .filter((r) => qbCardStateOfStatus(r.status) === "matched_complete")
           .map((r) => r.stagedPaymentId);
         const uncoveredQbIds = nonExcludedQb
-          .filter((r) => r.status !== "match_confirmed")
+          .filter((r) => qbCardStateOfStatus(r.status) !== "matched_complete")
           .map((r) => r.stagedPaymentId);
         const qbRepresentedAmount = gifts
           .reduce((acc, g) => acc + (Number(g.amount) || 0), 0)
@@ -2107,16 +2115,19 @@ router.get(
             state: qbCardStateOfStatus(rec.status),
             isTransactionEvidence: rec.role !== "fee",
           })),
-          transactions: nonExcludedQb.map((rec) => ({
-            transactionId: rec.stagedPaymentId,
-            livePayment: rec.status !== "excluded",
-            refundStatus: "none" as const,
-            state: (rec.status === "match_confirmed"
-              ? "matched"
-              : rec.status === "match_proposed"
-                ? "partial"
-                : "unmatched") as TransactionCardState,
-          })),
+          transactions: nonExcludedQb.map((rec) => {
+            const cardState = qbCardStateOfStatus(rec.status);
+            return {
+              transactionId: rec.stagedPaymentId,
+              livePayment: cardState !== "excluded",
+              refundStatus: "none" as const,
+              state: (cardState === "matched_complete"
+                ? "matched"
+                : cardState === "match_proposed"
+                  ? "partial"
+                  : "unmatched") as TransactionCardState,
+            };
+          }),
           crmCards: gifts.map((g) => {
             const isLinked = coveredQbIds.some((id) => g.linkedStagedPaymentIds.includes(id));
             const cardState: CrmCardState = isLinked
@@ -2130,7 +2141,7 @@ router.get(
           evidenceRecords: countable.map((rec) => ({
             id: rec.stagedPaymentId,
             source: "qb_record" as const,
-            roles: (rec.status === "match_confirmed"
+            roles: (qbCardStateOfStatus(rec.status) === "matched_complete"
               ? (["payment_transaction", "accounting", "donor_purpose"] as const)
               : (["payment_transaction", "accounting"] as const)),
             grain: "unit" as const,

@@ -111,6 +111,7 @@ import {
   deriveEvidenceLanes,
   derivePayoutLanes,
 } from "../lib/reconciliationLanes";
+import { qbCardStateOfStatus } from "./reconciliation/workbenchRowState";
 import {
   donorboxEnrichmentSelect,
   donorboxEnrichmentOrNull,
@@ -391,7 +392,7 @@ router.get(
         ...row,
         donorbox: donorboxEnrichmentOrNull(row.donorbox),
         reconciliationLanes: deriveEvidenceLanes({
-          status: row.status,
+          cardState: qbCardStateOfStatus(row.status),
           donorPresent:
             row.organizationId != null ||
             row.individualGiverPersonId != null ||

@@ -4,6 +4,7 @@ import { stagedPayments } from "@workspace/db/schema";
 import { and, count, eq } from "drizzle-orm";
 import { asyncHandler, parsePagination } from "../../lib/helpers";
 import { deriveEvidenceLanes } from "../../lib/reconciliationLanes";
+import { qbCardStateOfStatus } from "../reconciliation/workbenchRowState";
 import {
   entityWhere,
   queueWhere,
@@ -71,7 +72,7 @@ router.get(
         // on the consolidated reconciliation-card surface), so the optional
         // `giftProposed` signal is left unset here.
         reconciliationLanes: deriveEvidenceLanes({
-          status: row.status,
+          cardState: qbCardStateOfStatus(row.status),
           donorPresent:
             row.organizationId != null ||
             row.individualGiverPersonId != null ||

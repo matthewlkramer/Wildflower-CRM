@@ -15,6 +15,12 @@
 // evidence rows) and project them onto the two lanes. They mirror the pure
 // `deriveGiftQbTie` / `deriveOppFields` pattern: pure functions, no DB access.
 
+// Canonical per-record QB card state — always produced via the ONE shared
+// mapping `qbCardStateOfStatus` (routes/reconciliation/workbenchRowState.ts)
+// from the derived lifecycle status. Server internals converge on this
+// vocabulary; raw status strings must not be compared here.
+import type { QbCardState } from "../routes/reconciliation/workbenchRowState";
+
 export type ReconciliationLaneStatus =
   | "unlinked"
   | "proposed"
@@ -48,8 +54,8 @@ export function deriveGiftLanes(
 }
 
 export interface EvidenceLaneInput {
-  // Staged-payment / Stripe-charge DERIVED lifecycle status (lib/derivedStatus.ts).
-  status: string; // pending | match_proposed | match_confirmed | excluded
+  // Canonical QB card state of the evidence row, via qbCardStateOfStatus.
+  cardState: QbCardState;
   // A donor candidate FK is set on the evidence row (auto-guessed or chosen).
   donorPresent: boolean;
   // A human has stamped the donor match (matchConfirmedAt is set).
@@ -66,9 +72,9 @@ export interface EvidenceLaneInput {
 // still open (human picked the donor, no gift link yet).
 export function deriveEvidenceLanes(i: EvidenceLaneInput): ReconciliationLanes {
   const funding: ReconciliationLaneStatus =
-    i.status === "excluded"
+    i.cardState === "excluded"
       ? "exempt"
-      : i.giftLinked || i.status === "match_confirmed"
+      : i.giftLinked || i.cardState === "matched_complete"
         ? "confirmed"
         : i.giftProposed
           ? "proposed"

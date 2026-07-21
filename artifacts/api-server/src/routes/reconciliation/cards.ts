@@ -808,9 +808,13 @@ router.get(
 
       const opportunityState = row.recOppId ? "determined" : "none";
 
-      // For a charge card the lane status follows the CHARGE's lifecycle, not
+      // For a charge card the lane state follows the CHARGE's lifecycle, not
       // the QB deposit header (which may sit at 'approved' for the whole lump).
-      const laneStatus = isCharge ? (row.chargeStatus ?? row.status) : row.status;
+      // Raw status is mapped ONCE through the shared qbCardStateOfStatus
+      // vocabulary — no server code branches on raw status strings here.
+      const laneCardState = qbCardStateOfStatus(
+        isCharge ? (row.chargeStatus ?? row.status) : row.status,
+      );
       const donorConfirmed = isCharge
         ? row.chargeMatchConfirmedAt != null
         : row.matchConfirmedAt != null;
@@ -820,8 +824,8 @@ router.get(
         stripeChargeId: isCharge ? row.chargeId : null,
         // The QB ROW's linkage status in the ONE derived per-record QB card
         // vocabulary (same mapping the workbench-clusters endpoint uses for
-        // coverage.state.qbCards). The raw staged-payment status stays
-        // server-internal (laneStatus/derivations below) and is NOT on the wire.
+        // coverage.state.qbCards). The raw staged-payment status is never
+        // compared directly and is NOT on the wire.
         qbCardState: qbCardStateOfStatus(row.status),
         queue: row.queue,
         // A charge card reconciles for the charge's own gross, not the QB lump.
@@ -934,7 +938,7 @@ router.get(
         ready: !isCharge && !isSourceGroup && row.cardReady === true,
         exclusionReason: row.exclusionReason ?? null,
         reconciliationLanes: deriveEvidenceLanes({
-          status: laneStatus,
+          cardState: laneCardState,
           donorPresent: donorId != null,
           donorConfirmed,
           giftLinked: resolvedGiftId != null,
