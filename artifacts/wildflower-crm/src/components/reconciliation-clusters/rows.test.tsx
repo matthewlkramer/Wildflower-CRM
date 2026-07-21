@@ -745,6 +745,34 @@ describe("giftUnlinkOptions (relationship-specific unlink)", () => {
     expect(options[0].source).toContain("QuickBooks group · 3 records");
     expect(options[0].amount).toBe("$90");
     expect(options[0].note).toContain("removes all of them together");
+    // The member list shows WHICH records leave together (amount/date each).
+    expect(options[0].members?.map((m) => m.id)).toEqual([
+      "sp_rep",
+      "sp_m1",
+      "sp_m2",
+    ]);
+    expect(options[0].members?.[0].amount).toBe("$30");
+    expect(options[0].members?.[0].date).toBeTruthy();
+  });
+
+  it("labels members without evidence details by id instead of hiding them", () => {
+    const cluster = makePayoutCluster({
+      charges: [],
+      anchorId: "sp_rep",
+      group: { memberCount: 2, totalAmount: "60.00" },
+      qbRecords: [
+        makeQbRecord({ stagedPaymentId: "sp_rep", role: "anchor" }),
+        makeQbRecord({ stagedPaymentId: "sp_m1", role: "group_member" }),
+      ],
+    });
+    const gift = makeGift({
+      linkedStagedPaymentIds: ["sp_rep", "sp_m1"],
+    }) as unknown as WorkbenchCluster["gifts"][number];
+    const options = giftUnlinkOptions(gift, cluster);
+    const members = options[0].members ?? [];
+    expect(members).toHaveLength(2);
+    // No lineDescription/reference/memo on the fixture → qbLabel falls back to the id.
+    expect(members[0].label).toBe("sp_rep");
   });
 
   it("keeps non-group links separate alongside the collapsed group option", () => {
@@ -924,6 +952,49 @@ describe("UnlinkChooserDialog", () => {
       id: "sp_z",
       label: "Jane Donor gift",
     });
+  });
+
+  it("renders the group option's member records inline (amount/date/reference each)", () => {
+    const groupOption: UnlinkOption = {
+      anchor: { kind: "staged", id: "sp_rep", label: "Jane Donor gift" },
+      source: "QuickBooks group · 2 records reconciled together",
+      amount: "$90",
+      date: null,
+      note: "These 2 QuickBooks records were reconciled as one group — unlinking removes all of them together.",
+      members: [
+        {
+          id: "sp_rep",
+          label: "Deposit line A",
+          amount: "$30",
+          date: "Jan 1, 2099",
+          reference: "QB reference: 1042",
+        },
+        {
+          id: "sp_m1",
+          label: "Deposit line B",
+          amount: "$60",
+          date: null,
+          reference: null,
+        },
+      ],
+    };
+    render(
+      <UnlinkChooserDialog
+        open
+        onOpenChange={() => {}}
+        giftLabel="Jane Donor gift"
+        options={[groupOption]}
+        busy={false}
+        onPick={() => {}}
+      />,
+    );
+    expect(byBodyTestId("list-unlink-members-sp_rep")).toBeTruthy();
+    expect(byBodyTestId("text-unlink-member-sp_rep")).toBeTruthy();
+    expect(byBodyTestId("text-unlink-member-sp_m1")).toBeTruthy();
+    expect(document.body.textContent).toContain("Deposit line A");
+    expect(document.body.textContent).toContain("$30 · Jan 1, 2099");
+    expect(document.body.textContent).toContain("QB reference: 1042");
+    expect(document.body.textContent).toContain("Deposit line B");
   });
 });
 

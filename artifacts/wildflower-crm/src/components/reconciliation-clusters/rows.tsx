@@ -320,6 +320,21 @@ export function giftUnlinkOptions(
       amount: cluster.group?.totalAmount != null ? fmt(cluster.group.totalAmount) : null,
       date: null,
       note: `These ${linkedGroupIds.length} QuickBooks records were reconciled as one group — unlinking removes all of them together.`,
+      // So the user can see WHICH records go away before confirming a
+      // whole-group unlink. Members missing from the (capped) cluster list
+      // fall back to an id-only label rather than being hidden.
+      members: linkedGroupIds.map((memberId) => {
+        const r = cluster.qbRecords.find(
+          (x) => x.stagedPaymentId === memberId,
+        );
+        return {
+          id: memberId,
+          label: r ? qbLabel(r) : `QuickBooks record ${memberId}`,
+          amount: r?.amount != null ? fmt(r.amount) : null,
+          date: r?.dateReceived ? formatDateShort(r.dateReceived) : null,
+          reference: r ? qbReferenceNote(r) : null,
+        };
+      }),
     });
   }
   for (const id of gift.linkedStagedPaymentIds ?? []) {

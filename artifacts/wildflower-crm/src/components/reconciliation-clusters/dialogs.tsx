@@ -226,6 +226,25 @@ export interface UnlinkOption {
    * Rendered in the chooser and carried into the revert confirm copy.
    */
   note?: string | null;
+  /**
+   * When picking this option removes a whole group of records at once, the
+   * individual member records (so the user can see exactly WHICH records are
+   * removed before confirming). Rendered as an inline list under the option.
+   */
+  members?: UnlinkOptionMember[] | null;
+}
+
+/** One member record of a group-collapsed unlink option. */
+export interface UnlinkOptionMember {
+  id: string;
+  /** Identifying title, e.g. the QB line description / reference / memo. */
+  label: string;
+  /** Preformatted amount ("$99.10") or null when unknown. */
+  amount: string | null;
+  /** Preformatted date ("Dec 26, 2024") or null when unknown. */
+  date: string | null;
+  /** Extra reference/memo when it adds info beyond the label, or null. */
+  reference: string | null;
 }
 
 /**
@@ -294,6 +313,31 @@ export function UnlinkChooserDialog({
                       data-testid={`text-unlink-note-${o.anchor.id}`}
                     >
                       {o.note}
+                    </span>
+                  ) : null}
+                  {o.members && o.members.length > 0 ? (
+                    <span
+                      className="block mt-1.5 space-y-1 border-l-2 border-muted pl-2"
+                      data-testid={`list-unlink-members-${o.anchor.id}`}
+                    >
+                      {o.members.map((m) => (
+                        <span
+                          key={m.id}
+                          className="block"
+                          data-testid={`text-unlink-member-${m.id}`}
+                        >
+                          <span className="block truncate">{m.label}</span>
+                          <span className="text-muted-foreground block">
+                            {[m.amount, m.date].filter(Boolean).join(" · ") ||
+                              "no amount / date on record"}
+                          </span>
+                          {m.reference ? (
+                            <span className="text-muted-foreground block truncate">
+                              {m.reference}
+                            </span>
+                          ) : null}
+                        </span>
+                      ))}
                     </span>
                   ) : null}
                 </span>
