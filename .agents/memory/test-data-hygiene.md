@@ -67,14 +67,24 @@ leftover rows from OTHER suites sit closer to the anchor and crowd the expected 
 out of `LIMIT 25`. The failure looks like a code regression but reproduces even on
 untouched search code.
 
+Any suite's leftovers can break any OTHER suite this way — observed with both
+`wbcluster_*` (2099-11) and `reconanchor_*` (2099-12) rows crowding
+`reconciliation-search-split`'s window (2026-07).
+
 **Cleanup** (in FK order — delete everything in the far-future band; no legitimate data
 lives in `2098-01-01` to `2100-12-31`):
 1. `payment_applications` — by `gift_id` AND by `payment_id` for all rows in the band
-2. `settlement_links` — by `deposit_staged_payment_id` (a CHECK constraint forbids the
-   ON DELETE SET NULL path when status is `confirmed`, so this must be explicit)
-3. `staged_payments`, `stripe_staged_charges` — in the date band
-4. `gift_allocations` (by `gift_id`), then `gifts_and_payments` — where
+2. `unit_group_members` (by `source_id`), then orphan `unit_groups`
+   (`id NOT IN (SELECT group_id FROM unit_group_members)`)
+3. `settlement_links` — by `payout_id` AND `deposit_staged_payment_id` (a CHECK
+   constraint forbids the ON DELETE SET NULL path when status is `confirmed`, so this
+   must be explicit — a plain `staged_payments` delete errors mid-cascade otherwise)
+4. `staged_payments`, `stripe_staged_charges` — in the date band
+5. `gift_allocations` (by `gift_id` — NOT `gift_payment_id`, that column doesn't
+   exist), then `gifts_and_payments` — where
    `date_received BETWEEN '2098-01-01' AND '2100-12-31'`
+6. `organizations` by the seed id prefix (killed runs can strand hundreds of
+   `Zztest`-payer orgs)
 
 Re-run the failing file in isolation after cleanup to confirm.
 

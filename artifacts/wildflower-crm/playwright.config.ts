@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
@@ -15,8 +16,25 @@ import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:80";
 
+// On NixOS (the Replit environment) the Playwright-downloaded Chromium can't
+// load its shared libraries; use the Nix-provided system Chromium instead
+// (absolute path resolved from PATH). Override with PLAYWRIGHT_CHROMIUM_PATH;
+// on conventional hosts (neither set) the default Playwright download is used.
+function systemChromium(): string | undefined {
+  try {
+    return execSync("which chromium", { stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+  } catch {
+    return undefined;
+  }
+}
+
+const chromiumPath = process.env.PLAYWRIGHT_CHROMIUM_PATH ?? systemChromium();
+
 export default defineConfig({
   testDir: "./e2e",
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -25,6 +43,9 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "on-first-retry",
+    ...(chromiumPath
+      ? { launchOptions: { executablePath: chromiumPath } }
+      : {}),
   },
   projects: [
     {
