@@ -96,20 +96,55 @@ export function formatDateShort(dateString: string | null | undefined): string {
   }
 }
 
+// ─── Fiscal-year computation (canonical client-side implementation) ─────────
+// Wildflower's fiscal year ends Jun 30 in America/Chicago — months Jul–Dec
+// belong to the next-year FY. Everything below mirrors the server's
+// `computeCurrentFiscalYear` (analytics.ts): the ONLY timezone that matters
+// is America/Chicago, never the browser's local zone or UTC. All client-side
+// "which fiscal year" decisions must go through these helpers.
+
+/** July 1 boundary: the FY end year for a given calendar year + 1-12 month. */
+export function fiscalYearEndYear(year: number, month: number): number {
+  return month >= 7 ? year + 1 : year;
+}
+
+const CHICAGO_YM = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Chicago",
+  year: "numeric",
+  month: "2-digit",
+});
+
+/**
+ * The FY end year for an instant in time, evaluated in America/Chicago
+ * (mirrors the server's computeCurrentFiscalYear). Defaults to "now".
+ */
+export function currentFiscalYearEndYear(now: Date = new Date()): number {
+  const parts = CHICAGO_YM.formatToParts(now);
+  const y = Number(parts.find((p) => p.type === "year")!.value);
+  const m = Number(parts.find((p) => p.type === "month")!.value);
+  return fiscalYearEndYear(y, m);
+}
+
+/**
+ * The current fiscal year as a `fiscal_years.id` slug like "fy2026",
+ * evaluated in America/Chicago. Defaults to "now".
+ */
+export function currentFiscalYearSlug(now: Date = new Date()): string {
+  return `fy${currentFiscalYearEndYear(now)}`;
+}
+
 /**
  * Render an ISO date-only string as a fiscal-year slug like "FY26".
- * Wildflower's fiscal year ends Jun 30 in America/Chicago — months
- * Jul–Dec belong to the next-year FY. Returns `null` for null/empty
- * or unparseable input so callers can render their own placeholder.
+ * Returns `null` for null/empty or unparseable input so callers can
+ * render their own placeholder.
  */
 export function fiscalYearFromDate(
   dateString: string | null | undefined,
 ): string | null {
   if (!dateString) return null;
   // Date-only strings ("YYYY-MM-DD") — parse the components directly to
-  // sidestep any tz drift from `new Date("YYYY-MM-DD")`. Anything else
-  // falls through to parseISO + UTC accessors, which is fine for the
-  // date-time fields we never feed in here.
+  // sidestep any tz drift from `new Date("YYYY-MM-DD")`. These have no
+  // timezone: the stated calendar date IS the answer.
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateString);
   let year: number;
   let month: number;
@@ -117,16 +152,24 @@ export function fiscalYearFromDate(
     year = Number(m[1]);
     month = Number(m[2]);
   } else {
+    // Date-time strings denote an instant — evaluate it in America/Chicago
+    // like every other FY decision (was UTC accessors, which disagreed with
+    // the server near the Jul 1 boundary).
     try {
       const d = parseISO(dateString);
-      year = d.getUTCFullYear();
-      month = d.getUTCMonth() + 1;
+      if (Number.isNaN(d.getTime())) return null;
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Chicago",
+        year: "numeric",
+        month: "2-digit",
+      }).formatToParts(d);
+      year = Number(parts.find((p) => p.type === "year")!.value);
+      month = Number(parts.find((p) => p.type === "month")!.value);
     } catch {
       return null;
     }
   }
-  const endYear = month >= 7 ? year + 1 : year;
-  return `FY${String(endYear).slice(-2)}`;
+  return `FY${String(fiscalYearEndYear(year, month)).slice(-2)}`;
 }
 
 /**

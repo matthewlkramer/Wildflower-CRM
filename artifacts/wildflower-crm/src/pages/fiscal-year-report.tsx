@@ -9,7 +9,7 @@ import {
   type FiscalYearReportRow,
   type FundraisingCategory,
 } from "@workspace/api-client-react";
-import { formatCurrency, formatDateShort, formatEnum, abbreviateUsStates } from "@/lib/format";
+import { formatCurrency, formatDateShort, formatEnum, abbreviateUsStates, currentFiscalYearSlug } from "@/lib/format";
 import { partitionFiscalYears } from "@/lib/dropdownVisibility";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -63,17 +63,8 @@ function fmtDate(s: string | null | undefined): string {
 
 // Wildflower fiscal year: July 1 – June 30, labelled by the END year, in
 // America/Chicago (mirrors the server's computeCurrentFiscalYear). Used to
-// resolve the `current` URL alias to a concrete `fy<endYear>` slug.
-function currentFySlug(now: Date = new Date()): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Chicago",
-    year: "numeric",
-    month: "2-digit",
-  }).formatToParts(now);
-  const y = Number(parts.find((p) => p.type === "year")!.value);
-  const m = Number(parts.find((p) => p.type === "month")!.value);
-  return `fy${m >= 7 ? y + 1 : y}`;
-}
+// resolve the `current` URL alias to a concrete `fy<endYear>` slug. The
+// actual FY decision lives in the shared helper (lib/format).
 
 export default function FiscalYearReport() {
   const params = useParams<{ fyId: string }>();
@@ -92,7 +83,7 @@ export default function FiscalYearReport() {
     if (isAlias) {
       const next = new URLSearchParams(search);
       next.set("category", category);
-      navigate(`/fiscal-year-report/${currentFySlug()}?${next.toString()}`, { replace: true });
+      navigate(`/fiscal-year-report/${currentFiscalYearSlug()}?${next.toString()}`, { replace: true });
     }
   }, [isAlias, search, category, navigate]);
 

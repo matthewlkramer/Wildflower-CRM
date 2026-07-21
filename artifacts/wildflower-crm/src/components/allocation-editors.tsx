@@ -64,7 +64,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { RegionMultiCombobox } from "@/components/region-multi-combobox";
 import { useRegionNameMap } from "@/components/region-picker";
-import { formatCurrency, formatEnum } from "@/lib/format";
+import { formatCurrency, formatEnum, currentFiscalYearSlug } from "@/lib/format";
 
 /* ──────────────────────────────────────────────────────────────────────── */
 /* Shared options + helpers                                                  */
@@ -144,18 +144,14 @@ function useFiscalYearOptions(): ReadonlyArray<Option> {
     .map((fy) => ({ value: fy.id, label: fy.label }));
 }
 
+// "Which FY is it" comes from the shared America/Chicago helper (mirrors the
+// server); we only resolve the slug against the fetched fiscal_years list so
+// we never default to a year that doesn't exist (or is audit-closed).
 function useCurrentFiscalYearId(): string {
   const { data } = useListFiscalYears();
   if (!data) return "";
-  const today = new Date().toISOString().slice(0, 10);
-  const current = data.find(
-    (fy) =>
-      fy.auditClosedAt == null &&
-      fy.startDate != null &&
-      fy.endDate != null &&
-      fy.startDate <= today &&
-      today <= fy.endDate,
-  );
+  const slug = currentFiscalYearSlug();
+  const current = data.find((fy) => fy.id === slug && fy.auditClosedAt == null);
   return current?.id ?? "";
 }
 
