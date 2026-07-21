@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@workspace/coding-forms": "workspace:*",
     "@workspace/db": "workspace:*",
     "xlsx": "0.18.5"
   },

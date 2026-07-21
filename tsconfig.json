@@ -13,6 +13,9 @@
       "path": "./lib/api-zod"
     },
     {
+      "path": "./lib/coding-forms"
+    },
+    {
       "path": "./lib/integrations-anthropic-ai"
     }
   ]

@@ -2,7 +2,7 @@
 // xlsx import here — the runner loads xlsx and feeds raw cell rows in). Kept
 // side-effect free so the mapping logic is testable in isolation.
 
-export type CodingFormSource = "fy24" | "fy25" | "fy26" | "girasol";
+export type CodingFormSource = "fy24" | "fy25" | "fy26" | "fy27" | "girasol";
 
 export interface ParsedCodingFormRow {
   source: CodingFormSource;
@@ -251,11 +251,13 @@ function buildColMap(headerRow: unknown[]): ColMap {
 }
 
 // Per-source header-row index (junk rows above it). FY24 header is row 0; FY25
-// has one junk row; FY26 has two.
+// has one junk row; FY26 has two. FY27 is the LIVE Google Sheet (fetched as
+// CSV by the api-server daily sync) whose header is the first row.
 const HEADER_ROW: Record<Exclude<CodingFormSource, "girasol">, number> = {
   fy24: 0,
   fy25: 1,
   fy26: 2,
+  fy27: 0,
 };
 
 export function parseFormSheet(

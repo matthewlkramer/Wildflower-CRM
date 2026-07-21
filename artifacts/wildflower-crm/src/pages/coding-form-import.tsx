@@ -92,6 +92,7 @@ const SOURCE_LABEL: Record<string, string> = {
   fy24: "FY24",
   fy25: "FY25",
   fy26: "FY26",
+  fy27: "FY27",
   girasol: "Girasol",
 };
 
@@ -1661,6 +1662,7 @@ export default function CodingFormImportPage() {
             <SelectItem value="fy24">FY24</SelectItem>
             <SelectItem value="fy25">FY25</SelectItem>
             <SelectItem value="fy26">FY26</SelectItem>
+            <SelectItem value="fy27">FY27</SelectItem>
             <SelectItem value="girasol">Girasol</SelectItem>
           </SelectContent>
         </Select>

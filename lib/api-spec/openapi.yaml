@@ -207,7 +207,7 @@ paths:
         Admin only.
       parameters:
         - { name: status, in: query, schema: { $ref: "#/components/schemas/CodingFormRowStatus" }, description: "Filter by apply status. Omit for all." }
-        - { name: source, in: query, schema: { type: string, enum: [fy24, fy25, fy26, girasol] }, description: "Filter by source sheet." }
+        - { name: source, in: query, schema: { type: string, enum: [fy24, fy25, fy26, fy27, girasol] }, description: "Filter by source sheet." }
         - { name: matchTier, in: query, schema: { type: string, enum: [high, suggested, none] }, description: "Filter by match confidence tier." }
         - { name: hasDriveLink, in: query, schema: { type: boolean }, description: "When true, only rows carrying a grant-agreement Drive link (the grant-agreement backfill queue)." }
         - { $ref: "#/components/parameters/Limit" }

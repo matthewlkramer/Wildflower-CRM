@@ -35,6 +35,7 @@
     "@clerk/express": "^2.1.4",
     "@google-cloud/storage": "^7.19.0",
     "@workspace/api-zod": "workspace:*",
+    "@workspace/coding-forms": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/integrations-anthropic-ai": "workspace:*",
     "cookie-parser": "^1.4.7",

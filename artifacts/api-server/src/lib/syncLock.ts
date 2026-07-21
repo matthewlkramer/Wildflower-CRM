@@ -27,7 +27,8 @@ type SyncSource =
   | "calendar"
   | "quickbooks"
   | "stripe"
-  | "donorbox";
+  | "donorbox"
+  | "coding_forms";
 
 const SOURCE_TAG: Record<SyncSource, number> = {
   gmail: 1,
@@ -35,6 +36,7 @@ const SOURCE_TAG: Record<SyncSource, number> = {
   quickbooks: 3,
   stripe: 4,
   donorbox: 5,
+  coding_forms: 6,
 };
 
 // Stable signed-int32 hash of a userId for pg_try_advisory_lock's

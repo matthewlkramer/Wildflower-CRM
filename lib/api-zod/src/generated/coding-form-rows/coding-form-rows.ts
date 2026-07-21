@@ -20,7 +20,7 @@ export const listCodingFormRowsQueryPageDefault = 1;
 
 export const ListCodingFormRowsQueryParams = zod.object({
   "status": zod.enum(['pending', 'applied', 'skipped']).optional().describe('Filter by apply status. Omit for all.'),
-  "source": zod.enum(['fy24', 'fy25', 'fy26', 'girasol']).optional().describe('Filter by source sheet.'),
+  "source": zod.enum(['fy24', 'fy25', 'fy26', 'fy27', 'girasol']).optional().describe('Filter by source sheet.'),
   "matchTier": zod.enum(['high', 'suggested', 'none']).optional().describe('Filter by match confidence tier.'),
   "hasDriveLink": zod.coerce.boolean().optional().describe('When true, only rows carrying a grant-agreement Drive link (the grant-agreement backfill queue).'),
   "limit": zod.coerce.number().min(1).max(listCodingFormRowsQueryLimitMax).default(listCodingFormRowsQueryLimitDefault),

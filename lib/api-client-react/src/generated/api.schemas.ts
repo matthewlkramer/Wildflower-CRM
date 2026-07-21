@@ -8990,6 +8990,7 @@ export const ListCodingFormRowsSource = {
   fy24: 'fy24',
   fy25: 'fy25',
   fy26: 'fy26',
+  fy27: 'fy27',
   girasol: 'girasol',
 } as const;
 

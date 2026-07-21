@@ -20,7 +20,7 @@ import {
   parseFormSheet,
   parseGirasolSheet,
   type ParsedCodingFormRow,
-} from "./lib/coding-forms-parse";
+} from "@workspace/coding-forms";
 
 const require = createRequire(import.meta.url);
 const XLSX = require("xlsx");
