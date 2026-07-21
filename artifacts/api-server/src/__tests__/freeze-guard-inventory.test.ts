@@ -107,11 +107,6 @@ const EXPECTED: Record<string, FileClass> = {
     reason:
       "Grant-letter artifact write; grant letters are not frozen by the audit-close model.",
   },
-  "lib/giftFinalAmount.ts": {
-    classification: "exempt",
-    reason:
-      "Writes derived provenance / settlement pointers; preserves the human-entered audited amount (never overwrites it).",
-  },
   "lib/giftAllocationSeed.ts": {
     classification: "exempt",
     reason:

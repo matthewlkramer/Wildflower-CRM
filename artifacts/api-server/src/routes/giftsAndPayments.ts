@@ -53,16 +53,9 @@ const maskGiftDonorRow = maskDonorDisplayFields;
 // This is the single named column set every full-row gift select flows through
 // (see deprecated-column-response-leak). Columns fully retired from the schema
 // (grant_year, needs_research, processor_fee, final_amount_qb_staged_payment_id,
-// finalAmountStripeChargeId) simply fall out of getTableColumns and never reach
-// a response. The deprecated-but-still-physical final_amount_source /
-// original_human_crm_amount columns (Task #757, pending drop) are explicitly
-// scrubbed here so no full-row select echoes them.
-const {
-  finalAmountSource: _retiredFinalAmountSource,
-  originalHumanCrmAmount: _retiredOriginalHumanCrmAmount,
-  ...giftHeaderColumns
-} = getTableColumns(giftsAndPayments);
-export { giftHeaderColumns };
+// finalAmountStripeChargeId, final_amount_source, original_human_crm_amount)
+// simply fall out of getTableColumns and never reach a response.
+export const giftHeaderColumns = getTableColumns(giftsAndPayments);
 
 // Extended gift select that adds live-derived read-only fields (type and
 // quickbooksTieStatus) alongside the static header columns. Use instead of

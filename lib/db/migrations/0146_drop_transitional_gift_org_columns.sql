@@ -14,8 +14,17 @@
 --     (the transaction-level record) is NOT touched.
 --
 -- Also drops:
---   - the gift_final_amount_source enum type (only user was the dropped column)
 --   - organizations_payment_intermediary_id_idx (index on the dropped column)
+--   - gift_amount_allocation_review (table, with its indexes/FKs) — the
+--     amount-review worklist of the RETIRED stamp/unstamp final-amount flow
+--     (Task #757). Dead code: no OpenAPI path, no frontend reference, no server
+--     route reads it; its only writer's only caller was an integration test.
+--     Prod holds 0 rows (verified 2026-07-21); dev's 28 stale OPEN rows are
+--     transient worklist debris from the retired flow, safe to drop.
+--   - gift_final_amount_source enum type — its last dependent is the review
+--     table above, so it is dropped immediately AFTER the table. (The first
+--     prod apply failed at DROP TYPE because the table still used it; the -1
+--     transaction rolled back atomically, so prod was left unchanged.)
 --
 -- SAFE TO RE-RUN (IF EXISTS everywhere; the backfill is ON CONFLICT DO NOTHING
 -- and a no-op once the source column is gone).
@@ -52,7 +61,7 @@ BEGIN
   END IF;
 END $$;
 
--- ── Step 2: Drop the retired columns / index / enum type ────────────────────
+-- ── Step 2: Drop the retired columns / index ─────────────────────────────────
 DROP INDEX IF EXISTS organizations_payment_intermediary_id_idx;
 
 ALTER TABLE organizations
@@ -62,5 +71,10 @@ ALTER TABLE gifts_and_payments
   DROP COLUMN IF EXISTS final_amount_source,
   DROP COLUMN IF EXISTS original_human_crm_amount;
 
--- The enum type's only column is gone; safe to drop the type itself.
+-- ── Step 3: Drop the dead review-table worklist, THEN its enum ───────────────
+-- Order matters: gift_amount_allocation_review.source is the enum's last
+-- dependent, so the table must go first or DROP TYPE fails (as the first prod
+-- apply did). Indexes and FKs drop with the table.
+DROP TABLE IF EXISTS gift_amount_allocation_review;
+
 DROP TYPE IF EXISTS gift_final_amount_source;

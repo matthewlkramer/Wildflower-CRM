@@ -160,7 +160,6 @@ const ORGANIZATION_OVERRIDE_FIELDS: ReadonlyArray<string> = [
   "enthusiasm",
   "strategicAlignment",
   "parentOrganizationId",
-  "paymentIntermediaryId",
   "priority",
 ];
 

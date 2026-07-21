@@ -246,7 +246,7 @@ discipline. **Never** persist a value that has an authoritative derivation.
 - Gift ↔ QuickBooks tie status → `giftQbTie.ts` (`applyGiftQbTieMany`).
 - Revenue coding → `revenueCoding.ts` / `@workspace/api-zod`'s
   `deriveRevenueCoding`.
-- Gift payment/settled/fee/off-books summary → `giftFinalAmount.ts`.
+- Gift payment/settled/fee/off-books summary → `giftPaymentSummary.ts`.
 - Reconciliation lanes/graph → `reconciliationLanes.ts`,
   `reconciliationGraph.ts`.
 

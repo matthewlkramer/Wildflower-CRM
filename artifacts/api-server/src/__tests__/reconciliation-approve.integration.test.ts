@@ -90,7 +90,6 @@ let schema: {
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   settlementLinks: Db["settlementLinks"];
-  giftAmountAllocationReview: Db["giftAmountAllocationReview"];
   paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -408,17 +407,6 @@ async function readOpp(id: string) {
   return row;
 }
 
-// OPEN gift_amount_allocation_review rows for a gift (resolved_at IS NULL). The
-// partial-unique index guarantees at most one, so this proves the flag-vs-upsert
-// behavior of adjustSingleAllocationOrFlag.
-async function readOpenReviews(giftId: string) {
-  const rows = await db
-    .select()
-    .from(schema.giftAmountAllocationReview)
-    .where(eqFn(schema.giftAmountAllocationReview.giftId, giftId));
-  return rows.filter((r) => r.resolvedAt == null);
-}
-
 async function readAlloc(id: string) {
   const [row] = await db
     .select()
@@ -442,7 +430,6 @@ beforeAll(async () => {
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     settlementLinks: dbMod.settlementLinks,
-    giftAmountAllocationReview: dbMod.giftAmountAllocationReview,
     paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
@@ -2045,9 +2032,8 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
     expect(gift.amount).toBe("98.50");
     // Ledger row records the charge link (finalAmountStripeChargeId @deprecated).
     expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
-    // No overwrite ⇒ nothing snapshotted, no allocation rescale, no review flag.
+    // No overwrite ⇒ nothing snapshotted, no allocation rescale.
     expect((await readAlloc(allocId)).subAmount).toBe("98.50");
-    expect(await readOpenReviews(giftId)).toHaveLength(0);
     // The QB staged row stays as reconciled evidence at its own coarse figure.
     const staged = await readStaged(stagedId);
     expect(staged.status).toBe("match_confirmed");
@@ -2091,64 +2077,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth inva
     // Ledger row records the charge link (finalAmountStripeChargeId @deprecated).
     expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
     expect((await readAlloc(allocId)).subAmount).toBe("105.00");
-    expect(await readOpenReviews(giftId)).toHaveLength(0);
-  }, 30_000);
-});
-
-describe.skipIf(!HAS_DB)("Allocation rescale vs flag — adjustSingleAllocationOrFlag (integration)", () => {
-  it("rescales the lone allocation to the new amount and raises NO review flag", async () => {
-    const giftId = await seedGiftWithAllocations("100.00", ["100.00"]);
-    const allocId = allocIds[allocIds.length - 1] as string;
-    const { adjustSingleAllocationOrFlag } = await import("../lib/giftFinalAmount");
-
-    const result = await db.transaction((tx) =>
-      adjustSingleAllocationOrFlag(tx, giftId, "100.00", "105.00", "stripe"),
-    );
-    expect(result.rescaled).toBe(true);
-    expect(result.flagged).toBe(false);
-    expect((await readAlloc(allocId)).subAmount).toBe("105.00");
-    expect(await readOpenReviews(giftId)).toHaveLength(0);
-  }, 30_000);
-
-  it("flags a zero-allocation gift (no_allocation) instead of guessing a split", async () => {
-    const giftId = await seedGiftWithAllocations("100.00", []);
-    const { adjustSingleAllocationOrFlag } = await import("../lib/giftFinalAmount");
-
-    const result = await db.transaction((tx) =>
-      adjustSingleAllocationOrFlag(tx, giftId, "100.00", "120.00", "quickbooks"),
-    );
-    expect(result.rescaled).toBe(false);
-    expect(result.flagged).toBe(true);
-    const open = await readOpenReviews(giftId);
-    expect(open).toHaveLength(1);
-    expect(open[0]?.reason).toBe("no_allocation");
-    expect(open[0]?.allocationCount).toBe(0);
-    expect(open[0]?.source).toBe("quickbooks");
-  }, 30_000);
-
-  it("flags a multi-allocation mismatch and keeps exactly ONE open review row across re-runs (upsert)", async () => {
-    const giftId = await seedGiftWithAllocations("100.00", ["60.00", "40.00"]);
-    const { adjustSingleAllocationOrFlag } = await import("../lib/giftFinalAmount");
-
-    const first = await db.transaction((tx) =>
-      adjustSingleAllocationOrFlag(tx, giftId, "100.00", "150.00", "stripe"),
-    );
-    expect(first.flagged).toBe(true);
-    expect(first.rescaled).toBe(false);
-    let open = await readOpenReviews(giftId);
-    expect(open).toHaveLength(1);
-    expect(open[0]?.reason).toBe("multi_allocation_mismatch");
-    expect(open[0]?.allocationCount).toBe(2);
-    expect(open[0]?.newAmount).toBe("150.00");
-
-    // Re-running reconciliation must UPSERT the same open row, never pile up duplicates.
-    const second = await db.transaction((tx) =>
-      adjustSingleAllocationOrFlag(tx, giftId, "100.00", "160.00", "stripe"),
-    );
-    expect(second.flagged).toBe(true);
-    open = await readOpenReviews(giftId);
-    expect(open).toHaveLength(1);
-    expect(open[0]?.newAmount).toBe("160.00");
   }, 30_000);
 });
 

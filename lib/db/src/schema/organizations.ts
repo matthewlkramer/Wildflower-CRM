@@ -20,7 +20,6 @@ import {
   priorityEnum,
 } from "./_enums";
 import { users } from "./users";
-import { paymentIntermediaries } from "./paymentIntermediaries";
 
 /**
  * Unified external-organization table. Consolidates the former `funders`
@@ -81,17 +80,9 @@ export const organizations = pgTable("organizations", {
     (): AnyPgColumn => organizations.id,
     { onDelete: "set null" },
   ),
-  // @deprecated RETIRED (Task #757) — superseded by the
-  // donor_payment_intermediaries join table (a donor can give through many
-  // intermediaries); existing values were backfilled there. No code reads,
-  // writes, or echoes this column. Physically retained ONLY so dev push stays
-  // additive and prod Publish never auto-drops it; the physical DROP (column +
-  // organizations_payment_intermediary_id_idx) ships as reviewed SQL
-  // (migration 0146). Do not reintroduce readers or writers.
-  paymentIntermediaryId: text("payment_intermediary_id").references(
-    () => paymentIntermediaries.id,
-    { onDelete: "set null" },
-  ),
+  // NOTE: payment_intermediary_id was DROPPED (migration 0146) — superseded by
+  // the donor_payment_intermediaries join table (a donor can give through many
+  // intermediaries); values were backfilled there. Do not reintroduce.
   // Solicitation priority tier. Relevant when issuesGrants = true.
   priority: priorityEnum("priority"),
   // When true, the organization's real name is hidden in the UI (shown as
@@ -105,7 +96,6 @@ export const organizations = pgTable("organizations", {
 }, (t) => [
   index("organizations_owner_user_id_idx").on(t.ownerUserId),
   index("organizations_parent_organization_id_idx").on(t.parentOrganizationId),
-  index("organizations_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
   index("organizations_priority_idx").on(t.priority),
   index("organizations_issues_grants_idx").on(t.issuesGrants),
   index("organizations_archived_at_idx").on(t.archivedAt),

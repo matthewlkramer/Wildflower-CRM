@@ -121,15 +121,11 @@ const orgsMostRecentGiftExpr = sql`(
 )`;
 
 // Shared column set used by every org response projection (list/detail spread
-// and `.returning()` on POST/PATCH). The retired `otherNames` column has been
-// physically dropped (migration 0107). The deprecated-but-still-physical
-// payment_intermediary_id column (Task #757, superseded by
-// donor_payment_intermediaries; pending drop) is explicitly scrubbed so no org
-// response echoes it.
-const {
-  paymentIntermediaryId: _retiredPaymentIntermediaryId,
-  ...orgColumns
-} = getTableColumns(organizations);
+// and `.returning()` on POST/PATCH). Retired columns (`otherNames`, migration
+// 0107; `payment_intermediary_id`, migration 0146 — superseded by
+// donor_payment_intermediaries) are physically dropped and simply fall out of
+// getTableColumns.
+const orgColumns = getTableColumns(organizations);
 
 const orgsListSelect = {
   ...orgColumns,

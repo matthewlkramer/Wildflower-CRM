@@ -989,22 +989,6 @@ export const stripeRefundKindEnum = pgEnum("stripe_refund_kind", [
   "chargeback",
 ]);
 
-// Where a CRM gift's FINAL `amount` was last sourced from (provenance for the
-// reconciliation model in which the CRM gift is the single source of truth).
-//   human      — hand-entered by a fundraiser (default; the pre-reconciliation
-//                state of every existing gift).
-//   stripe     — stamped from a Stripe charge (gross, per-donor). Stripe WINS
-//                whenever a charge exists for the gift.
-//   quickbooks — stamped from a QuickBooks staged row. Used ONLY when there is
-//                no Stripe charge behind the gift.
-// The matching pointer column on gifts_and_payments is enforced XOR with this
-// value by a CHECK constraint (human ⇒ no pointer).
-export const giftFinalAmountSourceEnum = pgEnum("gift_final_amount_source", [
-  "human",
-  "stripe",
-  "quickbooks",
-]);
-
 // Derived (persisted) signal of whether an on-books gift reconciles to a
 // QuickBooks record. Computed from the off-books exemption flags + the gift's
 // QuickBooks linkage + the gross-vs-net fee tolerance — never hand-set.

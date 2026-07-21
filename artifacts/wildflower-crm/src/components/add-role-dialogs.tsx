@@ -732,15 +732,16 @@ export function AddHouseholdMemberDialog({
 
 /* ───────────────────────────────────────────────────────────────────────── */
 /* Funder detail → Organizations card → "Add"                                */
-/* Set a parent funder, add a child funder, or set a payment intermediary.   */
+/* Set a parent funder or add a child funder. Payment-intermediary links     */
+/* moved to the Gives-through card (donor_payment_intermediaries) — the org  */
+/* payment_intermediary_id column was dropped (migration 0146).              */
 /* ───────────────────────────────────────────────────────────────────────── */
 
-type FunderRelation = "parent" | "child" | "payment_intermediary";
+type FunderRelation = "parent" | "child";
 
 const RELATION_LABEL: Record<FunderRelation, string> = {
   parent: "Parent funder",
   child: "Child funder",
-  payment_intermediary: "Payment intermediary",
 };
 
 export function AddOrganizationRelationDialog({ organizationId }: { organizationId: string }) {
@@ -793,18 +794,11 @@ export function AddOrganizationRelationDialog({ organizationId }: { organization
     if (!entityId || update.isPending) return;
     if (relation === "parent") {
       update.mutate({ id: organizationId, data: { parentOrganizationId: entityId } });
-    } else if (relation === "child") {
+    } else {
       // The child funder gets this funder as its parent.
       update.mutate({ id: entityId, data: { parentOrganizationId: organizationId } });
-    } else {
-      update.mutate({
-        id: organizationId,
-        data: { paymentIntermediaryId: entityId },
-      });
     }
   };
-
-  const isFunderPick = relation === "parent" || relation === "child";
 
   return (
     <Dialog
@@ -820,8 +814,8 @@ export function AddOrganizationRelationDialog({ organizationId }: { organization
         <DialogHeader>
           <DialogTitle>Add organization relationship</DialogTitle>
           <DialogDescription>
-            Set a parent funder, add a child funder, or set a payment
-            intermediary.
+            Set a parent funder or add a child funder. Payment intermediaries
+            are managed on the Gives-through card.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -854,28 +848,16 @@ export function AddOrganizationRelationDialog({ organizationId }: { organization
           </div>
           <div className="space-y-1.5">
             <Label>{RELATION_LABEL[relation]}</Label>
-            {isFunderPick ? (
-              <EntityCombobox
-                useSearch={useOrganizationSearch}
-                useResolve={useOrganizationName}
-                value={entityId}
-                onChange={setEntityId}
-                allowNull={false}
-                placeholder="Search funders…"
-                testId="select-funder-relation-entity"
-                excludeIds={[organizationId]}
-              />
-            ) : (
-              <EntityCombobox
-                useSearch={useIntermediarySearch}
-                useResolve={useIntermediaryName}
-                value={entityId}
-                onChange={setEntityId}
-                allowNull={false}
-                placeholder="Search intermediaries…"
-                testId="select-funder-relation-entity"
-              />
-            )}
+            <EntityCombobox
+              useSearch={useOrganizationSearch}
+              useResolve={useOrganizationName}
+              value={entityId}
+              onChange={setEntityId}
+              allowNull={false}
+              placeholder="Search funders…"
+              testId="select-funder-relation-entity"
+              excludeIds={[organizationId]}
+            />
           </div>
           <DialogFooter>
             <Button

@@ -30,6 +30,27 @@ reference" gate, not the grep. A dev-runtime test CANNOT validate a prod drop be
 the non-destructive strategy keeps the column in dev through Publish — validation of a
 column drop is inherently static.
 
+## Drop's DROP TYPE and string-keyed select lists need their own checks
+
+Two residual-reference forms the three-form grep above still misses:
+
+- **Enum types**: "drop the enum with its last column" is a claim about pg_depend, not
+  the schema file. `gift_final_amount_source` looked orphaned after its gifts column
+  dropped, but `gift_amount_allocation_review.source` still used it — a prod apply DID
+  fail at that DROP TYPE (the `-1` transaction rolled back atomically, prod unchanged).
+  Verify with a pg catalog query (`pg_depend`/`information_schema.columns WHERE
+  udt_name = ...`) before any DROP TYPE. Resolution follow-through: if the enum's last
+  dependent is itself dead code (no route/spec/frontend reference, only writer's only
+  caller is a test), the reduction move is to retire the dependent too — DROP TABLE
+  first, then DROP TYPE, in that order in the same migration — rather than keeping a
+  dead table alive to justify keeping a dead enum.
+- **String-keyed column lists**: whitelists like the entity-merge `overrideFields`
+  build Drizzle selects via `sel[f] = cols[f]` — a stale field name type-checks fine
+  but yields an undefined select entry and a runtime drizzle `orderSelectedFields`
+  TypeError ("Cannot convert undefined or null to object") in every consumer (e.g.
+  potential-duplicates). Grep the bare column NAME as a quoted string, not just
+  dot/object-key/alias forms; only integration tests catch it.
+
 ## "Unread" is not enough to drop — is the STORED value still authoritative?
 
 A column can be absent from the serving/read path yet still be UNDROPPABLE because its

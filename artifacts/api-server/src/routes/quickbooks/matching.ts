@@ -35,8 +35,6 @@ import {
 } from "../../lib/giftAllocationSeed";
 import { isGovernmentReimbursement } from "../../lib/quickbooksExclusionRules";
 import {
-} from "../../lib/giftFinalAmount";
-import {
   applyPaymentApplication,
   confirmPaymentApplicationsForPayment,
   qbLedgerExistsForGiftExcludingPayment,

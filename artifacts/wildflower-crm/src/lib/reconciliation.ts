@@ -6,7 +6,6 @@ import {
   type ReconciliationCandidate,
   type ReconciliationGraph,
   type ApproveCompleteMatchBody,
-  type GiftFinalAmountSource,
   type ReconciliationLaneStatus,
   type ReconciliationLanes,
   type StagedPaymentExclusionReason,
@@ -100,13 +99,6 @@ export const CANDIDATE_SOURCE_LABEL: Record<ReconciliationCandidateSource, strin
   intermediary: "intermediary",
   stripe: "stripe",
   manual: "manual",
-};
-
-/** Which evidence track set the gift's final amount. */
-export const FINAL_AMOUNT_SOURCE_LABEL: Record<GiftFinalAmountSource, string> = {
-  human: "Human amount",
-  stripe: "Stripe gross",
-  quickbooks: "QuickBooks",
 };
 
 /**

@@ -13,7 +13,6 @@ import {
 import { sql } from "drizzle-orm";
 import {
   giftPaymentMethodEnum,
-  giftFinalAmountSourceEnum,
   loanOrGrantEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
@@ -64,24 +63,13 @@ export const giftsAndPayments = pgTable("gifts_and_payments", {
   dateReceived: date("date_received"),
   paymentMethod: giftPaymentMethodEnum("payment_method"),
   amount: numeric("amount", { precision: 14, scale: 2 }),
-  // @deprecated RETIRED (Task #757) — no code reads, writes, or echoes these
-  // two transitional provenance columns anymore. The human-entered `amount` is
-  // the authoritative donor credit; settled amounts and provenance are DERIVED
-  // at read time from the counted payment_applications ledger
-  // (giftPaymentSummary.ts / derivedStatus.ts). Physically retained ONLY so dev
-  // push stays additive and prod Publish never auto-drops them; the physical
-  // DROP ships as reviewed SQL (migration 0146). Do not reintroduce readers or
-  // writers.
-  originalHumanCrmAmount: numeric("original_human_crm_amount", {
-    precision: 14,
-    scale: 2,
-  }),
-  // @deprecated RETIRED (Task #757) — see originalHumanCrmAmount above. The
-  // gift_final_amount_source enum type is dropped together with this column in
-  // migration 0146.
-  finalAmountSource: giftFinalAmountSourceEnum("final_amount_source")
-    .notNull()
-    .default("human"),
+  // NOTE: the transitional provenance columns final_amount_source and
+  // original_human_crm_amount were DROPPED (migration 0146), together with the
+  // gift_amount_allocation_review worklist table and the
+  // gift_final_amount_source enum (both dead since the stamp/unstamp flow was
+  // retired). The human-entered `amount` is the authoritative donor credit;
+  // settled amounts and provenance are DERIVED at read time from the counted
+  // payment_applications ledger (giftPaymentSummary.ts / derivedStatus.ts).
   // NOTE: gifts_and_payments.final_amount_qb_staged_payment_id was DROPPED
   // (migration 0130). final_amount_stripe_charge_id was DROPPED (Task #451, migration
   // 0132). QB amount provenance is derived from the counted `payment_applications`
