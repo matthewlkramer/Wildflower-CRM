@@ -1,4 +1,15 @@
+---
+status: ratified
+last_verified: 2026-07-21
+---
+
 # Reconciliation Workbench Business Rules
+
+This document is the **ratified product specification** for the reconciliation
+workbench. It is normative even where current code disagrees; implementation
+differences are drift to repair, not precedent — see
+[`reconciliation-status.md`](reconciliation-status.md) for the current drift
+list.
 
 ## 1. Overview
 
@@ -148,6 +159,8 @@ A CRM gift is complete when it satisfies one of the following canonical paths.
 
 These rules apply to every CRM card on the row, whether or not that card is linked to another card.
 
+Completeness applies to CRM gifts/payments. A pledge by itself is never complete: pledge allocation rows record intentions, not authoritative facts. A row whose only CRM record is a pledge cannot satisfy CRM completeness until a CRM gift/payment exists; the gift/payment's allocation rows are the authoritative completeness input.
+
 ## 3.1 Donorbox path
 
 The gift has a valid linked Donorbox record containing the required donor and purpose information.
@@ -269,11 +282,10 @@ Transaction state combines the card’s relationship state with any transaction-
 | `amount_mismatch`    | Links exist, but applied amounts do not reconcile within tolerance                                          |
 | `info_conflict`      | Amounts reconcile, but transaction and linked metadata materially conflict                                  |
 | `matched`            | Required links are present, amounts reconcile, and no material conflict exists                              |
-| `refund_anticipated` | A user has indicated that the transaction is expected to be reversed, but the reversal has not yet occurred |
 | `refunded`           | The transaction has been reversed and no longer counts as live payment evidence                             |
 | `excluded`           | The transaction is intentionally excluded from active reconciliation                                        |
 
-`refund_anticipated` and `refunded` apply only to the individual transaction.
+`refunded` applies only to the individual transaction. There is no anticipatory refund state: records stay exactly as they are until a refund is actually processed.
 
 If a row contains one refunded transaction and one live matched transaction, the live transaction continues to support the row.
 
@@ -287,8 +299,6 @@ If a row contains one refunded transaction and one live matched transaction, the
 | Confirm proposed match           | System has proposed a match                                        |
 | Unmatch from CRM gift            | Any transaction with a CRM relationship                            |
 | Unmatch from QuickBooks evidence | Any transaction with an accounting relationship                    |
-| Mark refund anticipated          | Any non-refunded, non-excluded transaction                         |
-| Clear refund anticipated         | Transaction is marked refund anticipated but has not been refunded |
 | Exclude transaction              | Any non-excluded transaction                                       |
 | Un-exclude transaction           | Excluded transaction                                               |
 | View processor record            | Any transaction with an external source record                     |
@@ -360,22 +370,19 @@ A single large QuickBooks record linked to several smaller transactions is not a
 | Unmatch from transaction                             | Any QuickBooks record with a transaction relationship                  |
 | Exclude                                              | Any non-excluded state                                                 |
 | Un-exclude                                           | Excluded                                                               |
-| Fill out QuickBooks from CRM or transaction evidence | CRM is complete and a target QuickBooks record has been identified     |
+| Fill out QuickBooks from CRM or transaction evidence | Displayed grayed out with the reason — the system cannot write to QuickBooks (see 7.4) |
 | View QuickBooks record                               | Any QuickBooks record                                                  |
 
-## 7.3 QuickBooks permissions
+## 7.3 QuickBooks permissions (background)
 
-Only a user with a finance-team role may make changes to QuickBooks records or accounting relationships.
+The system never writes to QuickBooks; all QuickBooks access is pull-only. QuickBooks-side changes — creating or changing QuickBooks coding, populating QuickBooks fields — are made by a finance-team human directly in QuickBooks. The division of labor below is background describing who is expected to do what; the QuickBooks-side items are not system behavior.
 
-This includes:
+Within the CRM, only a user with a finance-team role may change accounting relationships:
 
-* Creating or changing QuickBooks coding
-* Populating QuickBooks fields from CRM
 * Grouping or splitting QuickBooks reconciliation records
 * Confirming accounting relationships
 * Removing or replacing confirmed accounting relationships
 * Excluding or un-excluding QuickBooks records
-* Writing changes back to QuickBooks
 
 Non-finance users may:
 
@@ -387,19 +394,11 @@ Non-finance users may:
 
 They may not apply accounting changes.
 
-## 7.4 Filling out QuickBooks from CRM
+## 7.4 Filling out QuickBooks from CRM (not built — display only)
 
-`Fill out QuickBooks from CRM` is a cross-column write action that uses CRM-resident information to populate or propose accounting fields.
+The system cannot write to QuickBooks, so `Fill out QuickBooks from CRM` is not built as a write action. Where the action is displayed, it appears grayed out with the reason (the system cannot write to QuickBooks). The CRM may instead present the CRM-resident information as a reviewable reference so a finance-team member can transcribe it into QuickBooks manually.
 
-It is available only when:
-
-* The CRM gift is complete
-* A target QuickBooks record has been identified
-* The acting user is a finance-team member
-* The destination fields are applicable to the record
-* Existing conflicting QuickBooks values are reviewed rather than silently overwritten
-
-Potentially propagated information includes:
+Potentially relevant information for manual transcription includes:
 
 * Donor or customer identity
 * Recipient entity, project, or school
@@ -410,8 +409,6 @@ Potentially propagated information includes:
 * Fees
 * Reporting obligations
 * Other accounting classification fields
-
-The action should present a reviewable comparison before writing conflicting or previously populated values.
 
 ---
 
@@ -440,8 +437,8 @@ This mirrors the transaction and QuickBooks columns.
 | `mixed`                    | Competing unit- and bundle-level CRM representations overlap                                                              |
 | `conflict`                 | CRM information materially contradicts Donorbox, a completed coding form, a grant letter, or another authoritative record |
 | `pledge_link_broken`       | A payment relationship expected from a pledge allocation has been disconnected and requires repair                        |
-| `lost`                     | The gift or opportunity is no longer expected to receive payment                                                          |
-| `dormant`                  | No current live payment is known, but the opportunity may still result in a future gift                                   |
+
+Lost or dormant CRM records never render as CRM cards: CRM cards represent only gifts believed won. Marking a gift lost or dormant (see 8.2) removes its card from the workbench.
 
 A CRM card can therefore be complete for its own column while the row’s link status remains `missing`.
 
@@ -493,7 +490,7 @@ Mixed requires competing or overlapping CRM representations.
 | Mark gift dormant                         | No live payment is linked but future payment remains possible                             |
 | Repair pledge allocation link             | Pledge link broken                                                                        |
 | Unmatch payment from pledge               | An incorrect pledge-payment relationship exists                                           |
-| Fill out QuickBooks from gift             | CRM complete, target QuickBooks record identified, and user is a finance-team member      |
+| Fill out QuickBooks from gift             | Displayed grayed out with the reason — the system cannot write to QuickBooks (see 7.4)    |
 
 `Remove CRM card from row` and `Move CRM card to a new row` are relationship actions. They do not delete or archive the CRM gift.
 
@@ -553,7 +550,7 @@ Enrichment actions add or improve information without changing which cards are r
 * Complete CRM gift
 * Complete coding form
 * Attach grant letter
-* Fill out QuickBooks from CRM
+* Fill out QuickBooks from CRM (not built — display only; manual transcription in QuickBooks, see 7.4)
 * Add missing restriction information
 * Add accounting coding
 
@@ -564,13 +561,11 @@ Disposition actions change whether evidence or opportunities remain active.
 * Exclude or un-exclude evidence
 * Mark gift lost
 * Mark gift dormant
-* Mark transaction refund anticipated
 
 ## 9.4 Exception actions
 
 Exception actions resolve inconsistencies or special conditions.
 
-* Clear refund expectation
 * Resolve amount mismatch
 * Resolve donor or restriction conflict
 * Replace an incorrect relationship
@@ -626,7 +621,6 @@ type WorkbenchRowState = {
     livePayment: boolean;
     refundStatus:
       | "none"
-      | "anticipated"
       | "refunded";
   }>;
 

@@ -32,9 +32,9 @@ booked twice across Stripe sync, QuickBooks staging, and Donorbox.
 - The mint runs in a txn that re-locks the row `FOR UPDATE` and re-checks
   status/stripe/link guards — this is what actually prevents a same-row double
   mint. Donor XOR re-validated post-lock (`validateGiftInvariants`).
-- A created gift is a plain CRM gift with **no `finalAmountSource`**, so
-  `applyGiftQbTieMany` classifies it `missing` until reconciled (surfaces in the
-  QB-tie worklist) — intended.
+- A created gift is a plain CRM gift with **no `finalAmountSource`**, so the
+  live-derived QB tie (`deriveGiftQbTieLiveExpr`) classifies it `missing` until
+  reconciled (surfaces in the QB-tie worklist) — intended.
 
 **Merge coverage:** `donorbox_donations` donor FKs (`organization_id`,
 `individual_giver_person_id`) are in the mergeEntities FK inventories so a donor

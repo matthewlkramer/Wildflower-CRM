@@ -11,7 +11,7 @@ description: A wrong confirmed donor on a Stripe charge deterministically propos
 1. payment_applications counted/confirmed row (amount = charge GROSS per bookStripeChargeApplication).
 2. Charge row stamps: matched_gift_id, match_status='matched', match_confirmed_by/at, approved_by/at (see reconciliationBundleCommit).
 3. Gift final-amount provenance: final_amount_source='stripe' + final_amount_stripe_charge_id (stampGiftFinalAmount; Stripe overwrites 'human'; amount itself untouched).
-4. quickbooks_tie_status re-derivation — it is NOT QB-only: applyGiftQbTieMany reads counted Stripe rows with per-source precedence (QB > Stripe > Donorbox), so a gift gaining/losing a Stripe counted row changes its tie (156.48 vs 156.00 → amount_mismatch).
+4. QB-tie signal — it is NOT QB-only: the live-derived tie (deriveGiftQbTieLiveExpr; no recompute step) reads counted Stripe rows with per-source precedence (QB > Stripe > Donorbox), so a gift gaining/losing a Stripe counted row changes its tie (156.48 vs 156.00 → amount_mismatch).
 5. Ordering vs partial uniques: move the wrong charge's pointers OFF the gift before the right charge claims it (matched_gift_id_uq + counted (charge,gift) key are checked per-statement even inside one txn).
 
 Precedent repair file: lib/db/migrations/0124_swap_rue_kirby_crossed_charge_gift_links.sql (guards double as prod pre-flight checks — each statement no-ops unless the exact wrong state still holds).

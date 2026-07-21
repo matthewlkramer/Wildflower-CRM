@@ -57,7 +57,9 @@ value + no counted ledger row, so it no-ops if parity already ran).
 ## Go-live ordering (parity gate vs derived-persisted recompute)
 
 When the same release also recomputes a **derived-persisted** rollup that is sourced
-from the ledger (e.g. `quickbooks_tie_status` via `backfill:gift-qb-tie`), the order
+from the ledger (e.g. the since-retired `quickbooks_tie_status` via
+`backfill:gift-qb-tie` — that column is now live-derived and dropped, but the
+ordering rule stands for any future ledger-sourced rollup), the order
 is: re-apply backfill SQL → **parity (must pass)** → recompute the rollup. Never run
 the rollup recompute against an unverified ledger.
 

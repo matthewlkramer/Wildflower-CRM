@@ -1,26 +1,35 @@
 ---
-name: Canonical architecture docs
-description: Where the authoritative app map + design invariants live; read before non-trivial changes.
+name: Canonical architecture map
+description: Authority hierarchy and entry-point documents for non-trivial changes; read before touching a subsystem.
 ---
 
-# Canonical architecture & intent docs
+# Canonical architecture & authority map
 
-The authoritative, kept-current description of *what this app is and what we're trying
-to do* lives in two files — read them first for any non-trivial change:
+The authority order for conflicting sources is defined in `replit.md` (the
+operating contract). The documentation map and status vocabulary live in
+`docs/README.md`.
 
-- `replit.md` — product goal, the 7 **Design principles** (contract-first; header +
-  allocation money model; calculated opportunity status; Donor XOR; revenue vs loan
-  capital as parallel tracks; archive-don't-delete; non-destructive human-applied prod
-  data) and a per-feature subsystem rundown (incl. QuickBooks, Stripe + Stripe↔QB
-  reconciliation, revenue coding, email/calendar sync + intelligence, grant leads,
-  tasks, entity merge).
-- `lib/db/SCHEMA.md` — per-table reference + cross-table invariants. The Drizzle code
-  in `lib/db/src/schema/*.ts` (+ `_enums.ts`) is the ultimate source of truth.
+Entry points, in reading order for any non-trivial change:
 
-**Why:** both are kept current as the single orientation map so future work stays
-consistent instead of re-deriving intent. The dozens of other topic files in this
-memory dir are the *non-obvious lessons underneath* those docs — they complement, not
-replace, the canon.
+1. `replit.md` — invariants: contract-first; header + allocations; one
+   authority per derived fact; donor XOR; loan/revenue separation; canonical
+   money link tables; refunds are transaction facts; archive by default;
+   human-gated prod; reduction as the success criterion.
+2. `docs/README.md` — which document is canonical for the subsystem, with the
+   `status`/`last_verified` vocabulary.
+3. For reconciliation: `docs/reconciliation-status.md` (current state) →
+   `docs/workbench-business-rules.md` (ratified semantics) →
+   `docs/reconciliation-design.md` (target model) →
+   `docs/adr-source-link-ledger.md` (proposed evidence↔evidence ledger).
+4. `lib/db/SCHEMA.md` — per-table reference; the Drizzle code in
+   `lib/db/src/schema/*.ts` (+ `_enums.ts`) is the ultimate truth for what
+   physically exists.
+5. `lib/api-spec/openapi.yaml` — the public API contract.
 
-**How to apply:** start from replit.md + SCHEMA.md for orientation; use memory topic
-files for the gotchas; trust the schema code over any prose if they ever disagree.
+**Why:** business-rule and design docs say what SHOULD exist; schema and code
+say what DOES exist. When they disagree, record the gap in the subsystem's
+current-status document instead of treating the implementation as intent.
+
+**How to apply:** orient from the documents above; use memory topic files only
+for the non-obvious lessons underneath them; trust schema code over any prose
+about the physical model.

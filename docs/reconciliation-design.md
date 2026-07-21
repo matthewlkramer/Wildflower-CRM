@@ -1,3 +1,8 @@
+---
+status: design-target
+last_verified: 2026-07-21
+---
+
 # Reconciliation — Target-State Design (ratified)
 
 **Status:** ratified design, now largely implemented. This document is the
@@ -85,8 +90,9 @@ ad-hoc groups too — no representative pointer dance.
   equivalents remain the live link columns on those sources.
 
 On top of the links sit **five derived-status projections**:
-`gifts_and_payments.quickbooks_tie_status` (now derived+persisted via
-`giftQbTie.ts`), the two-lane `funding` / `crmRecord` model
+the gift↔QB tie signal (now LIVE-derived at read time via `giftQbTie.ts`
+`deriveGiftQbTieLiveExpr`; the persisted `quickbooks_tie_status` column was
+dropped), the two-lane `funding` / `crmRecord` model
 (`reconciliationLanes.ts`: `deriveEvidenceLanes` / `derivePayoutLanes`), the payout
 `qb_reconciliation_status`, the cards-queue derivation (`routes/reconciliation/cards.ts`
 `readyExpr` / `unlinkedDonorGiftWhere`), and the settlement-bundle drafts

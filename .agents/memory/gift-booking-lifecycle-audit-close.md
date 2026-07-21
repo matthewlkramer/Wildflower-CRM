@@ -1,6 +1,6 @@
 ---
 name: Gift booking lifecycle & audit-close freeze
-description: Accounting model for freezing gifts/pledges after a fiscal year's audit closes, plus write-off (pledge negative-revenue) and overpay→new-gift rules, and the derived reconciliation status that replaces quickbooks_tie_status.
+description: Accounting model for freezing gifts/pledges after a fiscal year's audit closes, plus write-off (pledge negative-revenue) and overpay→new-gift rules, and the amount-mismatch/QB-tie signal (now live-derived).
 ---
 
 Wildflower FY runs Jul 1–Jun 30. After 6/30 the finance team preps the prior year,
@@ -56,15 +56,16 @@ Booking lifecycle stamp (DERIVED, not hand-set): `unbooked` (no counted cash) �
 `booked` (cash recorded in QB) → `booked_and_audit_closed` (booked AND governing FY
 audit-closed).
 
-Amount-mismatch signal — REUSE the shipped `quickbooks_tie_status`; do NOT add a new
-persisted status. One-count is already enforced by
+Amount-mismatch signal — REUSE the QB-tie signal (now LIVE-derived via
+`giftQbTie.ts`; the persisted `quickbooks_tie_status` column was dropped); do NOT
+add a new persisted status. One-count is already enforced by
 `giftQbTie.ts` via PER-SOURCE PRECEDENCE (QB sum wins, else Stripe, else Donorbox — not
 a cross-source SUM) over counted `payment_applications` rows, so `amount_mismatch`
 already detects gift-vs-evidence mismatches without double-counting. The
 `exempt|reconciled|partial|unreconciled` rename (tracked in docs/reconciliation-design.md)
-is a LATER reconciliation phase, OUT OF SCOPE here — `quickbooks_tie_status` is still
-actively read/written and NOT drop-ready. `giftAmountResolution.ts` is the single
-swap-point if it is ever renamed.
+is a LATER reconciliation phase, OUT OF SCOPE here. `giftAmountResolution.ts` is
+the single swap-point if the vocabulary is ever renamed. (The persisted
+`quickbooks_tie_status` column has since been dropped; the tie is live-derived.)
 Compute over- vs under-payment DIRECTION on the fly in the resolution/worklist layer
 (precedence linkAmount vs gift.amount), NOT as a new persisted enum value.
 
@@ -73,7 +74,7 @@ behavior; getting freeze/write-off wrong would misstate audited books.
 **How to apply:** gate every gift/pledge/allocation mutation (PATCH, allocation CRUD,
 bulk, merge, QB revert hard-delete, reconciliation stamp, archive) with a shared
 assertMutable() keyed to the governing FY's audit-close date; drive the amount-
-mismatch worklist + resolution actions off `quickbooks_tie_status` + the DERIVED
+mismatch worklist + resolution actions off the live-derived QB-tie signal + the DERIVED
 lifecycle. One-count is already shipped (giftQbTie per-source precedence), so no
 all-source-SUM flip is needed.
 
@@ -100,7 +101,7 @@ Implementation constraints (must stay true across the freeze guard + resolution 
   - Overpaid gifts: exclude the original once it HAS an active surplus child
     (`overpay_of_gift_id` present), AND exclude the surplus child gift itself
     (`overpay_of_gift_id IS NULL` in the unresolved predicate). The child has NO
-    counted evidence so it defaults to `quickbooks_tie_status='missing'` and has NO
+    counted evidence so its live-derived QB tie is `missing` and it has NO
     resolution path of its own (its surplus is ≤0 → the resolve route 409s), so
     without this it flags forever in the FY it was booked into.
 
@@ -115,8 +116,8 @@ Build decisions (freeze guard + write-off/overpay resolution):
   FAIL unless every file is in a hand-maintained GUARDED-or-EXEMPT list, so a new mutation
   surface can't silently bypass freeze.
 - **EXEMPT from freeze (must stay writable on frozen records):** derived-column appliers
-  (giftQbTie's quickbooks_tie_status write, applyDerivedOppFields / pledge-stage status
-  writes) and grant-letter / conditions edits — freeze covers audited ledger FACTS, not
+  (applyDerivedOppFields / pledge-stage status writes; the QB tie is live-derived,
+  no write) and grant-letter / conditions edits — freeze covers audited ledger FACTS, not
   derived flags or next-year artifacts.
 - **Write-off schema (additive SQL, never drizzle push):** opportunities_and_pledges
   gains `write_off_of_pledge_id` FK (→ original pledge) + `is_write_off` flag. The

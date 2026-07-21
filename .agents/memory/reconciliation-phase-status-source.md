@@ -37,15 +37,15 @@ is being superseded by it. The design doc's §4.5 / Decision 4 / §7 still say
 the live code.
 
 The remaining cleanup tail is the `@deprecated`-but-still-live `gifts_and_payments`
-columns (`quickbooks_tie_status`, `final_amount_source`, `final_amount_*` provenance
-pointers) and the dead enum values (`processor_payout`, `confirmed_excluded`) still read
+columns (`final_amount_source`, `final_amount_*` provenance pointers —
+`quickbooks_tie_status` was since PORTED to live derivation and DROPPED; see
+`gift-qb-tie-status.md`) and the dead enum values (`processor_payout`, `confirmed_excluded`) still read
 by revert paths — not safe to drop until those read paths are ported.
 
 **Drop-readiness caution (verify, don't trust the label):** a schema `@deprecated`
 comment is NOT proof a column is drop-ready. Several `gifts_and_payments` columns
 labelled `@deprecated` "no longer read or written" are in fact STILL read/written by
-live code — `quickbooks_tie_status` (feeds `deriveGiftLanes` + the gifts filter,
-recomputed by `applyGiftQbTieMany` on every gift mutation), `final_amount_source`
+live code — `final_amount_source`
 and the `final_amount_*` provenance pointers (QB matching/actions still write them,
 financial corrections read them), and `type` (still read by the gifts list filter,
 analytics, revenueCoding, gatherTaskSignals; copied onto split-gift rows). ALSO

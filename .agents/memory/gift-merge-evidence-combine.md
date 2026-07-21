@@ -40,7 +40,6 @@ concurrent double-submit race.
 **How to apply:** any future edit to the merge route must keep the
 archived-participant rejection and must not reintroduce a
 COALESCE(matched,created,groupReconciled)+ledger double-read on one surface.
-Post-tx runs `applyDerivedOppFieldsMany(...pledges)` +
-`applyGiftQbTieMany(primary, ...losers)` (tie on archived losers benignly
-derives `missing`). This ledger-aware combine ships via Publish (no mid-phase
+Post-tx runs `applyDerivedOppFieldsMany(...pledges)`; QB tie is live-derived —
+no recompute (tie on archived losers benignly derives `missing`). This ledger-aware combine ships via Publish (no mid-phase
 prod-SQL gate).

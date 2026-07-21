@@ -1,336 +1,226 @@
-# Wildflower Fundraising CRM
+# Wildflower Fundraising CRM — Agent Operating Guide
 
-## Overview
+## Purpose
 
-Purpose-built fundraising CRM for Wildflower Schools, replacing Copper. A pnpm
-workspace monorepo: TypeScript + React/Vite + Express 5 + PostgreSQL/Drizzle,
-auth via Clerk.
+Wildflower CRM is the fundraising system of record for pipeline, commitments,
+payments, donor communications, and financial reconciliation, replacing Copper.
+The monorepo uses TypeScript, React/Vite, Express 5, PostgreSQL/Drizzle, Clerk,
+OpenAPI/Orval, and pnpm workspaces.
 
-The product goal: give the fundraising team one trustworthy place to run the whole
-donor lifecycle — pipeline → commitments → cash in — with money, communications
-(Gmail/Calendar), and accounting (QuickBooks/Stripe) all reconciled against the same
-donor records, replacing a hand-stitched mix of Copper, spreadsheets, quickbooks, and inboxes.
+This file is the stable operating contract for coding agents. Keep it short. Put
+subsystem design, implementation status, and troubleshooting detail in the linked
+documents rather than expanding this file.
 
-## Change recipe map
+## Start every task this way
 
-For the common edits (add a field end-to-end, add a list filter/column, add an
-API endpoint, ship a prod migration, change a derived field, change a validation
-rule), [`docs/change-recipes.md`](docs/change-recipes.md) gives the exact entry
-files, ordered steps, invariants at risk, and which fast check to run — start
-there before re-tracing a routine change.
+1. Read this file.
+2. Read [`docs/README.md`](docs/README.md) and the canonical document for the
+   subsystem being changed.
+3. Inspect the current diff, the relevant schema, and the relevant API contract
+   before proposing code.
+4. State, briefly: the concept being changed; its current authoritative
+   representation; the shared mutation or derivation boundary; the smallest
+   relevant tests.
+5. Only then edit code.
 
-## Design principles (the invariants to protect)
+Do not load the entire `.agents/memory/` directory. Start with
+[`.agents/memory/MEMORY.md`](.agents/memory/MEMORY.md), then read only the topic
+files relevant to the task.
 
-These recur across the whole app — keep them true whenever you change things:
+## Authority order
 
-1. **Contract-first.** `lib/api-spec/openapi.yaml` is the source of truth; the React
-   Query hooks (`api-client-react`) and Zod validators (`api-zod`) are *generated*
-   from it. Change the spec, regenerate, then implement — never hand-edit generated
-   files.
-2. **Money model = header + allocations.** `opportunities_and_pledges` and
-   `gifts_and_payments` are header-only; ALL scope (entity, fiscal year, region,
-   intended usage, sub-amounts, revenue coding) lives on the child allocation rows.
-3. **Opportunity status is calculated, never written by hand** — derived from stage +
-   payments + the user-set `loss_type` override. The only user-settable lifecycle
-   input is `loss_type` (`dormant` / `lost`).
-4. **Donor XOR.** Every opportunity and gift has exactly one donor (organization,
-   individual, or household), enforced at the DB (CHECK), the API, and on merged
-   PATCH state. Staged payment/charge queue rows hold *at most one* candidate donor;
-   exactly-one is enforced only when they approve/reconcile into a gift
-   (`validateGiftInvariants`).
-5. **Revenue and loan capital are parallel tracks.** Never fold loan capital into
-   revenue rollups; goals and analytics split by the authoritative `loan_or_grant`
-   flag (the legacy `fundraising_category` is deprecated — physical only, never
-   written/read/returned).
-6. **Archive, don't delete.** Soft-delete (`archived_at`) is the app-wide default;
-   only a few explicit paths still hard-delete.
-7. **Non-destructive, human-applied prod data changes.** The agent cannot write to
-   prod. Schema/code ship via Publish; every prod *data* change is a reviewed,
-   idempotent SQL file in `lib/db/migrations/`, applied by a human.
-8. **Architecture before patching.** Before changing code, identify the canonical
-   source of truth for every concept affected and verify the proposed change follows
-   the current target architecture — not a legacy field, transitional dual-write path,
-   cached projection, or route-specific workaround. Do not add a new pointer, status
-   field, duplicated derivation, compatibility fallback, or special-case write path
-   merely to fix an immediate symptom. When any of the following is true, **stop and
-   find the shared derivation or mutation boundary first** — do not proceed with a
-   local patch unless the user explicitly approves it as temporary and a removal
-   condition is documented:
-   - The same fact is read from or written to more than one table or field.
-   - A fix requires updating more than one copy of equivalent logic.
-   - A cached or derived value must be recomputed from a new call site.
-   - The implementation uses a field marked frozen, deprecated, dual-write-only, or
-     pending retirement.
-   - The fix would add another pointer, status field, proposal field, or fallback.
-9. **Do not revive retired models.** Historical memory files (e.g. `legacy-reconciliation/`)
-   and `@deprecated` columns document past states for regression context only — never
-   as implementation guidance. Before using any existing field or helper, confirm it is
-   still authoritative and not retained only for migration compatibility. Current
-   architecture documents and schema code take precedence.
-10. **Reduction is the success criterion.** A successful architectural change reduces
-    at least one of: authoritative fields, independent status derivations, write paths,
-    fallback paths, or required recomputation call sites. When a change appears to
-    require a new representation of an existing fact, first identify which current
-    representation can be removed or absorbed. The default is one authority replacing
-    another, not another layer beside it.
+When sources disagree, use this order and surface the conflict instead of guessing:
 
-## User preferences
+1. The user's explicit instruction for the task.
+2. Canonical business-rule documents identified in `docs/README.md`.
+3. Ratified architecture decisions and current implementation-status documents.
+4. Drizzle schema (`lib/db/src/schema/`) and database constraints for the current
+   physical model.
+5. `lib/api-spec/openapi.yaml` for the public API contract.
+6. Shared domain services and derivation modules.
+7. Route and UI implementations.
+8. `.agents/memory/` implementation lessons.
+9. Historical documents and deprecated code.
 
-- Precise and hands-on; wants to understand tradeoffs and consequences before acting.
-- Spend the time to keep memory files up to date, archiving approaches as they go stale.
-- When giving prod data-migration `psql` commands to run by hand, always use the
-  `$PROD_DATABASE_URL` variable (NOT `$DATABASE_URL`) and the full repo-root-relative
-  path to the `.sql` file (e.g. `lib/db/migrations/<file>.sql`), so they can be
-  copy-pasted and run from the project root.
-- In pickers/search lists, never hide unpickable rows — show them grayed out WITH
-  the blocking reason labeled, so the user can spot and help debug a mis-derived
-  status. Enforcement stays on the action endpoints (specific 409s).
+Schema and code describe what exists. Business-rule and architecture documents
+describe what should exist. When those differ, do not silently treat the current
+implementation as the intended design — record the gap in the subsystem's
+current-status document.
 
-## Stack
+## Non-negotiable invariants
 
-- **Monorepo**: pnpm workspaces · **Node**: 24 · **TypeScript**: 5.9
-- **Frontend**: React + Vite + Tailwind + shadcn/ui (port from `PORT` env)
-- **API**: Express 5 (port 8080)
-- **Database**: PostgreSQL + Drizzle ORM
-- **Auth**: Clerk (Google SSO restricted to @wildflowerschools.org)
-- **Validation**: Zod / `@workspace/api-zod` (generated from the OpenAPI spec)
-- **API codegen**: Orval (OpenAPI spec → React Query hooks + Zod schemas)
+1. **Contract first.** Change `lib/api-spec/openapi.yaml`, regenerate, then
+   implement. Never hand-edit generated files.
+2. **Header plus allocations.** Opportunity/pledge and gift/payment headers hold
+   identity and lifecycle facts. Scope, recipient, fiscal year, restriction,
+   intended use, project, region, and sub-amount live on allocation rows.
+3. **One authority per derived fact.** Lifecycle, reconciliation, totals, and
+   completeness are derived once. Do not add stored status columns, copied SQL
+   CASE expressions, route-local derivations, or frontend fallback heuristics for
+   facts that already have an authority. Opportunity status is fully derived; the
+   only user-set lifecycle input is `loss_type` (`dormant`/`lost`).
+4. **Donor XOR.** Every opportunity and gift has exactly one organization,
+   individual, or household donor — enforced at the DB, the API, and on merged
+   PATCH state.
+5. **Loan and revenue remain separate.** `loan_or_grant` is the sole persisted
+   classification. `gifts_and_payments.type` and the legacy `fundraising_category`
+   model are retired and must not be revived.
+6. **Canonical money relationships.** Use:
+   - `payment_applications` for payment/evidence unit → CRM gift;
+   - `settlement_links` for Stripe payout → QuickBooks deposit;
+   - `source_links` only after its ADR is implemented for evidence ↔ evidence
+     (until then the existing source-specific pointers are frozen — never add a
+     sibling pointer).
+7. **Refunds are transaction facts.** A processed refund removes or reduces live
+   payment evidence. It does not, by itself, archive the CRM gift, rewrite donor
+   intent, or prove the gift was never paid. There is no anticipatory refund
+   state — records stay as they are until a refund is actually processed. Follow
+   [`docs/workbench-business-rules.md`](docs/workbench-business-rules.md).
+8. **Archive by default.** Soft-delete (`archived_at`) is the app-wide default;
+   hard deletion is allowed only in an explicitly documented, tested exception.
+9. **Production is human-gated.** Agents work on main and dev only and cannot
+   write to production. Schema/code ship via user-initiated Publish; every prod
+   *data* change is a reviewed, idempotent SQL file in `lib/db/migrations/`
+   applied by a human.
+10. **Reduction is the architectural success criterion.** Prefer removing an
+    authority, write path, fallback, or recomputation call site over adding a new
+    representation beside it.
 
-## Architecture
+Stop and ask before implementing when a proposed fix:
 
-```
-lib/
-  db/                        — Drizzle schema, DB connection
-  api-spec/                  — OpenAPI spec (openapi.yaml) — contract source of truth
-  api-client-react/          — Generated React Query hooks + response types
-  api-zod/                   — Generated Zod validators + Donor-XOR invariant guards
-  integrations-anthropic-ai/ — Anthropic SDK wrapper (batching, retries, rate-limit)
-  object-storage-web/        — React hooks + Uppy components for GCS uploads
-artifacts/
-  api-server/                — Express REST API (port 8080)
-  wildflower-crm/            — React frontend (Vite)
-  mockup-sandbox/            — design/prototyping preview server (not deployed)
-scripts/                     — maintenance scripts (@workspace/scripts)
-tools/
-  magio-extension/           — Gmail open-tracking browser extension (NOT in the workspace)
-```
+- updates more than one copy of equivalent logic;
+- adds a pointer, status, proposal field, cache, or fallback for an existing fact;
+- reads or writes a deprecated, frozen, historical, or dual-write-only field;
+- requires a new recomputation call site for a persisted derivative;
+- changes money booking, reconciliation grain, donor identity, or lifecycle
+  without an invariant test.
 
-## Key Commands
+## Reconciliation-specific guard
+
+Before any reconciliation change, read:
+
+- [`docs/reconciliation-status.md`](docs/reconciliation-status.md) — what is
+  currently implemented and known to be drifting;
+- [`docs/workbench-business-rules.md`](docs/workbench-business-rules.md) —
+  ratified product semantics (normative even where current code disagrees);
+- [`docs/reconciliation-design.md`](docs/reconciliation-design.md) — target money
+  and relationship model;
+- [`docs/adr-source-link-ledger.md`](docs/adr-source-link-ledger.md) — proposed
+  evidence-to-evidence ledger.
+
+Required rules:
+
+- The three semantic columns are donor/purpose (CRM), payment transaction, and
+  accounting evidence. One physical record may serve more than one role.
+- Link completeness and information completeness are independent signals.
+- CRM completeness applies to every CRM card on the row, linked or not. A pledge
+  by itself is never complete — completeness requires a CRM gift/payment, whose
+  allocation rows are authoritative (pledge allocations are intentions).
+- Lost or dormant CRM records never render as CRM cards; cards are only for
+  gifts believed won.
+- `audit_ready` requires the required QuickBooks documentation to be complete,
+  not merely the presence of accounting evidence. The system never writes to
+  QuickBooks (pull-only); QB-side documentation is done by a human in QuickBooks.
+- Completed-lens membership, counts, displayed status, and available actions must
+  derive from the same canonical row state.
+- Donorbox is donor/purpose evidence, not transaction evidence.
+- Accounting-changing actions require the appropriate finance permission.
+
+Do not extend a known implementation drift described in
+`docs/reconciliation-status.md`; repair the canonical boundary first.
+
+## Change workflow
+
+### Routine code change
+
+1. Find the recipe in [`docs/change-recipes.md`](docs/change-recipes.md).
+2. Update the canonical contract/schema/deriver first.
+3. Reuse the shared write service or transaction boundary.
+4. Add or update the narrow invariant test.
+5. Run scoped checks while iterating; run the required full checks once before
+   finishing.
+6. Update canonical documentation and memory in the same change when behavior or
+   architecture changed.
+
+### Schema or production-data change
+
+- Additive and nullable/defaulted first.
+- Dev loop after editing `lib/db/src/schema/`:
 
 ```bash
-pnpm run typecheck                                       # Full typecheck (builds libs first)
-pnpm --filter @workspace/api-spec run codegen           # Regenerate hooks/Zod from spec (orval + barrel)
-pnpm --filter @workspace/api-spec run codegen:check      # NON-MUTATING: regen to temp dir, diff vs committed, compile the 2 generated libs
-pnpm --filter @workspace/db run push                    # Push DB schema changes (dev only)
-cd lib/db && pnpm exec tsc -p tsconfig.json             # Rebuild DB declarations after schema changes
-pnpm --filter @workspace/api-server run test            # API server vitest
-pnpm --filter @workspace/scripts run cleanup:test-users # Archive test users after e2e runs
+pnpm --filter @workspace/db run push          # apply to dev DB
+cd lib/db && pnpm exec tsc -p tsconfig.json   # refresh composite lib declarations
 ```
 
-**After a schema change**, run both `pnpm --filter @workspace/db run push` AND
-`cd lib/db && pnpm exec tsc -p tsconfig.json` so the composite-lib declarations
-stay in sync (stale declarations show up as "property does not exist" on the leaf
-typecheck — trust `pnpm run typecheck`, which builds libs first).
+  Stale declarations show up as "property does not exist" on leaf typechecks —
+  trust `pnpm run typecheck`, which builds libs first.
+- Every schema change also needs a uniquely numbered, idempotent migration file
+  in `lib/db/migrations/` (plus a runbook when ordering or data risk is
+  non-trivial). Dev schema changes do not prove production readiness.
+- Give human-run commands with `$PROD_DATABASE_URL` and a repo-root-relative path:
 
-### Fast scoped checks (verify just what you touched)
+```bash
+psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/<file>.sql
+```
 
-Prefer these over a full rebuild — each is scoped as tightly as possible, so after
-the first warm build later runs finish in seconds. They are registered as named
-validation checks (run on demand, each returns a pass/fail summary + log path) and
-also exist as root `check:*` scripts for a plain shell:
+  Do not place `BEGIN`/`COMMIT` inside a file applied with `psql -1`.
 
-| Check      | Root script          | What it does                                            |
-|------------|----------------------|---------------------------------------------------------|
-| `libs`     | `pnpm check:libs`    | Build the shared libs (run before leaf checks)          |
-| `api`      | `pnpm check:api`     | Typecheck only the API server                           |
-| `web`      | `pnpm check:web`     | Typecheck only the CRM frontend                         |
-| `codegen`  | `pnpm check:codegen` | NON-MUTATING spec check: regenerates into a temp dir, diffs against the committed generated dirs, compiles only the two generated libs. Safe to run concurrently with anything. |
-| `test-api` | `pnpm check:test-api`| Full API server test suite (unit + integration, parallel, dedicated test DB) |
-| `test-api-unit` | `pnpm check:test-api-unit` | Only the fast API unit tier (no `*.integration` files) |
-| `test-api-changed` | `pnpm check:test-api-changed` | Only API tests related to files changed since the git baseline |
-| `test-web` | `pnpm check:test-web`| Full frontend test suite                                |
-| `test-web-changed` | `pnpm check:test-web-changed` | Only frontend tests related to changed files |
-| `full`     | `pnpm check:full`    | The complete `pnpm run typecheck` (unchanged safety net)|
+## Validation
 
-**Which check after which change (default loop = scoped typecheck + changed-scope tests):**
+Use the smallest checks that cover the change. Do not run several DB-backed test
+commands concurrently; the dedicated test database intentionally serializes them.
 
-- Edited `lib/api-spec/openapi.yaml` (the contract) → run
-  `pnpm --filter @workspace/api-spec run codegen` to regenerate (this mutates the
-  generated dirs — run it alone, never while tests/typechecks are running), then
-  the `codegen` check verifies committed output matches the spec. The check
-  itself is non-mutating and concurrency-safe.
-- Edited API server code → run `api` + `test-api-changed`.
-- Edited CRM frontend code → run `web` + `test-web-changed`.
-- Edited a shared lib → the changed-scope checks trace imports across the
-  workspace (libs export TS source), so `test-api-changed` / `test-web-changed`
-  still pick up affected tests.
-- A leaf check reports missing `@workspace/*` types → run `libs` first, then re-run
-  the leaf check (stale lib declarations, not a real error).
-- Before finishing → run `full` + the full `test-api` (and `test-web` if the
-  frontend changed) once. Reserve browser e2e for genuinely changed UI flows —
-  it costs 10+ minutes per run.
-- The changed-scope baseline is `git merge-base HEAD origin/main`; both checks
-  pass with no tests when nothing relevant changed.
+| Change | Iteration checks | Before finishing |
+|---|---|---|
+| OpenAPI contract | regenerate alone, then `pnpm check:codegen` | affected API/web checks |
+| Shared library | `pnpm check:libs` + affected changed-scope tests | `pnpm check:full` |
+| API server | `pnpm check:api` + `pnpm check:test-api-changed` | `pnpm check:test-api` + `pnpm check:full` |
+| Frontend | `pnpm check:web` + `pnpm check:test-web-changed` | `pnpm check:test-web` + `pnpm check:full` |
+| Browser flow | component/integration tests first | one focused e2e flow if UI behavior changed |
 
-The API suite runs unit and `*.integration` files as separate vitest projects
-with 6 parallel forks (the tests are DB-bound, not CPU-bound) against a
-**dedicated test database** — full-suite wall time dropped ~4x (measured 384s
-on the old serial/dev-DB setup → 99–105s across two consecutive clean runs,
-1299/1299 passing, zero flakes).
-The first run of a check warms the incremental cache (slow); subsequent runs are
-fast. Fresh environments warm the tsc + vitest caches in the background right
-after post-merge setup (`scripts/post-merge.sh`), so the first verify shouldn't
-pay the cold build.
+Run code generation by itself (it mutates the generated dirs; the `codegen`
+check is non-mutating):
 
-### Dedicated test database (vitest never touches the dev DB)
+```bash
+pnpm --filter @workspace/api-spec run codegen
+```
 
-Every api-server vitest run auto-provisions and targets `<devdb>_test` (e.g.
-`heliumdb_test`) via `artifacts/api-server/src/test/global-setup.ts`:
+## Documentation and memory rules
 
-- Creates the DB if missing, and re-pushes the Drizzle schema only when the
-  schema files' content hash changes (stamp in the `test_meta` schema, which
-  drizzle-kit never introspects). On schema change it drops + recreates
-  `public` and pushes into the EMPTY schema — a pure-CREATE push that can't hit
-  drizzle-kit's interactive rename prompt (which exits 0 applying nothing
-  without a TTY). Warm-path setup cost is ~1s.
-- On the warm path it TRUNCATEs every non-reference table so each run starts
-  from a clean slate (killed runs can't leave crowding leftovers), then
-  re-mirrors the small reference tables (`entities`, `regions`,
-  `fiscal_years`) from the dev DB — some tests key FKs to real ids like
-  `wildflower_foundation`; everything else is test-seeded.
-- A Postgres advisory lock is held for the ENTIRE run, fully serializing
-  concurrent vitest invocations (e.g. `test-api` and `test-api-changed`
-  firing together) — two suites sharing the DB otherwise crowd each other's
-  date-proximity LIMIT'd searches. A killed process releases the lock with
-  its session.
-- Consequences: tests no longer race the dev API server's schedulers, no
-  longer pollute dev data, and killed runs can't corrupt dev. Browser e2e
-  still goes through the dev server → dev DB, so e2e hygiene rules still apply.
+- `replit.md` contains stable rules only; no benchmark counts, migration-phase
+  diaries, or one-off incident notes.
+- `docs/` contains canonical business rules, architecture, current status, and
+  runbooks. Major design docs declare `status` and `last_verified`; see
+  [`docs/README.md`](docs/README.md).
+- `.agents/memory/` contains durable implementation lessons and routing indexes,
+  not competing architecture. Follow `.agents/memory/README.md`.
+- When a design changes, update or supersede the old document in the same change.
+  Do not leave contradictory "current" statements in multiple files.
+- Historical material belongs under an explicit `legacy/` or `archive/` path and
+  must not be linked as current guidance.
 
-## Database
+## Project map
 
-Schema lives in `lib/db/src/schema/`. Full per-table
-reference is in [`lib/db/SCHEMA.md`](lib/db/SCHEMA.md).
+- `lib/db/` — Drizzle schema, DB connection, migrations; `lib/db/SCHEMA.md` is
+  the per-table map
+- `lib/api-spec/` — canonical API contract (`openapi.yaml`)
+- `lib/api-client-react/` — generated React Query client
+- `lib/api-zod/` — generated schemas plus shared invariant helpers
+- `artifacts/api-server/` — Express API and domain services (port 8080)
+- `artifacts/wildflower-crm/` — React frontend (Vite)
+- `artifacts/mockup-sandbox/` — design preview server (not deployed)
+- `docs/README.md` — documentation authority and subsystem map
+- `.agents/memory/MEMORY.md` — selective implementation-memory index
 
-Key invariants:
+## User working preferences
 
-- **Donor XOR** — `opportunities_and_pledges` and `gifts_and_payments` each have
-  exactly one donor: `organization_id`, `individual_giver_person_id`, or
-  `household_id`. Enforced by DB CHECK constraints *and* pre-validated in the API
-  (`validateOppInvariants` / `validateGiftInvariants` in `@workspace/api-zod`) so
-  the API returns 400 instead of a DB 500. PATCH validates merged post-update state.
-- **Many-to-many links** use `text[]` slug arrays with GIN indexes — query with
-  array operators (`@>`, `&&`, `<@`), never `= ANY(...)`.
-
-## Auth
-
-Clerk middleware (`requireAuth`) auto-provisions users on first sign-in; all API
-routes require auth.
-
-**E2E testing note (Clerk captcha):** use the testing skill's `runTest` with
-`testClerkAuth: true` and an `@wildflowerschools.org` email for a programmatic,
-already-authenticated session — never drive the Clerk sign-in UI or captcha;
-navigate straight to the target path. Treat a mid-run captcha as noise (retry).
-
-## Features
-
-Each line is a pointer; deep implementation detail lives in the code, the schema
-reference, and the design docs.
-
-- **CRM core** — organizations (grant-makers flagged via `issuesGrants`), people,
-  households, opportunities & pledges, gifts & payments, allocations, payment
-  intermediaries, regions, schools, fiscal years. Dashboard / projections /
-  grants-calendar analytics are derived server-side.
-- **Opportunity lifecycle** — `status` (`open`/`pledge`/`cash_in`/`dormant`/`lost`)
-  is fully derived (invariant #3). Precedence: `loss_type` > `cash_in`
-  (payment-driven) > `pledge` (sticky `written_pledge`/`was_pledge` flag) > `open`.
-  The sticky flag auto-latches true only when an *unpaid* grant letter exists; a
-  fully-paid grant or merely-described money is NOT a pledge. Grant-letter upload
-  via object storage (presigned GCS URL).
-- **Loan vs grant tracks (revenue vs loan capital)** — parallel analytics tracks
-  (invariant #5) keyed by the authoritative `loan_or_grant` enum: per-track goals
-  (goals PK includes `loan_or_grant`), dashboard renders a track per fiscal year.
-  Gift `type` still derives the flag (`loan_fund_investment` → `loan`). Legacy
-  `fundraising_category` columns are deprecated (physical only). All pre-existing
-  data is `grant`.
-- **List-page choosers** — per-page filter + column choosers on the 4 list pages,
-  persisted in saved views.
-- **Media-mention ingestion** — daily off-hours GDELT DOC 2.0 pull (free, no key)
-  for high-capacity funders/people; DB-atomic dedupe, no AI summary by design.
-- **Email open tracking** — per-recipient open attribution ("Path A") via a
-  per-recipient pixel-tagged Gmail send, driven by the `tools/magio-extension`
-  browser extension (per-user extension token); falls back to a single pixel.
-- **Anonymous records** — `anonymous` flag masks org/person names in the UI to
-  "Anonymous" for everyone but the owner and admins. UI-only (names stay in API
-  responses); some join-projection name refs aren't masked yet.
-- **QuickBooks payment sync** — pull-only QBO → CRM. Scheduled + on-demand worker
-  stages incoming money in a review queue ("Finance Reconciliation") keyed
-  idempotently by `(realmId, qbEntityType, qbEntityId, qbLineId)`, auto-matches
-  donors, and attributes an `entity_id` from text markers. Approve mints a gift in a
-  tx (Donor XOR). Tokens encrypted at rest; never writes back to QB.
-- **Gift ↔ QuickBooks tie status** — every gift carries a derived-but-persisted
-  `quickbooks_tie_status` (`exempt`/`tied`/`amount_mismatch`/`missing`), recomputed
-  at every link/amount mutation (`applyGiftQbTieMany`) + a backfill script. Off-books
-  gifts are exempt. Gifts list has a `quickbooksTie` filter; a per-gift
-  audit-reconciliation read view returns the when/where/who/restrictions trail.
-- **Flodesk subscriber sync** — people → one segment. Outbound upserts eligible
-  people fire-and-forget on create/update; inbound reconcile is daily + monotonic
-  (only ever SETS unsubscribed). Flodesk unsubscribe always wins. No-op until
-  `FLODESK_API_KEY` + `FLODESK_SEGMENT_ID` are set.
-- **Stripe sync + reconciliation** — a second pull-only money source parallel to
-  QuickBooks; the reconciliation queue ties a coarse QB deposit/payout lump to its
-  individual Stripe charges so money is never booked twice. Charge-tie confirm
-  supersedes an exact-cents QB-grain counted booking onto the tied charge
-  (`chargeTieSupersede.ts`; QB row demoted to corroborating), and a charge-grain
-  tie counts as confirmed status evidence only when the tied charge itself is
-  booked — raw linkage alone only blocks re-picking. The ratified target
-  state (three link tables: `payment_applications` unit→gift, `settlement_links`
-  payout↔deposit, `source_links` evidence↔evidence ADR; all statuses derived;
-  phased prod-safe path) is in
-  [`docs/reconciliation-design.md`](docs/reconciliation-design.md) — treat that doc
-  as the source of truth for the in-flight reconciliation redesign. Derived
-  staged/charge statuses come from ONE set of alias-parameterized SQL builders
-  (`api-server/src/lib/derivedStatus.ts`) — never hand-roll a status CASE twin.
-  The evidence↔evidence claim pointers (charge↔QB tie, fee link, Donorbox
-  counterparts) are frozen pending
-  [`docs/adr-source-link-ledger.md`](docs/adr-source-link-ledger.md).
-- **Allocation restriction (three axes)** — restriction captured per allocation on
-  `regional`/`usage`/`time` axes (each `donor_restricted`/`wf_restricted`/
-  `unrestricted`); a line codes restricted when ANY axis is `donor_restricted`.
-- **Revenue-accounting coding (CFO "Revenue Extractor")** — coding is derived on
-  demand from allocation scope (`revenueCoding.ts`) with per-fund-entity overrides;
-  no longer persisted on allocations (editors show a live preview, the reviewer
-  snapshots it onto the matching `staged_payments` row).
-- **Grant conditions** — `conditional` + `conditions_met` on `pledge_allocations`;
-  the opportunity header exposes a derived rollup that drives win-probability
-  weighting (conditional written pledge weights 0.75 vs 0.90).
-- **Email & calendar sync + intelligence** — per-user Gmail/Calendar sync matched to
-  CRM entities; AI "email intelligence" (Claude) extracts signals into
-  `email_proposals` a reviewer accepts/rejects (versioned, admin-tunable prompt).
-  Grant opportunities also feed a team-shared `grant_leads` queue.
-- **Tasks + AI next-step suggestions** — manual + reporting-deadline tasks with
-  AI-proposed next steps, auto-generated only on true first view.
-- **Entity merge** — transactional collapse of duplicate orgs/people into a primary
-  (re-points every FK, merges arrays, archives the duplicate). A FK-inventory test
-  fails on schema drift so a new FK can't be silently missed.
-- **Meeting notes** — paste-a-transcript flow → editable AI summary + action items
-  in the activity timeline.
-- **Archive (soft-delete)** — app-wide default; archived rows leave list views
-  (admin-only "show archived", LIST only) and archived gifts are excluded from
-  financial / pledge-paid totals. A few hard-delete exceptions remain (gift merge,
-  QuickBooks revert).
-
-## Known follow-ups (non-blocking)
-
-- **Prod data changes** — prod holds live data; the agent cannot write to it.
-  Schema/code ship via Publish; every prod data change is a reviewed idempotent SQL
-  file (see `lib/db/migrations/` + runbooks), applied by a human with
-  `psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/<file>.sql`.
-- **`gmail.send` scope** — new OAuth scope; each user must reconnect Google once.
-  Until then the extension falls back to the legacy single-pixel send.
-- **Anonymous masking gaps** — join-projection name references (role rows, household
-  members, colleague/affiliation lists) aren't masked yet. Gift NAMES (which often
-  embed donor names) are also returned unmasked everywhere, including the
-  gifts-missing-qb `linkedMatches` companion list.
-- **Media ingest** — no relevance filtering on person-name searches (common names →
-  false positives); live GDELT calls are flaky from the dev sandbox but work in prod.
+- Explain material tradeoffs and architectural consequences before a large or
+  destructive change.
+- Prefer a complete root-cause fix over a convincing local patch.
+- In pickers, show blocked rows disabled with the blocking reason; do not hide
+  them. Enforcement remains on the write endpoint with specific errors.
+- Prod data-migration commands must use `$PROD_DATABASE_URL` (never
+  `$DATABASE_URL`) and the full repo-root-relative `.sql` path, copy-pasteable
+  from the project root.
+- Keep documentation and memory current — archive approaches as they go stale —
+  but do not create a new memory file for every task.

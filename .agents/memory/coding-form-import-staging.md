@@ -23,7 +23,8 @@ a "needs a decision" list.
   refreshes only raw/normalized capture fields, never decisions/status.
 - Cross-check (new/same/conflict/na) is computed **live on read** in
   `artifacts/api-server/src/lib/codingForms.ts`, never stored, so it can't go stale.
-- Apply re-derives via `applyDerivedOppFields` / `applyGiftQbTieMany`.
+- Apply re-derives via `applyDerivedOppFields` (QB tie is live-derived — no
+  recompute; see `gift-qb-tie-status.md`).
 
 **Rollout (invariant #7).** Schema (enum + table) ships via Publish; the
 self-contained idempotent equivalent is `lib/db/migrations/0084_*.sql` (+ RUNBOOK).

@@ -41,9 +41,9 @@ fields (conditions/conditional/contingent/expectedPaymentDate/status/directToSch
 or @deprecated coding; let `display_usage` be trigger-computed.
 
 **Re-derivation is already wired** post-commit on the mint path —
-`applyPaymentApplication` + `applyDerivedOppFieldsMany(opportunityId)` +
-`applyGiftQbTieMany(newGiftId)` recompute pledge paid/committed/status + QB tie.
-Don't re-add it.
+`applyPaymentApplication` + `applyDerivedOppFieldsMany(opportunityId)` recompute
+pledge paid/committed/status. Don't re-add it. (QB tie needs no recompute — it
+is live-derived now; see `gift-qb-tie-status.md`.)
 
 **Manual-entry dup guard**: `GET /staged-payments-pending-for-donor`
 (?donorType&donorId) returns pending staged money for a donor across BOTH sources

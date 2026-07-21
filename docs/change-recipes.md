@@ -38,8 +38,8 @@ answer is "I'm not sure," resolve it first.
    stop. Use the current authority or get explicit approval to use the legacy path
    as a temporary bridge with a documented removal condition.
 5. **Can the fix be made at the shared derivation or mutation boundary** (e.g.
-   `derivedStatus.ts`, `deriveOppFields`, `applyGiftQbTieMany`) instead of at one
-   call site?
+   `derivedStatus.ts`, `deriveOppFields`, `deriveGiftQbTieLiveExpr`) instead of
+   at one call site?
 6. **What invariant test proves the system is still correct?** Name it. If none
    exists, does one need to be added?
 7. **If this adds technical debt, what exact condition removes it?** Write that
@@ -243,7 +243,8 @@ discipline. **Never** persist a value that has an authoritative derivation.
 
 **Start in:** the derivation helper in `artifacts/api-server/src/lib/`:
 - Opportunity status / pledge stage → `pledgeStage.ts` (`deriveOppFields`).
-- Gift ↔ QuickBooks tie status → `giftQbTie.ts` (`applyGiftQbTieMany`).
+- Gift ↔ QuickBooks tie status → `giftQbTie.ts` (`deriveGiftQbTieLiveExpr` —
+  live-derived at read time; there is no stored column and no applier to call).
 - Revenue coding → `revenueCoding.ts` / `@workspace/api-zod`'s
   `deriveRevenueCoding`.
 - Gift payment/settled/fee/off-books summary → `giftPaymentSummary.ts`.
@@ -256,9 +257,11 @@ discipline. **Never** persist a value that has an authoritative derivation.
 2. **Mirror any SQL backfill** in lockstep (e.g.
    `scripts/backfill-derived-opp-fields.ts` / the matching `_RUNBOOK` migration)
    so out-of-band rows converge to the same result the deriver produces.
-3. **Recompute at every mutation** that can change an input: a persisted-but-
-   derived field (like `quickbooks_tie_status`) goes silently stale if any
-   link/amount mutation doesn't re-run its deriver.
+3. **Recompute at every mutation** that can change an input — but only for the
+   facts that are still persisted-but-derived (e.g. pledge `paid_amount`/stage
+   via `deriveOppFields`). The gift↔QB tie is NOT one of these: it is
+   live-derived, so there is no recompute call site to add. Prefer converting a
+   persisted derivative to live derivation over adding another recompute site.
 4. **Bump the cache key** in lockstep if the response shape of a cached
    driver-tree/analytics endpoint changes (a stale key serves the old shape).
 5. **Spec + codegen** if the response shape changes at all → **verify with

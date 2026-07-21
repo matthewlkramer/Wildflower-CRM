@@ -24,8 +24,9 @@ two identical donations). Without it the book-once guard dead-ends 409.
   incumbent displacement): remove PA rows → pointer-safe
   `unstampGiftFinalAmount(quickbooks)` → allocation adjust + old-pledge
   re-derive only if restored → audit on the old gift. Lock the OLD gift row too.
-- After commit `applyGiftQbTieMany(target, movedFrom)` recomputes tie status on
-  BOTH sides — the old gift silently loses its only QB evidence otherwise.
+- The old gift losing its only QB evidence is reflected automatically on both
+  sides: QB tie is live-derived at read time (the post-commit
+  `applyGiftQbTieMany` recompute was retired; see `gift-qb-tie-status.md`).
 
 **Failed Stripe charge orphan:** when `switchStripeSource` swaps a gift off an
 old charge whose `rawCharge.status === 'failed'`, the orphan lands

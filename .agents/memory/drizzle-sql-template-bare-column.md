@@ -74,7 +74,9 @@ An earlier pass flagged these as broken on this footgun. Since bare table-object
 interpolation was since shown to QUALIFY, that conclusion is now in doubt for any
 site using bare `${table.col}` (vs `alias()`'d). Render each with
 `PgDialect.sqlToQuery` before treating it as a bug or "fixing" it:
-- `lib/giftQbTie.ts` applyGiftQbTieMany (direct/group/split QB-link detection).
+- `lib/giftQbTie.ts` QB-tie derivation (direct/group/split QB-link detection —
+  now the live-derived `deriveGiftQbTieLiveExpr`/`Raw`; the old `applyGiftQbTieMany`
+  applier was retired).
 - `routes/giftsAndPayments.ts` — gift-detail linked field, list `linked`/`unlinked`
   filter, allocation-based entityId/grantYear/usage list filters.
 - `routes/financialCorrections.ts`, `routes/quickbooks/shared.ts`,

@@ -1,85 +1,78 @@
+# Agent Memory Routing Index
+
+Memory is supplemental implementation context, not canonical architecture. Read
+only the sections relevant to the task. When memory conflicts with `replit.md`,
+a canonical document, the schema, or the current API contract, trust the current
+code/docs and update or archive the stale memory.
+
+## Always applies
+
 - [user_query widget doesn't render](interactive-prompts-dont-render.md) — this user can't see interactive prompts; ALWAYS ask clarifying questions in plain-text chat, never via user_query.
-- [Canonical architecture docs](architecture-canon.md) — read replit.md + lib/db/SCHEMA.md first (kept-current intent + invariants); schema code is the final truth.
-- [Email & calendar sync](email-calendar-sync.md) — grouped index: Gmail/Calendar sync, open tracking, email intelligence (AI proposals), Flodesk, email-address dedup; read before touching any email/calendar feature.
-- [Money sync & reconciliation](money-sync-reconciliation.md) — current-state index: QB/Stripe/Donorbox ingest, three link tables: PA+settlement_links (current authority), source_links (planned, not yet shipped); derived status, workbench; read before any money-sync or reconciliation feature.
-- [Legacy reconciliation — pointer era](legacy-reconciliation/index.md) — retired pointer-era entries (matched/created/group_reconciled_gift_id QB cols DROPPED 0126); read for regression context only, never as current instructions.
-- [wildflower-crm detail routes](wildflower-crm-routes.md) — organizations live at /organizations (was /funding-entities); pledge detail inherits opportunity.
-- [funders→organizations consolidation](funders-organizations-consolidation.md) — funders+organizations merged; issuesGrants flag distinguishes grant-makers; DonorType "funder"→"organization"; the stale one-time Airtable importer was retired/deleted (2026-07).
-- [wildflower-crm activity feed scoping](wildflower-activity-feed-scoping.md) — keep notes/tasks scope separate from donor-relationship scope; API list filters AND together.
-- [wildflower list-page chooser pattern](wildflower-list-chooser-pattern.md) — 4 list pages share filter/column choosers; saved views persist null at default, known/hidden keeps opt-in filters hidden for predating views.
-- [media-mention GDELT dedupe](media-ingest-dedupe.md) — dedupe must stay DB-atomic ON CONFLICT upsert; manual script goes through the lock; never AI-summarize auto headlines.
-- [api-server runs a built bundle](wildflower-api-server-build.md) — schema/DB drift (e.g. "column X does not exist" 500) may be a stale build; restart rebuilds, check newest log.
-- [Verify under CPU throttling](build-verify-cpu-throttling.md) — monorepo tsc --build/orval/runTest blow past tool caps; let one full build finish to warm .tsbuildinfo (then incremental is fast); e2e can exceed the 600s cap.
-- [cross-env DB schema drift](cross-env-db-schema-drift.md) — successor task's dev DB lacks predecessor's new column (only code propagates); fix additively via SQL, never blunt push (drops unrelated drifted columns = data loss).
-- [post-merge push abort](post-merge-push-abort.md) — interactive drizzle-kit push aborts (skipping ALL additive changes) on schema-dropped columns still present in live DB; retain them as @deprecated, don't approve the drop.
-- [Schema-rename reconciliation](lifecycle-rename-reconciliation.md) — clear a stuck post-merge RENAME via guarded manual pre-rename→push (never push-force); prove Publish safe by checking prod-only cols == rename sources; rename exposes stale migration-file col refs + -1 BEGIN/COMMIT.
-- [api-zod must stay env-neutral](api-zod-cross-env.md) — imported by server AND browser; no URL/node/DOM globals; validate via pure regex + superRefine, PATCH re-validates merged state.
+
+## Start here
+
+- [`../../replit.md`](../../replit.md) — agent operating contract and stable invariants.
+- [`../../docs/README.md`](../../docs/README.md) — documentation authority map and status vocabulary.
+- [Memory maintenance policy](README.md) — what belongs here and how to retire it.
+- [Canonical architecture map](architecture-canon.md) — authority hierarchy + entry points for non-trivial changes.
+
+## Domain indexes
+
+- [Money sync and reconciliation](money-sync-reconciliation.md) — QuickBooks, Stripe, Donorbox ingest, payment applications, settlement links, source-link plan, workbench lessons. Read the canonical reconciliation docs before individual notes.
+- [Email and calendar](email-calendar-sync.md) — Gmail/Calendar sync, open tracking, email intelligence, Flodesk, dedup.
+- [CRM domain notes](crm-domain-notes.md) — gifts/pledges, donors/orgs/people, lists/dashboards, tasks/ingestion/admin feature lessons.
+- [Platform and delivery notes](platform-and-delivery-notes.md) — build/env, API plumbing, prod-migration and data-operation gotchas.
+
+## Core data-model invariants
+
+- [opportunity status is calculated](wildflower-opp-status-calculated.md) — status fully derived server-side; only user override is loss_type (dormant/lost); never write status directly.
+- [opp derivation idempotency](opp-derivation-idempotency.md) — deriveOppFields must be a true fixed point + SQL backfill mirrors it; cash_in is payment-driven; won pledge stage='complete' even if partially paid.
 - [Donor XOR across split pickers](wildflower-donor-xor-pickers.md) — per-type donor pickers must send all 3 FK fields (null the rest) + allowNull=false to keep exactly-one invariant.
-- [anonymous funders/people visibility](wildflower-anonymous-visibility.md) — UI-only name hiding; canSeeIdentity (display) vs canManageIdentity (toggle) must stay separate; join-projection name refs aren't masked.
-- [Entity-merge cascade-delete lock](merge-entity-cascade-lock.md) — merge txn must SELECT...FOR UPDATE the funder/person rows before reassign+delete; cascade FKs otherwise lose concurrent child inserts.
-- [prod→dev data sync](prod-dev-data-sync.md) — mirror prod rows into dev w/o reverting dev edits (funders.about ties); funders text overflows json_agg; apply via json_populate + replica mode; verify INCLUDE→EXCLUDE FKs first.
-- [Gives-through donor→PI links](gives-through-donor-pi.md) — donor (org/indiv/household) ↔ payment-intermediary join; donor-XOR at 3 layers; idempotent onConflictDoNothing; giftDerived suggestions; old org PI col deprecated not dropped.
-- [opp derivation idempotency](opp-derivation-idempotency.md) — deriveOppFields must be a true fixed point + SQL backfill mirrors it; legacy stage='cash_in' latches written_pledge but is NOT a status trigger (cash_in is payment-driven); won pledge stage='complete' even if partially paid.
-- [opportunity status is calculated](wildflower-opp-status-calculated.md) — status fully derived server-side; only user override is loss_type (dormant/lost); never write status directly; enum keeps dormant/lost.
-- [Shared multi-outcome handler gating](shared-outcome-flag-gating.md) — gate behavior on the explicit outcome flag, not a shared body field's presence; a stray field else silently hijacks another outcome.
-- [Fundable projects page](fundable-projects-page.md) — management moved off Admin to /fundable-projects; timeframes+goal columns nullable; progress = sum gift_allocations.sub_amount per project.
-- [clerk admin-gated e2e testing](clerk-admin-e2e-testing.md) — testClerkAuth provisions team_member; add a [DB] step to promote to admin or admin cards silently 403/hide.
-- [task intelligence](task-intelligence.md) — AI next-step suggestions in Tasks card; auto-generate ONLY on true first view (hasAnyProposal=false), never regenerate after accept/dismiss; refresh is explicit.
-- [Publish diffs the dev DB, not code](publish-diffs-dev-database.md) — stale dev DB → destructive reverts + skipped additive creates (→500); reconcile dev forward then re-publish; prod gets columns/indexes but NEVER CREATE EXTENSION (pg_trgm needs a manual idempotent psql file — [extensions](publish-flow-extensions.md)).
+- [Gift must always have >=1 allocation](gift-allocation-seed-invariant.md) — all 6 mint paths seed a starter allocation via giftAllocationSeed.ts; grant_year set only if the fiscal_years FK row exists.
+- [Allocation restriction model + total guard](wildflower-allocation-restriction-ux.md) — 3-axis restriction (any donor_restricted⇒restricted); coding→staged_payments, conditions→pledge_allocations; POST omits empties, PATCH sends null.
+- [archive soft-delete boundaries](archive-soft-delete-boundaries.md) — archive REPLACED hard delete app-wide (only QuickBooks revert still hard-deletes); admin show-archived is server-enforced LIST-only; archived gifts EXCLUDED from analytics + pledge paid-amount.
+- [Loan vs revenue tracks + loan_or_grant flag](loan-capital-fundraising-category.md) — loan_or_grant is the SOLE authority; gift `type` and fundraising_category columns are DROPPED (never revive); goals PK includes loan_or_grant.
+- [Gift scope → allocation migration](gift-scope-allocation-migration.md) — settled/fees + off-books all DERIVED in giftPaymentSummary.ts (off-books = all allocs on no-payment entities); QB tie is live-derived, no stored column.
+
+## Delivery, database, and verification
+
+- [Scoped validation checks](scoped-validation-checks.md) — fast per-package + changed-scope checks; codegen CHECK is non-mutating (concurrency-safe), but the regen SCRIPT mutates — run it alone.
+- [Dedicated vitest test DB](dedicated-test-db.md) — api-server vitest auto-provisions <devdb>_test (never dev); push only into an EMPTY recreated schema; mirrors entities/regions/fiscal_years.
+- [Test-data hygiene](test-data-hygiene.md) — dev DB pollution patterns after killed runs: Test Dev/Admin e2e users, 2099-dated reconciliation seeds, dupspec phone constants.
+- [Publish diffs the dev DB, not code](publish-diffs-dev-database.md) — stale dev DB → destructive reverts + skipped additive creates (→500); reconcile dev forward then re-publish; prod NEVER gets CREATE EXTENSION ([extensions](publish-flow-extensions.md)).
+- [cross-env DB schema drift](cross-env-db-schema-drift.md) — successor task's dev DB lacks predecessor's new column; fix additively via SQL, never blunt push (drops unrelated drifted columns = data loss).
+- [Data migration runs after Publish](data-migration-publish-ordering.md) — prod seed/backfill SQL dies "relation does not exist" unless Publish (schema diff) ran first; no BEGIN/COMMIT in a `psql -1` file.
 - [Drizzle SQL pitfalls](drizzle-pitfalls.md) — 7 runtime-only footguns invisible to typecheck: ANY(array) cast, outer-paren syntax, top-level-field unqualify, ORDER BY ordinal, alias collision, alias ordering, .desc() index churn.
 - [Orval / React Query patterns](orval-guide.md) — invalidation key must use /api prefix; custom query options require queryKey; coerce.boolean() makes the string "false" parse as true.
-- [Test-data hygiene](test-data-hygiene.md) — three dev DB pollution patterns after killed runs: Test Dev/Admin e2e users, 2099-dated reconciliation seeds, dupspec phone constants.
-- [Deleting a gift requires removing allocations first](gift-delete-allocations-restrict.md) — gift_allocations FK is RESTRICT (every gift has >=1); delete route must clear allocations in-txn first; other gift FKs are set-null.
-- [Vite build-time env gating](vite-build-env-gating.md) — artifact vite.config must validate PORT/BASE_PATH only in `command==="serve"`; root build builds ALL artifacts (incl. non-deployed design ones), so build-time throws crash the deploy.
-- [api-server HTTP integration tests](api-server-http-integration-tests.md) — DB-backed route test pattern: mock requireAuth, boot app.listen(0)+fetch, raise hook timeouts, skipIf no real DB; suite is otherwise DB-free.
-- [parseOrBadRequest 2nd arg](parse-or-bad-request-arg.md) — pass req.body/req.query, never req; wrong call type-checks (param is unknown) but always 400s at runtime; only HTTP tests catch it.
-- [Weighted projection tile](wildflower-weighted-projection.md) — dashboard projection = received + committed + weighted open asks; committed is per-pledge UNPAID remainder (nets payments out of pledge allocation, clamped) to dedupe partial payments; don't revert to full pledge.
-- [Allocation restriction model + total guard](wildflower-allocation-restriction-ux.md) — 3-axis restriction (any donor_restricted⇒restricted); coding→staged_payments, conditions→pledge_allocations; displayUsage trigger-only; POST omits empties, PATCH sends null.
-- [Bulk-action by-id load gate](bulk-action-load-gate.md) — dialogs resolving selection by id must block submit until loaded==expectedCount (selection size), else partial subset silently runs.
-- [archive soft-delete boundaries](archive-soft-delete-boundaries.md) — archive REPLACED hard delete app-wide (only QuickBooks revert still hard-deletes); admin show-archived is server-enforced LIST-only; archived gifts EXCLUDED from analytics + pledge paid-amount.
-- [Split gift into pledge](split-gift-into-pledge.md) — transform-in-place (keep original as 1st payment); matching-gift split intentionally allowed; lock allocation rows too; pledge stage derived (cash_in when fully paid).
-- [Pledge paid_amount derivation](pledge-status-rederivation.md) — paid_amount SUM EXCLUDES archived payments; out-of-band/raw-SQL changes don't re-run derivation — re-derive by mirroring deriveOppFields stage advance.
-- [merge-config FK inventory test](merge-config-inventory-drift.md) — any new table FK→organizations/people must be added to mergeEntities *_FK_REFS (or EXPECTED_FK_OMISSIONS); a test derives the expected set from schema & fails on drift (caught grant_leads too).
-- [Bulk owner-reassignment column coverage](owner-reassignment-column-coverage.md) — offboarding must move every owner/assignee FK to users (incl. grant_leads.assignee) but preserve provenance FKs (createdBy/author/etc); no inventory test guards the set, so new owner cols get missed.
-- [Data migration runs after Publish](data-migration-publish-ordering.md) — prod seed/backfill SQL dies "relation does not exist" unless Publish (schema diff) ran first; don't put BEGIN/COMMIT in a `psql -1`-applied file.
-- [Additive columns need a migration file](schema-column-migration-required.md) — a new Drizzle column also needs a reviewable idempotent ADD COLUMN IF NOT EXISTS migration+runbook (precedent 0006/0017); code-review REJECTS without it even though Publish also creates columns.
-- [Missing workspace symlink reads as TS2307](workspace-symlink-ts2307.md) — leaf typecheck "Cannot find module '@workspace/x'" = dropped pnpm symlink (run pnpm install), NOT stale lib decls; TS2305 is the stale-decl case.
-- [Loan vs revenue tracks + loan_or_grant flag](loan-capital-fundraising-category.md) — loan_or_grant is the SOLE signal as of 2026-07 cutover; legacy fundraising_category deprecated+scrubbed; gift type still live; goals PK includes loan_or_grant; `:category` normalizes both token families.
-- [Potential-duplicates queue](potential-duplicates-queue.md) — admin dup detection (name pg_trgm + shared phone); phone bonus must apply ONCE per pair (dedupe self-join), dismiss persists canonicalized ids.
-- [Audit log recording model](audit-log-recording-model.md) — atomic recordAudit(tx) for in-tx writes (archive/bulk/merge); non-throwing safeRecordAudit after standalone create/PATCH so audit never breaks a save; admin-gated.
-- [Raw ::date cast needs round-trip validation](raw-date-cast-validation.md) — query-param dates feeding a raw `::date` cast need a Date round-trip check (regex passes 2026-13-40 → Postgres 500); return 400.
-- [Reporting-deadline donor filter](reporting-deadline-donor-filter.md) — reporting_deadline tasks carry only opportunityIds; donor filter must EXISTS through the linked opportunity, not the task entity arrays.
-- [Prod data-seed slug/id mismatch](prod-data-seed-slug-mismatch.md) — id/slug-matched UPDATE can COMMIT yet flag the wrong row count; verify by affected-row count/state, not clean exit.
-- [Reimbursable direct/indirect share exclusion](reimbursable-share-exclusion.md) — direct-tagged alloc lines recorded full but excluded from goal analytics via IS DISTINCT FROM 'direct'; never leak into opp-status or paid-amount derivation.
-- [Individual org soft-credit](individual-org-soft-credit.md) — person lifetime/last-gift folds in org gifts (primary-contact|advisor|current-principal); disjoint via donor XOR (org_id NOT NULL); all paths now filter archived; org/hh totals unchanged.
-- [List-page pagination & PageJumper](list-page-pagination.md) — pagination markup duplicated (not shared) across 6 list pages, all use editable PageJumper (admin/audit-log excluded); blur-after-Enter/Escape needs skipBlurRef guard.
-- [Wildflower Foundation org vs entity](wildflower-foundation-org-vs-entity.md) — Foundation is both an organizations row (where staff hold roles) and an entities slug (fund attribution); don't cross them.
-- [Allocation school link (pledge vs gift)](allocation-school-link.md) — both carry schoolRecipientId FK; gift name via server display_usage trigger, pledge resolves client-side (no trigger by design); "School recipient" is a raw Input not a picker.
-- [Airtable→schools sync & school-recipient FK](school-sync-recipient-fk.md) — school recipient is allocation-level ONLY (no gifts_and_payments.school_recipient_id); sync upserts before stale-check so an error status can hide already-synced data; token prefers AIRTABLE_API_TOKEN.
-- [List-page default sort order](list-page-default-order.md) — server default order must mirror the displayed personDisplayName + end with an id tiebreaker (stable offset pagination).
-- [Gift scope → allocation migration](gift-scope-allocation-migration.md) — settled/fees + off-books all DERIVED in giftPaymentSummary.ts (off-books = all allocs on no-payment entities); stamp no longer rewrites amount; type/qb_tie_status still header-resident.
-- [FY Report page](fy-report-page.md) — lists records behind the dashboard goal bar; report route must mirror fyMetricsFor bucket semantics in lockstep or totals stop reconciling; entity scope from global header filter.
-- [Cleanup queue flag-for-research](cleanup-queue-flag-for-research.md) — SOLE research-flag path; polymorphic targetType (new type needs targetHref case); idempotent cleanup_nr_<targetId>; retired free-text notes need a DISTINCT reason_code or ON CONFLICT drops them ([issues_to_address](issues-to-address-cleanup-queue.md)).
-- [Deprecated-column response leaks (no Zod stripping)](deprecated-column-response-leak.md) — responses are plain res.json, so a @deprecated-but-still-physical Drizzle column leaks through EVERY full-row select that reaches the client; route all response reads through ONE scrubbed projection.
-- [Pledge expected_payment_date](pledge-expected-payment-date.md) — per-ROW date on PLEDGE allocations only (not gifts, not per-grant-year; one FY can hold many payments); shared date = one expected payment; nullable, additive, no trigger.
-- [Select-in-Dialog scroll trap](select-in-dialog-scroll-trap.md) — a long shadcn Select nested in a modal Dialog overflows + can't scroll; use an inline scrollable RadioGroup instead; page-level filter Selects are fine as-is.
-- [Gift must always have >=1 allocation](gift-allocation-seed-invariant.md) — all 6 mint paths seed a starter allocation via giftAllocationSeed.ts; guard app-level by decision (invariant #7); grant_year set only if the fiscal_years FK row exists.
-- [Audit-close gift freeze](gift-booking-lifecycle-audit-close.md) — records freeze by governing FY when its audit closes; fix in an open FY (under→new offsetting pledge, over→new gift), never mutate originals.
-- [Pledge write-off model](pledge-write-off-model.md) — many write-offs over time, ONE editable at once (FOR UPDATE app lock, unique index dropped); capacity = committed+writtenOff−paid must stay lockstep in 3 places.
-- [Reimbursable grant = pledge](reimbursable-grant-payment-model.md) — reimbursable grants (conditional='reimbursable') are pledges; book each real QB/Stripe check as a 1:1 gift payment (create_gift_from_opportunity), never as placeholder award-amount gifts.
-- [Deprecated-column drop audit](deprecated-column-drop-audit.md) — a "pure drop" grep must cover .col dot-access, col: object-key writes, AND table alias() reads (resolvedGift.col); trust full typecheck over grep + stale @deprecated comments.
-- [Scoped validation checks](scoped-validation-checks.md) — fast per-package + changed-scope checks; codegen CHECK is now non-mutating temp-dir diff (concurrency-safe), but the regen SCRIPT still mutates — run it alone.
-- [Dedicated vitest test DB](dedicated-test-db.md) — api-server vitest auto-provisions <devdb>_test (never dev); drizzle push prompts silently no-op without TTY → push only into an EMPTY recreated schema; mirror entities/regions/fiscal_years.
-- [Replit DB deletion nukes dev AND prod](replit-db-deletion-recovery.md) — deleting the built-in DB kills both branches; publish recreates empty prod schema; restore prod from dump human-run; verify with count(*) not n_live_tup.
+- [api-server HTTP integration tests](api-server-http-integration-tests.md) — DB-backed route test pattern: mock requireAuth, boot app.listen(0)+fetch, raise hook timeouts, skipIf no real DB.
+
+## Frontend and interaction conventions
+
 - [Unpickable rows are labeled, never hidden](unpickable-rows-label-not-hide.md) — user rule (also in replit.md prefs): pickers gray blocked rows WITH the reason; enforce via 409s.
-- [Recon search bands & confirm gating](reconciliation-search-and-confirm-gating.md) — text overrides the amount band; never pre-gate ahead of the locking confirm primitive; overridable blockers = exclusion (in-tx re-include) + amount-mismatch (pinned chargeId only); claimed-money blockers stay hard 409.
-- [Recon three-facet model](recon-three-facet-model.md) — owner-ratified vocabulary who/why|transaction|accounting (CRM gift ≠ who/why); linkage vs adequacy are separate signals; stray lanes + drag-to-link semantics.
-- [prod executeSql enum cast](prod-executesql-enum-cast.md) — prod read returns ZERO rows (only START TRANSACTION/ROLLBACK, success=true) if the SELECT list has an un-cast enum column; always ::text enums.
-- [Mockup preview iframe URLs](mockup-preview-url.md) — canvas iframes must use https://$REPLIT_DOMAINS/__mockup/preview/… (shared proxy), NEVER :8000 (unreachable → "couldn't reach this app").
-- [Canonical person display-name SQL](person-name-display-sql.md) — chain is preferred(nickname)+last → full → first+last, one shared helper; UI label "Preferred name", field stays nickname; ILIKE exempt.
-- [Coding-form import](coding-form-import.md) — effective reads are AI??parsed??raw via one accessor module; AI only normalizes/suppresses (never maps circles); record-first gift match inherits donor; grant letters opp-else-gift.
-- [Coding-form gift matching](coding-form-gift-matching.md) — bulk rematch must stay pending+unconfirmed (rematch clears human decisions); exact ±1¢ band ≠ ingest fee band; auto-propose only on exactly-one candidate.
-- [Donor-intent restriction policy](donor-restriction-policy.md) — owner rules beat form text: Yield/Arthur Rock never restricted; BWF always; hubs geo-restrict; Donorbox authoritative.
-- [Router self-prefix + 401 mask](router-self-prefix-401-mask.md) — reconciliation routers self-prefix full paths; requireAuth-before-routing makes curl 401 mask an unregistered route (verify authed, not bare curl).
-- [Migration "already applied" claims can be false](migration-applied-claims.md) — probe dev+prod information_schema before writing a "missing" drop; header comments and task briefs both lied once.
+- [wildflower list-page chooser pattern](wildflower-list-chooser-pattern.md) — 4 list pages share filter/column choosers; saved views persist null at default, known/hidden keeps opt-in filters hidden for predating views.
+- [List-page pagination & PageJumper](list-page-pagination.md) — pagination markup duplicated (not shared) across 6 list pages; blur-after-Enter/Escape needs skipBlurRef guard.
+- [Select-in-Dialog scroll trap](select-in-dialog-scroll-trap.md) — a long shadcn Select nested in a modal Dialog overflows + can't scroll; use an inline scrollable RadioGroup instead.
 - [Playwright e2e Clerk setup](playwright-e2e-clerk-setup.md) — 4 hard constraints to run committed e2e specs directly; the testing subagent bypasses all of them.
+- [clerk admin-gated e2e testing](clerk-admin-e2e-testing.md) — testClerkAuth provisions team_member; add a [DB] step to promote to admin or admin cards silently 403/hide.
+
+## High-risk operational notes
+
+Use these only when the symptom matches:
+
+- [Replit DB deletion nukes dev AND prod](replit-db-deletion-recovery.md) — deleting the built-in DB kills both branches; restore prod from dump human-run; verify with count(*) not n_live_tup.
+- [Schema-rename reconciliation](lifecycle-rename-reconciliation.md) — clear a stuck post-merge RENAME via guarded manual pre-rename→push (never push-force); prove Publish safe by checking prod-only cols == rename sources.
+- [post-merge push abort](post-merge-push-abort.md) — interactive drizzle-kit push aborts (skipping ALL additive changes) on schema-dropped columns still present in live DB; retain them as @deprecated, don't approve the drop.
+- [Missing workspace symlink reads as TS2307](workspace-symlink-ts2307.md) — leaf typecheck "Cannot find module '@workspace/x'" = dropped pnpm symlink (run pnpm install); TS2305 is the stale-decl case.
+- [prod executeSql enum cast](prod-executesql-enum-cast.md) — prod read returns ZERO rows (success=true) if the SELECT list has an un-cast enum column; always ::text enums.
+
+## Historical context
+
+- [Legacy reconciliation — pointer era](legacy-reconciliation/index.md) — regression context only; never current implementation guidance.
+- `legacy/` and any future `archive/` directory — historical only.
+
+## Search rule
+
+When the relevant index does not answer the question, search filenames and
+frontmatter descriptions (`grep -l` over `.agents/memory/`). Do not read all
+memory files. A useful memory note states a durable rule, why it matters, its
+current code/test anchor, and its retirement condition when transitional.
