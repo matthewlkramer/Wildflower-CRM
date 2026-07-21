@@ -41,6 +41,7 @@ export const ListReconciliationCardsResponse = zod.object({
   "data": zod.array(zod.object({
   "stagedPaymentId": zod.string(),
   "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "qbCardState": zod.enum(['raw', 'enriched', 'match_proposed', 'matched_complete', 'matched_partial_qb_surplus', 'matched_partial_external_surplus', 'matched_conflict', 'excluded']).describe('The QB row\'s linkage status expressed in the ONE derived per-record QB card vocabulary (same as coverage.state.qbCards on workbench-clusters). New UI reads this, not the raw staged-payment status.'),
   "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
   "amount": zod.string().nullish(),
   "dateReceived": zod.string().date().nullish(),

@@ -779,8 +779,13 @@ export function GroupQbDialog({
       return "This is the row being grouped";
     if (c.stripeChargeId)
       return "Stripe charge-level card — grouping applies to whole QB rows";
-    if (c.status === "match_confirmed") return "Already reconciled to a gift";
-    if (c.status === "excluded") return "Excluded — re-include first";
+    // Derived per-record QB card vocabulary (coverage.state.qbCards) — the one
+    // per-record QB status source; never read the raw staged-payment status.
+    // Any matched_* variant is already counted into a gift, so it can't be
+    // regrouped without unmatching first.
+    if (c.qbCardState.startsWith("matched"))
+      return "Already reconciled to a gift";
+    if (c.qbCardState === "excluded") return "Excluded — re-include first";
     return null;
   };
 

@@ -7951,11 +7951,12 @@ components:
         timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
     ReconciliationCard:
       type: object
-      required: [stagedPaymentId, status, queue, hasStripeEvidence, ready, isSourceGroup, cardStatus, settled]
+      required: [stagedPaymentId, status, qbCardState, queue, hasStripeEvidence, ready, isSourceGroup, cardStatus, settled]
       description: "List item for the unified reconciler — one per QB staged payment (the anchor), OR one per manual 'same physical gift' source group (collapsed; stagedPaymentId is the representative member). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card."
       properties:
         stagedPaymentId: { type: string }
         status:          { $ref: "#/components/schemas/StagedPaymentStatus" }
+        qbCardState:     { $ref: "#/components/schemas/WorkbenchRowQbCardState", description: "The QB row's linkage status expressed in the ONE derived per-record QB card vocabulary (same as coverage.state.qbCards on workbench-clusters). New UI reads this, not the raw staged-payment status." }
         queue:           { $ref: "#/components/schemas/QuickbooksStagedPaymentQueue" }
         amount:          { type: string, nullable: true }
         dateReceived:    { type: string, format: date, nullable: true }

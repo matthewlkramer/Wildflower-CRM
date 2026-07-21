@@ -33,6 +33,7 @@ import {
   stagedStatusWhere,
 } from "../../lib/derivedStatus";
 import { isQbGroupMemberSql } from "../../lib/unitGroupMembership";
+import { qbCardStateOfStatus } from "./workbenchRowState";
 import { payoutStatusLabelSql } from "../../lib/settlementLink";
 import {
   entityWhere,
@@ -818,6 +819,10 @@ router.get(
         stagedPaymentId: row.id,
         stripeChargeId: isCharge ? row.chargeId : null,
         status: row.status,
+        // The QB ROW's linkage status in the ONE derived per-record QB card
+        // vocabulary (same mapping the workbench-clusters endpoint uses for
+        // coverage.state.qbCards). New UI reads this, not raw status.
+        qbCardState: qbCardStateOfStatus(row.status),
         queue: row.queue,
         // A charge card reconciles for the charge's own gross, not the QB lump.
         amount: isCharge ? (row.chargeGross ?? row.amount) : row.amount,

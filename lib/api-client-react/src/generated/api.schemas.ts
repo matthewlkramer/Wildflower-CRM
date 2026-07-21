@@ -4096,6 +4096,23 @@ export const ReconciliationCardCardStatus = {
 } as const;
 
 /**
+ * Derived display state for one QB evidence card. Also carries the record's linkage vocabulary: raw = no candidate gift yet (pending); match_proposed = candidate awaiting human confirm; matched_* = counted into a gift; excluded = marked not-a-donation. enriched is reserved for the future fill-out-QB documentation workflow.
+ */
+export type WorkbenchRowQbCardState = typeof WorkbenchRowQbCardState[keyof typeof WorkbenchRowQbCardState];
+
+
+export const WorkbenchRowQbCardState = {
+  raw: 'raw',
+  enriched: 'enriched',
+  match_proposed: 'match_proposed',
+  matched_complete: 'matched_complete',
+  matched_partial_qb_surplus: 'matched_partial_qb_surplus',
+  matched_partial_external_surplus: 'matched_partial_external_surplus',
+  matched_conflict: 'matched_conflict',
+  excluded: 'excluded',
+} as const;
+
+/**
  * One member of a manual 'same physical gift' source group, summarized for the group card.
  */
 export interface ReconciliationCardGroupMember {
@@ -4115,6 +4132,8 @@ export interface ReconciliationCardGroupMember {
 export interface ReconciliationCard {
   stagedPaymentId: string;
   status: StagedPaymentStatus;
+  /** The QB row's linkage status expressed in the ONE derived per-record QB card vocabulary (same as coverage.state.qbCards on workbench-clusters). New UI reads this, not the raw staged-payment status. */
+  qbCardState: WorkbenchRowQbCardState;
   queue: QuickbooksStagedPaymentQueue;
   amount?: string | null;
   dateReceived?: string | null;
@@ -5458,23 +5477,6 @@ export interface WorkbenchRowCoverageState {
   /** Number of linked records on the source side of this pairwise edge. */
   relationshipCount: number;
 }
-
-/**
- * Derived display state for one QB evidence card. Also carries the record's linkage vocabulary: raw = no candidate gift yet (pending); match_proposed = candidate awaiting human confirm; matched_* = counted into a gift; excluded = marked not-a-donation. enriched is reserved for the future fill-out-QB documentation workflow.
- */
-export type WorkbenchRowQbCardState = typeof WorkbenchRowQbCardState[keyof typeof WorkbenchRowQbCardState];
-
-
-export const WorkbenchRowQbCardState = {
-  raw: 'raw',
-  enriched: 'enriched',
-  match_proposed: 'match_proposed',
-  matched_complete: 'matched_complete',
-  matched_partial_qb_surplus: 'matched_partial_qb_surplus',
-  matched_partial_external_surplus: 'matched_partial_external_surplus',
-  matched_conflict: 'matched_conflict',
-  excluded: 'excluded',
-} as const;
 
 /**
  * One QB evidence card in the cluster — one entry per QB record in qbRecords (keyed by qbRecordId = stagedPaymentId), the ONE source of per-record QB linkage state.
