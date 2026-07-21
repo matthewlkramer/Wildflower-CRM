@@ -9,7 +9,7 @@ Before writing any reconciliation code, confirm:
 
 - **Use the authoritative link table for the relationship involved.**
   `payment_applications` for money unit→gift; `settlement_links` for payout↔deposit;
-  `source_links` (when shipped) for evidence↔evidence. Never route a relationship
+  `source_links` for evidence↔evidence. Never route a relationship
   through the wrong table or add a sibling pointer column.
 - **Do not add new pointer columns, stored queue status columns, copied status CASE
   expressions, or route-specific money-link logic.** All queue status derives at read
@@ -17,8 +17,10 @@ Before writing any reconciliation code, confirm:
 - **Frozen pointer columns may be read only where the current migration phase already
   requires it.** Do not add new readers or writers of frozen/deprecated pointers.
   The QB gift-pointer columns (`staged_payments.matched/created/group_reconciled_gift_id`)
-  are DROPPED (0126). Stripe/Donorbox charge pointers are frozen pending their
-  ledger read-flip.
+  are DROPPED (0126). The Stripe/Donorbox cross-processor pointers
+  (`linked/proposed_qb_staged_payment_id`, `linked_fee_qb_staged_payment_id`,
+  `linked_stripe_charge_id`) are DROPPED (0149) — `source_links` is the sole
+  authority for those ties.
 - **Current state ≠ target state.** Transitional dual-write fields document migration
   progress, not preferred architecture. New work should move the system toward the
   target. Any change that must use a frozen, deprecated, or dual-write-only field must
@@ -48,10 +50,11 @@ current authority). Lifecycle: `proposed | confirmed | exempt`. Status derived o
 Separate from `source_links` by design (different link types, different cardinality
 rules); the two tables are siblings, not one absorbing the other.
 
-**Ledger 3: `source_links`** — Evidence↔evidence claim pointers: charge↔QB tie,
-charge↔fee-row, Donorbox↔QB, Donorbox↔charge. **NOT YET SHIPPED** — phased migration
-(ADR) in `docs/adr-source-link-ledger.md`. The frozen pointer columns it will replace
-are still live; no new pointer columns until `source_links` ships.
+**Ledger 3: `source_links`** — Evidence↔evidence claims: charge↔QB tie,
+charge↔fee-row, Donorbox↔QB, Donorbox↔charge. **SHIPPED and sole authority**
+(ADR in `docs/adr-source-link-ledger.md`, phases 1–6 complete). The five legacy
+pointer columns it replaced were dropped in migration 0149; never add sibling
+pointer columns.
 
 **No stored lifecycle status** on `staged_payments` or `stripe_staged_charges`.
 All reconciliation queue status is derived at read time via `derivedStatus.ts` alias-
@@ -139,7 +142,7 @@ stored lifecycle (`status` column); map to shared derived vocab via
 - [Two-lane reconciliation model](reconciliation-two-lane-model.md) — every unit of money derives two independent lanes (funding + crmRecord), never stored; gift link ≠ donor confirmed; emit on ALL evidence endpoints.
 - [Reconciliation target-state design](reconciliation-target-design.md) — ratified three-link-table model (payment_applications + settlement_links + source_links) in docs/reconciliation-design.md; two planes, all statuses derived; phases 2-5 shipped; "one-ledger" in older doc sections refers to payment_applications as the sole unit→gift ledger (pre-source_links vocabulary).
 - [Reconciliation status is derived](reconciliation-derived-status.md) — staged/charge status derived from facts via ONE set of alias-parameterized builders in derivedStatus.ts; never hand-roll a CASE twin (parity tests pin it); Donorbox maps stored→vocab at the API edge.
-- **Evidence↔evidence claim pointers are FROZEN (2026-07)** — no new siblings; `source_links` ADR + phased migration in docs/adr-source-link-ledger.md.
+- **Evidence↔evidence claim pointers are DROPPED (migration 0149, 2026-07)** — `source_links` is the sole authority; never add sibling pointer columns. ADR in docs/adr-source-link-ledger.md.
 - [Reconciliation phase status source](reconciliation-phase-status-source.md) — trust migration ledger + schema header comments for phase status; all link-table phases shipped; cluster view (reconciliation-clusters.tsx) is the current UI design, superseding the six-queue workbench.
 - [payment_applications ledger](payment-applications-ledger.md) — unit→gift ledger (polymorphic evidence_source: quickbooks|stripe|donorbox); QB reads flipped; Stripe/Donorbox dual-write only; book-once in service layer; gift_id RESTRICT; provenance promotion on confirm (system→system_confirmed).
 - [Ledger read-cutover prod gate](ledger-read-cutover-prod-gate.md) — additive dual-write→backfill→flip-reads is only safe once parity runs on PROD (dev parity ≠ prod); after a flip, fixtures seeding legacy-only links must dual-write the ledger row.

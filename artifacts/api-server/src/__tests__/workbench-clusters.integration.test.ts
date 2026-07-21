@@ -270,13 +270,11 @@ async function seedCharge(
     payerName: opts.payerName ?? `Zztest Cluster Charge ${RUN}`,
     payerEmail: `${RUN}-charge@example.invalid`,
     exclusionReason: (opts.exclusionReason ?? null) as never,
-    linkedQbStagedPaymentId: opts.linkedQbStagedPaymentId ?? null,
-    linkedFeeQbStagedPaymentId: opts.linkedFeeQbStagedPaymentId ?? null,
     refundPropagationStatus: (opts.refundProposed ? "proposed" : "none") as never,
     refundPropagationKind: (opts.refundProposed ? "full_refund" : null) as never,
     organizationId: opts.organizationId ?? null,
   });
-  // Ledger mirror — reads are ledger-authoritative (source_links).
+  // The tie lives ONLY in the source_links ledger (the authority).
   if (opts.linkedQbStagedPaymentId) {
     await db.insert(schema.sourceLinks).values({
       id: schema.sourceLinkId("charge_qb_tie", id),

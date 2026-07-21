@@ -444,8 +444,6 @@ router.post(
           await tx
             .update(stripeStagedCharges)
             .set({
-              linkedQbStagedPaymentId: qbId,
-              proposedQbStagedPaymentId: null,
               crossProcessorLinkedByUserId: user.id,
               crossProcessorLinkedAt: now,
               updatedAt: now,
@@ -576,17 +574,9 @@ router.post(
         }
 
         // Clear the proposal: delete the PROPOSED ledger row (confirmed rows
-        // are untouched by the helper's lifecycle guard) and clear the
-        // pointer mirror in lockstep (dual-write window). The FOR UPDATE
+        // are untouched by the helper's lifecycle guard). The FOR UPDATE
         // lock above makes drift impossible.
         await clearProposedChargeTie(tx, chargeId);
-        await tx
-          .update(stripeStagedCharges)
-          .set({
-            proposedQbStagedPaymentId: null,
-            updatedAt: new Date(),
-          })
-          .where(eq(stripeStagedCharges.id, chargeId));
 
         return { rejected: true, chargeId, qbStagedPaymentId: qbId };
       });
@@ -659,15 +649,12 @@ router.post(
         const feeQbId = charge.linkedFeeQbStagedPaymentId;
 
         // Clear the tie: delete the charge's tie ledger row and its fee-row
-        // claim, and clear the pointer mirrors in lockstep (dual-write
-        // window). The FOR UPDATE lock above makes drift impossible.
+        // claim. The FOR UPDATE lock above makes drift impossible.
         await deleteChargeTie(tx, chargeId);
         await deleteChargeFeeRowLink(tx, chargeId);
         await tx
           .update(stripeStagedCharges)
           .set({
-            linkedQbStagedPaymentId: null,
-            linkedFeeQbStagedPaymentId: null,
             crossProcessorLinkedByUserId: null,
             crossProcessorLinkedAt: null,
             updatedAt: new Date(),

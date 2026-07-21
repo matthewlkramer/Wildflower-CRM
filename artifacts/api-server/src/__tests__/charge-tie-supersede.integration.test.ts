@@ -131,11 +131,10 @@ async function seedCharge(over?: {
     grossAmount: over?.gross ?? "103.00",
     netAmount: over?.net ?? "99.71",
     dateReceived: "2026-03-14",
-    linkedQbStagedPaymentId: over?.linkedTo ?? null,
     crossProcessorLinkedByUserId: over?.linkedTo ? USER_ID : null,
     crossProcessorLinkedAt: over?.linkedTo ? new Date() : null,
   });
-  // Ledger mirror — tie reads are ledger-authoritative (source_links).
+  // The tie lives ONLY in the source_links ledger (the authority).
   if (over?.linkedTo) {
     await db.insert(schema.sourceLinks).values({
       id: schema.sourceLinkId("charge_qb_tie", id),
@@ -212,7 +211,6 @@ async function untie(charge: string) {
   await db
     .update(schema.stripeStagedCharges)
     .set({
-      linkedQbStagedPaymentId: null,
       crossProcessorLinkedByUserId: null,
       crossProcessorLinkedAt: null,
     })
@@ -365,11 +363,7 @@ describe.skipIf(!HAS_DB)("charge-tie supersede (DB)", () => {
     const ch = await seedCharge();
     // The gift was booked from the charge BEFORE the tie (e.g. Gift report).
     const preexistingId = await seedChargeLedgerRow(ch, gift);
-    await db
-      .update(schema.stripeStagedCharges)
-      .set({ linkedQbStagedPaymentId: sp })
-      .where(eqFn(schema.stripeStagedCharges.id, ch));
-    // Ledger mirror — the supersede pass reads the tie from source_links.
+    // The supersede pass reads the tie from source_links (the authority).
     await db.insert(schema.sourceLinks).values({
       id: schema.sourceLinkId("charge_qb_tie", ch),
       linkType: "charge_qb_tie",

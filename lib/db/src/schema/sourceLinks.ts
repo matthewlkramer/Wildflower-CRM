@@ -27,14 +27,13 @@ import {
  *   • Plane 2 (unit↔gift):   `payment_applications` — the cash-application ledger.
  *   • THIS table:            unit↔unit claims across evidence sources.
  *
- * It REPLACES the five scattered pointer columns:
+ * It REPLACED the five scattered pointer columns (DROPPED in migration 0149):
  *   stripe_staged_charges.linked_qb_staged_payment_id     → charge_qb_tie (confirmed)
  *   stripe_staged_charges.proposed_qb_staged_payment_id   → charge_qb_tie (proposed)
  *   stripe_staged_charges.linked_fee_qb_staged_payment_id → charge_fee_row
  *   donorbox_donations.linked_qb_staged_payment_id        → donorbox_qb
  *   donorbox_donations.linked_stripe_charge_id            → donorbox_charge
- * Those columns stay physical `@deprecated` mirrors during the transition
- * (never approve the interactive-push drop); this ledger is the authority.
+ * This ledger is the SOLE authority — do not reintroduce pointer columns.
  *
  * CLAIM ≠ STATUS stays law (derivedStatus.ts): a source_links row is a CLAIM —
  * it blocks re-picking and feeds eligibility filters — but `match_confirmed`

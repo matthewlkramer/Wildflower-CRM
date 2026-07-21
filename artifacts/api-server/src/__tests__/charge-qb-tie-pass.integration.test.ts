@@ -92,10 +92,8 @@ async function seedCharge(over: {
     dateReceived: over.dateReceived,
     payerName: over.payerName ?? null,
     exclusionReason: over.exclusionReason ?? null,
-    linkedQbStagedPaymentId: over.linkedQbStagedPaymentId ?? null,
-    proposedQbStagedPaymentId: over.proposedQbStagedPaymentId ?? null,
   });
-  // Ledger mirror — the tie pass reads/writes source_links as the authority.
+  // The tie lives ONLY in the source_links ledger (the authority).
   const tieQb = over.linkedQbStagedPaymentId ?? over.proposedQbStagedPaymentId;
   if (tieQb) {
     await db.insert(schema.sourceLinks).values({
@@ -130,18 +128,8 @@ async function seedQbRow(over: {
   return id;
 }
 
-/**
- * Read the tie state from the LEDGER (the authority) and assert the deprecated
- * pointer mirrors agree — every dual-write drift shows up here.
- */
+/** Read the tie state from the LEDGER (the sole authority). */
 async function readCharge(id: string) {
-  const [pointers] = await db
-    .select({
-      proposed: schema.stripeStagedCharges.proposedQbStagedPaymentId,
-      linked: schema.stripeStagedCharges.linkedQbStagedPaymentId,
-    })
-    .from(schema.stripeStagedCharges)
-    .where(eqFn(schema.stripeStagedCharges.id, id));
   const ties = await db
     .select({
       lifecycle: schema.sourceLinks.lifecycle,
@@ -160,8 +148,6 @@ async function readCharge(id: string) {
     linked: tie?.lifecycle === "confirmed" ? tie.qb : null,
   };
   expect(ties.length).toBeLessThanOrEqual(1);
-  expect(pointers!.proposed).toBe(row.proposed);
-  expect(pointers!.linked).toBe(row.linked);
   return row;
 }
 

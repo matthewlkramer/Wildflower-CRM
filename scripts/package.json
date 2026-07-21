@@ -9,7 +9,6 @@
     "parse:reconciliation-sheets": "tsx ./src/parse-reconciliation-sheets.ts",
     "import:coding-forms": "tsx ./src/import-coding-forms.ts",
     "gen:coding-forms-seed": "tsx ./src/generate-coding-forms-seed-sql.ts",
-    "check:source-link-drift": "tsx ./src/source-link-drift-check.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

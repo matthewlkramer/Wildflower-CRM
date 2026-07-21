@@ -232,9 +232,8 @@ async function seedCharge(
     // counted stripe ledger row reads `match_confirmed`, otherwise `pending`
     // (the pointer columns are retired and never written).
     exclusionReason: (opts.exclusionReason ?? null) as never,
-    linkedQbStagedPaymentId: opts.linkedQbStagedPaymentId ?? null,
   });
-  // Ledger mirror — reads are ledger-authoritative (source_links).
+  // The tie lives ONLY in the source_links ledger (the authority).
   if (opts.linkedQbStagedPaymentId) {
     await db.insert(schema.sourceLinks).values({
       id: schema.sourceLinkId("charge_qb_tie", id),
@@ -254,6 +253,28 @@ async function seedCharge(
   }
   chargeIds.push(id);
   return id;
+}
+
+/** The charge's tie state from the source_links ledger (the sole authority). */
+async function ledgerTies(chargeId: string): Promise<{
+  linkedQb: string | null;
+  feeQb: string | null;
+}> {
+  const rows = await db
+    .select({
+      linkType: schema.sourceLinks.linkType,
+      lifecycle: schema.sourceLinks.lifecycle,
+      qb: schema.sourceLinks.qbStagedPaymentId,
+    })
+    .from(schema.sourceLinks)
+    .where(eqFn(schema.sourceLinks.stripeChargeId, chargeId));
+  return {
+    linkedQb:
+      rows.find(
+        (r) => r.linkType === "charge_qb_tie" && r.lifecycle === "confirmed",
+      )?.qb ?? null,
+    feeQb: rows.find((r) => r.linkType === "charge_fee_row")?.qb ?? null,
+  };
 }
 
 async function seedStaged(opts: {
@@ -1158,11 +1179,7 @@ describe.skipIf(!HAS_DB)("Manual charge-tie exclusion override (integration)", (
     expect(row!.exclusionReason).toBeNull();
     expect(row!.classificationSource).toBe("manual");
 
-    const [charge] = await db
-      .select()
-      .from(schema.stripeStagedCharges)
-      .where(eqFn(schema.stripeStagedCharges.id, chargeId));
-    expect(charge!.linkedQbStagedPaymentId).toBe(qb);
+    expect((await ledgerTies(chargeId)).linkedQb).toBe(qb);
   });
 });
 
@@ -1179,11 +1196,7 @@ describe.skipIf(!HAS_DB)("Pinned charge-tie + amount-mismatch override (integrat
     expect(r.status).toBe(409);
     expect(r.json.error).toBe("amount_mismatch");
 
-    const [charge] = await db
-      .select()
-      .from(schema.stripeStagedCharges)
-      .where(eqFn(schema.stripeStagedCharges.id, chargeId));
-    expect(charge!.linkedQbStagedPaymentId).toBeNull();
+    expect((await ledgerTies(chargeId)).linkedQb).toBeNull();
   });
 
   it("ties a mismatched row to the PINNED charge with overrideAmountMismatch", async () => {
@@ -1199,11 +1212,11 @@ describe.skipIf(!HAS_DB)("Pinned charge-tie + amount-mismatch override (integrat
     expect(r.json.confirmed).toBe(true);
     expect(r.json.tied).toBe(1);
 
+    expect((await ledgerTies(chargeId)).linkedQb).toBe(qb);
     const [charge] = await db
       .select()
       .from(schema.stripeStagedCharges)
       .where(eqFn(schema.stripeStagedCharges.id, chargeId));
-    expect(charge!.linkedQbStagedPaymentId).toBe(qb);
     expect(charge!.crossProcessorLinkedByUserId).toBe(TEST_USER_ID);
   });
 
@@ -1221,16 +1234,8 @@ describe.skipIf(!HAS_DB)("Pinned charge-tie + amount-mismatch override (integrat
     expect(r.status).toBe(200);
     expect(r.json.tied).toBe(1);
 
-    const [a] = await db
-      .select()
-      .from(schema.stripeStagedCharges)
-      .where(eqFn(schema.stripeStagedCharges.id, chargeA));
-    const [b] = await db
-      .select()
-      .from(schema.stripeStagedCharges)
-      .where(eqFn(schema.stripeStagedCharges.id, chargeB));
-    expect(b!.linkedQbStagedPaymentId).toBe(qb);
-    expect(a!.linkedQbStagedPaymentId).toBeNull();
+    expect((await ledgerTies(chargeB)).linkedQb).toBe(qb);
+    expect((await ledgerTies(chargeA)).linkedQb).toBeNull();
   });
 
   it("excluded + mismatched needs BOTH flags: exclusion 409 first, then both flags tie and re-include", async () => {
@@ -1267,11 +1272,7 @@ describe.skipIf(!HAS_DB)("Pinned charge-tie + amount-mismatch override (integrat
       .where(eqFn(schema.stagedPayments.id, qb));
     expect(row!.exclusionReason).toBeNull();
     expect(row!.classificationSource).toBe("manual");
-    const [charge] = await db
-      .select()
-      .from(schema.stripeStagedCharges)
-      .where(eqFn(schema.stripeStagedCharges.id, chargeId));
-    expect(charge!.linkedQbStagedPaymentId).toBe(qb);
+    expect((await ledgerTies(chargeId)).linkedQb).toBe(qb);
   });
 
   it("rejects malformed pins: multiple rows with chargeId, or the amount flag without a pin (400)", async () => {
@@ -1342,12 +1343,10 @@ describe.skipIf(!HAS_DB)("Revert confirmed charge↔QB tie (integration)", () =>
     const chargeId = await seedCharge(po, { linkedQbStagedPaymentId: qb });
     // The confirm path also stamps the claimed sibling fee row + who/when —
     // seed those directly so the revert must clear ALL of it. Fee reads are
-    // ledger-authoritative (source_links), so seed the ledger row alongside
-    // the deprecated pointer mirror.
+    // ledger-authoritative (source_links).
     await db
       .update(schema.stripeStagedCharges)
       .set({
-        linkedFeeQbStagedPaymentId: feeQb,
         crossProcessorLinkedByUserId: TEST_USER_ID,
         crossProcessorLinkedAt: new Date(),
       })
@@ -1380,12 +1379,13 @@ describe.skipIf(!HAS_DB)("Revert confirmed charge↔QB tie (integration)", () =>
     expect(r.json.qbStagedPaymentId).toBe(qb);
     expect(r.json.feeQbStagedPaymentId).toBe(feeQb);
 
+    const tiesAfter = await ledgerTies(chargeId);
+    expect(tiesAfter.linkedQb).toBeNull();
+    expect(tiesAfter.feeQb).toBeNull();
     const [charge] = await db
       .select()
       .from(schema.stripeStagedCharges)
       .where(eqFn(schema.stripeStagedCharges.id, chargeId));
-    expect(charge!.linkedQbStagedPaymentId).toBeNull();
-    expect(charge!.linkedFeeQbStagedPaymentId).toBeNull();
     expect(charge!.crossProcessorLinkedByUserId).toBeNull();
     expect(charge!.crossProcessorLinkedAt).toBeNull();
 
@@ -1878,7 +1878,7 @@ describe.skipIf(!HAS_DB)(
       expect(r.json.ok).toBe(true);
       expect(r.json.chargesLinked).toBe(0);
 
-      // No charge_qb_tie ledger rows and no pointer mirrors were minted.
+      // No charge_qb_tie ledger rows were minted.
       const ties = await db
         .select({ id: schema.sourceLinks.id })
         .from(schema.sourceLinks)
@@ -1889,17 +1889,6 @@ describe.skipIf(!HAS_DB)(
           ),
         );
       expect(ties).toHaveLength(0);
-      const charges = await db
-        .select({
-          id: schema.stripeStagedCharges.id,
-          linkedQb: schema.stripeStagedCharges.linkedQbStagedPaymentId,
-        })
-        .from(schema.stripeStagedCharges)
-        .where(
-          inArrayFn(schema.stripeStagedCharges.id, [chargeA, chargeB]),
-        );
-      expect(charges).toHaveLength(2);
-      for (const c of charges) expect(c.linkedQb).toBeNull();
 
       // Idempotent: re-running is a no-op 200.
       const again = await post(

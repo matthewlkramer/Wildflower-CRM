@@ -403,7 +403,6 @@ describe.skipIf(!HAS_DB)(
           amountRefunded: "259.11",
           exclusionReason: "refunded_charge",
         }),
-        linkedQbStagedPaymentId: spId,
       } as UpsertValues);
       await seedTie(chId, spId);
 
@@ -425,11 +424,9 @@ describe.skipIf(!HAS_DB)(
             amountRefunded: "259.11",
             exclusionReason: "refunded_charge",
           }),
-          linkedQbStagedPaymentId: spId,
         },
         {
           ...upsertValues(liveId, { grossAmount: "251.81", netAmount: "251.81" }),
-          linkedQbStagedPaymentId: spId,
         },
       ] as UpsertValues[]);
       await seedTie(refundedId, spId);
@@ -453,14 +450,12 @@ describe.skipIf(!HAS_DB)(
             amountRefunded: "259.11",
             exclusionReason: "refunded_charge",
           }),
-          linkedQbStagedPaymentId: spId,
         },
         {
           ...upsertValues(failedId, {
             rawCharge: { id: failedId, object: "charge", status: "failed" },
             exclusionReason: "failed_charge",
           }),
-          linkedQbStagedPaymentId: spId,
         },
       ] as UpsertValues[]);
       await seedTie(refundedId, spId);
@@ -485,7 +480,6 @@ describe.skipIf(!HAS_DB)(
           amountRefunded: "259.11",
           exclusionReason: "refunded_charge",
         }),
-        linkedQbStagedPaymentId: spId,
       } as UpsertValues);
       await seedTie(chId, spId);
 

@@ -33,12 +33,11 @@ import {
  * NET, both to the cent — close date, and — when several same-amount
  * candidates compete — payer-name similarity).
  *
- * PURELY a proposer: it only ever writes
- * `stripe_staged_charges.proposed_qb_staged_payment_id`. It NEVER stamps the
- * confirmed `linked_qb_staged_payment_id` (a human approve does that), never
- * touches settlement_links, gifts, or any QB row, and never overwrites a
- * confirmed tie. Idempotent: re-running recomputes the same proposals and
- * clears stale ones.
+ * PURELY a proposer: it only ever writes PROPOSED `charge_qb_tie` rows in the
+ * `source_links` ledger. It NEVER stamps a CONFIRMED tie (a human approve does
+ * that), never touches settlement_links, gifts, or any QB row, and never
+ * overwrites a confirmed tie. Idempotent: re-running recomputes the same
+ * proposals and clears stale ones.
  */
 
 // ── Pure matching (unit-testable, no DB) ──────────────────────────────────
@@ -363,8 +362,7 @@ export async function runChargeTiePass(
 
   // Scope exit: a charge whose payout HAS a settlement link (the lump path owns
   // it) must not keep a stale charge-grain proposal around. Confirmed ties are
-  // untouched — only PROPOSED claims clear. The ledger is the authority; the
-  // pointer mirror clears in lockstep (dual-write window).
+  // untouched — only PROPOSED claims clear. The ledger is the sole authority.
   const scopeExitLedger = await db.execute<{ charge_id: string }>(sql`
     DELETE FROM source_links srcl
     USING stripe_staged_charges c
@@ -377,23 +375,7 @@ export async function runChargeTiePass(
       )
     RETURNING c.id AS charge_id
   `);
-  const scopeExitPointer = await db
-    .update(stripeStagedCharges)
-    .set({ proposedQbStagedPaymentId: null, updatedAt: new Date() })
-    .where(
-      and(
-        sql`${stripeStagedCharges.proposedQbStagedPaymentId} IS NOT NULL`,
-        sql`EXISTS (
-          SELECT 1 FROM settlement_links sl
-          WHERE sl.payout_id = ${stripeStagedCharges.stripePayoutId}
-        )`,
-      ),
-    )
-    .returning({ id: stripeStagedCharges.id });
-  cleared += new Set([
-    ...scopeExitLedger.rows.map((r) => r.charge_id),
-    ...scopeExitPointer.map((r) => r.id),
-  ]).size;
+  cleared += new Set(scopeExitLedger.rows.map((r) => r.charge_id)).size;
 
   // Payouts with NO settlement link at all (the "Missing deposit" pool).
   const noLink = sql`NOT EXISTS (
@@ -518,34 +500,17 @@ export async function runChargeTiePass(
 
     // Persist this payout's proposals in ONE transaction: clear stale ones,
     // then stamp the fresh assignment. Ledger writes are guarded on the tie
-    // row not being CONFIRMED (a racing human approve wins); the pointer
-    // mirror is guarded the same way and written in lockstep (dual-write).
+    // row not being CONFIRMED (a racing human approve wins).
     await db.transaction(async (tx) => {
       for (const c of charges) {
         const want = assignment.get(c.id) ?? null;
         if (c.proposedQbStagedPaymentId === want) continue;
         if (want == null) {
           await clearProposedChargeTie(tx, c.id);
+          cleared += 1;
         } else {
           await upsertProposedChargeTie(tx, c.id, want);
         }
-        const upd = await tx
-          .update(stripeStagedCharges)
-          .set({ proposedQbStagedPaymentId: want, updatedAt: new Date() })
-          .where(
-            and(
-              eq(stripeStagedCharges.id, c.id),
-              isNull(stripeStagedCharges.linkedQbStagedPaymentId),
-              sql`NOT EXISTS (
-                SELECT 1 FROM source_links srcl
-                WHERE srcl.link_type = 'charge_qb_tie'
-                  AND srcl.lifecycle = 'confirmed'
-                  AND srcl.stripe_charge_id = "stripe_staged_charges"."id"
-              )`,
-            ),
-          )
-          .returning({ id: stripeStagedCharges.id });
-        if (upd.length && want == null) cleared += 1;
       }
     });
     proposed += assignment.size;
@@ -792,16 +757,6 @@ export async function claimSiblingFeeRows(
         .onConflictDoNothing()
         .returning({ id: sourceLinks.id });
       if (inserted.length) {
-        // Pointer mirror in lockstep (dual-write window).
-        await tx
-          .update(stripeStagedCharges)
-          .set({ linkedFeeQbStagedPaymentId: feeRowId, updatedAt: now })
-          .where(
-            and(
-              eq(stripeStagedCharges.id, chargeId),
-              isNull(stripeStagedCharges.linkedFeeQbStagedPaymentId),
-            ),
-          );
         claimed += inserted.length;
       }
       await tx.execute(sql`RELEASE SAVEPOINT fee_claim_stamp`);

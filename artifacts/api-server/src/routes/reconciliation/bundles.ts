@@ -113,12 +113,9 @@ router.post(
               user.id,
               now,
             );
-            // Pointer mirror (dual-write window).
             await tx
               .update(donorboxDonations)
               .set({
-                linkedStripeChargeId: d.stripeChargeId,
-                linkedQbStagedPaymentId: id,
                 crossProcessorLinkedByUserId: user.id,
                 crossProcessorLinkedAt: now,
               })

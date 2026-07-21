@@ -1,6 +1,8 @@
 # ADR: One source-link ledger for evidence↔evidence claims
 
-**Status:** Proposed (2026-07-16) · **Owner:** reconciliation
+**Status:** Implemented (2026-07-21; phases 1–6 complete — pointer columns
+physically dropped in migration 0149, `source_links` is the sole authority) ·
+**Owner:** reconciliation
 **Companion:** [`reconciliation-design.md`](reconciliation-design.md) — the
 ratified two-plane target state. This ADR fills the one gap that design left
 open: *where do evidence↔evidence claims live?*
@@ -138,13 +140,12 @@ human-applied idempotent SQL files per invariant #7.
    reconcile. The parity integration test runs against BOTH shapes during this
    phase (seed pointer + link, assert identical derivations).
 5. **Stop-write + deprecate.** Pointer writes cease; columns become
-   `@deprecated` **and stay physical** (repo convention: never approve the
-   interactive-push drop; scrub from every response projection — the
-   deprecated-column-leak rule). `proposed_qb_staged_payment_id` is the one
-   likely full-drop candidate later (pure workflow state, no history value),
-   via the deprecated-column-drop-audit playbook.
-6. **(Later, optional) physical drops** per the drop-audit playbook, one
-   column per Publish, after a full quiet cycle.
+   `@deprecated` and are scrubbed from every response projection (the
+   deprecated-column-leak rule). **Done.**
+6. **Physical drops** per the drop-audit playbook, after a clean drift check
+   vs prod. **Done (2026-07-21):** all 5 pointer columns dropped in
+   `lib/db/migrations/0149_drop_source_link_pointer_columns.sql`; the drift
+   check script was deleted with the dual-writes it policed.
 
 ## 4. Consequences
 

@@ -160,25 +160,13 @@ export const donorboxDonations = pgTable(
     // `payment_applications` ledger row (`donorbox_donation_id` anchor); a mint
     // is `created_the_gift = true`. Do not reintroduce gift-pointer columns.
 
-    // ── Cross-processor link pointers — RETIRED (source_links is authority) ──
-    // The donation's confirmed QB / Stripe counterparts now live in the
-    // `source_links` ledger (docs/adr-source-link-ledger.md): `donorbox_qb`
-    // and `donorbox_charge`. These pointer columns stay physical as dual-write
-    // mirrors during the transition (never approve the interactive-push drop;
-    // scrub from response projections). Do not add new readers.
-    /** @deprecated Read `source_links` (link_type='donorbox_qb') instead.
-     * Dual-write mirror only. */
-    linkedQbStagedPaymentId: text("linked_qb_staged_payment_id").references(
-      () => stagedPayments.id,
-      { onDelete: "set null" },
-    ),
-    /** @deprecated Read `source_links` (link_type='donorbox_charge') instead.
-     * Dual-write mirror only. (The read-only PULLED `stripeChargeId` join key
-     * above is NOT deprecated — it is sync-derived enrichment, not a claim.) */
-    linkedStripeChargeId: text("linked_stripe_charge_id").references(
-      () => stripeStagedCharges.id,
-      { onDelete: "set null" },
-    ),
+    // The cross-processor pointer columns (linked_qb_staged_payment_id,
+    // linked_stripe_charge_id) were DROPPED (migration 0149): a donation's
+    // confirmed QB / Stripe counterparts live SOLELY in the `source_links`
+    // ledger (docs/adr-source-link-ledger.md) as `donorbox_qb` and
+    // `donorbox_charge`. (The read-only PULLED `stripeChargeId` join key above
+    // remains — it is sync-derived enrichment, not a claim.) Do not
+    // reintroduce pointer columns for these facts.
     crossProcessorLinkedByUserId: text(
       "cross_processor_linked_by_user_id",
     ).references(() => users.id, { onDelete: "set null" }),
@@ -212,12 +200,6 @@ export const donorboxDonations = pgTable(
       t.individualGiverPersonId,
     ),
     index("donorbox_donations_household_id_idx").on(t.householdId),
-    index("donorbox_donations_linked_qb_staged_payment_id_idx").on(
-      t.linkedQbStagedPaymentId,
-    ),
-    index("donorbox_donations_linked_stripe_charge_id_idx").on(
-      t.linkedStripeChargeId,
-    ),
   ],
 );
 

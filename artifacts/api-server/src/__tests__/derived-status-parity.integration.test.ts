@@ -184,11 +184,8 @@ async function seedCharge(
     ...(over.matchConfirmedAt !== undefined
       ? { matchConfirmedAt: over.matchConfirmedAt }
       : {}),
-    ...(over.linkedQbStagedPaymentId
-      ? { linkedQbStagedPaymentId: over.linkedQbStagedPaymentId }
-      : {}),
   });
-  // Ledger mirror — reads are ledger-authoritative (source_links).
+  // The tie lives ONLY in the source_links ledger (the authority).
   if (over.linkedQbStagedPaymentId) {
     await db.insert(schema.sourceLinks).values({
       id: schema.sourceLinkId("charge_qb_tie", id),

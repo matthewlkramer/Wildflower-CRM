@@ -195,30 +195,12 @@ export const stripeStagedCharges = pgTable(
     ),
     refundConfirmedAt: timestamp("refund_confirmed_at", { withTimezone: true }),
 
-    // ── Cross-processor link pointers — RETIRED (source_links is authority) ──
-    // The charge↔QB tie / fee-row claims now live in the `source_links` ledger
-    // (docs/adr-source-link-ledger.md): `charge_qb_tie` (lifecycle proposed |
-    // confirmed) and `charge_fee_row`. These pointer columns stay physical as
-    // dual-write mirrors during the transition (never approve the interactive-
-    // push drop; scrub from response projections). Do not add new readers.
-    /** @deprecated Read `source_links` (link_type='charge_qb_tie',
-     * lifecycle='confirmed') instead. Dual-write mirror only. */
-    linkedQbStagedPaymentId: text("linked_qb_staged_payment_id").references(
-      () => stagedPayments.id,
-      { onDelete: "set null" },
-    ),
-    /** @deprecated Read `source_links` (link_type='charge_qb_tie',
-     * lifecycle='proposed') instead. Dual-write mirror only. */
-    proposedQbStagedPaymentId: text("proposed_qb_staged_payment_id").references(
-      () => stagedPayments.id,
-      { onDelete: "set null" },
-    ),
-    /** @deprecated Read `source_links` (link_type='charge_fee_row') instead.
-     * Dual-write mirror only. Fee rows remain Plane-1 evidence ONLY — they
-     * never enter payment_applications. */
-    linkedFeeQbStagedPaymentId: text(
-      "linked_fee_qb_staged_payment_id",
-    ).references(() => stagedPayments.id, { onDelete: "set null" }),
+    // The cross-processor pointer columns (linked_qb_staged_payment_id,
+    // proposed_qb_staged_payment_id, linked_fee_qb_staged_payment_id) were
+    // DROPPED (migration 0149): charge↔QB ties and fee-row claims live SOLELY
+    // in the `source_links` ledger (docs/adr-source-link-ledger.md) as
+    // `charge_qb_tie` (lifecycle proposed | confirmed) and `charge_fee_row`.
+    // Do not reintroduce pointer columns for these facts.
     crossProcessorLinkedByUserId: text(
       "cross_processor_linked_by_user_id",
     ).references(() => users.id, { onDelete: "set null" }),
@@ -237,17 +219,6 @@ export const stripeStagedCharges = pgTable(
   (t) => [
     index("stripe_staged_charges_match_status_idx").on(t.matchStatus),
     index("stripe_staged_charges_payout_id_idx").on(t.stripePayoutId),
-    index("stripe_staged_charges_linked_qb_staged_payment_id_idx").on(
-      t.linkedQbStagedPaymentId,
-    ),
-    index("stripe_staged_charges_proposed_qb_staged_payment_id_idx").on(
-      t.proposedQbStagedPaymentId,
-    ),
-    // A QB fee row is settlement evidence for AT MOST ONE charge — a partial
-    // unique index (NULLs excluded) enforces the bijection.
-    uniqueIndex("stripe_staged_charges_linked_fee_qb_staged_payment_id_uq")
-      .on(t.linkedFeeQbStagedPaymentId)
-      .where(sql`${t.linkedFeeQbStagedPaymentId} IS NOT NULL`),
     index("stripe_staged_charges_date_received_idx").on(t.dateReceived),
     index("stripe_staged_charges_gross_amount_idx").on(t.grossAmount),
     index("stripe_staged_charges_organization_id_idx").on(t.organizationId),
