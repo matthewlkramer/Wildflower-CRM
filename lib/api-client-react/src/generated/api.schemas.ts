@@ -5217,19 +5217,6 @@ export const WorkbenchClusterKind = {
   crm_only: 'crm_only',
 } as const;
 
-/**
- * Derived per-record linkage status for QB staged rows: pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation. (Stripe charges no longer carry this field — per-charge state lives in coverage.state.transactions.)
- */
-export type WorkbenchRecordStatus = typeof WorkbenchRecordStatus[keyof typeof WorkbenchRecordStatus];
-
-
-export const WorkbenchRecordStatus = {
-  pending: 'pending',
-  match_proposed: 'match_proposed',
-  match_confirmed: 'match_confirmed',
-  excluded: 'excluded',
-} as const;
-
 export type WorkbenchClusterGiftDonorKind = typeof WorkbenchClusterGiftDonorKind[keyof typeof WorkbenchClusterGiftDonorKind] | null;
 
 
@@ -5359,7 +5346,7 @@ export type WorkbenchClusterQbRecordAttributedDonor = ({
 }) | null;
 
 /**
- * One QuickBooks staged row in the cluster's bank-and-accounting facet.
+ * One QuickBooks staged row in the cluster's bank-and-accounting facet. Per-record linkage state is NOT carried here — read the matching coverage.state.qbCards entry (keyed by stagedPaymentId), the one source of truth.
  */
 export interface WorkbenchClusterQbRecord {
   /** staged_payments.id */
@@ -5377,7 +5364,6 @@ export interface WorkbenchClusterQbRecord {
   dateReceived?: string | null;
   /** Raw QB PaymentMethodRef name (e.g. Check, ACH, Visa) from the staged row — accounting evidence as QuickBooks recorded it; null when QB recorded none. */
   paymentMethod?: string | null;
-  status: WorkbenchRecordStatus;
   /** For fee / charge_tie roles: the stripe_staged_charges id the link runs through. */
   linkedChargeId?: string | null;
   /** QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee / charge_tie / group_member. */
@@ -5504,7 +5490,7 @@ export interface WorkbenchRowCoverageState {
 }
 
 /**
- * Derived display state for one QB evidence card.
+ * Derived display state for one QB evidence card. Also carries the record's linkage vocabulary: raw = no candidate gift yet (pending); match_proposed = candidate awaiting human confirm; matched_* = counted into a gift; excluded = marked not-a-donation. enriched is reserved for the future fill-out-QB documentation workflow.
  */
 export type WorkbenchRowQbCardState = typeof WorkbenchRowQbCardState[keyof typeof WorkbenchRowQbCardState];
 
@@ -5512,6 +5498,7 @@ export type WorkbenchRowQbCardState = typeof WorkbenchRowQbCardState[keyof typeo
 export const WorkbenchRowQbCardState = {
   raw: 'raw',
   enriched: 'enriched',
+  match_proposed: 'match_proposed',
   matched_complete: 'matched_complete',
   matched_partial_qb_surplus: 'matched_partial_qb_surplus',
   matched_partial_external_surplus: 'matched_partial_external_surplus',
@@ -5520,7 +5507,7 @@ export const WorkbenchRowQbCardState = {
 } as const;
 
 /**
- * One QB evidence card in the cluster.
+ * One QB evidence card in the cluster — one entry per QB record in qbRecords (keyed by qbRecordId = stagedPaymentId), the ONE source of per-record QB linkage state.
  */
 export interface WorkbenchRowQbCardEntry {
   qbRecordId: string;

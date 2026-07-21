@@ -338,6 +338,7 @@ The QuickBooks column represents accounting records and their relationship and i
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `raw`                              | Imported QuickBooks or bank-feed record with only basic source information such as date and amount           |
 | `enriched`                         | Additional accounting information has been entered, but the record remains unmatched or not fully reconciled |
+| `match_proposed`                   | A match to a CRM gift or transaction has been proposed but not yet confirmed                                  |
 | `matched_complete`                 | All in-scope amount and evidence units are covered by valid relationships                                    |
 | `matched_partial_qb_surplus`       | The QuickBooks record contains more money than linked transaction or CRM evidence accounts for               |
 | `matched_partial_external_surplus` | Linked transaction or CRM evidence exceeds the QuickBooks amount or scope                                    |

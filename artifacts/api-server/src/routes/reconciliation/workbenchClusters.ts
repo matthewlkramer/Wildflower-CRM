@@ -22,13 +22,13 @@ import {
   informationStateOf,
   rowCompleteFromState,
   lensFlagsFromState,
+  qbCardStateOfStatus,
   type WorkbenchRowState,
   type CoverageState as WbCoverageState,
   type CrmCardEntry,
   type CrmCardState,
   type CrmSatisfiedByCanonical,
   type QbCardEntry,
-  type QbCardState,
   type TransactionEntry,
   type TransactionCardState,
   type LinkCompleteness,
@@ -853,6 +853,7 @@ function buildClusterCoverage(
   grossTotal: string | null,
   depAmount: string | null,
   depId: string | null,
+  depStatus: string | null,
   slLifecycle: string | null,
   slConflictGiftId: string | null,
 ): CoverageOut {
@@ -1112,19 +1113,28 @@ function buildClusterCoverage(
     };
   });
 
-  // QB card entries (settlement deposit OR per-charge ties)
+  // QB card entries — ONE card per QB record in the cluster (deposit, fee,
+  // charge_tie, …), keyed by stagedPaymentId. State is the record's linkage
+  // status via the one shared mapping (qbCardStateOfStatus); this is the only
+  // place per-record QB status is carried on the wire.
   const qbCards: QbCardEntry[] = [];
-  if (slLifecycle === "confirmed" && depId) {
-    qbCards.push({ qbRecordId: depId, state: "matched_complete", isTransactionEvidence: false });
-  } else {
-    for (const tie of chargeTies) {
-      const tieCardState: QbCardState =
-        tie.status === "match_confirmed" ? "matched_complete"
-        : tie.status === "excluded" ? "excluded"
-        : tie.status === "match_proposed" ? "enriched"
-        : "raw";
-      qbCards.push({ qbRecordId: tie.stagedPaymentId, state: tieCardState, isTransactionEvidence: false });
-    }
+  const seenQbCardIds = new Set<string>();
+  if (depId) {
+    qbCards.push({
+      qbRecordId: depId,
+      state: qbCardStateOfStatus(depStatus),
+      isTransactionEvidence: false,
+    });
+    seenQbCardIds.add(depId);
+  }
+  for (const row of linkedQbRows) {
+    if (seenQbCardIds.has(row.stagedPaymentId)) continue;
+    seenQbCardIds.add(row.stagedPaymentId);
+    qbCards.push({
+      qbRecordId: row.stagedPaymentId,
+      state: qbCardStateOfStatus(row.status),
+      isTransactionEvidence: false,
+    });
   }
 
   // Information completeness: accounting-EVIDENCE completeness (aeComplete) is
@@ -1869,6 +1879,7 @@ router.get(
           h?.gross_total ?? null,
           h?.dep_amount ?? null,
           h?.dep_id ?? null,
+          h?.dep_status ?? null,
           h?.sl_lifecycle ?? null,
           h?.sl_conflict_gift_id ?? null,
         );
@@ -1919,7 +1930,9 @@ router.get(
           charges: (h?.charges ?? []).map(
             ({ status: _status, refundProposed: _refundProposed, ...rest }) => rest,
           ),
-          qbRecords: qbRecords.map((rec) =>
+          // Contract shape: per-record status is retired — the UI reads QB
+          // linkage state from coverage.state.qbCards.
+          qbRecords: qbRecords.map(({ status: _status, ...rec }) =>
             rec.role === "deposit" ? { ...rec, attributedDonor: depAttributedDonor } : rec,
           ),
           settlement: h?.sl_lifecycle
@@ -2030,13 +2043,13 @@ router.get(
             qbEvidenceComplete: total > 0,
           },
           flags: { excluded: r.f_excluded, conflict: false, attentionRequired: false },
-          qbCards: countable.map((rec) => ({
+          // ONE card per QB record (fees included) via the one shared
+          // status→state mapping; fee rows are accounting detail, never
+          // transaction evidence.
+          qbCards: qbRecordsWithDonor.map((rec) => ({
             qbRecordId: rec.stagedPaymentId,
-            state: (rec.status === "match_confirmed" ? "matched_complete"
-              : rec.status === "excluded" ? "excluded"
-              : rec.status === "match_proposed" ? "enriched"
-              : "raw") as QbCardState,
-            isTransactionEvidence: true,
+            state: qbCardStateOfStatus(rec.status),
+            isTransactionEvidence: rec.role !== "fee",
           })),
           transactions: nonExcludedQb.map((rec) => ({
             transactionId: rec.stagedPaymentId,
@@ -2127,7 +2140,9 @@ router.get(
           statusDetail,
           gifts,
           charges: [],
-          qbRecords: qbRecordsWithDonor,
+          // Contract shape: per-record status is retired — the UI reads QB
+          // linkage state from coverage.state.qbCards.
+          qbRecords: qbRecordsWithDonor.map(({ status: _status, ...rec }) => rec),
           settlement: null,
           group: isGroup
             ? {

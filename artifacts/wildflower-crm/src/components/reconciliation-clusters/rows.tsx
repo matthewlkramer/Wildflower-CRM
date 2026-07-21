@@ -85,8 +85,8 @@ export interface ClusterActions {
   }) => void;
   /** True when the viewer is a finance team member or admin. Finance-gates QB write actions (§7.3). */
   isFinanceOrAdmin: boolean;
-  /** Open the read-only in-app QB record detail dialog (§7.2). */
-  openQbDetail: (record: WorkbenchClusterQbRecord) => void;
+  /** Open the read-only in-app QB record detail dialog (§7.2). Linkage word comes from coverage.state.qbCards. */
+  openQbDetail: (record: WorkbenchClusterQbRecord, linkage: string) => void;
   /** Reject/dismiss the system-proposed payout→deposit settlement tie (§6.2 "Remove proposal"). Finance-gated. */
   removeSettlementProposal: (payoutId: string, label: string) => void;
   /** Revert a confirmed payout reconciliation back to proposed state (§6.2 "Unmatch confirmed settlement"). Finance-gated; shows confirm dialog before acting. */
@@ -350,6 +350,23 @@ export function giftUnlinkOptions(
   return options;
 }
 
+/**
+ * QB linkage vocabulary derived from the record's coverage.state.qbCards
+ * entry — the ONE per-record status source (WorkbenchClusterQbRecord no
+ * longer carries a status field).
+ */
+type QbLinkage = "pending" | "match_proposed" | "match_confirmed" | "excluded";
+function qbLinkageOf(
+  rowState: WorkbenchRowState | null | undefined,
+  stagedPaymentId: string,
+): QbLinkage {
+  const s = rowState?.qbCards?.find((e) => e.qbRecordId === stagedPaymentId)?.state;
+  if (s === "excluded") return "excluded";
+  if (s === "match_proposed") return "match_proposed";
+  if (s?.startsWith("matched")) return "match_confirmed";
+  return "pending";
+}
+
 /** Shared status-based blocking reason for gift-side evidence matching. */
 function evidenceStatusBlock(status: string): string | null {
   switch (status) {
@@ -376,7 +393,7 @@ export function giftChargeMatchOptions(cluster: WorkbenchCluster): EvidencePickO
       (r) =>
         r.role === "charge_tie" &&
         r.linkedChargeId === c.chargeId &&
-        r.status === "match_proposed",
+        qbLinkageOf(cluster.coverage?.state, r.stagedPaymentId) === "match_proposed",
     );
     const disabledReason =
       txn?.state === "excluded"
@@ -414,7 +431,7 @@ export function giftQbMatchOptions(cluster: WorkbenchCluster): EvidencePickOptio
           ? "Deposit lump — settles the payout via the settlement link, not one gift"
           : r.role === "charge_tie"
             ? "Per-charge QB tie — its evidence flows through the Stripe charge"
-            : evidenceStatusBlock(r.status),
+            : evidenceStatusBlock(qbLinkageOf(cluster.coverage?.state, r.stagedPaymentId)),
   }));
 }
 
@@ -507,7 +524,9 @@ function GiftCard({
     const proposedQb = (gift.linkedStagedPaymentIds ?? [])
       .map((id) => cluster.qbRecords.find((r) => r.stagedPaymentId === id))
       .filter(
-        (r): r is WorkbenchClusterQbRecord => r?.status === "match_proposed",
+        (r): r is WorkbenchClusterQbRecord =>
+          r != null &&
+          qbLinkageOf(cluster.coverage?.state, r.stagedPaymentId) === "match_proposed",
       );
     const giftLabel = gift.name ?? "this gift";
     const chargeMatchOpts = giftChargeMatchOptions(cluster);
@@ -958,17 +977,20 @@ function QbCard({
 }) {
   const roleLabel = QB_ROLE_LABEL[record.role];
   const anchor: AnchorRef = { kind: "staged", id: record.stagedPaymentId, label: qbLabel(record) };
-  const excluded = record.status === "excluded";
-  const linked = record.status === "match_confirmed";
+  // Linkage from the canonical coverage.state.qbCards entry — the ONE status source (§§7.1).
+  const linkage = qbLinkageOf(rowState, record.stagedPaymentId);
+  const excluded = linkage === "excluded";
+  const linked = linkage === "match_confirmed";
   const refNote = qbReferenceNote(record);
 
-  // Tone from canonical QB card state (§§7.1).
   const qbEntry = rowState?.qbCards.find((e) => e.qbRecordId === record.stagedPaymentId);
   const qbState = qbEntry?.state;
+  const settlementConfirmed =
+    record.role === "deposit" && rowState?.settlementLinkState === "confirmed";
   const tone: "green" | "amber" | "slate" =
-    excluded || qbState === "excluded"
+    excluded
       ? "slate"
-      : qbState === "matched_complete"
+      : qbState === "matched_complete" || settlementConfirmed
         ? "green"
         : "amber";
 
@@ -989,7 +1011,7 @@ function QbCard({
   const qbHrefUrl = qbHref(record);
   const isFee = record.role === "fee";
   const isDeposit = record.role === "deposit";
-  const proposed = record.status === "match_proposed";
+  const proposed = linkage === "match_proposed";
   const isFinance = actions.isFinanceOrAdmin;
   const settlementState = rowState?.settlementLinkState;
   const menu: MenuItem[] = [];
@@ -1170,7 +1192,7 @@ function QbCard({
               onClick: () => actions.openSplitStaged(record),
             }
         : { label: "Split into reconciliation units", disabledReason: "Finance team only" },
-      { label: "View QB record", onClick: () => actions.openQbDetail(record) },
+      { label: "View QB record", onClick: () => actions.openQbDetail(record, linkage) },
     );
   }
   menu.push(
@@ -1611,7 +1633,7 @@ function PayoutBundleRow({
             (r) =>
               r.role === "charge_tie" &&
               r.linkedChargeId === charge.chargeId &&
-              r.status === "match_proposed",
+              qbLinkageOf(cluster.coverage?.state, r.stagedPaymentId) === "match_proposed",
           )}
         />
         <div className="space-y-1.5">
@@ -1805,7 +1827,10 @@ function PayoutBundleRow({
                   rowState={cluster.coverage.state}
                   payoutId={cluster.anchorId}
                   depositStagedPaymentId={deposit?.stagedPaymentId ?? null}
-                  chargeTieProposed={tie?.status === "match_proposed"}
+                  chargeTieProposed={
+                    tie != null &&
+                    qbLinkageOf(cluster.coverage?.state, tie.stagedPaymentId) === "match_proposed"
+                  }
                 />
                 {tie ? (
                   <QbCard record={tie} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} grouped={cluster.group != null && (tie.role === "anchor" || tie.role === "group_member")} />

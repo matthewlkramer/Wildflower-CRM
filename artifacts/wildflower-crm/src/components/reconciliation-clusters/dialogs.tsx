@@ -610,10 +610,13 @@ export function QbRecordDetailDialog({
   open,
   onOpenChange,
   record,
+  linkage,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   record: WorkbenchClusterQbRecord | null;
+  /** Linkage word derived from coverage.state.qbCards — the one per-record QB status source. */
+  linkage?: string | null;
 }) {
   if (!record) return null;
 
@@ -664,7 +667,7 @@ export function QbRecordDetailDialog({
             <DetailRow label="Payment method" value={record.paymentMethod} />
             <DetailRow label="QB entity type" value={record.qbEntityType} />
             <DetailRow label="QB entity ID" value={record.qbEntityId} />
-            <DetailRow label="Status" value={record.status} />
+            <DetailRow label="Status" value={linkage ?? null} />
             <DetailRow label="Role" value={QB_ROLE_LABEL[record.role]} />
           </section>
 

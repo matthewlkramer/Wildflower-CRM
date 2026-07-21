@@ -51,6 +51,7 @@ export type TransactionEntry = {
 export type QbCardState =
   | "raw"
   | "enriched"
+  | "match_proposed"
   | "matched_complete"
   | "matched_partial_qb_surplus"
   | "matched_partial_external_surplus"
@@ -63,6 +64,27 @@ export type QbCardEntry = {
   /** True only for qb_standalone clusters where the QB record IS the transaction evidence. */
   isTransactionEvidence: boolean;
 };
+
+/**
+ * The ONE mapping from a QB staged row's derived linkage status
+ * (pending/match_proposed/match_confirmed/excluded) to its canonical card
+ * state. coverage.state.qbCards is the only place per-record QB status is
+ * carried on the wire — WorkbenchClusterQbRecord no longer has a status field.
+ * "enriched" is reserved for the future fill-out-QB documentation workflow
+ * and is never derived from linkage status.
+ */
+export function qbCardStateOfStatus(status: string | null | undefined): QbCardState {
+  switch (status) {
+    case "match_confirmed":
+      return "matched_complete";
+    case "match_proposed":
+      return "match_proposed";
+    case "excluded":
+      return "excluded";
+    default:
+      return "raw";
+  }
+}
 
 export type CrmCardState =
   | "missing"

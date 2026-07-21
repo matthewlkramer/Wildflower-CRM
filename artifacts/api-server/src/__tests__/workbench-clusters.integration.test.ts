@@ -593,7 +593,12 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     expect(rep.qbRecords.length).toBe(2);
     const memberRec = rep.qbRecords.find((r: any) => r.role === "group_member");
     expect(memberRec?.stagedPaymentId).toBe(m2);
-    expect(memberRec?.status).toBe("match_confirmed");
+    // Per-record status retired from qbRecords — linkage lives ONLY in coverage.state.qbCards.
+    expect(memberRec?.status).toBeUndefined();
+    const memberCard = rep.coverage.state.qbCards.find(
+      (c: any) => c.qbRecordId === m2,
+    );
+    expect(memberCard?.state).toBe("matched_complete");
     // The member's gift shows on the representative cluster.
     const gift = rep.gifts.find((g: any) => g.giftId === gGroup);
     expect(gift).toBeTruthy();
@@ -656,7 +661,13 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     const row = map.get(`qb_standalone:${sMp}`);
     expect(row).toBeTruthy();
     expect(row.coverage.complete).toBe(false);
-    expect(row.qbRecords[0]?.status).toBe("match_proposed");
+    // Per-record status retired from qbRecords — linkage lives ONLY in coverage.state.qbCards.
+    expect(row.qbRecords[0]?.status).toBeUndefined();
+    expect(
+      row.coverage.state.qbCards.find(
+        (c: any) => c.qbRecordId === row.qbRecords[0]?.stagedPaymentId,
+      )?.state,
+    ).toBe("match_proposed");
     const { map: completed } = await listClusters("completed");
     expect(completed.has(`qb_standalone:${sMp}`)).toBe(false);
   });

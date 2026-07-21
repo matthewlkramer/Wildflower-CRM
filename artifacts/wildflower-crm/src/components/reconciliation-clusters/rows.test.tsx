@@ -294,7 +294,6 @@ describe("single-charge payout row (canonical state display)", () => {
       amount: "100.00",
       dateReceived: "2099-01-01",
       paymentMethod: null,
-      status: "match_confirmed",
       linkedChargeId: "ch_1",
       payerName: null,
       qbEntityType: null,
@@ -706,7 +705,6 @@ describe("giftUnlinkOptions (relationship-specific unlink)", () => {
       amount: "30.00",
       dateReceived: "2099-01-01",
       paymentMethod: null,
-      status: "match_confirmed",
       linkedChargeId: null,
       payerName: null,
       qbEntityType: null,
@@ -828,7 +826,6 @@ describe("gift-side match builders (Match to Stripe / QuickBooks)", () => {
       amount: "30.00",
       dateReceived: "2099-01-01",
       paymentMethod: null,
-      status: "pending",
       linkedChargeId: null,
       payerName: null,
       qbEntityType: null,
@@ -855,10 +852,17 @@ describe("gift-side match builders (Match to Stripe / QuickBooks)", () => {
           stagedPaymentId: "sp_tie_prop",
           role: "charge_tie",
           linkedChargeId: "ch_prop",
-          status: "match_proposed",
         }),
       ],
       state: makeState({
+        // Per-record QB status now lives ONLY in coverage.state.qbCards.
+        qbCards: [
+          {
+            qbRecordId: "sp_tie_prop",
+            state: "match_proposed",
+            isTransactionEvidence: false,
+          },
+        ],
         transactions: [
           {
             transactionId: "ch_ex",
@@ -885,16 +889,25 @@ describe("gift-side match builders (Match to Stripe / QuickBooks)", () => {
     const cluster = makePayoutCluster({
       charges: [],
       qbRecords: [
-        matchQbRecord({ stagedPaymentId: "sp_ok", role: "anchor", status: "pending" }),
+        matchQbRecord({ stagedPaymentId: "sp_ok", role: "anchor" }),
         matchQbRecord({ stagedPaymentId: "sp_fee", role: "fee" }),
         matchQbRecord({ stagedPaymentId: "sp_dep", role: "deposit" }),
         matchQbRecord({ stagedPaymentId: "sp_tie", role: "charge_tie" }),
         matchQbRecord({
           stagedPaymentId: "sp_done",
           role: "group_member",
-          status: "match_confirmed",
         }),
       ],
+      state: makeState({
+        // Per-record QB status now lives ONLY in coverage.state.qbCards.
+        qbCards: [
+          {
+            qbRecordId: "sp_done",
+            state: "matched_complete",
+            isTransactionEvidence: false,
+          },
+        ],
+      }),
     });
     const options = giftQbMatchOptions(cluster);
     expect(options).toHaveLength(5);

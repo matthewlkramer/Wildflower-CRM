@@ -1025,7 +1025,6 @@ export const ListWorkbenchClustersResponse = zod.object({
   "amount": zod.string().nullish().describe('Staged amount, major units.'),
   "dateReceived": zod.string().date().nullish(),
   "paymentMethod": zod.string().nullish().describe('Raw QB PaymentMethodRef name (e.g. Check, ACH, Visa) from the staged row — accounting evidence as QuickBooks recorded it; null when QB recorded none.'),
-  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('Derived per-record linkage status for QB staged rows: pending = no candidate gift yet; match_proposed = candidate awaiting human confirm; match_confirmed = counted into a gift; excluded = marked not-a-donation. (Stripe charges no longer carry this field — per-charge state lives in coverage.state.transactions.)'),
   "linkedChargeId": zod.string().nullish().describe('For fee \/ charge_tie roles: the stripe_staged_charges id the link runs through.'),
   "payerName": zod.string().nullish().describe('QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee \/ charge_tie \/ group_member.'),
   "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']).nullish().describe('The QuickBooks transaction type this staged row came from — drives the \'View in QuickBooks\' deep link.'),
@@ -1035,7 +1034,7 @@ export const ListWorkbenchClustersResponse = zod.object({
   "donorId": zod.string(),
   "donorName": zod.string().nullish()
 }).nullish().describe('Donor identified on this specific QB row via the Identify action. Present for anchor\/deposit roles when a donor has been identified; null otherwise.')
-}).describe('One QuickBooks staged row in the cluster\'s bank-and-accounting facet.')),
+}).describe('One QuickBooks staged row in the cluster\'s bank-and-accounting facet. Per-record linkage state is NOT carried here — read the matching coverage.state.qbCards entry (keyed by stagedPaymentId), the one source of truth.')),
   "settlement": zod.object({
   "lifecycle": zod.enum(['proposed', 'confirmed']).describe('proposed = awaiting human confirm (a needs_accounting\/conflict signal); confirmed = settled.'),
   "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit lump named by the link.'),
@@ -1128,9 +1127,9 @@ export const ListWorkbenchClustersResponse = zod.object({
   "settlementLinkState": zod.enum(['unlinked', 'proposed_full', 'proposed_partial', 'proposed_conflict', 'confirmed']).describe('State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only.').nullish().describe('Present for all stripe_payout clusters (\'unlinked\' when no settlement relationship exists); absent for other cluster kinds.'),
   "qbCards": zod.array(zod.object({
   "qbRecordId": zod.string(),
-  "state": zod.enum(['raw', 'enriched', 'matched_complete', 'matched_partial_qb_surplus', 'matched_partial_external_surplus', 'matched_conflict', 'excluded']).describe('Derived display state for one QB evidence card.'),
+  "state": zod.enum(['raw', 'enriched', 'match_proposed', 'matched_complete', 'matched_partial_qb_surplus', 'matched_partial_external_surplus', 'matched_conflict', 'excluded']).describe('Derived display state for one QB evidence card. Also carries the record\'s linkage vocabulary: raw = no candidate gift yet (pending); match_proposed = candidate awaiting human confirm; matched_\* = counted into a gift; excluded = marked not-a-donation. enriched is reserved for the future fill-out-QB documentation workflow.'),
   "isTransactionEvidence": zod.boolean().describe('True for qb_standalone clusters where the QB record is also the transaction evidence.')
-}).describe('One QB evidence card in the cluster.')),
+}).describe('One QB evidence card in the cluster — one entry per QB record in qbRecords (keyed by qbRecordId = stagedPaymentId), the ONE source of per-record QB linkage state.')),
   "transactions": zod.array(zod.object({
   "transactionId": zod.string(),
   "livePayment": zod.boolean().describe('False when the charge is proposed-refunded.'),

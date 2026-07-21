@@ -223,7 +223,11 @@ export default function ReconciliationClustersPage() {
     amount: string | null;
     date: string | null;
   } | null>(null);
-  const [qbDetailFor, setQbDetailFor] = useState<WorkbenchClusterQbRecord | null>(null);
+  const [qbDetailFor, setQbDetailFor] = useState<{
+    record: WorkbenchClusterQbRecord;
+    /** Linkage word from coverage.state.qbCards — the one per-record QB status source. */
+    linkage: string;
+  } | null>(null);
   const [revertSettlementFor, setRevertSettlementFor] = useState<{
     payoutId: string;
     label: string;
@@ -1015,7 +1019,7 @@ export default function ReconciliationClustersPage() {
       setMarkLossFor({ opportunityId, kind, label }),
     openSettlementSearch: (args) => setSettlementSearchFor(args),
     isFinanceOrAdmin: me?.role === "finance" || me?.role === "admin",
-    openQbDetail: (record) => setQbDetailFor(record),
+    openQbDetail: (record, linkage) => setQbDetailFor({ record, linkage }),
     removeSettlementProposal: (payoutId, _label) => void handleRemoveSettlementProposal(payoutId),
     revertSettlement: (payoutId, label) => setRevertSettlementFor({ payoutId, label }),
     replaceSettlement: (payoutId, label, search) =>
@@ -1635,7 +1639,8 @@ export default function ReconciliationClustersPage() {
       <QbRecordDetailDialog
         open={!!qbDetailFor}
         onOpenChange={(v) => { if (!v) setQbDetailFor(null); }}
-        record={qbDetailFor}
+        record={qbDetailFor?.record ?? null}
+        linkage={qbDetailFor?.linkage ?? null}
       />
 
       {/* "Group with another gift" — shared merge dialog (same as gifts list
