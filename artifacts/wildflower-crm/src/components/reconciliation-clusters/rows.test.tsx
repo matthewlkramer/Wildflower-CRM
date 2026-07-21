@@ -62,6 +62,7 @@ function makeActions(): ClusterActions {
     openExclude: vi.fn(),
     reInclude: vi.fn(),
     openRevert: vi.fn(),
+    openEjectFromGroup: vi.fn(),
     openConfirmRefund: vi.fn(),
     openDismissRefund: vi.fn(),
     openFlag: vi.fn(),

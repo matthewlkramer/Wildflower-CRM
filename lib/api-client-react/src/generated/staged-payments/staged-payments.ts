@@ -24,6 +24,7 @@ import type {
   ConfirmStagedPaymentMatchesBody,
   ConfirmStagedPaymentMatchesResponse,
   DonorSearchList,
+  EjectStagedPaymentFromGroupResponse,
   ExcludeStagedPaymentBody,
   FinanceForbiddenResponse,
   GetPendingStagedMoneyForDonorParams,
@@ -1869,5 +1870,90 @@ export const useRevertStagedPayment = <TError = ErrorType<NotFoundResponse | voi
         TContext
       > => {
       return useMutation(getRevertStagedPaymentMutationOptions(options));
+    }
+    /**
+ * Removes a single member from a group-reconciled QuickBooks unit group
+without reverting the whole group: the ejected member's counted
+payment_applications ledger row to the group's gift is deleted, its
+queue facts reset (back to pending, donor match kept), and its
+unit_group_members row removed. Every OTHER member keeps its counted
+ledger row, so the gift stays reconciled to the remaining members. If
+ejection leaves fewer than two members, the group is dissolved (the
+remaining member becomes an equivalent direct match). The gift's
+human-entered amount is never rewritten — the response reports the
+remaining evidence total and whether it still sits inside the fee band
+so the operator can correct the gift amount if needed (the derived
+quickbooks_tie_status surfaces any mismatch automatically).
+409s when the row is not in a group, the group is not reconciled yet
+(use ungroup instead), or no OTHER member holds a counted ledger row
+(use the whole-group revert instead).
+
+ * @summary Eject ONE member from a reconciled QuickBooks unit group (the rest stay reconciled).
+ */
+export const getEjectStagedPaymentFromGroupUrl = (id: string,) => {
+
+
+  
+
+  return `/api/staged-payments/${id}/eject-from-group`
+}
+
+export const ejectStagedPaymentFromGroup = async (id: string, options?: RequestInit): Promise<EjectStagedPaymentFromGroupResponse> => {
+  
+  return customFetch<EjectStagedPaymentFromGroupResponse>(getEjectStagedPaymentFromGroupUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getEjectStagedPaymentFromGroupMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['ejectStagedPaymentFromGroup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  ejectStagedPaymentFromGroup(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EjectStagedPaymentFromGroupMutationResult = NonNullable<Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>>
+    
+    export type EjectStagedPaymentFromGroupMutationError = ErrorType<NotFoundResponse | void>
+
+    /**
+ * @summary Eject ONE member from a reconciled QuickBooks unit group (the rest stay reconciled).
+ */
+export const useEjectStagedPaymentFromGroup = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getEjectStagedPaymentFromGroupMutationOptions(options));
     }
     

@@ -48,11 +48,13 @@ const { TEST_USER_ID } = vi.hoisted(() => ({
 // Replace the Clerk-backed auth gate with one that injects our seeded user.
 vi.mock("../middlewares/requireAuth", () => ({
   requireAuth: (
-    req: { appUser?: { id: string } },
+    req: { appUser?: { id: string; role: string } },
     _res: unknown,
     next: () => void,
   ) => {
-    req.appUser = { id: TEST_USER_ID };
+    // role matches the seeded DB user; some routes (e.g. the bare /group
+    // action) gate on appUser.role via requireFinance.
+    req.appUser = { id: TEST_USER_ID, role: "admin" };
     next();
   },
 }));
@@ -600,6 +602,159 @@ describe.skipIf(!HAS_DB)(
         .from(schema.giftsAndPayments)
         .where(eqFn(schema.giftsAndPayments.id, giftId));
       expect(gift).toBeTruthy();
+    }, 30_000);
+
+    // ─── single-member ejection ──────────────────────────────────────────
+    // POST /staged-payments/:id/eject-from-group removes ONE member while the
+    // rest of the group stays reconciled (the whole-group revert above is the
+    // undo-everything path).
+
+    async function groupMembershipIds(anyMemberId: string): Promise<string[]> {
+      const rows = await db.execute(
+        sqlFn`SELECT m2.source_id FROM unit_group_members m1
+              JOIN unit_group_members m2 ON m2.group_id = m1.group_id
+                AND m2.evidence_source = 'quickbooks'
+              WHERE m1.evidence_source = 'quickbooks'
+                AND m1.source_id = ${anyMemberId}`,
+      );
+      return (rows.rows as { source_id: string }[])
+        .map((r) => r.source_id)
+        .sort();
+    }
+
+    it("ejects one member from a 3-member group; the others stay reconciled and the gift is kept", async () => {
+      const giftId = await seedGift("90.00");
+      seededGiftIds.push(giftId);
+      const aId = await seedStaged(giftId, "a", "30.00");
+      const bId = await seedStaged(giftId, "b", "30.00");
+      const cId = await seedStaged(giftId, "c", "30.00");
+
+      const grouped = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId, cId],
+      });
+      expect(grouped.status).toBe(200);
+
+      const res = await api(`/api/staged-payments/${bId}/eject-from-group`);
+      expect(res.status).toBe(200);
+      expect(res.json.giftId).toBe(giftId);
+      expect(res.json.groupDissolved).toBe(false);
+      expect(res.json.remainingStagedPaymentIds).toEqual([aId, cId].sort());
+      // 60.00 remaining vs 90.00 gift → below the fee band.
+      expect(res.json.remainingTotal).toBe("60.00");
+      expect(res.json.giftAmount).toBe("90.00");
+      expect(res.json.remainingInFeeBand).toBe(false);
+
+      // Ejected row: pending again, zero counted ledger rows, donor kept.
+      const ejected = await readStaged(bId);
+      expect(ejected.status).toBe("pending");
+      expect(await qbCountedRowsForPayment(bId)).toHaveLength(0);
+      expect(ejected.approvedByUserId).toBeNull();
+      expect(ejected.matchConfirmedAt).toBeNull();
+      expect(ejected.organizationId).toBe(ORG_ID);
+      // ... and out of the group.
+      expect(await groupMembershipIds(bId)).toEqual([]);
+
+      // The other two members stay reconciled to the same gift, still grouped.
+      for (const id of [aId, cId]) {
+        const row = await readStaged(id);
+        expect(row.status).toBe("match_confirmed");
+        expect(await qbSoleGiftIdForPayment(id)).toBe(giftId);
+      }
+      expect(await groupMembershipIds(aId)).toEqual([aId, cId].sort());
+
+      // The gift survives with its human-entered amount untouched.
+      const [gift] = await db
+        .select()
+        .from(schema.giftsAndPayments)
+        .where(eqFn(schema.giftsAndPayments.id, giftId));
+      expect(gift.amount).toBe("90.00");
+      expect(gift.finalAmountSource).toBe("quickbooks");
+    }, 30_000);
+
+    it("ejecting from a 2-member group dissolves the group; the survivor stays reconciled as a direct match", async () => {
+      const giftId = await seedGift("100.00");
+      seededGiftIds.push(giftId);
+      const aId = await seedStaged(giftId, "a", "50.00");
+      const bId = await seedStaged(giftId, "b", "50.00");
+
+      const grouped = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+      });
+      expect(grouped.status).toBe(200);
+
+      const res = await api(`/api/staged-payments/${aId}/eject-from-group`);
+      expect(res.status).toBe(200);
+      expect(res.json.groupDissolved).toBe(true);
+      expect(res.json.remainingStagedPaymentIds).toEqual([bId]);
+
+      // Group fully gone for BOTH rows (a lone member is not a group).
+      expect(await groupMembershipIds(aId)).toEqual([]);
+      expect(await groupMembershipIds(bId)).toEqual([]);
+
+      // Survivor keeps its counted ledger row — an equivalent direct match.
+      const survivor = await readStaged(bId);
+      expect(survivor.status).toBe("match_confirmed");
+      expect(await qbSoleGiftIdForPayment(bId)).toBe(giftId);
+
+      // Ejected row back to pending.
+      const ejected = await readStaged(aId);
+      expect(ejected.status).toBe("pending");
+      expect(await qbCountedRowsForPayment(aId)).toHaveLength(0);
+
+      // The survivor can still be fully reverted afterwards (normal direct
+      // revert path — proves ejection left a coherent state behind).
+      const reverted = await api(`/api/staged-payments/${bId}/revert`);
+      expect(reverted.status).toBe(200);
+      expect((await readStaged(bId)).status).toBe("pending");
+    }, 30_000);
+
+    it("409s: not in a group / group not reconciled / excluded / 404 missing", async () => {
+      // Not in a group: a plain pending row.
+      const giftId = await seedGift("50.00");
+      seededGiftIds.push(giftId);
+      const loneId = await seedStaged(giftId, "a", "50.00");
+      const notInGroup = await api(
+        `/api/staged-payments/${loneId}/eject-from-group`,
+      );
+      expect(notInGroup.status).toBe(409);
+      expect(notInGroup.json.error).toBe("not_in_group");
+
+      // Group not reconciled yet: build a bare group via the group action.
+      const gift2 = await seedGift("100.00");
+      seededGiftIds.push(gift2);
+      const g1 = await seedStaged(gift2, "a", "50.00");
+      const g2 = await seedStaged(gift2, "b", "50.00");
+      const groupedOnly = await api("/api/staged-payments/group", {
+        stagedPaymentIds: [g1, g2],
+      });
+      expect(groupedOnly.status).toBe(200);
+      const notReconciled = await api(
+        `/api/staged-payments/${g1}/eject-from-group`,
+      );
+      expect(notReconciled.status).toBe(409);
+      expect(notReconciled.json.error).toBe("not_reconciled");
+
+      // Excluded row.
+      const gift3 = await seedGift("50.00");
+      seededGiftIds.push(gift3);
+      const exId = await seedStaged(gift3, "a", "50.00");
+      await db
+        .update(schema.stagedPayments)
+        .set({ exclusionReason: "other" })
+        .where(eqFn(schema.stagedPayments.id, exId));
+      const excluded = await api(
+        `/api/staged-payments/${exId}/eject-from-group`,
+      );
+      expect(excluded.status).toBe(409);
+      expect(excluded.json.error).toBe("excluded");
+
+      // Missing row.
+      const missing = await api(
+        `/api/staged-payments/${RUN}_nope/eject-from-group`,
+      );
+      expect(missing.status).toBe(404);
     }, 30_000);
   },
 );

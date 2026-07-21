@@ -3463,6 +3463,32 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StagedPayment" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Staged payment cannot be reverted from its current state" }
+  /staged-payments/{id}/eject-from-group:
+    post:
+      operationId: ejectStagedPaymentFromGroup
+      tags: [staged-payments]
+      summary: Eject ONE member from a reconciled QuickBooks unit group (the rest stay reconciled).
+      description: |
+        Removes a single member from a group-reconciled QuickBooks unit group
+        without reverting the whole group: the ejected member's counted
+        payment_applications ledger row to the group's gift is deleted, its
+        queue facts reset (back to pending, donor match kept), and its
+        unit_group_members row removed. Every OTHER member keeps its counted
+        ledger row, so the gift stays reconciled to the remaining members. If
+        ejection leaves fewer than two members, the group is dissolved (the
+        remaining member becomes an equivalent direct match). The gift's
+        human-entered amount is never rewritten — the response reports the
+        remaining evidence total and whether it still sits inside the fee band
+        so the operator can correct the gift amount if needed (the derived
+        quickbooks_tie_status surfaces any mismatch automatically).
+        409s when the row is not in a group, the group is not reconciled yet
+        (use ungroup instead), or no OTHER member holds a counted ledger row
+        (use the whole-group revert instead).
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EjectStagedPaymentFromGroupResponse" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Not in a group, group not reconciled (use ungroup), or last reconciled member (use revert)" }
 
   # ─── Grant Leads (team-shared, cross-inbox deduped) ────────────────────────
   /grant-leads:
@@ -9740,6 +9766,17 @@ components:
       properties:
         revertedIds: { type: array, items: { type: string }, description: "Ids that were actually reverted." }
         requested: { type: integer, description: "How many ids were submitted. (requested − revertedIds.length = skipped.)" }
+    EjectStagedPaymentFromGroupResponse:
+      type: object
+      required: [stagedPayment, giftId, remainingStagedPaymentIds, remainingInFeeBand, groupDissolved]
+      properties:
+        stagedPayment: { $ref: "#/components/schemas/StagedPayment" }
+        giftId: { type: string, description: "The group's gift the ejected member was unlinked from (the remaining members stay reconciled to it)." }
+        remainingStagedPaymentIds: { type: array, items: { type: string }, description: "The members still reconciled to the gift after ejection (sorted)." }
+        remainingTotal: { type: string, nullable: true, description: "SUM of the remaining members' counted ledger amounts applied to the gift." }
+        giftAmount: { type: string, nullable: true, description: "The gift's (untouched) human-entered amount, for the fee-band comparison." }
+        remainingInFeeBand: { type: boolean, description: "Whether the remaining evidence total still sits inside the fee band around the gift amount. When false, the derived quickbooks_tie_status shows amount_mismatch until the gift amount is corrected." }
+        groupDissolved: { type: boolean, description: "True when ejection left fewer than two members and the unit group was dissolved (the remaining member becomes a direct match)." }
     ExcludeStagedPaymentBody:
       type: object
       required: [exclusionReason]

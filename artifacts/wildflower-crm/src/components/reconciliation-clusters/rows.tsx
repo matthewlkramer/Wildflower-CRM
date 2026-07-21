@@ -60,6 +60,8 @@ export interface ClusterActions {
   reInclude: (anchor: AnchorRef) => void;
   /** Confirm-gated unlink/undo: reverts a booked link (may delete a minted gift). */
   openRevert: (anchor: AnchorRef, description: string) => void;
+  /** Confirm-gated: eject ONE member from a reconciled QB unit group — the other members stay reconciled to the gift. */
+  openEjectFromGroup: (anchor: AnchorRef) => void;
   openConfirmRefund: (
     chargeId: string,
     kind: "refund" | "chargeback",
@@ -909,11 +911,14 @@ function QbCard({
   actions,
   rowState,
   payoutId,
+  grouped,
 }: {
   record: WorkbenchClusterQbRecord;
   actions: ClusterActions;
   rowState?: WorkbenchRowState | null;
   payoutId?: string;
+  /** True when this record belongs to the cluster's QB unit group (anchor or member). */
+  grouped?: boolean;
 }) {
   const roleLabel = QB_ROLE_LABEL[record.role];
   const anchor: AnchorRef = { kind: "staged", id: record.stagedPaymentId, label: qbLabel(record) };
@@ -1047,6 +1052,15 @@ function QbCard({
       );
     }
   } else if (linked) {
+    if (grouped) {
+      // Group-reconciled member: the plain revert unwinds the WHOLE group, so
+      // offer the surgical single-member ejection first.
+      menu.push({
+        label: "Remove from group — keep the rest reconciled",
+        destructive: true,
+        onClick: () => actions.openEjectFromGroup(anchor),
+      });
+    }
     menu.push(
       {
         label: "Unlink from CRM gift",
@@ -1054,7 +1068,9 @@ function QbCard({
         onClick: () =>
           actions.openRevert(
             anchor,
-            `Unlink QuickBooks record from its gift. If the gift was minted from this QB record it is deleted; a pre-existing gift is kept and just unlinked.`,
+            grouped
+              ? `Unlink the QuickBooks group from its gift. This record was reconciled as part of a group, so the WHOLE group is reverted back to the queue together.`
+              : `Unlink QuickBooks record from its gift. If the gift was minted from this QB record it is deleted; a pre-existing gift is kept and just unlinked.`,
           ),
       },
       {
@@ -1543,7 +1559,7 @@ function PayoutBundleRow({
         <div className="space-y-1.5">
           {cluster.qbRecords.length > 0 ? (
             cluster.qbRecords.map((r) => (
-              <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} />
+              <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} grouped={cluster.group != null && (r.role === "anchor" || r.role === "group_member")} />
             ))
           ) : (
             <SettlementGapSlot cluster={cluster} actions={actions} />
@@ -1731,7 +1747,7 @@ function PayoutBundleRow({
                   depositStagedPaymentId={deposit?.stagedPaymentId ?? null}
                 />
                 {tie ? (
-                  <QbCard record={tie} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} />
+                  <QbCard record={tie} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} grouped={cluster.group != null && (tie.role === "anchor" || tie.role === "group_member")} />
                 ) : (
                   <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1">
                     ↳ part of the payout bundle above
@@ -1861,7 +1877,7 @@ function QbStandaloneRow({
           instead of leaving a hollow middle column. */}
       <div className="col-span-2 space-y-1.5">
         {cluster.qbRecords.map((r) => (
-          <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage.state} />
+          <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage.state} grouped={cluster.group != null && (r.role === "anchor" || r.role === "group_member")} />
         ))}
         <div className="text-[11px] text-muted-foreground/70 pl-1 italic">
           {looksLikeStripeMoney

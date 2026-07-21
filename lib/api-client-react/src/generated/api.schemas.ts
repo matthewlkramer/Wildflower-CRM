@@ -7015,6 +7015,22 @@ export interface RevertStagedPaymentMatchesResponse {
   requested: number;
 }
 
+export interface EjectStagedPaymentFromGroupResponse {
+  stagedPayment: StagedPayment;
+  /** The group's gift the ejected member was unlinked from (the remaining members stay reconciled to it). */
+  giftId: string;
+  /** The members still reconciled to the gift after ejection (sorted). */
+  remainingStagedPaymentIds: string[];
+  /** SUM of the remaining members' counted ledger amounts applied to the gift. */
+  remainingTotal?: string | null;
+  /** The gift's (untouched) human-entered amount, for the fee-band comparison. */
+  giftAmount?: string | null;
+  /** Whether the remaining evidence total still sits inside the fee band around the gift amount. When false, the derived quickbooks_tie_status shows amount_mismatch until the gift amount is corrected. */
+  remainingInFeeBand: boolean;
+  /** True when ejection left fewer than two members and the unit group was dissolved (the remaining member becomes a direct match). */
+  groupDissolved: boolean;
+}
+
 /**
  * File the staged payment under a non-gift exclusion category.
  */

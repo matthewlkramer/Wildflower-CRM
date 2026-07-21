@@ -1753,3 +1753,123 @@ export const RevertStagedPaymentResponse = zod.object({
   "updatedAt": zod.string().datetime({})
 })
 
+/**
+ * Removes a single member from a group-reconciled QuickBooks unit group
+without reverting the whole group: the ejected member's counted
+payment_applications ledger row to the group's gift is deleted, its
+queue facts reset (back to pending, donor match kept), and its
+unit_group_members row removed. Every OTHER member keeps its counted
+ledger row, so the gift stays reconciled to the remaining members. If
+ejection leaves fewer than two members, the group is dissolved (the
+remaining member becomes an equivalent direct match). The gift's
+human-entered amount is never rewritten — the response reports the
+remaining evidence total and whether it still sits inside the fee band
+so the operator can correct the gift amount if needed (the derived
+quickbooks_tie_status surfaces any mismatch automatically).
+409s when the row is not in a group, the group is not reconciled yet
+(use ungroup instead), or no OTHER member holds a counted ledger row
+(use the whole-group revert instead).
+
+ * @summary Eject ONE member from a reconciled QuickBooks unit group (the rest stay reconciled).
+ */
+export const EjectStagedPaymentFromGroupParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const EjectStagedPaymentFromGroupResponse = zod.object({
+  "stagedPayment": zod.object({
+  "id": zod.string(),
+  "realmId": zod.string(),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
+  "qbEntityId": zod.string(),
+  "qbLineId": zod.string().nullish(),
+  "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),
+  "amount": zod.string().nullish(),
+  "dateReceived": zod.string().date().nullish(),
+  "payerName": zod.string().nullish(),
+  "payerEmail": zod.string().nullish(),
+  "rawReference": zod.string().nullish(),
+  "lineDescription": zod.string().nullish(),
+  "status": zod.enum(['pending', 'match_proposed', 'match_confirmed', 'excluded']).describe('DERIVED lifecycle of a staged payment \/ Stripe charge — computed from the row\'s facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.'),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'refunded_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).nullish().describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). refunded_charge is auto-set on fully-refunded money never booked into a CRM gift (a Stripe charge with no gift link, or a QB staged payment whose whole Stripe trace is such charges); charges with a gift link take the refund-propagation path instead. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).'),
+  "classificationSource": zod.enum(['auto', 'manual']),
+  "lineItemNames": zod.array(zod.string()).nullish(),
+  "lineAccountNames": zod.array(zod.string()).nullish(),
+  "lineClasses": zod.array(zod.string()).nullish(),
+  "qbPayerType": zod.enum(['vendor', 'customer', 'employee']).nullish().describe('The QuickBooks payer\/entity kind behind this incoming money (Customer for a SalesReceipt\/Payment, or the deposit line\'s Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).'),
+  "qbPayerId": zod.string().nullish(),
+  "qbPaymentMethod": zod.string().nullish(),
+  "qbCheckNumber": zod.string().nullish(),
+  "qbDepositToAccountName": zod.string().nullish(),
+  "qbDocNumber": zod.string().nullish(),
+  "qbBillingAddress": zod.string().nullish(),
+  "qbTransactionMemo": zod.string().nullish(),
+  "qbCurrency": zod.string().nullish(),
+  "qbExchangeRate": zod.string().nullish(),
+  "qbCreateTime": zod.string().datetime({}).nullish(),
+  "qbLinkedTxn": zod.array(zod.object({
+  "txnId": zod.string(),
+  "txnType": zod.string()
+})).nullish(),
+  "qbDepositLinks": zod.array(zod.object({
+  "txnId": zod.string(),
+  "txnType": zod.string()
+})).nullish().describe('Top-level QuickBooks LinkedTxn references, derived read-only from the stored raw QB payload (never written onto the row). For a Payment\/SalesReceipt this is the Deposit it was deposited into. Display-only reference; does not change any field on the staged payment. (The invoices\/credit memos\/journal entries a payment applies to ship in qbLinkedTxn.)'),
+  "matchStatus": zod.enum(['matched', 'suggested', 'unmatched']),
+  "matchScore": zod.number().nullish(),
+  "matchMethod": zod.enum(['email', 'name', 'name_amount_date', 'amount_date', 'memo', 'intermediary', 'manual']).nullish(),
+  "matchConfirmedByUserId": zod.string().nullish(),
+  "matchConfirmedAt": zod.string().datetime({}).nullish(),
+  "organizationId": zod.string().nullish(),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish(),
+  "matchedPaymentIntermediaryId": zod.string().nullish(),
+  "autoApplied": zod.boolean(),
+  "approvedByUserId": zod.string().nullish(),
+  "approvedAt": zod.string().datetime({}).nullish(),
+  "rejectedByUserId": zod.string().nullish(),
+  "rejectedAt": zod.string().datetime({}).nullish(),
+  "queue": zod.enum(['needs_review', 'fiscally_sponsored', 'auto_matched', 'excluded', 'done']).optional().describe('QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).'),
+  "organizationName": zod.string().nullish(),
+  "householdName": zod.string().nullish(),
+  "individualGiverPersonName": zod.string().nullish(),
+  "intermediaryName": zod.string().nullish(),
+  "entityId": zod.string().nullish().describe('Wildflower legal entity this incoming money is attributed to (entities.id), derived from QuickBooks markers. Null = no distinctive marker (treated as the default Wildflower Foundation bucket by the entity filter).'),
+  "entityName": zod.string().nullish().describe('Display name of the attributed entity, joined server-side. Null when entityId is null or the entity has since been deleted.'),
+  "entitySource": zod.enum(['auto', 'manual']).describe('Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync \/ reclassify.'),
+  "fundingSource": zod.enum(['stripe', 'brokerage', 'daf', 'donorbox', 'paypal', 'wire_ach', 'check', 'cash', 'employer_match', 'other']).nullish().describe('WHERE this money came from \/ how it rendered (Stripe, brokerage, DAF, …). Origin dimension, distinct from qbPaymentMethod (the instrument) and the derived funding lane. Null = unknown \/ not yet determined. Auto-seeded at ingest, human-correctable.'),
+  "fundingSourceProvenance": zod.enum(['auto', 'manual']).describe('Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync \/ reclassify.'),
+  "objectCode": zod.string().nullish(),
+  "objectCodeOverride": zod.string().nullish(),
+  "revenueLocation": zod.string().nullish(),
+  "revenueLocationOverride": zod.string().nullish(),
+  "revenueClass": zod.string().nullish(),
+  "revenueClassOverride": zod.string().nullish(),
+  "codingFlags": zod.array(zod.string()).nullish().describe('Coding flags surfaced for human review (e.g. location_default, payer_type_assumed).'),
+  "deferredRevenue": zod.enum(['yes', 'no', 'na']).nullish(),
+  "deferredRevenueReason": zod.string().nullish(),
+  "resolvedGiftId": zod.string().nullish(),
+  "resolvedGiftName": zod.string().nullish(),
+  "resolvedGiftAmount": zod.string().nullish(),
+  "resolvedGiftDate": zod.string().date().nullish(),
+  "splitCount": zod.number().optional().describe('How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift.'),
+  "splitTotal": zod.string().nullish().describe('Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split.'),
+  "splitGiftNames": zod.array(zod.string()).nullish().describe('Names of the gifts this staged payment is split across, for display. Null when not split.'),
+  "giftAlreadyLinkedElsewhere": zod.boolean().optional().describe('True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn\'t been created yet (create a new gift for it, or exclude if it\'s a duplicate).'),
+  "matchedRuleId": zod.string().nullish().describe('Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule.'),
+  "matchedRuleName": zod.string().nullish().describe('Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted.'),
+  "reconciliationLanes": zod.object({
+  "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
+  "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
+}).describe('The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).').optional().describe('Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded\/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt).'),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+}),
+  "giftId": zod.string().describe('The group\'s gift the ejected member was unlinked from (the remaining members stay reconciled to it).'),
+  "remainingStagedPaymentIds": zod.array(zod.string()).describe('The members still reconciled to the gift after ejection (sorted).'),
+  "remainingTotal": zod.string().nullish().describe('SUM of the remaining members\' counted ledger amounts applied to the gift.'),
+  "giftAmount": zod.string().nullish().describe('The gift\'s (untouched) human-entered amount, for the fee-band comparison.'),
+  "remainingInFeeBand": zod.boolean().describe('Whether the remaining evidence total still sits inside the fee band around the gift amount. When false, the derived quickbooks_tie_status shows amount_mismatch until the gift amount is corrected.'),
+  "groupDissolved": zod.boolean().describe('True when ejection left fewer than two members and the unit group was dissolved (the remaining member becomes a direct match).')
+})
+
