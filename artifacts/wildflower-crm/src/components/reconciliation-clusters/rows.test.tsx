@@ -122,11 +122,14 @@ function makePayoutCluster(opts: {
   charges: Array<Record<string, unknown>>;
   state?: Record<string, unknown>;
   qbRecords?: Array<Record<string, unknown>>;
+  anchorId?: string;
+  group?: Record<string, unknown> | null;
 }): WorkbenchCluster {
   return ClusterItemSchema.parse({
     id: "stripe_payout:po_1",
     kind: "stripe_payout",
-    anchorId: "po_1",
+    anchorId: opts.anchorId ?? "po_1",
+    group: opts.group ?? null,
     title: "Test Payer",
     status: "unresolved",
     statusDetail: null,
@@ -572,6 +575,98 @@ describe("giftUnlinkOptions (relationship-specific unlink)", () => {
     expect(giftUnlinkOptions(multi, cluster)).toHaveLength(2);
     expect(giftUnlinkOptions(single, cluster)).toHaveLength(1);
     expect(giftUnlinkOptions(single, cluster)[0].anchor.id).toBe("ch_a");
+  });
+
+  function makeQbRecord(over: Record<string, unknown> = {}) {
+    return {
+      stagedPaymentId: "sp_1",
+      role: "anchor",
+      reference: null,
+      lineDescription: null,
+      memo: null,
+      amount: "30.00",
+      dateReceived: "2099-01-01",
+      paymentMethod: null,
+      status: "match_confirmed",
+      linkedChargeId: null,
+      payerName: null,
+      qbEntityType: null,
+      qbEntityId: null,
+      attributedDonor: null,
+      ...over,
+    };
+  }
+
+  it("collapses a group-reconciled gift's member links into ONE honest option (server reverts the whole group)", () => {
+    const cluster = makePayoutCluster({
+      charges: [],
+      anchorId: "sp_rep",
+      group: { memberCount: 3, totalAmount: "90.00" },
+      qbRecords: [
+        makeQbRecord({ stagedPaymentId: "sp_rep", role: "anchor" }),
+        makeQbRecord({ stagedPaymentId: "sp_m1", role: "group_member" }),
+        makeQbRecord({ stagedPaymentId: "sp_m2", role: "group_member" }),
+      ],
+    });
+    const gift = makeGift({
+      linkedStagedPaymentIds: ["sp_rep", "sp_m1", "sp_m2"],
+    }) as unknown as WorkbenchCluster["gifts"][number];
+    const options = giftUnlinkOptions(gift, cluster);
+    // One collapsed option — never three per-member options the server can't honor.
+    expect(options).toHaveLength(1);
+    expect(options[0].anchor).toEqual({
+      kind: "staged",
+      id: "sp_rep",
+      label: "Jane Donor gift",
+    });
+    expect(options[0].source).toContain("QuickBooks group · 3 records");
+    expect(options[0].amount).toBe("$90");
+    expect(options[0].note).toContain("removes all of them together");
+  });
+
+  it("keeps non-group links separate alongside the collapsed group option", () => {
+    const cluster = makePayoutCluster({
+      charges: [makeCharge({ chargeId: "ch_a" })],
+      anchorId: "sp_rep",
+      group: { memberCount: 2, totalAmount: "60.00" },
+      qbRecords: [
+        makeQbRecord({ stagedPaymentId: "sp_rep", role: "anchor" }),
+        makeQbRecord({ stagedPaymentId: "sp_m1", role: "group_member" }),
+        // A charge_tie QB row is NOT part of the unit group.
+        makeQbRecord({ stagedPaymentId: "sp_tie", role: "charge_tie" }),
+      ],
+    });
+    const gift = makeGift({
+      linkedChargeIds: ["ch_a"],
+      linkedStagedPaymentIds: ["sp_rep", "sp_m1", "sp_tie"],
+    }) as unknown as WorkbenchCluster["gifts"][number];
+    const options = giftUnlinkOptions(gift, cluster);
+    // charge + collapsed group + the non-group QB tie = 3 options.
+    expect(options).toHaveLength(3);
+    const group = options.find((o) => o.note != null);
+    expect(group?.source).toContain("2 records");
+    const tie = options.find((o) => o.anchor.id === "sp_tie");
+    expect(tie).toBeTruthy();
+    expect(tie?.note ?? null).toBeNull();
+  });
+
+  it("does NOT collapse when only one linked staged id is in the group (single-member revert is per-relationship)", () => {
+    const cluster = makePayoutCluster({
+      charges: [],
+      anchorId: "sp_rep",
+      group: { memberCount: 2, totalAmount: "60.00" },
+      qbRecords: [
+        makeQbRecord({ stagedPaymentId: "sp_rep", role: "anchor" }),
+        makeQbRecord({ stagedPaymentId: "sp_m1", role: "group_member" }),
+      ],
+    });
+    const gift = makeGift({
+      linkedStagedPaymentIds: ["sp_rep"],
+    }) as unknown as WorkbenchCluster["gifts"][number];
+    const options = giftUnlinkOptions(gift, cluster);
+    expect(options).toHaveLength(1);
+    expect(options[0].note ?? null).toBeNull();
+    expect(options[0].source).toContain("QuickBooks ·");
   });
 });
 

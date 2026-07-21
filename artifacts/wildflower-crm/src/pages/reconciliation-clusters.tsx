@@ -1036,7 +1036,9 @@ export default function ReconciliationClustersPage() {
           setUnlinkChooserFor(null);
           setRevertFor({
             anchor: option.anchor,
-            description: `Unlink “${giftLabel}” from ${option.source}. Only this relationship is removed — other links stay. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
+            description: option.note
+              ? `Unlink “${giftLabel}” from ${option.source}. ${option.note} If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`
+              : `Unlink “${giftLabel}” from ${option.source}. Only this relationship is removed — other links stay. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
           });
         }}
       />

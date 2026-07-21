@@ -215,6 +215,12 @@ export interface UnlinkOption {
   amount: string | null;
   /** Preformatted date ("Dec 26, 2024") or null when unknown. */
   date: string | null;
+  /**
+   * Honesty warning when picking this option removes MORE than one
+   * relationship (e.g. a group-reconciled QB unit group reverts together).
+   * Rendered in the chooser and carried into the revert confirm copy.
+   */
+  note?: string | null;
 }
 
 /**
@@ -277,6 +283,14 @@ export function UnlinkChooserDialog({
                   <span className="text-muted-foreground block">
                     {[o.amount, o.date].filter(Boolean).join(" · ") || "no amount / date on record"}
                   </span>
+                  {o.note ? (
+                    <span
+                      className="text-amber-700 dark:text-amber-500 block mt-0.5"
+                      data-testid={`text-unlink-note-${o.anchor.id}`}
+                    >
+                      {o.note}
+                    </span>
+                  ) : null}
                 </span>
               </label>
             );

@@ -270,7 +270,37 @@ export function giftUnlinkOptions(
       date: c?.chargeDate ? formatDateShort(c.chargeDate) : null,
     });
   }
+  // Group-reconciled gifts: the server's revert endpoint reverts the WHOLE
+  // unit group when any member is reverted (group reconciliation is one
+  // atomic unit — every member applies to the same gift). Offering the
+  // members as separate "only this relationship is removed" options would be
+  // a lie, so collapse them into ONE honest option that says all the group's
+  // links are removed together.
+  const groupStagedIds =
+    cluster.group != null
+      ? new Set(
+          cluster.qbRecords
+            .filter((r) => r.role === "anchor" || r.role === "group_member")
+            .map((r) => r.stagedPaymentId),
+        )
+      : new Set<string>();
+  const linkedGroupIds = (gift.linkedStagedPaymentIds ?? []).filter((id) =>
+    groupStagedIds.has(id),
+  );
+  if (linkedGroupIds.length > 1) {
+    const preferred = linkedGroupIds.includes(cluster.anchorId ?? "")
+      ? (cluster.anchorId as string)
+      : linkedGroupIds[0];
+    options.push({
+      anchor: { kind: "staged", id: preferred, label },
+      source: `QuickBooks group · ${linkedGroupIds.length} records reconciled together`,
+      amount: cluster.group?.totalAmount != null ? fmt(cluster.group.totalAmount) : null,
+      date: null,
+      note: `These ${linkedGroupIds.length} QuickBooks records were reconciled as one group — unlinking removes all of them together.`,
+    });
+  }
   for (const id of gift.linkedStagedPaymentIds ?? []) {
+    if (linkedGroupIds.length > 1 && groupStagedIds.has(id)) continue;
     const r = cluster.qbRecords.find((x) => x.stagedPaymentId === id);
     options.push({
       anchor: { kind: "staged", id, label },
@@ -401,7 +431,7 @@ function GiftCard({
             onClick: () =>
               actions.openRevert(
                 unlinkOptions[0].anchor,
-                `Unlink “${gift.name ?? gift.giftId}” from its evidence. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
+                `Unlink “${gift.name ?? gift.giftId}” from its evidence.${unlinkOptions[0].note ? ` ${unlinkOptions[0].note}` : ""} If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
               ),
           }
         : {
