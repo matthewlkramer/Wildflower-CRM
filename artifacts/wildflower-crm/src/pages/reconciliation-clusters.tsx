@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import {
+  getGetGiftOrPaymentQueryKey,
+  getGetGiftOrPaymentQueryOptions,
+  getGetReconciliationGraphQueryOptions,
   getListOpportunitiesAndPledgesQueryKey,
   getListWorkbenchClustersQueryKey,
   getListWorkbenchRecentChangesQueryKey,
+  useApproveReconciliationCard,
   useConfirmSettlementLink,
+  useConfirmStagedPaymentMatch,
   useConfirmStripeRefundPropagation,
   useCreateGiftFromStagedPayment,
   useCreateGiftFromStripeStagedCharge,
@@ -13,6 +18,7 @@ import {
   useExcludeStagedPayment,
   useExcludeStripeStagedCharge,
   useGetCurrentUser,
+  useGroupStagedPayments,
   useLinkStripeChargeToGift,
   useRejectChargeQbTie,
   useRejectSettlementProposal,
@@ -26,8 +32,12 @@ import {
   useResolveStripeStagedCharge,
   useRevertStagedPayment,
   useRevertStripeStagedCharge,
+  useSplitStagedPayment,
+  useUpdateGiftOrPayment,
   useUpdateOpportunityOrPledge,
   type GiftOrPayment,
+  type GiftOrPaymentDetail,
+  type SplitStagedPaymentBody,
   type StagedPaymentExclusionReason,
   type WorkbenchClusterQbRecord,
   type WorkbenchLens,
@@ -58,13 +68,22 @@ import {
   is409,
   isPermanentSettlementError,
 } from "@/components/reconciliation-bundles/settlement-actions";
-import { extractStripeSourceConflict, type StripeSourceConflict } from "@/lib/reconciliation";
+import {
+  deriveApproveBodyFromProposal,
+  extractStripeSourceConflict,
+  type StripeSourceConflict,
+} from "@/lib/reconciliation";
+import { MergeGiftsDialog } from "@/components/gift-merge-dialogs";
+import { SplitEditorDialog } from "@/components/reconciliation-split-editor";
 import type { DonorType } from "@/components/entity-picker";
 import {
   DonorResolveDialog,
+  EvidenceChooserDialog,
   ExcludeReasonDialog,
+  GroupQbDialog,
   QbRecordDetailDialog,
   UnlinkChooserDialog,
+  type EvidencePickOption,
   type EvidencePreview,
   type UnlinkOption,
 } from "@/components/reconciliation-clusters/dialogs";
@@ -162,6 +181,15 @@ export default function ReconciliationClustersPage() {
     preview: EvidencePreview | null;
   } | null>(null);
   const [excludeFor, setExcludeFor] = useState<AnchorRef | null>(null);
+  const [matchEvidenceFor, setMatchEvidenceFor] = useState<{
+    giftId: string;
+    giftLabel: string;
+    options: EvidencePickOption[];
+  } | null>(null);
+  const [unmatchPledgeFor, setUnmatchPledgeFor] = useState<{
+    giftId: string;
+    giftLabel: string;
+  } | null>(null);
   const [revertFor, setRevertFor] = useState<{
     anchor: AnchorRef;
     description: string;
@@ -204,6 +232,12 @@ export default function ReconciliationClustersPage() {
     giftLabel: string;
     options: UnlinkOption[];
   } | null>(null);
+  // "Group with another gift" — combine the row's gifts via the shared merge dialog.
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
+  // "Split into reconciliation units" / "Group QuickBooks records" on a QB card.
+  const [splitFor, setSplitFor] = useState<WorkbenchClusterQbRecord | null>(null);
+  const [groupFor, setGroupFor] = useState<WorkbenchClusterQbRecord | null>(null);
 
   // Debounce free-text search so we don't refetch per keystroke.
   useEffect(() => {
@@ -250,10 +284,15 @@ export default function ReconciliationClustersPage() {
   const reIncludeStagedM = useReIncludeStagedPayment();
   const revertStagedM = useRevertStagedPayment();
   const updateOppM = useUpdateOpportunityOrPledge();
+  const updateGiftM = useUpdateGiftOrPayment();
   const confirmSettlementM = useConfirmSettlementLink();
+  const confirmMatchM = useConfirmStagedPaymentMatch();
   const rejectChargeQbTieM = useRejectChargeQbTie();
   const rejectSettlementProposalM = useRejectSettlementProposal();
   const revertStripePayoutReconciliationM = useRevertStripePayoutReconciliation();
+  const splitM = useSplitStagedPayment();
+  const groupM = useGroupStagedPayments();
+  const approveCardM = useApproveReconciliationCard();
 
   const busy =
     linkChargeM.isPending ||
@@ -271,10 +310,15 @@ export default function ReconciliationClustersPage() {
     reIncludeStagedM.isPending ||
     revertStagedM.isPending ||
     updateOppM.isPending ||
+    updateGiftM.isPending ||
     confirmSettlementM.isPending ||
+    confirmMatchM.isPending ||
     rejectChargeQbTieM.isPending ||
     rejectSettlementProposalM.isPending ||
-    revertStripePayoutReconciliationM.isPending;
+    revertStripePayoutReconciliationM.isPending ||
+    splitM.isPending ||
+    groupM.isPending ||
+    approveCardM.isPending;
 
   const invalidate = useCallback(() => {
     void queryClient.invalidateQueries({
@@ -290,7 +334,179 @@ export default function ReconciliationClustersPage() {
     });
   }, [queryClient]);
 
+  // ── "Group with another gift" (shared MergeGiftsDialog) ───────────────────
+  // Same pattern as the stray-gifts worklist: keep the picked ids in state so
+  // nothing empties the dialog mid-review, then load each gift's full detail
+  // (the dialog blocks submit until every selected gift resolves).
+  const mergeQueries = useQueries({
+    queries: mergeGiftIds.map((id) =>
+      getGetGiftOrPaymentQueryOptions(id, {
+        query: {
+          enabled: mergeOpen,
+          staleTime: 30_000,
+          queryKey: getGetGiftOrPaymentQueryKey(id),
+        },
+      }),
+    ),
+  });
+  const mergeRecords = useMemo<GiftOrPaymentDetail[]>(
+    () =>
+      mergeQueries
+        .map((q) => q.data)
+        .filter((d): d is GiftOrPaymentDetail => !!d),
+    [mergeQueries],
+  );
+  const mergeLoadError = mergeQueries.some((q) => q.isError);
+
   // ── Handlers ───────────────────────────────────────────────────────────────
+
+  const openMergeGifts = (giftIds: string[]) => {
+    const ids = Array.from(new Set(giftIds));
+    if (ids.length < 2) return;
+    setMergeGiftIds(ids);
+    setMergeOpen(true);
+  };
+
+  // Split one staged QB payment into parts (fee-band aware shared editor).
+  // Unlike the queue workbench there is no staging tray here — the split
+  // applies immediately.
+  const handleSplitStage = async (
+    body: SplitStagedPaymentBody,
+    detail: string,
+  ) => {
+    if (!splitFor) return;
+    try {
+      await splitM.mutateAsync({ id: splitFor.stagedPaymentId, data: body });
+      setSplitFor(null);
+      invalidate();
+      toast({ title: "Payment split", description: detail });
+    } catch (err) {
+      if (is409(err)) {
+        toast({
+          title: "The record changed — try again.",
+          description: apiErrorMessage(err) ?? errMessage(err),
+        });
+        invalidate();
+      } else {
+        toast({
+          title: "Couldn't split",
+          description: errMessage(err),
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  // Group several staged QB rows into ONE reconciliation unit. A donor
+  // conflict is a deliberate two-step (same confirm flow as the queue
+  // workbench): the server rejects (400) with error="donor_conflict", the
+  // human confirms, we retry with confirmDonorConflict=true.
+  const handleGroupQb = async (otherIds: string[]) => {
+    if (!groupFor) return;
+    const ids = Array.from(new Set([groupFor.stagedPaymentId, ...otherIds]));
+    if (ids.length < 2) return;
+    const run = (confirmDonorConflict: boolean) =>
+      groupM.mutateAsync({
+        data: { stagedPaymentIds: ids, confirmDonorConflict },
+      });
+    try {
+      await run(false);
+    } catch (err) {
+      const code =
+        err && typeof err === "object" && "data" in err
+          ? (err as { data?: { error?: string } }).data?.error
+          : undefined;
+      if (
+        code === "donor_conflict" &&
+        window.confirm(
+          "These payments resolve to more than one donor. Group them into one gift anyway?",
+        )
+      ) {
+        try {
+          await run(true);
+        } catch (retryErr) {
+          toast({
+            title: "Couldn't group",
+            description: errMessage(retryErr),
+            variant: "destructive",
+          });
+          return;
+        }
+      } else {
+        toast({
+          title: "Couldn't group",
+          description: errMessage(err),
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    setGroupFor(null);
+    invalidate();
+    toast({
+      title: `Grouped ${ids.length} records`,
+      description: "They now reconcile as one unit into one gift.",
+    });
+  };
+
+  // Confirm the server-proposed match on a per-charge card: fetch the linked
+  // QB deposit's reconciliation graph, verify the proposal targets THIS charge
+  // (a whole-deposit proposal must be confirmed from the QB card so the human
+  // sees the full scope), then approve with the same derived body as the
+  // queue workbench's one-click confirm.
+  const handleConfirmChargeProposal = async (
+    chargeId: string,
+    label: string,
+    depositStagedPaymentId: string,
+  ) => {
+    try {
+      const graph = await queryClient.fetchQuery(
+        getGetReconciliationGraphQueryOptions(depositStagedPaymentId),
+      );
+      if ((graph.evidence.stripe?.chargeId ?? null) !== chargeId) {
+        toast({
+          title: "Confirm from the QuickBooks card",
+          description:
+            "This proposal covers the whole deposit, not just this charge — use “Confirm proposed match” on the deposit's QuickBooks card so the full scope is visible.",
+        });
+        return;
+      }
+      const derived = deriveApproveBodyFromProposal(graph);
+      if (!derived.ok) {
+        toast({ title: "Can't confirm yet", description: derived.reason });
+        return;
+      }
+      if (
+        derived.confirm &&
+        !window.confirm(`${derived.confirm.title}\n\n${derived.confirm.description}`)
+      ) {
+        return;
+      }
+      await approveCardM.mutateAsync({
+        stagedPaymentId: depositStagedPaymentId,
+        data: derived.body,
+      });
+      invalidate();
+      toast({
+        title: "Match confirmed",
+        description: `${label} was approved as proposed.`,
+      });
+    } catch (err) {
+      if (is409(err)) {
+        toast({
+          title: "The record changed — try again.",
+          description: apiErrorMessage(err) ?? errMessage(err),
+        });
+        invalidate();
+      } else {
+        toast({
+          title: "Couldn't confirm match",
+          description: errMessage(err),
+          variant: "destructive",
+        });
+      }
+    }
+  };
 
   const handlePickGift = async (gift: GiftOrPayment) => {
     if (!linkGiftFor) return;
@@ -345,6 +561,74 @@ export default function ReconciliationClustersPage() {
     } catch (err) {
       toast({
         title: "Couldn't switch",
+        description: errMessage(err),
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Gift-side "Match to …": the user picked an evidence record IN this cluster;
+  // same endpoints as the evidence-side link flow, direction inverted.
+  const handlePickEvidence = async (option: EvidencePickOption) => {
+    if (!matchEvidenceFor) return;
+    const { giftId } = matchEvidenceFor;
+    try {
+      if (option.anchor.kind === "charge") {
+        await linkChargeM.mutateAsync({
+          id: option.anchor.id,
+          data: { giftId },
+        });
+      } else {
+        await reconcileM.mutateAsync({
+          id: option.anchor.id,
+          data: { giftId },
+        });
+      }
+      setMatchEvidenceFor(null);
+      invalidate();
+      toast({
+        title: "Linked",
+        description: `${option.source} is now linked to the gift.`,
+      });
+    } catch (err) {
+      if (option.anchor.kind === "charge") {
+        const conflict = extractStripeSourceConflict(err);
+        if (conflict) {
+          setMatchEvidenceFor(null);
+          setChargeConflict({
+            chargeId: option.anchor.id,
+            giftId,
+            label: option.anchor.label,
+            conflict,
+          });
+          return;
+        }
+      }
+      toast({
+        title: "Couldn't link",
+        description: errMessage(err),
+        variant: "destructive",
+      });
+    }
+  };
+
+  // "Unmatch from pledge payment": PATCH opportunityId=null. The server
+  // re-derives the old pledge's paid amount + stage in the same call
+  // (applyDerivedOppFieldsMany over both the old and new pledge ids).
+  const handleUnmatchPledge = async () => {
+    if (!unmatchPledgeFor) return;
+    const { giftId, giftLabel } = unmatchPledgeFor;
+    try {
+      await updateGiftM.mutateAsync({ id: giftId, data: { opportunityId: null } });
+      setUnmatchPledgeFor(null);
+      invalidate();
+      toast({
+        title: "Unmatched from pledge",
+        description: `${giftLabel} no longer counts toward the pledge; the pledge's paid amount was re-derived.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't unmatch",
         description: errMessage(err),
         variant: "destructive",
       });
@@ -616,6 +900,37 @@ export default function ReconciliationClustersPage() {
     }
   };
 
+  // Graduates a proposed donor match to human-confirmed (match_confirmed_at).
+  // 409 = the row moved out of a confirmable state (or lost its donor) since
+  // render — refresh so the menu regates rather than erroring destructively.
+  const handleConfirmProposedMatch = async (
+    stagedPaymentId: string,
+    label: string,
+  ) => {
+    try {
+      await confirmMatchM.mutateAsync({ id: stagedPaymentId });
+      invalidate();
+      toast({
+        title: "Match confirmed",
+        description: `${label} is now confirmed against its gift.`,
+      });
+    } catch (err) {
+      if (is409(err)) {
+        toast({
+          title: "The record changed — try again.",
+          description: apiErrorMessage(err) ?? errMessage(err),
+        });
+        invalidate();
+      } else {
+        toast({
+          title: "Couldn't confirm match",
+          description: errMessage(err),
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
   const handleRejectChargeQbTie = async (chargeId: string) => {
     try {
       await rejectChargeQbTieM.mutateAsync({ chargeId });
@@ -679,8 +994,19 @@ export default function ReconciliationClustersPage() {
     replaceSettlement: (payoutId, label, search) =>
       setRevertSettlementFor({ payoutId, label, replaceSearch: search }),
     rejectChargeQbTie: (chargeId) => void handleRejectChargeQbTie(chargeId),
+    confirmProposedMatch: (stagedPaymentId, label) =>
+      void handleConfirmProposedMatch(stagedPaymentId, label),
+    openMatchEvidence: (giftId, giftLabel, options) =>
+      setMatchEvidenceFor({ giftId, giftLabel, options }),
+    unmatchPledge: (giftId, giftLabel) =>
+      setUnmatchPledgeFor({ giftId, giftLabel }),
     openUnlinkChooser: (giftLabel, options) =>
       setUnlinkChooserFor({ giftLabel, options }),
+    openMergeGifts,
+    openSplitStaged: (record) => setSplitFor(record),
+    openGroupQb: (record) => setGroupFor(record),
+    confirmChargeProposal: (chargeId, label, depositStagedPaymentId) =>
+      void handleConfirmChargeProposal(chargeId, label, depositStagedPaymentId),
   };
 
   const toggleExpanded = (id: string) =>
@@ -921,6 +1247,15 @@ export default function ReconciliationClustersPage() {
         }
       />
 
+      <EvidenceChooserDialog
+        open={matchEvidenceFor != null}
+        onOpenChange={(v) => (!v ? setMatchEvidenceFor(null) : null)}
+        giftLabel={matchEvidenceFor?.giftLabel ?? "this gift"}
+        options={matchEvidenceFor?.options ?? []}
+        busy={busy}
+        onPick={(option) => void handlePickEvidence(option)}
+      />
+
       <DonorResolveDialog
         open={createFor != null}
         onOpenChange={(v) => (!v ? setCreateFor(null) : null)}
@@ -993,6 +1328,35 @@ export default function ReconciliationClustersPage() {
               data-testid="button-confirm-switch-source"
             >
               Switch source
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Unmatch a payment from its pledge (PATCH opportunityId=null) */}
+      <AlertDialog
+        open={unmatchPledgeFor != null}
+        onOpenChange={(v) => (!v && !busy ? setUnmatchPledgeFor(null) : null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unmatch this payment from its pledge?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {unmatchPledgeFor?.giftLabel ?? "This gift"} will stop counting
+              toward the pledge&apos;s paid amount, and the pledge&apos;s status
+              is re-derived. The gift itself is kept — only the pledge link is
+              removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={() => void handleUnmatchPledge()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-unmatch-pledge"
+            >
+              Unmatch from pledge
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1217,6 +1581,56 @@ export default function ReconciliationClustersPage() {
         open={!!qbDetailFor}
         onOpenChange={(v) => { if (!v) setQbDetailFor(null); }}
         record={qbDetailFor}
+      />
+
+      {/* "Group with another gift" — shared merge dialog (same as gifts list
+          and the stray-gifts worklist). */}
+      <MergeGiftsDialog
+        open={mergeOpen}
+        onOpenChange={(o) => {
+          setMergeOpen(o);
+          if (!o) setMergeGiftIds([]);
+        }}
+        gifts={mergeRecords}
+        expectedCount={mergeGiftIds.length}
+        loadError={mergeLoadError}
+        onDone={() => invalidate()}
+      />
+
+      {/* "Split into reconciliation units" — shared fee-band split editor. */}
+      {splitFor ? (
+        <SplitEditorDialog
+          anchor={{
+            stagedPaymentId: splitFor.stagedPaymentId,
+            amount: splitFor.amount ?? null,
+            payerName:
+              splitFor.payerName ??
+              splitFor.lineDescription ??
+              splitFor.memo ??
+              splitFor.reference ??
+              null,
+            dateReceived: splitFor.dateReceived ?? null,
+            paymentMethod: splitFor.paymentMethod ?? null,
+            reference: splitFor.reference ?? null,
+          }}
+          busy={splitM.isPending}
+          stageLabel="Split payment"
+          onClose={() => {
+            if (!splitM.isPending) setSplitFor(null);
+          }}
+          onStage={(body, detail) => void handleSplitStage(body, detail)}
+        />
+      ) : null}
+
+      {/* "Group QuickBooks records" — pick sibling staged rows to group. */}
+      <GroupQbDialog
+        record={groupFor}
+        open={!!groupFor}
+        onOpenChange={(v) => {
+          if (!v && !groupM.isPending) setGroupFor(null);
+        }}
+        busy={groupM.isPending}
+        onSubmit={(ids) => void handleGroupQb(ids)}
       />
     </div>
   );

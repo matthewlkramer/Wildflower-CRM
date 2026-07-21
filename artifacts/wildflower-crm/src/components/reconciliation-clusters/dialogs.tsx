@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Loader2, Lock, Sparkles } from "lucide-react";
-import type {
-  StagedPaymentExclusionReason,
-  WorkbenchClusterQbRecord,
+import {
+  listReconciliationCards,
+  type ReconciliationCard,
+  type StagedPaymentExclusionReason,
+  type WorkbenchClusterQbRecord,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort } from "@/lib/format";
 import {
@@ -14,9 +16,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { DonorFieldPicker, type DonorType } from "@/components/entity-picker";
+import { useDebounce } from "@/hooks/use-debounce";
 import {
   EXCLUSION_REASON_LABELS,
   MANUAL_EXCLUSION_FAMILIES,
@@ -324,6 +329,130 @@ export function UnlinkChooserDialog({
   );
 }
 
+/** One evidence record (Stripe charge / QB row) offered as a match target for a gift. */
+export interface EvidencePickOption {
+  /** Structurally matches rows.tsx AnchorRef (kept structural to avoid an import cycle). */
+  anchor: { kind: "charge" | "staged"; id: string; label: string };
+  /** e.g. "Stripe charge · Jane Donor" or "QuickBooks · Deposit 4/12" */
+  source: string;
+  amount: string | null;
+  date: string | null;
+  /**
+   * When set, the row renders grayed-but-VISIBLE with the blocking reason
+   * labeled (never hidden — a mis-derived status must stay spottable).
+   */
+  disabledReason?: string | null;
+}
+
+/**
+ * Gift-side "Match to …" chooser: pick the evidence record IN this cluster the
+ * gift is paid by. Unpickable rows stay visible with their blocking reason.
+ */
+export function EvidenceChooserDialog({
+  open,
+  onOpenChange,
+  giftLabel,
+  options,
+  busy,
+  onPick,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  giftLabel: string;
+  options: EvidencePickOption[];
+  busy: boolean;
+  onPick: (option: EvidencePickOption) => void;
+}) {
+  const [pickedId, setPickedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) setPickedId(null);
+  }, [open]);
+
+  const picked =
+    options.find(
+      (o) => !o.disabledReason && `${o.anchor.kind}:${o.anchor.id}` === pickedId,
+    ) ?? null;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => (!busy ? onOpenChange(v) : null)}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Which record pays this gift?</DialogTitle>
+          <DialogDescription>
+            Pick the money evidence in this row that {giftLabel} is paid by.
+            Records that can&apos;t be picked stay listed with the reason.
+          </DialogDescription>
+        </DialogHeader>
+        <RadioGroup
+          value={pickedId ?? ""}
+          onValueChange={(v) => setPickedId(v)}
+          className="max-h-72 overflow-y-auto pr-2 space-y-1"
+        >
+          {options.map((o) => {
+            const key = `${o.anchor.kind}:${o.anchor.id}`;
+            const blocked = Boolean(o.disabledReason);
+            return (
+              <label
+                key={key}
+                className={
+                  blocked
+                    ? "flex items-start gap-2 text-xs rounded border px-2.5 py-2 opacity-60 cursor-not-allowed"
+                    : "flex items-start gap-2 text-xs cursor-pointer rounded border px-2.5 py-2 hover:bg-muted/60"
+                }
+              >
+                <RadioGroupItem
+                  value={key}
+                  disabled={blocked}
+                  className="mt-0.5"
+                  data-testid={`radio-evidence-${o.anchor.id}`}
+                />
+                <span className="min-w-0">
+                  <span className="font-medium block">{o.source}</span>
+                  <span className="text-muted-foreground block">
+                    {[o.amount, o.date].filter(Boolean).join(" · ") ||
+                      "no amount / date on record"}
+                  </span>
+                  {o.disabledReason ? (
+                    <span
+                      className="text-amber-700 dark:text-amber-500 block mt-0.5"
+                      data-testid={`text-evidence-blocked-${o.anchor.id}`}
+                    >
+                      {o.disabledReason}
+                    </span>
+                  ) : null}
+                </span>
+              </label>
+            );
+          })}
+        </RadioGroup>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => onOpenChange(false)}
+            data-testid="button-evidence-chooser-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            disabled={busy || !picked}
+            onClick={() => {
+              if (picked) onPick(picked);
+            }}
+            data-testid="button-evidence-chooser-continue"
+          >
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+            Link this evidence
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /**
  * "Exclude — not a donation" reason picker. Inline scrollable radio list (a
  * Select nested in a Dialog can't scroll — see the queue workbench).
@@ -531,6 +660,190 @@ export function QbRecordDetailDialog({
           ) : null}
           <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Group QuickBooks records ─────────────────────────────────────────────────
+
+/**
+ * Pick other staged QB rows to group with `record` into ONE reconciliation
+ * unit (same endpoint as the queue workbench's multi-select "Group" action).
+ * Per the app-wide picker rule, unpickable rows stay visible — grayed out with
+ * the blocking reason labeled — so a mis-derived status is easy to spot.
+ */
+export function GroupQbDialog({
+  record,
+  open,
+  onOpenChange,
+  busy,
+  onSubmit,
+}: {
+  record: WorkbenchClusterQbRecord | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  busy: boolean;
+  /** Called with the OTHER staged payment ids picked (the caller prepends the anchor's own id). */
+  onSubmit: (stagedPaymentIds: string[]) => void;
+}) {
+  const [q, setQ] = useState("");
+  const debouncedQ = useDebounce(q.trim());
+  const [results, setResults] = useState<ReconciliationCard[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  // Monotonic sequence so a slow earlier response can't clobber a newer search.
+  const searchSeq = useRef(0);
+
+  // Fresh state per open.
+  useEffect(() => {
+    if (open) {
+      setQ("");
+      setPicked(new Set());
+    }
+  }, [open, record?.stagedPaymentId]);
+
+  useEffect(() => {
+    if (!open) return;
+    const seq = ++searchSeq.current;
+    setSearching(true);
+    listReconciliationCards({
+      ...(debouncedQ ? { q: debouncedQ } : {}),
+      limit: 20,
+    })
+      .then((res) => {
+        if (seq === searchSeq.current) setResults(res.data ?? []);
+      })
+      .catch(() => {
+        if (seq === searchSeq.current) setResults([]);
+      })
+      .finally(() => {
+        if (seq === searchSeq.current) setSearching(false);
+      });
+  }, [open, debouncedQ]);
+
+  if (!record) return null;
+
+  /** Blocking reason for a result row, or null when pickable. */
+  const blockReason = (c: ReconciliationCard): string | null => {
+    if (c.stagedPaymentId === record.stagedPaymentId)
+      return "This is the row being grouped";
+    if (c.stripeChargeId)
+      return "Stripe charge-level card — grouping applies to whole QB rows";
+    if (c.status === "match_confirmed") return "Already reconciled to a gift";
+    if (c.status === "excluded") return "Excluded — re-include first";
+    return null;
+  };
+
+  const toggle = (id: string) => {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Group QuickBooks records</DialogTitle>
+          <DialogDescription>
+            Pick the other staged QuickBooks rows that belong to the same money
+            event as{" "}
+            <span className="font-medium">
+              {record.reference ?? record.memo ?? "this record"}
+            </span>
+            {record.amount != null ? ` (${formatCurrency(record.amount)})` : ""}.
+            The group reconciles as one unit into one gift.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="relative">
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search payer, reference, or memo…"
+            data-testid="input-group-qb-search"
+          />
+          {searching ? (
+            <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+          ) : null}
+        </div>
+
+        <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border p-1">
+          {results.length === 0 && !searching ? (
+            <p className="py-6 text-center text-xs text-muted-foreground">
+              No open staged payments match.
+            </p>
+          ) : (
+            results.map((c) => {
+              const reason = blockReason(c);
+              const key = `${c.stagedPaymentId}:${c.stripeChargeId ?? ""}`;
+              const checked = picked.has(c.stagedPaymentId);
+              return (
+                <label
+                  key={key}
+                  className={`flex items-start gap-2 rounded px-2 py-1.5 text-sm ${
+                    reason
+                      ? "cursor-not-allowed opacity-50"
+                      : "cursor-pointer hover:bg-muted"
+                  }`}
+                >
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={checked}
+                    disabled={!!reason || busy}
+                    onCheckedChange={() => toggle(c.stagedPaymentId)}
+                    data-testid={`checkbox-group-qb-${c.stagedPaymentId}`}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="truncate font-medium">
+                        {c.payerName ?? c.rawReference ?? "(no payer)"}
+                      </span>
+                      <span className="shrink-0 tabular-nums">
+                        {c.amount != null ? formatCurrency(c.amount) : "—"}
+                      </span>
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {[
+                        c.dateReceived ? formatDateShort(c.dateReceived) : null,
+                        c.qbDocNumber ?? c.rawReference,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                    {reason ? (
+                      <span className="block text-xs italic text-muted-foreground">
+                        {reason}
+                      </span>
+                    ) : null}
+                  </span>
+                </label>
+              );
+            })
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => onSubmit(Array.from(picked))}
+            disabled={busy || picked.size < 1}
+            data-testid="button-group-qb-submit"
+          >
+            {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+            Group {picked.size + 1} records
           </Button>
         </DialogFooter>
       </DialogContent>

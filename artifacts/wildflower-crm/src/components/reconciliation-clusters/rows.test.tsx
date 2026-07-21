@@ -8,7 +8,13 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { WorkbenchCluster } from "@workspace/api-client-react";
 import { ListWorkbenchClustersResponse } from "@workspace/api-zod";
-import { ClusterRow, giftUnlinkOptions, type ClusterActions } from "./rows";
+import {
+  ClusterRow,
+  giftChargeMatchOptions,
+  giftQbMatchOptions,
+  giftUnlinkOptions,
+  type ClusterActions,
+} from "./rows";
 import { DonorActions } from "./primitives";
 import { UnlinkChooserDialog, type UnlinkOption } from "./dialogs";
 
@@ -68,7 +74,14 @@ function makeActions(): ClusterActions {
     revertSettlement: vi.fn(),
     replaceSettlement: vi.fn(),
     rejectChargeQbTie: vi.fn(),
+    confirmProposedMatch: vi.fn(),
+    openMatchEvidence: vi.fn(),
+    unmatchPledge: vi.fn(),
     openUnlinkChooser: vi.fn(),
+    openMergeGifts: vi.fn(),
+    openSplitStaged: vi.fn(),
+    openGroupQb: vi.fn(),
+    confirmChargeProposal: vi.fn(),
   };
 }
 
@@ -653,6 +666,24 @@ describe("giftUnlinkOptions (relationship-specific unlink)", () => {
     expect(options[2].amount).toBeNull();
   });
 
+  it("staged-only subset drives 'Unmatch from QuickBooks record': mixed links filter to staged anchors", () => {
+    // The gift menu's QB-specific unmatch filters unlink options to
+    // anchor.kind === "staged" — charges must never leak into that subset,
+    // and a single staged link routes straight to the one-click revert.
+    const cluster = makePayoutCluster({
+      charges: [makeCharge({ chargeId: "ch_a" })],
+    });
+    const gift = makeGift({
+      linkedChargeIds: ["ch_a"],
+      linkedStagedPaymentIds: ["sp_z"],
+    }) as unknown as WorkbenchCluster["gifts"][number];
+    const staged = giftUnlinkOptions(gift, cluster).filter(
+      (o) => o.anchor.kind === "staged",
+    );
+    expect(staged).toHaveLength(1);
+    expect(staged[0].anchor.id).toBe("sp_z");
+  });
+
   it("routes the gift menu: multiple links → chooser payload, single link → direct anchor", () => {
     const multi = makeGift({
       linkedChargeIds: ["ch_a", "ch_b"],
@@ -758,6 +789,83 @@ describe("giftUnlinkOptions (relationship-specific unlink)", () => {
     expect(options).toHaveLength(1);
     expect(options[0].note ?? null).toBeNull();
     expect(options[0].source).toContain("QuickBooks ·");
+  });
+});
+
+describe("gift-side match builders (Match to Stripe / QuickBooks)", () => {
+  function matchQbRecord(over: Record<string, unknown> = {}) {
+    return {
+      stagedPaymentId: "sp_1",
+      role: "anchor",
+      reference: null,
+      lineDescription: null,
+      memo: null,
+      amount: "30.00",
+      dateReceived: "2099-01-01",
+      paymentMethod: null,
+      status: "pending",
+      linkedChargeId: null,
+      payerName: null,
+      qbEntityType: null,
+      qbEntityId: null,
+      attributedDonor: null,
+      ...over,
+    };
+  }
+
+  it("giftChargeMatchOptions lists EVERY charge; non-pending statuses stay visible with a reason", () => {
+    const cluster = makePayoutCluster({
+      charges: [
+        makeCharge({ chargeId: "ch_ok", payerName: "Alice", status: "pending" }),
+        makeCharge({
+          chargeId: "ch_taken",
+          payerName: "Bob",
+          status: "match_confirmed",
+        }),
+        makeCharge({
+          chargeId: "ch_prop",
+          payerName: "Cara",
+          status: "match_proposed",
+        }),
+        makeCharge({ chargeId: "ch_ex", payerName: "Dan", status: "excluded" }),
+      ],
+    });
+    const options = giftChargeMatchOptions(cluster);
+    expect(options).toHaveLength(4);
+    expect(options[0].anchor).toEqual(
+      expect.objectContaining({ kind: "charge", id: "ch_ok" }),
+    );
+    expect(options[0].disabledReason ?? null).toBeNull();
+    expect(options[1].disabledReason).toContain("Already linked");
+    expect(options[2].disabledReason).toContain("proposed match");
+    expect(options[3].disabledReason).toContain("re-include");
+    expect(options[0].source).toContain("Alice");
+  });
+
+  it("giftQbMatchOptions blocks accounting-detail roles (fee / deposit / charge_tie) with role-specific reasons", () => {
+    const cluster = makePayoutCluster({
+      charges: [],
+      qbRecords: [
+        matchQbRecord({ stagedPaymentId: "sp_ok", role: "anchor", status: "pending" }),
+        matchQbRecord({ stagedPaymentId: "sp_fee", role: "fee" }),
+        matchQbRecord({ stagedPaymentId: "sp_dep", role: "deposit" }),
+        matchQbRecord({ stagedPaymentId: "sp_tie", role: "charge_tie" }),
+        matchQbRecord({
+          stagedPaymentId: "sp_done",
+          role: "group_member",
+          status: "match_confirmed",
+        }),
+      ],
+    });
+    const options = giftQbMatchOptions(cluster);
+    expect(options).toHaveLength(5);
+    const byId = new Map(options.map((o) => [o.anchor.id, o]));
+    expect(byId.get("sp_ok")?.disabledReason ?? null).toBeNull();
+    expect(byId.get("sp_fee")?.disabledReason).toContain("fee");
+    expect(byId.get("sp_dep")?.disabledReason).toContain("settlement link");
+    expect(byId.get("sp_tie")?.disabledReason).toContain("Stripe charge");
+    // Role passes but the record is already matched → status reason still applies.
+    expect(byId.get("sp_done")?.disabledReason).toContain("Already linked");
   });
 });
 

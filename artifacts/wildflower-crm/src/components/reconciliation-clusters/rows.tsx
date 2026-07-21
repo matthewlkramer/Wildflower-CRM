@@ -25,7 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatCurrency, formatDateShort } from "@/lib/format";
-import type { EvidencePreview, UnlinkOption } from "./dialogs";
+import type { EvidencePickOption, EvidencePreview, UnlinkOption } from "./dialogs";
 import {
   CodingBadge,
   DbBadge,
@@ -97,8 +97,29 @@ export interface ClusterActions {
   ) => void;
   /** Reject the system-proposed charge↔QB tie for a Stripe charge (§5.2 / §7.2 "Unmatch from QB evidence"). */
   rejectChargeQbTie: (chargeId: string) => void;
+  confirmProposedMatch: (stagedPaymentId: string, label: string) => void;
+  /** Gift-side "Match to …": chooser over the cluster's own evidence records. */
+  openMatchEvidence: (
+    giftId: string,
+    giftLabel: string,
+    options: EvidencePickOption[],
+  ) => void;
+  /** PATCH opportunityId=null — server re-derives the old pledge in the same call. */
+  unmatchPledge: (giftId: string, giftLabel: string) => void;
   /** Relationship chooser when a gift has MULTIPLE linked evidence records. */
   openUnlinkChooser: (giftLabel: string, options: UnlinkOption[]) => void;
+  /** Combine several of the row's gifts into ONE gift (shared MergeGiftsDialog). */
+  openMergeGifts: (giftIds: string[]) => void;
+  /** Split one QB staged payment across several gifts (shared SplitEditorDialog). Finance-gated. */
+  openSplitStaged: (record: WorkbenchClusterQbRecord) => void;
+  /** Group several QB staged rows into one reconciliation unit. Finance-gated. */
+  openGroupQb: (record: WorkbenchClusterQbRecord) => void;
+  /** Approve the server-proposed match for a per-charge card via its deposit's reconciliation graph. */
+  confirmChargeProposal: (
+    chargeId: string,
+    label: string,
+    depositStagedPaymentId: string,
+  ) => void;
 }
 
 // ── Canonical row-state display maps (§2, §6 of workbench-business-rules.md) ─
@@ -312,6 +333,56 @@ export function giftUnlinkOptions(
   return options;
 }
 
+/** Shared status-based blocking reason for gift-side evidence matching. */
+function evidenceStatusBlock(status: string): string | null {
+  switch (status) {
+    case "match_confirmed":
+      return "Already linked to a gift — unlink it there first";
+    case "match_proposed":
+      return "Has a proposed match — confirm or dismiss it first";
+    case "excluded":
+      return "Excluded as not a donation — re-include it first";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Gift-side "Match to Stripe transaction" options: every charge in the cluster,
+ * unpickable ones grayed WITH the blocking reason (never hidden).
+ */
+export function giftChargeMatchOptions(cluster: WorkbenchCluster): EvidencePickOption[] {
+  return (cluster.charges ?? []).map((c) => ({
+    anchor: { kind: "charge" as const, id: c.chargeId, label: chargeLabel(c) },
+    source: `Stripe charge · ${chargeLabel(c)}`,
+    amount: c.amount != null ? fmt(c.amount) : null,
+    date: c.chargeDate ? formatDateShort(c.chargeDate) : null,
+    disabledReason: evidenceStatusBlock(c.status),
+  }));
+}
+
+/**
+ * Gift-side "Match to QuickBooks record" options: every QB row in the cluster.
+ * Accounting-detail roles (fee / deposit lump / per-charge tie) are never
+ * donation matches; the rest gate on the shared record status.
+ */
+export function giftQbMatchOptions(cluster: WorkbenchCluster): EvidencePickOption[] {
+  return (cluster.qbRecords ?? []).map((r) => ({
+    anchor: { kind: "staged" as const, id: r.stagedPaymentId, label: qbLabel(r) },
+    source: `QuickBooks · ${qbLabel(r)}`,
+    amount: r.amount != null ? fmt(r.amount) : null,
+    date: r.dateReceived ? formatDateShort(r.dateReceived) : null,
+    disabledReason:
+      r.role === "fee"
+        ? "Processor fee — accounting detail on the payout, not a donation"
+        : r.role === "deposit"
+          ? "Deposit lump — settles the payout via the settlement link, not one gift"
+          : r.role === "charge_tie"
+            ? "Per-charge QB tie — its evidence flows through the Stripe charge"
+            : evidenceStatusBlock(r.status),
+  }));
+}
+
 function GiftCard({
   gift,
   cluster,
@@ -395,23 +466,56 @@ function GiftCard({
     });
   }
   if (unmatchedGift || !crmEntry) {
+    // A donor match proposed on a LINKED QB record graduates to human-confirmed
+    // via the same confirm endpoint the QB card uses; proposed Stripe charge
+    // matches still confirm on the charge card.
+    const proposedQb = (gift.linkedStagedPaymentIds ?? [])
+      .map((id) => cluster.qbRecords.find((r) => r.stagedPaymentId === id))
+      .filter(
+        (r): r is WorkbenchClusterQbRecord => r?.status === "match_proposed",
+      );
+    const giftLabel = gift.name ?? "this gift";
+    const chargeMatchOpts = giftChargeMatchOptions(cluster);
+    const qbMatchOpts = giftQbMatchOptions(cluster);
     menu.push(
-      {
-        label: "Match to Stripe transaction",
-        disabledReason:
-          "Not built yet — link from the charge card using 'Link to existing CRM gift'",
-      },
-      {
-        label: "Match to QuickBooks record",
-        disabledReason:
-          "Not built yet — link from the QB card using 'Match to CRM gift'",
-      },
-      {
+      chargeMatchOpts.length > 0
+        ? {
+            label: "Match to Stripe transaction",
+            onClick: () =>
+              actions.openMatchEvidence(gift.giftId, giftLabel, chargeMatchOpts),
+          }
+        : {
+            label: "Match to Stripe transaction",
+            disabledReason: "No Stripe transactions in this row",
+          },
+      qbMatchOpts.length > 0
+        ? {
+            label: "Match to QuickBooks record",
+            onClick: () =>
+              actions.openMatchEvidence(gift.giftId, giftLabel, qbMatchOpts),
+          }
+        : {
+            label: "Match to QuickBooks record",
+            disabledReason: "No QuickBooks records in this row",
+          },
+    );
+    if (proposedQb.length > 0) {
+      for (const r of proposedQb) {
+        menu.push({
+          label:
+            proposedQb.length > 1
+              ? `Confirm proposed match — ${qbLabel(r)}`
+              : "Confirm proposed match",
+          onClick: () => actions.confirmProposedMatch(r.stagedPaymentId, qbLabel(r)),
+        });
+      }
+    } else {
+      menu.push({
         label: "Confirm proposed match",
         disabledReason:
-          "Not built yet — proposed matches confirm via the evidence card menus",
-      },
-    );
+          "No proposed QuickBooks match on this gift — proposed Stripe matches confirm on the charge card",
+      });
+    }
   }
 
   // Unlink is relationship-specific: one link keeps the one-click revert;
@@ -441,34 +545,62 @@ function GiftCard({
           },
   );
   if (hasQbLinks) {
-    menu.push({
-      label: "Unmatch from QuickBooks record",
-      disabledReason:
-        "Not built yet — QB unlink requires the accounting card's unmatch action",
-    });
+    // Same relationship-specific unlink as above, restricted to QB anchors.
+    const qbUnlinkOptions = unlinkOptions.filter((o) => o.anchor.kind === "staged");
+    menu.push(
+      qbUnlinkOptions.length > 1
+        ? {
+            label: "Unmatch from QuickBooks record…",
+            destructive: true,
+            onClick: () =>
+              actions.openUnlinkChooser(gift.name ?? gift.giftId, qbUnlinkOptions),
+          }
+        : qbUnlinkOptions.length === 1
+          ? {
+              label: "Unmatch from QuickBooks record",
+              destructive: true,
+              onClick: () =>
+                actions.openRevert(
+                  qbUnlinkOptions[0].anchor,
+                  `Unlink “${gift.name ?? gift.giftId}” from its QuickBooks record.${qbUnlinkOptions[0].note ? ` ${qbUnlinkOptions[0].note}` : ""} If the gift was minted from this QB record it is deleted; a pre-existing gift is kept and just unlinked.`,
+                ),
+            }
+          : {
+              label: "Unmatch from QuickBooks record",
+              disabledReason:
+                "The linked QuickBooks records aren't in this cluster — unlink from the row that holds them",
+            },
+    );
   }
   if (gift.opportunityId) {
     menu.push({
       label: "Unmatch from pledge payment",
-      disabledReason:
-        "Not built yet — open the gift record to remove the pledge allocation link",
+      destructive: true,
+      onClick: () => actions.unmatchPledge(gift.giftId, gift.name ?? "this gift"),
     });
   }
   menu.push(
     {
       label: "Remove from cluster",
       disabledReason:
-        "Not built yet — removing a gift card from its cluster requires a planned API",
+        "Cluster membership is derived from evidence links — 'Unlink from this match' removes this gift from the row",
     },
     {
       label: "Move to different cluster",
       disabledReason:
-        "Not built yet — unlink from current evidence, then link from the target row",
+        "Unlink from this match first, then link the gift from the target row's evidence card",
     },
-    {
-      label: "Group with another gift",
-      disabledReason: "Not built yet — allocation grouping is a planned operation",
-    },
+    cluster.gifts.length >= 2
+      ? {
+          label: "Group with another gift",
+          onClick: () =>
+            actions.openMergeGifts(cluster.gifts.map((g) => g.giftId)),
+        }
+      : {
+          label: "Group with another gift",
+          disabledReason:
+            "This row has only one gift — grouping combines several of a row's gifts into one",
+        },
     {
       label: "Split into separate gifts",
       disabledReason: "Not built yet — allocation splitting is a planned operation",
@@ -561,11 +693,14 @@ function ChargeCard({
   actions,
   rowState,
   payoutId,
+  depositStagedPaymentId,
 }: {
   charge: WorkbenchClusterCharge;
   actions: ClusterActions;
   rowState?: WorkbenchRowState | null;
   payoutId?: string;
+  /** The QB deposit staged payment this charge settles into, when the cluster has one — enables graph-based proposal confirm. */
+  depositStagedPaymentId?: string | null;
 }) {
   const label = chargeLabel(charge);
   const anchor: AnchorRef = { kind: "charge", id: charge.chargeId, label };
@@ -603,11 +738,23 @@ function ChargeCard({
     menu.push({ label: "Re-include", onClick: () => actions.reInclude(anchor) });
   } else if (!refundProposed) {
     if (charge.status === "match_proposed") {
-      menu.push({
-        label: "Confirm proposed match",
-        disabledReason:
-          "Not built yet — proposed charge matches confirm via the settlement or gift-link flow",
-      });
+      menu.push(
+        depositStagedPaymentId
+          ? {
+              label: "Confirm proposed match",
+              onClick: () =>
+                actions.confirmChargeProposal(
+                  charge.chargeId,
+                  label,
+                  depositStagedPaymentId,
+                ),
+            }
+          : {
+              label: "Confirm proposed match",
+              disabledReason:
+                "No QuickBooks deposit is linked to this payout yet — link the settlement first, then confirm",
+            },
+      );
     }
     if (!linked) {
       // Unmatched transaction: match / create / identify are the real next steps.
@@ -662,7 +809,7 @@ function ChargeCard({
       {
         label: "Mark refund anticipated",
         disabledReason:
-          "Not built yet — flag via the cleanup queue for now",
+          "Refund status is derived from Stripe evidence — use 'Flag for research' to note an expected refund",
       },
       {
         label: "Exclude — not a donation",
@@ -929,8 +1076,8 @@ function QbCard({
     if (proposed) {
       menu.push({
         label: "Confirm proposed match",
-        disabledReason:
-          "Not built yet — proposed QB matches confirm via the charge-tie or gift-link flow",
+        onClick: () =>
+          actions.confirmProposedMatch(record.stagedPaymentId, qbLabel(record)),
       });
     }
     menu.push(
@@ -947,18 +1094,29 @@ function QbCard({
     );
   }
   if (!isFee) {
+    // Group/split act on the staged QB row itself — only meaningful while the
+    // row is still open (not reconciled into a gift, not excluded).
+    const rowOpenReason = excluded
+      ? "Excluded rows can't be changed — re-include first"
+      : linked
+        ? "Already reconciled to a gift — unlink first"
+        : null;
     menu.push(
       isFinance
-        ? {
-            label: "Group QuickBooks records",
-            disabledReason: "Not built yet — grouping several QB rows into one event",
-          }
+        ? rowOpenReason
+          ? { label: "Group QuickBooks records", disabledReason: rowOpenReason }
+          : {
+              label: "Group QuickBooks records",
+              onClick: () => actions.openGroupQb(record),
+            }
         : { label: "Group QuickBooks records", disabledReason: "Finance team only" },
       isFinance
-        ? {
-            label: "Split into reconciliation units",
-            disabledReason: "Not built yet — splitting one QB row into parts",
-          }
+        ? rowOpenReason
+          ? { label: "Split into reconciliation units", disabledReason: rowOpenReason }
+          : {
+              label: "Split into reconciliation units",
+              onClick: () => actions.openSplitStaged(record),
+            }
         : { label: "Split into reconciliation units", disabledReason: "Finance team only" },
       { label: "View QB record", onClick: () => actions.openQbDetail(record) },
     );
@@ -1375,7 +1533,13 @@ function PayoutBundleRow({
             </>
           )}
         </div>
-        <ChargeCard charge={charge} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} />
+        <ChargeCard
+          charge={charge}
+          actions={actions}
+          rowState={cluster.coverage.state}
+          payoutId={cluster.anchorId}
+          depositStagedPaymentId={deposit?.stagedPaymentId ?? null}
+        />
         <div className="space-y-1.5">
           {cluster.qbRecords.length > 0 ? (
             cluster.qbRecords.map((r) => (
@@ -1559,7 +1723,13 @@ function PayoutBundleRow({
                     </>
                   )}
                 </div>
-                <ChargeCard charge={charge} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} />
+                <ChargeCard
+                  charge={charge}
+                  actions={actions}
+                  rowState={cluster.coverage.state}
+                  payoutId={cluster.anchorId}
+                  depositStagedPaymentId={deposit?.stagedPaymentId ?? null}
+                />
                 {tie ? (
                   <QbCard record={tie} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} />
                 ) : (
