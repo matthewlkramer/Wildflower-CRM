@@ -47,6 +47,14 @@ export const stripePayouts = pgTable(
     grossTotal: numeric("gross_total", { precision: 14, scale: 2 }),
     feeTotal: numeric("fee_total", { precision: 14, scale: 2 }),
     refundTotal: numeric("refund_total", { precision: 14, scale: 2 }),
+    // Net of every OTHER balance transaction settling inside the payout —
+    // fee-refund adjustments, failed-payment reversals (payment_failure_refund),
+    // failed-payout recoveries (payout_failure). NULL until the payout is
+    // (re-)synced by rollup code that computes it.
+    adjustmentTotal: numeric("adjustment_total", { precision: 14, scale: 2 }),
+    // True Stripe-ledger net: gross − fees − refunds + adjustments. Equals the
+    // bank `amount` whenever Stripe's books balance, so the settlement-gap lens
+    // only flags genuinely unexplained payouts.
     netTotal: numeric("net_total", { precision: 14, scale: 2 }),
     chargeCount: integer("charge_count"),
 

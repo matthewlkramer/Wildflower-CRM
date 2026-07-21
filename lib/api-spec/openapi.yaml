@@ -9028,7 +9028,9 @@ components:
         title:         { type: string, nullable: true, description: "Display line for the row header: payer / donor / gift name, anonymous-masked." }
         grossTotal:    { type: string, nullable: true, description: "Charge-sum gross for a payout, major units." }
         feeTotal:      { type: string, nullable: true, description: "Processor-fee total for a payout, major units." }
-        netTotal:      { type: string, nullable: true, description: "Net total (gross − fees) for a payout; the staged amount for QB money; the gift amount for crm_only." }
+        refundTotal:   { type: string, nullable: true, description: "Σ |refund amounts| settling inside a payout, major units. Null for QB/crm_only clusters." }
+        adjustmentTotal: { type: string, nullable: true, description: "Net of adjustment-type balance txns settling inside a payout (fee refunds, failed-payment reversals, failed-payout recoveries), major units. Null for QB/crm_only clusters and payouts not yet re-synced." }
+        netTotal:      { type: string, nullable: true, description: "True Stripe-ledger net for a payout (gross − fees − refunds + adjustments; equals bank amount when Stripe's books balance); the staged amount for QB money; the gift amount for crm_only." }
         bankAmount:    { type: string, nullable: true, description: "What hit the bank: the raw Stripe payout amount, or the settlement-linked/standalone QB deposit amount." }
         gapAmount:     { type: string, nullable: true, description: "netTotal − bankAmount when both sides exist (the money-math gap line); null when either side is unknown." }
         resolvedCount: { type: integer, nullable: true, description: "Evidence rows confirmed into gifts (excluded rows don't count toward the denominator). Null for crm_only." }

@@ -5811,7 +5811,11 @@ export interface WorkbenchCluster {
   grossTotal?: string | null;
   /** Processor-fee total for a payout, major units. */
   feeTotal?: string | null;
-  /** Net total (gross − fees) for a payout; the staged amount for QB money; the gift amount for crm_only. */
+  /** Σ |refund amounts| settling inside a payout, major units. Null for QB/crm_only clusters. */
+  refundTotal?: string | null;
+  /** Net of adjustment-type balance txns settling inside a payout (fee refunds, failed-payment reversals, failed-payout recoveries), major units. Null for QB/crm_only clusters and payouts not yet re-synced. */
+  adjustmentTotal?: string | null;
+  /** True Stripe-ledger net for a payout (gross − fees − refunds + adjustments; equals bank amount when Stripe's books balance); the staged amount for QB money; the gift amount for crm_only. */
   netTotal?: string | null;
   /** What hit the bank: the raw Stripe payout amount, or the settlement-linked/standalone QB deposit amount. */
   bankAmount?: string | null;

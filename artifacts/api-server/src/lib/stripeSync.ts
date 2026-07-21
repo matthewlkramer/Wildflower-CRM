@@ -134,16 +134,29 @@ export interface PayoutRollup {
   grossTotal: string;
   feeTotal: string;
   refundTotal: string;
+  adjustmentTotal: string;
   netTotal: string;
   chargeCount: number;
 }
 
 /**
  * Roll a payout's balance transactions into payout-level totals:
- *   gross  — Σ charge/payment amounts (what donors gave)
- *   fee    — Σ processor fees on every txn
- *   refund — Σ |refund amounts|
- *   net    — gross − fee − refund  (≈ payout.amount that hit the bank)
+ *   gross      — Σ charge/payment amounts (what donors gave)
+ *   fee        — Σ processor fees on charge/payment/refund txns
+ *   refund     — Σ |refund amounts|
+ *   adjustment — Σ net of every OTHER txn type settling inside the payout
+ *                (fee-refund `adjustment`s, failed-payment reversals
+ *                `payment_failure_refund`, failed-payout recoveries
+ *                `payout_failure`, …)
+ *   net        — gross − fee − refund + adjustment
+ *
+ * `net` is the true Stripe-ledger net: it equals Σ bt.net over every non-payout
+ * txn, which is exactly what arrives at the bank when Stripe's books balance —
+ * so the settlement-gap lens (net ≠ bank amount) only flags payouts that are
+ * genuinely unexplained, not ones that merely absorbed an adjustment.
+ *
+ * The payout's own `payout`-type balance transaction (the bank transfer itself,
+ * amount = −payout.amount) is skipped: it is the other side of the equation.
  */
 export function rollupPayout(
   bts: Stripe.BalanceTransaction[],
@@ -151,21 +164,29 @@ export function rollupPayout(
   let grossMinor = 0;
   let feeMinor = 0;
   let refundMinor = 0;
+  let adjustmentMinor = 0;
   let chargeCount = 0;
   for (const bt of bts) {
-    feeMinor += bt.fee ?? 0;
+    if (bt.type === "payout") continue;
     if (bt.type === "charge" || bt.type === "payment") {
       grossMinor += bt.amount;
+      feeMinor += bt.fee ?? 0;
       chargeCount += 1;
     } else if (bt.type === "refund" || bt.type === "payment_refund") {
       refundMinor += Math.abs(bt.amount);
+      feeMinor += bt.fee ?? 0;
+    } else {
+      // Everything else is an adjustment in the broadest sense; its own fee is
+      // already folded into bt.net, so the buckets stay double-count-free.
+      adjustmentMinor += bt.net ?? 0;
     }
   }
-  const netMinor = grossMinor - feeMinor - refundMinor;
+  const netMinor = grossMinor - feeMinor - refundMinor + adjustmentMinor;
   return {
     grossTotal: (grossMinor / 100).toFixed(2),
     feeTotal: (feeMinor / 100).toFixed(2),
     refundTotal: (refundMinor / 100).toFixed(2),
+    adjustmentTotal: (adjustmentMinor / 100).toFixed(2),
     netTotal: (netMinor / 100).toFixed(2),
     chargeCount,
   };
@@ -511,6 +532,7 @@ async function stagePayoutAndCharges(
       grossTotal: rollup.grossTotal,
       feeTotal: rollup.feeTotal,
       refundTotal: rollup.refundTotal,
+      adjustmentTotal: rollup.adjustmentTotal,
       netTotal: rollup.netTotal,
       chargeCount: rollup.chargeCount,
       rawPayout: payout as unknown as Record<string, unknown>,
@@ -528,6 +550,7 @@ async function stagePayoutAndCharges(
         grossTotal: rollup.grossTotal,
         feeTotal: rollup.feeTotal,
         refundTotal: rollup.refundTotal,
+        adjustmentTotal: rollup.adjustmentTotal,
         netTotal: rollup.netTotal,
         chargeCount: rollup.chargeCount,
         rawPayout: payout as unknown as Record<string, unknown>,

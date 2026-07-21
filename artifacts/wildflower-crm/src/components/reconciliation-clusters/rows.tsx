@@ -1759,8 +1759,16 @@ function PayoutBundleRow({
               ) : (
                 <X className="w-3 h-3 inline text-amber-600 shrink-0" />
               )}
-              gross {fmt(cluster.grossTotal)} − fees {fmt(cluster.feeTotal)} ={" "}
-              net {fmt(cluster.netTotal)} {balanced ? "=" : "≠"} bank{" "}
+              gross {fmt(cluster.grossTotal)} − fees {fmt(cluster.feeTotal)}
+              {Number(cluster.refundTotal ?? 0) !== 0
+                ? ` − refunds ${fmt(cluster.refundTotal)}`
+                : ""}
+              {Number(cluster.adjustmentTotal ?? 0) !== 0
+                ? ` ${Number(cluster.adjustmentTotal) > 0 ? "+" : "−"} adj ${fmt(
+                    Math.abs(Number(cluster.adjustmentTotal)).toFixed(2),
+                  )}`
+                : ""}{" "}
+              = net {fmt(cluster.netTotal)} {balanced ? "=" : "≠"} bank{" "}
               {deposit ? qbLabel(deposit) : fmt(cluster.bankAmount)}
               {gap != null
                 ? ` · gap ${fmt(cluster.gapAmount)} — ${balanced ? "money balanced" : "off"}`

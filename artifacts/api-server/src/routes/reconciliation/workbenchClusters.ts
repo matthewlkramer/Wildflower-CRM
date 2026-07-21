@@ -628,6 +628,8 @@ interface PayoutRow {
   bank_amount: string | null;
   gross_total: string | null;
   fee_total: string | null;
+  refund_total: string | null;
+  adjustment_total: string | null;
   net_total: string | null;
   charge_count: number | null;
   deposit_payer_name: string | null;
@@ -1338,6 +1340,8 @@ router.get(
         sp.amount::text AS bank_amount,
         sp.gross_total::text AS gross_total,
         sp.fee_total::text AS fee_total,
+        sp.refund_total::text AS refund_total,
+        sp.adjustment_total::text AS adjustment_total,
         COALESCE(sp.net_total, sp.amount)::text AS net_total,
         sp.charge_count AS charge_count,
         ad.payer_name AS deposit_payer_name,
@@ -1927,6 +1931,8 @@ router.get(
           title: h?.deposit_payer_name ?? null,
           grossTotal: h?.gross_total ?? null,
           feeTotal: h?.fee_total ?? null,
+          refundTotal: h?.refund_total ?? null,
+          adjustmentTotal: h?.adjustment_total ?? null,
           netTotal: h?.net_total ?? null,
           bankAmount: h?.bank_amount ?? null,
           gapAmount: gapOf(h?.net_total ?? null, h?.bank_amount ?? null),
@@ -2137,6 +2143,8 @@ router.get(
           title: h?.payer_name ?? h?.raw_reference ?? null,
           grossTotal: hasFees ? (h?.amount ?? null) : null,
           feeTotal: hasFees ? (-feeSum).toFixed(2) : null,
+          refundTotal: null,
+          adjustmentTotal: null,
           netTotal: isGroup
             ? (h?.group_total ?? null)
             : hasFees
@@ -2205,6 +2213,8 @@ router.get(
         title: maskedDonor ?? h?.title_gift_name ?? null,
         grossTotal: null,
         feeTotal: null,
+        refundTotal: null,
+        adjustmentTotal: null,
         netTotal: h?.amount ?? null,
         bankAmount: null,
         gapAmount: null,
