@@ -21,13 +21,23 @@ It never touches shared source, so running it concurrently with any other check
 (including the mark_task_complete all-checks-at-once storm) is safe — verified
 by running all 7 checks simultaneously, all green.
 
-**The regen SCRIPT still mutates.** `pnpm --filter @workspace/api-spec run
-codegen` wipes and rewrites `lib/*/src/generated` in place. Run it ALONE —
-never while tests/typechecks/the api-server build are running. If a check fails
-with "Cannot find module './generated'" right after a regen, that's the
-transient window: re-run codegen alone, then re-run the failed check. An
-`EADDRINUSE:8080` in the same storm is an orphaned server process — restart the
+**The regen SCRIPT is now atomic too (2026-07).** `pnpm --filter
+@workspace/api-spec run codegen` (lib/api-spec/codegen.sh) generates into a
+same-filesystem temp mirror, then swaps each generated dir in with a single
+`mv --exchange -T` (renameat2 RENAME_EXCHANGE). The dirs are never absent or
+half-written, so running codegen concurrently with tests/typechecks/builds is
+safe — verified with a full check storm during a live regen, all green. If
+output is byte-identical, no swap happens (keeps tsc cache warm). An
+`EADDRINUSE:8080` in a check storm is an orphaned server process — restart the
 workflow.
+
+**Lib declaration emit is flock-serialized (2026-07).** A second race: when
+generated sources get fresh mtimes, concurrent `tsc --build` runs re-emit lib
+`.d.ts` while a leaf typecheck reads them mid-rewrite → false TS2367/TS2305 on
+recently renamed types, passing in isolation. All lib-emitting builds AND leaf
+typechecks share `flock /tmp/wf-tsc-libs.lock`; leaf typechecks also rebuild
+libs first under the lock, so they never read stale declarations. Keep the
+flock (and the build-libs-first step) if editing any `typecheck` script.
 
 ## `test-api` runs on a dedicated test DB (2026-07)
 
@@ -35,8 +45,12 @@ vitest provisions and targets `<devdb>_test` — see dedicated-test-db.md. A
 "column X does not exist" in tests now means the TEST DB schema stamp predates
 your schema change only if you bypassed the hash (it hashes lib/db/src/schema);
 for the dev SERVER the cross-env-db-schema-drift.md note still applies.
-Concurrent vitest invocations (test-api + test-api-changed) serialize their
-setup on an advisory lock by design.
+Concurrent vitest invocations (test-api / test-api-changed / test-api-unit)
+now serialize the WHOLE run via `flock /tmp/wf-test-db.lock` in the api-server
+test scripts (2026-07). Setup-only advisory locking was insufficient: a second
+run's global setup truncates all tables mid-first-run → flaky assertions and
+deadlocks. test:unit shares the same global setup, so it takes the lock too.
+Keep the flock if editing any api-server test script.
 
 ## Merge-time generated-dir clobbering (parallel contract tasks)
 

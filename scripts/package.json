@@ -9,7 +9,7 @@
     "parse:reconciliation-sheets": "tsx ./src/parse-reconciliation-sheets.ts",
     "import:coding-forms": "tsx ./src/import-coding-forms.ts",
     "gen:coding-forms-seed": "tsx ./src/generate-coding-forms-seed-sql.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "flock /tmp/wf-tsc-libs.lock sh -c 'tsc --build ../tsconfig.json && tsc -p tsconfig.json --noEmit'"
   },
   "dependencies": {
     "@workspace/coding-forms": "workspace:*",

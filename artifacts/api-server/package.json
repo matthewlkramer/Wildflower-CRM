@@ -7,8 +7,8 @@
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "typecheck": "flock /tmp/wf-tsc-libs.lock sh -c 'tsc --build ../../tsconfig.json && tsc -p tsconfig.json --noEmit'",
+    "test": "flock /tmp/wf-test-db.lock vitest run",
     "ingest:media": "tsx src/scripts/ingest-media-mentions.ts",
     "sync:flodesk": "tsx src/scripts/sync-flodesk.ts",
     "sync:schools": "tsx src/scripts/sync-schools.ts",
@@ -28,8 +28,8 @@
     "refresh:task-suggestions": "tsx src/scripts/refresh-task-suggestions.ts",
     "migrate:organizations": "tsx src/scripts/migrate-organizations.ts",
     "analyze:coding-form-conflicts": "tsx src/scripts/analyze-coding-form-conflicts.ts",
-    "test:unit": "vitest run --project unit",
-    "test:changed": "vitest run --passWithNoTests --changed $(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
+    "test:unit": "flock /tmp/wf-test-db.lock vitest run --project unit",
+    "test:changed": "flock /tmp/wf-test-db.lock vitest run --passWithNoTests --changed $(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
   },
   "dependencies": {
     "@clerk/express": "^2.1.4",

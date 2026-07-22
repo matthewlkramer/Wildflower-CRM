@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "codegen": "orval --config ./orval.config.ts && node ./gen-index.mjs",
+    "codegen": "bash ./codegen.sh",
     "codegen:check": "bash ./codegen-check.sh"
   },
   "devDependencies": {

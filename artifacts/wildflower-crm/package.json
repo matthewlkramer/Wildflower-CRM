@@ -7,7 +7,7 @@
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "flock /tmp/wf-tsc-libs.lock sh -c 'tsc --build ../../tsconfig.json && tsc -p tsconfig.json --noEmit'",
     "test": "vitest run",
     "e2e": "playwright test",
     "test:changed": "vitest run --passWithNoTests --changed $(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)"

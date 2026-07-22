@@ -37,7 +37,8 @@ if [ "$status" -ne 0 ]; then
   echo "codegen:check FAILED: committed generated code is stale relative to"
   echo "lib/api-spec/openapi.yaml. Run:"
   echo "  pnpm --filter @workspace/api-spec run codegen"
-  echo "(alone, not concurrently with other checks) and commit the result."
+  echo "and commit the result. (The regen swaps output in atomically, so it"
+  echo "is safe to run even while other checks are in flight.)"
   exit 1
 fi
 
@@ -45,5 +46,8 @@ echo "codegen:check: generated output matches the committed dirs."
 
 # Verify the committed generated code compiles (scoped: only the two
 # generated libs and their upstream refs, not the whole lib solution).
+# The flock serializes declaration emit with every other tsc --build /
+# lib-reading typecheck (they all take the same lock), so concurrent checks
+# never read half-rewritten lib declarations.
 cd "$root"
-pnpm exec tsc --build lib/api-client-react lib/api-zod
+flock /tmp/wf-tsc-libs.lock pnpm exec tsc --build lib/api-client-react lib/api-zod
