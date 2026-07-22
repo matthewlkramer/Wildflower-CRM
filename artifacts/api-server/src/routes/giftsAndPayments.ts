@@ -1857,30 +1857,31 @@ router.post(
         };
       }
 
-      // A gift wired into a QuickBooks staged payment must be unlinked first —
-      // reverting archives it and would falsify an approved reconciliation.
-      // The counted QB ledger unifies direct + split + group links, so one
-      // existence check covers every link shape (the legacy staged gift-link
-      // columns are @deprecated and no longer written).
-      const qbLedgerLink = await tx
-        .select({ id: paymentApplications.id })
+      // A gift with ANY counted payment application must be unlinked first —
+      // reverting archives the gift, and a live counted link (QuickBooks,
+      // Stripe, or Donorbox evidence alike) pointing at an archived gift would
+      // orphan booked money and falsify reconciliation. The counted ledger
+      // unifies direct + split + group links, so one existence check covers
+      // every link shape (the legacy staged gift-link columns are @deprecated
+      // and no longer written).
+      const countedLinks = await tx
+        .select({ evidenceSource: paymentApplications.evidenceSource })
         .from(paymentApplications)
         .where(
           and(
             eq(paymentApplications.giftId, id),
-            eq(paymentApplications.evidenceSource, "quickbooks"),
             eq(paymentApplications.linkRole, "counted"),
           ),
-        )
-        .limit(1);
-      if (qbLedgerLink.length) {
+        );
+      if (countedLinks.length) {
+        const sources = [...new Set(countedLinks.map((l) => l.evidenceSource))].sort();
         return {
           ok: false,
           status: 409,
           json: {
-            error: "quickbooks_linked",
-            message:
-              "This gift is linked to a QuickBooks staged payment. Resolve that link before reverting.",
+            error: "payment_linked",
+            evidenceSources: sources,
+            message: `This gift has a counted payment link (${sources.join(", ")}). Resolve that link before reverting.`,
           },
         };
       }

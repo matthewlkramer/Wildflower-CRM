@@ -14,13 +14,9 @@ import type { Server } from "node:http";
  *   - asPledge=true → written pledge at verbal_confirmation, deriving
  *     status='pledge'; asPledge=false → open pipeline opportunity;
  *   - guards: 404 unknown gift; 409 gift_archived; 409 gift_already_on_pledge;
- *     409 quickbooks_linked when a COUNTED QuickBooks payment application
- *     exists (reverting would falsify an approved reconciliation).
- *
- * NOTE (reported, not fixed — task #794 is test-only): the reconciliation
- * guard only checks evidenceSource='quickbooks'. A gift with a counted STRIPE
- * payment application can still be reverted, leaving a live counted link
- * pointing at an archived gift.
+ *     409 payment_linked when ANY counted payment application exists —
+ *     regardless of evidence source (quickbooks, stripe, donorbox) —
+ *     because reverting archives the gift and would orphan booked money.
  *
  * Only the Clerk auth gate is mocked. Skips when no real DATABASE_URL.
  */
@@ -37,9 +33,12 @@ const GIFT_PLEDGED = `${RUN}_g_pledged`; // revert → written pledge
 const GIFT_ARCHIVED = `${RUN}_g_archived`;
 const GIFT_ON_PLEDGE = `${RUN}_g_onpledge`;
 const GIFT_QB = `${RUN}_g_qb`;
+const GIFT_STRIPE = `${RUN}_g_stripe`;
 const OPP_EXISTING = `${RUN}_opp_existing`;
 const SP_QB = `${RUN}_sp_qb`;
 const PA_QB = `${RUN}_pa_qb`;
+const CHARGE_STRIPE = `${RUN}_charge`;
+const PA_STRIPE = `${RUN}_pa_stripe`;
 
 const auth = vi.hoisted(() => ({
   current: { id: "", role: "" } as { id: string; role: string },
@@ -66,6 +65,7 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   giftAllocations: Db["giftAllocations"];
   stagedPayments: Db["stagedPayments"];
+  stripeStagedCharges: Db["stripeStagedCharges"];
   paymentApplications: Db["paymentApplications"];
   bulkOperations: Db["bulkOperations"];
 };
@@ -108,6 +108,7 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     giftAllocations: dbMod.giftAllocations,
     stagedPayments: dbMod.stagedPayments,
+    stripeStagedCharges: dbMod.stripeStagedCharges,
     paymentApplications: dbMod.paymentApplications,
     bulkOperations: dbMod.bulkOperations,
   };
@@ -173,6 +174,13 @@ beforeAll(async () => {
       amount: "600.00",
       dateReceived: "2099-05-06",
     },
+    {
+      id: GIFT_STRIPE,
+      name: `GiftRevert Stripe-linked ${RUN}`,
+      organizationId: ORG_ID,
+      amount: "150.00",
+      dateReceived: "2099-05-07",
+    },
   ]);
 
   // Two uneven allocations on the plain gift so the mirror is observable.
@@ -200,6 +208,22 @@ beforeAll(async () => {
     amountApplied: "600.00",
   });
 
+  // COUNTED Stripe link on GIFT_STRIPE — must ALSO block the revert
+  // (regression for the source-blind guard gap found in earlier test work).
+  await db.insert(schema.stripeStagedCharges).values({
+    id: CHARGE_STRIPE,
+    stripeAccountId: RUN,
+    grossAmount: "150.00",
+  });
+  await db.insert(schema.paymentApplications).values({
+    id: PA_STRIPE,
+    giftId: GIFT_STRIPE,
+    stripeChargeId: CHARGE_STRIPE,
+    evidenceSource: "stripe",
+    linkRole: "counted",
+    amountApplied: "150.00",
+  });
+
   auth.current = { id: ADMIN_ID, role: "admin" };
   const { default: app } = await import("../app");
   server = await new Promise<Server>((resolve) => {
@@ -215,10 +239,13 @@ afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   await db
     .delete(schema.paymentApplications)
-    .where(eqFn(schema.paymentApplications.id, PA_QB));
+    .where(inArrayFn(schema.paymentApplications.id, [PA_QB, PA_STRIPE]));
   await db
     .delete(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.id, SP_QB));
+  await db
+    .delete(schema.stripeStagedCharges)
+    .where(eqFn(schema.stripeStagedCharges.id, CHARGE_STRIPE));
   await db
     .delete(schema.bulkOperations)
     .where(
@@ -332,15 +359,34 @@ describe.skipIf(!HAS_DB)("gift revert-to-opportunity", () => {
     expect(json.error).toBe("gift_already_on_pledge");
   });
 
-  it("409 quickbooks_linked — a counted QB payment application blocks the revert", async () => {
+  it("409 payment_linked — a counted QuickBooks payment application blocks the revert", async () => {
     const { status, json } = await revert(GIFT_QB);
     expect(status).toBe(409);
-    expect(json.error).toBe("quickbooks_linked");
+    expect(json.error).toBe("payment_linked");
+    expect(json.evidenceSources).toEqual(["quickbooks"]);
     // The gift stays live and the counted link untouched.
     const [gift] = await db
       .select()
       .from(schema.giftsAndPayments)
       .where(eqFn(schema.giftsAndPayments.id, GIFT_QB));
     expect(gift.archivedAt).toBeNull();
+  });
+
+  it("409 payment_linked — a counted STRIPE payment application also blocks the revert (regression)", async () => {
+    const { status, json } = await revert(GIFT_STRIPE);
+    expect(status).toBe(409);
+    expect(json.error).toBe("payment_linked");
+    expect(json.evidenceSources).toEqual(["stripe"]);
+    // The gift stays live — no orphaned counted link at an archived gift.
+    const [gift] = await db
+      .select()
+      .from(schema.giftsAndPayments)
+      .where(eqFn(schema.giftsAndPayments.id, GIFT_STRIPE));
+    expect(gift.archivedAt).toBeNull();
+    const [pa] = await db
+      .select()
+      .from(schema.paymentApplications)
+      .where(eqFn(schema.paymentApplications.id, PA_STRIPE));
+    expect(pa).toBeTruthy();
   });
 });
