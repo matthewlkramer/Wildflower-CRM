@@ -31,6 +31,13 @@ const MEMBER_ID = `${RUN}_member`;
 const ORG_ID = `${RUN}_org`;
 const DRIFT_OPP_ID = `${RUN}_opp_drift`;
 const CLEAN_OPP_ID = `${RUN}_opp_clean`;
+// Paid-rollup drift: stored `paid` disagrees with the live SUM of non-archived
+// linked gifts (the write-off cap computes paid LIVE via pledgeCapacity.ts
+// while the pre-close checklist reads the persisted rollup — this report entry
+// is the tripwire that catches the two disagreeing).
+const PAID_OPP_ID = `${RUN}_opp_paid`;
+const PAID_GIFT_LIVE = `${RUN}_gift_live`;
+const PAID_GIFT_ARCH = `${RUN}_gift_arch`;
 
 const auth = vi.hoisted(() => ({
   current: { id: "", role: "" } as { id: string; role: string },
@@ -54,6 +61,7 @@ let schema: {
   users: Db["users"];
   organizations: Db["organizations"];
   opportunitiesAndPledges: Db["opportunitiesAndPledges"];
+  giftsAndPayments: Db["giftsAndPayments"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let server: Server;
@@ -93,6 +101,7 @@ beforeAll(async () => {
     users: dbMod.users,
     organizations: dbMod.organizations,
     opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
+    giftsAndPayments: dbMod.giftsAndPayments,
   };
   eqFn = drizzle.eq;
 
@@ -140,6 +149,39 @@ beforeAll(async () => {
     paid: "0",
   });
 
+  // PAID-drift opp: one LIVE $500 gift + one ARCHIVED $250 gift are linked,
+  // so the derived rollup is 500.00 — but we store paid='100' as if a write
+  // path skipped the applier. The report must flag `paid` with derived=500
+  // (proving the archived gift is EXCLUDED from the live sum too).
+  await db.insert(schema.opportunitiesAndPledges).values({
+    id: PAID_OPP_ID,
+    name: `Deriv Health PAID Opp ${RUN}`,
+    organizationId: ORG_ID,
+    stage: "warm_lead",
+    status: "open",
+    winProbability: "0.1000",
+    paid: "100",
+  });
+  await db.insert(schema.giftsAndPayments).values([
+    {
+      id: PAID_GIFT_LIVE,
+      name: `Deriv Health live gift ${RUN}`,
+      organizationId: ORG_ID,
+      opportunityId: PAID_OPP_ID,
+      amount: "500.00",
+      dateReceived: "2099-11-01",
+    },
+    {
+      id: PAID_GIFT_ARCH,
+      name: `Deriv Health archived gift ${RUN}`,
+      organizationId: ORG_ID,
+      opportunityId: PAID_OPP_ID,
+      amount: "250.00",
+      dateReceived: "2099-11-02",
+      archivedAt: new Date("2099-11-03T00:00:00Z"),
+    },
+  ]);
+
   auth.current = { id: ADMIN_ID, role: "admin" };
 
   const { default: app } = await import("../app");
@@ -154,7 +196,12 @@ afterAll(async () => {
   if (!HAS_DB) return;
   if (server)
     await new Promise<void>((resolve) => server.close(() => resolve()));
-  for (const id of [DRIFT_OPP_ID, CLEAN_OPP_ID]) {
+  for (const id of [PAID_GIFT_LIVE, PAID_GIFT_ARCH]) {
+    await db
+      .delete(schema.giftsAndPayments)
+      .where(eqFn(schema.giftsAndPayments.id, id));
+  }
+  for (const id of [DRIFT_OPP_ID, CLEAN_OPP_ID, PAID_OPP_ID]) {
     await db
       .delete(schema.opportunitiesAndPledges)
       .where(eqFn(schema.opportunitiesAndPledges.id, id));
@@ -191,6 +238,18 @@ describe.skipIf(!HAS_DB)("derivation health check", () => {
     expect(Number(wpRow.derived)).toBeCloseTo(0);
 
     expect(json.drift.some((d) => d.id === CLEAN_OPP_ID)).toBe(false);
+  });
+
+  it("flags a stale persisted paid rollup (stored ≠ live gift sum; archived gifts excluded)", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    const { status, json } = await getReport();
+    expect(status).toBe(200);
+    const mine = json.drift.filter((d) => d.id === PAID_OPP_ID);
+    const paidRow = mine.find((d) => d.field === "paid");
+    expect(paidRow).toBeTruthy();
+    expect(Number(paidRow!.stored)).toBeCloseTo(100);
+    // Derived = the LIVE $500 gift only — the archived $250 gift must not count.
+    expect(Number(paidRow!.derived)).toBeCloseTo(500);
   });
 
   it("is report-only: stored values are untouched after a run", async () => {

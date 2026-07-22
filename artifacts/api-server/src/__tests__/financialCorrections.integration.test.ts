@@ -64,6 +64,39 @@ const LINK_DATE = "2099-12-28";
 
 const MERGE_KEY = `merge_gifts:${[GIFT_M1, GIFT_M2].sort().join(",")}`;
 
+// ── Task #794 step 4 fixtures: detector matching rules ──────────────────────
+// Fee-tolerance band (amountTies): evidence ∈ [0.9*sum − 0.5, sum + 0.5].
+// TIE pair sums to 1000; 899.60 is just INSIDE the floor (899.50), so the
+// merge proposal carries the evidence tie. NOTIE pair also sums to 1000 but
+// its deposit is 899.00 — just OUTSIDE — so the proposal has no evidence.
+const ORG_T = `${RUN}_orgt`;
+const GIFT_T1 = `${RUN}_giftt1`;
+const GIFT_T2 = `${RUN}_giftt2`;
+const TIE_DATE = "2099-12-20";
+const STAGED_TIE = `${RUN}_stagedtie`;
+const ORG_N = `${RUN}_orgn`;
+const GIFT_N1 = `${RUN}_giftn1`;
+const GIFT_N2 = `${RUN}_giftn2`;
+const NOTIE_DATE = "2099-12-21";
+const STAGED_NOTIE = `${RUN}_stagednotie`;
+// Counted-linked exclusion: a gift that is already the counted source of a
+// Stripe charge must never enter a merge group.
+const ORG_C = `${RUN}_orgc`;
+const GIFT_C1 = `${RUN}_giftc1`; // counted stripe link
+const GIFT_C2 = `${RUN}_giftc2`;
+const COUNTED_DATE = "2099-12-22";
+const CH_C = `${RUN}_ch_c`;
+// link_evidence donor floor: a deposit tying EXACTLY to two same-donor gifts
+// must NOT produce a link_evidence proposal (needs >= 2 distinct donors).
+const ORG_S = `${RUN}_orgs`;
+const GIFT_S1 = `${RUN}_gifts1`;
+const GIFT_S2 = `${RUN}_gifts2`;
+const SINGLE_DATE = "2099-12-23";
+const STAGED_SINGLE = `${RUN}_stagedsingle`;
+
+const TIE_KEY = `merge_gifts:${[GIFT_T1, GIFT_T2].sort().join(",")}`;
+const NOTIE_KEY = `merge_gifts:${[GIFT_N1, GIFT_N2].sort().join(",")}`;
+
 const auth = vi.hoisted(() => ({
   current: { id: "", role: "" } as { id: string; role: string },
 }));
@@ -88,6 +121,7 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
   paymentApplications: Db["paymentApplications"];
+  stripeStagedCharges: Db["stripeStagedCharges"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -156,6 +190,7 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
     paymentApplications: dbMod.paymentApplications,
+    stripeStagedCharges: dbMod.stripeStagedCharges,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -182,6 +217,10 @@ beforeAll(async () => {
     { id: ORG_M, name: `Merge Org ${RUN}` },
     { id: ORG_L1, name: `Link Org 1 ${RUN}` },
     { id: ORG_L2, name: `Link Org 2 ${RUN}` },
+    { id: ORG_T, name: `Tie Org ${RUN}` },
+    { id: ORG_N, name: `NoTie Org ${RUN}` },
+    { id: ORG_C, name: `Counted Org ${RUN}` },
+    { id: ORG_S, name: `Single Org ${RUN}` },
   ]);
 
   await db.insert(schema.giftsAndPayments).values([
@@ -216,6 +255,65 @@ beforeAll(async () => {
       dateReceived: LINK_DATE,
     },
   ]);
+
+  // ── Step-4 fixtures: band edges, counted exclusion, donor floor ──────────
+  await db.insert(schema.giftsAndPayments).values([
+    { id: GIFT_T1, name: `Gift T1 ${RUN}`, organizationId: ORG_T, amount: "400.00", dateReceived: TIE_DATE },
+    { id: GIFT_T2, name: `Gift T2 ${RUN}`, organizationId: ORG_T, amount: "600.00", dateReceived: TIE_DATE },
+    { id: GIFT_N1, name: `Gift N1 ${RUN}`, organizationId: ORG_N, amount: "400.00", dateReceived: NOTIE_DATE },
+    { id: GIFT_N2, name: `Gift N2 ${RUN}`, organizationId: ORG_N, amount: "600.00", dateReceived: NOTIE_DATE },
+    { id: GIFT_C1, name: `Gift C1 ${RUN}`, organizationId: ORG_C, amount: "300.00", dateReceived: COUNTED_DATE },
+    { id: GIFT_C2, name: `Gift C2 ${RUN}`, organizationId: ORG_C, amount: "300.00", dateReceived: COUNTED_DATE },
+    { id: GIFT_S1, name: `Gift S1 ${RUN}`, organizationId: ORG_S, amount: "100.00", dateReceived: SINGLE_DATE },
+    { id: GIFT_S2, name: `Gift S2 ${RUN}`, organizationId: ORG_S, amount: "200.00", dateReceived: SINGLE_DATE },
+  ]);
+  await db.insert(schema.stagedPayments).values([
+    {
+      // Just INSIDE the fee floor: 0.9 * 1000 − 0.5 = 899.50 ≤ 899.60.
+      id: STAGED_TIE,
+      realmId: `${RUN}_realm`,
+      qbEntityType: "deposit",
+      qbEntityId: STAGED_TIE,
+      amount: "899.60",
+      dateReceived: TIE_DATE,
+      payerName: `Tie Deposit ${RUN}`,
+    },
+    {
+      // Just OUTSIDE the fee floor: 899.00 < 899.50.
+      id: STAGED_NOTIE,
+      realmId: `${RUN}_realm`,
+      qbEntityType: "deposit",
+      qbEntityId: STAGED_NOTIE,
+      amount: "899.00",
+      dateReceived: NOTIE_DATE,
+      payerName: `NoTie Deposit ${RUN}`,
+    },
+    {
+      // Ties EXACTLY to the single-donor pair's sum (300.00).
+      id: STAGED_SINGLE,
+      realmId: `${RUN}_realm`,
+      qbEntityType: "deposit",
+      qbEntityId: STAGED_SINGLE,
+      amount: "300.00",
+      dateReceived: SINGLE_DATE,
+      payerName: `Single Donor Deposit ${RUN}`,
+    },
+  ]);
+  // GIFT_C1 is the counted source of a Stripe charge — book-once already done.
+  await db.insert(schema.stripeStagedCharges).values({
+    id: CH_C,
+    stripeAccountId: `${RUN}_acct`,
+    grossAmount: "300.00",
+    dateReceived: COUNTED_DATE,
+  });
+  await db.insert(schema.paymentApplications).values({
+    id: `${RUN}_pa_c1`,
+    giftId: GIFT_C1,
+    stripeChargeId: CH_C,
+    evidenceSource: "stripe",
+    linkRole: "counted",
+    amountApplied: "300.00",
+  });
 
   // Unlinked QB staged deposit used as the evidence for the apply test. Amount
   // intentionally far from the A1+A2 sum so no link_evidence proposal is auto-
@@ -253,11 +351,29 @@ afterAll(async () => {
         GIFT_M2,
         GIFT_A1,
         GIFT_A2,
+        GIFT_T1,
+        GIFT_T2,
+        GIFT_N1,
+        GIFT_N2,
+        GIFT_C1,
+        GIFT_C2,
+        GIFT_S1,
+        GIFT_S2,
       ]),
     );
   await db
+    .delete(schema.stripeStagedCharges)
+    .where(eqFn(schema.stripeStagedCharges.id, CH_C));
+  await db
     .delete(schema.stagedPayments)
-    .where(eqFn(schema.stagedPayments.id, STAGED_E));
+    .where(
+      inArrayFn(schema.stagedPayments.id, [
+        STAGED_E,
+        STAGED_TIE,
+        STAGED_NOTIE,
+        STAGED_SINGLE,
+      ]),
+    );
   await db
     .delete(schema.giftsAndPayments)
     .where(
@@ -266,11 +382,29 @@ afterAll(async () => {
         GIFT_M2,
         GIFT_A1,
         GIFT_A2,
+        GIFT_T1,
+        GIFT_T2,
+        GIFT_N1,
+        GIFT_N2,
+        GIFT_C1,
+        GIFT_C2,
+        GIFT_S1,
+        GIFT_S2,
       ]),
     );
   await db
     .delete(schema.organizations)
-    .where(inArrayFn(schema.organizations.id, [ORG_M, ORG_L1, ORG_L2]));
+    .where(
+      inArrayFn(schema.organizations.id, [
+        ORG_M,
+        ORG_L1,
+        ORG_L2,
+        ORG_T,
+        ORG_N,
+        ORG_C,
+        ORG_S,
+      ]),
+    );
   await db
     .delete(schema.users)
     .where(inArrayFn(schema.users.id, [OTHER_ID, ADMIN_ID]));
@@ -371,6 +505,58 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
       .where(eqFn(schema.giftsAndPayments.id, GIFT_A1));
     expect(row.has).toBe(false);
     expect(row.amt).toBeNull();
+  }, 30_000);
+
+  it("amountTies fee band: evidence just inside [0.9·sum − 0.5, sum + 0.5] ties, just outside does not", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    const corrections = await detect(1_000_000);
+
+    // 899.60 vs sum 1000 sits 10 cents INSIDE the fee floor → evidence tie.
+    const tied = corrections.find((c) => c.key === TIE_KEY);
+    expect(tied, "in-band merge proposal present").toBeDefined();
+    expect(tied!.evidence).toBeDefined();
+    expect(tied!.evidence!.id).toBe(STAGED_TIE);
+    expect(tied!.score).toBeCloseTo(0.92);
+
+    // 899.00 vs sum 1000 sits 50 cents OUTSIDE the floor → merge proposal
+    // still emitted (same donor + date) but with NO evidence tie.
+    const untied = corrections.find((c) => c.key === NOTIE_KEY);
+    expect(untied, "out-of-band merge proposal present").toBeDefined();
+    expect(untied!.evidence).toBeUndefined();
+    expect(untied!.score).toBeCloseTo(0.7);
+  }, 30_000);
+
+  it("a counted-linked gift never enters a merge group", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    const corrections = await detect(1_000_000);
+    // GIFT_C1 carries a counted stripe payment_application, so the C pair can
+    // never group — no merge proposal may mention either gift.
+    const touching = corrections.filter(
+      (c) =>
+        c.kind === "merge_gifts" &&
+        c.gifts.some((g) => g.id === GIFT_C1 || g.id === GIFT_C2),
+    );
+    expect(touching).toEqual([]);
+  }, 30_000);
+
+  it("link_evidence requires >= 2 distinct donors even when the deposit ties exactly", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    const corrections = await detect(1_000_000);
+    // The 300.00 deposit ties exactly to GIFT_S1 + GIFT_S2, but both belong
+    // to one donor — batching evidence across gifts of a single donor is a
+    // merge question, not a link_evidence proposal.
+    const linkProposals = corrections.filter(
+      (c) => c.kind === "link_evidence" && c.evidence?.id === STAGED_SINGLE,
+    );
+    expect(linkProposals).toEqual([]);
+    // The same pair DOES surface as a same-donor merge (with the tie).
+    const merged = corrections.find(
+      (c) =>
+        c.kind === "merge_gifts" &&
+        c.gifts.some((g) => g.id === GIFT_S1) &&
+        c.gifts.some((g) => g.id === GIFT_S2),
+    );
+    expect(merged).toBeDefined();
   }, 30_000);
 
   it("rejects apply with an unknown evidence row (404) or unknown gifts (400)", async () => {
