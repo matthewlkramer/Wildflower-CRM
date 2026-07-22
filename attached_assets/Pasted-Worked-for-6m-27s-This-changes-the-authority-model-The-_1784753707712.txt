@@ -1,0 +1,295 @@
+Worked for 6m 27s
+This changes the authority model
+
+The problem is not simply that a few QuickBooks names are wrong. It is that the system has been treating a QuickBooks incoming-money row as though all of its attributes describe the same real-world thing:
+
+amount + date + bank arrival + donor + gift + coding
+
+They do not.
+
+The linked data confirms the pattern:
+
+The $194.87 Stripe payout is exactly the net proceeds of Randy Steiner’s $:
+The $194.87 Stripe payout is exactly the net proceeds100 charge and Mark/Jill Blank’s $103.83 charge: $95.60 + $99.27 after fees. The corresponding QBO deposit line is labeled Suzanne Bakewell. Payout row 56 Charge rows 90–91 QBO row 2461
+Suzanne’s actual Stripe charge was $250 gross, $10.55 fee, $239.45 net. The $239.45 QBO payment was labeled Jan Levine. Stripe charge row 94 QBO row 1041
+Jan’s actual $250 gross/$239.45 net charge is part of the $5,203.21 payout, along with Anne Essner’s much larger charge. Payout row 57 Charge rows 92–93
+
+This also reveals a second issue: the individual QBO entries often use the net Stripe amount, while the donor’s gift is the gross charge amount. So QBO may be wrong both about the donor and about the appropriate gift grain.
+
+Authority should be defined by attribute
+
+No single system is authoritative for the entire transaction.
+
+Fact	Authoritative source
+Money reached the bank	Bank-side/QBO deposit amount, date, and account
+A particular Stripe payout produced that deposit	Stripe payout plus confirmed settlement link
+Which charges were in the payout	Stripe payout ID and Stripe balance transactions
+Gross gift amount	Stripe charge
+Stripe fee	Stripe charge/balance transaction
+Refund or dispute	Stripe
+Processor-supplied payer information	Stripe/Donorbox metadata
+Canonical donor identity	CRM resolution, supported by processor information
+Gift restrictions and allocations	CRM gift/pledge records and supporting documentation
+What QuickBooks currently says	Raw QBO transaction fields
+What QuickBooks should have said	CRM-derived coding plus finance review
+
+The key distinction is:
+
+QuickBooks is authoritative evidence of the accounting record and bank settlement. It is not necessarily authoritative evidence of donor identity or processor-batch composition.
+
+The three relationship planes
+1. Settlement: payout to bank deposit
+Stripe payout
+    ↓ settlement link
+QBO/bank deposit
+
+This relationship says:
+
+These are the same net dollars at the processor and bank grains.
+
+The current settlement_links model is already structurally appropriate: it ties one Stripe payout to the QBO deposit it la no donor or allocation split. fileciteturn322file0L21-L40
+
+Settlement matching should use:
+
+Stripe payout ID where available
+Exact or fee-consistent net amount
+Arrival/deposit date with an allowed lag
+Bank account
+Bank trace/reference when available
+Human confirmation when ambiguous
+
+It should not use the QBO payer name as a requirement.
+
+Thus, this is a valid confirmed relationship:
+
+Stripe payout $194.87
+    ↔
+QBO deposit $194.87 labeled “Suzanne Bakewell”
+
+The label is wrong, but the settlement relationship is right.
+
+2. Donor credit: charge to CRM gift
+Stripe charge
+    ↓ counted payment application
+CRM gift
+
+For processor-originated gifts, the counted money relationship should be:
+
+Stripe charge gross amount → CRM gift
+
+not:
+
+QBO net payment → CRM gift
+
+The existing payment_applications table already supports source-specific evidence and distinfileciteturn290file0L27-L44 fileciteturn290file0L93-L127
+
+The correct records for the $194.87 payout would therefore be:
+
+Randy Steiner Stripe charge
+$100 gross
+→ Randy Steiner gift $100
+
+Mark/Jill Blank Stripe charge
+$103.83 gross
+→ Mark/Jill Blank gift $103.83
+
+Payout net:
+$100 − $4.40
++ $103.83 − $4.56
+= $194.87 bank deposit
+
+The QBO deposit should not create or own either donor gift.
+
+3. Accounting representation: QBO coding versus reality
+QBO entry
+    ↓ comparison
+Canonical processor + CRM facts
+
+This plane answers:
+
+Did QBO use the correct donor?
+Did it use gross or net?
+Did it use the correct entity, account, class, location, and restriction treatment?
+Is the difference historical and accepted, or does finance need to correct it?
+
+This is distinct from settlement and donor reconciliation.
+
+Change the meaning of QBO staged rows
+
+The present staged-payment model assumes that a sales receipt, payment, one-donor incoming-money unit. fileciteturn323file0L39-L54
+
+The $194.87 example proves that this assumption is not universally true. A QBO deposit line representing a processor payout may contain multiple donors even when QBO assigned one customer name to the line.
+
+Add or derive a role such as:
+
+quickbooksMoneyRole:
+  | "direct_receipt"
+  | "processor_settlement"
+  | "processor_accounting_entry"
+  | "other";
+Direct receipt
+
+Examples:
+
+Check directly from a foundation
+ACH directly from a donor
+Government reimbursement deposited directly
+
+This row may identify one donor and may be counted toward a gift.
+
+Processor settlement
+
+Example:
+
+The $194.87 Stripe payout deposit
+
+This row:
+
+Has no canonical donor
+May represent many gifts
+Links to a Stripe payout
+Must never create a gift directly
+Must never be counted as donor-credit money
+
+Its QBO payer name remains visible only as a raw accounting label.
+
+Processor accounting entry
+
+Example:
+
+The $239.45 QBO “Jan Levine” payment that actually represents Suzanne’s net Stripe proceeds
+
+This is an accounting representation of processor money. It may be associated with the corresponding charge or gift for audit purposes, but it should be corroborating, not counted.
+
+Preserve raw QBO facts; do not “correct” them in place
+
+The current staged-payment schema already separates the QBO-supplied `pa citeturn323file0L111-L173 fileciteturn323file0L216-L234
+
+Keep that separation, but make the labels unmistakable:
+
+Current presentation	Better presentation
+Payer: Suzanne Bakewell	QBO payer label: Suzanne Bakewell
+Donor: Suzanne Bakewell	Resolved donor: Randy Steiner / Mark and Jill Blank
+Matched	Settlement confirmed; QBO coding conflicts
+
+Do not overwrite the QBO name with the corrected donor. Preserve both:
+
+QBO says: Suzanne Bakewell
+Processor composition says:
+• Randy Steiner
+• Mark and Jill Blank
+
+Resolution:
+Historical QBO miscode accepted; processor and CRM records govern donor credit.
+Add a structured accounting-discrepancy record
+
+The existing free-text settlement note is not enough. Add a targeted table, rather than another universal relationship model:
+
+accountingDiscrepancies {
+  id
+
+  qbStagedPaymentId
+  settlementLinkId        // nullable
+  giftId                  // nullable
+
+  kind:
+    | "payer_mislabeled"
+    | "processor_batch_labeled_as_one_donor"
+    | "gross_net_mismatch"
+    | "account_mismatch"
+    | "entity_mismatch"
+    | "class_or_location_mismatch"
+    | "allocation_mismatch"
+    | "other"
+
+  disposition:
+    | "open"
+    | "correction_requested"
+    | "corrected_in_qb"
+    | "accepted_historical"
+    | "not_material"
+
+  detectedBy:
+    | "system"
+    | "human"
+
+  expectedFacts          // structured JSON snapshot
+  observedQbFacts        // structured JSON snapshot
+  explanation
+
+  confirmedByUserId
+  confirmedAt
+  resolvedByUserId
+  resolvedAt
+}
+
+For the $194.87 deposit:
+
+Kind:
+processor_batch_labeled_as_one_donor
+
+Observed QBO:
+Suzanne Bakewell, $194.87
+
+Expected:
+Randy Steiner net $95.60
+Mark/Jill Blank net $99.27
+
+Disposition:
+accepted_historical
+
+This preserves the audit trail without pretending that QuickBooks was corrected.
+
+Do not let a QBO discrepancy invalidate a true settlement
+
+The workbench needs separate signals:
+
+Settlement:
+Confirmed
+
+Charge-to-gift donor credit:
+Complete
+
+Accounting consistency:
+Historical mismatch accepted
+
+A row should not be forced into either “matched” or “conflict” as one combined state.
+
+I would use:
+
+Settlement state
+orphan
+proposed
+confirmed
+exempt
+Donor-credit state
+unassigned charges
+partially assigned
+complete
+conflict
+Accounting consistency flag
+consistent
+mismatch needs review
+correction requested
+historical exception accepted
+
+A historical QBO miscode should not prevent the cluster from being financially reconciled. It may prevent a stricter audit_ready state unless it has been explicitly accepted as a historical exception.
+
+Historical repair process
+
+For all historical Stripe transactions, I would rebuild truth from the processor outward.
+
+For each Stripe payout
+Read the exact charge membership from stripe_payout_id.
+Verify that charge net totals equal the payout.
+Match the payout to the bank/QBO deposit using net amount, date, account, and trace information.
+Confirm the settlement link regardless of QBO payer labels.
+Link or mint one CRM gift per real Stripe charge using the gross charge amount.
+Resolve donor identity from Stripe/Donorbox and CRM—not from QBO.
+Remove or demote any counted QBO-to-gift applications representing the same processor money.
+Record QBO donor/coding differences as historical discrepancies.
+Leave QuickBooks unchanged.
+
+The settlement model already recognizes that a confirmed payout/deposit link and its constituent charges represent the same dollars at different grains, and that coarse QBO applthe charge-level applications. fileciteturn322file0L36-L40
+
+Given the apparent shifted-name pattern, I would run this across all historical Stripe payouts, not merely repair the remaining unmatched cases individually.
