@@ -139,6 +139,7 @@ import {
   extractStripeSourceConflict,
   extractQbLinkConflict,
   extractOwnApplicationConflict,
+  currentlyAppliedGiftOf,
   type OwnApplicationConflict,
   isAlreadyResolvedError,
   changeReachedIntendedState,
@@ -2771,6 +2772,11 @@ function ReconCard({
   const giftAmountNum = num(card.resolvedGiftAmount);
   const groupMatchesGift = card.settled;
   const crmRecordLane = lanes.find((b) => b.key === "crmRecord");
+  // Money already booked to the resolved gift via this payment's own counted
+  // application (worker auto-match, proposed or confirmed). Said up front so a
+  // re-target's "move this application?" confirmation is expected, not a
+  // surprise 409 round-trip.
+  const appliedGift = currentlyAppliedGiftOf(card);
   // A per-charge card: one card for ONE Stripe charge (not the whole QB deposit).
   // Its matching unit is the single charge → its own CRM gift, so deposit-level
   // actions (group / split / exclude / select-for-grouping) don't apply.
@@ -2996,6 +3002,19 @@ function ReconCard({
                   under {giftDonorName}. Approving keeps the gift’s donor (
                   {giftDonorName}); use “Change donor / payer” to re-point it to{" "}
                   {qbPayerName} (a separately confirmed choice).
+                </div>
+              )}
+              {appliedGift && (
+                <div
+                  className="mt-1 rounded border bg-muted/40 p-1.5 text-[11px] text-muted-foreground"
+                  data-testid={`note-applied-gift-${card.stagedPaymentId}`}
+                >
+                  <span className="font-medium text-foreground">
+                    Money currently applied to this gift.
+                  </span>{" "}
+                  Re-targeting to a different gift moves the booked payment off{" "}
+                  {appliedGift.name ?? "this gift"} — you’ll be asked to
+                  confirm the move.
                 </div>
               )}
               {card.resolvedGiftDate && (
@@ -3956,6 +3975,10 @@ function RetargetDialog({
   const [results, setResults] = useState<ReconciliationCandidate[]>([]);
   const [searching, setSearching] = useState(false);
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
+  // The gift this payment's money is ALREADY booked to (worker auto-match,
+  // proposed or confirmed) — said up front so picking a different gift reads
+  // as an expected move, not a surprise server conflict.
+  const appliedGift = currentlyAppliedGiftOf(card);
   const debouncedQ = useDebounce(q.trim());
   // Monotonic sequence so a slow earlier response can never clobber the
   // results of a newer (debounced) search.
@@ -4013,6 +4036,23 @@ function RetargetDialog({
           </DialogDescription>
         </DialogHeader>
         <AnchorPaymentSummary card={card} />
+        {appliedGift && (
+          <div
+            className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            data-testid="note-retarget-applied-gift"
+          >
+            <span className="font-medium">
+              This payment’s money is currently applied to{" "}
+              {appliedGift.name ?? "a gift"}
+              {appliedGift.amount != null
+                ? ` (${money(appliedGift.amount)})`
+                : ""}
+              .
+            </span>{" "}
+            Picking a different gift moves that booked application — you’ll be
+            asked to confirm the move.
+          </div>
+        )}
         <div className="relative">
           <Input
             autoFocus

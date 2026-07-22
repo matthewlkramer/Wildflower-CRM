@@ -459,6 +459,42 @@ export function extractQbLinkConflict(err: unknown): QbLinkConflict | null {
   return null;
 }
 
+/**
+ * The gift a card's money is ALREADY booked to via its own counted payment
+ * application — the fact the server's `payment_already_applied` gate would
+ * surface if the reviewer re-targets to a different gift. Shown up front on
+ * the card and inside the re-target picker so the move confirmation is
+ * expected rather than a surprise 409 round-trip (project preference: show
+ * the blocking/conflicting state with the reason instead of hiding it).
+ *
+ * Presentation-only derivation from facts already on the wire:
+ *  - a per-charge card re-sources through the Stripe switch flow, not the
+ *    own-application move, so it never gets this note;
+ *  - a source group re-links via group-reconcile (different guard);
+ *  - `qbCardState` match_proposed / matched_* means the money is counted into
+ *    the resolved gift (the worker books the application at proposal time).
+ * Returns null when the money isn't currently booked to a gift.
+ */
+export function currentlyAppliedGiftOf(card: {
+  stripeChargeId?: string | null;
+  isSourceGroup?: boolean;
+  resolvedGiftId?: string | null;
+  resolvedGiftName?: string | null;
+  resolvedGiftAmount?: string | null;
+  qbCardState?: string | null;
+}): { id: string; name: string | null; amount: string | null } | null {
+  if (card.stripeChargeId) return null;
+  if (card.isSourceGroup) return null;
+  if (!card.resolvedGiftId) return null;
+  const s = card.qbCardState;
+  if (s !== "match_proposed" && !(s ?? "").startsWith("matched")) return null;
+  return {
+    id: card.resolvedGiftId,
+    name: card.resolvedGiftName ?? null,
+    amount: card.resolvedGiftAmount ?? null,
+  };
+}
+
 /** The 409 payload when the PAYMENT being re-targeted is itself already applied
  *  to a different gift (a wrong worker auto-match); the currently applied gift's
  *  details ride on `details.currentAppliedGift`. */

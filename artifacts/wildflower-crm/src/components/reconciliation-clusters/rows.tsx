@@ -966,12 +966,31 @@ function qbHref(r: WorkbenchClusterQbRecord): string | null {
   return `https://app.qbo.intuit.com/app/${page}?txnId=${encodeURIComponent(r.qbEntityId)}`;
 }
 
+/**
+ * The CRM gift this QB record's money is currently booked to (proposed or
+ * confirmed direct match) — the gift whose linkedStagedPaymentIds carries the
+ * record. Shown on the card so a reviewer re-targeting the match knows up
+ * front that the existing application will move (the server's
+ * payment_already_applied confirm still guards the write).
+ */
+function appliedGiftFor(
+  cluster: WorkbenchCluster,
+  stagedPaymentId: string,
+): WorkbenchClusterGift | null {
+  return (
+    cluster.gifts.find((g) =>
+      (g.linkedStagedPaymentIds ?? []).includes(stagedPaymentId),
+    ) ?? null
+  );
+}
+
 function QbCard({
   record,
   actions,
   rowState,
   payoutId,
   grouped,
+  appliedGiftName,
 }: {
   record: WorkbenchClusterQbRecord;
   actions: ClusterActions;
@@ -979,6 +998,9 @@ function QbCard({
   payoutId?: string;
   /** True when this record belongs to the cluster's QB unit group (anchor or member). */
   grouped?: boolean;
+  /** Name of the gift this record's money is currently booked to, when a
+      proposed/confirmed direct match exists (see appliedGiftFor). */
+  appliedGiftName?: string | null;
 }) {
   const roleLabel = QB_ROLE_LABEL[record.role];
   const anchor: AnchorRef = { kind: "staged", id: record.stagedPaymentId, label: qbLabel(record) };
@@ -1228,6 +1250,19 @@ function QbCard({
             : null}
           {record.memo ? ` · ${record.memo}` : null}
           {refNote ? <span className="block text-xs text-muted-foreground">{refNote}</span> : null}
+          {appliedGiftName &&
+          (proposed || linked) &&
+          record.role !== "fee" &&
+          record.role !== "charge_tie" ? (
+            <span
+              className="block text-xs text-muted-foreground"
+              data-testid={`note-qb-applied-gift-${record.stagedPaymentId}`}
+            >
+              Money currently applied to gift: {appliedGiftName}
+              {proposed ? " (proposed match)" : ""} — re-targeting moves it
+              after you confirm.
+            </span>
+          ) : null}
         </>
       }
       gap={gap}
@@ -1694,7 +1729,7 @@ function PayoutBundleRow({
         <div className="space-y-1.5">
           {cluster.qbRecords.length > 0 ? (
             cluster.qbRecords.map((r) => (
-              <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} grouped={cluster.group != null && (r.role === "anchor" || r.role === "group_member")} />
+              <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} grouped={cluster.group != null && (r.role === "anchor" || r.role === "group_member")} appliedGiftName={appliedGiftFor(cluster, r.stagedPaymentId)?.name ?? null} />
             ))
           ) : (
             <SettlementGapSlot cluster={cluster} actions={actions} />
@@ -1896,7 +1931,7 @@ function PayoutBundleRow({
                   }
                 />
                 {tie ? (
-                  <QbCard record={tie} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} grouped={cluster.group != null && (tie.role === "anchor" || tie.role === "group_member")} />
+                  <QbCard record={tie} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} grouped={cluster.group != null && (tie.role === "anchor" || tie.role === "group_member")} appliedGiftName={appliedGiftFor(cluster, tie.stagedPaymentId)?.name ?? null} />
                 ) : (
                   <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1">
                     ↳ part of the payout bundle above
@@ -2026,7 +2061,7 @@ function QbStandaloneRow({
           instead of leaving a hollow middle column. */}
       <div className="col-span-2 space-y-1.5">
         {cluster.qbRecords.map((r) => (
-          <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage.state} grouped={cluster.group != null && (r.role === "anchor" || r.role === "group_member")} />
+          <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage.state} grouped={cluster.group != null && (r.role === "anchor" || r.role === "group_member")} appliedGiftName={appliedGiftFor(cluster, r.stagedPaymentId)?.name ?? null} />
         ))}
         <div className="text-[11px] text-muted-foreground/70 pl-1 italic">
           {looksLikeStripeMoney
