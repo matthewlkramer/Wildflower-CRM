@@ -741,7 +741,7 @@ async function reconcileCreateOrgWithPer(
 // so the review UI shows the entity name instead of a raw record id.
 // Batched one query per entity type. Ids that no longer resolve are left
 // without a name (the UI falls back to the id).
-async function enrichCreatePerEntityNames(
+export async function enrichCreatePerEntityNames(
   actions: ProposedAction[],
 ): Promise<ProposedAction[]> {
   const creates = actions.filter(
@@ -796,7 +796,7 @@ async function enrichCreatePerEntityNames(
 // `organizationName`. set_primary_email may carry only an emailId, so we
 // resolve that to its owner (person or organization) first. Ids that no
 // longer resolve are left without a name (the UI falls back to "person").
-async function enrichPersonActionNames(
+export async function enrichPersonActionNames(
   actions: ProposedAction[],
 ): Promise<ProposedAction[]> {
   const isPersonAction = (
@@ -910,7 +910,7 @@ async function enrichPersonActionNames(
 // of the entity (organization / payment intermediary / household) it's at.
 // Roles that no longer resolve are left unenriched (the UI falls back to
 // the id-based text).
-async function enrichRoleActionLabels(
+export async function enrichRoleActionLabels(
   actions: ProposedAction[],
 ): Promise<ProposedAction[]> {
   const isRoleAction = (

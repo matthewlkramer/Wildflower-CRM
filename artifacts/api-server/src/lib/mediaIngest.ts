@@ -196,7 +196,7 @@ const ENTITY_COLUMN = {
   person: "person_ids",
 } as const;
 
-async function upsertArticle(
+export async function upsertArticle(
   target: IngestTarget,
   article: { url: string; title: string; domain: string; publicationDate: string | null },
 ): Promise<"created" | "linked" | "noop"> {

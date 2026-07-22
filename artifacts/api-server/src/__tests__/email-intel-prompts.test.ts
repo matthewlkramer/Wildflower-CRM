@@ -73,6 +73,18 @@ describe("email-intel prompt model", () => {
         expect(accuracy).not.toEqual(suppression);
       }
     });
+
+    it("suppression rules are per-signal-type (no shared/copied prompt) and state a suppress criterion", () => {
+      const suppressionPrompts = EMAIL_INTEL_SIGNAL_TYPES.map((st) =>
+        buildDefaultReviewPrompt(st, "suppression"),
+      );
+      // Each signal type has its OWN suppression criteria — a copy-paste
+      // collapse of two types into identical text is a regression.
+      expect(new Set(suppressionPrompts).size).toBe(suppressionPrompts.length);
+      for (const prompt of suppressionPrompts) {
+        expect(prompt.toLowerCase()).toContain("suppress");
+      }
+    });
   });
 
   describe("composeSystemPrompt", () => {
