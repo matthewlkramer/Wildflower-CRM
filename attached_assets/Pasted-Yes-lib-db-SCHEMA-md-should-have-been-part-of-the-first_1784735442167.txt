@@ -1,0 +1,239 @@
+Yes. lib/db/SCHEMA.md should have been part of the first review. It is one of the most important agent-orientation files because replit.md and MEMORY.md direct agents toward it.
+
+Overall assessment
+
+The file contains valuable domain knowledge, but in its current form it is more dangerous than helpful in several places because it mixes:
+
+Current implemented schema
+Approved but not yet implemented target design
+Retired schema
+Migration history
+Operational sync instructions
+Architecture rules
+Unresolved notes and TODOs
+
+It opens by correctly saying that Drizzle is authoritative, but then describes fields and tables that do not exist in the current default branch while also retaining descriptions of fields already retired.
+
+The file should be a current-state map of the database, not a combined roadmap and archaeological record.
+
+Important discrepancies
+
+I compared the supplied text with the current repository default branch.
+
+Area	What SCHEMA.md says	What the current schema/code says
+Reimbursement model	disbursement_model, award_closed_at, and award_close_reason exist as Task #788	The current opportunity table does not contain those fields, and status still derives cash_in from paid >= awarded.
+Expected payments	pledge_expected_payments exists and expected_payment_date is deprecated	The current pledge-allocation schema still defines expectedPaymentDate as the expected-payment mechanism.
+Gift type	gifts_and_payments.type exists and drives loan_or_grant	The current schema explicitly says the type column was dropped; type is derived, and loan_or_grant is stored directly.
+Pledge link	Gifts use payment_on_pledge_id	The current field is the more general opportunity_id.
+School relationships	Only gift_allocations points to schools	pledge_allocations also has school_recipient_id.
+Restriction axis	Uses other_restriction_type	The current default-branch schema still uses usage_restriction_type.
+QB relationship ledger	Described mostly correctly as a unified ledger	The actual table supports three separate evidence anchors and partial unique indexes, not merely one generic UNIQUE(payment_id, gift_id) model.
+
+Some of the supplied text may reflect work on a branch that has not reached the default branch. That is exactly why the document needs an explicit current-versus-proposed boundary.
+
+What SCHEMA.md should be
+
+I would define its role narrowly:
+
+SCHEMA.md is the human-readable map of the schema implemented on the referenced commit. It explains table responsibilities and cross-table invariants. It does not describe proposed fields, migration history, UI behavior, or transitional implementation plans.
+
+It should contain four things:
+
+Authority and verification metadata
+A concise domain/table map
+Cross-table invariants
+Links to deeper business-rule and implementation-status documents
+
+It should not contain:
+
+Task-number history
+Migration-by-migration chronology
+Proposed tables
+Detailed resync commands
+UI route descriptions
+Test behavior
+One-off data-cleanup facts
+Raw TODOs such as “WE NEED TO CLEAN THIS UP”
+Descriptions of physically retired columns
+Recommended opening
+
+I would replace the beginning with something like:
+
+# Database Schema Map
+
+**Status:** Current implementation map  
+**Last verified:** YYYY-MM-DD  
+**Verified against:** `<commit SHA>`
+
+## Authority
+
+This document explains the purpose of the database tables and the
+cross-table invariants that are easy to break.
+
+For exact implemented facts:
+
+1. `lib/db/src/schema/*.ts` — tables, columns, indexes, and constraints
+2. `lib/db/src/schema/_enums.ts` — database enums
+3. `lib/api-spec/openapi.yaml` — public API contract
+4. Canonical business-rule documents — domain meaning and intended behavior
+
+When this document disagrees with the schema code, the schema code describes
+what currently exists. When the schema code disagrees with a ratified business
+rule, consult the subsystem implementation-status document before changing code.
+
+This file documents implemented state only. Proposed or approved-but-unshipped
+changes belong in a design or status document and must not be presented here as
+existing schema.
+
+The commit SHA is important. Without it, an agent cannot tell whether a mismatch means the document is stale or it is looking at the wrong branch.
+
+Recommended structure
+1. Data provenance
+
+Retain the important point that the Copper/Airtable cleanup import is complete, but move operational commands elsewhere.
+
+## Data provenance
+
+- Historical CRM data was imported once from manually cleaned Copper exports.
+  That source is closed and must not be resynchronized.
+- Schools are mirrored from the Schools Airtable base.
+- QuickBooks, Stripe, Donorbox, Gmail, Calendar, and other integrations are
+  ongoing sources.
+
+Operational sync procedures live in `docs/integrations/data-sources.md`.
+
+Also fix “experts of Copper” to “exports from Copper.”
+
+2. Domain table index
+
+Use a compact table instead of several paragraphs per table:
+
+Domain	Primary tables	Purpose
+Donors and contacts	organizations, people, households, contact tables	External parties and contact information
+Fundraising pipeline	opportunities_and_pledges, pledge_allocations	Planned asks, commitments, restrictions, and collection plans
+Received money	gifts_and_payments, gift_allocations	Actual donor credit and actual received-money treatment
+Payment evidence	staged_payments, stripe_staged_charges, donorbox_donations	Imported evidence that money moved
+Reconciliation	payment_applications, settlement_links, relevant source-link structures	Authoritative relationships among evidence and CRM records
+Internal dimensions	entities, fiscal_years, fundable_projects, schools, regions	Allocation and reporting dimensions
+
+Then give each important table two or three sentences rather than copying most columns and enum values.
+
+3. Cross-table invariants
+
+This should be the most prominent section.
+
+Header plus allocations
+opportunities_and_pledges
+└── pledge_allocations: planned or committed scope
+
+gifts_and_payments
+└── gift_allocations: actual received-money scope
+
+The planned-versus-actual distinction should be explicit.
+
+Donor XOR
+
+Document the three donor FKs and where exactly-one versus at-most-one applies.
+
+Derived opportunity lifecycle
+
+Describe the implemented derivation only. Link to the lifecycle design for future changes.
+
+Evidence relationships
+
+State clearly:
+
+payment_applications is the authoritative evidence-unit-to-gift ledger.
+settlement_links is the authoritative payout-to-QB-deposit relationship.
+Stored gift-pointer columns must not be recreated.
+Statuses derive from relationships.
+Archive behavior
+
+Describe soft-delete as the default and link to any documented exceptions rather than enumerating historical hard-delete paths here.
+
+4. Subsystem links
+## Deeper references
+
+- Fundraising and pledge model: `docs/fundraising-money-model.md`
+- Reconciliation business rules: `docs/workbench-business-rules.md`
+- Reconciliation target design: `docs/reconciliation-design.md`
+- Reconciliation implementation status: `docs/reconciliation-status.md`
+- Integration ownership and sync rules: `docs/integrations/data-sources.md`
+- Routine schema changes: `docs/change-recipes.md`
+Where the new pledge model should live
+
+The reimbursement and expected-payment design we just discussed should not yet be written into SCHEMA.md as implemented fact unless the corresponding schema is actually present on the branch being documented.
+
+Create or update:
+
+docs/fundraising-money-model.md
+
+That document should contain the approved design:
+
+fixed_commitment versus cost_reimbursement
+Annual pledge allocations as the reimbursable collection forecast
+Direct/indirect goal treatment
+Expected-payment records for fixed commitments
+Evidence-created pledge payments
+Plan-to-actual allocation inheritance
+Award closure rules
+
+Give it explicit metadata:
+
+status: approved_not_implemented
+last_reviewed: 2026-07-21
+implementation_status: docs/fundraising-money-status.md
+
+Once fields actually ship, the implemented portions can be reflected concisely in SCHEMA.md.
+
+Changes to the documentation proposal
+
+Including SCHEMA.md changes my earlier proposed hierarchy slightly.
+
+replit.md
+
+The task-start instructions should say:
+
+For any data-model change:
+
+1. Read the subsystem's canonical business-rule document.
+2. Read `lib/db/SCHEMA.md` for the current cross-table map.
+3. Inspect the actual Drizzle schema and OpenAPI contract.
+4. Read the subsystem implementation-status document before assuming
+   approved design has shipped.
+docs/README.md
+
+Its authority map should distinguish:
+
+Question	Authority
+What should this concept mean?	Canonical business-rule/design document
+What tables and columns currently exist?	Drizzle schema
+How do the existing tables relate?	lib/db/SCHEMA.md
+What is implemented versus pending?	Subsystem status document
+How does the API expose it?	OpenAPI
+What previously went wrong?	Memory/history
+MEMORY.md
+
+It should link to SCHEMA.md but should not repeat table definitions. Memory entries such as gift type, QB tie status, or expected-payment location should be removed or marked historical once the schema map and status documents cover them.
+
+.agents/memory/README.md
+
+Add:
+
+Memory files must not be the sole authority for an active table, column, enum, or relationship. Current schema facts belong in Drizzle and the schema map; approved future design belongs in canonical design documents.
+
+Recommended disposition of the current file
+
+I would not incrementally edit this version. There are too many generations mixed together.
+
+Use it as source material for three replacements:
+
+A substantially shorter lib/db/SCHEMA.md describing only implemented state.
+docs/fundraising-money-model.md containing the approved pledge/reimbursement target design.
+docs/integrations/data-sources.md containing data provenance, sync ownership, and resync procedures.
+
+Migration numbers, task numbers, and retired-field history should either be deleted or moved to a historical appendix that agents do not read by default.
+
+The most urgent rule to add is:
+
+Never document an approved schema change in SCHEMA.md until it exists in the referenced implementation commit.
