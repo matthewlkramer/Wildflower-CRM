@@ -45,9 +45,15 @@ import {
   chargeCountedLedgerRow,
   giftCountedStripeChargeId,
 } from "../../lib/paymentApplications";
+// Write-path guard vocabulary: DerivedStatus predicates/constants ONLY (see
+// the decision note in lib/derivedStatus.ts). Never branch on the read-path
+// card-state mapping (qbCardStateOfStatus) here.
 import {
+  OPEN_STATUSES,
   chargeStatusIn,
   deriveStripeChargeStatus,
+  isBookedStatus,
+  isPendingStatus,
   stagedConfirmedSettlementLinkExists,
   stagedStatusSql,
 } from "../../lib/derivedStatus";
@@ -203,7 +209,7 @@ async function mintGiftFromEvidence(
       // match_confirmed with NULL links, but its money is ALREADY booked —
       // opening the hatch there would double-count it.
       const settlementOnlyConfirmed =
-        pre.status === "match_confirmed" &&
+        isBookedStatus(pre.status) &&
         pre.confirmedSettlementLink === true &&
         pre.hasLedgerLink === false;
       if (settlementOnlyConfirmed && stripeChargeId && !group) {
@@ -306,7 +312,7 @@ async function mintGiftFromEvidence(
           // settlement link with NO counted ledger rows (a split-resolved row
           // is already booked — never charge-anchor over it).
           const settlementOnlyConfirmed =
-            row.status === "match_confirmed" &&
+            isBookedStatus(row.status) &&
             row.confirmedSettlementLink === true &&
             row.hasLedgerLink === false;
           if (
@@ -402,11 +408,13 @@ async function mintGiftFromEvidence(
         // A fresh mint can only claim a still-free (derived-pending) charge.
         // Gift-link fact = the counted ledger row (pointer columns retired).
         if (
-          deriveStripeChargeStatus({
-            ...charge,
-            hasCountedApplication:
-              (await chargeCountedLedgerRow(tx, charge.id)) != null,
-          }) !== "pending"
+          !isPendingStatus(
+            deriveStripeChargeStatus({
+              ...charge,
+              hasCountedApplication:
+                (await chargeCountedLedgerRow(tx, charge.id)) != null,
+            }),
+          )
         ) {
           throw new ApproveAbort(409, {
             error: "stripe_charge_not_available",
@@ -523,7 +531,7 @@ async function mintGiftFromEvidence(
               inArray(stripeStagedCharges.stripePayoutId, stagedPayoutIds),
               // Claimable = still open (an excluded charge is terminal noise
               // and must not block a QB-only mint; a booked charge is taken).
-              chargeStatusIn(["pending", "match_proposed"]),
+              chargeStatusIn(OPEN_STATUSES),
             ),
           );
         stripeChargesAvailable = n;
@@ -860,7 +868,7 @@ router.post(
       .where(eq(stagedPayments.id, stagedPaymentId))
       .then((r) => r[0]);
     if (!pre) return notFound(res, "staged payment");
-    if (pre.status === "match_confirmed") {
+    if (isBookedStatus(pre.status)) {
       const tiedGiftId = pre.mintedGiftId == null ? pre.linkedGiftId : null;
       if (tiedGiftId != null && tiedGiftId === giftId) {
         res.json({
@@ -977,7 +985,7 @@ router.post(
         // moveOwnApplication. Every other confirmed shape (settlement-only,
         // group, split, minted) stays closed.
         const openForRelink =
-          staged.status === "match_confirmed" &&
+          isBookedStatus(staged.status) &&
           staged.ledgerSoleGiftId != null &&
           staged.ledgerMintedGiftId == null &&
           !staged.ledgerGroupMember;
@@ -1198,9 +1206,9 @@ router.post(
             ...charge,
             hasCountedApplication: chargeLedger != null,
           });
-          const chargePending = chargeDerived === "pending";
+          const chargePending = isPendingStatus(chargeDerived);
           const chargeIdempotent =
-            chargeDerived === "match_confirmed" &&
+            isBookedStatus(chargeDerived) &&
             chargeLedger != null &&
             !chargeLedger.createdTheGift &&
             chargeLedger.giftId === giftId;
@@ -1253,7 +1261,7 @@ router.post(
                 inArray(stripeStagedCharges.stripePayoutId, stagedPayoutIds),
                 // Claimable = still open (excluded charges are terminal noise,
                 // booked charges are taken).
-                chargeStatusIn(["pending", "match_proposed"]),
+                chargeStatusIn(OPEN_STATUSES),
               ),
             );
           stripeChargesAvailable = n;

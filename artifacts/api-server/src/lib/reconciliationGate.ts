@@ -4,7 +4,11 @@ import {
   hasExactlyOneDonor,
   type LinkDonor,
 } from "./quickbooksLink";
-import type { DerivedStatus } from "./derivedStatus";
+import {
+  OPEN_STATUSES,
+  isOpenStatus,
+  type DerivedStatus,
+} from "./derivedStatus";
 
 /**
  * Shared consistency gate for the unified "complete-match" reconciler.
@@ -98,7 +102,8 @@ export interface GateIssue {
 
 export interface GateStaged {
   id: string;
-  status: string;
+  /** DERIVED status (lib/derivedStatus.ts) — the write-path guard vocabulary. */
+  status: DerivedStatus;
   /** Set ONLY by the link_existing_gift route when the row is a confirmed
    *  DIRECT match (a sole counted non-mint ledger application, no mint/group
    *  membership) being re-targeted
@@ -323,13 +328,10 @@ function donorCount(d: LinkDonor): number {
  * be (re-)approved through this reconciler. The approve route and this gate
  * share this set so they can never disagree.
  */
-export const APPROVABLE_STAGED_STATUSES = [
-  "pending",
-  "match_proposed",
-] as const satisfies readonly DerivedStatus[];
+export const APPROVABLE_STAGED_STATUSES = OPEN_STATUSES;
 
-export function isStagedApprovable(status: string): boolean {
-  return (APPROVABLE_STAGED_STATUSES as readonly string[]).includes(status);
+export function isStagedApprovable(status: DerivedStatus): boolean {
+  return isOpenStatus(status);
 }
 
 /**

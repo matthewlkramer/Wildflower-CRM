@@ -89,6 +89,67 @@ export const DERIVED_STATUSES = [
 ] as const;
 export type DerivedStatus = (typeof DERIVED_STATUSES)[number];
 
+/* ── Write-path status vocabulary (deliberate decision) ─────────────────────
+ *
+ * Write-path lifecycle guards (the reconciliation approve/link/mint/revert/
+ * exclude routes) branch on THIS DerivedStatus vocabulary — never on the
+ * read-path card-state mapping (`qbCardStateOfStatus` in
+ * routes/reconciliation/workbenchRowState.ts). Card states are a PRESENTATION
+ * projection derived FROM DerivedStatus; routing guards through them would
+ * invert that dependency and blur lifecycle facts the write path must
+ * distinguish (e.g. "matched_complete" covers both a counted booking and a
+ * settlement-only confirmation, which mint vs link paths treat differently).
+ *
+ * Drift protection is TYPE-LEVEL instead of mapping-level: every guard
+ * comparison goes through the typed constants/predicates below on
+ * DerivedStatus values, so renaming, removing, or adding a status is a
+ * compile error at every guard — the two vocabularies cannot silently drift.
+ */
+
+/** Still open for donor/gift review work: pending or an unreviewed proposal.
+ *  The gate's APPROVABLE_STAGED_STATUSES aliases this set — one authority. */
+export const OPEN_STATUSES = [
+  "pending",
+  "match_proposed",
+] as const satisfies readonly DerivedStatus[];
+
+/** Carrying a gift link of its own (proposed or confirmed) — revertible. */
+export const LINKED_STATUSES = [
+  "match_proposed",
+  "match_confirmed",
+] as const satisfies readonly DerivedStatus[];
+
+/** Open = pending OR match_proposed (still needs donor/gift work). */
+export function isOpenStatus(
+  status: DerivedStatus,
+): status is (typeof OPEN_STATUSES)[number] {
+  return (OPEN_STATUSES as readonly DerivedStatus[]).includes(status);
+}
+
+/** Linked = match_proposed OR match_confirmed (a gift link exists). */
+export function isLinkedStatus(
+  status: DerivedStatus,
+): status is (typeof LINKED_STATUSES)[number] {
+  return (LINKED_STATUSES as readonly DerivedStatus[]).includes(status);
+}
+
+/** Booked/settled: confirmed evidence ties this row's money to a gift. */
+export function isBookedStatus(
+  status: DerivedStatus,
+): status is "match_confirmed" {
+  return status === "match_confirmed";
+}
+
+/** Untouched — free to claim, mint against, or resolve. */
+export function isPendingStatus(status: DerivedStatus): status is "pending" {
+  return status === "pending";
+}
+
+/** Excluded from the money flow (stored reason or derived settlement claim). */
+export function isExcludedStatus(status: DerivedStatus): status is "excluded" {
+  return status === "excluded";
+}
+
 /* ── Alias validation & quoting ────────────────────────────────────────── */
 
 const SQL_ALIAS_RE = /^[a-z_][a-z0-9_]*$/;

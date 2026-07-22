@@ -72,6 +72,12 @@ export type QbCardEntry = {
  * carried on the wire — WorkbenchClusterQbRecord no longer has a status field.
  * "enriched" is reserved for the future fill-out-QB documentation workflow
  * and is never derived from linkage status.
+ *
+ * READ-PATH ONLY (deliberate decision): this mapping is a presentation
+ * projection. Write-path lifecycle guards (approve/link/mint/revert/exclude
+ * routes) must NOT branch on card states — they use the typed DerivedStatus
+ * predicates/constants in lib/derivedStatus.ts, which is the fact vocabulary
+ * this projection is derived from. See the decision note there.
  */
 export function qbCardStateOfStatus(status: string | null | undefined): QbCardState {
   switch (status) {

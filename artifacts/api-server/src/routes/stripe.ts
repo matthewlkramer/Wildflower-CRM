@@ -100,11 +100,18 @@ import {
 } from "../lib/stripeConfirm";
 import { proposePayoutMatches } from "../lib/stripeReconcile";
 import { proposeChargeQbTies } from "../lib/chargeQbTie";
+// Write-path guard vocabulary: DerivedStatus predicates/constants ONLY (see
+// the decision note in lib/derivedStatus.ts). qbCardStateOfStatus is used
+// below strictly for READ-path card projections, never lifecycle guards.
 import {
   chargeStatusIn,
   chargeStatusSql,
   chargeStatusWhere,
   deriveStripeChargeStatus,
+  isBookedStatus,
+  isExcludedStatus,
+  isLinkedStatus,
+  isPendingStatus,
   qbStatusCaseText,
 } from "../lib/derivedStatus";
 import {
@@ -519,7 +526,7 @@ router.post(
       .where(eq(stripeStagedCharges.id, id))
       .then((r) => r[0]);
     if (!existing) return notFound(res, "stripe staged charge");
-    if (existing.status !== "pending") {
+    if (!isPendingStatus(existing.status)) {
       res.status(409).json({
         error: "not_pending",
         message: "Only pending staged charges can be resolved.",
@@ -647,7 +654,7 @@ router.post(
           hasCountedApplication: chargeLedger != null,
         });
         if (
-          chargeStatus === "match_confirmed" &&
+          isBookedStatus(chargeStatus) &&
           chargeLedger != null &&
           !chargeLedger.createdTheGift &&
           chargeLedger.giftId === giftId
@@ -655,7 +662,7 @@ router.post(
           alreadyLinked = true;
           return;
         }
-        if (chargeStatus !== "pending") {
+        if (!isPendingStatus(chargeStatus)) {
           throw new ReconcileAbort(409, {
             error: "not_pending",
             message:
@@ -840,10 +847,12 @@ router.post(
     if (!existing) return notFound(res, "stripe staged charge");
     const existingLedger = await chargeCountedLedgerRow(db, id);
     if (
-      deriveStripeChargeStatus({
-        ...existing,
-        hasCountedApplication: existingLedger != null,
-      }) !== "pending"
+      !isPendingStatus(
+        deriveStripeChargeStatus({
+          ...existing,
+          hasCountedApplication: existingLedger != null,
+        }),
+      )
     ) {
       res.status(409).json({
         error: "not_pending",
@@ -878,10 +887,12 @@ router.post(
         if (!locked) throw new Error(NOT_PENDING);
         const lockedLedger = await chargeCountedLedgerRow(tx, id);
         if (
-          deriveStripeChargeStatus({
-            ...locked,
-            hasCountedApplication: lockedLedger != null,
-          }) !== "pending"
+          !isPendingStatus(
+            deriveStripeChargeStatus({
+              ...locked,
+              hasCountedApplication: lockedLedger != null,
+            }),
+          )
         ) {
           throw new Error(NOT_PENDING);
         }
@@ -1046,7 +1057,10 @@ router.post(
       .where(eq(stripeStagedCharges.id, id))
       .then((r) => r[0]);
     if (!existing) return notFound(res, "stripe staged charge");
-    if (existing.status !== "pending" && existing.status !== "excluded") {
+    if (
+      !isPendingStatus(existing.status) &&
+      !isExcludedStatus(existing.status)
+    ) {
       res.status(409).json({
         error: "not_excludable",
         message:
@@ -1102,7 +1116,7 @@ router.post(
       .where(eq(stripeStagedCharges.id, id))
       .then((r) => r[0]);
     if (!existing) return notFound(res, "stripe staged charge");
-    if (existing.status !== "excluded") {
+    if (!isExcludedStatus(existing.status)) {
       res.status(409).json({
         error: "not_excluded",
         message: "Only excluded staged charges can be re-included.",
@@ -1239,10 +1253,7 @@ router.post(
           ...locked,
           hasCountedApplication: lockedLedger != null,
         });
-        if (
-          lockedStatus !== "match_proposed" &&
-          lockedStatus !== "match_confirmed"
-        ) {
+        if (!isLinkedStatus(lockedStatus)) {
           throw new Error(NOT_REVERTIBLE);
         }
 
