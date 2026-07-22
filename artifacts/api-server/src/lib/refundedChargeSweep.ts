@@ -18,8 +18,9 @@ import { stagedStatusWhere } from "./derivedStatus";
  *     lump (`settlement_links.deposit_staged_payment_id`; a CONFIRMED link
  *     already derives the row match_confirmed, so in practice this covers
  *     proposed links), and
- *   - any per-charge QB ties naming this row (`linked_qb_staged_payment_id`
- *     confirmed / `proposed_qb_staged_payment_id` proposed).
+ *   - any per-charge QB ties naming this row (source_links rows with
+ *     link_type='charge_qb_tie', confirmed or proposed lifecycle; the legacy
+ *     pointer columns are retired).
  *
  * The row is excluded only when:
  *   - it is derived-pending AND auto-classified (a human resolve or a manual

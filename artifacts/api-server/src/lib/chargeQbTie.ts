@@ -369,9 +369,9 @@ function shiftDate(isoDate: string, days: number): string {
 
 /**
  * Recompute charge↔QB tie proposals over every payout with NO settlement link
- * (optionally restricted to `payoutIds`). Idempotent. Writes ONLY
- * `proposed_qb_staged_payment_id`, always guarded on the confirmed tie still
- * being NULL, so a concurrent human approve is never clobbered.
+ * (optionally restricted to `payoutIds`). Idempotent. Writes ONLY proposed
+ * charge_qb_tie rows in source_links, always guarded on no confirmed tie
+ * existing for the charge, so a concurrent human approve is never clobbered.
  *
  * Lock-free like runProposalPass: callers already holding the per-account
  * "stripe" advisory lock call this directly; {@link proposeChargeQbTies} takes

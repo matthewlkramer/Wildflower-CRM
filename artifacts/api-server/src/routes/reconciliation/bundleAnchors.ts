@@ -48,7 +48,9 @@ type AnchorSource = "stripe_payout" | "qb_staged_payment";
 // FULLY CHARGE-TIED = the settlement path for "individually-booked" payouts:
 // no settlement link will ever exist (the bookkeeper recorded one QB row per
 // donation, not a deposit lump), but every charge is either confirmed-tied to
-// its own QB row (`linked_qb_staged_payment_id`) or terminal. Such a payout is
+// its own QB row (a confirmed source_links charge_qb_tie row; SQL aliases
+// keep the legacy `linked_qb_staged_payment_id` name for API compatibility)
+// or terminal. Such a payout is
 // SETTLED — it shows as Matched, not Missing deposit.
 export const fullyChargeTied = sql`(
   NOT EXISTS (SELECT 1 FROM settlement_links sl WHERE sl.payout_id = sp.id)

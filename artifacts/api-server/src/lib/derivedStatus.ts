@@ -29,8 +29,8 @@ import { sql, type SQL } from "drizzle-orm";
  *                         QB deposit lump (QB only — the deposit is settled
  *                         against a Stripe payout, its money booked per-charge)
  *                       - a BOOKED charge-grain tie claiming this row (QB
- *                         only — a Stripe charge names it via
- *                         linked_qb_staged_payment_id AND that charge itself
+ *                         only — a confirmed source_links charge_qb_tie row
+ *                         names it from a Stripe charge AND that charge itself
  *                         carries a counted ledger row; the gift booking lives
  *                         on the CHARGE, moved there by chargeTieSupersede.ts)
  *   excluded (derived) ⇐ no stronger arm matched AND the row is CLAIMED as
@@ -46,9 +46,9 @@ import { sql, type SQL } from "drizzle-orm";
  * also carries a gift link; human confirmation (match_confirmed_at) or
  * autoApplied=false is what promotes it.
  *
- * TIE ≠ match_confirmed. A charge-grain tie (linked_qb_staged_payment_id) is
- * a SOURCE LINK — a claim that a charge and a QB row are the same money. The
- * claim alone NEVER produces match_confirmed: only the booking on the tied
+ * TIE ≠ match_confirmed. A charge-grain tie (a source_links row with
+ * link_type='charge_qb_tie') is a claim that a charge and a QB row are the
+ * same money. The claim alone NEVER produces match_confirmed: only the booking on the tied
  * charge (its counted ledger row) is that evidence. A confirmed-but-unbooked
  * tie DOES derive `excluded` (see the derived-excluded arm above): the row is
  * settled evidence, not review work, and it promotes to match_confirmed when
@@ -350,8 +350,8 @@ export interface StagedStatusFacts {
   hasCountedApplication: boolean;
   /** EXISTS arm — pass when known; default false (QB-rare deposit shape). */
   hasConfirmedSettlementLink?: boolean;
-  /** EXISTS arm — a BOOKED charge-grain tie claims this row (some Stripe
-   * charge's linked_qb_staged_payment_id names it AND that charge carries a
+  /** EXISTS arm — a BOOKED charge-grain tie claims this row (a confirmed
+   * source_links charge_qb_tie row names it from a Stripe charge AND that charge carries a
    * counted ledger row). Mere linkage is NOT evidence — pass true only when
    * the tied charge's booking is known-counted; default false. */
   hasConfirmedChargeTie?: boolean;

@@ -86,7 +86,8 @@ interface ProposedPayment {
 // match the manual Link dialog surfaces (searchQbStaged): donor name over the
 // payer/memo/line fields, a generous ±20%/±$50 amount band (QB gross vs Stripe
 // net differ by fees), and a ±30d date window. Restricted to staged rows not yet
-// tied to a gift (matched / created / group-reconciled all null) so a proposal is
+// tied to a gift (no counted ledger row anchors them; the legacy matched /
+// created / group-reconciled pointer columns are retired) so a proposal is
 // always actionable, and ordered so the single closest amount-then-date row wins.
 // Returns null when nothing plausible matches (Stripe fallback runs next).
 async function proposeQbPaymentForGift(opts: {
@@ -174,8 +175,9 @@ async function proposeQbPaymentForGift(opts: {
 // Best-guess UNLINKED Stripe staged charge for a stray gift row — the Stripe
 // analogue of proposeQbPaymentForGift, used when no plausible QuickBooks payment
 // exists (a Stripe-settled gift never gets a per-gift QB record). Restricted to
-// still-open charges not yet tied to a gift (status='pending', matched/created
-// gift both null) and not refunded/disputed (those aren't real gifts). The
+// still-open charges not yet tied to a gift (derived status 'pending' — no
+// counted ledger row; the legacy matched/created gift-pointer columns are
+// retired) and not refunded/disputed (those aren't real gifts). The
 // amount uses the shared KNOWN-NET fee band (giftMatchAmountBoundsKnownNet): a
 // gift booked anywhere in [min(net,gross), max(net,gross)] is the same money a
 // processor fee apart, consistent with how the reconciler ties a charge (GROSS)
@@ -213,8 +215,8 @@ async function proposeStripeChargeForGift(opts: {
     );
   }
   if (opts.date) {
-    // A charge already tied to a QuickBooks deposit by a confirmed settlement
-    // link (linkedQbStagedPaymentId) is authoritative context — the human
+    // A charge already tied to a QuickBooks deposit by a confirmed
+    // charge_qb_tie row in source_links is authoritative context — the human
     // confirmed this money settled through QB. Never let the ±30d window hide
     // it: a gift is routinely booked well after (or before) the charge date.
     conds.push(

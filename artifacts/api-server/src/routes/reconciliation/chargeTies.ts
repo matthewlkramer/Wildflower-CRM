@@ -55,8 +55,8 @@ const ledgerFeeRowSql = sql<string | null>`(
  * Charge-grain settlement confirm for "individually-booked" payouts — payouts
  * whose money the bookkeeper recorded as one QB row PER DONATION instead of a
  * single deposit lump, so the payout↔deposit settlement path can never tie
- * them. Confirming stamps each charge's permanent
- * `linked_qb_staged_payment_id` (+ who/when provenance) — settlement EVIDENCE
+ * them. Confirming records a confirmed charge_qb_tie row in source_links
+ * (+ who/when provenance) — settlement EVIDENCE
  * only (plane 1). It never mints a gift, never changes a QB row's status or
  * donor, and never touches settlement_links; per-charge → gift booking stays
  * with the Gift report.
@@ -598,8 +598,8 @@ router.post(
 
 /**
  * Revert ONE CONFIRMED charge↔QB tie — the undo for an accidental or wrong
- * confirm (the "separate path" the reject endpoint's 409 points at). Clears
- * the charge's permanent `linked_qb_staged_payment_id` (+ who/when
+ * confirm (the "separate path" the reject endpoint's 409 points at). Removes
+ * the charge's confirmed charge_qb_tie source_links row (+ who/when
  * provenance) and frees the sibling negative "Stripe fee" QB row claimed at
  * confirm time, if any. Plane 1 only: no gift, donor, or settlement link is
  * touched — both statuses are derived, so the QB row returns to the open

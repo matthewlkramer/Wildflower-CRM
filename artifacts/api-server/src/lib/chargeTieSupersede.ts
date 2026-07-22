@@ -17,7 +17,9 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *
  * When a bookkeeper records a donation as its OWN QuickBooks row (an
  * "individually-booked" payout) and that row is confirmed-tied to a Stripe
- * charge (`stripe_staged_charges.linked_qb_staged_payment_id`), the money is
+ * charge (a confirmed source_links charge_qb_tie row; the legacy
+ * `linked_qb_staged_payment_id` column is retired — SQL aliases keep the
+ * name for API compatibility only), the money is
  * ONE unit seen by two systems. The counted cash-application ledger row must
  * live at the CHARGE grain so the ledger — the sole gift-link record — shows
  * gift ↔ charge ↔ QB row as one trail:
