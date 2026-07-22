@@ -150,6 +150,75 @@ export function buildStagedLineUpsert(
 }
 
 /**
+ * Delete the now-superfluous whole-deposit header rows for the given deposit
+ * ids (one ≤500-id chunk). A header exists ONLY because its deposit yielded
+ * zero direct-line rows; when a later QB edit gives the deposit direct lines,
+ * the line rows are the representation and the header is a duplicate. A header
+ * that review work already references — a settlement link, a source link, or a
+ * ledger row (the last should be impossible by guard, but is checked for
+ * safety) — is KEPT so a human resolution is never silently destroyed.
+ *
+ * Returns the drizzle builder; exported so the reference guards can be
+ * asserted in a regression test (compile-only via `.toSQL()`).
+ */
+export function buildSuperfluousHeaderDelete(
+  realmId: string,
+  qbDepositIds: string[],
+) {
+  return db
+    .delete(stagedPayments)
+    .where(
+      and(
+        eq(stagedPayments.realmId, realmId),
+        eq(stagedPayments.qbEntityType, "deposit_header"),
+        inArray(stagedPayments.qbEntityId, qbDepositIds),
+        sql`NOT EXISTS (SELECT 1 FROM ${settlementLinks} WHERE ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id})`,
+        sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
+        sql`NOT EXISTS (SELECT 1 FROM ${paymentApplications} WHERE ${paymentApplications.paymentId} = ${stagedPayments.id})`,
+      ),
+    );
+}
+
+/**
+ * The REVERSE transition of buildSuperfluousHeaderDelete: delete now-stale
+ * direct-LINE rows (`qb_entity_type = 'deposit'`) for deposits that emitted a
+ * whole-deposit HEADER this pull. A header is emitted only when every line of
+ * the deposit re-records an already-ingested Payment/SalesReceipt — so any
+ * previously staged direct-line row for that deposit describes a line that no
+ * longer exists in QB (the deposit was edited); left behind it would surface
+ * the same money as open review work THREE times (stale line + Payment rows +
+ * header).
+ *
+ * Guards (all must hold, per row):
+ *   - same three reference guards as the header delete (settlement link,
+ *     source link, ledger row) — review work is never silently destroyed;
+ *   - derived status still open (`pending` / `excluded`) — a human-resolved
+ *     line row is kept even if unreferenced (e.g. a manual confirmation),
+ *     mirroring the "never clobber a manual resolution" upsert rule.
+ *
+ * Returns the drizzle builder; exported so the guards can be asserted in a
+ * regression test (compile-only via `.toSQL()`).
+ */
+export function buildSuperfluousLineDelete(
+  realmId: string,
+  qbDepositIds: string[],
+) {
+  return db
+    .delete(stagedPayments)
+    .where(
+      and(
+        eq(stagedPayments.realmId, realmId),
+        eq(stagedPayments.qbEntityType, "deposit"),
+        inArray(stagedPayments.qbEntityId, qbDepositIds),
+        stagedStatusIn(["pending", "excluded"]),
+        sql`NOT EXISTS (SELECT 1 FROM ${settlementLinks} WHERE ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id})`,
+        sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
+        sql`NOT EXISTS (SELECT 1 FROM ${paymentApplications} WHERE ${paymentApplications.paymentId} = ${stagedPayments.id})`,
+      ),
+    );
+}
+
+/**
  * One-way QuickBooks → CRM payment pull. Resolves the active company, pulls
  * incoming-money entities updated since the watermark, stages each incoming
  * UNIT (SalesReceipt / Payment / single Deposit LINE) as a review-queue row
@@ -671,6 +740,12 @@ export async function syncQuickbooks(
     // direct lines: the line rows are now the representation).
     const directLineDepositIds = new Set<string>();
 
+    // Deposits whose pull emitted a whole-deposit HEADER this run — used after
+    // the loop for the reverse cleanup: a header means the deposit currently
+    // has NO direct lines in QB, so any previously staged direct-line rows for
+    // it are stale (the deposit was edited to all-re-recording).
+    const headerDepositIds = new Set<string>();
+
     for (const p of pulled) {
       if (p.lastUpdatedTime) {
         const t = new Date(p.lastUpdatedTime).getTime();
@@ -679,6 +754,7 @@ export async function syncQuickbooks(
         }
       }
       if (p.qbEntityType === "deposit") directLineDepositIds.add(p.qbEntityId);
+      if (p.qbEntityType === "deposit_header") headerDepositIds.add(p.qbEntityId);
 
       // A whole-deposit header is NEVER donation-review work (derived status
       // `excluded` by entity type): its money is already counted on the
@@ -833,18 +909,20 @@ export async function syncQuickbooks(
     if (directLineDepositIds.size > 0) {
       const ids = [...directLineDepositIds];
       for (let i = 0; i < ids.length; i += 500) {
-        await db
-          .delete(stagedPayments)
-          .where(
-            and(
-              eq(stagedPayments.realmId, conn.realmId),
-              eq(stagedPayments.qbEntityType, "deposit_header"),
-              inArray(stagedPayments.qbEntityId, ids.slice(i, i + 500)),
-              sql`NOT EXISTS (SELECT 1 FROM ${settlementLinks} WHERE ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id})`,
-              sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
-              sql`NOT EXISTS (SELECT 1 FROM ${paymentApplications} WHERE ${paymentApplications.paymentId} = ${stagedPayments.id})`,
-            ),
-          );
+        await buildSuperfluousHeaderDelete(conn.realmId, ids.slice(i, i + 500));
+      }
+    }
+
+    // ── Reverse transition: clean up now-stale direct-line rows. ──
+    // A deposit that emitted a HEADER this pull has NO direct lines in QB any
+    // more (it was edited to all-re-recording). Previously staged 'deposit'
+    // line rows for it are stale duplicates of money already counted on the
+    // Payment rows — delete them, UNLESS review work references them or a
+    // human already resolved them (guards inside the builder).
+    if (headerDepositIds.size > 0) {
+      const ids = [...headerDepositIds];
+      for (let i = 0; i < ids.length; i += 500) {
+        await buildSuperfluousLineDelete(conn.realmId, ids.slice(i, i + 500));
       }
     }
 

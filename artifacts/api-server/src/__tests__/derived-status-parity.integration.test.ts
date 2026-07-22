@@ -92,17 +92,18 @@ async function seedQbRow(
     exclusionReason?: "other_revenue";
     autoApplied?: boolean;
     matchConfirmedAt?: Date | null;
+    qbEntityType?: "payment" | "deposit_header";
   } = {},
 ): Promise<string> {
   const id = nextId("sp");
   await db.insert(schema.stagedPayments).values({
     id,
     realmId: REALM_ID,
-    qbEntityType: "payment",
+    qbEntityType: over.qbEntityType ?? "payment",
     qbEntityId: nextId("qbe"),
     amount: "50.00",
     dateReceived: "2026-05-02",
-    payerName: `${RUN} qb payer`,
+    payerName: over.qbEntityType === "deposit_header" ? null : `${RUN} qb payer`,
     ...(over.exclusionReason ? { exclusionReason: over.exclusionReason } : {}),
     ...(over.autoApplied !== undefined ? { autoApplied: over.autoApplied } : {}),
     ...(over.matchConfirmedAt !== undefined
@@ -422,6 +423,25 @@ describe.skipIf(!HAS_DB)("QB staged-payment derived-status parity", () => {
     await expectQbStatus(id, "match_confirmed");
     // The tied charge itself is booked → confirmed on its own ledger row.
     await expectChargeStatus(chargeId, "match_confirmed");
+  });
+
+  it("bare deposit_header → excluded by entity type alone (never open)", async () => {
+    // A whole-deposit header is settlement evidence, not donation-review
+    // work: its money is already counted on the underlying Payment rows.
+    const id = await seedQbRow({ qbEntityType: "deposit_header" });
+    await expectQbStatus(id, "excluded");
+  });
+
+  it("CONFIRMED settlement link on a deposit_header → match_confirmed (evidence wins over the header arm)", async () => {
+    const id = await seedQbRow({ qbEntityType: "deposit_header" });
+    await seedSettlementLink(await seedPayout(), id, "confirmed");
+    await expectQbStatus(id, "match_confirmed");
+  });
+
+  it("merely-PROPOSED settlement link on a deposit_header stays excluded (not pending)", async () => {
+    const id = await seedQbRow({ qbEntityType: "deposit_header" });
+    await seedSettlementLink(await seedPayout(), id, "proposed");
+    await expectQbStatus(id, "excluded");
   });
 });
 

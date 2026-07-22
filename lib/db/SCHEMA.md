@@ -38,7 +38,7 @@ Sync ownership and operational resync commands:
 | Donors & contacts | `organizations`, `people`, `households`, `people_entity_roles`, `payment_intermediaries`, `emails`/`phone_numbers`/`addresses` | External parties and contact info |
 | Fundraising pipeline | `opportunities_and_pledges`, `pledge_allocations`, `pledge_expected_payments` | Planned asks, commitments, restrictions, collection plans |
 | Received money | `gifts_and_payments`, `gift_allocations` | Actual donor credit and received-money scope |
-| Payment evidence | `staged_payments`, `stripe_payouts`, `stripe_staged_charges`, `donorbox_donations` | Imported evidence that money moved |
+| Payment evidence | `staged_payments`, `stripe_payouts`, `stripe_staged_charges`, `donorbox_donations`, `bank_transactions` | Imported evidence that money moved |
 | Reconciliation relationships | `payment_applications`, `settlement_links`, `source_links` | Authoritative links among evidence and CRM records |
 | Internal dimensions | `entities`, `fiscal_years`, `fiscal_year_entity_goals`, `fundable_projects`, `schools`, `charters`, `regions`, `fundraising_campaigns` | Allocation and reporting dimensions |
 | Communications | `email_messages`, `calendar_events`, `interactions`, `notes`, `meeting_notes`, tracking/sync-state tables | Synced and manual touches |
@@ -284,6 +284,18 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   sync watermark. Pull-only: the CRM never writes to QuickBooks.
 - `staged_payments` — the QB review queue. Incoming-money units idempotent on
   `(realmId, qbEntityType, qbEntityId, qbLineId)` (deposits stage per line).
+  `qb_entity_type = 'deposit_header'` is the whole-deposit exception: a bank
+  Deposit whose every line re-records an already-ingested Payment/SalesReceipt
+  stages ONE header row (`qbLineId = ''`, null payer fields, aggregated
+  `qb_linked_txn` provenance) so the deposit is visible to settlement matching
+  without double-counting money already on the Payment rows. A header derives
+  status `excluded` by entity type alone (confirmed settlement evidence still
+  wins → `match_confirmed`); it can never anchor a ledger row, mint a gift, or
+  be split. The sync keeps the representation exclusive both ways: staging
+  direct lines deletes a now-superfluous header, and staging a header deletes
+  now-stale direct-line rows — in both directions only unreferenced (no
+  settlement link / source link / ledger row) and, for line rows, still-open
+  (`pending`/`excluded`) rows are removed.
   Status / exclusion-reason / match-status enums; classification and entity
   attribution each carry an `auto` vs `manual` source (a manual pin survives
   re-sync). Candidate donor FKs are all nullable (XOR enforced only at
@@ -298,6 +310,15 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   human confirm) so money isn't booked twice.
 - `donorbox_donations` / `donorbox_sync_state` — Donorbox donor/purpose
   evidence (not transaction evidence).
+- `bank_transactions` — raw bank-register evidence, one row per register line,
+  tagged by `source` (`qbo_register_export` today; `plaid` reserved). Loaded by
+  the scripts importer (`import:bank-register`) from the overlapping historical
+  QBO register XLS exports, merged + deduplicated (`dedup_key` = raw register
+  field values; `occurrence` disambiguates legitimate intra-file repeats — the
+  max count seen in any single file; unique on source+key+occurrence makes
+  re-imports idempotent). Read-only after import; never mints gifts, never
+  anchors `payment_applications` rows, and carries NO foreign keys — any future
+  cross-evidence tie goes through the `source_links` ledger once implemented.
 - `payment_applications` — the unit↔gift cash-application ledger. Each row
   anchors on exactly one evidence unit per `evidence_source` (`quickbooks` →
   `payment_id`, `stripe` → `stripe_charge_id`, `donorbox` →

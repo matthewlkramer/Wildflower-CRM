@@ -60,6 +60,7 @@ export * from "./flodeskSyncState";
 export * from "./schoolSyncState";
 export * from "./donorboxDonations";
 export * from "./donorboxSyncState";
+export * from "./bankTransactions";
 export * from "./connectionEnthusiasmHistory";
 export * from "./grantLeads";
 export * from "./auditLog";

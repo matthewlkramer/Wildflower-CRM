@@ -1103,3 +1103,16 @@ export const codingFormRowStatusEnum = pgEnum("coding_form_row_status", [
   "applied",
   "skipped",
 ]);
+
+// ──────────────────────────────────────────────────────────────────
+// Bank transactions (raw bank-register evidence)
+// ──────────────────────────────────────────────────────────────────
+
+// Where a bank_transactions row came from.
+//   qbo_register_export — historical QuickBooks Online bank-register XLS
+//                         exports (merged + deduplicated at import time)
+//   plaid               — live Plaid transaction feed (future)
+export const bankTransactionSourceEnum = pgEnum("bank_transaction_source", [
+  "qbo_register_export",
+  "plaid",
+]);

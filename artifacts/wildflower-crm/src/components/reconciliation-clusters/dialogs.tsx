@@ -624,7 +624,8 @@ export function QbRecordDetailDialog({
   const qbHref =
     record.qbEntityType && record.qbEntityId
       ? `https://app.qbo.intuit.com/app/${
-          { sales_receipt: "salesreceipt", payment: "recvpayment", deposit: "deposit" }[record.qbEntityType] ?? record.qbEntityType
+          // A deposit_header row IS the whole deposit — link to the deposit page.
+          { sales_receipt: "salesreceipt", payment: "recvpayment", deposit: "deposit", deposit_header: "deposit" }[record.qbEntityType] ?? record.qbEntityType
         }?txnId=${encodeURIComponent(record.qbEntityId)}`
       : null;
 

@@ -13,6 +13,7 @@ import {
   qbSettlementClaimedText,
   qbHasSplitChildrenText,
   qbResolvedElsewhereText,
+  qbIsDepositHeaderText,
   qbStatusCaseText,
   qbOpenText,
   chargeCountedExistsText,
@@ -101,6 +102,7 @@ describe("quotedSqlAlias", () => {
       qbChargeTieLinkExistsText,
       qbProposedText,
       qbConfirmedEvidenceText,
+      qbIsDepositHeaderText,
       qbStatusCaseText,
       qbOpenText,
       chargeCountedExistsText,
@@ -147,14 +149,16 @@ describe("builders emit consistently quoted identifiers", () => {
 });
 
 describe("status CASE shape", () => {
-  it("enumerates every derived status (QB: excluded twice — exclusion_reason + settlement claim)", () => {
+  it("enumerates every derived status (QB: excluded three times — exclusion_reason + settlement claim + deposit header)", () => {
     for (const status of DERIVED_STATUSES) {
-      // QB CASE: `excluded` appears twice by design — the stored
-      // exclusion_reason arm AND the settlement-claim arm.
+      // QB CASE: `excluded` appears three times by design — the stored
+      // exclusion_reason arm, the settlement-claim arm, AND the
+      // deposit_header entity-type arm (a whole-deposit header is never
+      // donation-review work; its money lives on the underlying Payments).
       expect(
         qbStatusCaseText("s").split(`'${status}'`).length - 1,
         `qb ${status}`,
-      ).toBe(status === "excluded" ? 2 : 1);
+      ).toBe(status === "excluded" ? 3 : 1);
       expect(
         chargeStatusCaseText("s").split(`'${status}'`).length - 1,
         `charge ${status}`,
@@ -175,7 +179,7 @@ describe("base-table drizzle fragments render the builders' text (one source)", 
     expect(render(stagedHasSplitChildren)).toBe(qbHasSplitChildrenText(QB));
 
     expect(render(stagedStatusWhere.excluded)).toBe(
-      `("${QB}"."exclusion_reason" IS NOT NULL OR (NOT ${qbProposedText(QB)} AND NOT ${qbConfirmedEvidenceText(QB)} AND ${qbResolvedElsewhereText(QB)}))`,
+      `("${QB}"."exclusion_reason" IS NOT NULL OR (NOT ${qbProposedText(QB)} AND NOT ${qbConfirmedEvidenceText(QB)} AND (${qbResolvedElsewhereText(QB)} OR ${qbIsDepositHeaderText(QB)})))`,
     );
     expect(render(stagedStatusWhere.match_proposed)).toBe(
       `("${QB}"."exclusion_reason" IS NULL AND ${qbProposedText(QB)})`,
@@ -184,7 +188,7 @@ describe("base-table drizzle fragments render the builders' text (one source)", 
       `("${QB}"."exclusion_reason" IS NULL AND NOT ${qbProposedText(QB)} AND ${qbConfirmedEvidenceText(QB)})`,
     );
     expect(render(stagedStatusWhere.pending)).toBe(
-      `("${QB}"."exclusion_reason" IS NULL AND NOT ${qbConfirmedEvidenceText(QB)} AND NOT ${qbResolvedElsewhereText(QB)})`,
+      `("${QB}"."exclusion_reason" IS NULL AND NOT ${qbConfirmedEvidenceText(QB)} AND NOT ${qbResolvedElsewhereText(QB)} AND NOT ${qbIsDepositHeaderText(QB)})`,
     );
   });
 
@@ -239,6 +243,25 @@ describe("tie consultation: booked = evidence, raw link = settlement claim", () 
       chargeConfirmedText("s"),
     ]) {
       expect(t).not.toContain("charge_qb_tie");
+    }
+  });
+
+  it("the QB CASE and open predicate carry the deposit_header arm (charges never do)", () => {
+    const caseText = qbStatusCaseText("s");
+    // The header arm sits AFTER match_confirmed and the settlement-claim arm:
+    // a header named by a confirmed settlement link stays match_confirmed
+    // (settled evidence); only an otherwise-bare header falls to `excluded`.
+    expect(caseText).toContain(qbIsDepositHeaderText("s"));
+    expect(caseText.indexOf(qbIsDepositHeaderText("s"))).toBeGreaterThan(
+      caseText.indexOf(qbResolvedElsewhereText("s")),
+    );
+    // A header is NEVER open — it is settlement evidence, not review work.
+    expect(qbOpenText("s")).toContain(
+      `NOT ${qbIsDepositHeaderText("s")}`,
+    );
+    // Charge derivations have no entity-type concept at all.
+    for (const t of [chargeStatusCaseText("s"), chargeOpenText("s")]) {
+      expect(t).not.toContain("qb_entity_type");
     }
   });
 
