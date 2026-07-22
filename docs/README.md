@@ -49,6 +49,9 @@ unverified and confirm against code before relying on it.
   change types (contract change, schema change, new derived fact, etc.).
 - [`../lib/db/SCHEMA.md`](../lib/db/SCHEMA.md) — per-table map of the physical
   schema.
+- [`integrations/data-sources.md`](integrations/data-sources.md) — data
+  provenance, sync ownership, and operational resync procedures (Copper import
+  is closed; schools mirror; QuickBooks/Stripe/Donorbox/Gmail/Flodesk syncs).
 
 ## Rules
 

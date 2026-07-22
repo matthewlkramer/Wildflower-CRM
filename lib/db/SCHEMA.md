@@ -1,454 +1,362 @@
-# Database Schema Reference
+# Database Schema Map
 
-> **Canonical source:** the Drizzle definitions in `lib/db/src/schema/*.ts` and the
-> enum list in `lib/db/src/schema/_enums.ts` are the source of truth. This file is a
-> human-readable map of *what each table is for* and the cross-table invariants that
-> are easy to break — when in doubt, trust the code.
->
-> **Historical data:** most of the data in the system comes from experts of Copper that were cleaned up by the user manually in Airtable before
-> importing them into the CRM. Other data comes from several live syncs - of quickbooks, stripe, donorbox, airtable schools database. There is no need for
-> any resyncing with the Airtable files that were cleaned up from copper (sometimes referred to as 'CRM Files') or with copper - the one time sync of those
-> source files is complete.
+**Status:** current-status (implementation map)
+**Last verified:** 2026-07-22
+**Verified against:** `c76b27df6aefb0a78e611f03c4edd740bbee1d59`
 
-## ⚠️ funders + organizations are now ONE table
+## Authority
 
-The historical split between a `funders` table (grant-makers) and an `organizations`
-table (everything else) has been **consolidated into a single `organizations`
-table**. A boolean `issues_grants` flag distinguishes grant-makers. Former
-funder-only fields (capacity rating, enthusiasm, strategic alignment,
-connection status, interests, historical names, self-referencing parent) now live on
-`organizations`. The donor-type discriminator that used to be `"funder"` is now
-`"organization"`. There is **no `funders.ts`** — any reference to a `funders` table
-in older notes is stale.
+This document explains what each table is for and the cross-table invariants
+that are easy to break. For exact implemented facts:
 
-## Core entities
+1. `lib/db/src/schema/*.ts` — tables, columns, indexes, constraints
+2. `lib/db/src/schema/_enums.ts` — database enums
+3. `lib/api-spec/openapi.yaml` — public API contract
+4. Canonical business-rule documents (see `docs/README.md`) — intended behavior
 
-- `regions` — geographic regions, self-referencing `parent_region_id`. Enum
-  `region_type`: state, metro_area, city, neighborhood, region_within_state,
-  multi_state_region, country, continent. **PK is a human-readable slug** (e.g.
-  `united_states__minnesota__saint_paul`), built from the region's own name plus the
-  names of its ancestors of the "included" types (continent / country / state / city
-  / neighborhood); intermediate aggregation layers (multi_state_region,
-  region_within_state, metro_area, untyped) appear only as the last segment of their
-  own slug and are skipped when building descendants' slugs, so inserting/removing a
-  wrapper between `united_states` and `minnesota` never disturbs the state or its
-  cities. `display_path` is a denormalized comma-separated full path for cheap UI
-  display.
+When this document disagrees with the schema code, the schema code describes
+what currently exists. This file documents **implemented state only** —
+proposed or approved-but-unshipped changes belong in design/status documents
+and must never be presented here as existing schema.
 
-- `organizations` — **all external entities** (grant-makers AND non-grant-making
-  orgs: advisors, intermediaries, vendors, networks, etc.). `issues_grants`
-  distinguishes grant-makers. Self-referencing `parent_organization_id`. `type` is
-  the unified `entity_type` enum (~32 values — replaces the old
-  `funding_entity_subtype` + `organization_type` pair; the old enums are retained in
-  the DB only for migration safety). Array columns for `interests_thematic`,
-  `interests_ages`, `interests_gov_models`, and `historical_names text[]` (prior
-  names, for searchability after rebrands/merges). Grant-maker fields:
-  `number_of_employees` (size buckets), `capacity_rating`
-  (`tier_1k_10k` … `tier_1m_plus`), `connection_status`, `enthusiasm`
-  (now **prefixed/ordered** values: `7-advocate`, `6-supportive`, `5-warm`,
-  `4-neutral`, `3-cool`, `2-unsupportive`, `1-hostile`), `strategic_alignment`,
-  `active_status` (`active` / `defunct` / `spenddown`). `owner_user_id` → the team
-  member who owns the org. `anonymous` flag → UI-only name masking (see Anonymous
-  records below).
+## Data provenance
 
-- `schools` — mirrored one-way from the dedicated Wildflower **Schools** Airtable
-  base (`appJBT9a4f3b7hWQ2`), "Data for CRM in Replit" view. Re-sync with
-  `AIRTABLE_TOKEN=... node lib/db/src/sync-schools-from-airtable.mjs` (wipes and
-  reloads; uses the Schools-base record IDs as PKs). `status` enum `school_status`,
-  `governance_model` enum, `ages_planes text[]` (GIN-indexed for membership
-  filtering; the linked Ages-Planes table is not imported on its own). No other table
-  FKs to schools except `gift_allocations.school_recipient_id`.
+- Historical CRM data came from a one-time import of manually cleaned exports
+  from Copper. That source is **closed** — never resynchronize with Copper or
+  the cleaned Airtable files.
+- Schools are mirrored one-way from the Schools Airtable base.
+- QuickBooks, Stripe, Donorbox, Gmail/Calendar, Flodesk, and GDELT are ongoing
+  sources.
 
-- `households` — name + `active` boolean. Households can be the direct donor on
-  opps/gifts (see `household_id`).
+Sync ownership and operational resync commands:
+[`docs/integrations/data-sources.md`](../../docs/integrations/data-sources.md).
 
-- `people` — individuals (donors, advisors, staff contacts). `anonymous` flag →
-  UI-only name masking. Joined to entities via `people_entity_roles`. `newsletter` /
-  `unsubscribed_to_newsletter` drive the Flodesk sync eligibility.
+## Domain index
 
-- `people_entity_roles` — polymorphic join: a person plays a role in exactly one of
-  organization / payment_intermediary / household (enum `entity_role_type` =
-  `organization` / `payment_intermediary` / `household` — note **no `funder`**).
-  `connection` enum (`employee` / `principal` / `board_member` / `partner` /
-  `professor` / `donor_advisor` / `elected_official`) and `people_role_current`
-  (`current` / `past`). `primary_contact` boolean (conventionally singular per org;
-  not DB-enforced — genuine dual-primary cases exist).
+| Domain | Primary tables | Purpose |
+|---|---|---|
+| Donors & contacts | `organizations`, `people`, `households`, `people_entity_roles`, `payment_intermediaries`, `emails`/`phone_numbers`/`addresses` | External parties and contact info |
+| Fundraising pipeline | `opportunities_and_pledges`, `pledge_allocations`, `pledge_expected_payments` | Planned asks, commitments, restrictions, collection plans |
+| Received money | `gifts_and_payments`, `gift_allocations` | Actual donor credit and received-money scope |
+| Payment evidence | `staged_payments`, `stripe_payouts`, `stripe_staged_charges`, `donorbox_donations` | Imported evidence that money moved |
+| Reconciliation relationships | `payment_applications`, `settlement_links`, `source_links` | Authoritative links among evidence and CRM records |
+| Internal dimensions | `entities`, `fiscal_years`, `fiscal_year_entity_goals`, `fundable_projects`, `schools`, `charters`, `regions`, `fundraising_campaigns` | Allocation and reporting dimensions |
+| Communications | `email_messages`, `calendar_events`, `interactions`, `notes`, `meeting_notes`, tracking/sync-state tables | Synced and manual touches |
+| AI / workflow | `email_proposals`, `email_intel_prompts`, `grant_leads`, `tasks`, `task_proposals`, `cleanup_queue` | Proposals, tasks, review queues |
+| App plumbing | `users`, `saved_views`, `bulk_operations`, `audit_log`, OAuth/sync-state tables | Auth, UI persistence, operations |
 
-- `payment_intermediaries` — DAFs, giving platforms, private wealth managers. Enum
-  `payment_intermediary_type`: `daf` / `giving_platform` / `private_wealth_manager`.
+## Cross-table invariants
 
-- `donor_payment_intermediaries` — join linking a donor (org / individual / household
-  — donor-XOR at the join level too) to a payment intermediary it gives *through*.
+### Header + allocations (planned vs actual)
 
-- `emails`, `phone_numbers`, `addresses` — contact info. Each row is owned by
-  **exactly one** of `person_id` / `organization_id` / `payment_intermediary_id` /
-  `household_id` (CHECK `num_nonnulls(...) = 1`; CASCADE on owner delete).
-  `validity` (`valid` / `invalid` / `unknown`) and `is_preferred`. `emails.type` =
-  `email_type`; `phone_numbers.type` = `phone_type`. **`emails` is globally unique on
-  `lower(email)`** (one address per row anywhere; API returns 409 on collision).
-  `addresses` carries denormalized `city_name` / `state_code`.
+```
+opportunities_and_pledges  ── header (identity, lifecycle)
+└── pledge_allocations     ── PLANNED/committed scope (intentions)
 
-- `entities` — internal **fund entities** money is booked against (Wildflower
-  Foundation, Black Wildflowers Fund, Sunlight - debt, Sunlight - grants, etc.).
-  Slug PK so new entities can be added through the UI without a migration. Referenced
-  by `pledge_allocations.entity_id` and `gift_allocations.entity_id`.
+gifts_and_payments         ── header (identity, lifecycle)
+└── gift_allocations       ── ACTUAL received-money scope (authoritative)
+```
 
-- `fundable_projects` — specific projects a contribution can fund (e.g. `mdd`, `ssj`,
-  `charter_growth`, `tsl`). Slug PK. Referenced by the allocation tables when
-  `intended_usage = 'project'`. The FK is **optional** even for project usage (the
-  team often knows a gift is project-scoped before deciding which project). Managed at
-  `/fundable-projects`.
+Headers never carry scope: fund entity, fiscal year (`grant_year`), regions,
+restriction axes, intended usage / fundable project, and per-line sub-amounts
+all live on allocation rows. Every header should have at least one allocation
+row. Pledge allocations are intentions; once money lands, the gift allocations
+are the canonical record. `gift_allocations.source_pledge_allocation_id`
+records provenance when a gift allocation was seeded from a pledge plan line
+(gift allocations stay independently editable; `variance_reason` captures a
+deliberate deviation).
 
-- `fiscal_years` — Wildflower's July 1 – June 30 fiscal years. Slug PK (e.g.
-  `fy2024`), seeded `fy2014`–`fy2050` plus a `future` sentinel. Used by the
-  allocation tables' `grant_year` (one fiscal year per per-row booking; multi-year
-  commitments split across rows). The table's own `goal_amount` is legacy/unused —
-  goals live in `fiscal_year_entity_goals`.
+### Donor XOR
 
-- `fiscal_year_entity_goals` — per-track fundraising goals. **PK is
-  `(fiscal_year_id, entity_id, loan_or_grant)`** (migration 0120), so the grant
-  (revenue) and loan-capital tracks each carry their own goal. Cascading FKs to
-  both parents. Analytics sum across this table honoring the same entity/track
-  filters as the money rollups.
+`opportunities_and_pledges` and `gifts_and_payments` each carry three nullable
+donor FKs — `organization_id`, `individual_giver_person_id`, `household_id` —
+with a DB CHECK (`num_nonnulls(...) = 1`) so **exactly one** is set. Also
+enforced at the API (`validateOppInvariants` / `validateGiftInvariants` in
+`@workspace/api-zod`) and re-validated on the merged PATCH state. Per-type
+donor pickers must send all three fields, nulling the unused two.
 
-- `users` — Clerk-provisioned app users (`role` includes `admin`; admin gates
-  show-archived, restore, and admin-only screens).
+**Exception — staged queues.** `staged_payments` and `stripe_staged_charges`
+carry the same three donor FKs with **no** XOR CHECK (a pending row can be
+unmatched). Exactly-one is enforced only when a row is approved/reconciled
+into a gift.
 
-## Opportunities, pledges, gifts (the money model)
+### Derived opportunity lifecycle
 
-- `opportunities_and_pledges` — both opportunities and pledges in one **header-only**
-  row (an idea → a committed grant). All scope (entities, fiscal years, regions,
-  intended usage, sub-amounts) lives one level down on `pledge_allocations`.
-  - **`status` is FULLY CALCULATED server-side — never written directly.** Enum
-    `opportunity_status` = `open` / `pledge` / `cash_in` / `dormant` / `lost`.
-    Derivation (see `pledgeStage.ts` / `deriveOppFields`): if `loss_type` is set →
-    status = that; else complete → `cash_in` — where "complete" is
-    payment-driven (paid ≥ awarded > 0) for `fixed_commitment` and
-    closure-driven (`award_closed_at` set) for `cost_reimbursement`; else
-    `written_pledge` → `pledge`; else `open`. Stage never drives status.
-  - **`loss_type`** (enum `opportunity_loss_type` = `dormant` / `lost`, nullable) is
-    a user-settable lifecycle input — it pulls a row out of the calculated funnel.
-  - **`disbursement_model`** (enum `disbursement_model` =
-    `fixed_commitment` / `cost_reimbursement`, NOT NULL default
-    `fixed_commitment`, Task #788) — how the money is disbursed.
-    `fixed_commitment`: known installments (see `pledge_expected_payments`);
-    completes when paid ≥ awarded. `cost_reimbursement`: the award is a CEILING
-    drawn down as costs are incurred; annual pledge allocations are the
-    forecast, overdue nagging is suppressed, and the pledge completes **only**
-    via the explicit finance-permitted Close-award action — never by
-    paid ≥ ceiling. Replaces the retired `conditional='reimbursable'` input
-    (legacy allocation rows keep the value for history; migration 0151
-    reclassified their pledges).
-  - **`award_closed_at`** (date, nullable) + **`award_close_reason`** (enum
-    `award_close_reason` = `fully_collected` / `award_period_ended` /
-    `unused_balance` / `terminated`) — set only by the finance-permitted
-    close-award route (cleared by reopen-award); the second user-set lifecycle
-    input alongside `loss_type`. Closing requires the remaining projected plan
-    to be resolved (planned ≤ paid) first.
-  - Enums: `type` (`solicitation` / `renewal` / `open_application`), `stage` (10:
-    `cold_lead`, `warm_lead`, `in_conversation`, `convince`,
-    `conditional_commitment`, `probable_renewal`, `verbal_confirmation`,
-    `written_commitment`, `cash_in`, `complete`). Stage is a pure funnel,
-    separate from the outcome — a WON row (status `pledge` / `cash_in`) reads
-    `complete`; everything else keeps its real funnel stage. The three legacy
-    commitment/outcome values (`conditional_commitment`, `written_commitment`,
-    `cash_in`) are **retained in the pg type for history but no longer written**
-    by the app and no longer latch `written_pledge`; migration 0121 remapped the
-    last rows carrying them to `verbal_confirmation`, so zero rows use them.
-    `conditional` (`unconditional` / `conditional_unspecified` / `reimbursable` /
-    `conditional_on_funder_determination` / `conditional_on_target`),
-    **`loan_or_grant`** (the authoritative loan-vs-grant flag — see below).
-  - A sticky `written_pledge` flag (renamed from `was_pledge`) latches true only
-    when a grant letter is uploaded while the money is not already fully in, or
-    on an explicit user set — never auto-cleared. It drives the calculated
-    `status` (→ `pledge`) and the Pledges-page filter.
-    `match_id` self-references the original opp a matching-gift row matches. `owner_user_id`,
-    `primary_contact_person_id` (frozen historical attribution), `copper_pledge_id`.
-  - The old `closed_requires_completion_date` CHECK has been **dropped** (it blocked
-    bulk historical cleanup — ~244 legacy closed rows have no date and must stay
-    editable). The rule now lives at the **API layer as a close-transition check**
-    (`validateOppCloseTransition` in `@workspace/api-zod`, wired into create /
-    PATCH / bulk-update): a request that *newly* closes a row (`loss_type` set, or
-    `stage` → `complete`) must leave it with an `actual_completion_date`; edits to
-    already-closed rows are never blocked. Do not reinstate the DB CHECK.
+`opportunities_and_pledges.status` (`open` / `pledge` / `cash_in` / `dormant` /
+`lost`) is **fully calculated server-side** (`deriveOppFields` /
+`applyDerivedOppFields`) — never written directly. Derivation: if `loss_type`
+is set → status mirrors it; else if complete → `cash_in` — where "complete" is
+payment-driven (paid ≥ awarded > 0) for `disbursement_model =
+'fixed_commitment'` and closure-driven (`award_closed_at` set) for
+`'cost_reimbursement'`; else `written_pledge` → `pledge`; else `open`. The
+only user-set lifecycle inputs are `loss_type` (`dormant` / `lost`) and — on
+cost-reimbursement pledges only — the finance-permitted Close-award action
+(`award_closed_at` + `award_close_reason`). Paid ≥ ceiling never
+auto-completes a cost-reimbursement award. `paid` is a persisted derived
+rollup of linked non-archived gift amounts, recomputed on every relevant
+mutation.
 
-- `pledge_allocations` — line items within an opportunity/pledge. All per-row scope
-  (entity, fiscal year `grant_year`, `region_ids text[]`, `intended_usage`,
-  `fundable_project_id`) lives here, plus the **same three restriction axes as
-  `gift_allocations`** (`regional_restriction_type` / `other_restriction_type` /
-  `time_restriction_type` — see Restriction taxonomy below) and revenue-coding
-  capture (below). `status`
-  enum `pledge_allocation_status`: `working` (internal draft), `committed` /
-  `committed_with_conditions` (firm), `abandoned` (dropped unpaid). The
-  **superseded family is retired** (Task #665): `superseded` /
-  `superseded_by_pledge` / `superseded_by_gift` were removed from the API contract
-  and the UI (users keep allocations accurate directly; a gift→pledge split now
-  writes `committed`), the historical rows were remapped to `abandoned`
-  (migration 0120), and the three values remain in the pg enum only because
-  removing a pg enum value requires a type rebuild. `expected_payment_date` is
-  **`@deprecated`** (Task #788) — installment dates live on
-  `pledge_expected_payments`; migration 0151 seeded that table from it, and no
-  new readers/writers may use the column.
+### Evidence relationships (one authority each)
 
-- `pledge_expected_payments` — installment schedule for a **fixed-commitment**
-  pledge (Task #788): `pledge_or_opportunity_id` → `opportunities_and_pledges`
-  (RESTRICT), `expected_date` (NOT NULL), `amount` (nullable), `notes`. The
-  explicit cash forecast + overdue source for fixed commitments;
-  cost-reimbursement pledges need none (their forecast is the allocation plan).
+- `payment_applications` is the **sole** unit↔gift cash-application ledger
+  (evidence unit → CRM gift). Header grain (`gift_id`, never an allocation;
+  `gift_allocation_id` is a narrowing annotation only).
+- `settlement_links` is the sole payout↔deposit relationship (Stripe payout →
+  QuickBooks deposit lump); at most one link per payout.
+- `source_links` is the sole unit↔unit evidence↔evidence claim ledger
+  (charge↔QB tie, charge fee row, Donorbox↔QB, Donorbox↔charge). It replaced
+  the retired source-specific pointer columns — **never reintroduce pointer
+  columns** on evidence or gift tables.
+- Statuses (QB tie, payout settlement, match status) **derive from these
+  relationships at read time**; do not add stored status columns for them.
+  A `source_links` claim is not itself status evidence (claim ≠ status).
 
-- `gifts_and_payments` — gift records + payments against pledges, **header-only**.
-  Scope lives on `gift_allocations`. `payment_on_pledge_id` →
-  `opportunities_and_pledges`. Enums: `type` (`standard_gift` / `pledge_payment` /
-  `directed_gift` / `loan_fund_investment` / `matching_gift`), **`loan_or_grant`**
-  (the authoritative loan-vs-grant flag — see below — dual-written from `type`),
-  `payment_method`
-  (`ach` / `check` / `wire` / `stock` / `donor_box` / `daf_ach` / `daf_check` /
-  `daf_bill_com`). `date_received` is the canonical "money arrived" date.
-  `thank_you_sent_at` / `thank_you_email_message_id` stamped by the email-intel
-  thank-you flow.
+### Archive by default
 
-- `gift_allocations` — line items within a gift. `entity_id` → `entities`,
-  `fundable_project_id` → `fundable_projects` (when project usage),
-  `school_recipient_id` → `schools`, `grant_year`, `region_ids text[]`. Restriction
-  is captured on **three independent axes** —
-  `regional_restriction_type` / `other_restriction_type` / `time_restriction_type`,
-  each a `restriction_axis` (`donor_restricted` / `wf_restricted` / `unrestricted`),
-  NOT NULL default `unrestricted` (see below); `pledge_allocations` carries the
-  same three axes. `display_usage` is a
-  **trigger-maintained, read-only** human label
-  (`compute_gift_allocation_display_usage` + triggers in `post-import-fixups.sql`);
-  renames of a school / region / fundable project cascade into it — **never write
-  `display_usage` directly**. The revenue-coding snapshot no longer lives here — it
-  is derived on demand from scope and captured on `staged_payments` (below). The old
-  coarse `formal_*` restriction booleans and the per-allocation coding columns
-  (`object_code`(+`_override`), `revenue_location`(+`_override`),
-  `revenue_class`(+`_override`), `coding_flags`, `restriction_type`,
-  `restriction_evidence`, `deferred_revenue`(+`_reason`)) are **`@deprecated`** —
-  still physically present for the deprecate-then-drop window, no longer written.
-  **`source_pledge_allocation_id`** (→ `pledge_allocations`, SET NULL, Task #788)
-  stamps which pledge-plan line a seeded gift allocation drew from —
-  remaining-plan inheritance (`copyPledgeAllocationsToGift`) uses it to compute
-  what is already drawn; `variance_reason` (text, nullable) captures why a draw
-  deviated from plan.
+Soft-delete via `archived_at` (non-null = archived, hidden from non-admins) is
+the app-wide default; hard deletion only in explicitly documented, tested
+exceptions (e.g. QuickBooks revert). Archived gifts are excluded from
+analytics and pledge paid-amount derivation.
 
-### Donor XOR — three mutually-exclusive donor options
+## Donors & contacts
 
-`opportunities_and_pledges` and `gifts_and_payments` each carry three nullable donor
-FKs with a `CHECK (num_nonnulls(...) = 1)` ("donor_xor") so **exactly one** is set:
-- `organization_id` → `organizations` (institutional donor)
-- `individual_giver_person_id` → `people` (single-person donor)
-- `household_id` → `households` (joint-account donor; lead via
-  `primary_contact_person_id`)
+- `organizations` — **all external entities** (grant-makers AND everything
+  else); `issues_grants` distinguishes grant-makers; `type` is the unified
+  `entity_type` enum. Carries grant-maker cultivation fields (capacity rating,
+  enthusiasm, connection status, strategic alignment, interests arrays,
+  `historical_names`), self-referencing parent, `owner_user_id`, and an
+  `anonymous` flag (UI-only name masking). There is no separate `funders`
+  table — that split was consolidated here.
+- `people` — individuals (donors, advisors, staff contacts); `anonymous`
+  flag; `newsletter` / `unsubscribed_to_newsletter` drive Flodesk eligibility.
+- `households` — joint-account donors (name + `active`).
+- `people_entity_roles` — polymorphic join: a person plays a role in exactly
+  one of organization / payment_intermediary / household, with `connection`,
+  `people_role_current`, and a conventionally-singular `primary_contact`
+  boolean (not DB-enforced).
+- `payment_intermediaries` — DAFs, giving platforms, private wealth managers.
+  `donor_payment_intermediaries` joins a donor (donor-XOR at the join level)
+  to an intermediary it gives *through*.
+- `emails`, `phone_numbers`, `addresses` — each row owned by exactly one of
+  person / organization / payment_intermediary / household (CHECK
+  `num_nonnulls(...) = 1`, CASCADE on owner delete). `emails` is globally
+  unique on `lower(email)` (API returns 409 on collision).
 
-This is enforced at the DB (CHECK), at the API (`validateOppInvariants` /
-`validateGiftInvariants` in `@workspace/api-zod`, returning 400 not 500), and PATCH
-re-validates the *merged* post-update state. Per-type donor pickers must send all
-three FK fields (nulling the unused two).
+## Internal dimensions
 
-**Exception — staged queues.** `staged_payments` and `stripe_staged_charges` carry
-the same three donor FKs but **no donor_xor CHECK** (a pending row can be unmatched,
-so all three may be null). Exactly-one is enforced only when a row is
-approved/reconciled into a gift (via `validateGiftInvariants`), not by the table.
+- `entities` — internal fund entities money is booked against (slug PK; new
+  entities addable through the UI). `expects_payment = false` entities mark
+  off-books money (see gifts below).
+- `fiscal_years` — July 1 – June 30 fiscal years, slug PK (e.g. `fy2024`)
+  plus a `future` sentinel. Allocation `grant_year` FKs point here; the
+  table's own `goal_amount` is legacy/unused.
+- `fiscal_year_entity_goals` — per-track fundraising goals; **PK is
+  `(fiscal_year_id, entity_id, loan_or_grant)`** so the grant and loan tracks
+  carry separate goals.
+- `fundable_projects` — slug-PK projects referenced by allocations when
+  `intended_usage = 'project'`; the FK is optional even for project usage.
+- `schools` — mirrored one-way from the Schools Airtable base (Airtable
+  record IDs are the PKs); `ages_planes text[]` is GIN-indexed. FKs to
+  schools: `gift_allocations.school_recipient_id` **and**
+  `pledge_allocations.school_recipient_id` (both RESTRICT).
+- `charters` — charter legal recipients, referenced by
+  `gift_allocations.charter_recipient_id`.
+- `regions` — geographic regions with a self-referencing parent and a
+  human-readable slug PK built from the ancestor chain; `display_path` is a
+  denormalized full path for display.
+- `fundraising_campaigns` — slug-PK campaign records;
+  `gifts_and_payments.campaign_slug` FKs here (ON UPDATE CASCADE).
+- `users` — Clerk-provisioned app users; `role` includes `admin` (gates
+  show-archived, restore, admin screens).
 
-### Intended usage
+## Fundraising pipeline
 
-`pledge_allocations` and `gift_allocations` each carry an `intended_usage` enum
-(`gen_ops` / `growth` / `school_startup` / `teacher_training` / `project`) plus a
-nullable `fundable_project_id` (populated only when usage = `project`). Parent rows
-are header-only and do not carry these. NOTE: WE NEED TO CLEAN THIS UP VS. THE RESTRICTION MODEL
+- `opportunities_and_pledges` — one header row spans the opportunity → pledge
+  lifecycle. Lifecycle facts: derived `status` (see invariants above),
+  user-set `loss_type`, sticky `written_pledge` (latched true on grant-letter
+  upload or explicit user set; never auto-cleared), `stage` (pure cultivation
+  funnel — a WON row reads `complete`; three legacy commitment values remain
+  in the pg enum but are no longer written), `disbursement_model`
+  (`fixed_commitment` default / `cost_reimbursement`), `award_closed_at` +
+  `award_close_reason` (finance-permitted close of a cost-reimbursement
+  award), `loan_or_grant`, `conditional`/`conditions_met` header columns
+  (write-deprecated — the live rollup derives from pledge allocations),
+  write-off self-links (`is_write_off`, `write_off_of_pledge_id`), and
+  `match_id` (matching-gift self-reference). The close-transition rule
+  (newly-closed rows must carry `actual_completion_date`) is enforced at the
+  API layer (`validateOppCloseTransition`), not by a DB CHECK — do not
+  reinstate the blind CHECK; legacy closed rows without dates must stay
+  editable.
+- `pledge_allocations` — planned/committed line items: entity, `grant_year`,
+  `region_ids text[]`, intended usage, optional school/fundable-project FKs,
+  the three restriction axes, per-allocation grant conditions (`conditional`,
+  `conditions_met` — the header exposes a derived read-only rollup that
+  drives win-probability weighting), `reimbursement_type`
+  (`direct`-tagged lines are excluded from goal analytics), and `status`
+  (`working` / `committed` / `committed_with_conditions` / `abandoned`; the
+  superseded values remain in the pg enum but are rejected by the API).
+  `expected_payment_date` is **`@deprecated`** — do not add readers or
+  writers; installment scheduling lives on `pledge_expected_payments`.
+- `pledge_expected_payments` — installment schedule for fixed-commitment
+  pledges: `expected_date` (NOT NULL), nullable `amount`, notes. The sole
+  authority for overdue detection and cash forecasting on fixed commitments.
+  Cash-timing only — no scope; scope stays on `pledge_allocations`.
+  Cost-reimbursement pledges normally have no rows here (their allocation
+  plan is the forecast).
 
-## Restriction taxonomy (three axes)
+## Received money
 
-Each allocation row carries **three independent restriction axes** — regional, **other
-restriction** (`other_restriction_type`, renamed from the widely-misread "usage" axis:
-restrictions beyond region, time, school, and project, e.g. "grants to schools only"),
-and time — each a `restriction_axis` enum: `donor_restricted` /
-`wf_restricted` / `unrestricted`, NOT NULL default `unrestricted`. A line codes as
-*restricted* (→ 4100.x object code) when **ANY** axis is `donor_restricted`;
-`wf_restricted` (an internal Wildflower designation) and `unrestricted` both code as
-unrestricted (4000.x). This replaces the coarse `formal_*` booleans and the old
-`restriction_type` enum (`unrestricted` / `purpose` / `time` / `both` / `unclear` /
-`na`). The `restriction_type` columns are `@deprecated` (dropped by migration 0095)
-and the now-orphaned `restriction_type` pg **type** is retired by migration 0096.
-Because the axes default `unrestricted`, there is no longer an `unclear` review-flag
-path from restriction.
+- `gifts_and_payments` — header-only gift/payment records. `opportunity_id`
+  links a payment to the opportunity/pledge it pays (generic — its presence
+  is what distinguishes a pledge payment from a one-off gift). **There is no
+  stored `type` column**: gift type is fully derived at read time
+  (`deriveGiftTypeExpr`: loan_fund_investment > matching_gift > directed_gift
+  > reimbursement > pledge_payment > standard_gift). `loan_or_grant` is
+  stored directly and is the sole loan authority. The human-entered `amount`
+  is the authoritative donor credit; settled amounts, QB-tie status, and
+  off-books-ness are all **derived at read time** (`giftPaymentSummary.ts` /
+  `derivedStatus.ts`) from the counted `payment_applications` ledger and the
+  allocation entities — a gift is off-books when every allocation sits on a
+  no-payment entity. **Never reintroduce gift-pointer or stored-status
+  columns here.** Other facts: `date_received` (canonical "money arrived"
+  date), `payment_method`, donor XOR FKs, `payment_intermediary_id`,
+  matching-gift self-link (`gift_being_matched_id`), audit-close overpay
+  self-link (`overpay_of_gift_id`, at most one active per original),
+  `awaiting_settlement` (suppresses premature missing-QB flags), thank-you
+  and grant-letter/acknowledgement file fields.
+- `gift_allocations` — actual received-money line items: entity,
+  `grant_year`, regions, intended usage, school/charter recipient FKs, the
+  three restriction axes, `counts_toward_goal` (the sole home of the
+  goal-counting signal), `reimbursement_type`, `seed_fund`,
+  `school_support_type`, per-axis designation-type columns (provenance of who
+  chose each scope dimension; the legacy restriction axes stay authoritative
+  for revenue coding until a planned consolidation), and plan-vs-actual
+  provenance (`source_pledge_allocation_id`, `variance_reason`).
+  `display_usage` is a **trigger-maintained, read-only** label — never write
+  it directly.
 
-Two free-text fields accompany the axes on both allocation tables:
-`restriction_description` (nullable; plain-language summary of the restriction, e.g.
-"Salaries for RGL and Ops Guide only") and `purpose_verbatim` (nullable; **exact
-source language only** — grant letter, Donorbox designation, check memo). Migration
-0150 renamed the axis column, added `restriction_description`, and sorted polluted
-`purpose_verbatim` content into description/verbatim/cleared.
+### Restriction taxonomy (three axes)
 
-## Revenue-accounting coding capture (CFO "Revenue Extractor")
+Both allocation tables carry three independent axes —
+`regional_restriction_type`, `other_restriction_type` (restrictions beyond
+region/time/school/project), `time_restriction_type` — each a
+`restriction_axis` enum (`donor_restricted` / `wf_restricted` /
+`unrestricted`), NOT NULL default `unrestricted`. A line codes as *restricted*
+(4100.x) when **any** axis is `donor_restricted`; `wf_restricted` and
+`unrestricted` both code unrestricted (4000.x). Two free-text companions:
+`restriction_description` (plain-language summary) and `purpose_verbatim`
+(**exact source language only** — grant letter, Donorbox designation, check
+memo).
 
-Revenue-coding is **derived on demand** from allocation scope (donor kind + fundable
-project + region + the three restriction axes) by `revenueCoding.ts` /
-`@workspace/api-zod`'s `deriveRevenueCoding`, with per-fund-entity overrides in
-`entity_coding_rules` (keyed on `entities.id` — fiscal-sponsee "SPO" defaults:
-`force_restricted` / `location` / `revenue_class`). It is **no longer persisted on the
-allocation rows**; the allocation editors show a live read-only preview and the
-reviewer captures the resolved snapshot onto the matching `staged_payments` row.
-- **`staged_payments` coding snapshot** — `object_code`(+`_override`),
-  `revenue_location`(+`_override`), `revenue_class`(+`_override`), `coding_flags text[]`,
-  `deferred_revenue` enum (`yes` / `no` / `na`), `deferred_revenue_reason`. Captured
-  via the staged-payment coding write endpoint; describes the QuickBooks *payment*, not
-  the donor's intent.
-- `deferred_revenue` enum: `yes` / `no` / `na` (CRM captures the answer; it does NOT
-  compute AR).
-- `revenue_accounts` — the GL account list the coder maps onto.
-- `entity_coding_rules` — per-fund-entity overrides (PK `entities.id`;
-  fiscal-sponsee defaults) applied during derivation.
+### loan_or_grant
 
-## Grant conditions (on pledge allocations)
+`loan_or_grant` (`loan` / `grant`, NOT NULL default `grant`) is the **single
+source of truth** for loan-fund principal vs ordinary fundraising money; the
+two tracks report in parallel and never mix in analytics. Stored directly on
+`gifts_and_payments`, `opportunities_and_pledges`, and
+`fiscal_year_entity_goals` (part of its PK). **`grant` means all non-loan
+money** — individual donations, foundation grants, earned revenue — not
+literally only grants. The legacy `fundraising_category` model is retired and
+must not be revived.
 
-Grant conditions live on `pledge_allocations` — `conditional` (enum, nullable) +
-`conditions_met` (enum, default `no`). The opportunity header exposes a **derived,
-read-only rollup** (`conditionalRollup` / `conditionsMetRollup`, via
-`deriveConditionalRollup`): the opportunity is conditional when ANY pledge allocation
-is a genuinely-uncertain conditional kind, and conditions are met only when every
-conditional allocation has `conditions_met = yes`. This drives win-probability
-weighting — a conditional written pledge weights `0.7500` instead of `0.9000`. The old
-header `conditional` / `conditions` / `conditions_met` columns are kept physical but
-**write-deprecated** (source for the one-time backfill only).
+### Revenue-accounting coding capture
 
-The `reimbursement_type` enum (`direct` / `indirect`, renamed from
-`reimbursable_share`) on both allocation tables tags direct-vs-indirect cost share;
-`direct`-tagged lines are recorded in full but **excluded** from goal analytics.
+Revenue coding is **derived on demand** from allocation scope
+(`deriveRevenueCoding` in `@workspace/api-zod`, with per-fund-entity overrides
+in `entity_coding_rules`), never persisted on allocation rows. The reviewer
+captures the resolved snapshot onto the matching `staged_payments` row
+(object code / revenue location / revenue class + overrides, `coding_flags`,
+`deferred_revenue` + reason — describing the QuickBooks *payment*, not donor
+intent). `revenue_accounts` holds the GL account list.
 
-## loan_or_grant (the authoritative loan-vs-grant flag)
+### Many-to-many via slug arrays
 
-`loan_or_grant` enum (`loan` / `grant`, NOT NULL default `grant`) is the **single
-source of truth** for whether money is loan-fund principal or ordinary
-fundraising money — the two tracks report in parallel and are never mixed in
-analytics. Lives on `gifts_and_payments`, `opportunities_and_pledges`, and
-`fiscal_year_entity_goals` (where it is part of the PK). Opportunity and goal
-writes take it directly; a gift's flag is still derived from its `type`
-(`loan_fund_investment` → `loan`, everything else → `grant`) via
-`giftTypeToLoanOrGrant` in `@workspace/api-zod` (`loan-or-grant.ts`).
+Multi-value links (regions on allocations, org interests, historical names)
+are `text[]` columns of slug-PK references, not junction tables; each carries
+a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
+`= ANY(...)` (seq scan) and never `ANY(${jsArray}::text[])` in a Drizzle
+`sql` template (runtime cast error — use `inArray()` or Drizzle's
+`arrayContains` / `arrayOverlaps` / `arrayContained`).
 
-**`grant` means ALL non-loan money** — individual donations, foundation grants,
-earned revenue, etc. — **not literally only grants.**
+## Payment evidence & reconciliation
 
-The cutover is complete: analytics, goals, and revenue coding all read
-`loan_or_grant`. The legacy `fundraising_category` enum and the columns it
-backed (`opportunities_and_pledges.fundraising_category`,
-`fiscal_year_entity_goals.category`) have been physically dropped (migration
-0130). Backfills were migrations 0067/0068; the goals PK swap is 0120.
+- `quickbooks_connections` — per-realm OAuth tokens (encrypted at rest) +
+  sync watermark. Pull-only: the CRM never writes to QuickBooks.
+- `staged_payments` — the QB review queue. Incoming-money units idempotent on
+  `(realmId, qbEntityType, qbEntityId, qbLineId)` (deposits stage per line).
+  Status / exclusion-reason / match-status enums; classification and entity
+  attribution each carry an `auto` vs `manual` source (a manual pin survives
+  re-sync). Candidate donor FKs are all nullable (XOR enforced only at
+  approve/reconcile). Also carries the captured revenue-coding snapshot.
+- `quickbooks_handling_rules` — admin-editable ingest rules
+  (`exclude` / `auto_create_approve`); seed rules must mirror the code
+  classifier.
+- `stripe_payouts` / `stripe_staged_charges` / `stripe_sync_state` — payout
+  lumps, per-charge gross records, and the sync watermark. Stripe↔QB
+  reconciliation ties a QB deposit lump to its charges; the coarse QB-derived
+  gift is archived and the QB row excluded (`processor_payout`, set only on
+  human confirm) so money isn't booked twice.
+- `donorbox_donations` / `donorbox_sync_state` — Donorbox donor/purpose
+  evidence (not transaction evidence).
+- `payment_applications` — the unit↔gift cash-application ledger. Each row
+  anchors on exactly one evidence unit per `evidence_source` (`quickbooks` →
+  `payment_id`, `stripe` → `stripe_charge_id`, `donorbox` →
+  `donorbox_donation_id`; enforced by per-source CHECKs). `link_role`
+  (`counted` / `corroborating`) — money reads SUM only `counted` rows;
+  `amount_applied` must be > 0 on counted rows. Book-once is enforced by
+  **partial unique indexes per evidence anchor** — one counted unique and one
+  corroborating unique per anchor kind (payment / stripe charge / donorbox
+  donation × gift) — plus the service helper's transactional row-lock and
+  per-anchor SUM validation. Both the unit and gift FKs are RESTRICT.
+  `created_the_gift` preserves the mint-ownership signal.
+- `settlement_links` — one row ties a Stripe payout to its QB deposit lump
+  (no donor, no amount split); exclusive per payout (deterministic
+  `sl_<payout_id>` PK + UNIQUE). The payout's settlement status is a pure
+  derivation over this table.
+- `source_links` — unit↔unit evidence claims (`charge_qb_tie`,
+  `charge_fee_row`, `donorbox_qb`, `donorbox_charge`) with deterministic ids
+  and lifecycle. Sole authority for evidence↔evidence ties; a claim blocks
+  re-picking but is never itself status evidence.
+- `reconciliation_bundle_drafts`, `unit_groups` — workbench working state.
 
-## Many-to-many via slug arrays
+## Communications & workflow
 
-Multi-value links (an org's regional priorities, an allocation's regions, interests,
-historical names) are stored as `text[]` columns of slug-PK references, **not**
-junction tables. Slug PKs make rotted references visible on inspection, trading away
-per-element FK enforcement. Each array column carries a **GIN index** — query with
-array operators (`@>` "contains", `&&` "overlaps", `<@` "subset"), **never
-`= ANY(...)`** (forces a seq scan) and never `ANY(${jsArray}::text[])` in a Drizzle
-`sql` template (renders a row-constructor → runtime cast error — use `inArray()` or
-Drizzle's `arrayContains` / `arrayOverlaps` / `arrayContained`).
-
-## Integrations & operational tables
-
-Column-level detail lives in each schema file; this is the orientation map.
-
-**QuickBooks payment sync** (pull-only QBO → CRM)
-- `quickbooks_connections` — per-realm OAuth tokens + realmId (encrypted at rest) +
-  per-connection sync watermark.
-- `staged_payments` — the review queue. Pulled "incoming money" units
-  (`quickbooks_entity_type` = `sales_receipt` / `payment` / `deposit`), idempotent on
-  `(realmId, qbEntityType, qbEntityId, qbLineId)` (deposits stage per line;
-  non-deposit rows use `qbLineId = ''`). `staged_payment_status` (`pending` /
-  `approved` / `rejected` / `excluded`); `staged_payment_exclusion_reason` (large
-  enum — keep the TS classifier and any SQL backfills in lockstep);
-  `staged_payment_match_status` / `_match_method`; classification + entity attribution
-  each carry an `auto` vs `manual` source enum (a `manual` pin survives every
-  re-classify/re-sync). Carries a *candidate* donor (all three FKs nullable;
-  exactly-one enforced only at approve/reconcile) + an `entity_id` attribution.
-- `payment_applications` — the authoritative **cash-application ledger** (M:N
-  between `staged_payments` and `gifts_and_payments`). It is the **SOLE**
-  QB↔gift link record. All four legacy gift-pointer columns were DROPPED:
-  `staged_payments.matched_gift_id` / `created_gift_id` /
-  `group_reconciled_gift_id` (migration 0126) and
-  `gifts_and_payments.final_amount_qb_staged_payment_id` (migration 0130).
-  Do not reintroduce gift-pointer columns on these tables. The retired
-  `staged_payment_splits` table was dropped in 0115 — a split's resolution
-  lives entirely in counted ledger rows. One row per payment↔gift
-  booking (HEADER grain):
-  `amount_applied` (> 0); `evidence_source` (`quickbooks` / `stripe` / `donorbox`,
-  with the matching `stripe_charge_id` / `donorbox_donation_id` required by CHECK);
-  `match_method` (`system` / `system_confirmed` / `human`); `created_the_gift`
-  (preserves the mint-ownership signal); `link_role` (`counted` /
-  `corroborating` — money reads filter `counted`). Both FKs are **RESTRICT**
-  (the QB record and the gift are anchors). Book-once = `UNIQUE(payment_id, gift_id)`
-  + the service helper's tx row-lock + SUM validation — **no** DB aggregate/fee-band
-  constraint. Ledger SUM(amount_applied) per gift is the QB-settled figure the
-  tie deriver reads.
-- `quickbooks_handling_rules` — admin-editable ingest rules; action
-  `quickbooks_rule_action` (`exclude` / `auto_create_approve`). The engine's seed
-  rules must mirror the code classifier (a fidelity test guards drift).
-
-**Stripe sync + Stripe↔QuickBooks reconciliation**
-- `stripe_payouts` — Stripe NET payout lumps.
-- `stripe_staged_charges` — per-charge gross records (the precise gift record).
-- `stripe_sync_state` — per-account watermark.
-- Reconciliation (`stripeReconcile.ts`) ties a QB deposit/payout lump to its
-  individual Stripe charges; the coarse QB-derived gift is then archived and the QB
-  staged row is `excluded` with reason `processor_payout` (set **only** on human
-  confirm) so the same money isn't booked twice.
-
-**Email / Gmail + calendar sync**
-- `google_oauth_tokens` — per-user Google tokens.
-- `email_messages` — synced Gmail (enum `email_direction` `sent` / `received`); same
-  Gmail message is stored once per mailbox and de-duplicated in the list endpoint via
-  `DISTINCT ON (gmail_message_id)`.
-- `email_attachments`, `tracked_emails` (+ views) — open-tracking attribution merged
-  onto synced messages.
-- `email_sync_state` / `calendar_sync_state` — cursors; `no_progress_runs` counts
-  consecutive errored runs to flag a stuck mailbox. `email_sync_skip`,
-  `correspondent_ignore`, `person_suppression_windows`,
-  `calendar_meeting_filters` — sync suppression / matching controls.
-- `internal_email_domains` — staff-domain singleton (matcher loads it cached; was a
-  hardcoded set).
-- `calendar_events`, `interactions` (manual touches; enum `interaction_kind`),
-  `meeting_notes` (paste-a-transcript flow), `notes`.
-
-**Email intelligence (AI proposals)**
-- `email_proposals` — one actionable signal per row (enum `email_proposal_kind`:
-  `linkedin_job_change`, `auto_responder_move`, `bounce_invalid`, `bounce_soft`,
-  `signature_update`, `grant_opportunity`, `thank_you_acknowledgment`). Status enum
-  `pending` / `applied` / `rejected` / `ignored`.
-- `email_intel_prompts` — versioned, admin-editable **review** prompts, one
-  key per (`signal_type`, `review_phase`). `signal_type` enum
-  `email_intel_signal_type` (`linkedin_job_change`, `auto_responder_move`,
-  `bounce`, `signature_update`, `grant_opportunity`,
-  `thank_you_acknowledgment` — the two bounce kinds collapse to `bounce`;
-  `wildflower_update` is intentionally absent). `review_phase` enum
-  `email_intel_review_phase` (`accuracy` / `suppression`). Status
-  `active` / `draft` / `archived`, origin `hand_edited` / `ai_generated` /
-  `reverted`. Partial unique indexes enforce at most one `active` and one
-  `draft` per (`signal_type`, `review_phase`). Both columns are nullable for
-  legacy rows (demoted to `archived`). The hidden "action-proposing core"
-  prompt (how to act) is hard-coded in `emailIntelPrompts.ts` and never
-  stored here or exposed by any API; these rows hold only the accuracy /
-  suppression review criteria appended to that core.
-- `grant_leads` — team-shared, cross-inbox grant-opportunity queue extracted from
-  email (status `new` / `claimed` / `converted` / `archived`).
-
-**Tasks**
-- `tasks` (kind `general` / `reporting_deadline` / `thank_you_followup`; status
-  `open` / `waiting` / `done` / `cancelled`), `task_proposals` (AI next-step
-  suggestions: `pending` / `accepted` / `dismissed`), `task_suggestion_state`.
-
-**Media mentions**
-- `media_mentions` (GDELT press coverage), `media_ingest_state`.
-
-**Other**
-- `saved_views` (per-page filter/column chooser persistence), `bulk_operations`
-  (multi-select edit toolbar), `connection_enthusiasm_history`, `flodesk_sync_state`.
+- `google_oauth_tokens`, `email_messages` (one row per mailbox per Gmail
+  message, de-duplicated in the list endpoint), `email_attachments`,
+  `tracked_emails` — Gmail sync + open tracking.
+- `email_sync_state` / `calendar_sync_state` — cursors; `no_progress_runs`
+  flags a stuck mailbox. `email_sync_skip`, `correspondent_ignore`,
+  `person_suppression_windows`, `calendar_meeting_filters` — suppression and
+  matching controls. `internal_email_domains` — staff-domain singleton.
+- `calendar_events`, `interactions` (manual touches), `meeting_notes`,
+  `notes`.
+- `email_proposals` — one actionable AI signal per row (job change, bounce,
+  signature update, grant opportunity, thank-you acknowledgment, …).
+- `email_intel_prompts` — versioned, admin-editable review prompts per
+  (`signal_type`, `review_phase`); partial uniques enforce at most one
+  `active` and one `draft` per pair. The action-proposing core prompt is
+  hard-coded in the API server and never stored or exposed here.
+- `grant_leads` — team-shared grant-opportunity queue extracted from email.
+- `tasks`, `task_proposals`, `task_suggestion_state` — tasks and AI
+  next-step suggestions.
+- `media_mentions`, `media_ingest_state` — GDELT press coverage.
+- `saved_views`, `bulk_operations`, `connection_enthusiasm_history`,
+  `flodesk_sync_state`, `audit_log`, `cleanup_queue`, `duplicate_dismissals`,
+  `coding_form_rows`, `wildflower_updates` — app plumbing and operational
+  state.
 
 ## Anonymous records
 
-`anonymous` flag on `organizations` + `people` masks the name to "Anonymous" in the
-UI for everyone except the record owner and admins. **UI-only** — names are still in
-API responses. Keep `canSeeIdentity` (display) separate from `canManageIdentity`
-(toggle). Join-projection name references aren't masked yet.
+The `anonymous` flag on `organizations` and `people` masks the name to
+"Anonymous" in the UI for everyone except the record owner and admins.
+**UI-only** — names are still present in API responses. Keep `canSeeIdentity`
+(display) separate from `canManageIdentity` (toggle).
+
+## Deeper references
+
+- Reconciliation business rules: [`docs/workbench-business-rules.md`](../../docs/workbench-business-rules.md)
+- Reconciliation target design: [`docs/reconciliation-design.md`](../../docs/reconciliation-design.md)
+- Reconciliation implementation status: [`docs/reconciliation-status.md`](../../docs/reconciliation-status.md)
+- Evidence↔evidence ledger ADR: [`docs/adr-source-link-ledger.md`](../../docs/adr-source-link-ledger.md)
+- Data provenance and sync procedures: [`docs/integrations/data-sources.md`](../../docs/integrations/data-sources.md)
+- Routine schema changes: [`docs/change-recipes.md`](../../docs/change-recipes.md)
