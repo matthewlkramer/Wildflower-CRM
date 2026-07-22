@@ -24,6 +24,7 @@ import type {
   BulkArchiveBody,
   BulkUpdateOpportunitiesBody,
   BulkUpdateResult,
+  CloseAwardBody,
   CreateOpportunityOrPledgeBody,
   ForbiddenResponse,
   GiftOrPayment,
@@ -680,6 +681,164 @@ export const useWriteOffPledge = <TError = ErrorType<BadRequestResponse | NotFou
         TContext
       > => {
       return useMutation(getWriteOffPledgeMutationOptions(options));
+    }
+    /**
+ * The ONLY way a cost-reimbursement pledge completes — paid >= ceiling
+never completes it automatically. Stamps award_closed_at + reason and
+re-derives status (a closed award derives cash_in and leaves the active
+forecast); the ceiling and all actual payment history are preserved.
+
+Closing requires the remaining projected plan to be resolved first: if
+any allocation's fiscal-year plan still projects uncollected money
+(plannedCollectionAmount > paid), the caller must first revise the plan
+(reduce/remove remaining allocations); otherwise this returns 409
+'unresolved_projected_allocations' with the remaining amount in
+details. Requires the finance (or admin) role — 403
+'finance_role_required' otherwise. 409 'not_cost_reimbursement' on a
+fixed-commitment pledge; 409 'award_already_closed' when already closed.
+
+ * @summary Explicitly close a cost-reimbursement award (finance-permitted).
+ */
+export const getCloseAwardUrl = (id: string,) => {
+
+
+  
+
+  return `/api/opportunities-and-pledges/${id}/close-award`
+}
+
+export const closeAward = async (id: string,
+    closeAwardBody: CloseAwardBody, options?: RequestInit): Promise<OpportunityOrPledge> => {
+  
+  return customFetch<OpportunityOrPledge>(getCloseAwardUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      closeAwardBody,)
+  }
+);}
+  
+
+
+
+export const getCloseAwardMutationOptions = <TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeAward>>, TError,{id: string;data: BodyType<CloseAwardBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof closeAward>>, TError,{id: string;data: BodyType<CloseAwardBody>}, TContext> => {
+
+const mutationKey = ['closeAward'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof closeAward>>, {id: string;data: BodyType<CloseAwardBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  closeAward(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CloseAwardMutationResult = NonNullable<Awaited<ReturnType<typeof closeAward>>>
+    export type CloseAwardMutationBody = BodyType<CloseAwardBody>
+    export type CloseAwardMutationError = ErrorType<BadRequestResponse | void | NotFoundResponse>
+
+    /**
+ * @summary Explicitly close a cost-reimbursement award (finance-permitted).
+ */
+export const useCloseAward = <TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeAward>>, TError,{id: string;data: BodyType<CloseAwardBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof closeAward>>,
+        TError,
+        {id: string;data: BodyType<CloseAwardBody>},
+        TContext
+      > => {
+      return useMutation(getCloseAwardMutationOptions(options));
+    }
+    /**
+ * Clears award_closed_at + award_close_reason and re-derives status, so
+the award returns to the active forecast. Finance (or admin) role
+required. 409 'award_not_closed' when the award is not closed.
+
+ * @summary Reopen a closed cost-reimbursement award (finance-permitted).
+ */
+export const getReopenAwardUrl = (id: string,) => {
+
+
+  
+
+  return `/api/opportunities-and-pledges/${id}/reopen-award`
+}
+
+export const reopenAward = async (id: string, options?: RequestInit): Promise<OpportunityOrPledge> => {
+  
+  return customFetch<OpportunityOrPledge>(getReopenAwardUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getReopenAwardMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reopenAward>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reopenAward>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['reopenAward'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reopenAward>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  reopenAward(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReopenAwardMutationResult = NonNullable<Awaited<ReturnType<typeof reopenAward>>>
+    
+    export type ReopenAwardMutationError = ErrorType<void | NotFoundResponse>
+
+    /**
+ * @summary Reopen a closed cost-reimbursement award (finance-permitted).
+ */
+export const useReopenAward = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reopenAward>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reopenAward>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getReopenAwardMutationOptions(options));
     }
     /**
  * Convert a worked opportunity or pledge into a CRM gift directly from its

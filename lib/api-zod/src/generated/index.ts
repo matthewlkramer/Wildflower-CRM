@@ -42,6 +42,7 @@ export * from "./people/people";
 export * from "./people-entity-roles/people-entity-roles";
 export * from "./phone-numbers/phone-numbers";
 export * from "./pledge-allocations/pledge-allocations";
+export * from "./pledge-expected-payments/pledge-expected-payments";
 export * from "./potential-duplicates/potential-duplicates";
 export * from "./quickbooks-oauth/quickbooks-oauth";
 export * from "./quickbooks-sync/quickbooks-sync";

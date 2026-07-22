@@ -1,7 +1,8 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
-import { opportunitiesAndPledges, pledgeAllocations, giftsAndPayments, giftAllocations, organizations, households, people, tasks, type NewPledgeAllocation } from "@workspace/db/schema";
+import { opportunitiesAndPledges, pledgeAllocations, pledgeExpectedPayments, giftsAndPayments, giftAllocations, organizations, households, people, tasks, type NewPledgeAllocation } from "@workspace/db/schema";
+import { derivePledgePlanning } from "../lib/pledgePlanning";
 import { giftSelectWithDerived } from "./giftsAndPayments";
 import { oppWorklistConds, type OppWorklist } from "../lib/worklists";
 import { alias } from "drizzle-orm/pg-core";
@@ -96,6 +97,7 @@ import {
   BulkArchiveOpportunitiesAndPledgesBody,
   WriteOffPledgeBody,
   MintGiftFromOpportunityBody,
+  CloseAwardBody,
   validateOppInvariants,
   validateOppCloseTransition,
   type InvariantIssue,
@@ -106,6 +108,7 @@ import {
   assertGiftHasAllocations,
 } from "../lib/giftAllocationSeed";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
+import { requireFinance } from "../lib/financeGuard";
 import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { resolvePledgeFreeze, resolvePledgeFreezeById, respondFrozen } from "../lib/freezeGuard";
@@ -352,13 +355,16 @@ router.get(
     const where = filters.length ? and(...filters) : undefined;
     // Default order is newest projected-close first. Two worklists override it:
     // verbal_no_letter surfaces the stalest (least-recently-updated) first, and
-    // partially_paid orders by oldest projected close as a best-effort "overdue"
-    // proxy (no expected-payment-date field exists).
+    // partially_paid orders by the earliest scheduled installment
+    // (pledge_expected_payments) as the "most overdue" proxy, falling back to
+    // oldest projected close for pledges with no installment schedule.
     const worklistOrder =
       q.worklist === "verbal_no_letter"
         ? [asc(opportunitiesAndPledges.updatedAt)]
         : q.worklist === "partially_paid"
-          ? [sql`${opportunitiesAndPledges.projectedCloseDate} ASC NULLS LAST`]
+          ? [
+              sql`COALESCE((SELECT MIN(pep.expected_date) FROM pledge_expected_payments pep WHERE pep.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}), ${opportunitiesAndPledges.projectedCloseDate}) ASC NULLS LAST`,
+            ]
           : null;
     // Opt-in per-stage SUM(ask_amount) over the FULL filtered set (not just
     // this page) so the pipeline board's column totals stay correct when the
@@ -434,6 +440,7 @@ router.get(
       uncollectedRaw,
       resolvedByWriteOffPledgeId,
       flaggedForResearch,
+      expectedPayments,
     ] = await Promise.all([
       db.select().from(pledgeAllocations).where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
       // Named gift-header projection for the nested `payments` array.
@@ -446,6 +453,12 @@ router.get(
       findActiveWriteOffChildPledgeId(id),
       // Passive "Needs research" badge — driven solely by the Cleanup Queue.
       isFlaggedForResearch(id),
+      // Installment schedule (fixed-commitment cash plan), soonest first.
+      db
+        .select()
+        .from(pledgeExpectedPayments)
+        .where(eq(pledgeExpectedPayments.pledgeOrOpportunityId, id))
+        .orderBy(asc(pledgeExpectedPayments.expectedDate)),
     ]);
     const auditClose = {
       frozen: pledgeFreeze.frozen,
@@ -453,7 +466,79 @@ router.get(
       uncollectedRemainder: Math.max(0, uncollectedRaw).toFixed(2),
       resolvedByWriteOffPledgeId,
     };
-    res.json({ ...maskOppDonorRow(row, getViewer(req)), allocations, payments, auditClose, flaggedForResearch });
+    // Read-time planning derivations (Task #788) — single authority in
+    // lib/pledgePlanning.ts; never persisted.
+    const planning = derivePledgePlanning({
+      status: row.status,
+      disbursementModel: row.disbursementModel,
+      awardedAmount: row.awardedAmount,
+      allocations: allocations.map((a) => ({
+        subAmount: a.subAmount,
+        grantYear: a.grantYear,
+        reimbursementType: a.reimbursementType,
+        entityId: a.entityId,
+        intendedUsage: a.intendedUsage,
+        fundableProjectId: a.fundableProjectId,
+      })),
+      expectedPaymentCount: expectedPayments.length,
+    });
+    // Plan-vs-actual per allocation line (Task #788) — derived at read time
+    // from the live gift allocations stamped with this line's id via
+    // source_pledge_allocation_id (archived gifts excluded). Never persisted.
+    const allocIds = allocations.map((a) => a.id);
+    const actualRows = allocIds.length
+      ? await db
+          .select({
+            sourcePledgeAllocationId: giftAllocations.sourcePledgeAllocationId,
+            subAmount: giftAllocations.subAmount,
+            varianceReason: giftAllocations.varianceReason,
+          })
+          .from(giftAllocations)
+          .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
+          .where(
+            and(
+              inArray(giftAllocations.sourcePledgeAllocationId, allocIds),
+              isNull(giftsAndPayments.archivedAt),
+            ),
+          )
+      : [];
+    const actualBySource = new Map<
+      string,
+      { actual: number; varianceReasons: string[] }
+    >();
+    for (const r of actualRows) {
+      if (!r.sourcePledgeAllocationId) continue;
+      const acc =
+        actualBySource.get(r.sourcePledgeAllocationId) ??
+        { actual: 0, varianceReasons: [] };
+      const amt = r.subAmount == null ? null : Number(r.subAmount);
+      if (amt != null && Number.isFinite(amt)) acc.actual += amt;
+      if (r.varianceReason) acc.varianceReasons.push(r.varianceReason);
+      actualBySource.set(r.sourcePledgeAllocationId, acc);
+    }
+    const allocationsWithActuals = allocations.map((a) => {
+      const acc = actualBySource.get(a.id);
+      const actual = acc?.actual ?? 0;
+      const planned = a.subAmount == null ? null : Number(a.subAmount);
+      return {
+        ...a,
+        actualAllocatedAmount: actual.toFixed(2),
+        remainingPlannedAmount:
+          planned == null || !Number.isFinite(planned)
+            ? null
+            : Math.max(0, planned - actual).toFixed(2),
+        varianceReasons: acc?.varianceReasons ?? [],
+      };
+    });
+    res.json({
+      ...maskOppDonorRow(row, getViewer(req)),
+      allocations: allocationsWithActuals,
+      payments,
+      auditClose,
+      flaggedForResearch,
+      expectedPayments,
+      ...planning,
+    });
   }),
 );
 
@@ -691,6 +776,9 @@ router.post(
         grantLetterUrl: body.grantLetterUrl ?? null,
         awardedAmount: body.awardedAmount ?? null,
         paidAmount: 0,
+        // A brand-new record has no award-closure yet.
+        disbursementModel: body.disbursementModel ?? null,
+        awardClosedAt: null,
       }).status;
       const wp = canonicalWinProbability(
         derivedStatus,
@@ -972,6 +1060,21 @@ router.post(
       });
     }
 
+    // Evidence-only gift creation (Task #788): manual minting from ANY
+    // pledge/opportunity is blocked — money arriving in QuickBooks mints the
+    // gift via reconciliation, keeping payment evidence the sole source of
+    // pledge cash. Mirrors the POST /gifts-and-payments guard exactly; the
+    // only escape hatch is the explicit off-books exception (money that never
+    // appears in QuickBooks), gated to finance/admin.
+    if (!body.offBooksException) {
+      return res.status(409).json({
+        error: "manual_gift_on_pledge_blocked",
+        message:
+          "Manual gift creation against a pledge is blocked — payments are minted from QuickBooks evidence via reconciliation. Use offBooksException=true (finance only) for money that never hits QuickBooks.",
+      });
+    }
+    if (!requireFinance(req, res)) return;
+
     // Donor XOR: copy all three FKs straight from the opportunity (its own
     // num_nonnulls = 1 CHECK guarantees exactly one is set), so the minted gift
     // inherits the same single donor without re-deriving it.
@@ -1093,9 +1196,22 @@ router.patch(
       body.stage !== undefined || body.lossType !== undefined;
     const writeData: typeof body & {
       winProbability?: string | null;
+      awardClosedAt?: string | null;
+      awardCloseReason?: null;
     } = {
       ...body,
     };
+    // Award closure is meaningful ONLY on a cost-reimbursement pledge —
+    // switching the model away clears the closure fields server-side (the
+    // contract documents this; awardClosedAt is never PATCHable directly).
+    if (
+      body.disbursementModel !== undefined &&
+      merged.disbursementModel !== "cost_reimbursement" &&
+      (existing.awardClosedAt != null || existing.awardCloseReason != null)
+    ) {
+      writeData.awardClosedAt = null;
+      writeData.awardCloseReason = null;
+    }
     // loanOrGrant (authoritative flag) flows straight from the body when set.
     if (stageOrLossTypeInBody && body.winProbability === undefined) {
       // Conditions live on the pledge allocations now; the inline stamp uses the
@@ -1109,6 +1225,8 @@ router.patch(
         grantLetterUrl: merged.grantLetterUrl ?? null,
         awardedAmount: merged.awardedAmount ?? null,
         paidAmount: 0,
+        disbursementModel: merged.disbursementModel ?? null,
+        awardClosedAt: merged.awardClosedAt ?? null,
       }).status;
       const wp = canonicalWinProbability(
         derivedStatus,
@@ -1164,6 +1282,128 @@ router.patch(
 
     await auditUpdate(req, "opportunity", row.id, existing as Record<string, unknown>, (final ?? row) as Record<string, unknown>, Object.keys(body), "Updated opportunity");
     res.json({ ...(final ?? row), promptForReportingDeadlines });
+  }),
+);
+
+// Close a cost-reimbursement award (Task #788) — the ONLY way such a pledge
+// completes (paid >= ceiling never auto-completes it). Finance-permitted.
+// Closing requires the remaining projected plan to be resolved first: the
+// caller must revise allocations down so plannedCollectionAmount <= paid.
+router.post(
+  "/opportunities-and-pledges/:id/close-award",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const body = parseOrBadRequest(CloseAwardBody, req.body, res);
+    if (!body) return;
+    if (!requireFinance(req, res)) return;
+    const [opp] = await db
+      .select()
+      .from(opportunitiesAndPledges)
+      .where(eq(opportunitiesAndPledges.id, id))
+      .limit(1);
+    if (!opp) return notFound(res, "opportunity");
+    if (opp.disbursementModel !== "cost_reimbursement") {
+      return res.status(409).json({
+        error: "not_cost_reimbursement",
+        message: "Close award applies only to cost-reimbursement pledges.",
+      });
+    }
+    if (opp.awardClosedAt != null) {
+      return res.status(409).json({
+        error: "award_already_closed",
+        message: "This award is already closed.",
+      });
+    }
+    // Remaining projected = planned collection (SUM of allocation sub-amounts)
+    // minus actual payments (live gifts). Positive → the plan still projects
+    // uncollected money and must be revised before closing.
+    const [[{ planned } = { planned: "0" }], [{ paid } = { paid: "0" }]] =
+      await Promise.all([
+        db
+          .select({ planned: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text` })
+          .from(pledgeAllocations)
+          .where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
+        db
+          .select({ paid: sql<string>`COALESCE(SUM(${giftsAndPayments.amount}), 0)::text` })
+          .from(giftsAndPayments)
+          .where(and(eq(giftsAndPayments.opportunityId, id), isNull(giftsAndPayments.archivedAt))),
+      ]);
+    const remainingProjected = Number(planned) - Number(paid);
+    if (remainingProjected > 0.005) {
+      return res.status(409).json({
+        error: "unresolved_projected_allocations",
+        message:
+          "The plan still projects uncollected money — revise the remaining allocations (reduce or remove them) before closing the award.",
+        details: { remainingProjected: remainingProjected.toFixed(2) },
+      });
+    }
+    await db
+      .update(opportunitiesAndPledges)
+      .set({
+        awardClosedAt: body.closedAt,
+        awardCloseReason: body.reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(opportunitiesAndPledges.id, id));
+    // Closure drives the derived status (→ cash_in) — re-derive now.
+    await applyDerivedOppFields(id);
+    const final = await db
+      .select(oppHeaderColumns)
+      .from(opportunitiesAndPledges)
+      .where(eq(opportunitiesAndPledges.id, id))
+      .then((r) => r[0]);
+    await auditUpdate(
+      req,
+      "opportunity",
+      id,
+      opp as Record<string, unknown>,
+      (final ?? opp) as Record<string, unknown>,
+      ["awardClosedAt", "awardCloseReason"],
+      `Closed award (${body.reason})`,
+    );
+    res.json(final);
+  }),
+);
+
+// Reopen a closed cost-reimbursement award — clears the closure fields and
+// re-derives status so the award returns to the active forecast.
+router.post(
+  "/opportunities-and-pledges/:id/reopen-award",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    if (!requireFinance(req, res)) return;
+    const [opp] = await db
+      .select()
+      .from(opportunitiesAndPledges)
+      .where(eq(opportunitiesAndPledges.id, id))
+      .limit(1);
+    if (!opp) return notFound(res, "opportunity");
+    if (opp.awardClosedAt == null) {
+      return res.status(409).json({
+        error: "award_not_closed",
+        message: "This award is not closed.",
+      });
+    }
+    await db
+      .update(opportunitiesAndPledges)
+      .set({ awardClosedAt: null, awardCloseReason: null, updatedAt: new Date() })
+      .where(eq(opportunitiesAndPledges.id, id));
+    await applyDerivedOppFields(id);
+    const final = await db
+      .select(oppHeaderColumns)
+      .from(opportunitiesAndPledges)
+      .where(eq(opportunitiesAndPledges.id, id))
+      .then((r) => r[0]);
+    await auditUpdate(
+      req,
+      "opportunity",
+      id,
+      opp as Record<string, unknown>,
+      (final ?? opp) as Record<string, unknown>,
+      ["awardClosedAt", "awardCloseReason"],
+      "Reopened award",
+    );
+    res.json(final);
   }),
 );
 

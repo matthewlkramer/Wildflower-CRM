@@ -410,6 +410,52 @@ export const OpportunityConditional = {
   conditional_on_target: 'conditional_on_target',
 } as const;
 
+export type OpportunityConditionalWritable = typeof OpportunityConditionalWritable[keyof typeof OpportunityConditionalWritable];
+
+
+export const OpportunityConditionalWritable = {
+  unconditional: 'unconditional',
+  conditional_unspecified: 'conditional_unspecified',
+  conditional_on_funder_determination: 'conditional_on_funder_determination',
+  conditional_on_target: 'conditional_on_target',
+} as const;
+
+/**
+ * How a pledge's money is disbursed (Task #788). fixed_commitment: the
+funder pays N installments on known dates — the explicit installment
+schedule (pledge_expected_payments) is the cash forecast and the pledge
+completes when paid >= awarded. cost_reimbursement: the award is a
+CEILING drawn down as costs are incurred — annual pledge allocations
+are the forecast (fiscal-year grain), no installments required, overdue
+nagging is suppressed, and the pledge completes ONLY via the explicit
+Close-award action (never by paid >= ceiling alone). Replaces the
+retired conditional='reimbursable' signal.
+
+ */
+export type DisbursementModel = typeof DisbursementModel[keyof typeof DisbursementModel];
+
+
+export const DisbursementModel = {
+  fixed_commitment: 'fixed_commitment',
+  cost_reimbursement: 'cost_reimbursement',
+} as const;
+
+/**
+ * Why a cost-reimbursement award was explicitly closed. Captured by the
+finance-permitted Close-award action alongside the close date — the
+second user-set lifecycle input alongside lossType.
+
+ */
+export type AwardCloseReason = typeof AwardCloseReason[keyof typeof AwardCloseReason];
+
+
+export const AwardCloseReason = {
+  fully_collected: 'fully_collected',
+  award_period_ended: 'award_period_ended',
+  unused_balance: 'unused_balance',
+  terminated: 'terminated',
+} as const;
+
 /**
  * Tri-state record of whether a grant's conditions have been met:
 'no' (none met), 'partial' (some met), or 'yes' (fully met).
@@ -1832,7 +1878,14 @@ export interface OpportunityOrPledge {
   householdId?: string | null;
   /** Authoritative loan-vs-grant classification. User-settable on create/update; defaults to 'grant'. Analytics, goals, and revenue coding all read from this. */
   loanOrGrant: LoanOrGrant;
+  /** How the money is disbursed. User-settable on create/update; defaults to 'fixed_commitment'. Drives cash forecasting (installments vs annual allocations), overdue nagging, completion semantics, and win-probability weighting. */
+  disbursementModel?: DisbursementModel;
+  /** Explicit award-closure date on a cost-reimbursement pledge — set ONLY via the POST /opportunities-and-pledges/{id}/close-award action (finance-permitted), never via PATCH. Non-null = the award is closed and derives status cash_in regardless of paid vs ceiling. */
+  readonly awardClosedAt?: string | null;
+  /** Why the award was closed. Set/cleared together with awardClosedAt by the close-award / reopen-award actions. */
+  readonly awardCloseReason?: AwardCloseReason | null;
   askAmount?: string | null;
+  /** Fixed commitment: the legal commitment amount (completion target). Cost reimbursement: the award CEILING (informational cap — allocations need not sum to it and reaching it never completes the award). */
   awardedAmount?: string | null;
   readonly paidAmount?: string;
   type?: OpportunityType | null;
@@ -1913,8 +1966,11 @@ export interface PledgeAllocation {
   contingent?: boolean;
   /** Free-text grant conditions for this allocation (moved off the opportunity header in Task #449). */
   conditions?: string | null;
-  /** Date this allocation's payment is expected. Per-row (a grant year may hold multiple payments); allocations sharing a date roll up into one expected payment. Drives overdue detection. Null = unscheduled. */
-  expectedPaymentDate?: string | null;
+  /**
+   * @deprecated — superseded by the pledge's installment schedule (PledgeExpectedPayment). No longer written.
+   * @deprecated
+   */
+  readonly expectedPaymentDate?: string | null;
   notes?: string | null;
   regionIds?: string[] | null;
   /** Exact restriction source language only (grant letter / Donorbox designation / check memo). Plain-language summaries belong in restrictionDescription. */
@@ -1926,6 +1982,34 @@ export interface PledgeAllocation {
    * @deprecated
    */
   reimbursableShare?: ReimbursementType | null;
+  /** Plan-vs-actual (Task #788, pledge detail only): SUM of live gift-allocation amounts seeded from this pledge-allocation line (source_pledge_allocation_id provenance; archived gifts excluded). Null when not derived (list endpoints). */
+  readonly actualAllocatedAmount?: string | null;
+  /** Plan-vs-actual (Task #788, pledge detail only): this line's planned subAmount minus actualAllocatedAmount, clamped at 0. Null when not derived or the line has no planned amount. */
+  readonly remainingPlannedAmount?: string | null;
+  /** Plan-vs-actual (Task #788, pledge detail only): variance_reason texts recorded on the live gift allocations seeded from this line (deliberate deviations from plan). Empty when none or not derived. */
+  readonly varianceReasons?: readonly string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * One expected installment on a FIXED-COMMITMENT pledge ("$250k due
+2026-09-01"). The sole authority for installment scheduling — replaces
+the deprecated per-allocation expectedPaymentDate convention. Pure
+cash-timing plan (no scope): purpose/restriction/fiscal-year scope
+stays on pledge allocations. Drives overdue detection, cash-timing
+forecasts, and reconciliation match scoring for fixed commitments.
+Cost-reimbursement pledges normally have none (optional row allowed
+when a payment is known to be imminent).
+
+ */
+export interface PledgeExpectedPayment {
+  id: string;
+  pledgeOrOpportunityId: string;
+  expectedDate: string;
+  /** Expected amount. Null = date known, amount TBD. */
+  amount?: string | null;
+  notes?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2084,13 +2168,25 @@ export interface PledgeAuditCloseResolution {
   readonly resolvedByWriteOffPledgeId: string | null;
 }
 
-export type OpportunityOrPledgeDetail = OpportunityOrPledge & {
+export type OpportunityOrPledgeDetail = OpportunityOrPledge & ({
   allocations?: PledgeAllocation[];
+  /** The pledge's installment schedule (fixed-commitment cash plan), sorted by expectedDate ascending. Normally empty for cost-reimbursement pledges. */
+  expectedPayments?: PledgeExpectedPayment[];
   payments?: GiftOrPayment[];
+  /** SUM(sub_amount) across the pledge's allocations — the total the team currently plans to collect. For cost-reimbursement pledges this (not the ceiling) is the forecast. '0' when no allocations. */
+  readonly plannedCollectionAmount?: string;
+  /** SUM(sub_amount) across allocations that count toward the fundraising goal. direct-tagged allocations are always excluded; on a COST-REIMBURSEMENT pledge an allocation with NULL reimbursementType is treated as un-planned (excluded here and surfaced as a planning gap) rather than counted by default; on fixed commitments untagged allocations keep counting. */
+  readonly plannedGoalCreditAmount?: string;
+  /** Cost-reimbursement only (null otherwise): awardedAmount (ceiling) minus plannedCollectionAmount, clamped at 0. INFORMATIONAL ONLY — never a drawdown balance, never spawns tasks or workflow. */
+  readonly unplannedAwardCapacity?: string | null;
+  /** Post-win planning-completeness signal (guidance badge, never a write block). Fixed commitment: allocations exist AND an installment schedule is entered. Cost reimbursement: allocations exist AND every allocation has fiscal year, amount, reimbursementType, recipient entity, and intended use set (a project-tagged use also needs its fundable project; the restriction axes are NOT NULL with defaults, so they are always coded). Always true for un-won records. */
+  readonly planningComplete?: boolean;
+  /** Human-readable list of the specific gaps behind planningComplete=false (empty when complete). */
+  readonly planningGaps?: readonly string[];
   auditClose: PledgeAuditCloseResolution;
   /** Derived (never persisted): true when an OPEN Cleanup Queue item with reason_code='needs_research' targets this record. Drives the passive 'Needs research' detail-page badge; set only via the Cleanup Queue, never writable here. */
   readonly flaggedForResearch?: boolean;
-};
+});
 
 /**
  * SUM(ask_amount) per stage over ALL rows matching the current
@@ -2122,6 +2218,8 @@ export interface CreateOpportunityOrPledgeBody {
   householdId?: string;
   /** Authoritative loan-vs-grant classification. Omitted → 'grant'. */
   loanOrGrant?: LoanOrGrant;
+  /** Omitted → 'fixed_commitment'. */
+  disbursementModel?: DisbursementModel;
   askAmount?: string;
   awardedAmount?: string;
   type?: OpportunityType;
@@ -2152,6 +2250,8 @@ export interface UpdateOpportunityOrPledgeBody {
   householdId?: string | null;
   /** Authoritative loan-vs-grant classification (not nullable — every opportunity is exactly one of the two). */
   loanOrGrant?: LoanOrGrant;
+  /** Not nullable — every pledge is exactly one of the two models. Switching model does NOT touch allocations or installments; award closure fields are cleared server-side when switching away from cost_reimbursement. */
+  disbursementModel?: DisbursementModel;
   askAmount?: string | null;
   awardedAmount?: string | null;
   type?: OpportunityType | null;
@@ -2194,12 +2294,11 @@ export interface CreatePledgeAllocationBody {
   otherRestrictionType?: RestrictionAxis;
   timeRestrictionType?: RestrictionAxis;
   reimbursementType?: ReimbursementType;
-  conditional?: OpportunityConditional;
+  conditional?: OpportunityConditionalWritable;
   conditionsMet?: OpportunityConditionsMet;
   status?: PledgeAllocationStatus;
   contingent?: boolean;
   conditions?: string;
-  expectedPaymentDate?: string;
   notes?: string;
   regionIds?: string[];
   purposeVerbatim?: string;
@@ -2219,16 +2318,39 @@ export interface UpdatePledgeAllocationBody {
   otherRestrictionType?: RestrictionAxis;
   timeRestrictionType?: RestrictionAxis;
   reimbursementType?: ReimbursementType | null;
-  conditional?: OpportunityConditional | null;
+  conditional?: OpportunityConditionalWritable | null;
   conditionsMet?: OpportunityConditionsMet;
   status?: PledgeAllocationStatus | null;
   contingent?: boolean;
   conditions?: string | null;
-  expectedPaymentDate?: string | null;
   notes?: string | null;
   regionIds?: string[] | null;
   purposeVerbatim?: string | null;
   restrictionDescription?: string | null;
+}
+
+export interface PledgeExpectedPaymentList {
+  data: PledgeExpectedPayment[];
+  pagination: Pagination;
+}
+
+export interface CreatePledgeExpectedPaymentBody {
+  pledgeOrOpportunityId: string;
+  expectedDate: string;
+  amount?: string;
+  notes?: string;
+}
+
+export interface UpdatePledgeExpectedPaymentBody {
+  expectedDate?: string;
+  amount?: string | null;
+  notes?: string | null;
+}
+
+export interface CloseAwardBody {
+  /** The award-closure date. */
+  closedAt: string;
+  reason: AwardCloseReason;
 }
 
 export interface GiftAllocation {
@@ -2256,6 +2378,10 @@ export interface GiftAllocation {
   purposeVerbatim?: string | null;
   /** Optional plain-language summary of the restriction (e.g. 'grants to schools only'). Never affects revenue coding. */
   restrictionDescription?: string | null;
+  /** Provenance (Task #788): the pledge allocation this gift allocation was seeded from by the evidence-mint remaining-plan seeding. Stamped server-side only, never client-writable; null for allocations not seeded from a pledge plan. Set-null on pledge-allocation delete. Gift allocations stay independently editable — a later pledge-plan revision never rewrites them. */
+  readonly sourcePledgeAllocationId?: string | null;
+  /** Free-text reason recorded when the actual allocation was deliberately changed from the seeded pledge plan (plan-vs-actual variance display). */
+  varianceReason?: string | null;
   /**
    * @deprecated — renamed to reimbursementType.
    * @deprecated
@@ -2417,6 +2543,8 @@ export interface CreateGiftOrPaymentBody {
   householdId?: string;
   loanOrGrant?: LoanOrGrant;
   opportunityId?: string;
+  /** Explicit off-books exception: allows a manual gift with opportunityId for money that never appears in QuickBooks. Finance/admin only. */
+  offBooksException?: boolean;
   advisorPersonId?: string;
   grantYear?: string;
   giftBeingMatchedId?: string;
@@ -2453,6 +2581,8 @@ export interface UpdateGiftOrPaymentBody {
   householdId?: string | null;
   loanOrGrant?: LoanOrGrant;
   opportunityId?: string | null;
+  /** Explicit off-books exception: allows re-pointing this gift at a pledge/opportunity for money that never appears in QuickBooks. Finance/admin only. Request-level flag; never persisted. */
+  offBooksException?: boolean;
   advisorPersonId?: string | null;
   giftBeingMatchedId?: string | null;
   primaryContactPersonId?: string | null;
@@ -7113,6 +7243,7 @@ export interface CreateGiftAllocationBody {
   regionIds?: string[];
   purposeVerbatim?: string;
   restrictionDescription?: string;
+  varianceReason?: string;
 }
 
 export interface UpdateGiftAllocationBody {
@@ -7133,6 +7264,7 @@ export interface UpdateGiftAllocationBody {
   regionIds?: string[] | null;
   purposeVerbatim?: string | null;
   restrictionDescription?: string | null;
+  varianceReason?: string | null;
 }
 
 /**
@@ -8465,6 +8597,8 @@ export interface WriteOffPledgeBody {
 export interface MintGiftFromOpportunityBody {
   /** When true, stamp the minted gift `awaiting_settlement=true` (the 'won gift awaiting imminent payment' action) so it is not treated as a reconciliation error while it briefly has no cash tie. Defaults false (a plain 'won gift'). */
   awaitingSettlement?: boolean;
+  /** Evidence-only escape hatch (Task #788): manual minting of a gift from a pledge/opportunity is blocked (409 manual_gift_on_pledge_blocked) — pledge payments are minted from QuickBooks evidence via reconciliation. Set true (finance/admin only) to record money that will never appear in QuickBooks. Request-level flag only; never persisted. */
+  offBooksException?: boolean;
 }
 
 /**
@@ -9714,6 +9848,19 @@ export const ListOpportunitiesAndPledgesWorklist = {
 } as const;
 
 export type ListPledgeAllocationsParams = {
+pledgeOrOpportunityId?: string;
+/**
+ * @minimum 1
+ * @maximum 10000
+ */
+limit?: LimitParameter;
+/**
+ * @minimum 1
+ */
+page?: PageParameter;
+};
+
+export type ListPledgeExpectedPaymentsParams = {
 pledgeOrOpportunityId?: string;
 /**
  * @minimum 1

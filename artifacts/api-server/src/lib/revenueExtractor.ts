@@ -10,6 +10,7 @@ import {
   fundableProjects,
   opportunitiesAndPledges,
   pledgeAllocations,
+  pledgeExpectedPayments,
   tasks,
   stagedPayments,
 } from "@workspace/db/schema";
@@ -338,13 +339,16 @@ export async function buildRevenueExtractorReport(
         return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
       });
     }
+    // Task #788: expected dates come from the installment schedule
+    // (pledge_expected_payments) — the sole authority for installment timing.
+    // The deprecated pledge_allocations.expected_payment_date is no longer read.
     const expectedRows = await db
       .select({
-        opportunityId: pledgeAllocations.pledgeOrOpportunityId,
-        expectedPaymentDate: pledgeAllocations.expectedPaymentDate,
+        opportunityId: pledgeExpectedPayments.pledgeOrOpportunityId,
+        expectedPaymentDate: pledgeExpectedPayments.expectedDate,
       })
-      .from(pledgeAllocations)
-      .where(inArray(pledgeAllocations.pledgeOrOpportunityId, pledgeOppIds));
+      .from(pledgeExpectedPayments)
+      .where(inArray(pledgeExpectedPayments.pledgeOrOpportunityId, pledgeOppIds));
     const expectedSetByOpp = new Map<string, Set<string>>();
     for (const er of expectedRows) {
       if (!er.opportunityId || !er.expectedPaymentDate) continue;

@@ -228,16 +228,68 @@ describe.skipIf(!HAS_DB)("reimbursable share — goal analytics exclusion", () =
     expect(rowOppIds).not.toContain(directOpp);
   });
 
-  it("does NOT change pledge paid-amount / cash_in derivation for a reimbursable pledge", async () => {
-    // A reimbursable pledge whose FULL award (direct + indirect) is paid must
-    // still derive to cash_in — the share tag is irrelevant to derivation.
+  it("cost-reimbursement pledge allocations with NULL share get NO goal credit (Task #788)", async () => {
+    // On a cost-reimbursement pledge the share tag is REQUIRED for goal
+    // credit: untagged (null) lines are excluded (unlike fixed commitments,
+    // where null counts). direct stays excluded; indirect still counts.
+    const breakdownBefore = await getBreakdown();
+    const askBefore = Number(breakdownBefore.revenue.openPipeline.totalAsk);
+
+    const oppId = nextId("opp");
+    await db.insert(schema.opportunitiesAndPledges).values({
+      id: oppId,
+      name: `RSH cr-null ${oppId}`,
+      organizationId: ORG_ID,
+      status: "open",
+      stage: "in_conversation",
+      disbursementModel: "cost_reimbursement",
+    });
+    seededOppIds.push(oppId);
+    await db.insert(schema.pledgeAllocations).values([
+      {
+        id: nextId("palloc"),
+        pledgeOrOpportunityId: oppId,
+        subAmount: "900.00",
+        entityId: ENTITY_ID,
+        grantYear: FY_ID,
+        reimbursementType: null, // CR + null → excluded
+      },
+      {
+        id: nextId("palloc"),
+        pledgeOrOpportunityId: oppId,
+        subAmount: "300.00",
+        entityId: ENTITY_ID,
+        grantYear: FY_ID,
+        reimbursementType: "indirect", // counts
+      },
+      {
+        id: nextId("palloc"),
+        pledgeOrOpportunityId: oppId,
+        subAmount: "400.00",
+        entityId: ENTITY_ID,
+        grantYear: FY_ID,
+        reimbursementType: "direct", // excluded
+      },
+    ]);
+    await applyDerivedOppFields(oppId);
+
+    const body = await getBreakdown();
+    // Only the indirect 300 is added to the open ask.
+    expect(Number(body.revenue.openPipeline.totalAsk)).toBeCloseTo(askBefore + 300, 2);
+  });
+
+  it("cost-reimbursement pledge: full payment does NOT complete; close-award does (Task #788)", async () => {
+    // A cost-reimbursement pledge whose FULL ceiling (direct + indirect) is
+    // paid must NOT derive to cash_in — reimbursement awards complete only via
+    // the explicit close-award action (award_closed_at). The share tag is
+    // still irrelevant to derivation.
     const oppId = nextId("opp");
     await db.insert(schema.opportunitiesAndPledges).values({
       id: oppId,
       name: `RSH paid ${oppId}`,
       organizationId: ORG_ID,
       stage: "written_commitment",
-      conditional: "reimbursable",
+      disbursementModel: "cost_reimbursement",
       awardedAmount: "1500.00",
       writtenPledge: true,
     });
@@ -273,13 +325,31 @@ describe.skipIf(!HAS_DB)("reimbursable share — goal analytics exclusion", () =
 
     await applyDerivedOppFields(oppId);
 
-    const [row] = await db
+    let [row] = await db
+      .select()
+      .from(schema.opportunitiesAndPledges)
+      .where(eqFn(schema.opportunitiesAndPledges.id, oppId));
+    // Paid >= ceiling NEVER completes a cost-reimbursement award.
+    expect(row?.status).toBe("pledge");
+    // A won row's funnel stage always reads 'complete' (deriveOppFields);
+    // the derived STATUS stays 'pledge' until the award is closed.
+    expect(row?.stage).toBe("complete");
+
+    // Explicit close-award (the only completion path for cost_reimbursement).
+    await db
+      .update(schema.opportunitiesAndPledges)
+      .set({
+        awardClosedAt: new Date().toISOString(),
+        awardCloseReason: "award_period_ended",
+      })
+      .where(eqFn(schema.opportunitiesAndPledges.id, oppId));
+    await applyDerivedOppFields(oppId);
+
+    [row] = await db
       .select()
       .from(schema.opportunitiesAndPledges)
       .where(eqFn(schema.opportunitiesAndPledges.id, oppId));
     expect(row?.status).toBe("cash_in");
-    // A won row's funnel stage always reads 'complete' (deriveOppFields);
-    // 'cash_in' is the derived STATUS, not a funnel stage.
     expect(row?.stage).toBe("complete");
   });
 });

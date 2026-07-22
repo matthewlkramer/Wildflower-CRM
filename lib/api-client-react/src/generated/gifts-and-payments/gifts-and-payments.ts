@@ -156,7 +156,7 @@ export const createGiftOrPayment = async (createGiftOrPaymentBody: CreateGiftOrP
 
 
 
-export const getCreateGiftOrPaymentMutationOptions = <TError = ErrorType<BadRequestResponse>,
+export const getCreateGiftOrPaymentMutationOptions = <TError = ErrorType<BadRequestResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftOrPayment>>, TError,{data: BodyType<CreateGiftOrPaymentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createGiftOrPayment>>, TError,{data: BodyType<CreateGiftOrPaymentBody>}, TContext> => {
 
@@ -185,9 +185,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateGiftOrPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof createGiftOrPayment>>>
     export type CreateGiftOrPaymentMutationBody = BodyType<CreateGiftOrPaymentBody>
-    export type CreateGiftOrPaymentMutationError = ErrorType<BadRequestResponse>
+    export type CreateGiftOrPaymentMutationError = ErrorType<BadRequestResponse | void>
 
-    export const useCreateGiftOrPayment = <TError = ErrorType<BadRequestResponse>,
+    export const useCreateGiftOrPayment = <TError = ErrorType<BadRequestResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftOrPayment>>, TError,{data: BodyType<CreateGiftOrPaymentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createGiftOrPayment>>,
@@ -289,7 +289,7 @@ export const updateGiftOrPayment = async (id: string,
 
 
 
-export const getUpdateGiftOrPaymentMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+export const getUpdateGiftOrPaymentMutationOptions = <TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateGiftOrPayment>>, TError,{id: string;data: BodyType<UpdateGiftOrPaymentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateGiftOrPayment>>, TError,{id: string;data: BodyType<UpdateGiftOrPaymentBody>}, TContext> => {
 
@@ -318,9 +318,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateGiftOrPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof updateGiftOrPayment>>>
     export type UpdateGiftOrPaymentMutationBody = BodyType<UpdateGiftOrPaymentBody>
-    export type UpdateGiftOrPaymentMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+    export type UpdateGiftOrPaymentMutationError = ErrorType<BadRequestResponse | void | NotFoundResponse>
 
-    export const useUpdateGiftOrPayment = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    export const useUpdateGiftOrPayment = <TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateGiftOrPayment>>, TError,{id: string;data: BodyType<UpdateGiftOrPaymentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateGiftOrPayment>>,

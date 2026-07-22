@@ -103,10 +103,12 @@ const RESTRICTION_AXIS_HINT =
   "Set each axis independently. Donor-restricted means the funder formally imposed it (a true restriction); WF board-designated is an internal designation that still counts as unrestricted for accounting.";
 
 // Per-allocation grant condition + whether the conditions have been met.
+// Task #788: `reimbursable` is no longer offered — cost-reimbursement is now a
+// header-level disbursement model, not an allocation condition. Legacy rows
+// still carrying the value render read-only via formatEnum.
 const CONDITIONAL_OPTIONS: ReadonlyArray<Option> = [
   { value: "unconditional", label: "Unconditional" },
   { value: "conditional_unspecified", label: "Conditional (unspecified)" },
-  { value: "reimbursable", label: "Reimbursable" },
   { value: "conditional_on_funder_determination", label: "Conditional on funder determination" },
   { value: "conditional_on_target", label: "Conditional on target / match" },
 ];
@@ -541,7 +543,9 @@ function AllocationTable({
 }
 
 const PLEDGE_HEADERS = [
-  { key: "amount", label: "Amount", align: "right" as const },
+  { key: "amount", label: "Planned", align: "right" as const },
+  { key: "actual", label: "Actual", align: "right" as const },
+  { key: "remaining", label: "Remaining", align: "right" as const },
   { key: "pct", label: "%", align: "right" as const },
   { key: "fund", label: "Fund" },
   { key: "usage", label: "Usage" },
@@ -608,7 +612,6 @@ type PledgeFormState = RestrictionAxisState & {
   entityId: string;
   intendedUsage: string;
   grantYear: string;
-  expectedPaymentDate: string;
   regionIds: string[];
   reimbursementType: string;
   conditional: string;
@@ -634,7 +637,6 @@ export function pledgeStateFrom(a: PledgeAllocation | null, defaults?: Allocatio
     entityId: a?.entityId ?? "",
     intendedUsage: a?.intendedUsage ?? (isNew ? "gen_ops" : ""),
     grantYear: a?.grantYear ?? (isNew ? (defaults?.currentFiscalYearId ?? "") : ""),
-    expectedPaymentDate: a?.expectedPaymentDate ?? "",
     regionIds: a?.regionIds ?? [],
     reimbursementType: a?.reimbursementType ?? "",
     conditional: a?.conditional ?? "",
@@ -703,11 +705,22 @@ function PledgeAllocationDialog({
         entityId: noneToNull(s.entityId),
         intendedUsage: (noneToNull(s.intendedUsage) as IntendedUsage | null) ?? null,
         grantYear: noneToNull(s.grantYear),
-        expectedPaymentDate: emptyToNull(s.expectedPaymentDate),
         regionIds: s.regionIds,
         ...axes,
         reimbursementType: (noneToNull(s.reimbursementType) as ReimbursementType | null) ?? null,
-        conditional: (noneToNull(s.conditional) as OpportunityConditional | null) ?? null,
+        // `reimbursable` is retired as an input (Task #788): the API rejects
+        // new writes of it. If this historical row still carries it, OMIT the
+        // field so the stored value stays untouched instead of being echoed
+        // back (which would 400) or silently nulled.
+        ...(s.conditional === "reimbursable"
+          ? {}
+          : {
+              conditional:
+                (noneToNull(s.conditional) as Exclude<
+                  OpportunityConditional,
+                  "reimbursable"
+                > | null) ?? null,
+            }),
         conditionsMet: s.conditionsMet as OpportunityConditionsMet,
         status: (noneToNull(s.status) as PledgeAllocationStatus | null) ?? null,
         fundableProjectId: noneToNull(s.fundableProjectId),
@@ -731,10 +744,10 @@ function PledgeAllocationDialog({
     if (noneToNull(s.entityId)) body.entityId = s.entityId;
     if (noneToNull(s.intendedUsage)) body.intendedUsage = s.intendedUsage as IntendedUsage;
     if (noneToNull(s.grantYear)) body.grantYear = s.grantYear;
-    if (emptyToNull(s.expectedPaymentDate)) body.expectedPaymentDate = s.expectedPaymentDate;
     if (s.regionIds.length) body.regionIds = s.regionIds;
     if (noneToNull(s.reimbursementType)) body.reimbursementType = s.reimbursementType as ReimbursementType;
-    if (noneToNull(s.conditional)) body.conditional = s.conditional as OpportunityConditional;
+    if (noneToNull(s.conditional) && s.conditional !== "reimbursable")
+      body.conditional = s.conditional as Exclude<OpportunityConditional, "reimbursable">;
     if (noneToNull(s.status)) body.status = s.status as PledgeAllocationStatus;
     if (noneToNull(s.fundableProjectId)) body.fundableProjectId = s.fundableProjectId;
     if (emptyToNull(s.schoolRecipientId)) body.schoolRecipientId = s.schoolRecipientId.trim();
@@ -808,19 +821,6 @@ function PledgeAllocationDialog({
               onValueChange={(v) => set("grantYear", v)}
               options={fiscalYearOptions}
             />
-          </DialogField>
-          <DialogField label="Expected payment" htmlFor="pa-expected">
-            <Input
-              id="pa-expected"
-              type="date"
-              className="h-8 text-sm"
-              value={s.expectedPaymentDate}
-              onChange={(e) => set("expectedPaymentDate", e.target.value)}
-              data-testid="input-pa-expected-date"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              When this payment is expected. Allocations sharing a date roll up into one expected payment.
-            </p>
           </DialogField>
           <DialogField label="Regions" htmlFor="pa-regions">
             <RegionMultiCombobox
@@ -1123,6 +1123,28 @@ export function PledgeAllocationsEditor({
                 <TableCell className="text-right font-medium whitespace-nowrap">
                   {formatCurrency(a.subAmount)}
                 </TableCell>
+                <TableCell
+                  className="text-right whitespace-nowrap"
+                  data-testid={`text-opp-alloc-${a.id}-actual`}
+                  title={
+                    (a.varianceReasons?.length ?? 0) > 0
+                      ? `Variance: ${(a.varianceReasons ?? []).join("; ")}`
+                      : undefined
+                  }
+                >
+                  {a.actualAllocatedAmount == null ? "—" : formatCurrency(a.actualAllocatedAmount)}
+                  {(a.varianceReasons?.length ?? 0) > 0 ? (
+                    <span className="ml-1 text-amber-600" aria-label="Deliberate variance recorded">
+                      *
+                    </span>
+                  ) : null}
+                </TableCell>
+                <TableCell
+                  className="text-right text-muted-foreground whitespace-nowrap"
+                  data-testid={`text-opp-alloc-${a.id}-remaining`}
+                >
+                  {a.remainingPlannedAmount == null ? "—" : formatCurrency(a.remainingPlannedAmount)}
+                </TableCell>
                 <TableCell className="text-right text-muted-foreground whitespace-nowrap">
                   {amt == null ? "—" : pctLabel(amt, total)}
                 </TableCell>
@@ -1192,6 +1214,7 @@ type GiftFormState = RestrictionAxisState & {
   schoolRecipientId: string;
   spendingStart: string;
   spendingEnd: string;
+  varianceReason: string;
 };
 
 export function giftStateFrom(a: GiftAllocation | null, defaults?: AllocationDefaults): GiftFormState {
@@ -1209,6 +1232,7 @@ export function giftStateFrom(a: GiftAllocation | null, defaults?: AllocationDef
     schoolRecipientId: a?.schoolRecipientId ?? "",
     spendingStart: a?.spendingStart ?? "",
     spendingEnd: a?.spendingEnd ?? "",
+    varianceReason: a?.varianceReason ?? "",
   };
 }
 
@@ -1276,6 +1300,7 @@ function GiftAllocationDialog({
         spendingEnd: emptyToNull(s.spendingEnd),
         purposeVerbatim: emptyToNull(s.purposeVerbatim),
         restrictionDescription: emptyToNull(s.restrictionDescription),
+        varianceReason: emptyToNull(s.varianceReason),
       };
       return body;
     }
@@ -1295,6 +1320,7 @@ function GiftAllocationDialog({
     if (emptyToNull(s.spendingEnd)) body.spendingEnd = s.spendingEnd;
     if (emptyToNull(s.purposeVerbatim)) body.purposeVerbatim = s.purposeVerbatim.trim();
     if (emptyToNull(s.restrictionDescription)) body.restrictionDescription = s.restrictionDescription.trim();
+    if (emptyToNull(s.varianceReason)) body.varianceReason = s.varianceReason.trim();
     return body;
   }
 
@@ -1427,6 +1453,23 @@ function GiftAllocationDialog({
                 onChange={(e) => set("spendingEnd", e.target.value)}
               />
             </DialogField>
+            {initial?.sourcePledgeAllocationId ? (
+              <DialogField label="Variance reason" htmlFor="ga-variance">
+                <Input
+                  id="ga-variance"
+                  className="h-8 text-sm"
+                  value={s.varianceReason}
+                  onChange={(e) => set("varianceReason", e.target.value)}
+                  placeholder="Why actuals deliberately differ from the pledge plan"
+                  data-testid="input-ga-variance-reason"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  This line was seeded from a pledge-plan allocation. If you changed
+                  it away from the plan on purpose, record why — it shows on the
+                  pledge's plan-vs-actual view.
+                </p>
+              </DialogField>
+            ) : null}
           </MoreDetails>
         </div>
         <DialogFooter className="sm:justify-between">

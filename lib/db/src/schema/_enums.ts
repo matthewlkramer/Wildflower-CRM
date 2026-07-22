@@ -250,6 +250,34 @@ export const restrictionAxisEnum = pgEnum("restriction_axis", [
   "unrestricted",
 ]);
 
+// ── Disbursement model (Task #788) ──────────────────────────────────────────
+// First-class split of the two funding instruments a pledge can be:
+//   fixed_commitment   — "org X will pay N installments on these dates". Cash
+//                        forecast + overdue nagging run off the explicit
+//                        pledge_expected_payments installment schedule; the
+//                        pledge completes when paid >= awarded.
+//   cost_reimbursement — "a $X ceiling we draw down as we spend". Annual pledge
+//                        allocations ARE the forecast (fiscal-year grain), no
+//                        installments required, overdue nagging suppressed;
+//                        completes ONLY via an explicit Close-award action
+//                        (award_closed_at + award_close_reason) — paid >=
+//                        ceiling alone never completes it.
+// Replaces the retired conditional='reimbursable' signal (data migrated off it;
+// the pg enum value itself is dropped later as its own reviewed migration).
+export const disbursementModelEnum = pgEnum("disbursement_model", [
+  "fixed_commitment",
+  "cost_reimbursement",
+]);
+
+// Why a cost-reimbursement award was explicitly closed (the second user-set
+// lifecycle input alongside loss_type — see replit.md invariant #3).
+export const awardCloseReasonEnum = pgEnum("award_close_reason", [
+  "fully_collected",
+  "award_period_ended",
+  "unused_balance",
+  "terminated",
+]);
+
 export const opportunityConditionalEnum = pgEnum("opportunity_conditional", [
   "unconditional",
   "conditional_unspecified",

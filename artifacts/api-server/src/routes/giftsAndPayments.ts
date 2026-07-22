@@ -216,6 +216,7 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { deriveGiftQbTieLiveExpr, type GiftQbTie } from "../lib/giftQbTie";
+import { requireFinance } from "../lib/financeGuard";
 import { deriveGiftTypeExpr } from "../lib/giftTypeDerived";
 import { payoutStatusFromLink } from "../lib/settlementLink";
 import { absorbGiftEvidenceIntoSurvivor } from "../lib/giftCombine";
@@ -749,6 +750,21 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateGiftOrPaymentBodyRefined, req.body, res);
     if (!body) return;
+    // Evidence-only gift creation (Task #788): a manual gift pointed at ANY
+    // pledge/opportunity is blocked — money arriving in QuickBooks mints the
+    // gift via reconciliation, keeping payment evidence the sole source of
+    // pledge cash. The only escape hatch is the explicit off-books exception
+    // (money that never appears in QuickBooks), gated to finance/admin.
+    if (body.opportunityId) {
+      if (!body.offBooksException) {
+        return res.status(409).json({
+          error: "manual_gift_on_pledge_blocked",
+          message:
+            "Manual gift creation against a pledge is blocked — payments are minted from QuickBooks evidence via reconciliation. Use offBooksException=true (finance only) for money that never hits QuickBooks.",
+        });
+      }
+      if (!requireFinance(req, res)) return;
+    }
     // Freeze guard: refuse to create a gift dated into an audit-closed FY.
     const freeze = await resolveGiftFreeze(undefined, body.dateReceived);
     if (freeze.frozen) return respondFrozen(res, freeze);
@@ -766,6 +782,8 @@ router.post(
       otherRestrictionType: captureOtherRestrictionType,
       timeRestrictionType: captureTimeRestrictionType,
       grantYear: captureGrantYear,
+      // Request-level flag only (evidence-only escape hatch) — not a column.
+      offBooksException: _offBooksException,
       ...headerBody
     } = body;
     const [row] = await db.transaction(async (tx) => {
@@ -945,6 +963,26 @@ router.patch(
       .then((r) => r[0]);
     if (!existing) return notFound(res, "gift");
 
+    // Evidence-only enforcement also covers PATCH (Task #788): creating a
+    // manual gift WITHOUT a pledge link, then PATCHing opportunityId onto it,
+    // is the same bypass as manual creation against a pledge. Pointing the
+    // gift at a (new) pledge requires the same finance-gated off-books
+    // exception; clearing the link (null) is always allowed.
+    if (
+      body.opportunityId !== undefined &&
+      body.opportunityId != null &&
+      body.opportunityId !== existing.opportunityId
+    ) {
+      if (!body.offBooksException) {
+        return res.status(409).json({
+          error: "manual_gift_on_pledge_blocked",
+          message:
+            "Pointing a gift at a pledge is blocked — payments are minted from QuickBooks evidence via reconciliation. Use offBooksException=true (finance only) for money that never hits QuickBooks.",
+        });
+      }
+      if (!requireFinance(req, res)) return;
+    }
+
     // Validate merged post-update state so partial PATCHes can't bypass the
     // donor_xor DB CHECK and produce a 500.
     const merged = { ...existing, ...body };
@@ -960,11 +998,13 @@ router.patch(
     const freeze = await resolveGiftFreeze(existing.dateReceived, merged.dateReceived);
     if (freeze.frozen) return respondFrozen(res, freeze);
 
-    const giftWrite: typeof body & {
+    // Request-level flag only (evidence-only escape hatch) — not a column.
+    const { offBooksException: _patchOffBooksException, ...bodyColumns } = body;
+    const giftWrite: typeof bodyColumns & {
       loanOrGrant?: "loan" | "grant";
       grantLetterUploadedAt?: string | null;
       thankYouLetterUploadedAt?: string | null;
-    } = { ...body };
+    } = { ...bodyColumns };
     // Stamp the file-upload timestamps server-side: set to now when a URL is
     // provided, cleared to null when the URL is removed. Never client-settable.
     if (body.grantLetterUrl !== undefined) {

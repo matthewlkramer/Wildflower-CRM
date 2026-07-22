@@ -162,6 +162,7 @@ export const CreateGiftOrPaymentBody = zod.object({
   "householdId": zod.string().optional(),
   "loanOrGrant": zod.enum(['loan', 'grant']).optional().describe('The single authoritative loan-vs-grant classification. Gifts derive their\nflag from `type` (\'loan_fund_investment\' → loan) because the gift type IS\nthe user input. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n'),
   "opportunityId": zod.string().optional(),
+  "offBooksException": zod.boolean().optional().describe('Explicit off-books exception: allows a manual gift with opportunityId for money that never appears in QuickBooks. Finance\/admin only.'),
   "advisorPersonId": zod.string().optional(),
   "grantYear": zod.string().optional(),
   "giftBeingMatchedId": zod.string().optional(),
@@ -294,6 +295,8 @@ export const GetGiftOrPaymentResponse = zod.object({
   "displayUsage": zod.string().nullish().describe('Server-computed human-readable usage label (school name | usage label | usage + \' - \' + region names). Maintained by DB triggers; read-only.'),
   "purposeVerbatim": zod.string().nullish().describe('Exact restriction source language only (grant letter \/ Donorbox designation \/ check memo). Plain-language summaries belong in restrictionDescription.'),
   "restrictionDescription": zod.string().nullish().describe('Optional plain-language summary of the restriction (e.g. \'grants to schools only\'). Never affects revenue coding.'),
+  "sourcePledgeAllocationId": zod.string().nullish().describe('Provenance (Task #788): the pledge allocation this gift allocation was seeded from by the evidence-mint remaining-plan seeding. Stamped server-side only, never client-writable; null for allocations not seeded from a pledge plan. Set-null on pledge-allocation delete. Gift allocations stay independently editable — a later pledge-plan revision never rewrites them.'),
+  "varianceReason": zod.string().nullish().describe('Free-text reason recorded when the actual allocation was deliberately changed from the seeded pledge plan (plan-vs-actual variance display).'),
   "reimbursableShare": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)').nullish().describe('@deprecated — renamed to reimbursementType.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -326,6 +329,7 @@ export const UpdateGiftOrPaymentBody = zod.object({
   "householdId": zod.string().nullish(),
   "loanOrGrant": zod.enum(['loan', 'grant']).optional().describe('The single authoritative loan-vs-grant classification. Gifts derive their\nflag from `type` (\'loan_fund_investment\' → loan) because the gift type IS\nthe user input. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n'),
   "opportunityId": zod.string().nullish(),
+  "offBooksException": zod.boolean().optional().describe('Explicit off-books exception: allows re-pointing this gift at a pledge\/opportunity for money that never appears in QuickBooks. Finance\/admin only. Request-level flag; never persisted.'),
   "advisorPersonId": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
   "primaryContactPersonId": zod.string().nullish(),
@@ -569,6 +573,8 @@ export const LinkThankYouEmailResponse = zod.object({
   "displayUsage": zod.string().nullish().describe('Server-computed human-readable usage label (school name | usage label | usage + \' - \' + region names). Maintained by DB triggers; read-only.'),
   "purposeVerbatim": zod.string().nullish().describe('Exact restriction source language only (grant letter \/ Donorbox designation \/ check memo). Plain-language summaries belong in restrictionDescription.'),
   "restrictionDescription": zod.string().nullish().describe('Optional plain-language summary of the restriction (e.g. \'grants to schools only\'). Never affects revenue coding.'),
+  "sourcePledgeAllocationId": zod.string().nullish().describe('Provenance (Task #788): the pledge allocation this gift allocation was seeded from by the evidence-mint remaining-plan seeding. Stamped server-side only, never client-writable; null for allocations not seeded from a pledge plan. Set-null on pledge-allocation delete. Gift allocations stay independently editable — a later pledge-plan revision never rewrites them.'),
+  "varianceReason": zod.string().nullish().describe('Free-text reason recorded when the actual allocation was deliberately changed from the seeded pledge plan (plan-vs-actual variance display).'),
   "reimbursableShare": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)').nullish().describe('@deprecated — renamed to reimbursementType.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})

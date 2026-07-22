@@ -2,7 +2,6 @@ import { db } from "@workspace/db";
 import {
   giftsAndPayments,
   opportunitiesAndPledges,
-  pledgeAllocations,
 } from "@workspace/db/schema";
 import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 import {
@@ -20,15 +19,19 @@ import {
 // user is nudged to book the real reimbursement checks instead.
 
 /**
- * EXISTS a reimbursable pledge allocation for the given opportunity. `oppIdSql`
+ * True when the given opportunity is a COST-REIMBURSEMENT pledge. `oppIdSql`
  * is a pre-qualified SQL expression for the opportunity id in the caller's
  * query (e.g. `sql`${opportunitiesAndPledges.id}`` or `sql`o.id``).
+ *
+ * Task #788: keys off the authoritative header `disbursement_model` (the
+ * legacy per-allocation conditional='reimbursable' signal is retired; data was
+ * migrated by 0151).
  */
 export function reimbursablePledgeExistsSql(oppIdSql: SQL): SQL<boolean> {
   return sql<boolean>`EXISTS (
-    SELECT 1 FROM ${pledgeAllocations} pa
-    WHERE pa.pledge_or_opportunity_id = ${oppIdSql}
-      AND pa.conditional = 'reimbursable'
+    SELECT 1 FROM ${opportunitiesAndPledges} o_dm
+    WHERE o_dm.id = ${oppIdSql}
+      AND o_dm.disbursement_model = 'cost_reimbursement'
   )`;
 }
 

@@ -1693,6 +1693,41 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RevenueCodingPreview" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  # ─── Pledge expected payments (installments, Task #788) ───────────────────
+  /pledge-expected-payments:
+    get:
+      operationId: listPledgeExpectedPayments
+      tags: [pledge-expected-payments]
+      parameters:
+        - { name: pledgeOrOpportunityId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PledgeExpectedPaymentList" } } } }
+    post:
+      operationId: createPledgeExpectedPayment
+      tags: [pledge-expected-payments]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreatePledgeExpectedPaymentBody" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/PledgeExpectedPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /pledge-expected-payments/{id}:
+    patch:
+      operationId: updatePledgeExpectedPayment
+      tags: [pledge-expected-payments]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdatePledgeExpectedPaymentBody" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PledgeExpectedPayment" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deletePledgeExpectedPayment
+      tags: [pledge-expected-payments]
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses: { "204": { description: Deleted } }
+
   # ─── Gifts & payments ──────────────────────────────────────────────────────
   /gifts-and-payments:
     get:
@@ -1834,6 +1869,8 @@ paths:
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPayment" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: "finance_role_required — offBooksException requires the finance (or admin) role." }
+        "409": { description: "manual_gift_on_pledge_blocked — manual gift creation against a pledge/opportunity is evidence-only (Task #788); money arriving in QuickBooks mints the gift via reconciliation. Pass offBooksException=true (finance-permitted) for money that never hits QuickBooks." }
   /gifts-and-payments/{id}:
     get:
       operationId: getGiftOrPayment
@@ -1850,7 +1887,9 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPayment" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: "finance_role_required — offBooksException requires the finance (or admin) role." }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "manual_gift_on_pledge_blocked — pointing an existing gift at a pledge/opportunity via PATCH is evidence-only (Task #788), the same policy as manual creation. Pass offBooksException=true (finance-permitted) for money that never hits QuickBooks. Clearing the link (null) is always allowed." }
   /gifts-and-payments/{id}/candidate-thank-you-emails:
     get:
       operationId: listCandidateThankYouEmails
@@ -4013,6 +4052,48 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Cannot write off: not a written pledge, no remaining balance (net of active write-offs), amount over the cap, governing FY not audit-closed, an EDITABLE active write-off already exists (error 'editable_write_off_exists', details.writeOffPledgeId = the child to edit), or no open fiscal year." }
+  /opportunities-and-pledges/{id}/close-award:
+    post:
+      operationId: closeAward
+      tags: [opportunities-and-pledges]
+      summary: "Explicitly close a cost-reimbursement award (finance-permitted)."
+      description: |
+        The ONLY way a cost-reimbursement pledge completes — paid >= ceiling
+        never completes it automatically. Stamps award_closed_at + reason and
+        re-derives status (a closed award derives cash_in and leaves the active
+        forecast); the ceiling and all actual payment history are preserved.
+
+        Closing requires the remaining projected plan to be resolved first: if
+        any allocation's fiscal-year plan still projects uncollected money
+        (plannedCollectionAmount > paid), the caller must first revise the plan
+        (reduce/remove remaining allocations); otherwise this returns 409
+        'unresolved_projected_allocations' with the remaining amount in
+        details. Requires the finance (or admin) role — 403
+        'finance_role_required' otherwise. 409 'not_cost_reimbursement' on a
+        fixed-commitment pledge; 409 'award_already_closed' when already closed.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CloseAwardBody" } } } }
+      responses:
+        "200": { description: "OK — the updated pledge.", content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: "finance_role_required" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "not_cost_reimbursement, award_already_closed, or unresolved_projected_allocations (details.remainingProjected = the projected amount still uncollected)." }
+  /opportunities-and-pledges/{id}/reopen-award:
+    post:
+      operationId: reopenAward
+      tags: [opportunities-and-pledges]
+      summary: "Reopen a closed cost-reimbursement award (finance-permitted)."
+      description: |
+        Clears award_closed_at + award_close_reason and re-derives status, so
+        the award returns to the active forecast. Finance (or admin) role
+        required. 409 'award_not_closed' when the award is not closed.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: "OK — the updated pledge.", content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
+        "403": { description: "finance_role_required" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "award_not_closed" }
   /opportunities-and-pledges/{id}/mint-gift:
     post:
       operationId: mintGiftFromOpportunity
@@ -4041,7 +4122,7 @@ paths:
         "201": { description: "Created — the new gift.", content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPayment" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "Cannot mint: the opportunity has no single donor, or is itself a write-off." }
+        "409": { description: "Cannot mint: the opportunity is itself a write-off, or `manual_gift_on_pledge_blocked` — evidence-only gift creation (Task #788) blocks manual minting unless the finance-gated `offBooksException` flag is sent." }
   /gifts-and-payments/{id}/resolve-overpay:
     post:
       operationId: resolveGiftOverpay
@@ -5106,7 +5187,36 @@ components:
         DEPRECATED (retained for historical rows, never written going forward):
         conditional_commitment, written_commitment, cash_in — the commitment
         outcome now lives on the writtenPledge flag, not the stage.
+    # `reimbursable` is RETIRED as an input (Task #788) — the disbursement-model
+    # split (DisbursementModel) replaced it. It remains in the enum only so
+    # historical rows still parse; the API rejects new writes of it and the UI
+    # no longer offers it. The pg enum value drop ships later as its own
+    # reviewed migration.
     OpportunityConditional: { type: string, enum: [unconditional, conditional_unspecified, reimbursable, conditional_on_funder_determination, conditional_on_target] }
+    # Write-side variant: `reimbursable` is not accepted on new writes (Task
+    # #788) — use disbursementModel='cost_reimbursement' on the pledge header
+    # instead. Historical rows still read back via OpportunityConditional.
+    OpportunityConditionalWritable: { type: string, enum: [unconditional, conditional_unspecified, conditional_on_funder_determination, conditional_on_target] }
+    DisbursementModel:
+      type: string
+      enum: [fixed_commitment, cost_reimbursement]
+      description: |
+        How a pledge's money is disbursed (Task #788). fixed_commitment: the
+        funder pays N installments on known dates — the explicit installment
+        schedule (pledge_expected_payments) is the cash forecast and the pledge
+        completes when paid >= awarded. cost_reimbursement: the award is a
+        CEILING drawn down as costs are incurred — annual pledge allocations
+        are the forecast (fiscal-year grain), no installments required, overdue
+        nagging is suppressed, and the pledge completes ONLY via the explicit
+        Close-award action (never by paid >= ceiling alone). Replaces the
+        retired conditional='reimbursable' signal.
+    AwardCloseReason:
+      type: string
+      enum: [fully_collected, award_period_ended, unused_balance, terminated]
+      description: |
+        Why a cost-reimbursement award was explicitly closed. Captured by the
+        finance-permitted Close-award action alongside the close date — the
+        second user-set lifecycle input alongside lossType.
     OpportunityConditionsMet:
       type: string
       enum: [no, partial, yes]
@@ -6398,8 +6508,11 @@ components:
         organizationId:                   { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
         loanOrGrant:                { allOf: [ { $ref: "#/components/schemas/LoanOrGrant" } ], description: "Authoritative loan-vs-grant classification. User-settable on create/update; defaults to 'grant'. Analytics, goals, and revenue coding all read from this." }
+        disbursementModel:          { allOf: [ { $ref: "#/components/schemas/DisbursementModel" } ], description: "How the money is disbursed. User-settable on create/update; defaults to 'fixed_commitment'. Drives cash forecasting (installments vs annual allocations), overdue nagging, completion semantics, and win-probability weighting." }
+        awardClosedAt:              { type: string, format: date, nullable: true, readOnly: true, description: "Explicit award-closure date on a cost-reimbursement pledge — set ONLY via the POST /opportunities-and-pledges/{id}/close-award action (finance-permitted), never via PATCH. Non-null = the award is closed and derives status cash_in regardless of paid vs ceiling." }
+        awardCloseReason:           { allOf: [ { $ref: "#/components/schemas/AwardCloseReason" } ], nullable: true, readOnly: true, description: "Why the award was closed. Set/cleared together with awardClosedAt by the close-award / reopen-award actions." }
         askAmount:                  { type: string, nullable: true }
-        awardedAmount:              { type: string, nullable: true }
+        awardedAmount:              { type: string, nullable: true, description: "Fixed commitment: the legal commitment amount (completion target). Cost reimbursement: the award CEILING (informational cap — allocations need not sum to it and reaching it never completes the award)." }
         # Server-computed: SUM(gifts_and_payments.amount) for payments
         # whose opportunity_id = this opp. "0" when no payments
         # exist. Primarily meaningful for pledges (status='won') so the
@@ -6487,7 +6600,15 @@ components:
           required: [auditClose]
           properties:
             allocations: { type: array, items: { $ref: "#/components/schemas/PledgeAllocation" } }
+            expectedPayments: { type: array, items: { $ref: "#/components/schemas/PledgeExpectedPayment" }, description: "The pledge's installment schedule (fixed-commitment cash plan), sorted by expectedDate ascending. Normally empty for cost-reimbursement pledges." }
             payments:    { type: array, items: { $ref: "#/components/schemas/GiftOrPayment" } }
+            # ── Derived planning/forecast values (Task #788) — read-time only,
+            # no stored columns (one authority per derived fact).
+            plannedCollectionAmount: { type: string, readOnly: true, description: "SUM(sub_amount) across the pledge's allocations — the total the team currently plans to collect. For cost-reimbursement pledges this (not the ceiling) is the forecast. '0' when no allocations." }
+            plannedGoalCreditAmount: { type: string, readOnly: true, description: "SUM(sub_amount) across allocations that count toward the fundraising goal. direct-tagged allocations are always excluded; on a COST-REIMBURSEMENT pledge an allocation with NULL reimbursementType is treated as un-planned (excluded here and surfaced as a planning gap) rather than counted by default; on fixed commitments untagged allocations keep counting." }
+            unplannedAwardCapacity:  { type: string, nullable: true, readOnly: true, description: "Cost-reimbursement only (null otherwise): awardedAmount (ceiling) minus plannedCollectionAmount, clamped at 0. INFORMATIONAL ONLY — never a drawdown balance, never spawns tasks or workflow." }
+            planningComplete:        { type: boolean, readOnly: true, description: "Post-win planning-completeness signal (guidance badge, never a write block). Fixed commitment: allocations exist AND an installment schedule is entered. Cost reimbursement: allocations exist AND every allocation has fiscal year, amount, reimbursementType, recipient entity, and intended use set (a project-tagged use also needs its fundable project; the restriction axes are NOT NULL with defaults, so they are always coded). Always true for un-won records." }
+            planningGaps:            { type: array, items: { type: string }, readOnly: true, description: "Human-readable list of the specific gaps behind planningComplete=false (empty when complete)." }
             auditClose:  { $ref: "#/components/schemas/PledgeAuditCloseResolution" }
             flaggedForResearch: { type: boolean, readOnly: true, description: "Derived (never persisted): true when an OPEN Cleanup Queue item with reason_code='needs_research' targets this record. Drives the passive 'Needs research' detail-page badge; set only via the Cleanup Queue, never writable here." }
     PledgeAuditCloseResolution:
@@ -6528,6 +6649,7 @@ components:
         organizationId:                   { type: string }
         householdId:                { type: string }
         loanOrGrant:                { allOf: [ { $ref: "#/components/schemas/LoanOrGrant" } ], description: "Authoritative loan-vs-grant classification. Omitted → 'grant'." }
+        disbursementModel:          { allOf: [ { $ref: "#/components/schemas/DisbursementModel" } ], description: "Omitted → 'fixed_commitment'." }
         askAmount:                  { type: string }
         awardedAmount:              { type: string }
         type:                       { $ref: "#/components/schemas/OpportunityType" }
@@ -6557,6 +6679,7 @@ components:
         organizationId:                   { type: string, nullable: true }
         householdId:                { type: string, nullable: true }
         loanOrGrant:                { allOf: [ { $ref: "#/components/schemas/LoanOrGrant" } ], description: "Authoritative loan-vs-grant classification (not nullable — every opportunity is exactly one of the two)." }
+        disbursementModel:          { allOf: [ { $ref: "#/components/schemas/DisbursementModel" } ], description: "Not nullable — every pledge is exactly one of the two models. Switching model does NOT touch allocations or installments; award closure fields are cleared server-side when switching away from cost_reimbursement." }
         askAmount:                  { type: string, nullable: true }
         awardedAmount:              { type: string, nullable: true }
         type:                       { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
@@ -6603,7 +6726,11 @@ components:
         status:                 { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
         contingent:             { type: boolean, description: "Scheduled (false) vs contingent (true) future payment." }
         conditions:             { type: string, nullable: true, description: "Free-text grant conditions for this allocation (moved off the opportunity header in Task #449)." }
-        expectedPaymentDate:    { type: string, format: date, nullable: true, description: "Date this allocation's payment is expected. Per-row (a grant year may hold multiple payments); allocations sharing a date roll up into one expected payment. Drives overdue detection. Null = unscheduled." }
+        # @deprecated (Task #788) — installment scheduling moved to the dedicated
+        # pledge_expected_payments table (PledgeExpectedPayment). Retained
+        # read-only for back-compat; no longer written or read for overdue /
+        # forecasting / matching. Existing values were seeded into installments.
+        expectedPaymentDate:    { type: string, format: date, nullable: true, readOnly: true, deprecated: true, description: "@deprecated — superseded by the pledge's installment schedule (PledgeExpectedPayment). No longer written." }
         notes:                  { type: string, nullable: true }
         regionIds:              { type: array, items: { type: string }, nullable: true }
         purposeVerbatim:        { type: string, nullable: true, description: "Exact restriction source language only (grant letter / Donorbox designation / check memo). Plain-language summaries belong in restrictionDescription." }
@@ -6611,6 +6738,13 @@ components:
         # @deprecated (Task #449) — superseded by reimbursementType. Spec-only
         # alias; the backing column was renamed, not retained. Read-only.
         reimbursableShare:      { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true, deprecated: true, description: "@deprecated — renamed to reimbursementType." }
+        # Plan-vs-actual derivations (Task #788) — populated ONLY on the pledge
+        # detail response (GET /opportunities-and-pledges/{id}); derived at read
+        # time from live gift allocations stamped with this line's id via
+        # source_pledge_allocation_id (archived gifts excluded). Never persisted.
+        actualAllocatedAmount:  { type: string, nullable: true, readOnly: true, description: "Plan-vs-actual (Task #788, pledge detail only): SUM of live gift-allocation amounts seeded from this pledge-allocation line (source_pledge_allocation_id provenance; archived gifts excluded). Null when not derived (list endpoints)." }
+        remainingPlannedAmount: { type: string, nullable: true, readOnly: true, description: "Plan-vs-actual (Task #788, pledge detail only): this line's planned subAmount minus actualAllocatedAmount, clamped at 0. Null when not derived or the line has no planned amount." }
+        varianceReasons:        { type: array, items: { type: string }, readOnly: true, description: "Plan-vs-actual (Task #788, pledge detail only): variance_reason texts recorded on the live gift allocations seeded from this line (deliberate deviations from plan). Empty when none or not derived." }
         createdAt:              { type: string, format: date-time }
         updatedAt:              { type: string, format: date-time }
     PledgeAllocationList:
@@ -6634,12 +6768,11 @@ components:
         otherRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
         timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
         reimbursementType:     { $ref: "#/components/schemas/ReimbursementType" }
-        conditional:           { $ref: "#/components/schemas/OpportunityConditional" }
+        conditional:           { $ref: "#/components/schemas/OpportunityConditionalWritable" }
         conditionsMet:         { $ref: "#/components/schemas/OpportunityConditionsMet" }
         status:                { $ref: "#/components/schemas/PledgeAllocationStatus" }
         contingent:            { type: boolean }
         conditions:            { type: string }
-        expectedPaymentDate:   { type: string, format: date }
         notes:                 { type: string }
         regionIds:             { type: array, items: { type: string } }
         purposeVerbatim:       { type: string }
@@ -6659,16 +6792,63 @@ components:
         otherRestrictionType:    { $ref: "#/components/schemas/RestrictionAxis" }
         timeRestrictionType:     { $ref: "#/components/schemas/RestrictionAxis" }
         reimbursementType:     { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true }
-        conditional:           { allOf: [ { $ref: "#/components/schemas/OpportunityConditional" } ], nullable: true }
+        conditional:           { allOf: [ { $ref: "#/components/schemas/OpportunityConditionalWritable" } ], nullable: true }
         conditionsMet:         { $ref: "#/components/schemas/OpportunityConditionsMet" }
         status:                { allOf: [ { $ref: "#/components/schemas/PledgeAllocationStatus" } ], nullable: true }
         contingent:            { type: boolean }
         conditions:            { type: string, nullable: true }
-        expectedPaymentDate:   { type: string, format: date, nullable: true }
         notes:                 { type: string, nullable: true }
         regionIds:             { type: array, items: { type: string }, nullable: true }
         purposeVerbatim:       { type: string, nullable: true }
         restrictionDescription: { type: string, nullable: true }
+
+    # ─── Pledge expected payments (installments, Task #788) ───────────────────
+    PledgeExpectedPayment:
+      type: object
+      required: [id, pledgeOrOpportunityId, expectedDate, createdAt, updatedAt]
+      description: |
+        One expected installment on a FIXED-COMMITMENT pledge ("$250k due
+        2026-09-01"). The sole authority for installment scheduling — replaces
+        the deprecated per-allocation expectedPaymentDate convention. Pure
+        cash-timing plan (no scope): purpose/restriction/fiscal-year scope
+        stays on pledge allocations. Drives overdue detection, cash-timing
+        forecasts, and reconciliation match scoring for fixed commitments.
+        Cost-reimbursement pledges normally have none (optional row allowed
+        when a payment is known to be imminent).
+      properties:
+        id:                    { type: string }
+        pledgeOrOpportunityId: { type: string }
+        expectedDate:          { type: string, format: date }
+        amount:                { type: string, nullable: true, description: "Expected amount. Null = date known, amount TBD." }
+        notes:                 { type: string, nullable: true }
+        createdAt:             { type: string, format: date-time }
+        updatedAt:             { type: string, format: date-time }
+    PledgeExpectedPaymentList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:       { type: array, items: { $ref: "#/components/schemas/PledgeExpectedPayment" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    CreatePledgeExpectedPaymentBody:
+      type: object
+      required: [pledgeOrOpportunityId, expectedDate]
+      properties:
+        pledgeOrOpportunityId: { type: string }
+        expectedDate:          { type: string, format: date }
+        amount:                { type: string }
+        notes:                 { type: string }
+    UpdatePledgeExpectedPaymentBody:
+      type: object
+      properties:
+        expectedDate: { type: string, format: date }
+        amount:       { type: string, nullable: true }
+        notes:        { type: string, nullable: true }
+    CloseAwardBody:
+      type: object
+      required: [closedAt, reason]
+      properties:
+        closedAt: { type: string, format: date, description: "The award-closure date." }
+        reason:   { $ref: "#/components/schemas/AwardCloseReason" }
 
     # ─── Gifts & payments ──────────────────────────────────────────────────────
     GiftOrPayment:
@@ -6898,7 +7078,14 @@ components:
         individualGiverPersonId:    { type: string }
         householdId:                { type: string }
         loanOrGrant:                { $ref: "#/components/schemas/LoanOrGrant" }
+        # Evidence-only gift creation (Task #788): manual POST with an
+        # opportunityId is REJECTED with 409 'manual_gift_on_pledge_blocked' —
+        # gifts against pledges are minted from QuickBooks/Stripe evidence via
+        # the reconciliation paths. The one exception: money that never hits
+        # QuickBooks may be recorded manually by passing offBooksException=true
+        # (finance/admin role required — 403 'finance_role_required' otherwise).
         opportunityId:          { type: string }
+        offBooksException:          { type: boolean, description: "Explicit off-books exception: allows a manual gift with opportunityId for money that never appears in QuickBooks. Finance/admin only." }
         advisorPersonId:            { type: string }
         grantYear:                  { type: string }
         giftBeingMatchedId:         { type: string }
@@ -6939,6 +7126,11 @@ components:
         householdId:                { type: string, nullable: true }
         loanOrGrant:                { $ref: "#/components/schemas/LoanOrGrant" }
         opportunityId:          { type: string, nullable: true }
+        # Evidence-only enforcement also covers PATCH: pointing an existing gift
+        # AT a pledge (setting/changing opportunityId to a non-null value) is the
+        # same two-step bypass as manual creation and needs the same finance-gated
+        # off-books exception. Clearing the link (null) is always allowed.
+        offBooksException:          { type: boolean, description: "Explicit off-books exception: allows re-pointing this gift at a pledge/opportunity for money that never appears in QuickBooks. Finance/admin only. Request-level flag; never persisted." }
         advisorPersonId:            { type: string, nullable: true }
         giftBeingMatchedId:         { type: string, nullable: true }
         primaryContactPersonId:     { type: string, nullable: true }
@@ -9922,6 +10114,8 @@ components:
         displayUsage:                { type: string, nullable: true, readOnly: true, description: "Server-computed human-readable usage label (school name | usage label | usage + ' - ' + region names). Maintained by DB triggers; read-only." }
         purposeVerbatim:             { type: string, nullable: true, description: "Exact restriction source language only (grant letter / Donorbox designation / check memo). Plain-language summaries belong in restrictionDescription." }
         restrictionDescription:      { type: string, nullable: true, description: "Optional plain-language summary of the restriction (e.g. 'grants to schools only'). Never affects revenue coding." }
+        sourcePledgeAllocationId:    { type: string, nullable: true, readOnly: true, description: "Provenance (Task #788): the pledge allocation this gift allocation was seeded from by the evidence-mint remaining-plan seeding. Stamped server-side only, never client-writable; null for allocations not seeded from a pledge plan. Set-null on pledge-allocation delete. Gift allocations stay independently editable — a later pledge-plan revision never rewrites them." }
+        varianceReason:              { type: string, nullable: true, description: "Free-text reason recorded when the actual allocation was deliberately changed from the seeded pledge plan (plan-vs-actual variance display)." }
         # @deprecated (Task #449) — superseded by reimbursementType. Spec-only
         # alias; the backing column was renamed, not retained. Read-only.
         reimbursableShare:           { allOf: [ { $ref: "#/components/schemas/ReimbursementType" } ], nullable: true, deprecated: true, description: "@deprecated — renamed to reimbursementType." }
@@ -9953,6 +10147,7 @@ components:
         regionIds:                   { type: array, items: { type: string } }
         purposeVerbatim:             { type: string }
         restrictionDescription:      { type: string }
+        varianceReason:              { type: string }
     UpdateGiftAllocationBody:
       type: object
       properties:
@@ -9973,6 +10168,7 @@ components:
         regionIds:                   { type: array, items: { type: string }, nullable: true }
         purposeVerbatim:             { type: string, nullable: true }
         restrictionDescription:      { type: string, nullable: true }
+        varianceReason:              { type: string, nullable: true }
 
     # ─── Restriction text review (admin) ─────────────────────────────────────
     RestrictionTextReviewRow:
@@ -11195,6 +11391,7 @@ components:
       description: "Options for proactively minting a gift from an opportunity/pledge. All money/donor/scope is derived server-side from the opportunity; the client only chooses the settlement-expectation flavor."
       properties:
         awaitingSettlement: { type: boolean, description: "When true, stamp the minted gift `awaiting_settlement=true` (the 'won gift awaiting imminent payment' action) so it is not treated as a reconciliation error while it briefly has no cash tie. Defaults false (a plain 'won gift')." }
+        offBooksException: { type: boolean, description: "Evidence-only escape hatch (Task #788): manual minting of a gift from a pledge/opportunity is blocked (409 manual_gift_on_pledge_blocked) — pledge payments are minted from QuickBooks evidence via reconciliation. Set true (finance/admin only) to record money that will never appear in QuickBooks. Request-level flag only; never persisted." }
     ResolveGiftOverpayBody:
       type: object
       description: "Optional metadata for an audit-close gift over-payment resolution. The surplus amount is derived server-side from evidence precedence; the client never supplies amounts."

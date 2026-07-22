@@ -14,6 +14,9 @@ const base = {
   grantLetterUrl: null as string | null,
   awardedAmount: 1000,
   paidAmount: 0,
+  // Task #788: default = fixed_commitment (payment-driven completion).
+  disbursementModel: "fixed_commitment" as string | null,
+  awardClosedAt: null as string | Date | null,
 };
 
 describe("deriveOppFields", () => {
@@ -124,6 +127,68 @@ describe("deriveOppFields", () => {
       });
       expect(r.status).toBe("lost");
       expect(r.stage).toBe("verbal_confirmation");
+    });
+  });
+
+  describe("cost_reimbursement disbursement model (Task #788)", () => {
+    const cr = {
+      ...base,
+      disbursementModel: "cost_reimbursement" as string | null,
+      writtenPledge: true as boolean | null,
+    };
+    it("paid >= ceiling does NOT complete a cost-reimbursement award", () => {
+      const r = deriveOppFields({ ...cr, paidAmount: 1000 });
+      expect(r.status).toBe("pledge");
+      expect(r.stage).toBe("complete"); // won funnel stage, status stays pledge
+    });
+    it("overpaid still does NOT complete", () => {
+      const r = deriveOppFields({ ...cr, paidAmount: 5000 });
+      expect(r.status).toBe("pledge");
+    });
+    it("awardClosedAt set → status=cash_in even when under-collected", () => {
+      const r = deriveOppFields({
+        ...cr,
+        paidAmount: 200,
+        awardClosedAt: new Date("2026-07-01"),
+      });
+      expect(r.status).toBe("cash_in");
+      expect(r.stage).toBe("complete");
+    });
+    it("awardClosedAt set with ZERO ceiling still completes (closure is authoritative)", () => {
+      const r = deriveOppFields({
+        ...cr,
+        awardedAmount: 0,
+        awardClosedAt: new Date("2026-07-01"),
+      });
+      expect(r.status).toBe("cash_in");
+    });
+    it("lossType override still wins over a closed award", () => {
+      const r = deriveOppFields({
+        ...cr,
+        lossType: "lost",
+        awardClosedAt: new Date("2026-07-01"),
+      });
+      expect(r.status).toBe("lost");
+    });
+    it("fixed_commitment ignores awardClosedAt (payment-driven only)", () => {
+      const r = deriveOppFields({
+        ...base,
+        writtenPledge: true,
+        disbursementModel: "fixed_commitment",
+        awardClosedAt: new Date("2026-07-01"),
+        paidAmount: 0,
+      });
+      expect(r.status).toBe("pledge");
+    });
+    it("does NOT latch writtenPledge from a grant letter once the award is closed", () => {
+      const r = deriveOppFields({
+        ...cr,
+        writtenPledge: false,
+        grantLetterUrl: "/api/storage/objects/abc",
+        awardClosedAt: new Date("2026-07-01"),
+      });
+      expect(r.writtenPledge).toBe(false);
+      expect(r.status).toBe("cash_in");
     });
   });
 

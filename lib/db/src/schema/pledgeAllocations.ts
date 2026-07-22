@@ -80,11 +80,12 @@ export const pledgeAllocations = pgTable("pledge_allocations", {
   // allocation. The free-text `conditions` below describes the contingency.
   contingent: boolean("contingent").default(false).notNull(),
   conditions: text("conditions"),
-  // Per-row expected payment date (NOT tranched by grant year — a single fiscal
-  // year can hold multiple payments). Allocations sharing an
-  // expected_payment_date roll up into one "expected payment" with N
-  // allocations. Drives overdue detection on committed/partially-paid pledges.
-  // Nullable = unscheduled.
+  // @deprecated (Task #788) — installment scheduling moved to the dedicated
+  // pledge_expected_payments table (one row per expected installment on a
+  // fixed-commitment pledge). This column is retained read-only for back-compat
+  // and is NO LONGER written or read for overdue detection / cash forecasting /
+  // match scoring. Existing values were seeded into pledge_expected_payments by
+  // migration 0151. Do not add new readers or writers.
   expectedPaymentDate: date("expected_payment_date"),
   // ── Grant conditions, per-allocation (Task #449) ──────────────────────────
   // Moved down from the opportunity header (where money is actually booked per

@@ -87,6 +87,8 @@ async function checkOpportunities(): Promise<{
         awardedAmount: opportunitiesAndPledges.awardedAmount,
         paid: opportunitiesAndPledges.paid,
         winProbability: opportunitiesAndPledges.winProbability,
+        disbursementModel: opportunitiesAndPledges.disbursementModel,
+        awardClosedAt: opportunitiesAndPledges.awardClosedAt,
       })
       .from(opportunitiesAndPledges)
       .where(isNull(opportunitiesAndPledges.archivedAt)),
@@ -141,6 +143,8 @@ async function checkOpportunities(): Promise<{
       grantLetterUrl: row.grantLetterUrl,
       awardedAmount: row.awardedAmount,
       paidAmount: paid,
+      disbursementModel: row.disbursementModel,
+      awardClosedAt: row.awardClosedAt,
     });
 
     const push = (field: string, stored: string | null, want: string | null) =>

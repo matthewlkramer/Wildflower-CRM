@@ -140,7 +140,15 @@ beforeAll(async () => {
   });
 
   // Single scan — the assertions below all read the post-rematch state.
+  // `rematchStagedPayments` runs under the shared QuickBooks sync lock and
+  // no-ops (`ran: false`) when another suite in the parallel run happens to
+  // hold it at that instant. Retry with a short backoff until the lock is
+  // free — the assertions all require a scan that actually ran.
   summary = await rematchStagedPayments();
+  for (let attempt = 0; !summary.ran && attempt < 30; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    summary = await rematchStagedPayments();
+  }
 }, 120_000);
 
 afterAll(async () => {

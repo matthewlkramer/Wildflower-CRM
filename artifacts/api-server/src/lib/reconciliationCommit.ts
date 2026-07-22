@@ -33,6 +33,7 @@ import { applySettlementSupersedeMany } from "./settlementSupersede";
 import {
   seedInitialGiftAllocation,
   assertGiftHasAllocations,
+  fiscalYearSlugForDate,
 } from "./giftAllocationSeed";
 
 /**
@@ -77,18 +78,29 @@ export class ReconcileAbort extends Error {
 
 /**
  * Forward gift intake: seed the newly-minted gift's allocations from the
- * opportunity/pledge's allocation lines, scaled to this payment, so a payment
- * booked against a pledge inherits its scope (entity / fiscal year / region /
- * intended usage / restriction axes / school recipient) instead of landing as
- * an unscoped header-only gift. The fundraiser can still edit the result.
+ * opportunity/pledge's allocation lines so a payment booked against a pledge
+ * inherits its scope (entity / fiscal year / region / intended usage /
+ * restriction axes / school recipient / restriction description) instead of
+ * landing as an unscoped header-only gift. The fundraiser can still edit the
+ * result — these are a starting point, never rewritten when the pledge plan
+ * is later revised.
  *
- * PROPORTIONAL by design: each line's sub_amount is scaled by
- * giftAmount / pledgeTotal; to avoid rounding drift the LAST line absorbs the
- * remainder so the copy sums EXACTLY to the gift amount (header == sum invariant).
- * When the pledge has no allocations (or no positive total, or the gift amount
- * is unknown) we copy nothing / 1:1 — never inventing scope. Only columns
- * shared by both tables are copied; pledge-only fields and the @deprecated coding
- * snapshot are dropped. display_usage is left for its DB trigger to compute.
+ * REMAINING-PLAN seeding (Task #788), replacing the old proportional copy-all:
+ *   1. Each pledge allocation's REMAINING amount is its sub_amount minus what
+ *      earlier (non-archived) gift allocations already drew from it, tracked
+ *      via source_pledge_allocation_id stamps.
+ *   2. If the gift's fiscal year (from date_received) matches pledge
+ *      allocations with remaining plan, seed from JUST that year's lines;
+ *      otherwise fall back to every line with remaining plan; if the whole
+ *      plan is consumed, fall back to all lines (old behavior) so the gift is
+ *      never scope-less.
+ *   3. The gift amount is spread PROPORTIONALLY across the chosen lines; the
+ *      last line absorbs rounding remainder so the copy sums EXACTLY to the
+ *      gift amount (header == sum invariant).
+ * Every seeded row copies restriction_description (previously dropped) and is
+ * stamped with source_pledge_allocation_id for plan-vs-actual reporting.
+ * When the pledge has no allocations we copy nothing — never inventing scope.
+ * display_usage is left for its DB trigger to compute.
  */
 export async function copyPledgeAllocationsToGift(
   tx: Tx,
@@ -103,25 +115,61 @@ export async function copyPledgeAllocationsToGift(
     .orderBy(pledgeAllocations.id);
   if (allocs.length === 0) return;
 
-  const pledgeTotal = allocs.reduce((acc, a) => acc + Number(a.subAmount ?? 0), 0);
+  // Already-drawn amounts per pledge allocation, from prior stamped gift
+  // allocations on live gifts (archived gifts are dead money).
+  const drawnRows = await tx
+    .select({
+      sourceId: giftAllocations.sourcePledgeAllocationId,
+      drawn: sql<string>`COALESCE(SUM(${giftAllocations.subAmount}), 0)::text`,
+    })
+    .from(giftAllocations)
+    .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
+    .where(
+      and(
+        inArray(
+          giftAllocations.sourcePledgeAllocationId,
+          allocs.map((a) => a.id),
+        ),
+        sql`${giftsAndPayments.archivedAt} IS NULL`,
+        sql`${giftAllocations.giftId} <> ${giftId}`,
+      ),
+    )
+    .groupBy(giftAllocations.sourcePledgeAllocationId);
+  const drawnById = new Map(drawnRows.map((r) => [r.sourceId, Number(r.drawn)]));
+
+  const remainingOf = (a: (typeof allocs)[number]) =>
+    Math.max(0, Number(a.subAmount ?? 0) - (drawnById.get(a.id) ?? 0));
+
+  // Gift FY from its date_received (same Jul–Dec → next-FY rule as seeding).
+  const [gift] = await tx
+    .select({ dateReceived: giftsAndPayments.dateReceived })
+    .from(giftsAndPayments)
+    .where(eq(giftsAndPayments.id, giftId))
+    .limit(1);
+  const giftFy = fiscalYearSlugForDate(gift?.dateReceived);
+
+  const withRemaining = allocs.filter((a) => remainingOf(a) > 0);
+  const fyMatched = giftFy
+    ? withRemaining.filter((a) => a.grantYear === giftFy)
+    : [];
+  const chosen =
+    fyMatched.length > 0 ? fyMatched : withRemaining.length > 0 ? withRemaining : allocs;
+
+  // Weight by remaining plan when any remains; otherwise by original amounts.
+  const weightOf = withRemaining.length > 0 ? remainingOf : (a: (typeof allocs)[number]) => Number(a.subAmount ?? 0);
+  const totalWeight = chosen.reduce((acc, a) => acc + weightOf(a), 0);
   const giftNum = Number(giftAmount ?? 0);
-  // Scale to the payment only when both the pledge total and the gift amount are
-  // positive and they actually differ; otherwise copy the line amounts 1:1.
-  const scale =
-    pledgeTotal > 0 && Number.isFinite(giftNum) && giftNum > 0
-      ? giftNum / pledgeTotal
-      : 1;
-  const willScale = scale !== 1 && Number.isFinite(giftNum) && giftNum > 0;
+  const willScale = totalWeight > 0 && Number.isFinite(giftNum) && giftNum > 0;
 
   let running = 0;
-  const rows = allocs.map((a, i) => {
+  const rows = chosen.map((a, i) => {
     let subAmount: string | null = a.subAmount;
     if (willScale) {
-      if (i === allocs.length - 1) {
+      if (i === chosen.length - 1) {
         // Last line absorbs the remainder so the copy sums to the gift exactly.
         subAmount = (giftNum - running).toFixed(2);
       } else {
-        const scaled = Number((Number(a.subAmount ?? 0) * scale).toFixed(2));
+        const scaled = Number(((weightOf(a) / totalWeight) * giftNum).toFixed(2));
         running += scaled;
         subAmount = scaled.toFixed(2);
       }
@@ -141,6 +189,8 @@ export async function copyPledgeAllocationsToGift(
       reimbursementType: a.reimbursementType,
       regionIds: a.regionIds,
       purposeVerbatim: a.purposeVerbatim,
+      restrictionDescription: a.restrictionDescription,
+      sourcePledgeAllocationId: a.id,
     } satisfies typeof giftAllocations.$inferInsert;
   });
   await tx.insert(giftAllocations).values(rows);

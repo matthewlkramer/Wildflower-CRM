@@ -18,6 +18,8 @@ import {
   opportunityConditionalEnum,
   opportunityConditionsMetEnum,
   loanOrGrantEnum,
+  disbursementModelEnum,
+  awardCloseReasonEnum,
 } from "./_enums";
 import { organizations } from "./organizations";
 import { people } from "./people";
@@ -106,6 +108,22 @@ export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
   // create/patch (defaults 'grant'); the single read source for dashboard /
   // projections / goals / revenue coding.
   loanOrGrant: loanOrGrantEnum("loan_or_grant").notNull().default("grant"),
+  // ── Disbursement model (Task #788) ─────────────────────────────────────
+  // fixed_commitment (default): installments in pledge_expected_payments are
+  // the cash forecast; completes via paid >= awarded.
+  // cost_reimbursement: awarded_amount is the award CEILING; annual pledge
+  // allocations are the forecast; completes ONLY via the explicit Close-award
+  // action below. Backfilled from allocations carrying the retired
+  // conditional='reimbursable' value (migration 0151).
+  disbursementModel: disbursementModelEnum("disbursement_model")
+    .notNull()
+    .default("fixed_commitment"),
+  // Explicit award closure — the SECOND user-set lifecycle input alongside
+  // loss_type (replit.md invariant #3). Only meaningful for cost_reimbursement
+  // pledges: setting award_closed_at (+ reason) is what completes the award
+  // (status derives cash_in). Never auto-set; finance-permitted action only.
+  awardClosedAt: date("award_closed_at"),
+  awardCloseReason: awardCloseReasonEnum("award_close_reason"),
   type: opportunityTypeEnum("type"),
   conditional: opportunityConditionalEnum("conditional"),
   conditions: text("conditions"),

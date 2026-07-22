@@ -1,6 +1,6 @@
 ---
 status: current-status
-last_verified: 2026-07-21
+last_verified: 2026-07-22
 verification_basis: >
   Relationship-authority table and derived-status claims verified against code
   on 2026-07-21 (commit d68abae9). Drift items are labeled individually:
@@ -27,6 +27,7 @@ canonical boundary first (see `replit.md`).
 | Gift ↔ QB tie signal | Live-derived at read time (`deriveGiftQbTieLiveExpr` in `giftQbTie.ts`); the stored `quickbooks_tie_status` column and its applier were retired — there is no recompute call site |
 | Staged/charge statuses | Derived from facts via the shared builders in `derivedStatus.ts`; no stored status columns (Donorbox's stored lifecycle is mapped to the shared vocabulary at every emit point). A QB deposit claimed by a confirmed settlement link or confirmed charge tie derives `excluded` (settled by the Stripe side; no stored `exclusion_reason`). A stored exclusion does NOT disqualify a deposit from settlement matching — exclusion and settlement eligibility are independent facts |
 | Workbench UI | The cluster view is the current design, superseding the older six-queue workbench described in earlier documents |
+| Manual gift creation on a pledge | Blocked at `POST /gifts-and-payments` (`manual_gift_on_pledge_blocked`, Task #788) — pledge payments are minted from QuickBooks evidence via reconciliation. Sole escape hatch: the explicit finance-gated `offBooksException` request flag (money that never hits QuickBooks); the flag is never persisted. Minted gifts inherit scope from the pledge's remaining plan (`copyPledgeAllocationsToGift`, stamped via `gift_allocations.source_pledge_allocation_id`) |
 
 ## Ratified rules with known or suspected implementation gaps
 

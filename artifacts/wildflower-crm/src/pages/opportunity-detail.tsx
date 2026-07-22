@@ -24,7 +24,15 @@ import {
   type OpportunityConditionsMet,
   type LoanOrGrant,
   type PeopleEntityRole,
+  type DisbursementModel,
+  useGetCurrentUser,
 } from "@workspace/api-client-react";
+import {
+  PlanningBadge,
+  InstallmentSchedule,
+  CloseAwardDialog,
+  useReopenAwardAction,
+} from "@/components/pledge-payment-plan";
 import { PledgeAllocationsEditor } from "@/components/allocation-editors";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { TasksPanel } from "@/components/tasks-panel";
@@ -92,6 +100,21 @@ const CATEGORY_OPTIONS = [
   { value: "grant", label: "Revenue / Gifts" },
   { value: "loan", label: "Loan Capital" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<LoanOrGrant>>;
+
+// How the funder disburses the award. Fixed commitments carry an installment
+// schedule; cost reimbursements are drawn down as expenses are incurred and
+// close via the explicit (finance-permitted) Close-award action.
+const DISBURSEMENT_MODEL_OPTIONS = [
+  { value: "fixed_commitment", label: "Fixed commitment" },
+  { value: "cost_reimbursement", label: "Cost reimbursement" },
+] as const satisfies ReadonlyArray<InlineSelectOption<DisbursementModel>>;
+
+const AWARD_CLOSE_REASON_LABELS: Record<string, string> = {
+  fully_collected: "Fully collected",
+  award_period_ended: "Award period ended",
+  unused_balance: "Unused balance",
+  terminated: "Terminated",
+};
 
 const CONDITIONS_MET_LABELS: Record<OpportunityConditionsMet, string> = {
   no: "No",
@@ -163,6 +186,7 @@ function OppView({
   const [writeOffOpen, setWriteOffOpen] = useState(false);
   const [flagResearchOpen, setFlagResearchOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [closeAwardOpen, setCloseAwardOpen] = useState(false);
   // Non-null while the "mark dormant/lost" close-date prompt is open.
   const [closingLossType, setClosingLossType] = useState<OpportunityLossType | null>(null);
   const [closeDateValue, setCloseDateValue] = useState("");
@@ -253,6 +277,12 @@ function OppView({
     await patch({ name: trimmed || null });
     setEditingName(false);
   }
+
+  // Finance/admin gate for close-award & reopen-award. Server enforces with
+  // a 403 finance_role_required; this only labels the disabled menu item.
+  const viewerRole = useGetCurrentUser().data?.role;
+  const viewerIsFinance = viewerRole === "finance" || viewerRole === "admin";
+  const reopenAward = useReopenAwardAction(opp.id);
 
   const userNames = useUserNameMap();
   const ownerDisplay = opp.ownerUserId
@@ -439,21 +469,38 @@ function OppView({
               >
                 Mark as committed pledge
               </DropdownMenuItem>
+              {/*
+                Evidence-only gift creation (Task #788): manually minting a
+                gift from a pledge/opportunity is an off-books exception —
+                finance only. Blocked rows are labeled, never hidden (user
+                rule); the API enforces the same guard with
+                manual_gift_on_pledge_blocked / finance 403.
+              */}
               <DropdownMenuItem
+                disabled={!viewerIsFinance || mintGift.isPending}
                 onSelect={() =>
-                  mintGift.mutate({ id: opp.id, data: { awaitingSettlement: true } })
+                  mintGift.mutate({
+                    id: opp.id,
+                    data: { awaitingSettlement: true, offBooksException: true },
+                  })
                 }
                 data-testid="action-mark-won-gift-awaiting"
               >
                 Mark as won gift awaiting imminent payment
+                {!viewerIsFinance ? " (finance role required — off-books exception)" : ""}
               </DropdownMenuItem>
               <DropdownMenuItem
+                disabled={!viewerIsFinance || mintGift.isPending}
                 onSelect={() =>
-                  mintGift.mutate({ id: opp.id, data: { awaitingSettlement: false } })
+                  mintGift.mutate({
+                    id: opp.id,
+                    data: { awaitingSettlement: false, offBooksException: true },
+                  })
                 }
                 data-testid="action-mark-won-gift"
               >
                 Mark as won gift
+                {!viewerIsFinance ? " (finance role required — off-books exception)" : ""}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {/*
@@ -477,6 +524,36 @@ function OppView({
                 {opp.lossType === "lost" ? "Unmark as lost" : "Mark as lost"}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              {/*
+                Close-award / reopen-award (cost-reimbursement only). The
+                second user-set lifecycle input alongside lossType. Blocked
+                rows are labeled, never hidden (user rule): non-finance
+                viewers see the item disabled with the reason.
+              */}
+              {opp.disbursementModel === "cost_reimbursement" ? (
+                <>
+                  {opp.awardClosedAt ? (
+                    <DropdownMenuItem
+                      disabled={!viewerIsFinance || reopenAward.isPending}
+                      onSelect={() => reopenAward.mutate({ id: opp.id })}
+                      data-testid="action-reopen-award"
+                    >
+                      Reopen award
+                      {!viewerIsFinance ? " (finance role required)" : ""}
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      disabled={!viewerIsFinance}
+                      onSelect={() => setCloseAwardOpen(true)}
+                      data-testid="action-close-award"
+                    >
+                      Close award
+                      {!viewerIsFinance ? " (finance role required)" : ""}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                </>
+              ) : null}
             </>
           ) : null}
           <DropdownMenuItem
@@ -493,6 +570,11 @@ function OppView({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <CloseAwardDialog
+        opp={opp}
+        open={closeAwardOpen}
+        onOpenChange={setCloseAwardOpen}
+      />
       <FlagForResearchDialog
         targetType={entityLabel.toLowerCase() === "pledge" ? "pledge" : "opportunity"}
         targetId={opp.id}
@@ -735,6 +817,15 @@ function OppView({
         </Badge>
       ) : null}
       <NeedsResearchBadge flagged={opp.flaggedForResearch} />
+      <PlanningBadge opp={opp} />
+      {opp.awardClosedAt ? (
+        <Badge variant="outline" className="rounded-full" data-testid="badge-award-closed">
+          Award closed
+          {opp.awardCloseReason
+            ? ` — ${AWARD_CLOSE_REASON_LABELS[opp.awardCloseReason] ?? opp.awardCloseReason}`
+            : ""}
+        </Badge>
+      ) : null}
     </>
   );
 
@@ -793,6 +884,37 @@ function OppView({
                       display={formatDate(opp.applicationDeadline)}
                       onSave={(next) => patch({ applicationDeadline: next })}
                     />
+                  </Row>
+                ) : null}
+                <Row label="Disbursement model">
+                  <InlineEditSelect
+                    label="Disbursement model"
+                    testIdBase="opp-disbursement-model"
+                    value={opp.disbursementModel ?? "fixed_commitment"}
+                    options={DISBURSEMENT_MODEL_OPTIONS}
+                    display={
+                      (opp.disbursementModel ?? "fixed_commitment") ===
+                      "cost_reimbursement"
+                        ? "Cost reimbursement"
+                        : "Fixed commitment"
+                    }
+                    allowNull={false}
+                    onSave={(next) =>
+                      patch({
+                        disbursementModel: (next ??
+                          "fixed_commitment") as DisbursementModel,
+                      })
+                    }
+                  />
+                </Row>
+                {opp.awardClosedAt ? (
+                  <Row label="Award closed">
+                    <span className="text-sm" data-testid="text-award-closed">
+                      {formatDate(opp.awardClosedAt)}
+                      {opp.awardCloseReason
+                        ? ` — ${AWARD_CLOSE_REASON_LABELS[opp.awardCloseReason] ?? opp.awardCloseReason}`
+                        : ""}
+                    </span>
                   </Row>
                 ) : null}
                 <Row label="Payment probability">
@@ -934,8 +1056,17 @@ function OppView({
                   pledgeOrOpportunityId={opp.id}
                   allocations={opp.allocations ?? []}
                   totalAmount={targetAmount}
-                  reimbursablePrompt={opp.conditionalRollup === "reimbursable"}
+                  reimbursablePrompt={opp.disbursementModel === "cost_reimbursement"}
                 />
+              </div>
+            </RelatedCard>
+
+            <RelatedCard
+              title="Payment plan"
+              count={(opp.expectedPayments ?? []).length || undefined}
+            >
+              <div className="px-2 py-1">
+                <InstallmentSchedule opp={opp} />
               </div>
             </RelatedCard>
 

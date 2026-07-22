@@ -17,10 +17,12 @@ import {
   getListOrganizationsQueryKey,
   getListOpportunitiesAndPledgesQueryKey,
   getListPledgeAllocationsQueryKey,
+  useGetCurrentUser,
   type OpportunityOrPledge,
   type IntendedUsage,
   type RestrictionAxis,
 } from "@workspace/api-client-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import type { LinkedRecordsScope } from "@/components/linked-records";
@@ -238,6 +240,14 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
 
   // Opportunity link
   const [linkedOpp, setLinkedOpp] = useState<OpportunityOrPledge | null>(null);
+  // Evidence-only rule: gifts against a pledge are minted from payment
+  // evidence (reconciliation) — manual creation is blocked server-side
+  // (409 manual_gift_on_pledge_blocked) unless a finance/admin user
+  // explicitly claims the off-books exception (money that will never
+  // appear in QuickBooks or Stripe).
+  const [offBooksException, setOffBooksException] = useState(false);
+  const viewerRole = useGetCurrentUser().data?.role;
+  const viewerIsFinance = viewerRole === "finance" || viewerRole === "admin";
   // "auto" = donor derived from the linked opp; "manual" = user picks the donor
   const [donorMode, setDonorMode] = useState<"auto" | "manual">("auto");
 
@@ -392,6 +402,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     setMemoDescription("");
     setCampaignSlug("");
     setLinkedOpp(null);
+    setOffBooksException(false);
     setDonorMode("auto");
     resetDonor();
     resetCoding();
@@ -403,6 +414,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     if (open) {
       resetDonor();
       setLinkedOpp(null);
+      setOffBooksException(false);
       setDonorMode("auto");
       resetCoding();
     }
@@ -483,6 +495,9 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
   function canSubmit(): boolean {
     if (!trimmed) return false;
     if (linkedOpp !== null) {
+      // Evidence-only rule: manual gifts on a pledge require the finance
+      // off-books exception (the server 409s otherwise).
+      if (!offBooksException || !viewerIsFinance) return false;
       const d = oppDonorFields(linkedOpp);
       return !!(d.organizationId || d.householdId || d.individualGiverPersonId);
     }
@@ -544,7 +559,7 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
       data: {
         name: trimmed,
         ...donorFields,
-        ...(linkedOpp ? { opportunityId: linkedOpp.id } : {}),
+        ...(linkedOpp ? { opportunityId: linkedOpp.id, offBooksException: true } : {}),
         ...(amt ? { amount: amt } : {}),
         ...(date ? { dateReceived: date } : {}),
         ...(titleReference.trim() ? { titleReference: titleReference.trim() } : {}),
@@ -628,6 +643,36 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                 choose &ldquo;No linked opportunity&rdquo; to pick a donor
                 directly.
               </p>
+              {linkedOpp !== null ? (
+                <div
+                  className="space-y-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+                  data-testid="notice-evidence-only"
+                >
+                  <p>
+                    Gifts against a pledge are created from payment evidence in
+                    the reconciliation workbench, not entered by hand. The only
+                    exception is off-books money that will never appear in
+                    QuickBooks or Stripe.
+                  </p>
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="off-books-exception"
+                      checked={offBooksException}
+                      disabled={!viewerIsFinance || create.isPending}
+                      onCheckedChange={(v) => setOffBooksException(v === true)}
+                      data-testid="checkbox-off-books-exception"
+                    />
+                    <Label
+                      htmlFor="off-books-exception"
+                      className={`text-xs font-normal ${!viewerIsFinance ? "text-muted-foreground" : ""}`}
+                    >
+                      This is off-books money (no QuickBooks/Stripe record will
+                      ever exist)
+                      {!viewerIsFinance ? " — finance role required" : ""}
+                    </Label>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             {/* ── Step 2: Donor — read-only chip or manual picker ── */}

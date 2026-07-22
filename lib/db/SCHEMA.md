@@ -122,12 +122,29 @@ in older notes is stale.
   - **`status` is FULLY CALCULATED server-side — never written directly.** Enum
     `opportunity_status` = `open` / `pledge` / `cash_in` / `dormant` / `lost`.
     Derivation (see `pledgeStage.ts` / `deriveOppFields`): if `loss_type` is set →
-    status = that; else fully paid (paid ≥ awarded > 0) → `cash_in`
-    (payment-driven only); else `written_pledge` → `pledge`; else `open`. Stage
-    never drives status.
+    status = that; else complete → `cash_in` — where "complete" is
+    payment-driven (paid ≥ awarded > 0) for `fixed_commitment` and
+    closure-driven (`award_closed_at` set) for `cost_reimbursement`; else
+    `written_pledge` → `pledge`; else `open`. Stage never drives status.
   - **`loss_type`** (enum `opportunity_loss_type` = `dormant` / `lost`, nullable) is
-    the **only** user-settable part of the old status overload — it pulls a row out of
-    the calculated funnel.
+    a user-settable lifecycle input — it pulls a row out of the calculated funnel.
+  - **`disbursement_model`** (enum `disbursement_model` =
+    `fixed_commitment` / `cost_reimbursement`, NOT NULL default
+    `fixed_commitment`, Task #788) — how the money is disbursed.
+    `fixed_commitment`: known installments (see `pledge_expected_payments`);
+    completes when paid ≥ awarded. `cost_reimbursement`: the award is a CEILING
+    drawn down as costs are incurred; annual pledge allocations are the
+    forecast, overdue nagging is suppressed, and the pledge completes **only**
+    via the explicit finance-permitted Close-award action — never by
+    paid ≥ ceiling. Replaces the retired `conditional='reimbursable'` input
+    (legacy allocation rows keep the value for history; migration 0151
+    reclassified their pledges).
+  - **`award_closed_at`** (date, nullable) + **`award_close_reason`** (enum
+    `award_close_reason` = `fully_collected` / `award_period_ended` /
+    `unused_balance` / `terminated`) — set only by the finance-permitted
+    close-award route (cleared by reopen-award); the second user-set lifecycle
+    input alongside `loss_type`. Closing requires the remaining projected plan
+    to be resolved (planned ≤ paid) first.
   - Enums: `type` (`solicitation` / `renewal` / `open_application`), `stage` (10:
     `cold_lead`, `warm_lead`, `in_conversation`, `convince`,
     `conditional_commitment`, `probable_renewal`, `verbal_confirmation`,
@@ -168,7 +185,16 @@ in older notes is stale.
   and the UI (users keep allocations accurate directly; a gift→pledge split now
   writes `committed`), the historical rows were remapped to `abandoned`
   (migration 0120), and the three values remain in the pg enum only because
-  removing a pg enum value requires a type rebuild.
+  removing a pg enum value requires a type rebuild. `expected_payment_date` is
+  **`@deprecated`** (Task #788) — installment dates live on
+  `pledge_expected_payments`; migration 0151 seeded that table from it, and no
+  new readers/writers may use the column.
+
+- `pledge_expected_payments` — installment schedule for a **fixed-commitment**
+  pledge (Task #788): `pledge_or_opportunity_id` → `opportunities_and_pledges`
+  (RESTRICT), `expected_date` (NOT NULL), `amount` (nullable), `notes`. The
+  explicit cash forecast + overdue source for fixed commitments;
+  cost-reimbursement pledges need none (their forecast is the allocation plan).
 
 - `gifts_and_payments` — gift records + payments against pledges, **header-only**.
   Scope lives on `gift_allocations`. `payment_on_pledge_id` →
@@ -199,6 +225,11 @@ in older notes is stale.
   `revenue_class`(+`_override`), `coding_flags`, `restriction_type`,
   `restriction_evidence`, `deferred_revenue`(+`_reason`)) are **`@deprecated`** —
   still physically present for the deprecate-then-drop window, no longer written.
+  **`source_pledge_allocation_id`** (→ `pledge_allocations`, SET NULL, Task #788)
+  stamps which pledge-plan line a seeded gift allocation drew from —
+  remaining-plan inheritance (`copyPledgeAllocationsToGift`) uses it to compute
+  what is already drawn; `variance_reason` (text, nullable) captures why a draw
+  deviated from plan.
 
 ### Donor XOR — three mutually-exclusive donor options
 

@@ -13,6 +13,7 @@ export * from "./phoneNumbers";
 export * from "./addresses";
 export * from "./opportunitiesAndPledges";
 export * from "./pledgeAllocations";
+export * from "./pledgeExpectedPayments";
 export * from "./giftsAndPayments";
 export * from "./giftAllocations";
 export * from "./entities";

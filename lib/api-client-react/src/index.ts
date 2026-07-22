@@ -62,3 +62,4 @@ export * from './generated/reconciliation/reconciliation';
 export * from './generated/coding-form-rows/coding-form-rows';
 export * from './generated/revenue-extractor/revenue-extractor';
 export * from './generated/fundraising-campaigns/fundraising-campaigns';
+export * from './generated/pledge-expected-payments/pledge-expected-payments';

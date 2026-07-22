@@ -58,7 +58,10 @@ current-status document.
    completeness are derived once. Do not add stored status columns, copied SQL
    CASE expressions, route-local derivations, or frontend fallback heuristics for
    facts that already have an authority. Opportunity status is fully derived; the
-   only user-set lifecycle input is `loss_type` (`dormant`/`lost`).
+   user-set lifecycle inputs are `loss_type` (`dormant`/`lost`) and — on
+   cost-reimbursement pledges only — the finance-permitted Close-award action
+   (`award_closed_at` + `award_close_reason`), the sole completion path for that
+   disbursement model (paid ≥ ceiling never auto-completes it).
 4. **Donor XOR.** Every opportunity and gift has exactly one organization,
    individual, or household donor — enforced at the DB, the API, and on merged
    PATCH state.

@@ -42,6 +42,8 @@ export const ListGiftAllocationsResponse = zod.object({
   "displayUsage": zod.string().nullish().describe('Server-computed human-readable usage label (school name | usage label | usage + \' - \' + region names). Maintained by DB triggers; read-only.'),
   "purposeVerbatim": zod.string().nullish().describe('Exact restriction source language only (grant letter \/ Donorbox designation \/ check memo). Plain-language summaries belong in restrictionDescription.'),
   "restrictionDescription": zod.string().nullish().describe('Optional plain-language summary of the restriction (e.g. \'grants to schools only\'). Never affects revenue coding.'),
+  "sourcePledgeAllocationId": zod.string().nullish().describe('Provenance (Task #788): the pledge allocation this gift allocation was seeded from by the evidence-mint remaining-plan seeding. Stamped server-side only, never client-writable; null for allocations not seeded from a pledge plan. Set-null on pledge-allocation delete. Gift allocations stay independently editable — a later pledge-plan revision never rewrites them.'),
+  "varianceReason": zod.string().nullish().describe('Free-text reason recorded when the actual allocation was deliberately changed from the seeded pledge plan (plan-vs-actual variance display).'),
   "reimbursableShare": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)').nullish().describe('@deprecated — renamed to reimbursementType.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -70,7 +72,8 @@ export const CreateGiftAllocationBody = zod.object({
   "spendingEnd": zod.string().date().optional(),
   "regionIds": zod.array(zod.string()).optional(),
   "purposeVerbatim": zod.string().optional(),
-  "restrictionDescription": zod.string().optional()
+  "restrictionDescription": zod.string().optional(),
+  "varianceReason": zod.string().optional()
 })
 
 export const UpdateGiftAllocationParams = zod.object({
@@ -94,7 +97,8 @@ export const UpdateGiftAllocationBody = zod.object({
   "spendingEnd": zod.string().date().nullish(),
   "regionIds": zod.array(zod.string()).nullish(),
   "purposeVerbatim": zod.string().nullish(),
-  "restrictionDescription": zod.string().nullish()
+  "restrictionDescription": zod.string().nullish(),
+  "varianceReason": zod.string().nullish()
 })
 
 export const UpdateGiftAllocationResponse = zod.object({
@@ -117,6 +121,8 @@ export const UpdateGiftAllocationResponse = zod.object({
   "displayUsage": zod.string().nullish().describe('Server-computed human-readable usage label (school name | usage label | usage + \' - \' + region names). Maintained by DB triggers; read-only.'),
   "purposeVerbatim": zod.string().nullish().describe('Exact restriction source language only (grant letter \/ Donorbox designation \/ check memo). Plain-language summaries belong in restrictionDescription.'),
   "restrictionDescription": zod.string().nullish().describe('Optional plain-language summary of the restriction (e.g. \'grants to schools only\'). Never affects revenue coding.'),
+  "sourcePledgeAllocationId": zod.string().nullish().describe('Provenance (Task #788): the pledge allocation this gift allocation was seeded from by the evidence-mint remaining-plan seeding. Stamped server-side only, never client-writable; null for allocations not seeded from a pledge plan. Set-null on pledge-allocation delete. Gift allocations stay independently editable — a later pledge-plan revision never rewrites them.'),
+  "varianceReason": zod.string().nullish().describe('Free-text reason recorded when the actual allocation was deliberately changed from the seeded pledge plan (plan-vs-actual variance display).'),
   "reimbursableShare": zod.enum(['direct', 'indirect']).describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)').nullish().describe('@deprecated — renamed to reimbursementType.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})

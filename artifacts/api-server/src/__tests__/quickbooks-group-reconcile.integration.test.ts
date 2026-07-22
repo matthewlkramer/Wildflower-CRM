@@ -156,18 +156,43 @@ async function seedGiftWithDonor(
  */
 async function seedNoDonorGift(amount: string): Promise<string> {
   const id = nextGiftId();
-  await db.execute(
-    sqlFn`ALTER TABLE gifts_and_payments DROP CONSTRAINT IF EXISTS ${sqlFn.raw(
-      DONOR_XOR_CONSTRAINT,
-    )}`,
-  );
-  await db.insert(schema.giftsAndPayments).values({ id, amount });
-  await db.execute(
-    sqlFn`ALTER TABLE gifts_and_payments ADD CONSTRAINT ${sqlFn.raw(
-      DONOR_XOR_CONSTRAINT,
-    )} CHECK (num_nonnulls(organization_id, individual_giver_person_id, household_id) = 1) NOT VALID`,
-  );
-  return id;
+  // The ALTERs take an AccessExclusiveLock on gifts_and_payments. Under the
+  // fully parallel test suite a *waiting* AccessExclusiveLock queues every
+  // later reader behind it, which has caused deadlocks in unrelated test
+  // files. Run the whole drop→insert→re-add sequence in ONE transaction with
+  // a short lock_timeout so the ALTER fails fast (and we retry) instead of
+  // camping in the lock queue, and so the constraint is never observably
+  // missing outside this transaction.
+  const attempt = () =>
+    db.transaction(async (tx) => {
+      await tx.execute(sqlFn`SET LOCAL lock_timeout = '500ms'`);
+      await tx.execute(
+        sqlFn`ALTER TABLE gifts_and_payments DROP CONSTRAINT IF EXISTS ${sqlFn.raw(
+          DONOR_XOR_CONSTRAINT,
+        )}`,
+      );
+      await tx.insert(schema.giftsAndPayments).values({ id, amount });
+      await tx.execute(
+        sqlFn`ALTER TABLE gifts_and_payments ADD CONSTRAINT ${sqlFn.raw(
+          DONOR_XOR_CONSTRAINT,
+        )} CHECK (num_nonnulls(organization_id, individual_giver_person_id, household_id) = 1) NOT VALID`,
+      );
+    });
+  let lastErr: unknown;
+  for (let i = 0; i < 20; i++) {
+    try {
+      await attempt();
+      return id;
+    } catch (err) {
+      lastErr = err;
+      const e = err as { code?: string; cause?: { code?: string } } | null;
+      const code = e?.code ?? e?.cause?.code;
+      // 55P03 lock_not_available (lock_timeout), 40P01 deadlock_detected.
+      if (code !== "55P03" && code !== "40P01") throw err;
+      await new Promise((r) => setTimeout(r, 250 + Math.random() * 500));
+    }
+  }
+  throw lastErr;
 }
 
 /** Seed a pending staged row sharing the run's single deposit. */

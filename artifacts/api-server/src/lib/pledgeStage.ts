@@ -152,6 +152,12 @@ export interface DeriveInput {
   grantLetterUrl: string | null;
   awardedAmount: string | number | null;
   paidAmount: string | number;
+  // Task #788 — how the money is disbursed. fixed_commitment completes via
+  // paid >= awarded; cost_reimbursement completes ONLY via awardClosedAt.
+  disbursementModel: string | null;
+  // Second user-set lifecycle input (alongside lossType): the explicit
+  // award-closure date on a cost-reimbursement pledge. Non-null = complete.
+  awardClosedAt: string | Date | null;
 }
 
 export interface DeriveOutput {
@@ -173,9 +179,14 @@ export interface DeriveOutput {
  *
  *   status (FULLY CALCULATED):
  *     loss_type set                                  → loss_type (dormant|lost)
- *     else fully paid (paid≥awarded>0)               → 'cash_in' (payment-driven only)
+ *     else "fully collected" (see below)             → 'cash_in'
  *     else written_pledge                            → 'pledge' (UI: "Waiting for payment")
  *     else                                           → 'open'
+ *
+ *   "fully collected" depends on the disbursement model (Task #788):
+ *     fixed_commitment  → paid >= awarded > 0 (payment-driven, unchanged)
+ *     cost_reimbursement → award_closed_at IS NOT NULL (explicit Close-award
+ *       action only — paid >= ceiling NEVER completes a reimbursement award)
  *
  *   stage (pure funnel): a WON row (status pledge/cash_in) reads 'complete';
  *     a non-won row keeps its funnel stage. A stale 'complete' on a non-won
@@ -185,7 +196,13 @@ export interface DeriveOutput {
 export function deriveOppFields(input: DeriveInput): DeriveOutput {
   const paidNum = Number(input.paidAmount ?? 0);
   const awardedNum = Number(input.awardedAmount ?? 0);
-  const fullyPaid = awardedNum > 0 && paidNum >= awardedNum;
+  const isCostReimbursement = input.disbursementModel === "cost_reimbursement";
+  // Fixed commitments complete when the money is fully in; cost-reimbursement
+  // awards complete ONLY via the explicit Close-award action (the ceiling is
+  // informational — paid >= ceiling never completes one).
+  const fullyPaid = isCostReimbursement
+    ? input.awardClosedAt != null
+    : awardedNum > 0 && paidNum >= awardedNum;
 
   // A record becomes a (sticky) written pledge ONLY when it carries a genuine
   // written commitment — a grant letter — and the money has not already fully
@@ -269,6 +286,8 @@ export async function applyDerivedOppFields(
     grantLetterUrl: row.grantLetterUrl,
     awardedAmount: row.awardedAmount,
     paidAmount: paid,
+    disbursementModel: row.disbursementModel,
+    awardClosedAt: row.awardClosedAt,
   });
 
   const statusOrStageChanged = status !== row.status || stage !== row.stage;

@@ -134,7 +134,13 @@ function isFundraisingCategory(v: unknown): v is FundraisingCategory {
 // drop the direct share. This must NEVER be applied to opportunity-status or
 // pledge paid-amount derivation (those keep summing ALL allocations so cash_in
 // still fires on full reimbursement).
-const pledgeAllocCountsTowardGoal = sql`${pledgeAllocations.reimbursementType} IS DISTINCT FROM 'direct'`;
+// Task #788 per-model null handling: on a COST-REIMBURSEMENT pledge an
+// allocation with NULL reimbursement_type is un-planned — excluded from goal
+// credit (and surfaced as a planning gap on the detail) instead of counted by
+// default. Fixed commitments keep today's rule (untagged counts). Every query
+// using this predicate joins opportunities_and_pledges, so the header model
+// column is always in scope.
+const pledgeAllocCountsTowardGoal = sql`(${pledgeAllocations.reimbursementType} IS DISTINCT FROM 'direct' AND NOT (${opportunitiesAndPledges.disbursementModel} = 'cost_reimbursement' AND ${pledgeAllocations.reimbursementType} IS NULL))`;
 const giftAllocCountsTowardGoal = sql`${giftAllocations.reimbursementType} IS DISTINCT FROM 'direct'`;
 
 async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {

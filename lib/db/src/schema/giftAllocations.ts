@@ -20,6 +20,7 @@ import { fundableProjects } from "./fundableProjects";
 import { schools } from "./schools";
 import { fiscalYears } from "./fiscalYears";
 import { charters } from "./charters";
+import { pledgeAllocations } from "./pledgeAllocations";
 
 export const giftAllocations = pgTable("gift_allocations", {
   id: text("id").primaryKey(),
@@ -120,6 +121,20 @@ export const giftAllocations = pgTable("gift_allocations", {
   // regional/usage/time restriction axes above ("restricted" = any axis
   // donor_restricted); until that consolidation ships, the legacy axes stay
   // authoritative for revenue coding.
+  // ── Plan-vs-actual provenance (Task #788) ─────────────────────────────────
+  // The pledge_allocations row this gift allocation was SEEDED from when the
+  // evidence-driven mint copied the pledge's remaining plan onto the gift.
+  // Pure provenance: gift allocations stay independently editable and are
+  // NEVER rewritten when the pledge plan is later revised. SET NULL so
+  // deleting a plan line doesn't destroy the actual money record.
+  sourcePledgeAllocationId: text("source_pledge_allocation_id").references(
+    () => pledgeAllocations.id,
+    { onDelete: "set null" },
+  ),
+  // Free-text reason recorded when a reviewer deliberately changed this
+  // allocation's actuals away from the seeded pledge plan (plan-vs-actual
+  // variance display). Never affects derivation or revenue coding.
+  varianceReason: text("variance_reason"),
   schoolDesignationType: designationTypeEnum("school_designation_type"),
   entityDesignationType: designationTypeEnum("entity_designation_type"),
   regionalDesignationType: designationTypeEnum("regional_designation_type"),

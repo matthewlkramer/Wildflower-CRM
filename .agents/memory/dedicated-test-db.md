@@ -47,3 +47,14 @@ Isolation + 6-fork parallelism took the full suite 384s → ~100s with 0 flakes.
   6-way DB-bound parallelism).
 - Browser e2e still goes through the dev server → dev DB; dev-DB hygiene rules
   (test-data-hygiene.md) still apply to e2e, not to vitest anymore.
+
+## No DDL in parallel test files
+
+A test that runs `ALTER TABLE` mid-suite (e.g. dropping/re-adding a CHECK
+constraint to seed an invalid row) takes an AccessExclusiveLock; while that
+lock WAITS, every later reader of the table queues behind it, causing
+random-victim deadlocks/failures in unrelated test files. If DDL is
+unavoidable, wrap drop→insert→re-add in ONE transaction with
+`SET LOCAL lock_timeout = '500ms'` and retry on 55P03/40P01 so the ALTER
+fails fast instead of camping in the lock queue (see
+quickbooks-group-reconcile.integration.test.ts seedNoDonorGift).

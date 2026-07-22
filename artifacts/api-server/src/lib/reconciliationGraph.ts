@@ -31,6 +31,7 @@ import {
   stripePayouts,
   stripeStagedCharges,
   pledgeAllocations,
+  pledgeExpectedPayments,
   settlementLinks,
 } from "@workspace/db/schema";
 import {
@@ -707,23 +708,20 @@ async function loadDonorOpps(
     if (r.opportunityId) paidByOpp.set(r.opportunityId, Number(r.paid) || 0);
   }
 
-  // nearest expected-payment date per opp (pledge-allocation level) — a soft
-  // ranking signal only (smaller day-distance = sooner-due installment).
+  // nearest expected-payment date per opp — a soft ranking signal only
+  // (smaller day-distance = sooner-due installment). Task #788: reads the
+  // installment schedule (pledge_expected_payments), not the deprecated
+  // per-allocation expected_payment_date.
   const dateDiffByOpp = new Map<string, number>();
   if (paymentDate) {
     const dateRows = await db
       .select({
-        opportunityId: pledgeAllocations.pledgeOrOpportunityId,
-        diffDays: sql<number>`MIN(ABS(${pledgeAllocations.expectedPaymentDate} - ${paymentDate}::date))`,
+        opportunityId: pledgeExpectedPayments.pledgeOrOpportunityId,
+        diffDays: sql<number>`MIN(ABS(${pledgeExpectedPayments.expectedDate} - ${paymentDate}::date))`,
       })
-      .from(pledgeAllocations)
-      .where(
-        and(
-          inArray(pledgeAllocations.pledgeOrOpportunityId, ids),
-          sql`${pledgeAllocations.expectedPaymentDate} IS NOT NULL`,
-        ),
-      )
-      .groupBy(pledgeAllocations.pledgeOrOpportunityId);
+      .from(pledgeExpectedPayments)
+      .where(inArray(pledgeExpectedPayments.pledgeOrOpportunityId, ids))
+      .groupBy(pledgeExpectedPayments.pledgeOrOpportunityId);
     for (const r of dateRows) {
       if (r.opportunityId && r.diffDays != null)
         dateDiffByOpp.set(r.opportunityId, Number(r.diffDays));
