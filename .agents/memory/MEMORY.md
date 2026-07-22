@@ -52,6 +52,7 @@ code/docs and update or archive the stale memory.
 - [wildflower list-page chooser pattern](wildflower-list-chooser-pattern.md) — 4 list pages share filter/column choosers; saved views persist null at default, known/hidden keeps opt-in filters hidden for predating views.
 - [List-page pagination & PageJumper](list-page-pagination.md) — pagination markup duplicated (not shared) across 6 list pages; blur-after-Enter/Escape needs skipBlurRef guard.
 - [Select-in-Dialog scroll trap](select-in-dialog-scroll-trap.md) — a long shadcn Select nested in a modal Dialog overflows + can't scroll; use an inline scrollable RadioGroup instead.
+- [Testing subagent budget](testing-subagent-budget.md) — runTest is capped at 10 iterations/task and infra-timeouts count; one tiny flow per plan, check users table to detect a dead subagent.
 - [Playwright e2e Clerk setup](playwright-e2e-clerk-setup.md) — 4 hard constraints to run committed e2e specs directly; the testing subagent bypasses all of them.
 - [clerk admin-gated e2e testing](clerk-admin-e2e-testing.md) — testClerkAuth provisions team_member; add a [DB] step to promote to admin or admin cards silently 403/hide.
 

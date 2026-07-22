@@ -51,7 +51,6 @@ import {
 } from "@/components/ui/popover";
 import {
   Command,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -873,7 +872,12 @@ function AssigneeCombobox({
           />
           <CommandList>
             {filtered.length === 0 ? (
-              <CommandEmpty>No results.</CommandEmpty>
+              // Plain element, not <CommandEmpty>: cmdk hides CommandEmpty
+              // whenever ANY item renders, and the "Unassigned" item below is
+              // always rendered, so CommandEmpty never appeared.
+              <div className="py-3 text-center text-sm text-muted-foreground">
+                No results.
+              </div>
             ) : null}
             <CommandGroup>
               <CommandItem
