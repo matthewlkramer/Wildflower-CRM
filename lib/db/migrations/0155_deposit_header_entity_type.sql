@@ -1,0 +1,22 @@
+-- 0155: add 'deposit_header' to quickbooks_entity_type.
+--
+-- A deposit_header staged_payments row is a WHOLE-deposit record staged only
+-- when a QuickBooks bank Deposit yields zero direct-line rows (every line
+-- re-records an already-ingested Payment/SalesReceipt, which the per-line
+-- ingest correctly skips to avoid double-counting). Header rows make such
+-- deposits visible as settlement / charge-tie matching candidates; they are
+-- never donation-review work (derived status 'excluded' by entity type) and
+-- never anchor payment_applications rows.
+--
+-- Idempotent. No data backfill — rows are filled by the QuickBooks full
+-- re-pull after deploy (Admin → QuickBooks → full resync).
+--
+-- Run (human, from repo root, AFTER Publish or standalone — safe either way):
+--   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0155_deposit_header_entity_type.sql
+--
+-- Note: ALTER TYPE ... ADD VALUE cannot run inside a transaction block on
+-- older PostgreSQL, but IF NOT EXISTS + committed-per-statement psql -1 single
+-- statement file is fine on PG12+ (enum additions are allowed in transactions
+-- since PG12 when the type is not created in the same transaction).
+
+ALTER TYPE quickbooks_entity_type ADD VALUE IF NOT EXISTS 'deposit_header';

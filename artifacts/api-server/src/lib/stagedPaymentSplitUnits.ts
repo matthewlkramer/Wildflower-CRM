@@ -130,6 +130,18 @@ export async function splitStagedPaymentIntoUnits(
         "This row is itself a synthetic split unit — units cannot be split again. Unsplit the original QuickBooks row and re-split it differently instead.",
     });
   }
+  // A whole-deposit header (deposit_header) exists ONLY as settlement
+  // evidence — its money is already counted on the deposit's underlying
+  // Payment rows. Split children would look reconcilable and invite
+  // double-counting, so headers are never splittable.
+  if (parent.qbEntityType === "deposit_header") {
+    throw new ReconcileAbort(409, {
+      error: "consistency_gate",
+      code: "deposit_header_not_splittable",
+      message:
+        "This row is a whole-deposit header: its money is already counted on the deposit's underlying payment rows, so it cannot be split into units.",
+    });
+  }
   const existing = await childrenOf(tx, parentId);
   if (existing.length > 0) {
     throw new ReconcileAbort(409, {

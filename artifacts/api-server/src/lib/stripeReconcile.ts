@@ -317,12 +317,18 @@ export async function runProposalPass(
       // to a mis-typed lump here would double-count against the per-charge match.
       // Only let a single-charge payout tie to an actual deposit-typed lump (rare
       // but real); route everything else to charge-grain review (step 2). A null
-      // chargeCount is treated as single-charge (conservative).
+      // chargeCount is treated as single-charge (conservative). A whole-deposit
+      // header (deposit_header) IS a true deposit record — same gate outcome.
       const singleCharge = (p.chargeCount ?? 1) <= 1;
 
       for (const c of cands) {
         if (taken.has(c.id) || assigned.has(c.id)) continue;
-        if (singleCharge && c.qbEntityType !== "deposit") continue;
+        if (
+          singleCharge &&
+          c.qbEntityType !== "deposit" &&
+          c.qbEntityType !== "deposit_header"
+        )
+          continue;
         const s = scoreQbDepositCandidate(
           { amount: p.amount, netTotal: p.netTotal, arrivalDate: p.arrivalDate },
           c,

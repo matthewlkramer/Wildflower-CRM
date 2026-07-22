@@ -28,7 +28,7 @@ export const ListStagedPaymentsResponse = zod.object({
   "data": zod.array(zod.object({
   "id": zod.string(),
   "realmId": zod.string(),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).describe('QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments\/SalesReceipts) — settlement-matching evidence, never donation-review work.'),
   "qbEntityId": zod.string(),
   "qbLineId": zod.string().nullish(),
   "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),
@@ -204,7 +204,7 @@ export const ResolveStagedPaymentBody = zod.object({
 export const ResolveStagedPaymentResponse = zod.object({
   "id": zod.string(),
   "realmId": zod.string(),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).describe('QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments\/SalesReceipts) — settlement-matching evidence, never donation-review work.'),
   "qbEntityId": zod.string(),
   "qbLineId": zod.string().nullish(),
   "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),
@@ -309,7 +309,7 @@ export const ReIncludeStagedPaymentParams = zod.object({
 export const ReIncludeStagedPaymentResponse = zod.object({
   "id": zod.string(),
   "realmId": zod.string(),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).describe('QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments\/SalesReceipts) — settlement-matching evidence, never donation-review work.'),
   "qbEntityId": zod.string(),
   "qbLineId": zod.string().nullish(),
   "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),
@@ -418,7 +418,7 @@ export const SetStagedPaymentEntityBody = zod.object({
 export const SetStagedPaymentEntityResponse = zod.object({
   "id": zod.string(),
   "realmId": zod.string(),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).describe('QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments\/SalesReceipts) — settlement-matching evidence, never donation-review work.'),
   "qbEntityId": zod.string(),
   "qbLineId": zod.string().nullish(),
   "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),
@@ -527,7 +527,7 @@ export const SetStagedPaymentFundingSourceBody = zod.object({
 export const SetStagedPaymentFundingSourceResponse = zod.object({
   "id": zod.string(),
   "realmId": zod.string(),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).describe('QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments\/SalesReceipts) — settlement-matching evidence, never donation-review work.'),
   "qbEntityId": zod.string(),
   "qbLineId": zod.string().nullish(),
   "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),
@@ -646,7 +646,7 @@ export const SetStagedPaymentCodingBody = zod.object({
 export const SetStagedPaymentCodingResponse = zod.object({
   "id": zod.string(),
   "realmId": zod.string(),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).describe('QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments\/SalesReceipts) — settlement-matching evidence, never donation-review work.'),
   "qbEntityId": zod.string(),
   "qbLineId": zod.string().nullish(),
   "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),
@@ -755,7 +755,7 @@ export const ExcludeStagedPaymentBody = zod.object({
 export const ExcludeStagedPaymentResponse = zod.object({
   "id": zod.string(),
   "realmId": zod.string(),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).describe('QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments\/SalesReceipts) — settlement-matching evidence, never donation-review work.'),
   "qbEntityId": zod.string(),
   "qbLineId": zod.string().nullish(),
   "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),
@@ -1473,7 +1473,7 @@ export const ConfirmStagedPaymentMatchParams = zod.object({
 export const ConfirmStagedPaymentMatchResponse = zod.object({
   "id": zod.string(),
   "realmId": zod.string(),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).describe('QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments\/SalesReceipts) — settlement-matching evidence, never donation-review work.'),
   "qbEntityId": zod.string(),
   "qbLineId": zod.string().nullish(),
   "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),
@@ -1571,7 +1571,7 @@ export const UnmatchStagedPaymentParams = zod.object({
 export const UnmatchStagedPaymentResponse = zod.object({
   "id": zod.string(),
   "realmId": zod.string(),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).describe('QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments\/SalesReceipts) — settlement-matching evidence, never donation-review work.'),
   "qbEntityId": zod.string(),
   "qbLineId": zod.string().nullish(),
   "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),
@@ -1677,7 +1677,7 @@ export const RevertStagedPaymentParams = zod.object({
 export const RevertStagedPaymentResponse = zod.object({
   "id": zod.string(),
   "realmId": zod.string(),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).describe('QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments\/SalesReceipts) — settlement-matching evidence, never donation-review work.'),
   "qbEntityId": zod.string(),
   "qbLineId": zod.string().nullish(),
   "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),
@@ -1792,7 +1792,7 @@ export const EjectStagedPaymentFromGroupResponse = zod.object({
   "stagedPayment": zod.object({
   "id": zod.string(),
   "realmId": zod.string(),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).describe('QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments\/SalesReceipts) — settlement-matching evidence, never donation-review work.'),
   "qbEntityId": zod.string(),
   "qbLineId": zod.string().nullish(),
   "qbDepositId": zod.string().nullish().describe('The underlying bank Deposit id this incoming money belongs to, when known. Rows sharing one non-null value are candidates a fundraiser may manually group into a single deposit unit and reconcile as a whole to one multi-allocation gift. Null when not tied to a deposit (or staged before this field existed).'),

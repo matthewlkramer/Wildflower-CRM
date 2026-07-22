@@ -36,7 +36,13 @@ export interface SettlementLumpFields {
 
 /** TS-side lump eligibility (mirror of {@link settlementLumpWhere}). */
 export function isSettlementLump(row: SettlementLumpFields): boolean {
-  if (row.qbEntityType === "deposit") return true;
+  // A deposit-typed row IS the lump by construction: a direct deposit LINE or
+  // a WHOLE-deposit header record (deposit_header — staged when every line of
+  // the bank deposit re-records ingested Payments, so the header carries the
+  // deposit's date/total/account and is the only row that can be the lump).
+  if (row.qbEntityType === "deposit" || row.qbEntityType === "deposit_header") {
+    return true;
+  }
   const hay = [
     row.payerName,
     row.lineDescription,
@@ -56,6 +62,7 @@ export function isSettlementLump(row: SettlementLumpFields): boolean {
 export function settlementLumpWhere(): SQL {
   return or(
     eq(stagedPayments.qbEntityType, "deposit"),
+    eq(stagedPayments.qbEntityType, "deposit_header"),
     sql`lower(
       coalesce(${stagedPayments.payerName}, '') || ' ' ||
       coalesce(${stagedPayments.lineDescription}, '') || ' ' ||

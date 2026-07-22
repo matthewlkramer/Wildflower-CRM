@@ -173,7 +173,10 @@ async function resolveAndLockAnchor(
         );
       }
       const row = await tx
-        .select({ amount: stagedPayments.amount })
+        .select({
+          amount: stagedPayments.amount,
+          qbEntityType: stagedPayments.qbEntityType,
+        })
         .from(stagedPayments)
         .where(eq(stagedPayments.id, args.paymentId))
         .for("update")
@@ -181,6 +184,18 @@ async function resolveAndLockAnchor(
       if (!row) {
         throw new Error(
           `applyPaymentApplication: staged payment ${args.paymentId} not found`,
+        );
+      }
+      // A whole-deposit header (deposit_header) is a duplicate-money record:
+      // every dollar it bundles is already counted on the underlying
+      // Payment/SalesReceipt rows. Booking a ledger row against it would
+      // double-count that money, so it can NEVER anchor an application.
+      if (row.qbEntityType === "deposit_header") {
+        throw new Error(
+          `applyPaymentApplication: staged payment ${args.paymentId} is a ` +
+            "whole-deposit header (deposit_header) — its money is already " +
+            "counted on the underlying Payment rows, so it cannot anchor a " +
+            "payment application",
         );
       }
       return {

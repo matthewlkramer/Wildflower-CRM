@@ -28,7 +28,11 @@ import { getQuickbooksApiBase } from "./quickbooksOauth";
  * never trips the (revenue-code-based) exclusion rules.
  */
 
-export type QuickbooksEntityType = "sales_receipt" | "payment" | "deposit";
+export type QuickbooksEntityType =
+  | "sales_receipt"
+  | "payment"
+  | "deposit"
+  | "deposit_header";
 
 export interface NormalizedQuickbooksPayment {
   qbEntityType: QuickbooksEntityType;
@@ -834,6 +838,12 @@ export async function pullIncomingPayments(
   // via depositCodingByTxn).
   for (const row of deposits) {
     const depositMemo = row.PrivateNote ?? null;
+    // Whether ANY line of this deposit was staged as its own direct unit. When
+    // none is (every line re-records an ingested Payment/SalesReceipt), the
+    // deposit would otherwise be invisible — no row carries its date, total,
+    // or bank account — so we stage a WHOLE-deposit `deposit_header` record
+    // below for settlement/tie matching.
+    let stagedDirectLine = false;
     for (const line of row.Line ?? []) {
       // Skip ONLY lines that link back to a Payment/SalesReceipt — that money
       // is ingested via its own entity, so staging the deposit line too would
@@ -847,6 +857,7 @@ export async function pullIncomingPayments(
       )
         continue;
       // Each direct deposit line is its own matching unit.
+      stagedDirectLine = true;
       const detail = extractLineDetail([line], itemAccounts);
       const entityId = line.DepositLineDetail?.Entity?.value ?? null;
       out.push({
@@ -892,6 +903,57 @@ export async function pullIncomingPayments(
         // Store the whole deposit as the raw entity AND the specific line.
         qbRaw: row,
         qbRawLine: line,
+      });
+    }
+
+    // WHOLE-deposit header record: staged ONLY when the deposit yielded zero
+    // direct-line units above (every line re-records an ingested
+    // Payment/SalesReceipt). Without it the deposit has no row carrying its
+    // date, total amount, or bank account, so it can never surface as a
+    // settlement / charge-tie candidate. The header's money is ALREADY
+    // counted on the underlying Payment/SalesReceipt rows: header rows derive
+    // status `excluded` by entity type (derivedStatus.ts) and must never
+    // anchor a payment_applications row.
+    if (!stagedDirectLine && (row.Line ?? []).length > 0) {
+      const detail = extractLineDetail(row.Line, itemAccounts);
+      out.push({
+        qbEntityType: "deposit_header",
+        qbEntityId: row.Id,
+        // One idempotent unit per deposit (mirrors SalesReceipt/Payment).
+        qbLineId: "",
+        qbDepositId: row.Id,
+        // The deposit TOTAL — what the bank (and a Stripe payout) sees.
+        amount: num(row.TotalAmt),
+        dateReceived: row.TxnDate ?? null,
+        // A header bundles MANY payers; naming one would be wrong.
+        payerName: null,
+        payerEmail: null,
+        rawReference: depositMemo ?? row.DepositToAccountRef?.name ?? null,
+        lineDescription: null,
+        lastUpdatedTime: row.MetaData?.LastUpdatedTime ?? null,
+        // Aggregate coding across all lines — audit context only.
+        lineItemNames: detail.itemNames,
+        lineAccountNames: detail.accountNames,
+        lineClasses: detail.classes,
+        qbPayerType: null,
+        qbPayerId: null,
+        qbPaymentMethod: null,
+        qbCheckNumber: null,
+        qbDepositToAccountName: row.DepositToAccountRef?.name ?? null,
+        qbDocNumber: row.DocNumber ?? null,
+        qbBillingAddress: null,
+        qbTransactionMemo: depositMemo,
+        qbLocation: row.DepartmentRef?.name ?? null,
+        qbCurrency: row.CurrencyRef?.value ?? null,
+        qbExchangeRate: rate(row.ExchangeRate),
+        qbCreateTime: row.MetaData?.CreateTime ?? null,
+        // All line back-references (the Payments this deposit re-records) —
+        // provenance for "which payments landed in this deposit".
+        qbLinkedTxn: mapLinkedTxn(
+          (row.Line ?? []).flatMap((l) => l.LinkedTxn ?? []),
+        ),
+        qbRaw: row,
+        qbRawLine: null,
       });
     }
   }

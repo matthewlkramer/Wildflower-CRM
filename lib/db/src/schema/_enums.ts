@@ -760,10 +760,17 @@ export const taskProposalStatusEnum = pgEnum("task_proposal_status", [
 
 // Which QuickBooks "incoming money" entity a staged payment was pulled
 // from. Used together with the QB entity id for idempotent dedupe.
+// `deposit_header` is a WHOLE-deposit record staged only when a bank Deposit
+// yields zero direct-line rows (every line re-records an already-ingested
+// Payment/SalesReceipt). It exists so the deposit is visible for settlement /
+// tie matching; it is NEVER donation-review work (derived status `excluded`
+// by entity type) and must never anchor a payment_applications row — the
+// money it bundles is already counted on the underlying Payment rows.
 export const quickbooksEntityTypeEnum = pgEnum("quickbooks_entity_type", [
   "sales_receipt",
   "payment",
   "deposit",
+  "deposit_header",
 ]);
 
 // The kind of QuickBooks name a staged payment's payer resolves to. Pulled

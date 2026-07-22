@@ -277,6 +277,17 @@ export async function mintGiftInTx(
     auditReq,
   } = args;
 
+  // A whole-deposit header (deposit_header) can never mint a gift: its money
+  // is already counted on the underlying Payment/SalesReceipt rows, so a gift
+  // minted from it would double-count. (applyPaymentApplication backstops
+  // this at the ledger anchor; failing here keeps the error pre-write.)
+  if (staged.qbEntityType === "deposit_header") {
+    throw new Error(
+      "This row is a whole-deposit header: its money is already counted on " +
+        "the deposit's underlying payment rows, so it cannot create a gift",
+    );
+  }
+
   // convert: latch the opportunity into a pledge by setting the writtenPledge
   // outcome flag (the user-driven lifecycle input). Cultivation stage is a pure
   // funnel now and is NOT touched here; status + stage→complete are DERIVED
@@ -675,6 +686,17 @@ export async function linkGiftInTx(
     oldAppliedGift = null,
     allowRelink = false,
   } = args;
+
+  // Same double-count guard as mintGiftInTx: a whole-deposit header's money
+  // is already counted on the underlying Payment rows — it can never be
+  // reconciled onto a gift as counted evidence.
+  if (staged.qbEntityType === "deposit_header") {
+    throw new Error(
+      "This row is a whole-deposit header: its money is already counted on " +
+        "the deposit's underlying payment rows, so it cannot be reconciled " +
+        "to a gift",
+    );
+  }
 
   const rederivePledgeIds: string[] = [];
   const finalDonor = effectiveGiftDonor;

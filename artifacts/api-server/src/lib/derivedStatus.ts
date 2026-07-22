@@ -267,6 +267,19 @@ export function qbResolvedElsewhereText(alias: string): string {
   return `(${qbSettlementClaimedText(alias)} OR ${qbHasSplitChildrenText(alias)})`;
 }
 
+/** A WHOLE-deposit header record (qb_entity_type='deposit_header') — staged
+ *  only when a bank Deposit yields zero direct-line rows because every line
+ *  re-records an ingested Payment/SalesReceipt. Its money is already counted
+ *  on those Payment rows, so a header is NEVER donation-review work: it
+ *  derives `excluded` by entity type alone (no stored exclusion_reason).
+ *  Precedence: sits AFTER match_confirmed so a header named by a confirmed
+ *  settlement link still reads match_confirmed (settled evidence), exactly
+ *  like a deposit-line lump. */
+export function qbIsDepositHeaderText(alias: string): string {
+  const a = quotedSqlAlias(alias);
+  return `(${a}."qb_entity_type" = 'deposit_header')`;
+}
+
 /** The full derived-status CASE for QB row `alias` (parenthesized, no cast).
  *  The resolved-elsewhere arm sits AFTER match_confirmed on purpose: a tied
  *  row whose charge is already booked stays match_confirmed (the booking is
@@ -281,14 +294,16 @@ export function qbStatusCaseText(alias: string): string {
   WHEN ${qbProposedText(alias)} THEN 'match_proposed'
   WHEN ${qbConfirmedEvidenceText(alias)} THEN 'match_confirmed'
   WHEN ${qbResolvedElsewhereText(alias)} THEN 'excluded'
+  WHEN ${qbIsDepositHeaderText(alias)} THEN 'excluded'
   ELSE 'pending'
 END)`;
 }
 
-/** Open = pending OR match_proposed (still needs donor/gift work). */
+/** Open = pending OR match_proposed (still needs donor/gift work). A
+ *  deposit_header is never open — it is settlement evidence, not review work. */
 export function qbOpenText(alias: string): string {
   const a = quotedSqlAlias(alias);
-  return `(${a}."exclusion_reason" IS NULL AND (
+  return `(${a}."exclusion_reason" IS NULL AND NOT ${qbIsDepositHeaderText(alias)} AND (
   (NOT ${qbConfirmedEvidenceText(alias)} AND NOT ${qbResolvedElsewhereText(alias)})
   OR ${qbProposedText(alias)}
 ))`;
@@ -364,7 +379,7 @@ export const stagedStatusSql: SQL<DerivedStatus> = sql
 /** Per-status WHERE predicates (mutually exclusive, exhaustive). */
 export const stagedStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
   excluded: sql.raw(
-    `(${QBA}."exclusion_reason" IS NOT NULL OR (NOT ${qbProposedText(QB)} AND NOT ${qbConfirmedEvidenceText(QB)} AND ${qbResolvedElsewhereText(QB)}))`,
+    `(${QBA}."exclusion_reason" IS NOT NULL OR (NOT ${qbProposedText(QB)} AND NOT ${qbConfirmedEvidenceText(QB)} AND (${qbResolvedElsewhereText(QB)} OR ${qbIsDepositHeaderText(QB)})))`,
   ) as SQL<boolean>,
   match_proposed: sql.raw(
     `(${QBA}."exclusion_reason" IS NULL AND ${qbProposedText(QB)})`,
@@ -373,7 +388,7 @@ export const stagedStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
     `(${QBA}."exclusion_reason" IS NULL AND NOT ${qbProposedText(QB)} AND ${qbConfirmedEvidenceText(QB)})`,
   ) as SQL<boolean>,
   pending: sql.raw(
-    `(${QBA}."exclusion_reason" IS NULL AND NOT ${qbConfirmedEvidenceText(QB)} AND NOT ${qbResolvedElsewhereText(QB)})`,
+    `(${QBA}."exclusion_reason" IS NULL AND NOT ${qbConfirmedEvidenceText(QB)} AND NOT ${qbResolvedElsewhereText(QB)} AND NOT ${qbIsDepositHeaderText(QB)})`,
   ) as SQL<boolean>,
 };
 
@@ -457,6 +472,11 @@ export interface StagedStatusFacts {
    * claim: the children tell the money story — mirrors
    * qbHasSplitChildrenText; default false. */
   hasSplitChildren?: boolean;
+  /** The row's qb_entity_type when known. A 'deposit_header' row (whole-deposit
+   * record; its money is counted on the underlying Payment rows) derives
+   * `excluded` by type alone — mirrors qbIsDepositHeaderText. Callers echoing a
+   * staged row they hold MUST pass this so a header never echoes `pending`. */
+  qbEntityType?: string | null;
 }
 
 export function deriveStagedPaymentStatus(f: StagedStatusFacts): DerivedStatus {
@@ -474,6 +494,7 @@ export function deriveStagedPaymentStatus(f: StagedStatusFacts): DerivedStatus {
   if (f.hasSettlementClaim === true || f.hasSplitChildren === true) {
     return "excluded";
   }
+  if (f.qbEntityType === "deposit_header") return "excluded";
   return "pending";
 }
 

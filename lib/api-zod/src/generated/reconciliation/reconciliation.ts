@@ -1095,7 +1095,7 @@ export const ListWorkbenchClustersResponse = zod.object({
   "paymentMethod": zod.string().nullish().describe('Raw QB PaymentMethodRef name (e.g. Check, ACH, Visa) from the staged row — accounting evidence as QuickBooks recorded it; null when QB recorded none.'),
   "linkedChargeId": zod.string().nullish().describe('For fee \/ charge_tie roles: the stripe_staged_charges id the link runs through.'),
   "payerName": zod.string().nullish().describe('QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee \/ charge_tie \/ group_member.'),
-  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']).nullish().describe('The QuickBooks transaction type this staged row came from — drives the \'View in QuickBooks\' deep link.'),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).nullish().describe('The QuickBooks transaction type this staged row came from — drives the \'View in QuickBooks\' deep link (deposit_header deep-links to its Deposit).'),
   "qbEntityId": zod.string().nullish().describe('The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link).'),
   "splitUnitParentId": zod.string().nullish().describe('When this row is a SYNTHETIC reconciliation unit (created by splitting a QuickBooks row that bundled several money events), the id of the original QuickBooks parent row. Null for real QuickBooks rows. Synthetic units have no QuickBooks deep link of their own — the parent carries the qbEntityType\/qbEntityId.'),
   "attributedDonor": zod.object({

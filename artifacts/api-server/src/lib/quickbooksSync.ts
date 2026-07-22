@@ -7,6 +7,9 @@ import {
   quickbooksHandlingRules,
   organizations,
   fundableProjects,
+  settlementLinks,
+  sourceLinks,
+  paymentApplications,
 } from "@workspace/db/schema";
 import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
 import { newId } from "./helpers";
@@ -662,6 +665,12 @@ export async function syncQuickbooks(
     // edits apply to NEW incoming payments only (already-queued rows untouched).
     const handlingRules = await loadHandlingRules();
 
+    // Deposits whose pull yielded DIRECT line rows this run — used after the
+    // loop to clean up a now-superfluous whole-deposit header (a deposit that
+    // was all-linked when its header was staged, later edited in QB to carry
+    // direct lines: the line rows are now the representation).
+    const directLineDepositIds = new Set<string>();
+
     for (const p of pulled) {
       if (p.lastUpdatedTime) {
         const t = new Date(p.lastUpdatedTime).getTime();
@@ -669,10 +678,17 @@ export async function syncQuickbooks(
           maxUpdated = t;
         }
       }
+      if (p.qbEntityType === "deposit") directLineDepositIds.add(p.qbEntityId);
+
+      // A whole-deposit header is NEVER donation-review work (derived status
+      // `excluded` by entity type): its money is already counted on the
+      // underlying Payment/SalesReceipt rows. Skip handling rules, the donor
+      // scorer, and every auto-apply path — stage the bare evidence row only.
+      const isDepositHeader = p.qbEntityType === "deposit_header";
 
       // Classify first via the admin-editable rules. `exclude` → noise (skips the
       // costlier scorer); `auto_create_approve` → mint+approve after staging.
-      const ruleHit = evaluateRules(handlingRules, {
+      const ruleHit = isDepositHeader ? null : evaluateRules(handlingRules, {
         amount: p.amount,
         payerName: p.payerName,
         lineItemNames: p.lineItemNames,
@@ -708,7 +724,7 @@ export async function syncQuickbooks(
         qbDepositToAccountName: p.qbDepositToAccountName,
       });
 
-      const scored: ScoredMatch | null = excluded
+      const scored: ScoredMatch | null = excluded || isDepositHeader
         ? null
         : await scoreStagedPayment({
             payerName: p.payerName,
@@ -803,6 +819,32 @@ export async function syncQuickbooks(
       if (scored && scored.tier === "high") {
         const did = await autoApply(newRow.id, scored);
         if (did) autoApplied += 1;
+      }
+    }
+
+    // ── Clean up now-superfluous whole-deposit headers. ──
+    // A header exists ONLY because its deposit yielded zero direct-line rows.
+    // If a later QB edit gives the deposit direct lines (this pull staged
+    // them), the line rows are the representation and the header is a
+    // duplicate — delete it, UNLESS review work already references it (a
+    // settlement link, a source link, or a ledger row — the last should be
+    // impossible by guard, but is checked for safety). A referenced header is
+    // kept so a human resolution is never silently destroyed.
+    if (directLineDepositIds.size > 0) {
+      const ids = [...directLineDepositIds];
+      for (let i = 0; i < ids.length; i += 500) {
+        await db
+          .delete(stagedPayments)
+          .where(
+            and(
+              eq(stagedPayments.realmId, conn.realmId),
+              eq(stagedPayments.qbEntityType, "deposit_header"),
+              inArray(stagedPayments.qbEntityId, ids.slice(i, i + 500)),
+              sql`NOT EXISTS (SELECT 1 FROM ${settlementLinks} WHERE ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id})`,
+              sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
+              sql`NOT EXISTS (SELECT 1 FROM ${paymentApplications} WHERE ${paymentApplications.paymentId} = ${stagedPayments.id})`,
+            ),
+          );
       }
     }
 

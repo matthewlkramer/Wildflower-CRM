@@ -2626,6 +2626,9 @@ export interface UpdateGiftOrPaymentBody {
   thankYouLetterFilename?: string | null;
 }
 
+/**
+ * QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments/SalesReceipts) — settlement-matching evidence, never donation-review work.
+ */
 export type QuickbooksEntityType = typeof QuickbooksEntityType[keyof typeof QuickbooksEntityType];
 
 
@@ -2633,6 +2636,7 @@ export const QuickbooksEntityType = {
   sales_receipt: 'sales_receipt',
   payment: 'payment',
   deposit: 'deposit',
+  deposit_header: 'deposit_header',
 } as const;
 
 /**
@@ -5526,7 +5530,7 @@ export const WorkbenchClusterQbRecordRole = {
 } as const;
 
 /**
- * The QuickBooks transaction type this staged row came from — drives the 'View in QuickBooks' deep link.
+ * The QuickBooks transaction type this staged row came from — drives the 'View in QuickBooks' deep link (deposit_header deep-links to its Deposit).
  */
 export type WorkbenchClusterQbRecordQbEntityType = typeof WorkbenchClusterQbRecordQbEntityType[keyof typeof WorkbenchClusterQbRecordQbEntityType] | null;
 
@@ -5535,6 +5539,7 @@ export const WorkbenchClusterQbRecordQbEntityType = {
   sales_receipt: 'sales_receipt',
   payment: 'payment',
   deposit: 'deposit',
+  deposit_header: 'deposit_header',
 } as const;
 
 /**
@@ -5569,7 +5574,7 @@ export interface WorkbenchClusterQbRecord {
   linkedChargeId?: string | null;
   /** QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee / charge_tie / group_member. */
   payerName?: string | null;
-  /** The QuickBooks transaction type this staged row came from — drives the 'View in QuickBooks' deep link. */
+  /** The QuickBooks transaction type this staged row came from — drives the 'View in QuickBooks' deep link (deposit_header deep-links to its Deposit). */
   qbEntityType?: WorkbenchClusterQbRecordQbEntityType;
   /** The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link). */
   qbEntityId?: string | null;
