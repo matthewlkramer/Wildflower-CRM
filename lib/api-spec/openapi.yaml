@@ -9403,7 +9403,7 @@ components:
       type: object
       required: [attribute, label, status, applicable]
       properties:
-        attribute:  { type: string, enum: [reportDeadline, purposeVerbatim, usageRestriction, intendedUsage, regionalRestriction, allocationEntity, address, circle, seriesType, additionalNotes, internalMemo], description: "Which importable attribute this row describes." }
+        attribute:  { type: string, enum: [reportDeadline, restrictionDescription, purposeVerbatim, otherRestriction, timeRestriction, intendedUsage, regionalRestriction, allocationEntity, address, circle, seriesType, additionalNotes, internalMemo], description: "Which importable attribute this row describes. restrictionDescription = plain-language summary; purposeVerbatim = exact source language; otherRestriction / timeRestriction = restriction axes." }
         label:      { type: string, description: "Human-readable attribute name." }
         status:     { $ref: "#/components/schemas/CrossCheckStatus" }
         applicable: { type: boolean, description: "False when the sheet has nothing to import for this attribute." }

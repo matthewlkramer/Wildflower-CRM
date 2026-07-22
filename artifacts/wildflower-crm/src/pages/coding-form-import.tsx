@@ -40,6 +40,10 @@ import {
 } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatDateShort } from "@/lib/format";
+import {
+  canOverrideCrossCheck,
+  isCrossCheckApplyable,
+} from "@/lib/coding-form-gating";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -476,15 +480,12 @@ function RowCard({ row }: { row: CodingFormRow }) {
   };
 
   // Applyable attrs: applicable, not blocked, and a difference exists (new/conflict).
+  // timeRestriction is override-driven: server-side it only becomes applicable
+  // once an override exists, so a locally typed (not yet saved) override must
+  // also make it applyable — the override is sent in the same apply request.
   const applyable = useMemo(
-    () =>
-      row.crossChecks.filter(
-        (c) =>
-          c.applicable &&
-          !c.blockedReason &&
-          (c.status === "new" || c.status === "conflict"),
-      ),
-    [row.crossChecks],
+    () => row.crossChecks.filter((c) => isCrossCheckApplyable(c, overrides)),
+    [row.crossChecks, overrides],
   );
 
   const handleApply = () => {
@@ -761,15 +762,16 @@ function RowCard({ row }: { row: CodingFormRow }) {
             </thead>
             <tbody>
               {row.crossChecks.map((c) => {
+                // Mirrors the `applyable` memo: timeRestriction with a locally
+                // typed override is applyable even while the server-computed
+                // check reads not-applicable ("na").
                 const canApply =
-                  c.applicable &&
-                  !c.blockedReason &&
-                  (c.status === "new" || c.status === "conflict") &&
+                  isCrossCheckApplyable(c, overrides) &&
                   row.status !== "applied";
-                const canOverride =
-                  c.applicable &&
-                  c.attribute !== "address" &&
-                  row.status !== "applied";
+                // timeRestriction is override-driven: it only becomes
+                // applicable once an override is set, so its picker must be
+                // offered even while the check reads not-applicable.
+                const canOverride = canOverrideCrossCheck(c, row.status);
                 const overrideInput = (() => {
                   if (!canOverride) return null;
                   if (c.attribute === "allocationEntity") {
@@ -802,7 +804,10 @@ function RowCard({ row }: { row: CodingFormRow }) {
                       </Select>
                     );
                   }
-                  if (c.attribute === "usageRestriction") {
+                  if (
+                    c.attribute === "otherRestriction" ||
+                    c.attribute === "timeRestriction"
+                  ) {
                     return (
                       <Select
                         value={overrides[c.attribute] ?? ""}
@@ -852,8 +857,9 @@ function RowCard({ row }: { row: CodingFormRow }) {
                       />
                     );
                   }
-                  // Default: plain text input for purposeVerbatim, circle,
-                  // seriesType, additionalNotes, internalMemo, regionalRestriction.
+                  // Default: plain text input for restrictionDescription,
+                  // purposeVerbatim, circle, seriesType, additionalNotes,
+                  // internalMemo, regionalRestriction.
                   return (
                     <Input
                       className="h-7 text-xs w-[14rem]"

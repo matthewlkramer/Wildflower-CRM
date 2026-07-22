@@ -50,8 +50,13 @@ export type CrossCheckStatus = "new" | "same" | "conflict" | "na";
 
 export type CodingFormAttribute =
   | "reportDeadline"
+  // Plain-language restriction summary → allocation.restriction_description.
+  | "restrictionDescription"
+  // Verbatim restriction source language → allocation.purpose_verbatim.
   | "purposeVerbatim"
-  | "usageRestriction"
+  // Restriction axes → allocation.other_restriction_type / time_restriction_type.
+  | "otherRestriction"
+  | "timeRestriction"
   | "intendedUsage"
   // Structured circle mappings: "Hub: <place>" → allocation region + regional
   // axis; Black Wildflowers Fund circles → allocation fund entity.
@@ -701,6 +706,7 @@ interface AllocationRef {
   purposeVerbatim: string | null;
   restrictionDescription: string | null;
   otherRestrictionType: string;
+  timeRestrictionType: string;
   intendedUsage: string | null;
   regionIds: string[] | null;
   regionalRestrictionType: string;
@@ -723,6 +729,7 @@ async function resolveAllocation(
         purposeVerbatim: giftAllocations.purposeVerbatim,
         restrictionDescription: giftAllocations.restrictionDescription,
         otherRestrictionType: giftAllocations.otherRestrictionType,
+        timeRestrictionType: giftAllocations.timeRestrictionType,
         intendedUsage: giftAllocations.intendedUsage,
         regionIds: giftAllocations.regionIds,
         regionalRestrictionType: giftAllocations.regionalRestrictionType,
@@ -747,6 +754,7 @@ async function resolveAllocation(
         purposeVerbatim: pledgeAllocations.purposeVerbatim,
         restrictionDescription: pledgeAllocations.restrictionDescription,
         otherRestrictionType: pledgeAllocations.otherRestrictionType,
+        timeRestrictionType: pledgeAllocations.timeRestrictionType,
         intendedUsage: pledgeAllocations.intendedUsage,
         regionIds: pledgeAllocations.regionIds,
         regionalRestrictionType: pledgeAllocations.regionalRestrictionType,
@@ -1064,13 +1072,12 @@ export async function crossChecksFor(
 
   // 2. Restriction answer text → allocation.restrictionDescription.
   //    The sheet answer is the reviewer's plain-language description of the
-  //    restriction, NOT quoted source language — so it lands in the new
+  //    restriction, NOT quoted source language — so it lands in the
   //    restriction_description field. purpose_verbatim is reserved for exact
-  //    source language only. The attribute key stays "purposeVerbatim" for
-  //    stored-decision compatibility.
+  //    source language only (see #2b).
   {
-    const pvOv = ov("purposeVerbatim");
-    const effectivePurpose = pvOv ?? effRestriction;
+    const rdOv = ov("restrictionDescription");
+    const effectiveDescription = rdOv ?? effRestriction;
     const applicable = restrictionPresent;
     let status: CrossCheckStatus = "na";
     let crmValue: string | null = null;
@@ -1086,12 +1093,57 @@ export async function crossChecksFor(
         else status = "conflict";
       }
     }
-    // Mirrors applyRow: writes effectivePurpose (override ?? sheet).
+    // Mirrors applyRow: writes effectiveDescription (override ?? sheet).
+    const actionable =
+      !!alloc && (status === "new" || status === "conflict");
+    out.push({
+      attribute: "restrictionDescription",
+      label: "Restriction description",
+      status,
+      applicable,
+      sheetValue: effRestriction,
+      crmValue,
+      targetType: "allocation",
+      targetId: alloc?.id ?? null,
+      decision: dec("restrictionDescription"),
+      overrideValue: rdOv,
+      blockedReason,
+      willWrite: actionable ? effectiveDescription : null,
+      willWriteTo: actionable
+        ? allocDest("Restriction description", status)
+        : null,
+    });
+  }
+
+  // 2b. Verbatim restriction source language → allocation.purposeVerbatim.
+  //     The sheet's restriction answer is usually a paraphrase, so this is
+  //     primarily override-driven: the reviewer pastes the exact grant-letter /
+  //     designation language. Compare-don't-clobber against the existing
+  //     verbatim text.
+  {
+    const pvOv = ov("purposeVerbatim");
+    const effectiveVerbatim = pvOv ?? effRestriction;
+    const applicable = restrictionPresent;
+    let status: CrossCheckStatus = "na";
+    let crmValue: string | null = null;
+    let blockedReason: string | null = null;
+    if (applicable) {
+      if (!alloc) {
+        blockedReason = allocBlocked;
+        status = "na";
+      } else {
+        crmValue = alloc.purposeVerbatim;
+        if (!crmValue || crmValue.trim().length === 0) status = "new";
+        else if (eqText(crmValue, effectiveVerbatim)) status = "same";
+        else status = "conflict";
+      }
+    }
+    // Mirrors applyRow: writes effectiveVerbatim (override ?? sheet).
     const actionable =
       !!alloc && (status === "new" || status === "conflict");
     out.push({
       attribute: "purposeVerbatim",
-      label: "Restriction description",
+      label: "Purpose verbatim",
       status,
       applicable,
       sheetValue: effRestriction,
@@ -1101,21 +1153,21 @@ export async function crossChecksFor(
       decision: dec("purposeVerbatim"),
       overrideValue: pvOv,
       blockedReason,
-      willWrite: actionable ? effectivePurpose : null,
+      willWrite: actionable ? effectiveVerbatim : null,
       willWriteTo: actionable
-        ? allocDest("Restriction description", status)
+        ? allocDest("Purpose verbatim", status)
         : null,
     });
   }
 
-  // 3. Usage restriction axis → allocation.otherRestrictionType.
+  // 3. Other-restriction axis → allocation.otherRestrictionType.
   //    Sheet always implies donor_restricted; override lets reviewer pick
   //    donor_restricted or unrestricted.
   {
-    const usageOv = ov("usageRestriction");
-    const effectiveUsage =
-      usageOv === "donor_restricted" || usageOv === "unrestricted"
-        ? usageOv
+    const otherOv = ov("otherRestriction");
+    const effectiveOther =
+      otherOv === "donor_restricted" || otherOv === "unrestricted"
+        ? otherOv
         : "donor_restricted";
     const applicable = restrictionPresent;
     let status: CrossCheckStatus = "na";
@@ -1132,11 +1184,11 @@ export async function crossChecksFor(
         else status = "conflict"; // wf_restricted differs from donor intent
       }
     }
-    // Mirrors applyRow: writes effectiveUsage (override ?? "donor_restricted").
+    // Mirrors applyRow: writes effectiveOther (override ?? "donor_restricted").
     const actionable =
       !!alloc && (status === "new" || status === "conflict");
     out.push({
-      attribute: "usageRestriction",
+      attribute: "otherRestriction",
       label: "Other restriction",
       status,
       applicable,
@@ -1144,16 +1196,68 @@ export async function crossChecksFor(
       crmValue,
       targetType: "allocation",
       targetId: alloc?.id ?? null,
-      decision: dec("usageRestriction"),
-      overrideValue: usageOv ?? null,
+      decision: dec("otherRestriction"),
+      overrideValue: otherOv ?? null,
       blockedReason,
       willWrite: actionable
-        ? effectiveUsage === "donor_restricted"
+        ? effectiveOther === "donor_restricted"
           ? "Donor restricted"
           : "Unrestricted"
         : null,
       willWriteTo: actionable
         ? allocDest("Other restriction", status)
+        : null,
+    });
+  }
+
+  // 3b. Time-restriction axis → allocation.timeRestrictionType.
+  //     No current sheet column carries temporal-restriction language, so this
+  //     is override-driven: applicable only when the reviewer sets an override
+  //     (donor_restricted or unrestricted; invalid text defaults to
+  //     donor_restricted). Same compare-don't-clobber pattern as #3.
+  {
+    const timeOv = ov("timeRestriction");
+    const effectiveTime =
+      timeOv === "donor_restricted" || timeOv === "unrestricted"
+        ? timeOv
+        : "donor_restricted";
+    const applicable = !!timeOv;
+    let status: CrossCheckStatus = "na";
+    let crmValue: string | null = null;
+    let blockedReason: string | null = null;
+    if (applicable) {
+      if (!alloc) {
+        blockedReason = allocBlocked;
+        status = "na";
+      } else {
+        crmValue = alloc.timeRestrictionType;
+        if (crmValue === effectiveTime) status = "same";
+        else if (crmValue === "unrestricted") status = "new";
+        else status = "conflict";
+      }
+    }
+    // Mirrors applyRow: writes effectiveTime (override ?? "donor_restricted").
+    const actionable =
+      !!alloc && (status === "new" || status === "conflict");
+    out.push({
+      attribute: "timeRestriction",
+      label: "Time restriction",
+      status,
+      applicable,
+      sheetValue: null, // no sheet column carries temporal restriction language
+      crmValue,
+      targetType: "allocation",
+      targetId: alloc?.id ?? null,
+      decision: dec("timeRestriction"),
+      overrideValue: timeOv ?? null,
+      blockedReason,
+      willWrite: actionable
+        ? effectiveTime === "donor_restricted"
+          ? "Donor restricted"
+          : "Unrestricted"
+        : null,
+      willWriteTo: actionable
+        ? allocDest("Time restriction", status)
         : null,
     });
   }
@@ -1686,8 +1790,10 @@ export async function applyRow(
   //      hub region / fund entity). Mirrors crossChecksFor #2-#4c.
   //      Uses mergedOvForCheck overrides where present.
   const allocAttrs: CodingFormAttribute[] = [
+    "restrictionDescription",
     "purposeVerbatim",
-    "usageRestriction",
+    "otherRestriction",
+    "timeRestriction",
     "intendedUsage",
     "regionalRestriction",
     "allocationEntity",
@@ -1697,18 +1803,31 @@ export async function applyRow(
     const { alloc } = await resolveAllocation(row);
     if (alloc) {
       const patch: Record<string, unknown> = { updatedAt: new Date() };
-      if (allocToApply.includes("purposeVerbatim")) {
+      if (allocToApply.includes("restrictionDescription")) {
         // Plain-language reviewer answer → restriction_description (NOT
         // purpose_verbatim, which holds exact source language only).
-        const pvOv = mergedOvForCheck.purposeVerbatim;
+        const rdOv = mergedOvForCheck.restrictionDescription;
         patch.restrictionDescription =
+          rdOv ?? effectiveText(row, "restrictionLanguage");
+      }
+      if (allocToApply.includes("purposeVerbatim")) {
+        // Verbatim restriction source language → purpose_verbatim.
+        const pvOv = mergedOvForCheck.purposeVerbatim;
+        patch.purposeVerbatim =
           pvOv ?? effectiveText(row, "restrictionLanguage");
       }
-      if (allocToApply.includes("usageRestriction")) {
-        const usageOv = mergedOvForCheck.usageRestriction;
+      if (allocToApply.includes("otherRestriction")) {
+        const otherOv = mergedOvForCheck.otherRestriction;
         patch.otherRestrictionType =
-          usageOv === "donor_restricted" || usageOv === "unrestricted"
-            ? usageOv
+          otherOv === "donor_restricted" || otherOv === "unrestricted"
+            ? otherOv
+            : "donor_restricted";
+      }
+      if (allocToApply.includes("timeRestriction")) {
+        const timeOv = mergedOvForCheck.timeRestriction;
+        patch.timeRestrictionType =
+          timeOv === "donor_restricted" || timeOv === "unrestricted"
+            ? timeOv
             : "donor_restricted";
       }
       if (allocToApply.includes("intendedUsage")) {

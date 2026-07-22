@@ -6430,15 +6430,17 @@ export const CrossCheckStatus = {
 } as const;
 
 /**
- * Which importable attribute this row describes.
+ * Which importable attribute this row describes. restrictionDescription = plain-language summary; purposeVerbatim = exact source language; otherRestriction / timeRestriction = restriction axes.
  */
 export type CodingFormCrossCheckAttribute = typeof CodingFormCrossCheckAttribute[keyof typeof CodingFormCrossCheckAttribute];
 
 
 export const CodingFormCrossCheckAttribute = {
   reportDeadline: 'reportDeadline',
+  restrictionDescription: 'restrictionDescription',
   purposeVerbatim: 'purposeVerbatim',
-  usageRestriction: 'usageRestriction',
+  otherRestriction: 'otherRestriction',
+  timeRestriction: 'timeRestriction',
   intendedUsage: 'intendedUsage',
   regionalRestriction: 'regionalRestriction',
   allocationEntity: 'allocationEntity',
@@ -6461,7 +6463,7 @@ export const CodingFormCrossCheckDecision = {
 } as const;
 
 export interface CodingFormCrossCheck {
-  /** Which importable attribute this row describes. */
+  /** Which importable attribute this row describes. restrictionDescription = plain-language summary; purposeVerbatim = exact source language; otherRestriction / timeRestriction = restriction axes. */
   attribute: CodingFormCrossCheckAttribute;
   /** Human-readable attribute name. */
   label: string;
