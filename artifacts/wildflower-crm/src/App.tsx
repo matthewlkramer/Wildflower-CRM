@@ -30,6 +30,7 @@ import Admin from "@/pages/admin";
 import AuditLog from "@/pages/audit-log";
 import PotentialDuplicates from "@/pages/potential-duplicates";
 import CleanupQueue from "@/pages/cleanup-queue";
+import RestrictionTextReview from "@/pages/restriction-text-review";
 import RevenueExtractor from "@/pages/revenue-extractor";
 import CodingFormImport from "@/pages/coding-form-import";
 import FundableProjects from "@/pages/fundable-projects";
@@ -242,6 +243,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/revenue-extractor"><ProtectedRoute component={RevenueExtractor} /></Route>
           <Route path="/financial-corrections"><Redirect to="/reconciliation/clusters" /></Route>
           <Route path="/cleanup-queue"><ProtectedRoute component={CleanupQueue} /></Route>
+          <Route path="/restriction-text-review"><ProtectedRoute component={RestrictionTextReview} /></Route>
           <Route path="/coding-form-import"><ProtectedRoute component={CodingFormImport} /></Route>
           
           <Route component={NotFound} />

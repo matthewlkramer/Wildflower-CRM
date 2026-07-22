@@ -22,10 +22,13 @@ import type {
 import type {
   BadRequestResponse,
   CreateGiftAllocationBody,
+  ForbiddenResponse,
   GiftAllocation,
   GiftAllocationList,
   ListGiftAllocationsParams,
+  ListRestrictionTextReviewParams,
   NotFoundResponse,
+  RestrictionTextReviewList,
   RevenueCodingPreview,
   UpdateGiftAllocationBody
 } from '../api.schemas';
@@ -380,6 +383,96 @@ export function useGetGiftAllocationCodingPreview<TData = Awaited<ReturnType<typ
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetGiftAllocationCodingPreviewQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Admin-only. One row per gift or pledge allocation whose purpose_verbatim
+is still non-null after the automated restriction-text sort (migration
+0150). Heuristics could not judge every value — some verbatim text is
+really a plain-language description that belongs in
+restrictionDescription, or needs human rewording. Each row carries
+parent/donor context so a reviewer can judge the text, then edits go
+through the existing PATCH /gift-allocations/{id} and
+PATCH /pledge-allocations/{id} endpoints (this endpoint is read-only).
+
+ * @summary Admin-only review list of allocations that still carry purpose_verbatim text.
+ */
+export const getListRestrictionTextReviewUrl = (params?: ListRestrictionTextReviewParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/restriction-text-review?${stringifiedParams}` : `/api/restriction-text-review`
+}
+
+export const listRestrictionTextReview = async (params?: ListRestrictionTextReviewParams, options?: RequestInit): Promise<RestrictionTextReviewList> => {
+  
+  return customFetch<RestrictionTextReviewList>(getListRestrictionTextReviewUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getListRestrictionTextReviewQueryKey = (params?: ListRestrictionTextReviewParams,) => {
+    return [
+    `/api/restriction-text-review`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getListRestrictionTextReviewQueryOptions = <TData = Awaited<ReturnType<typeof listRestrictionTextReview>>, TError = ErrorType<ForbiddenResponse>>(params?: ListRestrictionTextReviewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRestrictionTextReview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRestrictionTextReviewQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRestrictionTextReview>>> = ({ signal }) => listRestrictionTextReview(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRestrictionTextReview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListRestrictionTextReviewQueryResult = NonNullable<Awaited<ReturnType<typeof listRestrictionTextReview>>>
+export type ListRestrictionTextReviewQueryError = ErrorType<ForbiddenResponse>
+
+
+/**
+ * @summary Admin-only review list of allocations that still carry purpose_verbatim text.
+ */
+
+export function useListRestrictionTextReview<TData = Awaited<ReturnType<typeof listRestrictionTextReview>>, TError = ErrorType<ForbiddenResponse>>(
+ params?: ListRestrictionTextReviewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRestrictionTextReview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListRestrictionTextReviewQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

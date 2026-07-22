@@ -7133,6 +7133,41 @@ export interface UpdateGiftAllocationBody {
   restrictionDescription?: string | null;
 }
 
+/**
+ * Whether this row is a gift allocation or a pledge allocation.
+ */
+export type RestrictionTextReviewRowSource = typeof RestrictionTextReviewRowSource[keyof typeof RestrictionTextReviewRowSource];
+
+
+export const RestrictionTextReviewRowSource = {
+  gift: 'gift',
+  pledge: 'pledge',
+} as const;
+
+export interface RestrictionTextReviewRow {
+  /** Id of the gift or pledge allocation carrying the verbatim text. PATCH the matching allocation endpoint to edit. */
+  allocationId: string;
+  /** Whether this row is a gift allocation or a pledge allocation. */
+  source: RestrictionTextReviewRowSource;
+  /** Parent gift id (source=gift) or opportunity/pledge id (source=pledge). */
+  parentId: string;
+  /** Parent gift or opportunity/pledge display name. */
+  parentName?: string | null;
+  /** Display name of the parent record's donor (organization, individual, or household). */
+  donorName?: string | null;
+  subAmount?: string | null;
+  grantYear?: string | null;
+  /** The remaining verbatim text under review (always non-null here). */
+  purposeVerbatim: string;
+  restrictionDescription?: string | null;
+  updatedAt: string;
+}
+
+export interface RestrictionTextReviewList {
+  data: RestrictionTextReviewRow[];
+  pagination: Pagination;
+}
+
 export type InteractionKind = typeof InteractionKind[keyof typeof InteractionKind];
 
 
@@ -9922,6 +9957,30 @@ limit?: LimitParameter;
  */
 page?: PageParameter;
 };
+
+export type ListRestrictionTextReviewParams = {
+/**
+ * Restrict to gift or pledge allocations. Omit for both.
+ */
+source?: ListRestrictionTextReviewSource;
+/**
+ * @minimum 1
+ * @maximum 10000
+ */
+limit?: LimitParameter;
+/**
+ * @minimum 1
+ */
+page?: PageParameter;
+};
+
+export type ListRestrictionTextReviewSource = typeof ListRestrictionTextReviewSource[keyof typeof ListRestrictionTextReviewSource];
+
+
+export const ListRestrictionTextReviewSource = {
+  gift: 'gift',
+  pledge: 'pledge',
+} as const;
 
 export type GetRevenueExtractorReportParams = {
 /**

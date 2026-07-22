@@ -88,6 +88,7 @@ const navItems: NavEntry[] = [
   { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
   { href: "/potential-duplicates", label: "Potential Duplicates", icon: CopyCheck, adminOnly: true },
   { href: "/cleanup-queue", label: "Cleanup Queue", icon: ListChecks },
+  { href: "/restriction-text-review", label: "Restriction Text Review", icon: ListChecks, adminOnly: true },
   { href: "/coding-form-import", label: "Coding Form Import", icon: FileSpreadsheet, adminOnly: true },
 ];
 

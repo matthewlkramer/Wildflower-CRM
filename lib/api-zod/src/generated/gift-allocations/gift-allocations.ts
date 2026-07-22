@@ -149,3 +149,48 @@ export const GetGiftAllocationCodingPreviewResponse = zod.object({
   "flags": zod.array(zod.string()).describe('Ambiguities surfaced for human review (e.g. payer_type_assumed, project_location_missing, loan_no_revenue_account). A complete gift derives with zero flags.')
 }).describe('Live, on-demand revenue-coding instructions derived from an allocation\'s\nscope (donor kind, fund entity, restriction axes, region). NOT persisted\non the allocation — a read-only preview the reviewer copies onto the\nlinked staged_payments coding snapshot.\n')
 
+/**
+ * Admin-only. One row per gift or pledge allocation whose purpose_verbatim
+is still non-null after the automated restriction-text sort (migration
+0150). Heuristics could not judge every value — some verbatim text is
+really a plain-language description that belongs in
+restrictionDescription, or needs human rewording. Each row carries
+parent/donor context so a reviewer can judge the text, then edits go
+through the existing PATCH /gift-allocations/{id} and
+PATCH /pledge-allocations/{id} endpoints (this endpoint is read-only).
+
+ * @summary Admin-only review list of allocations that still carry purpose_verbatim text.
+ */
+export const listRestrictionTextReviewQueryLimitDefault = 50;
+export const listRestrictionTextReviewQueryLimitMax = 10000;
+
+export const listRestrictionTextReviewQueryPageDefault = 1;
+
+
+
+export const ListRestrictionTextReviewQueryParams = zod.object({
+  "source": zod.enum(['gift', 'pledge']).optional().describe('Restrict to gift or pledge allocations. Omit for both.'),
+  "limit": zod.coerce.number().min(1).max(listRestrictionTextReviewQueryLimitMax).default(listRestrictionTextReviewQueryLimitDefault),
+  "page": zod.coerce.number().min(1).default(listRestrictionTextReviewQueryPageDefault)
+})
+
+export const ListRestrictionTextReviewResponse = zod.object({
+  "data": zod.array(zod.object({
+  "allocationId": zod.string().describe('Id of the gift or pledge allocation carrying the verbatim text. PATCH the matching allocation endpoint to edit.'),
+  "source": zod.enum(['gift', 'pledge']).describe('Whether this row is a gift allocation or a pledge allocation.'),
+  "parentId": zod.string().describe('Parent gift id (source=gift) or opportunity\/pledge id (source=pledge).'),
+  "parentName": zod.string().nullish().describe('Parent gift or opportunity\/pledge display name.'),
+  "donorName": zod.string().nullish().describe('Display name of the parent record\'s donor (organization, individual, or household).'),
+  "subAmount": zod.string().nullish(),
+  "grantYear": zod.string().nullish(),
+  "purposeVerbatim": zod.string().describe('The remaining verbatim text under review (always non-null here).'),
+  "restrictionDescription": zod.string().nullish(),
+  "updatedAt": zod.string().datetime({})
+})),
+  "pagination": zod.object({
+  "page": zod.number(),
+  "limit": zod.number(),
+  "total": zod.number()
+})
+})
+
