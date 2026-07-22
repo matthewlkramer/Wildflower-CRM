@@ -23,6 +23,7 @@ import {
   stagedStatusWhere,
 } from "../../lib/derivedStatus";
 import { sweepRefundedQbStagedPayments } from "../../lib/refundedChargeSweep";
+import { splitStagedPaymentIntoUnits } from "../../lib/stagedPaymentSplitUnits";
 import { applyChargeTieSupersedePairs } from "../../lib/chargeTieSupersede";
 import {
   upsertConfirmedChargeTie,
@@ -324,6 +325,81 @@ router.post(
               });
             }
             ties = manual.assigned;
+          }
+        }
+
+        // COMBINED-BOOKED handling: several charges resolving to the SAME QB
+        // row is legitimate exactly when the bookkeeper recorded those
+        // charges' money as one combined QB row (e.g. two donations booked
+        // as one deposit line). The confirmed side of a tie must stay
+        // one-QB-row-per-charge, so the shared row is first split into
+        // synthetic per-charge units (exact-sum enforced by the split
+        // service) and each charge is retied to its own unit. Any repeated
+        // row whose amount does NOT equal the group's exact gross or net
+        // sum is drift, not a combined booking — refuse, nothing written.
+        {
+          const byQb = new Map<string, string[]>();
+          for (const [chargeId, qbId] of ties) {
+            byQb.set(qbId, [...(byQb.get(qbId) ?? []), chargeId]);
+          }
+          const cents = (v: string | null): number | null => {
+            if (v == null) return null;
+            const n = Number(v);
+            return Number.isNaN(n) ? null : Math.round(n * 100);
+          };
+          for (const [qbId, groupChargeIds] of byQb) {
+            if (groupChargeIds.length < 2) continue;
+            const group = groupChargeIds.map((cid) => {
+              const c = charges.find((x) => x.id === cid)!;
+              return {
+                id: c.id,
+                gross: cents(c.grossAmount),
+                net: cents(c.netAmount),
+                grossAmount: c.grossAmount,
+                netAmount: c.netAmount,
+                payerName: c.payerName,
+                dateReceived: c.dateReceived,
+              };
+            });
+            const [qbRow] = await tx
+              .select({ amount: stagedPayments.amount })
+              .from(stagedPayments)
+              .where(eq(stagedPayments.id, qbId))
+              .limit(1);
+            const qbCents = cents(qbRow?.amount ?? null);
+            const grossSum = group.reduce((a, g) => a + (g.gross ?? NaN), 0);
+            const netSum = group.reduce((a, g) => a + (g.net ?? NaN), 0);
+            // One consistent basis for the whole group: the bookkeeper
+            // booked either the charges' gross sum or their net sum.
+            const basis =
+              qbCents != null && grossSum === qbCents
+                ? ("gross" as const)
+                : qbCents != null && netSum === qbCents
+                  ? ("net" as const)
+                  : null;
+            if (basis == null) {
+              throw new ReconcileAbort(409, {
+                error: "duplicate_qb_tie",
+                message:
+                  "Several charges resolved to the same QuickBooks row, but the row's amount doesn't equal their combined gross or net total — this is drift, not a combined booking. Re-run proposals and retry.",
+                details: {
+                  qbStagedPaymentId: qbId,
+                  chargeIds: groupChargeIds,
+                },
+              });
+            }
+            const split = await splitStagedPaymentIntoUnits(
+              tx,
+              qbId,
+              group.map((g) => ({
+                amount: (basis === "gross" ? g.grossAmount : g.netAmount)!,
+                payerName: g.payerName,
+                dateReceived: g.dateReceived,
+              })),
+            );
+            group.forEach((g, i) => {
+              ties.set(g.id, split.children[i]!.id);
+            });
           }
         }
 

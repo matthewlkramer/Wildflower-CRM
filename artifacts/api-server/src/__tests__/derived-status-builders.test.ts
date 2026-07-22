@@ -11,6 +11,8 @@ import {
   qbProposedText,
   qbConfirmedEvidenceText,
   qbSettlementClaimedText,
+  qbHasSplitChildrenText,
+  qbResolvedElsewhereText,
   qbStatusCaseText,
   qbOpenText,
   chargeCountedExistsText,
@@ -24,6 +26,7 @@ import {
   stagedConfirmedSettlementLinkExists,
   stagedChargeTieExists,
   stagedChargeTieLinkExists,
+  stagedHasSplitChildren,
   chargeStatusSql,
   chargeStatusWhere,
   chargeCountedApplicationExists,
@@ -169,9 +172,10 @@ describe("base-table drizzle fragments render the builders' text (one source)", 
     );
     expect(render(stagedChargeTieExists)).toBe(qbChargeTieBookedExistsText(QB));
     expect(render(stagedChargeTieLinkExists)).toBe(qbChargeTieLinkExistsText(QB));
+    expect(render(stagedHasSplitChildren)).toBe(qbHasSplitChildrenText(QB));
 
     expect(render(stagedStatusWhere.excluded)).toBe(
-      `("${QB}"."exclusion_reason" IS NOT NULL OR (NOT ${qbProposedText(QB)} AND NOT ${qbConfirmedEvidenceText(QB)} AND ${qbSettlementClaimedText(QB)}))`,
+      `("${QB}"."exclusion_reason" IS NOT NULL OR (NOT ${qbProposedText(QB)} AND NOT ${qbConfirmedEvidenceText(QB)} AND ${qbResolvedElsewhereText(QB)}))`,
     );
     expect(render(stagedStatusWhere.match_proposed)).toBe(
       `("${QB}"."exclusion_reason" IS NULL AND ${qbProposedText(QB)})`,
@@ -180,7 +184,7 @@ describe("base-table drizzle fragments render the builders' text (one source)", 
       `("${QB}"."exclusion_reason" IS NULL AND NOT ${qbProposedText(QB)} AND ${qbConfirmedEvidenceText(QB)})`,
     );
     expect(render(stagedStatusWhere.pending)).toBe(
-      `("${QB}"."exclusion_reason" IS NULL AND NOT ${qbConfirmedEvidenceText(QB)} AND NOT ${qbSettlementClaimedText(QB)})`,
+      `("${QB}"."exclusion_reason" IS NULL AND NOT ${qbConfirmedEvidenceText(QB)} AND NOT ${qbResolvedElsewhereText(QB)})`,
     );
   });
 
@@ -215,6 +219,9 @@ describe("tie consultation: booked = evidence, raw link = settlement claim", () 
     ).toBe(2);
     expect(caseText).toContain(qbChargeTieBookedExistsText("s"));
     expect(caseText).toContain(qbSettlementClaimedText("s"));
+    // The resolved-elsewhere arm also carries the split-parent predicate —
+    // a parent with synthetic children derives `excluded` the same way.
+    expect(caseText).toContain(qbHasSplitChildrenText("s"));
   });
 
   it("open/confirmed derivations follow the same rule", () => {
@@ -222,6 +229,8 @@ describe("tie consultation: booked = evidence, raw link = settlement claim", () 
     expect(openText).toContain(qbChargeTieBookedExistsText("s"));
     // Open must also carve out settlement-claimed rows (they derive excluded).
     expect(openText).toContain(qbSettlementClaimedText("s"));
+    // …and split parents (same excluded derivation).
+    expect(openText).toContain(qbHasSplitChildrenText("s"));
     // Charge derivations never consult the tie at all — a charge's own status
     // comes from its own ledger row, not from what it claims about a QB row.
     for (const t of [

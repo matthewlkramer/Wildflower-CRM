@@ -31,3 +31,4 @@ topic files relevant to the symptom.
 - [Migration "already applied" claims can be false](migration-applied-claims.md) — probe dev+prod information_schema before writing a "missing" drop; header comments and task briefs both lied once.
 - [Prod data-seed slug/id mismatch](prod-data-seed-slug-mismatch.md) — id/slug-matched UPDATE can COMMIT yet flag the wrong row count; verify by affected-row count/state, not clean exit.
 - [prod→dev data sync](prod-dev-data-sync.md) — mirror prod rows into dev w/o reverting dev edits; funders text overflows json_agg; apply via json_populate + replica mode; verify INCLUDE→EXCLUDE FKs first.
+- [Prod-migration rehearsal + retroactive supersede](prod-migration-rehearsal.md) — rehearse repair SQL on a schema-clone scratch DB (run twice, md5 snapshot); ties written by SQL never trigger runtime supersede, so the repair file must include the ledger moves.

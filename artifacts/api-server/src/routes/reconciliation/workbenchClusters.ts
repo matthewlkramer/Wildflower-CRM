@@ -623,6 +623,7 @@ interface QbRecordJson {
   payerName?: string | null;
   qbEntityType: string | null;
   qbEntityId: string | null;
+  splitUnitParentId?: string | null;
   attributedDonor?: {
     donorKind: "organization" | "person" | "household";
     donorId: string;
@@ -660,6 +661,7 @@ interface PayoutRow {
   dep_payment_method: string | null;
   dep_qb_entity_type: string | null;
   dep_qb_entity_id: string | null;
+  dep_split_parent_id: string | null;
   dep_attributed_donor_kind: "organization" | "person" | "household" | null;
   dep_attributed_donor_id: string | null;
   dep_attributed_donor_name: string | null;
@@ -706,6 +708,7 @@ interface QbAnchorRow {
   status: string;
   qb_entity_type: string | null;
   qb_entity_id: string | null;
+  split_parent_id: string | null;
   group_id: string | null;
   group_member_count: number | null;
   group_total: string | null;
@@ -1463,7 +1466,8 @@ router.get(
               'linkedChargeId', f.charge_id,
               'payerName', f.payer_name,
               'qbEntityType', f.qb_entity_type,
-              'qbEntityId', f.qb_entity_id
+              'qbEntityId', f.qb_entity_id,
+              'splitUnitParentId', f.split_parent_id
             ))
           FROM (
             SELECT fq.id, 'fee'::text AS role, fq.raw_reference, fq.line_description,
@@ -1472,7 +1476,8 @@ router.get(
                    fq.qb_payment_method AS payment_method,
                    ${sql.raw(qbStatusCaseText("fq"))} AS status, fc.id AS charge_id,
                    fq.payer_name,
-                   fq.qb_entity_type::text AS qb_entity_type, fq.qb_entity_id
+                   fq.qb_entity_type::text AS qb_entity_type, fq.qb_entity_id,
+                   fq.split_parent_id
             FROM stripe_staged_charges fc
             JOIN source_links srcl_fee
               ON srcl_fee.link_type = 'charge_fee_row'
@@ -1486,7 +1491,8 @@ router.get(
                    tq.qb_payment_method,
                    ${sql.raw(qbStatusCaseText("tq"))}, tc2.id,
                    tq.payer_name,
-                   tq.qb_entity_type::text, tq.qb_entity_id
+                   tq.qb_entity_type::text, tq.qb_entity_id,
+                   tq.split_parent_id
             FROM stripe_staged_charges tc2
             JOIN source_links srcl_tie
               ON srcl_tie.link_type = 'charge_qb_tie'
@@ -1501,7 +1507,8 @@ router.get(
                    nf2.qb_payment_method,
                    ${sql.raw(qbStatusCaseText("nf2"))}, NULL,
                    nf2.payer_name,
-                   nf2.qb_entity_type::text, nf2.qb_entity_id
+                   nf2.qb_entity_type::text, nf2.qb_entity_id,
+                   nf2.split_parent_id
             FROM settlement_links sl_f
             JOIN staged_payments dep0 ON dep0.id = sl_f.deposit_staged_payment_id
             JOIN staged_payments nf2 ON nf2.realm_id = dep0.realm_id
@@ -1529,6 +1536,7 @@ router.get(
         ad.qb_payment_method AS dep_payment_method,
         ad.qb_entity_type::text AS dep_qb_entity_type,
         ad.qb_entity_id AS dep_qb_entity_id,
+        ad.split_parent_id AS dep_split_parent_id,
         CASE WHEN ad.organization_id IS NOT NULL THEN 'organization'::text
              WHEN ad.individual_giver_person_id IS NOT NULL THEN 'person'::text
              WHEN ad.household_id IS NOT NULL THEN 'household'::text END AS dep_attributed_donor_kind,
@@ -1593,6 +1601,7 @@ router.get(
         ${sql.raw(qbStatusCaseText("s"))} AS status,
         s.qb_entity_type::text AS qb_entity_type,
         s.qb_entity_id,
+        s.split_parent_id,
         ugm.group_id AS group_id,
         (SELECT count(*)::int FROM unit_group_members gm
           WHERE gm.group_id = ugm.group_id AND gm.evidence_source = 'quickbooks') AS group_member_count,
@@ -1612,7 +1621,8 @@ router.get(
               'status', ${sql.raw(qbStatusCaseText("m"))},
               'linkedChargeId', NULL,
               'qbEntityType', m.qb_entity_type::text,
-              'qbEntityId', m.qb_entity_id
+              'qbEntityId', m.qb_entity_id,
+              'splitUnitParentId', m.split_parent_id
             ))
           FROM unit_group_members gm
           JOIN staged_payments m ON m.id = gm.source_id
@@ -1634,7 +1644,8 @@ router.get(
               'status', ${sql.raw(qbStatusCaseText("nf"))},
               'linkedChargeId', NULL,
               'qbEntityType', nf.qb_entity_type::text,
-              'qbEntityId', nf.qb_entity_id
+              'qbEntityId', nf.qb_entity_id,
+              'splitUnitParentId', nf.split_parent_id
             ) ORDER BY ${sql.raw(lineNumExpr("nf"))})
           FROM staged_payments nf
           WHERE s.amount > 0
@@ -1913,6 +1924,7 @@ router.get(
             payerName: h.deposit_payer_name,
             qbEntityType: h.dep_qb_entity_type,
             qbEntityId: h.dep_qb_entity_id,
+            splitUnitParentId: h.dep_split_parent_id,
           });
         }
         const seen = new Set<string>();
@@ -2031,6 +2043,7 @@ router.get(
                 payerName: h.payer_name,
                 qbEntityType: h.qb_entity_type,
                 qbEntityId: h.qb_entity_id,
+                splitUnitParentId: h.split_parent_id,
                 attributedDonor: anchorAttributedDonor,
               },
               ...h.group_members,

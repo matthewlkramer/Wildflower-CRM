@@ -3286,6 +3286,10 @@ export interface StagedPayment {
   splitTotal?: string | null;
   /** Names of the gifts this staged payment is split across, for display. Null when not split. */
   splitGiftNames?: string[] | null;
+  /** When this row is a SYNTHETIC reconciliation unit (created by splitting a QuickBooks row that bundled several money events), the id of the original QuickBooks parent row. Null for real QuickBooks rows. Distinct from the gift-split fields above — those fan one payment across gifts; this is unit lineage of the evidence row itself. */
+  readonly splitUnitParentId?: string | null;
+  /** How many synthetic reconciliation units this row was split into (0 when not unit-split). When > 0 the row derives `excluded` — its money story lives entirely on the units. */
+  readonly splitUnitCount?: number;
   /** True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate). */
   giftAlreadyLinkedElsewhere?: boolean;
   /** Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule. */
@@ -4519,6 +4523,45 @@ export interface ConfirmChargeTiesResult {
   payoutFullyTied: boolean;
 }
 
+export type SplitStagedPaymentUnitsBodyUnitsItem = {
+  /** Signed decimal amount, e.g. "1917.70" or "-256.00". Never zero. */
+  amount: string;
+  /** Display payer for the unit; defaults to the parent row's payer. */
+  payerName?: string | null;
+  /** Display description for the unit; defaults to the parent row's description. */
+  lineDescription?: string | null;
+  /** Unit date; defaults to the parent row's date (a clawback unit may carry the failed payout's date instead). */
+  dateReceived?: string | null;
+};
+
+export interface SplitStagedPaymentUnitsBody {
+  /**
+   * The synthetic reconciliation units. Signed decimal amounts that must sum to EXACTLY the QuickBooks row's amount (to the cent). Units may be negative (e.g. a clawed-back failed payout netted inside a deposit).
+   * @minItems 2
+   */
+  units: SplitStagedPaymentUnitsBodyUnitsItem[];
+}
+
+export type SplitStagedPaymentUnitsResultChildrenItem = {
+  /** Deterministic synthetic unit id (`<parentId>:split:<n>`). */
+  id: string;
+  amount: string;
+  payerName?: string | null;
+  dateReceived?: string | null;
+};
+
+export interface SplitStagedPaymentUnitsResult {
+  /** The split QuickBooks row (now derives `excluded` — its money story lives on the units). */
+  parentId: string;
+  children: SplitStagedPaymentUnitsResultChildrenItem[];
+}
+
+export interface UnsplitStagedPaymentUnitsResult {
+  /** The QuickBooks row restored to the open review flow. */
+  parentId: string;
+  removedChildIds: string[];
+}
+
 /**
  * Which path ran: a clean pending-deposit confirm, a linkage-only confirm against an already-booked (approved) deposit that was left untouched, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link.
  */
@@ -5501,6 +5544,8 @@ export interface WorkbenchClusterQbRecord {
   qbEntityType?: WorkbenchClusterQbRecordQbEntityType;
   /** The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link). */
   qbEntityId?: string | null;
+  /** When this row is a SYNTHETIC reconciliation unit (created by splitting a QuickBooks row that bundled several money events), the id of the original QuickBooks parent row. Null for real QuickBooks rows. Synthetic units have no QuickBooks deep link of their own — the parent carries the qbEntityType/qbEntityId. */
+  splitUnitParentId?: string | null;
   /** Donor identified on this specific QB row via the Identify action. Present for anchor/deposit roles when a donor has been identified; null otherwise. */
   attributedDonor?: WorkbenchClusterQbRecordAttributedDonor;
 }

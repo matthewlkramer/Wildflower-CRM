@@ -264,6 +264,17 @@ export const stagedSelect = {
       AND pa.evidence_source = 'quickbooks'
       AND pa.link_role = 'counted'
   )`.as("split_gift_names"),
+  // Unit-split lineage (distinct from the gift-split fields above, which fan
+  // ONE payment across gifts): a synthetic reconciliation unit points at its
+  // original QuickBooks parent row, and a split parent reports how many units
+  // it was split into. `split_parent_id IS NOT NULL` is the single authority
+  // for "this row is synthetic"; a parent with units derives `excluded` — its
+  // money story lives entirely on the units.
+  splitUnitParentId: stagedPayments.splitParentId,
+  splitUnitCount: sql<number>`(
+    SELECT COUNT(*)::int FROM staged_payments ch
+    WHERE ch.split_parent_id = ${stagedPayments.id}
+  )`.as("split_unit_count"),
   matchedRuleName: matchedRule.name,
   // Top-level QuickBooks LinkedTxn (e.g. the Deposit a Payment was deposited
   // into) — derived READ-ONLY from the stored raw QB payload, never written onto

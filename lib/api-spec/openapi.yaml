@@ -4833,6 +4833,60 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RejectChargeQbTieResult" } } } }
         "404": { description: "The charge no longer exists." }
         "409": { description: "No proposed tie to reject, or the tie is already confirmed." }
+  /reconciliation/staged-payments/{id}/split-units:
+    post:
+      operationId: splitStagedPaymentIntoUnits
+      tags: [reconciliation]
+      summary: Split a QuickBooks staged row into synthetic reconciliation units.
+      description: |
+        Splits ONE QuickBooks staged row into 2+ synthetic child UNITS when the
+        bookkeeper bundled several distinct money events into one QB row (e.g.
+        a deposit that nets a donation against a clawed-back failed payout).
+        The parent stays the untouched sync-owned QuickBooks mirror; the
+        children are additive CRM rows that participate everywhere real rows
+        do — charge ties, settlement links, cash applications — and may be
+        NEGATIVE (a clawback unit). Unit amounts must sum to EXACTLY the
+        parent's amount (signed, to the cent).
+
+        While units exist the parent derives `excluded` (its money story is
+        told entirely by the units) and every matcher and picker skips it;
+        unsplit restores it exactly. The parent must carry no reconciliation
+        evidence of its own at split time — proposed machine guesses are
+        cleared, confirmed claims 409. Distinct from the gift-split
+        (/staged-payments/{id}/split), which fans one PAYMENT out across
+        several gifts; this splits the QB EVIDENCE row itself.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SplitStagedPaymentUnitsBody" }
+      responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SplitStagedPaymentUnitsResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { description: "The staged payment no longer exists." }
+        "409": { description: "Consistency gate: already split, itself a split unit (no nesting), no amount, unit amounts don't sum to the row amount (`split_sum_mismatch`), or the row already carries reconciliation evidence (`parent_has_claims`). Nothing is written." }
+  /reconciliation/staged-payments/{id}/unsplit-units:
+    post:
+      operationId: revertStagedPaymentSplitUnits
+      tags: [reconciliation]
+      summary: Remove a QuickBooks row's synthetic reconciliation units (undo split).
+      description: |
+        Deletes ALL synthetic child units of a split QuickBooks staged row and
+        returns the parent to the open review flow (its derived status was
+        never stored). Refused (409) while any unit still carries
+        reconciliation evidence — a tie, settlement link, or linked gift —
+        revert those first. The hard delete here is the documented soft-delete
+        exception: units are synthetic CRM-created rows with zero claims.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/UnsplitStagedPaymentUnitsResult" } } } }
+        "404": { description: "The staged payment no longer exists." }
+        "409": { description: "Not split, or some units still carry reconciliation evidence (`split_children_claimed` — the body lists them). Nothing is written." }
   /reconciliation/charges/{chargeId}/qb-tie/revert:
     post:
       operationId: revertChargeQbTie
@@ -7509,6 +7563,8 @@ components:
         splitCount:                { type: integer, description: "How many existing gifts this staged payment is split across (0 when not split). When > 0 the row is resolved via a split, not a single resolvedGift." }
         splitTotal:                { type: string, nullable: true, description: "Combined gross total of the gifts this staged payment is split across (sum of the split sub-amounts). Null when not split." }
         splitGiftNames:            { type: array, items: { type: string }, nullable: true, description: "Names of the gifts this staged payment is split across, for display. Null when not split." }
+        splitUnitParentId:         { type: string, nullable: true, readOnly: true, description: "When this row is a SYNTHETIC reconciliation unit (created by splitting a QuickBooks row that bundled several money events), the id of the original QuickBooks parent row. Null for real QuickBooks rows. Distinct from the gift-split fields above — those fan one payment across gifts; this is unit lineage of the evidence row itself." }
+        splitUnitCount:            { type: integer, readOnly: true, description: "How many synthetic reconciliation units this row was split into (0 when not unit-split). When > 0 the row derives `excluded` — its money story lives entirely on the units." }
         giftAlreadyLinkedElsewhere: { type: boolean, description: "True when this pending row has no gift of its own, yet every same-donor, similar-amount gift is already linked to a different QuickBooks payment — i.e. the gift for this payment likely hasn't been created yet (create a new gift for it, or exclude if it's a duplicate)." }
         matchedRuleId:             { type: string, nullable: true, description: "Id of the admin-editable handling rule that auto-excluded or auto-created+approved this payment at ingest or apply time. Null for rows classified by the legacy code classifier, manually classified rows, or rows that matched no rule." }
         matchedRuleName:           { type: string, nullable: true, description: "Display name of the matched rule, joined server-side. Null when matchedRuleId is null or the rule has since been deleted." }
@@ -8408,6 +8464,43 @@ components:
         tied:      { type: integer, description: "Charges that gained a confirmed QuickBooks tie in this call." }
         feeRowsTied: { type: integer, description: "Sibling NEGATIVE QuickBooks 'Stripe fee' rows auto-detected and claimed alongside the donor-line ties in this call (same QB deposit, amount exactly −(gross − net)). Fee rows are plane-1 settlement evidence only — they never enter payment applications." }
         payoutFullyTied: { type: boolean, description: "True when, after this call, every charge of the payout is tied or excluded/rejected — the payout now shows as settled (Matched) on the Settlement report." }
+    SplitStagedPaymentUnitsBody:
+      type: object
+      required: [units]
+      properties:
+        units:
+          type: array
+          minItems: 2
+          description: "The synthetic reconciliation units. Signed decimal amounts that must sum to EXACTLY the QuickBooks row's amount (to the cent). Units may be negative (e.g. a clawed-back failed payout netted inside a deposit)."
+          items:
+            type: object
+            required: [amount]
+            properties:
+              amount:          { type: string, description: "Signed decimal amount, e.g. \"1917.70\" or \"-256.00\". Never zero." }
+              payerName:       { type: string, nullable: true, description: "Display payer for the unit; defaults to the parent row's payer." }
+              lineDescription: { type: string, nullable: true, description: "Display description for the unit; defaults to the parent row's description." }
+              dateReceived:    { type: string, format: date, nullable: true, description: "Unit date; defaults to the parent row's date (a clawback unit may carry the failed payout's date instead)." }
+    SplitStagedPaymentUnitsResult:
+      type: object
+      required: [parentId, children]
+      properties:
+        parentId: { type: string, description: "The split QuickBooks row (now derives `excluded` — its money story lives on the units)." }
+        children:
+          type: array
+          items:
+            type: object
+            required: [id, amount]
+            properties:
+              id:           { type: string, description: "Deterministic synthetic unit id (`<parentId>:split:<n>`)." }
+              amount:       { type: string }
+              payerName:    { type: string, nullable: true }
+              dateReceived: { type: string, format: date, nullable: true }
+    UnsplitStagedPaymentUnitsResult:
+      type: object
+      required: [parentId, removedChildIds]
+      properties:
+        parentId:        { type: string, description: "The QuickBooks row restored to the open review flow." }
+        removedChildIds: { type: array, items: { type: string } }
     ConfirmSettlementLinkResult:
       type: object
       required: [confirmed, kind, payoutId]
@@ -8977,6 +9070,7 @@ components:
           nullable: true
           description: "The QuickBooks transaction type this staged row came from — drives the 'View in QuickBooks' deep link."
         qbEntityId:      { type: string, nullable: true, description: "The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link)." }
+        splitUnitParentId: { type: string, nullable: true, description: "When this row is a SYNTHETIC reconciliation unit (created by splitting a QuickBooks row that bundled several money events), the id of the original QuickBooks parent row. Null for real QuickBooks rows. Synthetic units have no QuickBooks deep link of their own — the parent carries the qbEntityType/qbEntityId." }
         attributedDonor:
           nullable: true
           description: "Donor identified on this specific QB row via the Identify action. Present for anchor/deposit roles when a donor has been identified; null otherwise."

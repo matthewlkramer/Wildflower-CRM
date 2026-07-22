@@ -11,7 +11,7 @@ import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { getUncachableStripeClient } from "./stripeClient";
-import { chargeStatusWhere } from "./derivedStatus";
+import { chargeStatusWhere, stagedHasSplitChildren } from "./derivedStatus";
 import { sweepRefundedQbStagedPayments } from "./refundedChargeSweep";
 import {
   upsertProposedChargeTie,
@@ -252,6 +252,140 @@ export function assignChargeQbTies(
   return assigned;
 }
 
+/** Combined-booked proposer search cap: subsets are enumerated over at most
+ * this many leftover charges (2^8 = 256 masks per basis — trivial). */
+export const COMBINED_TIE_MAX_CHARGES = 8;
+
+/**
+ * Every distinct sum (size-≥2 subsets, gross basis and net basis separately)
+ * the leftover charges could have been combined-booked as, as decimal
+ * strings for the candidate amount filter. Pure; exact cents.
+ */
+export function combinedSubsetSumAmounts(charges: ChargeForTie[]): string[] {
+  const sums = new Set<number>();
+  for (const basis of ["gross", "net"] as const) {
+    const vals = charges
+      .map((c) =>
+        toCents(basis === "gross" ? c.grossAmount : c.netAmount),
+      )
+      .filter((v): v is number => v != null && v > 0);
+    const n = Math.min(vals.length, COMBINED_TIE_MAX_CHARGES);
+    for (let mask = 1; mask < 1 << n; mask++) {
+      let bits = 0;
+      let s = 0;
+      for (let i = 0; i < n; i++) {
+        if (mask & (1 << i)) {
+          bits += 1;
+          s += vals[i]!;
+        }
+      }
+      if (bits >= 2) sums.add(s);
+    }
+  }
+  return [...sums].sort((a, b) => a - b).map((c) => (c / 100).toFixed(2));
+}
+
+/**
+ * COMBINED-BOOKED proposer (subset-sum): a QB row may record the SUM of
+ * several charges the bookkeeper booked as ONE line. Pure and deterministic;
+ * deliberately conservative — evidence is the EXACT-cents sum plus the date
+ * window, so it only fires when the explanation is unique:
+ *   • per candidate row, subsets (size ≥2) of the still-unassigned charges
+ *     are enumerated on ONE consistent basis (all-gross or all-net);
+ *   • exactly ONE subset (by membership) may sum to the row's amount —
+ *     several different explanations = no proposal;
+ *   • a row that also exactly equals a SINGLE charge's gross/net is skipped
+ *     entirely: 1:1 territory belongs to {@link assignChargeQbTies} and its
+ *     name-similarity rules — the combined path must not bypass them;
+ *   • every subset charge must sit within {@link CHARGE_TIE_WINDOW_DAYS} of
+ *     the row's date;
+ *   • a charge joins at most one combined group (candidates are visited in
+ *     stable id order).
+ * Returns chargeId → qbRowId where SEVERAL charges may map to one row — the
+ * confirm path splits that row into per-charge synthetic units.
+ */
+export function assignCombinedChargeQbTies(
+  charges: ChargeForTie[],
+  candidates: QbRowForTie[],
+): Map<string, string> {
+  const cs = charges
+    .filter((c) => c.dateReceived != null)
+    .map((c) => ({
+      id: c.id,
+      gross: toCents(c.grossAmount),
+      net: toCents(c.netAmount),
+      date: c.dateReceived as string,
+    }))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  if (cs.length < 2 || cs.length > COMBINED_TIE_MAX_CHARGES) return new Map();
+
+  const cands = candidates
+    .filter((q) => {
+      const cents = toCents(q.amount);
+      return cents != null && cents > 0 && q.dateReceived != null;
+    })
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  const result = new Map<string, string>();
+  const usedCharges = new Set<string>();
+
+  for (const q of cands) {
+    const target = toCents(q.amount)!;
+    const qDate = q.dateReceived!;
+    const elig = cs.filter(
+      (c) =>
+        !usedCharges.has(c.id) &&
+        dayDiff(c.date, qDate) <= CHARGE_TIE_WINDOW_DAYS,
+    );
+    if (elig.length < 2) continue;
+
+    // Distinct exact-sum subsets by MEMBERSHIP (a gross subset and a net
+    // subset with identical members are ONE explanation, not two).
+    const solutionKeys = new Set<string>();
+    let solution: string[] | null = null;
+    let singleHit = false;
+    for (const basis of ["gross", "net"] as const) {
+      const usable = elig
+        .map((c) => ({
+          id: c.id,
+          v: basis === "gross" ? c.gross : c.net,
+        }))
+        .filter((x): x is { id: string; v: number } => x.v != null && x.v > 0);
+      const pick: string[] = [];
+      const dfs = (i: number, sum: number): void => {
+        if (singleHit || solutionKeys.size > 1) return;
+        if (sum === target) {
+          if (pick.length === 1) {
+            singleHit = true;
+          } else if (pick.length >= 2) {
+            const key = [...pick].sort().join("|");
+            if (!solutionKeys.has(key)) {
+              solutionKeys.add(key);
+              solution = [...pick];
+            }
+          }
+          // All amounts are positive — extending an exact subset can only
+          // overshoot.
+          return;
+        }
+        if (i >= usable.length || sum > target) return;
+        pick.push(usable[i]!.id);
+        dfs(i + 1, sum + usable[i]!.v);
+        pick.pop();
+        dfs(i + 1, sum);
+      };
+      dfs(0, 0);
+      if (singleHit || solutionKeys.size > 1) break;
+    }
+    if (singleHit || solutionKeys.size !== 1 || solution == null) continue;
+    for (const id of solution as string[]) {
+      result.set(id, q.id);
+      usedCharges.add(id);
+    }
+  }
+  return result;
+}
+
 export interface ManualTieResult {
   /** chargeId → qbRowId for every provided row that was placed. */
   assigned: Map<string, string>;
@@ -475,52 +609,83 @@ export async function runChargeTiePass(
         CHARGE_TIE_WINDOW_DAYS,
       );
 
-      // Candidate QB rows: exact one-of-the-charge-amounts, inside the widest
-      // per-payout window (the pure assigner re-checks per charge), an active
-      // status, and NOT already spoken for — not a settlement-link deposit
-      // (any lifecycle), not confirmed-tied to any charge, and not proposed to
-      // a charge of ANOTHER payout (this pass re-derives its own payout's
-      // proposals).
-      const cands = await db
-        .select({
-          id: stagedPayments.id,
-          amount: stagedPayments.amount,
-          dateReceived: stagedPayments.dateReceived,
-          payerName: stagedPayments.payerName,
-        })
-        .from(stagedPayments)
-        .where(
-          and(
-            inArray(stagedPayments.amount, amounts),
-            // EXCLUDED rows stay eligible (task-774 ratified decision): an
-            // exclusion classifies the row out of the DONATION review queue,
-            // but it can still be the QB booking of this charge's money —
-            // exclusion must not block matching. Refund-swept rows are safe:
-            // a swept row's tie already exists (confirmed → filtered below).
-            sql`${stagedPayments.dateReceived} >= ${fromStr}`,
-            sql`${stagedPayments.dateReceived} <= ${toStr}`,
-            sql`NOT EXISTS (
-              SELECT 1 FROM settlement_links sl
-              WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
-            )`,
-            sql`NOT EXISTS (
-              SELECT 1 FROM source_links srcl
-              WHERE srcl.link_type = 'charge_qb_tie'
-                AND srcl.lifecycle = 'confirmed'
-                AND srcl.qb_staged_payment_id = "staged_payments"."id"
-            )`,
-            sql`NOT EXISTS (
-              SELECT 1 FROM source_links srcl
-              JOIN stripe_staged_charges cc ON cc.id = srcl.stripe_charge_id
-              WHERE srcl.link_type = 'charge_qb_tie'
-                AND srcl.lifecycle = 'proposed'
-                AND srcl.qb_staged_payment_id = "staged_payments"."id"
-                AND cc.stripe_payout_id IS DISTINCT FROM ${p.id}
-            )`,
-          ),
-        );
+      // Candidate QB rows: exact amount fit, inside the widest per-payout
+      // window (the pure assigners re-check per charge), an active status,
+      // and NOT already spoken for — not a settlement-link deposit (any
+      // lifecycle), not confirmed-tied to any charge, and not proposed to a
+      // charge of ANOTHER payout (this pass re-derives its own payout's
+      // proposals). Shared by the 1:1 pass and the combined subset-sum pass
+      // so their eligibility can never drift apart.
+      const candidatesForAmounts = (amountsIn: string[]) =>
+        db
+          .select({
+            id: stagedPayments.id,
+            amount: stagedPayments.amount,
+            dateReceived: stagedPayments.dateReceived,
+            payerName: stagedPayments.payerName,
+          })
+          .from(stagedPayments)
+          .where(
+            and(
+              inArray(stagedPayments.amount, amountsIn),
+              // EXCLUDED rows stay eligible (task-774 ratified decision): an
+              // exclusion classifies the row out of the DONATION review queue,
+              // but it can still be the QB booking of this charge's money —
+              // exclusion must not block matching. Refund-swept rows are safe:
+              // a swept row's tie already exists (confirmed → filtered below).
+              sql`${stagedPayments.dateReceived} >= ${fromStr}`,
+              sql`${stagedPayments.dateReceived} <= ${toStr}`,
+              sql`NOT EXISTS (
+                SELECT 1 FROM settlement_links sl
+                WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
+              )`,
+              sql`NOT EXISTS (
+                SELECT 1 FROM source_links srcl
+                WHERE srcl.link_type = 'charge_qb_tie'
+                  AND srcl.lifecycle = 'confirmed'
+                  AND srcl.qb_staged_payment_id = "staged_payments"."id"
+              )`,
+              sql`NOT EXISTS (
+                SELECT 1 FROM source_links srcl
+                JOIN stripe_staged_charges cc ON cc.id = srcl.stripe_charge_id
+                WHERE srcl.link_type = 'charge_qb_tie'
+                  AND srcl.lifecycle = 'proposed'
+                  AND srcl.qb_staged_payment_id = "staged_payments"."id"
+                  AND cc.stripe_payout_id IS DISTINCT FROM ${p.id}
+              )`,
+              // A split PARENT is fully represented by its synthetic children
+              // (which ARE eligible candidates) — never tie the parent itself.
+              sql`NOT ${stagedHasSplitChildren}`,
+            ),
+          );
+      const cands = await candidatesForAmounts(amounts);
 
       assignment = assignChargeQbTies(matchable, cands);
+
+      // COMBINED-BOOKED pass: leftover charges the 1:1 assigner couldn't
+      // place may have been booked as ONE QB row recording their SUM (e.g.
+      // two donations in one deposit line). Candidates are rows whose amount
+      // equals an exact subset sum of the leftovers; the pure assigner only
+      // proposes a UNIQUE-subset explanation. Several charges then propose
+      // the SAME row — confirm splits it into per-charge synthetic units.
+      const leftovers = matchable.filter((c) => !assignment.has(c.id));
+      if (
+        leftovers.length >= 2 &&
+        leftovers.length <= COMBINED_TIE_MAX_CHARGES
+      ) {
+        const sumAmounts = combinedSubsetSumAmounts(leftovers);
+        if (sumAmounts.length > 0) {
+          const usedQbIds = new Set(assignment.values());
+          const comboCands = await candidatesForAmounts(sumAmounts);
+          const combined = assignCombinedChargeQbTies(
+            leftovers,
+            comboCands.filter((q) => !usedQbIds.has(q.id)),
+          );
+          for (const [chargeId, qbId] of combined) {
+            assignment.set(chargeId, qbId);
+          }
+        }
+      }
     }
 
     // Persist this payout's proposals in ONE transaction: clear stale ones,
@@ -702,13 +867,18 @@ export async function claimSiblingFeeRows(
   // Candidate fee rows across the tied deposits, locked so a concurrent
   // confirm can't claim the same row. (Negative rows are auto-excluded from
   // review, so NO status filter here — excluded IS the fee row's status.)
-  const depositPredicates = [...deposits.values()].map((d) =>
-    and(
-      eq(stagedPayments.realmId, d.realmId),
-      eq(stagedPayments.qbEntityType, d.qbEntityType),
-      eq(stagedPayments.qbEntityId, d.qbEntityId),
-    ),
-  );
+  // Synthetic split units carry no qbEntityId — they mirror no QB deposit of
+  // their own, so no sibling fee row can exist for them; skip them here.
+  const depositPredicates = [...deposits.values()]
+    .filter((d) => d.qbEntityId != null)
+    .map((d) =>
+      and(
+        eq(stagedPayments.realmId, d.realmId),
+        eq(stagedPayments.qbEntityType, d.qbEntityType),
+        eq(stagedPayments.qbEntityId, d.qbEntityId as string),
+      ),
+    );
+  if (depositPredicates.length === 0) return 0;
   const candidates = await tx
     .select({
       id: stagedPayments.id,

@@ -36,6 +36,10 @@ const AMT_C = "3456.79";
 // Net-booked fixture: gross/net pair (bookkeeper booked the post-fee net).
 const AMT_D_GROSS = "4567.91";
 const AMT_D_NET = "4435.26";
+// Combined-booked fixture: two charges whose GROSS sum equals one QB row.
+const AMT_E1 = "1111.13";
+const AMT_E2 = "2222.27";
+const AMT_E_SUM = "3333.40";
 
 type Db = typeof import("@workspace/db");
 let db: Db["db"];
@@ -305,6 +309,49 @@ describe.skipIf(!HAS_DB)("runChargeTiePass (DB)", () => {
       expect((await readCharge(ch5)).proposed).toBe(qb5);
       expect(second.cleared).toBe(0);
       expect(second.proposed).toBeGreaterThanOrEqual(1);
+    },
+  );
+
+  it(
+    "proposes a combined-booked group: both leftovers point at the shared QB row",
+    { timeout: 120_000 },
+    async () => {
+      // Neither charge has an exact-amount QB row of its own; the ONLY QB row
+      // in the window carries their exact gross sum (one combined deposit
+      // line). The subset-sum pass must propose BOTH charges onto that row —
+      // the confirm endpoint later splits it into per-charge units.
+      const po = await seedPayout({
+        amount: AMT_E_SUM,
+        arrivalDate: "2026-03-10",
+      });
+      const chA = await seedCharge({
+        payoutId: po,
+        grossAmount: AMT_E1,
+        dateReceived: "2026-03-08",
+        payerName: "Devon Person",
+      });
+      const chB = await seedCharge({
+        payoutId: po,
+        grossAmount: AMT_E2,
+        dateReceived: "2026-03-08",
+        payerName: "Fisher Fund",
+      });
+      const qbSum = await seedQbRow({
+        amount: AMT_E_SUM,
+        dateReceived: "2026-03-11",
+        payerName: null, // combined lines rarely carry one donor's name
+      });
+
+      const first = await runChargeTiePass([po]);
+      expect(first.payoutsEvaluated).toBe(1);
+      expect((await readCharge(chA)).proposed).toBe(qbSum);
+      expect((await readCharge(chB)).proposed).toBe(qbSum);
+
+      // Idempotent re-run: same group proposal, nothing cleared.
+      const second = await runChargeTiePass([po]);
+      expect((await readCharge(chA)).proposed).toBe(qbSum);
+      expect((await readCharge(chB)).proposed).toBe(qbSum);
+      expect(second.cleared).toBe(0);
     },
   );
 });

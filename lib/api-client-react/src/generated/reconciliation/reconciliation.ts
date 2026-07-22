@@ -55,6 +55,9 @@ import type {
   SearchReconciliationPayoutsParams,
   SearchReconciliationQbStagedParams,
   SettlementLineage,
+  SplitStagedPaymentUnitsBody,
+  SplitStagedPaymentUnitsResult,
+  UnsplitStagedPaymentUnitsResult,
   WorkbenchClusterListResponse,
   WorkbenchRecentChangesResponse
 } from '../api.schemas';
@@ -1130,6 +1133,170 @@ export const useRejectChargeQbTie = <TError = ErrorType<FinanceForbiddenResponse
         TContext
       > => {
       return useMutation(getRejectChargeQbTieMutationOptions(options));
+    }
+    /**
+ * Splits ONE QuickBooks staged row into 2+ synthetic child UNITS when the
+bookkeeper bundled several distinct money events into one QB row (e.g.
+a deposit that nets a donation against a clawed-back failed payout).
+The parent stays the untouched sync-owned QuickBooks mirror; the
+children are additive CRM rows that participate everywhere real rows
+do — charge ties, settlement links, cash applications — and may be
+NEGATIVE (a clawback unit). Unit amounts must sum to EXACTLY the
+parent's amount (signed, to the cent).
+
+While units exist the parent derives `excluded` (its money story is
+told entirely by the units) and every matcher and picker skips it;
+unsplit restores it exactly. The parent must carry no reconciliation
+evidence of its own at split time — proposed machine guesses are
+cleared, confirmed claims 409. Distinct from the gift-split
+(/staged-payments/{id}/split), which fans one PAYMENT out across
+several gifts; this splits the QB EVIDENCE row itself.
+
+ * @summary Split a QuickBooks staged row into synthetic reconciliation units.
+ */
+export const getSplitStagedPaymentIntoUnitsUrl = (id: string,) => {
+
+
+  
+
+  return `/api/reconciliation/staged-payments/${id}/split-units`
+}
+
+export const splitStagedPaymentIntoUnits = async (id: string,
+    splitStagedPaymentUnitsBody: SplitStagedPaymentUnitsBody, options?: RequestInit): Promise<SplitStagedPaymentUnitsResult> => {
+  
+  return customFetch<SplitStagedPaymentUnitsResult>(getSplitStagedPaymentIntoUnitsUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      splitStagedPaymentUnitsBody,)
+  }
+);}
+  
+
+
+
+export const getSplitStagedPaymentIntoUnitsMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof splitStagedPaymentIntoUnits>>, TError,{id: string;data: BodyType<SplitStagedPaymentUnitsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof splitStagedPaymentIntoUnits>>, TError,{id: string;data: BodyType<SplitStagedPaymentUnitsBody>}, TContext> => {
+
+const mutationKey = ['splitStagedPaymentIntoUnits'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof splitStagedPaymentIntoUnits>>, {id: string;data: BodyType<SplitStagedPaymentUnitsBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  splitStagedPaymentIntoUnits(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SplitStagedPaymentIntoUnitsMutationResult = NonNullable<Awaited<ReturnType<typeof splitStagedPaymentIntoUnits>>>
+    export type SplitStagedPaymentIntoUnitsMutationBody = BodyType<SplitStagedPaymentUnitsBody>
+    export type SplitStagedPaymentIntoUnitsMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | void>
+
+    /**
+ * @summary Split a QuickBooks staged row into synthetic reconciliation units.
+ */
+export const useSplitStagedPaymentIntoUnits = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof splitStagedPaymentIntoUnits>>, TError,{id: string;data: BodyType<SplitStagedPaymentUnitsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof splitStagedPaymentIntoUnits>>,
+        TError,
+        {id: string;data: BodyType<SplitStagedPaymentUnitsBody>},
+        TContext
+      > => {
+      return useMutation(getSplitStagedPaymentIntoUnitsMutationOptions(options));
+    }
+    /**
+ * Deletes ALL synthetic child units of a split QuickBooks staged row and
+returns the parent to the open review flow (its derived status was
+never stored). Refused (409) while any unit still carries
+reconciliation evidence — a tie, settlement link, or linked gift —
+revert those first. The hard delete here is the documented soft-delete
+exception: units are synthetic CRM-created rows with zero claims.
+
+ * @summary Remove a QuickBooks row's synthetic reconciliation units (undo split).
+ */
+export const getRevertStagedPaymentSplitUnitsUrl = (id: string,) => {
+
+
+  
+
+  return `/api/reconciliation/staged-payments/${id}/unsplit-units`
+}
+
+export const revertStagedPaymentSplitUnits = async (id: string, options?: RequestInit): Promise<UnsplitStagedPaymentUnitsResult> => {
+  
+  return customFetch<UnsplitStagedPaymentUnitsResult>(getRevertStagedPaymentSplitUnitsUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getRevertStagedPaymentSplitUnitsMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertStagedPaymentSplitUnits>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revertStagedPaymentSplitUnits>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['revertStagedPaymentSplitUnits'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revertStagedPaymentSplitUnits>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  revertStagedPaymentSplitUnits(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevertStagedPaymentSplitUnitsMutationResult = NonNullable<Awaited<ReturnType<typeof revertStagedPaymentSplitUnits>>>
+    
+    export type RevertStagedPaymentSplitUnitsMutationError = ErrorType<FinanceForbiddenResponse | void>
+
+    /**
+ * @summary Remove a QuickBooks row's synthetic reconciliation units (undo split).
+ */
+export const useRevertStagedPaymentSplitUnits = <TError = ErrorType<FinanceForbiddenResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertStagedPaymentSplitUnits>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revertStagedPaymentSplitUnits>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRevertStagedPaymentSplitUnitsMutationOptions(options));
     }
     /**
  * Reverts a CONFIRMED QuickBooks tie on ONE Stripe charge — the undo for

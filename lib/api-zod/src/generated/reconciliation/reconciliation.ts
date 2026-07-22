@@ -653,6 +653,72 @@ export const RejectChargeQbTieResponse = zod.object({
 })
 
 /**
+ * Splits ONE QuickBooks staged row into 2+ synthetic child UNITS when the
+bookkeeper bundled several distinct money events into one QB row (e.g.
+a deposit that nets a donation against a clawed-back failed payout).
+The parent stays the untouched sync-owned QuickBooks mirror; the
+children are additive CRM rows that participate everywhere real rows
+do — charge ties, settlement links, cash applications — and may be
+NEGATIVE (a clawback unit). Unit amounts must sum to EXACTLY the
+parent's amount (signed, to the cent).
+
+While units exist the parent derives `excluded` (its money story is
+told entirely by the units) and every matcher and picker skips it;
+unsplit restores it exactly. The parent must carry no reconciliation
+evidence of its own at split time — proposed machine guesses are
+cleared, confirmed claims 409. Distinct from the gift-split
+(/staged-payments/{id}/split), which fans one PAYMENT out across
+several gifts; this splits the QB EVIDENCE row itself.
+
+ * @summary Split a QuickBooks staged row into synthetic reconciliation units.
+ */
+export const SplitStagedPaymentIntoUnitsParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const splitStagedPaymentIntoUnitsBodyUnitsMin = 2;
+
+
+
+export const SplitStagedPaymentIntoUnitsBody = zod.object({
+  "units": zod.array(zod.object({
+  "amount": zod.string().describe('Signed decimal amount, e.g. \"1917.70\" or \"-256.00\". Never zero.'),
+  "payerName": zod.string().nullish().describe('Display payer for the unit; defaults to the parent row\'s payer.'),
+  "lineDescription": zod.string().nullish().describe('Display description for the unit; defaults to the parent row\'s description.'),
+  "dateReceived": zod.string().date().nullish().describe('Unit date; defaults to the parent row\'s date (a clawback unit may carry the failed payout\'s date instead).')
+})).min(splitStagedPaymentIntoUnitsBodyUnitsMin).describe('The synthetic reconciliation units. Signed decimal amounts that must sum to EXACTLY the QuickBooks row\'s amount (to the cent). Units may be negative (e.g. a clawed-back failed payout netted inside a deposit).')
+})
+
+export const SplitStagedPaymentIntoUnitsResponse = zod.object({
+  "parentId": zod.string().describe('The split QuickBooks row (now derives `excluded` — its money story lives on the units).'),
+  "children": zod.array(zod.object({
+  "id": zod.string().describe('Deterministic synthetic unit id (`<parentId>:split:<n>`).'),
+  "amount": zod.string(),
+  "payerName": zod.string().nullish(),
+  "dateReceived": zod.string().date().nullish()
+}))
+})
+
+/**
+ * Deletes ALL synthetic child units of a split QuickBooks staged row and
+returns the parent to the open review flow (its derived status was
+never stored). Refused (409) while any unit still carries
+reconciliation evidence — a tie, settlement link, or linked gift —
+revert those first. The hard delete here is the documented soft-delete
+exception: units are synthetic CRM-created rows with zero claims.
+
+ * @summary Remove a QuickBooks row's synthetic reconciliation units (undo split).
+ */
+export const RevertStagedPaymentSplitUnitsParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const RevertStagedPaymentSplitUnitsResponse = zod.object({
+  "parentId": zod.string().describe('The QuickBooks row restored to the open review flow.'),
+  "removedChildIds": zod.array(zod.string())
+})
+
+/**
  * Reverts a CONFIRMED QuickBooks tie on ONE Stripe charge — the undo for
 an accidental or wrong "Tie selected" / proposal approval. Clears the
 charge's linkedQbStagedPaymentId (+ the who/when provenance) and, when
@@ -1031,6 +1097,7 @@ export const ListWorkbenchClustersResponse = zod.object({
   "payerName": zod.string().nullish().describe('QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee \/ charge_tie \/ group_member.'),
   "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit']).nullish().describe('The QuickBooks transaction type this staged row came from — drives the \'View in QuickBooks\' deep link.'),
   "qbEntityId": zod.string().nullish().describe('The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link).'),
+  "splitUnitParentId": zod.string().nullish().describe('When this row is a SYNTHETIC reconciliation unit (created by splitting a QuickBooks row that bundled several money events), the id of the original QuickBooks parent row. Null for real QuickBooks rows. Synthetic units have no QuickBooks deep link of their own — the parent carries the qbEntityType\/qbEntityId.'),
   "attributedDonor": zod.object({
   "donorKind": zod.enum(['organization', 'person', 'household']),
   "donorId": zod.string(),

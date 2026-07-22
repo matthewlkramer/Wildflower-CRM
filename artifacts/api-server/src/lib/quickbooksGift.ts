@@ -15,7 +15,9 @@ import type { NewGiftOrPayment } from "@workspace/db/schema";
  */
 export interface StagedGiftSource {
   qbEntityType: string;
-  qbEntityId: string;
+  /** Null for SYNTHETIC split units (split_parent_id set): a unit mirrors no
+   * QB entity of its own — only the provenance string differs at mint. */
+  qbEntityId: string | null;
   amount: string | null;
   dateReceived: string | null;
   payerName: string | null;
@@ -45,7 +47,10 @@ export function buildGiftValuesFromStaged(
     individualGiverPersonId: staged.individualGiverPersonId,
     householdId: staged.householdId,
     paymentIntermediaryId: staged.matchedPaymentIntermediaryId,
-    details: `Imported from QuickBooks (${staged.qbEntityType} #${staged.qbEntityId}).`,
+    details:
+      staged.qbEntityId == null
+        ? `Imported from QuickBooks (${staged.qbEntityType}, split unit).`
+        : `Imported from QuickBooks (${staged.qbEntityType} #${staged.qbEntityId}).`,
     ownerUserId,
   };
 }

@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   assignChargeQbTies,
+  assignCombinedChargeQbTies,
   assignManualChargeQbTies,
+  combinedSubsetSumAmounts,
   nameSimilarity,
   nameTokens,
   pairChargeFeeRows,
   CHARGE_TIE_WINDOW_DAYS,
+  COMBINED_TIE_MAX_CHARGES,
   NAME_SIM_THRESHOLD,
   type ChargeForTie,
   type FeeChargeInput,
@@ -352,6 +355,186 @@ describe("assignManualChargeQbTies (Tie selected)", () => {
     const manual = assignManualChargeQbTies(chargesArr, rowsArr);
     expect(manual.issues).toEqual([]);
     expect(manual.assigned.size).toBe(2);
+  });
+});
+
+// ── Combined-booked proposer (subset-sum) ───────────────────────────────────
+
+describe("combinedSubsetSumAmounts", () => {
+  it("enumerates every size-≥2 subset sum on the gross basis", () => {
+    const out = combinedSubsetSumAmounts([
+      charge("c1", "100.00", "2026-01-10"),
+      charge("c2", "200.00", "2026-01-10"),
+      charge("c3", "50.00", "2026-01-10"),
+    ]);
+    // Pairs: 300, 150, 250; triple: 350. NO singles (150/250/300/350 only).
+    expect(out).toEqual(["150.00", "250.00", "300.00", "350.00"]);
+  });
+
+  it("includes net-basis sums as separate candidates", () => {
+    const out = combinedSubsetSumAmounts([
+      charge("c1", "100.00", "2026-01-10", null, null, "97.00"),
+      charge("c2", "50.00", "2026-01-10", null, null, "48.50"),
+    ]);
+    expect(out).toContain("150.00"); // gross+gross
+    expect(out).toContain("145.50"); // net+net
+    // Mixed bases are NOT enumerated (100 + 48.50 / 97 + 50).
+    expect(out).not.toContain("148.50");
+    expect(out).not.toContain("147.00");
+  });
+
+  it("skips charges with no usable amount and dedupes equal sums", () => {
+    const out = combinedSubsetSumAmounts([
+      charge("c1", "25.00", "2026-01-10", null, null, "25.00"),
+      charge("c2", "25.00", "2026-01-10", null, null, "25.00"),
+      charge("c3", null, "2026-01-10"),
+    ]);
+    expect(out).toEqual(["50.00"]); // gross pair == net pair, deduped
+  });
+
+  it("caps the enumeration at COMBINED_TIE_MAX_CHARGES", () => {
+    const many = Array.from({ length: COMBINED_TIE_MAX_CHARGES + 4 }, (_, i) =>
+      charge(`c${i}`, "10.00", "2026-01-10"),
+    );
+    const out = combinedSubsetSumAmounts(many);
+    // Largest possible sum uses only the first 8 charges: 8 × $10.
+    expect(out[out.length - 1]).toBe("80.00");
+  });
+});
+
+describe("assignCombinedChargeQbTies (combined-booked proposer)", () => {
+  it("proposes the unique pair whose gross sum equals the row amount", () => {
+    // The Fisher+Devon shape: 4794.70 + 496.38 booked as one 5291.08 row.
+    const out = assignCombinedChargeQbTies(
+      [
+        charge("c1", "4794.70", "2026-01-10"),
+        charge("c2", "496.38", "2026-01-10"),
+      ],
+      [qb("q1", "5291.08", "2026-01-12")],
+    );
+    expect(out.get("c1")).toBe("q1");
+    expect(out.get("c2")).toBe("q1");
+    expect(out.size).toBe(2);
+  });
+
+  it("proposes on the net basis when the bookkeeper booked post-fee", () => {
+    const out = assignCombinedChargeQbTies(
+      [
+        charge("c1", "100.00", "2026-01-10", null, null, "97.00"),
+        charge("c2", "50.00", "2026-01-10", null, null, "48.50"),
+      ],
+      [qb("q1", "145.50", "2026-01-12")],
+    );
+    expect(out.get("c1")).toBe("q1");
+    expect(out.get("c2")).toBe("q1");
+  });
+
+  it("never mixes bases inside one subset", () => {
+    // gross(c1) + net(c2) = 148.50 — must NOT propose.
+    const out = assignCombinedChargeQbTies(
+      [
+        charge("c1", "100.00", "2026-01-10", null, null, "97.00"),
+        charge("c2", "50.00", "2026-01-10", null, null, "48.50"),
+      ],
+      [qb("q1", "148.50", "2026-01-12")],
+    );
+    expect(out.size).toBe(0);
+  });
+
+  it("skips a row explained by TWO different subsets (ambiguous membership)", () => {
+    // {10+20} and {12+18} both sum to 30 — two explanations, no proposal.
+    const out = assignCombinedChargeQbTies(
+      [
+        charge("c1", "10.00", "2026-01-10"),
+        charge("c2", "20.00", "2026-01-10"),
+        charge("c3", "12.00", "2026-01-10"),
+        charge("c4", "18.00", "2026-01-10"),
+      ],
+      [qb("q1", "30.00", "2026-01-11")],
+    );
+    expect(out.size).toBe(0);
+  });
+
+  it("gross and net subsets with IDENTICAL members are one explanation", () => {
+    // Zero-fee charges: gross == net, so both bases find the same pair.
+    const out = assignCombinedChargeQbTies(
+      [
+        charge("c1", "25.00", "2026-01-10", null, null, "25.00"),
+        charge("c2", "35.00", "2026-01-10", null, null, "35.00"),
+      ],
+      [qb("q1", "60.00", "2026-01-11")],
+    );
+    expect(out.get("c1")).toBe("q1");
+    expect(out.get("c2")).toBe("q1");
+  });
+
+  it("defers to the 1:1 pass when the row also equals a SINGLE charge", () => {
+    // q1=30 equals c3's gross alone — 1:1 territory (name rules apply there),
+    // even though {c1,c2} also sums to 30.
+    const out = assignCombinedChargeQbTies(
+      [
+        charge("c1", "10.00", "2026-01-10"),
+        charge("c2", "20.00", "2026-01-10"),
+        charge("c3", "30.00", "2026-01-10"),
+      ],
+      [qb("q1", "30.00", "2026-01-11")],
+    );
+    expect(out.size).toBe(0);
+  });
+
+  it("excludes charges outside the date window from subsets", () => {
+    const out = assignCombinedChargeQbTies(
+      [
+        charge("c1", "10.00", "2026-01-10"),
+        charge("c2", "20.00", "2026-01-10"),
+        charge("c3", "5.00", "2025-06-01"), // far outside the window
+      ],
+      [qb("q1", "30.00", "2026-01-11")],
+    );
+    expect(out.get("c1")).toBe("q1");
+    expect(out.get("c2")).toBe("q1");
+    expect(out.has("c3")).toBe(false);
+  });
+
+  it("a charge joins at most ONE combined group (stable candidate order)", () => {
+    // Both rows could be explained by the same pair; the smaller row id wins.
+    const out = assignCombinedChargeQbTies(
+      [
+        charge("c1", "10.00", "2026-01-10"),
+        charge("c2", "20.00", "2026-01-10"),
+      ],
+      [qb("q2", "30.00", "2026-01-11"), qb("q1", "30.00", "2026-01-12")],
+    );
+    expect(out.get("c1")).toBe("q1");
+    expect(out.get("c2")).toBe("q1");
+    expect(out.size).toBe(2);
+  });
+
+  it("returns nothing for fewer than 2 or more than the cap of charges", () => {
+    expect(
+      assignCombinedChargeQbTies(
+        [charge("c1", "10.00", "2026-01-10")],
+        [qb("q1", "10.00", "2026-01-10")],
+      ).size,
+    ).toBe(0);
+    const many = Array.from(
+      { length: COMBINED_TIE_MAX_CHARGES + 1 },
+      (_, i) => charge(`c${i}`, "10.00", "2026-01-10"),
+    );
+    expect(
+      assignCombinedChargeQbTies(many, [qb("q1", "20.00", "2026-01-10")]).size,
+    ).toBe(0);
+  });
+
+  it("ignores negative or zero-amount candidate rows", () => {
+    const out = assignCombinedChargeQbTies(
+      [
+        charge("c1", "10.00", "2026-01-10"),
+        charge("c2", "20.00", "2026-01-10"),
+      ],
+      [qb("q1", "-30.00", "2026-01-11"), qb("q2", "0.00", "2026-01-11")],
+    );
+    expect(out.size).toBe(0);
   });
 });
 

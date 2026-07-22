@@ -20,7 +20,11 @@ import { getUncachableStripeClient } from "./stripeClient";
 import { upsertSettlementLink, deleteSettlementLink } from "./settlementLink";
 import { proposeSettlementLink } from "./settlementWriter";
 import { settlementLumpWhere } from "./settlementLump";
-import { stagedStatusSql, stagedStatusWhere } from "./derivedStatus";
+import {
+  stagedStatusSql,
+  stagedStatusWhere,
+  stagedHasSplitChildren,
+} from "./derivedStatus";
 import {
   qbLedgerExistsForPayment,
   qbLedgerSoleGiftIdForPayment,
@@ -301,6 +305,9 @@ export async function runProposalPass(
             gte(stagedPayments.dateReceived, fromStr),
             lte(stagedPayments.dateReceived, toStr),
             sql`abs(${stagedPayments.amount} - ${target}::numeric) <= 5.00`,
+            // A split PARENT is fully represented by its synthetic children
+            // (candidates in their own right) — never settle the parent.
+            sql`NOT ${stagedHasSplitChildren}`,
           ),
         );
 

@@ -1012,6 +1012,8 @@ function QbCard({
 
   const qbEntry = rowState?.qbCards.find((e) => e.qbRecordId === record.stagedPaymentId);
   const qbState = qbEntry?.state;
+  // Synthetic child reconciliation unit minted by splitting a combined QB row.
+  const isSplitUnit = record.splitUnitParentId != null;
   const settlementConfirmed =
     record.role === "deposit" && rowState?.settlementLinkState === "confirmed";
   const tone: "green" | "amber" | "slate" =
@@ -1212,12 +1214,18 @@ function QbCard({
             }
         : { label: "Group QuickBooks records", disabledReason: "Finance team only" },
       isFinance
-        ? rowOpenReason
-          ? { label: "Split into reconciliation units", disabledReason: rowOpenReason }
-          : {
+        ? isSplitUnit
+          ? {
               label: "Split into reconciliation units",
-              onClick: () => actions.openSplitStaged(record),
+              disabledReason:
+                "Already a split unit — split the original QuickBooks row instead",
             }
+          : rowOpenReason
+            ? { label: "Split into reconciliation units", disabledReason: rowOpenReason }
+            : {
+                label: "Split into reconciliation units",
+                onClick: () => actions.openSplitStaged(record),
+              }
         : { label: "Split into reconciliation units", disabledReason: "Finance team only" },
       { label: "View QB record", onClick: () => actions.openQbDetail(record, linkage) },
     );
@@ -1250,6 +1258,14 @@ function QbCard({
             : null}
           {record.memo ? ` · ${record.memo}` : null}
           {refNote ? <span className="block text-xs text-muted-foreground">{refNote}</span> : null}
+          {isSplitUnit ? (
+            <span
+              className="block text-xs text-muted-foreground"
+              data-testid={`note-qb-split-unit-${record.stagedPaymentId}`}
+            >
+              Split unit of a combined QuickBooks row
+            </span>
+          ) : null}
           {appliedGiftName &&
           (proposed || linked) &&
           record.role !== "fee" &&

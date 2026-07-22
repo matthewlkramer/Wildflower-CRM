@@ -160,6 +160,7 @@ const RESERVED_INTERNAL_ALIASES = new Set([
   "sl_ds",
   "cc_ds",
   "pa_ct_ds",
+  "sp_ds",
 ]);
 
 /**
@@ -246,18 +247,40 @@ export function qbSettlementClaimedText(alias: string): string {
   return `(${qbChargeTieLinkExistsText(alias)} OR EXISTS (SELECT 1 FROM "source_links" "srcl_ds" WHERE "srcl_ds"."link_type" = 'charge_fee_row' AND "srcl_ds"."lifecycle" = 'confirmed' AND "srcl_ds"."qb_staged_payment_id" = ${a}."id"))`;
 }
 
+/** EXISTS: synthetic split children name QB row `alias` as their parent —
+ *  the row was "split into reconciliation units" (workbench-business-rules
+ *  §7.2). The parent's money story is then told ENTIRELY by its children
+ *  (which tie, settle, and book like real rows), so the parent itself is
+ *  settled OUT of the review queue and out of every matcher/picker.
+ *  `split_parent_id IS NOT NULL` on the child side is the single authority —
+ *  this predicate is that same fact read from the parent side. */
+export function qbHasSplitChildrenText(alias: string): string {
+  const a = quotedSqlAlias(alias);
+  return `EXISTS (SELECT 1 FROM "staged_payments" "sp_ds" WHERE "sp_ds"."split_parent_id" = ${a}."id")`;
+}
+
+/** The row's review work is RESOLVED ELSEWHERE: claimed as confirmed Stripe
+ *  settlement evidence, OR split into synthetic child units. Either way the
+ *  row derives `excluded` (settled, not review work) without a stored
+ *  exclusion_reason, and un-claiming/un-splitting restores it. */
+export function qbResolvedElsewhereText(alias: string): string {
+  return `(${qbSettlementClaimedText(alias)} OR ${qbHasSplitChildrenText(alias)})`;
+}
+
 /** The full derived-status CASE for QB row `alias` (parenthesized, no cast).
- *  The settlement-claimed arm sits AFTER match_confirmed on purpose: a tied
+ *  The resolved-elsewhere arm sits AFTER match_confirmed on purpose: a tied
  *  row whose charge is already booked stays match_confirmed (the booking is
- *  the stronger fact); an unbooked-but-confirmed tie (or a claimed fee
- *  sibling) derives `excluded` — settled evidence, not donation review work. */
+ *  the stronger fact); an unbooked-but-confirmed tie, a claimed fee sibling,
+ *  or a split parent derives `excluded` — settled evidence, not donation
+ *  review work. (The split service refuses to split a row that carries any
+ *  booking evidence, so a split parent never reaches the stronger arms.) */
 export function qbStatusCaseText(alias: string): string {
   const a = quotedSqlAlias(alias);
   return `(CASE
   WHEN ${a}."exclusion_reason" IS NOT NULL THEN 'excluded'
   WHEN ${qbProposedText(alias)} THEN 'match_proposed'
   WHEN ${qbConfirmedEvidenceText(alias)} THEN 'match_confirmed'
-  WHEN ${qbSettlementClaimedText(alias)} THEN 'excluded'
+  WHEN ${qbResolvedElsewhereText(alias)} THEN 'excluded'
   ELSE 'pending'
 END)`;
 }
@@ -266,7 +289,7 @@ END)`;
 export function qbOpenText(alias: string): string {
   const a = quotedSqlAlias(alias);
   return `(${a}."exclusion_reason" IS NULL AND (
-  (NOT ${qbConfirmedEvidenceText(alias)} AND NOT ${qbSettlementClaimedText(alias)})
+  (NOT ${qbConfirmedEvidenceText(alias)} AND NOT ${qbResolvedElsewhereText(alias)})
   OR ${qbProposedText(alias)}
 ))`;
 }
@@ -341,7 +364,7 @@ export const stagedStatusSql: SQL<DerivedStatus> = sql
 /** Per-status WHERE predicates (mutually exclusive, exhaustive). */
 export const stagedStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
   excluded: sql.raw(
-    `(${QBA}."exclusion_reason" IS NOT NULL OR (NOT ${qbProposedText(QB)} AND NOT ${qbConfirmedEvidenceText(QB)} AND ${qbSettlementClaimedText(QB)}))`,
+    `(${QBA}."exclusion_reason" IS NOT NULL OR (NOT ${qbProposedText(QB)} AND NOT ${qbConfirmedEvidenceText(QB)} AND ${qbResolvedElsewhereText(QB)}))`,
   ) as SQL<boolean>,
   match_proposed: sql.raw(
     `(${QBA}."exclusion_reason" IS NULL AND ${qbProposedText(QB)})`,
@@ -350,9 +373,16 @@ export const stagedStatusWhere: Record<DerivedStatus, SQL<boolean>> = {
     `(${QBA}."exclusion_reason" IS NULL AND NOT ${qbProposedText(QB)} AND ${qbConfirmedEvidenceText(QB)})`,
   ) as SQL<boolean>,
   pending: sql.raw(
-    `(${QBA}."exclusion_reason" IS NULL AND NOT ${qbConfirmedEvidenceText(QB)} AND NOT ${qbSettlementClaimedText(QB)})`,
+    `(${QBA}."exclusion_reason" IS NULL AND NOT ${qbConfirmedEvidenceText(QB)} AND NOT ${qbResolvedElsewhereText(QB)})`,
   ) as SQL<boolean>,
 };
+
+/** EXISTS: this row has synthetic split children (it is a split PARENT).
+ *  Matchers and pickers use this to keep parents out of candidate pools —
+ *  the children are the tieable units. */
+export const stagedHasSplitChildren: SQL<boolean> = sql.raw(
+  qbHasSplitChildrenText(QB),
+) as SQL<boolean>;
 
 /** OR-combination of per-status predicates for queue/filter params. */
 export function stagedStatusIn(statuses: readonly DerivedStatus[]): SQL<boolean> {
@@ -422,6 +452,11 @@ export interface StagedStatusFacts {
    * (settled out of the donation review queue) when no stronger booking
    * evidence exists — mirrors qbSettlementClaimedText; default false. */
   hasSettlementClaim?: boolean;
+  /** EXISTS arm — synthetic split children name this row as parent (it was
+   * split into reconciliation units). Derives `excluded` like a settlement
+   * claim: the children tell the money story — mirrors
+   * qbHasSplitChildrenText; default false. */
+  hasSplitChildren?: boolean;
 }
 
 export function deriveStagedPaymentStatus(f: StagedStatusFacts): DerivedStatus {
@@ -436,7 +471,9 @@ export function deriveStagedPaymentStatus(f: StagedStatusFacts): DerivedStatus {
   ) {
     return "match_confirmed";
   }
-  if (f.hasSettlementClaim === true) return "excluded";
+  if (f.hasSettlementClaim === true || f.hasSplitChildren === true) {
+    return "excluded";
+  }
   return "pending";
 }
 

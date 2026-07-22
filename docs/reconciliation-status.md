@@ -90,6 +90,21 @@ underlying transaction is Stripe/PayPal/ACH/check). External review flagged
 surfaces that may treat Donorbox rows as transaction evidence. Verify before
 repairing.
 
+## Pending historical repair — migration 0154 (awaiting human run)
+
+`lib/db/migrations/0154_historical_charge_qb_ties.sql` fixes the audited
+historical Stripe-charge ↔ QuickBooks cases from
+`exports/stripe-payout-qb-audit.md`: splits two bundled QB rows into
+reconciliation units, writes 19 confirmed charge ties (+1 fee-row claim),
+applies the retroactive charge-tie supersede ledger moves/demotes (three of
+which repair live double-counts), and fixes four settlement links. It must be
+run by a human AFTER Publish applies the 0153 schema. Rehearsed on a scratch
+DB (end state verified, idempotent re-run). Residual after it runs: the
+Scholes/Raphael-Gang tie carries two different gifts (cross-gift duplicate,
+`recAtdBMpZ03Of3Wc` vs `recYHLtt4GT65pOQT`) — needs a human decision in the
+app; the migration deliberately does not touch that ledger. Delete this
+section once 0154 has been applied to production.
+
 ## Maintenance
 
 - When a drift item is repaired, delete it here and update
