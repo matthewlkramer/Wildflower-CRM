@@ -1098,8 +1098,6 @@ export default function Gifts() {
     restrictionLabels: string[];
     regionalRestrictionTypes: string[];
     otherRestrictionTypes: string[];
-    /** Legacy saved-view key (pre-rename); read-only fallback. */
-    usageRestrictionTypes?: string[];
     timeRestrictionTypes: string[];
     fundableProjects: string[];
     campaignSlugs: string[];
@@ -1177,7 +1175,7 @@ export default function Gifts() {
       setPurposeVerbatimPresence(s.purposeVerbatimPresence ?? undefined);
       setRestrictionLabels(s.restrictionLabels ?? []);
       setRegionalRestrictionTypes(s.regionalRestrictionTypes ?? []);
-      setOtherRestrictionTypes(s.otherRestrictionTypes ?? s.usageRestrictionTypes ?? []);
+      setOtherRestrictionTypes(s.otherRestrictionTypes ?? []);
       setTimeRestrictionTypes(s.timeRestrictionTypes ?? []);
       setFundableProjects(s.fundableProjects ?? []);
       setCampaignSlugs(s.campaignSlugs ?? []);
@@ -1204,7 +1202,7 @@ export default function Gifts() {
       !s.purposeVerbatimPresence &&
       (s.restrictionLabels?.length ?? 0) === 0 &&
       (s.regionalRestrictionTypes?.length ?? 0) === 0 &&
-      ((s.otherRestrictionTypes ?? s.usageRestrictionTypes)?.length ?? 0) === 0 &&
+      (s.otherRestrictionTypes?.length ?? 0) === 0 &&
       (s.timeRestrictionTypes?.length ?? 0) === 0 &&
       (s.fundableProjects?.length ?? 0) === 0 &&
       (s.campaignSlugs?.length ?? 0) === 0 &&
