@@ -115,6 +115,7 @@ router.get(
         stripePayoutId: stripeStagedCharges.stripePayoutId,
         // DERIVED lifecycle status (no stored column) — lib/derivedStatus.ts.
         status: chargeStatusSql.as("status"),
+        exclusionReason: stripeStagedCharges.exclusionReason,
         organizationId: stripeStagedCharges.organizationId,
         individualGiverPersonId: stripeStagedCharges.individualGiverPersonId,
         householdId: stripeStagedCharges.householdId,
@@ -161,6 +162,7 @@ router.get(
           ? "pulled"
           : "qb_confirmed") as LinkSource,
         status: c.status,
+        exclusionReason: c.exclusionReason,
         donorResolved: Boolean(
           c.organizationId || c.individualGiverPersonId || c.householdId,
         ),

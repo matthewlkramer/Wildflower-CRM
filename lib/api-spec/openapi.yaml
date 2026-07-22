@@ -8106,6 +8106,7 @@ components:
         linkSource:   { $ref: "#/components/schemas/SettlementLineageLinkSource" }
         # Explode-into-per-donor-gifts support (read-only; drives the bundle queue).
         status:            { type: string, nullable: true, description: "The staged charge's derived reconciliation status (pending | match_proposed | match_confirmed | excluded)." }
+        exclusionReason:   { type: string, nullable: true, description: "Why the charge is out of play when status=excluded (e.g. failed_charge, refunded_charge) — lets the UI grey it with the same 'Failed — auto-excluded' label as settlement cards. Null for a live charge." }
         donorResolved:     { type: boolean, description: "True when a donor (org/person/household) is already resolved on this charge, so it can be exploded into a gift." }
         hasGift:           { type: boolean, description: "True when this charge already has a created or matched gift (already exploded)." }
         resolvedDonorName: { type: string, nullable: true, description: "The resolved donor's display name, when known." }

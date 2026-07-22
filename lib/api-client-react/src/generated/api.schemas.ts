@@ -4112,6 +4112,8 @@ export interface SettlementLineageCharge {
   linkSource: SettlementLineageLinkSource;
   /** The staged charge's derived reconciliation status (pending | match_proposed | match_confirmed | excluded). */
   status?: string | null;
+  /** Why the charge is out of play when status=excluded (e.g. failed_charge, refunded_charge) — lets the UI grey it with the same 'Failed — auto-excluded' label as settlement cards. Null for a live charge. */
+  exclusionReason?: string | null;
   /** True when a donor (org/person/household) is already resolved on this charge, so it can be exploded into a gift. */
   donorResolved: boolean;
   /** True when this charge already has a created or matched gift (already exploded). */

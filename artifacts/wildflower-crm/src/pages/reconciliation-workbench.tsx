@@ -162,6 +162,7 @@ import {
 import { DonorFieldPicker, type DonorType } from "@/components/entity-picker";
 import FinancialCorrectionsPage from "@/pages/financial-corrections";
 import { SettlementReport } from "@/components/reconciliation-bundles/SettlementReport";
+import { chargeExcludedLabel } from "@/components/reconciliation-bundles/bundle-ui";
 import {
   FlagForResearchDialog,
   BulkFlagForResearchDialog,
@@ -3214,7 +3215,14 @@ function LineageStrip({
     );
   }
 
-  const steps: { label: string; sub: string; done: boolean }[] = [];
+  const steps: {
+    label: string;
+    sub: string;
+    done: boolean;
+    /** Set when the leg is out of play (e.g. "Failed — auto-excluded"):
+     * greys the chip so a dead charge doesn't read as bookable money. */
+    excludedLabel?: string | null;
+  }[] = [];
   steps.push({
     label: "QBO deposit",
     sub: `${money(data.deposit.amount)}${data.deposit.depositToAccountName ? ` · ${data.deposit.depositToAccountName}` : ""}`,
@@ -3228,10 +3236,12 @@ function LineageStrip({
     });
   }
   for (const c of data.charges.slice(0, 4)) {
+    const excludedLabel = chargeExcludedLabel(c);
     steps.push({
       label: "Stripe charge",
       sub: `${money(c.grossAmount)}${c.payerName ? ` · ${c.payerName}` : ""}`,
-      done: c.linkSource === "stripe_confirmed",
+      done: !excludedLabel && c.linkSource === "stripe_confirmed",
+      excludedLabel,
     });
   }
   for (const d of data.donations.slice(0, 4)) {
@@ -3256,10 +3266,20 @@ function LineageStrip({
                 s.done
                   ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                   : "border-border bg-background text-muted-foreground",
+                s.excludedLabel && "opacity-50",
               )}
             >
               <div className="font-medium">{s.label}</div>
-              <div className="tabular-nums">{s.sub}</div>
+              <div
+                className={cn("tabular-nums", s.excludedLabel && "line-through")}
+              >
+                {s.sub}
+              </div>
+              {s.excludedLabel && (
+                <div className="text-[10px] font-medium text-muted-foreground">
+                  {s.excludedLabel}
+                </div>
+              )}
             </div>
             {i < steps.length - 1 && (
               <ArrowRight className="h-3 w-3 text-muted-foreground" />

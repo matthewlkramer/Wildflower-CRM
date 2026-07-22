@@ -248,6 +248,7 @@ export const GetReconciliationLineageResponse = zod.object({
   "disputed": zod.boolean().optional(),
   "linkSource": zod.enum(['pulled', 'qb_confirmed', 'stripe_pulled', 'stripe_confirmed']).describe('HOW a lineage leg was tied to the anchor.\npulled: from a Stripe-pulled join key (payout↔QB tie, or charge.stripePayoutId).\nqb_confirmed: a reviewer-confirmed link directly to the QB staged row (charge.linkedQbStagedPaymentId \/ donation.linkedQbStagedPaymentId).\nstripe_pulled: a Donorbox donation tied to a Stripe charge via the pulled donation.stripeChargeId key.\nstripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).\n'),
   "status": zod.string().nullish().describe('The staged charge\'s derived reconciliation status (pending | match_proposed | match_confirmed | excluded).'),
+  "exclusionReason": zod.string().nullish().describe('Why the charge is out of play when status=excluded (e.g. failed_charge, refunded_charge) — lets the UI grey it with the same \'Failed — auto-excluded\' label as settlement cards. Null for a live charge.'),
   "donorResolved": zod.boolean().describe('True when a donor (org\/person\/household) is already resolved on this charge, so it can be exploded into a gift.'),
   "hasGift": zod.boolean().describe('True when this charge already has a created or matched gift (already exploded).'),
   "resolvedDonorName": zod.string().nullish().describe('The resolved donor\'s display name, when known.')
