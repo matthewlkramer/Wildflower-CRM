@@ -169,7 +169,7 @@ Each payout below is shown with its Stripe charges (and tie state) followed by E
 | 2021-01-25 | $7500.00 | deposit | FREE | Docebo NA Inc |  |  |
 | 2021-01-26 | $300000.00 | payment | FREE | Stranahan Foundation |  |  |
 | 2021-01-26 | $20000.00 | payment | FREE | Spring Point Partners |  |  |
-| 2021-01-26 | $514.00 | deposit | FREE |  | •	$514 is the close out of petty ca |  |
+| 2021-01-26 | $514.00 | deposit | FREE |  | •  $514 is the close out of petty ca |  |
 | 2021-01-26 | $4000.00 | payment | FREE | Hilary Cuevas-Balanon |  |  |
 | 2021-01-29 | $248.19 | deposit | FREE | Stripe |  |  |
 | 2021-01-29 | $5000.00 | payment | FREE | Elm City Montessori |  |  |
@@ -714,7 +714,7 @@ _No charges (negative/adjustment payout — money moved OUT of the bank; no QB d
 2. **2019-01-02 ($5,015.50)** — booked as TWO rows on 1/3/2019: $5,300.00 and −$284.50, both "Tim Welsh / STRIPE TRANSFER". 5300.00 − 284.50 = 5015.50 exactly.
 3. **2022-05-30 ($2,076.66)** — 7 of 8 charges confirmed. The 8th (Scott Greenfield, net $1,917.70) is booked as $1,661.70 = 1917.70 − 256.00: the bookkeeper netted the −$256.00 failed-payout reversal (the 2022-02-02 failed payout) into this booking. QB ties to the bank; the matcher can't see it because the amount differs.
 4. **2021-12-09 / 2021-12-15 / 2021-12-19 / 2021-12-20 / 2022-01-03** — exact QB matches already found by the system, sitting as unconfirmed proposals in the workbench (Shelly Fisher $4,794.70, Dana Devon $496.38, Jan Levine $239.45, Denise Bala $47.65, Josh Berberian $47.65, Erica Cantoni $248.19). Anne Essner (net $4,963.76) appears booked as $5,099.38 on 12/16 — a different amount, so no proposal.
-5. **2022-10-04 ($198.54)** — Raphael Gang's charge is tied; Ali Scholes ($99.27) is not, but a FREE $99.27 QB row labeled "Raphael Gang (c)" on 10/5 is almost certainly Ali's donation booked under the wrong name.
+5. **2022-10-04 ($198.54)** — CORRECTED after review: two donors each gave $103.83 (net $99.27) in this payout, and each has its own QB row — "Alison Macdonald" (= Ali Scholes, same person) and "Raphael Gang (c)". The existing confirmed tie was crosswise (Gang's charge tied to the Macdonald row), which made the Gang row look FREE and suggested the wrong-name theory in the original write-up. The fix (migration 0154) re-points the Gang charge to the Gang row and ties the Scholes charge to the Macdonald row; the Gang row's counted booking is demoted (the Gang gift is already counted on its charge).
 6. **2022-02-01 ($248.19)** — exact FREE QB match exists: $248.19 "Erica Cantoni (c)" on 2/2. **2021-12-16** (Suzanne Bakewell $239.45) — nearest same-amount row is the $239.45 "Jan Levine" payment already proposed to Jan's own charge; Suzanne's booking may be under another name/amount.
 7. **2022-07-21 ($49.64)** — an exact $49.64 "Stripe" deposit on 7/22 exists but is already lump-linked to a different payout; worth double-checking that link.
 8. **2021-01-20 (−$0.45) and 2024-09-29 (−$1,023.21)** — negative payouts: Stripe debited the bank. No QB deposit will ever exist; these should be resolved as withdrawals.

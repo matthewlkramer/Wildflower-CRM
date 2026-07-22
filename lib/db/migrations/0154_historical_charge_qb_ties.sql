@@ -21,9 +21,18 @@
 --              reversal the bookkeeper netted into the same row)
 --        - lHqCV0qGyidp97JFzSoHc  "Misc Customer"    payment  1378.82
 --            = 992.75 + 99.27 + 95.60 + 95.60 + 95.60 (five donations)
---   2. Writes CONFIRMED charge_qb_tie source_links for 19 charges
---      (6 promote existing machine proposals, 13 are new), plus the Tim
---      Welsh charge_fee_row claim on the −284.50 sibling deposit line.
+--   2. Writes CONFIRMED charge_qb_tie source_links for 20 charges
+--      (6 promote existing machine proposals, 13 are new, and 1 re-points
+--      an existing crosswise human tie — see Scholes/Gang below), plus the
+--      Tim Welsh charge_fee_row claim on the −284.50 sibling deposit line.
+--
+--      Scholes/Gang untangle: two donors each gave 103.83 (net 99.27) in
+--      payout po_1Lp22GAhXr9x8yiRJIYCe2nR. The bookkeeper recorded Ali
+--      Scholes's payment under "Alison Macdonald" (same person), and the
+--      existing confirmed tie crossed the pair (Gang charge -> Macdonald
+--      QB row). This file re-points that tie to the Gang QB row and ties
+--      the Scholes charge to the Macdonald QB row, so each QB record lines
+--      up against its own charge.
 --   3. Mirrors the charge-tie supersede ledger rule for the affected
 --      cash applications (chargeTieSupersede.ts, precedent repair 0129):
 --        - MOVE (exact-amount, gift not charge-booked): Fisher, Devon,
@@ -31,7 +40,8 @@
 --          grain (match_method charge_tie_supersede), demote the QB row
 --          to corroborating (amount kept, reversible).
 --        - DEMOTE ONLY (gift already charge-booked — these are live
---          DOUBLE-COUNTS today): Cantoni 2021-12-31, Rivera, Greenfield.
+--          DOUBLE-COUNTS today): Cantoni 2021-12-31, Rivera, Greenfield,
+--          Raphael Gang.
 --        - NOTHING (inexact override ties — booking stays on the QB row
 --          by design): Essner, Welsh.
 --   4. Settlement links:
@@ -46,11 +56,8 @@
 --
 -- Deliberately NOT touched:
 --   - Bakewell 194.87 (audit: leave as-is).
---   - Scholes ledger: the tied QB row (99.27, gift recAtdBMpZ03Of3Wc) and
---     the charge (gift recYHLtt4GT65pOQT) carry DIFFERENT gifts — a
---     pre-existing cross-gift duplicate a supersede move would turn into a
---     book-once violation. The tie is written (the money is the same);
---     the duplicate gifts need a human decision in the app.
+--   - The Macdonald QB row's application (corroborating, gift
+--     recYHLtt4GT65pOQT): already in the converged post-supersede state.
 --   - Kuthart-Aug ledger: repair 0129 already moved it; this file only
 --     adds the missing tie evidence row.
 
@@ -78,6 +85,7 @@ BEGIN
     ('eY58cEjOB9rluJXXrT9d8',  248.19),
     ('8ol1fhqpgJa1AMPN81FLd', 5099.38),
     ('Qp01YNiqbD7dNTHnwOKUZ',   99.27),
+    ('3m_pKGZPXJLJPZijwH3VQ',   99.27),
     ('r5x-zmGk8bNc_vgfMJ9qT', 5300.00),
     ('NJV3d5ekiQFDHcCbyfzEZ', -284.50),
     ('oPmu9CQS38V8-QNcxET2u',   49.64),
@@ -101,7 +109,8 @@ BEGIN
     ('ch_3K6ZwYAhXr9x8yiR1InFVHaE'), ('ch_3K7Mf3AhXr9x8yiR1Zofog9p'),
     ('ch_3K7hO4AhXr9x8yiR0avGRHJU'), ('ch_3KCrHoAhXr9x8yiR1qEM78H6'),
     ('ch_3KO2ePAhXr9x8yiR1TxWHAeF'), ('ch_3K6hokAhXr9x8yiR04ht7hoq'),
-    ('ch_3LoArlAhXr9x8yiR0dtsBBji'), ('ch_1DnaPrAhXr9x8yiRQ7GuxXDq'),
+    ('ch_3LoArlAhXr9x8yiR0dtsBBji'), ('ch_3LowvBAhXr9x8yiR1fVy0Blc'),
+    ('ch_1DnaPrAhXr9x8yiRQ7GuxXDq'),
     ('ch_3LYudbAhXr9x8yiR1rzT97il'), ('ch_3LlfhrAhXr9x8yiR0LdlCLMj'),
     ('ch_3LmQ5eAhXr9x8yiR0iMbqF8n'), ('ch_3Ka9uFAhXr9x8yiR05Xfum56'),
     ('ch_3LmFRdAhXr9x8yiR0VicBd8V'), ('ch_3Lm1o5AhXr9x8yiR06m8a8K0'),
@@ -124,7 +133,7 @@ BEGIN
     ('srcl_ct_ch_3KCrHoAhXr9x8yiR1qEM78H6', 'PMjE01PWL3VXLBZXhIgj1'),
     ('srcl_ct_ch_3KO2ePAhXr9x8yiR1TxWHAeF', 'eY58cEjOB9rluJXXrT9d8'),
     ('srcl_ct_ch_3K6hokAhXr9x8yiR04ht7hoq', '8ol1fhqpgJa1AMPN81FLd'),
-    ('srcl_ct_ch_3LoArlAhXr9x8yiR0dtsBBji', 'Qp01YNiqbD7dNTHnwOKUZ'),
+    ('srcl_ct_ch_3LoArlAhXr9x8yiR0dtsBBji', '3m_pKGZPXJLJPZijwH3VQ'),
     ('srcl_ct_ch_1DnaPrAhXr9x8yiRQ7GuxXDq', 'r5x-zmGk8bNc_vgfMJ9qT'),
     ('srcl_ct_ch_3LYudbAhXr9x8yiR1rzT97il', 'oPmu9CQS38V8-QNcxET2u'),
     ('srcl_ct_ch_3LlfhrAhXr9x8yiR0LdlCLMj', 'v3fh5q1adJWuN7NCs04os'),
@@ -140,6 +149,29 @@ BEGIN
   WHERE sl.lifecycle = 'confirmed' AND sl.qb_staged_payment_id <> e.qb;
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION '0154: charge already confirmed-tied elsewhere: %', bad;
+  END IF;
+
+  -- Scholes/Gang untangle: the Gang-charge tie must be in its known
+  -- crosswise state (confirmed -> Macdonald QB row) or already re-pointed
+  -- (re-run), and nothing else may claim either 99.27 QB row.
+  IF EXISTS (
+    SELECT 1 FROM source_links
+    WHERE id = 'srcl_ct_ch_3LowvBAhXr9x8yiR1fVy0Blc'
+      AND (lifecycle <> 'confirmed'
+           OR qb_staged_payment_id NOT IN ('3m_pKGZPXJLJPZijwH3VQ',
+                                           'Qp01YNiqbD7dNTHnwOKUZ'))
+  ) THEN
+    RAISE EXCEPTION '0154: Gang-charge tie srcl_ct_ch_3LowvB... not in an expected state';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM source_links
+    WHERE lifecycle = 'confirmed'
+      AND qb_staged_payment_id IN ('Qp01YNiqbD7dNTHnwOKUZ',
+                                   '3m_pKGZPXJLJPZijwH3VQ')
+      AND id NOT IN ('srcl_ct_ch_3LowvBAhXr9x8yiR1fVy0Blc',
+                     'srcl_ct_ch_3LoArlAhXr9x8yiR0dtsBBji')
+  ) THEN
+    RAISE EXCEPTION '0154: unexpected confirmed tie claims a Scholes/Gang 99.27 QB row';
   END IF;
 
   -- Existing split children (re-run) must match the planned breakdown, and
@@ -187,7 +219,8 @@ BEGIN
     ('92a24633-bf2e-4fb2-93c2-cbe512a93e34', 'Qojw5ATkwUaaFZynCYkvR', 'recVPAw4NsGEEIcGA',   47.65),
     ('3e93ab6c-d8b9-462b-b3de-0efdbb0b145f', 'K-CiqhhjiV8dUOuafpuGe', 'recVA9A5tkkhQHk6o',   47.65),
     ('3def179e-4e24-4e63-8c64-ba0b178927cc', 'PMjE01PWL3VXLBZXhIgj1', 'recdckIDvvWkcYh5K',  248.19),
-    ('b2cee29f-3979-4ed1-8ce2-d6dcb48cb6b9', 'v3fh5q1adJWuN7NCs04os', 'recqa7ZjXEUcVJfqE',   24.82)
+    ('b2cee29f-3979-4ed1-8ce2-d6dcb48cb6b9', 'v3fh5q1adJWuN7NCs04os', 'recqa7ZjXEUcVJfqE',   24.82),
+    ('18581e1b-f7eb-42a4-aa8a-d20dd67752d4', 'Qp01YNiqbD7dNTHnwOKUZ', 'recAtdBMpZ03Of3Wc',   99.27)
   ) AS e(app_id, qb_id, gift_id, amt)
   WHERE NOT EXISTS (
     SELECT 1 FROM payment_applications pa
@@ -275,6 +308,18 @@ WHERE id = '5c4ad0c5-a095-4d8d-9214-5a6c8d87e00f'
   AND payment_id = 'hTKDdCKpK6t3dfJKqMtKV';
 
 -- ── 3. Confirmed charge ↔ QB ties (+ the Welsh fee-row claim) ────────────
+-- First, re-point the existing crosswise Gang tie (Gang charge -> Macdonald
+-- QB row) onto the Gang QB row, BEFORE the upsert below ties the Scholes
+-- charge to the Macdonald row — otherwise the confirmed-tie unique index on
+-- the QB side would (correctly) reject a transient double-claim.
+UPDATE source_links
+SET qb_staged_payment_id = 'Qp01YNiqbD7dNTHnwOKUZ',
+    note = COALESCE(note || ' | ', '')
+      || 'migration 0154: re-pointed from the Alison Macdonald QB row (crosswise tie) to the Raphael Gang (c) QB row - two identical 103.83/99.27 donations in payout po_1Lp22GAhXr9x8yiRJIYCe2nR',
+    updated_at = now()
+WHERE id = 'srcl_ct_ch_3LowvBAhXr9x8yiR1fVy0Blc'
+  AND qb_staged_payment_id = '3m_pKGZPXJLJPZijwH3VQ';
+
 -- Mirrors upsertConfirmedChargeTie / upsertChargeFeeRowLink. Re-run no-op:
 -- the conflict update only fires when something actually differs.
 INSERT INTO source_links (
@@ -290,7 +335,8 @@ VALUES
   ('srcl_ct_ch_3KCrHoAhXr9x8yiR1qEM78H6', 'charge_qb_tie', 'ch_3KCrHoAhXr9x8yiR1qEM78H6', 'PMjE01PWL3VXLBZXhIgj1', 'confirmed', 'human', 'usr_matthew_kramer', now(), 'migration 0154 (audit): Erica Cantoni Dec net 248.19'),
   ('srcl_ct_ch_3KO2ePAhXr9x8yiR1TxWHAeF', 'charge_qb_tie', 'ch_3KO2ePAhXr9x8yiR1TxWHAeF', 'eY58cEjOB9rluJXXrT9d8', 'confirmed', 'human', 'usr_matthew_kramer', now(), 'migration 0154 (audit): Erica Cantoni Jan net 248.19'),
   ('srcl_ct_ch_3K6hokAhXr9x8yiR04ht7hoq', 'charge_qb_tie', 'ch_3K6hokAhXr9x8yiR04ht7hoq', '8ol1fhqpgJa1AMPN81FLd', 'confirmed', 'human', 'usr_matthew_kramer', now(), 'migration 0154 (audit): Anne Essner - amount mismatch ratified (charge net 4963.76 vs QB 5099.38); drift is derived at read'),
-  ('srcl_ct_ch_3LoArlAhXr9x8yiR0dtsBBji', 'charge_qb_tie', 'ch_3LoArlAhXr9x8yiR0dtsBBji', 'Qp01YNiqbD7dNTHnwOKUZ', 'confirmed', 'human', 'usr_matthew_kramer', now(), 'migration 0154 (audit): Ali Scholes net 99.27 booked as Raphael Gang (c). NOTE: QB row and charge carry different gifts (recAtdBMpZ03Of3Wc vs recYHLtt4GT65pOQT) - possible duplicate gifts, needs human review'),
+  ('srcl_ct_ch_3LoArlAhXr9x8yiR0dtsBBji', 'charge_qb_tie', 'ch_3LoArlAhXr9x8yiR0dtsBBji', '3m_pKGZPXJLJPZijwH3VQ', 'confirmed', 'human', 'usr_matthew_kramer', now(), 'migration 0154 (audit): Ali Scholes net 99.27 booked in QB as Alison Macdonald (same person)'),
+  ('srcl_ct_ch_3LowvBAhXr9x8yiR1fVy0Blc', 'charge_qb_tie', 'ch_3LowvBAhXr9x8yiR1fVy0Blc', 'Qp01YNiqbD7dNTHnwOKUZ', 'confirmed', 'human', 'usr_matthew_kramer', now(), 'migration 0154 (audit): Raphael Gang net 99.27 booked as Raphael Gang (c) - previously crosswise-tied to the Macdonald QB row'),
   ('srcl_ct_ch_1DnaPrAhXr9x8yiRQ7GuxXDq', 'charge_qb_tie', 'ch_1DnaPrAhXr9x8yiRQ7GuxXDq', 'r5x-zmGk8bNc_vgfMJ9qT', 'confirmed', 'human', 'usr_matthew_kramer', now(), 'migration 0154 (audit): Tim Welsh - QB booked 5300.00 gross-basis vs charge gross 5165.60; mismatch ratified, drift derived at read; sibling -284.50 fee line claimed as fee row'),
   ('srcl_fee_ch_1DnaPrAhXr9x8yiRQ7GuxXDq', 'charge_fee_row', 'ch_1DnaPrAhXr9x8yiRQ7GuxXDq', 'NJV3d5ekiQFDHcCbyfzEZ', 'confirmed', 'system_confirmed', 'usr_matthew_kramer', now(), 'migration 0154 (audit): Tim Welsh -284.50 fee/adjustment line (5300.00 - 284.50 = 5015.50 charge net)'),
   ('srcl_ct_ch_3LYudbAhXr9x8yiR1rzT97il', 'charge_qb_tie', 'ch_3LYudbAhXr9x8yiR1rzT97il', 'oPmu9CQS38V8-QNcxET2u', 'confirmed', 'human', 'usr_matthew_kramer', now(), 'migration 0154 (audit): Annie Kuthart Aug net 49.64 - completes the repair-0129 retroactive supersede with the tie evidence row'),
@@ -354,7 +400,8 @@ WHERE id IN (
   '92a24633-bf2e-4fb2-93c2-cbe512a93e34',
   '3e93ab6c-d8b9-462b-b3de-0efdbb0b145f',
   '3def179e-4e24-4e63-8c64-ba0b178927cc',
-  'b2cee29f-3979-4ed1-8ce2-d6dcb48cb6b9'
+  'b2cee29f-3979-4ed1-8ce2-d6dcb48cb6b9',
+  '18581e1b-f7eb-42a4-aa8a-d20dd67752d4'
 )
 AND link_role = 'counted';
 

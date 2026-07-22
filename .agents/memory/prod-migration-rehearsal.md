@@ -45,3 +45,12 @@ and 0154 both did the moves in SQL, exactly mirroring
 ledgers first; classify per the runtime decision table; never move a row
 whose gift differs from the charge-side gift if it would violate book-once —
 tie it, note the cross-gift duplicate, and leave the ledger for a human.
+
+**Crosswise-tie caveat:** before concluding "cross-gift duplicate", check
+whether two same-amount charges in one payout each have their own QB row and
+the existing tie simply crossed the pair (donor booked under a different
+name is common). Re-pointing the tie so each QB row lines up with its own
+charge can dissolve the "duplicate" entirely — and the demote then becomes a
+routine double-count fix. When re-pointing a confirmed tie in SQL, do the
+UPDATE before upserting the sibling tie, or the confirmed-per-QB-row unique
+index rejects the transient double-claim.

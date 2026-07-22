@@ -95,14 +95,13 @@ repairing.
 `lib/db/migrations/0154_historical_charge_qb_ties.sql` fixes the audited
 historical Stripe-charge ↔ QuickBooks cases from
 `exports/stripe-payout-qb-audit.md`: splits two bundled QB rows into
-reconciliation units, writes 19 confirmed charge ties (+1 fee-row claim),
-applies the retroactive charge-tie supersede ledger moves/demotes (three of
-which repair live double-counts), and fixes four settlement links. It must be
-run by a human AFTER Publish applies the 0153 schema. Rehearsed on a scratch
-DB (end state verified, idempotent re-run). Residual after it runs: the
-Scholes/Raphael-Gang tie carries two different gifts (cross-gift duplicate,
-`recAtdBMpZ03Of3Wc` vs `recYHLtt4GT65pOQT`) — needs a human decision in the
-app; the migration deliberately does not touch that ledger. Delete this
+reconciliation units, writes 20 confirmed charge ties (+1 fee-row claim) — including
+re-pointing the crosswise Gang-charge→Macdonald tie so the Scholes and Gang
+charges each line up against their own QB row — applies the retroactive
+charge-tie supersede ledger moves/demotes (four of which repair live
+double-counts), and fixes four settlement links. It must be run by a human
+AFTER Publish applies the 0153 schema. Rehearsed on a scratch DB (end state
+verified, idempotent re-run). No human-review residual remains. Delete this
 section once 0154 has been applied to production.
 
 ## Maintenance
