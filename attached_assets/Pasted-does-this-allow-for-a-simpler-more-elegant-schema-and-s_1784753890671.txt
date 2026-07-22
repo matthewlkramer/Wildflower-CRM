@@ -1,0 +1,624 @@
+does this allow for a simpler, more elegant schema and setup than we currently have? i feel like we created so much complexity to deal with these ideosyncracies.
+
+Yes. The new authority model allows a substantially simpler system because much of the current complexity exists to answer an impossible question:
+
+“Which QBO row is the real donor payment?”
+
+For processor transactions, the answer is: none of them necessarily is. The Stripe charge is the donor payment; the Stripe payout is the settlement batch; the bank transaction is the actual deposit; and QBO is the downstream accounting representation.
+
+Once those roles are separated, many of the special cases disappear.
+
+The simpler model
+
+There are five distinct grains:
+
+BANK MOVEMENT
+$194.87 actually entered the bank
+        ↓
+SETTLEMENT BATCH
+Stripe payout po_... was $194.87
+        ↓
+RECEIPT UNITS
+Randy Steiner charge: $100.00 gross
+Mark/Jill Blank charge: $103.83 gross
+        ↓
+FUNDRAISING RECORDS
+Two CRM gifts with their allocations
+        ↓
+ACCOUNTING POSTING
+QBO records how the batch, revenue, and fees were booked
+
+Each layer has one job.
+
+Layer	Answers
+Bank transaction	Did money actually enter or leave the bank?
+Settlement batch	Which processor payout or check batch created it?
+Receipt unit	What individual donor payment occurred?
+Gift and allocations	Who receives donor credit, and how is it treated?
+QBO posting	How was it recorded in accounting?
+
+The system no longer needs to force one record to answer all five questions.
+
+Why the current system became complicated
+
+The current staged_payments model treats QBO records as incoming-money units that can be matched to donors and gifts. It therefore carries QBO facts, donor candidates, match scores, gift-resolution state, classification state, and reconciliation state in the same area.
+
+The current payment_applications table then has to support three evidence-source types, counted versus corroborating roles, proposal versus confirmation state, mint ownership, source-specific anchor constraints, and duplicate suppression.
+
+The settlement system also ties the Stripe payout directly to a staged QBO deposit record, even though the real-world settlement counterpart is the bank transaction.
+
+That produced complexity such as:
+
+QBO-to-gift and Stripe-to-gift applications representing the same money
+Counted versus corroborating evidence
+Settlement supersession
+Fee-band logic
+Coarse deposit gifts that must later be archived
+Conflict gifts
+Gift-creation ownership flags
+Multiple pointer-retirement efforts
+Special grouping rules
+Status derivations from several generations of relationships
+Donor matching based on QBO names that may simply be wrong
+
+Most of those are compensating mechanisms for the earlier authority model.
+
+A cleaner target schema
+1. Raw evidence tables
+
+Keep source data separate and largely immutable:
+
+bank_transactions
+stripe_payouts
+stripe_charges
+donorbox_donations
+quickbooks_transactions
+
+These tables preserve what each system actually said. They do not contain canonical cross-system conclusions.
+
+2. Canonical receipt units
+
+Add one normalized donor-payment entity:
+
+receipt_units {
+  id
+
+  sourceKind:
+    | "stripe_charge"
+    | "check"
+    | "direct_ach"
+    | "wire"
+    | "qbo_payment_provisional"
+
+  stripeChargeId
+  checkItemId
+  provisionalQbTransactionId
+
+  grossAmount
+  feeAmount
+  netAmount
+  receivedDate
+
+  lifecycle:
+    | "received"
+    | "partially_refunded"
+    | "refunded"
+    | "disputed"
+}
+
+A receipt unit means:
+
+One donor-level payment occurred.
+
+For Stripe, it is deterministically created from a charge. Donorbox supplies additional donor and designation evidence but does not become another competing money unit.
+
+For an occasional check, the receipt unit can initially be based on a reviewed QBO payment. That provenance remains explicitly provisional until a check register or stronger source is available.
+
+3. Settlement relationships
+
+Use source-specific settlement tables rather than a universal relationship table:
+
+stripe_payout_bank_matches {
+  stripePayoutId
+  bankTransactionId
+  lifecycle
+  confirmedByUserId
+  confirmedAt
+}
+
+Later:
+
+check_batch_bank_matches {
+  checkDepositBatchId
+  bankTransactionId
+  lifecycle
+}
+
+Stripe already knows which charges belong to which payout, so no manually maintained charge-to-payout relationship is needed beyond the imported Stripe payout ID.
+
+4. Receipt-to-gift applications
+
+Replace the source-polymorphic payment ledger with:
+
+receipt_gift_applications {
+  id
+  receiptUnitId
+  giftId
+  amountApplied
+  matchMethod
+  confirmedByUserId
+  confirmedAt
+}
+
+This relationship always means one thing:
+
+This portion of this real donor payment belongs to this CRM gift.
+
+There is no evidence_source branch. There is no QBO-versus-Stripe source competition. There is normally no counted versus corroborating distinction.
+
+A receipt unit is money. A QBO posting is not.
+
+M:N remains available for legitimate cases:
+
+One payment split across two gifts
+Two partial payments satisfying one gift
+A combined payment covering more than one commitment
+5. QBO posting relationships
+
+Keep accounting downstream:
+
+qb_posting_links {
+  id
+  qbTransactionId
+
+  bankTransactionId
+  receiptUnitId
+  giftId
+
+  role:
+    | "bank_posting"
+    | "gross_revenue"
+    | "processor_fee"
+    | "donor_detail"
+    | "other"
+
+  reviewStatus:
+    | "unreviewed"
+    | "consistent"
+    | "mismatch"
+    | "accepted_historical"
+    | "correction_requested"
+    | "corrected"
+}
+
+A particular link may concern:
+
+The bank deposit
+The gross revenue
+The fee
+The donor-level accounting record
+
+The QBO transaction does not contribute money to the gift. It documents how the already-established money was recorded.
+
+A separate discrepancy table is useful only when detailed structured differences are needed. It does not need to be part of the core money model.
+
+What could disappear or shrink
+staged_payments
+
+It can become a much narrower imported-QBO table or be renamed quickbooks_transactions.
+
+Remove its responsibility for Stripe-originated:
+
+Donor identity
+Gift creation
+Gift ownership
+Counted money application
+Settlement truth
+Processor composition
+
+It can retain:
+
+Raw QBO facts
+Classification of the accounting transaction
+Links to bank transactions, receipt units, or gifts
+Coding review and discrepancy status
+Interim direct-check workflows
+payment_applications
+
+Replace it with receipt_gift_applications.
+
+Fields that likely disappear from the core relationship:
+
+evidence_source
+stripe_charge_id
+donorbox_donation_id
+link_role
+lifecycle beyond proposal/confirmation, if proposals are stored separately
+created_the_gift
+Corroborating uniqueness rules
+Source-specific partial unique indexes
+
+Gift creation provenance can live on the gift or in an audit event:
+
+Gift created from receipt unit X
+
+It does not need to affect the money relationship forever.
+
+settlement_links
+
+The concept remains, but it becomes simpler:
+
+Stripe payout ↔ bank transaction
+
+It no longer needs to point to the QBO record or carry gift-conflict semantics.
+
+Supersession
+
+The current rule that charge-level applications must supersede a coarse QBO deposit application becomes unnecessary because QBO processor rows never count as donor money in the first place.
+
+Unit groups
+
+Some grouping remains useful for genuinely combined direct receipts, but many processor-related grouping cases disappear because Stripe already supplies authoritative payout membership.
+
+Derived statuses
+
+Instead of one elaborate reconciliation status, derive four small states:
+
+Bank settlement:
+unmatched | confirmed
+
+Receipt application:
+unassigned | partial | complete | conflict
+
+CRM information:
+incomplete | complete
+
+QBO posting:
+not posted | unreviewed | consistent | mismatch accepted
+
+No single state machine needs to understand the entire system.
+
+What does not disappear
+
+The new model is simpler, but not simplistic. You still need:
+
+Raw evidence preservation
+M:N receipt-to-gift applications
+Refund and dispute handling
+Gross-versus-net calculations
+Gift and pledge allocation inheritance
+Historical QBO discrepancy records
+Check-batch composition once available
+Finance permissions and audit history
+Idempotent source imports
+
+Those are real business complexities. The difference is that each has an obvious place.
+
+Stripe workflow under the simpler model
+1. Import Stripe charge
+   → create receipt unit automatically
+
+2. Match Donorbox metadata
+   → resolve donor, designation, campaign
+
+3. Create or link CRM gift
+   → receipt_gift_application
+
+4. Import Stripe payout
+   → charge membership already known from Stripe
+
+5. Import bank transaction
+   → stripe_payout_bank_match
+
+6. Derive QBO coding instructions
+   → gross revenue, fees, net deposit, allocations
+
+7. Import QBO accounting records
+   → qb_posting_links and consistency review
+
+There is no need to first create a QBO gift, later discover Stripe charges, and then decide which representation should count.
+
+Direct check workflow
+
+Until check deposit registers exist:
+
+QBO payment
+→ reviewed provisional receipt unit
+→ CRM gift
+
+Actual bank transaction
+→ confirmed bank settlement
+
+QBO posting
+→ initially serves both as provisional donor evidence
+  and as the accounting record
+
+This is explicitly a fallback workflow, not the governing architecture.
+
+Later:
+
+Check deposit register item
+→ authoritative receipt unit
+
+QBO payment
+→ accounting posting only
+Migration approach
+
+Do not try to redesign and rewrite everything simultaneously.
+
+Phase 1: establish the authority rules
+Import actual bank transactions.
+Match Stripe payouts to bank transactions.
+Declare Stripe charges—not QBO records—the counted receipt source for Stripe.
+Stop creating gifts from QBO records identified as processor settlement or processor accounting entries.
+Phase 2: introduce receipt units
+Backfill one receipt unit per Stripe charge.
+Move Stripe charge-to-gift relationships to receipt-to-gift applications.
+Create provisional receipt units for legitimate direct QBO payments only.
+Phase 3: remove duplicate authority
+Demote or retire QBO counted applications for processor money.
+Remove settlement supersession logic after parity is verified.
+Move QBO mismatch handling into accounting review.
+Narrow the reconciliation workbench around the four independent states.
+Phase 4: simplify storage
+Retire obsolete source pointers and status fields.
+Reduce staged_payments to imported QBO facts and accounting review.
+Rename tables where that clarifies their actual responsibility.
+Update SCHEMA.md, reconciliation rules, and memory only after implementation matches.
+The key simplification
+
+The current model asks:
+
+Which imported record should count as the gift?
+
+The cleaner model says:
+
+A donor-level receipt is the money. Source records prove where it came from, bank records prove settlement, CRM records describe donor credit, and QBO records describe accounting.
+
+That should result in fewer tables with overlapping meanings, fewer status machines, fewer corrective actions, and substantially less reconciliation-specific code.
+
+can you write this up more concisely - the last two answers - for me to give to the coding agent?
+Reconciliation Architecture Revision
+Problem
+
+The current reconciliation model became overly complex because it treats QuickBooks records as though they are authoritative donor-payment records.
+
+They are not always reliable. QuickBooks can mislabel donors, represent processor payments at the wrong grain, and record net Stripe amounts rather than gross gifts.
+
+For processor-originated money:
+
+The bank transaction proves money reached the bank.
+The Stripe payout identifies the settlement batch.
+The Stripe charges identify the individual donor payments and gross amounts.
+Donorbox/Stripe metadata helps identify donors and designations.
+The CRM gift and allocations establish canonical donor credit and fundraising treatment.
+QuickBooks records the downstream accounting treatment, which may be correct, incorrect, or historically accepted.
+Target authority chain
+Actual bank transaction
+→ Stripe payout
+→ Stripe charges
+→ Donorbox / processor metadata
+→ CRM gifts and allocations
+→ QuickBooks accounting records
+
+QuickBooks should not determine the donor for Stripe-originated money.
+
+Core schema model
+Raw source records
+
+Keep source data immutable and separate:
+
+bank_transactions
+stripe_payouts
+stripe_charges
+donorbox_donations
+quickbooks_transactions
+
+Raw source tables should preserve what each system reported. They should not contain canonical cross-system conclusions.
+
+Canonical receipt units
+
+Add a normalized donor-payment entity:
+
+receipt_units {
+  id
+  source_kind
+  stripe_charge_id
+  provisional_qb_transaction_id
+  gross_amount
+  fee_amount
+  net_amount
+  received_date
+  lifecycle
+}
+
+A receipt unit means:
+
+One donor-level payment occurred.
+
+For Stripe, create one receipt unit automatically for each charge.
+
+For checks and direct payments, a reviewed QBO payment may temporarily create a provisional receipt unit until stronger evidence is available.
+
+Receipt-to-gift applications
+
+Replace the source-polymorphic payment ledger with:
+
+receipt_gift_applications {
+  id
+  receipt_unit_id
+  gift_id
+  amount_applied
+  match_method
+  confirmed_by_user_id
+  confirmed_at
+}
+
+This relationship has one meaning:
+
+This portion of this donor payment belongs to this CRM gift.
+
+It may remain many-to-many for legitimate splits and combined payments.
+
+Settlement relationships
+
+The primary Stripe settlement relationship should be:
+
+Stripe payout ↔ actual bank transaction
+
+For example:
+
+stripe_payout_bank_matches {
+  stripe_payout_id
+  bank_transaction_id
+  lifecycle
+  confirmed_by_user_id
+  confirmed_at
+}
+
+Stripe already provides payout membership, so charges do not need to be manually assigned to payouts.
+
+QuickBooks posting relationships
+
+QuickBooks should be downstream accounting evidence:
+
+qb_posting_links {
+  id
+  qb_transaction_id
+  bank_transaction_id
+  receipt_unit_id
+  gift_id
+
+  role
+  review_status
+}
+
+Possible roles include:
+
+Bank posting
+Gross revenue
+Processor fee
+Donor detail
+
+Possible review states include:
+
+Unreviewed
+Consistent
+Mismatch
+Accepted historical
+Correction requested
+Corrected
+
+QuickBooks relationships do not count money toward a gift.
+
+Going-forward Stripe workflow
+1. Import the posted bank transaction.
+2. Match it to the Stripe payout using amount, date, account, and trace data.
+3. Use Stripe to identify the charges included in the payout.
+4. Create one receipt unit per Stripe charge at the gross amount.
+5. Resolve the donor and designation using Donorbox/Stripe and CRM data.
+6. Create or link the CRM gift.
+7. Create editable gift allocations from the pledge, designation, or review.
+8. Produce the accounting instructions for QuickBooks.
+9. After finance records the transaction in QBO, import and verify the posting.
+
+The application should determine the correct accounting treatment before QBO is filled out.
+
+Checks and direct payments
+
+Until check deposit registers are available:
+
+QBO payment
+→ reviewed provisional receipt unit
+→ CRM gift
+
+Actual bank transaction
+→ confirms settlement
+
+This is an interim exception because check volume is low.
+
+Later, the preferred chain is:
+
+Bank deposit
+→ check deposit register
+→ individual checks
+→ receipt units
+→ CRM gifts
+→ QBO accounting
+What should become simpler
+staged_payments
+
+Narrow it into imported QuickBooks facts and accounting review.
+
+Remove responsibility for Stripe-originated:
+
+Donor identity
+Gift creation
+Counted gift applications
+Settlement truth
+Processor composition
+payment_applications
+
+Replace with receipt_gift_applications.
+
+The new relationship should not need:
+
+evidence_source
+Source-specific anchor columns
+Counted versus corroborating roles
+Settlement supersession
+Gift-creation ownership semantics
+Source-specific uniqueness rules
+settlement_links
+
+Simplify to payout-to-bank settlement.
+
+Do not attach donor or gift-conflict semantics to settlement records.
+
+Status
+
+Use several small derived states rather than one combined reconciliation state:
+
+Bank settlement:
+unmatched | proposed | confirmed
+
+Receipt-to-gift application:
+unassigned | partial | complete | conflict
+
+CRM information:
+incomplete | complete
+
+QBO posting:
+not posted | unreviewed | consistent | mismatch accepted
+
+A historical QBO error should not prevent financial reconciliation once the bank, processor, receipt, and CRM relationships are correct.
+
+Migration sequence
+Phase 1: authority correction
+Add/import actual bank transactions.
+Match Stripe payouts to bank transactions.
+Declare Stripe charges as the counted receipt source for Stripe money.
+Stop creating gifts from QBO processor records.
+Phase 2: receipt units
+Add receipt_units.
+Backfill one receipt unit per Stripe charge.
+Add receipt_gift_applications.
+Migrate Stripe-to-gift links.
+Create provisional receipt units only for legitimate direct QBO payments.
+Phase 3: remove duplicate authority
+Retire counted QBO applications for processor money.
+Remove settlement supersession once migration parity is verified.
+Move QBO mismatches into accounting review.
+Simplify the workbench around the independent states above.
+Phase 4: cleanup
+Narrow or rename staged_payments.
+Retire obsolete pointers and statuses.
+Update Drizzle, OpenAPI, tests, SCHEMA.md, reconciliation documents, and agent memory together.
+Non-negotiable rules
+Raw imported evidence is immutable.
+Stripe charges determine gross Stripe gifts.
+Bank transactions prove settlement.
+QBO processor labels never determine donor identity.
+QBO accounting records never count as additional gift money.
+CRM gifts and allocations remain canonical for donor credit and fundraising treatment.
+Do not remove the current model until backfill, parity checks, and database-backed tests confirm the replacement.
