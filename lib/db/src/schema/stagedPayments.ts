@@ -9,6 +9,8 @@ import {
   jsonb,
   uniqueIndex,
   index,
+  check,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -89,8 +91,13 @@ export const stagedPayments = pgTable(
     // The QuickBooks company this payment came from.
     realmId: text("realm_id").notNull(),
     qbEntityType: quickbooksEntityTypeEnum("qb_entity_type").notNull(),
-    // The QuickBooks entity id (unique per type within a company).
-    qbEntityId: text("qb_entity_id").notNull(),
+    // The QuickBooks entity id (unique per type within a company). NULL only
+    // for synthetic split children (splitParentId IS NOT NULL) — those are
+    // CRM-created reconciliation units, NOT QB mirror rows, so they carry no
+    // QB identity and the sync upsert (keyed on the unique index below, where
+    // NULLs are distinct) can never collide with or resurrect them. The
+    // split-child CHECK below enforces this shape both ways.
+    qbEntityId: text("qb_entity_id"),
     // The QuickBooks line id, for deposits staged per-line. Empty string
     // (NOT null) for SalesReceipt/Payment so the idempotency unique index
     // treats them as a single unit.
@@ -105,6 +112,24 @@ export const stagedPayments = pgTable(
     // single "deposit unit" and reconcile as a whole to one multi-allocation
     // gift. Grouping never spans deposits.
     qbDepositId: text("qb_deposit_id"),
+
+    // ── Split into reconciliation units (workbench-business-rules §7.2) ────
+    // NON-NULL marks this row as a synthetic CHILD unit of one real QB row
+    // ("split QuickBooks record into reconciliation units"). The parent stays
+    // the untouched sync-owned mirror (INV-G: splits are additive CRM
+    // associations, never edits to the mirror); its derived status becomes
+    // terminal 'split' (children exist ⇒ parent is out of matching), and the
+    // children participate everywhere real rows do (source_links,
+    // settlement_links, payment_applications). Invariants enforced by the
+    // split service, in one transaction: children sum == parent amount, no
+    // nested splits (a child cannot be a parent), parent has no live claims
+    // at split time. `split_parent_id IS NOT NULL` is the single authority
+    // for "this is a synthetic unit" — do NOT add a parallel marker column.
+    // RESTRICT: a parent with children cannot be deleted out from under them.
+    splitParentId: text("split_parent_id").references(
+      (): AnyPgColumn => stagedPayments.id,
+      { onDelete: "restrict" },
+    ),
 
     // Normalized incoming-money facts pulled from QuickBooks.
     amount: numeric("amount", { precision: 14, scale: 2 }),
@@ -361,6 +386,16 @@ export const stagedPayments = pgTable(
       t.qbEntityId,
       t.qbLineId,
     ),
+    // Split-child shape, both directions: a synthetic child (split_parent_id
+    // NOT NULL) carries NO QB identity; every real mirror row carries one.
+    check(
+      "staged_payments_split_child_shape_chk",
+      sql`(${t.splitParentId} IS NULL) = (${t.qbEntityId} IS NOT NULL)`,
+    ),
+    // "Find the children of this parent" + fast parent-has-children EXISTS.
+    index("staged_payments_split_parent_id_idx")
+      .on(t.splitParentId)
+      .where(sql`${t.splitParentId} IS NOT NULL`),
     index("staged_payments_match_status_idx").on(t.matchStatus),
     // Look up the candidate members of a bank deposit (manual deposit-grouping)
     // and the members of an already-grouped reconciliation.
