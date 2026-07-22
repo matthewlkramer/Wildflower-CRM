@@ -1,0 +1,435 @@
+## Recommendation
+
+Make a **moderate change to the data model and a substantial change to the picker**.
+
+The underlying mistake is that one `parent_region_id` relationship is currently doing two different jobs:
+
+1. Describing a natural geographic hierarchy.
+2. Defining flexible business groupings.
+
+Those are not the same thing.
+
+For example:
+
+```text
+United States
+└── Massachusetts
+    └── Boston
+        └── Back Bay
+```
+
+is a natural navigational hierarchy.
+
+But:
+
+```text
+New England
+├── Massachusetts
+├── Connecticut
+├── Maine
+├── New Hampshire
+├── Rhode Island
+└── Vermont
+```
+
+is a grouping.
+
+Massachusetts should not have to choose between “United States” and “New England” as its parent. Similarly, Boston can belong to Massachusetts, Greater Boston, New England, and perhaps a custom fundraising territory simultaneously.
+
+The current schema gives every region one optional parent, while the picker loads the full list, creates human-friendly labels, sorts everything alphabetically, and presents the levels together.
+
+# Proposed region model
+
+## 1. Keep canonical geographic parentage
+
+Retain one relationship for the intuitive geographic path:
+
+```ts
+regions {
+  id
+  name
+  type
+  canonicalParentRegionId
+  stateAbbreviation
+  archivedAt
+}
+```
+
+Use it only for natural navigation and display:
+
+| Type                | Canonical parent                                           |
+| ------------------- | ---------------------------------------------------------- |
+| Country             | Continent or null                                          |
+| State               | Country                                                    |
+| City                | State                                                      |
+| Neighborhood        | City                                                       |
+| Region within state | State                                                      |
+| Metro area          | State when clearly single-state; otherwise country or null |
+| Multi-state region  | Country or null                                            |
+
+A multi-state region should **not** become the canonical parent of its member states.
+
+I would rename `parent_region_id` to `canonical_parent_region_id` conceptually, although the physical rename could wait.
+
+## 2. Add flexible region membership
+
+```ts
+region_memberships {
+  containerRegionId
+  memberRegionId
+  createdAt
+}
+```
+
+Examples:
+
+```text
+New England includes Massachusetts
+New England includes Maine
+
+Greater Boston includes Boston
+Greater Boston includes Cambridge
+Greater Boston includes Somerville
+
+Twin Cities includes Minneapolis
+Twin Cities includes Saint Paul
+```
+
+A region may therefore belong to multiple broader regions without corrupting its display hierarchy.
+
+This supports:
+
+* Multi-state regions
+* Metro areas
+* Informal geographic areas
+* Fundraising territories
+* Regions within states
+* Future custom groupings
+
+Keep the existing region IDs referenced by allocation arrays, so this does not require replacing all current `region_ids` fields.
+
+## 3. Add aliases
+
+```ts
+region_aliases {
+  regionId
+  alias
+}
+```
+
+Examples:
+
+```text
+Minneapolis–Saint Paul
+Twin Cities
+
+Washington
+Washington, DC
+District of Columbia
+DC
+
+New York City
+NYC
+```
+
+Aliases improve search without producing duplicate region records.
+
+## 4. Add derived containment
+
+Use a recursive query initially, or a generated closure table later:
+
+```ts
+region_scope_closure {
+  ancestorRegionId
+  descendantRegionId
+  depth
+}
+```
+
+The closure should incorporate both:
+
+* Canonical parent relationships
+* Flexible membership relationships
+
+This gives broad regions real meaning.
+
+If an allocation is restricted to `New England`, Boston should be recognized as falling inside that scope. Exact slug matching alone is not sufficient for that.
+
+# Region types
+
+The current types are mostly adequate:
+
+* Continent
+* Country
+* Multi-state region
+* State
+* Region within state
+* Metro area
+* City
+* Neighborhood
+
+I would add:
+
+```text
+custom_region
+```
+
+but use it sparingly. A custom region should require an explicit definition through member regions rather than merely a name.
+
+The distinction is:
+
+* **Place:** state, city, neighborhood
+* **Named area:** metro, multi-state region, region within state, custom region
+
+Both remain selectable regions. They simply participate differently in navigation.
+
+# Picker design
+
+The picker should be **search-first and context-aware**, with browse support. It should not default to a flat list of approximately 568 alphabetically mixed entries, as the current implementation does.
+
+## Default view
+
+When the user opens the picker without typing:
+
+```text
+Recently used
+  Minnesota                         State
+  Greater Boston                    Metro area
+  New England                       Multi-state region
+
+Browse
+  Broad regions
+  States and territories
+  Metro areas
+  Cities and neighborhoods
+```
+
+Frequently used or recently selected regions are more useful than beginning with Alabama and walking through one combined alphabetical list.
+
+## Search results
+
+Searching for `Boston` could show:
+
+```text
+Boston
+City · Massachusetts
+
+Greater Boston
+Metro area · Massachusetts
+
+Back Bay
+Neighborhood · Boston, Massachusetts
+
+New England
+Multi-state region · includes Massachusetts and 5 other states
+```
+
+Searching for `Massachusetts` could show:
+
+```text
+Massachusetts
+State
+
+Western Massachusetts
+Region within state
+
+Greater Boston
+Metro area
+
+New England
+Multi-state region · includes Massachusetts
+```
+
+Each result should display:
+
+* Name
+* Type badge
+* Short geographic context
+* Optional coverage summary for grouped regions
+
+## Browse mode
+
+A tree works well for natural places:
+
+```text
+United States
+└── Massachusetts
+    ├── Cities
+    │   ├── Boston
+    │   ├── Cambridge
+    │   └── Worcester
+    ├── Metro areas
+    │   └── Greater Boston
+    └── Regions within state
+        └── Western Massachusetts
+```
+
+Broader groupings should be a separate browse branch:
+
+```text
+Broad regions
+├── New England
+├── Mid-Atlantic
+├── Great Lakes
+└── Pacific Northwest
+```
+
+Do not insert `New England` above Massachusetts in the ordinary place tree.
+
+# Context-specific picker modes
+
+The same region records should support different constrained pickers.
+
+## Fundraising restriction picker
+
+Allow every meaningful level:
+
+* Multi-state region
+* State
+* Region within state
+* Metro
+* City
+* Neighborhood
+* Custom area
+
+## Travel destination picker
+
+Default to:
+
+* Metro areas
+* Cities
+
+A state or broad region may still be searchable, but it should not dominate the list.
+
+For example:
+
+```text
+Washington, DC                 City
+Greater Boston                 Metro area
+New York City                  City
+```
+
+This is considerably more useful for travel planning than showing continents, neighborhoods, cities, states, and multi-state regions equally.
+
+## Address picker
+
+Prefer:
+
+* State
+* City
+* Neighborhood
+
+## Donor geographic-interest picker
+
+Allow broad and narrow regions, but group broader areas first because funder interests are commonly expressed as “New England,” “Minnesota,” or “the Twin Cities.”
+
+A picker mode should filter and prioritize types; it should not introduce separate geography tables.
+
+# Multi-select behavior
+
+Region fields on allocations are unions:
+
+```text
+New England OR New York
+```
+
+The picker should recognize redundant selections.
+
+For example, after selecting `New England`, Massachusetts could remain visible but appear disabled or secondary:
+
+```text
+Massachusetts
+Already included through New England
+```
+
+That follows the broader UI principle of showing blocked options with a reason rather than hiding them.
+
+This should be advisory where there is uncertainty. Do not silently remove existing selections during migration.
+
+# Region creation
+
+The current picker offers “Create” whenever a search produces no match, and the backend creates a region with only a name and a generated slug. It does not require a type, parent, or membership definition.
+
+That is likely producing or inviting orphaned, ambiguous regions.
+
+Remove direct one-click creation from ordinary pickers.
+
+Replace it with:
+
+```text
+Can’t find this region?
+[Add or request a region]
+```
+
+The structured workflow should require:
+
+1. Name
+2. Type
+3. Canonical parent, when applicable
+4. Included places or regions, for grouped areas
+5. Aliases
+6. Review of possible duplicates
+
+Creation could be admin-only, or user-submitted and admin-confirmed.
+
+# Display labels
+
+The existing type-aware formatting is sensible—it already renders labels such as `Boston, MA`, `Greater Boston, MA`, and `Back Bay, Boston, MA`, while avoiding multi-state groupings in the city path.
+
+Keep that idea, but separate three labels:
+
+```ts
+shortLabel       // Boston, MA
+browsePath       // United States › Massachusetts › Boston
+scopeDescription // City in Greater Boston; included in New England
+```
+
+One `display_path` string cannot serve every purpose.
+
+`display_path` should either become a derived cache from canonical parentage or eventually be removed as an independently editable value.
+
+# Suggested migration
+
+## Phase 1: picker improvement without breaking data
+
+1. Group current results by region type.
+2. Add recent selections.
+3. Add type badges and clearer subtitles.
+4. Add context-specific allowed/preferred types.
+5. Remove one-click creation from ordinary pickers.
+6. Improve search across name, path, state abbreviation, and aliases.
+
+This immediately improves usability.
+
+## Phase 2: separate hierarchy from grouping
+
+7. Add `region_memberships`.
+8. Reclassify multi-state-region-to-state parent links as membership links.
+9. Keep natural country/state/city/neighborhood parents.
+10. Add aliases.
+11. Generate scope expansion through a recursive query.
+
+## Phase 3: scope-aware behavior
+
+12. Make restriction matching understand descendants.
+13. Identify redundant multi-select choices.
+14. Use city/metro-specific picker mode for travel.
+15. Add structured region management and duplicate review.
+
+# What I would not do
+
+I would not introduce a full GIS or polygon system yet.
+
+You do not currently need to answer:
+
+> Is this exact latitude and longitude inside the legal boundary polygon?
+
+You principally need to answer:
+
+> Is Boston part of Greater Boston, Massachusetts, and New England?
+
+A named-region graph can answer that with much less complexity. Optional latitude/longitude or a centroid can be added later for travel-distance calculations.
+
+## Central rule
+
+> **Canonical parentage explains where a place sits. Region membership explains which flexible areas include it. The picker should present the geography according to the user’s current task rather than exposing the raw region table.**

@@ -39,3 +39,25 @@ money and lets re-runs stay idempotent while a human approve always wins races.
 **How to apply:** any new "is this QB row spoken for?" predicate must consider
 BOTH settlement-link deposits and charge-grain ties; any new confirm path must
 guard on the confirmed column, not the proposal.
+
+## Odd historical booking shapes defeat the exact-amount matcher
+
+The "No QB record found yet — likely not booked in QuickBooks" gap banner only
+reflects the LUMP probe (deposit within ±$5 of payout net/gross, ±45d). Before
+concluding a payout is unbooked, check charge-grain ties in `source_links` and
+then look for these real prod booking shapes, all of which tie to the bank but
+are invisible to exact-per-charge matching:
+- one combined QB row covering several charges (sum of charge nets to the cent);
+- a split booking (large positive row + negative fee-reversal row summing to net);
+- an amount netted against an unrelated failed-payout reversal;
+- correct amount under a mangled/placeholder payer name ("Jaders F", "Misc Customer");
+- negative payouts (bank debits) — no deposit will ever exist; resolve as withdrawal.
+
+**Why:** a 2026-07 prod audit found 59/75 "unlinked" payouts fully charge-tied and
+nearly all the rest booked in one of the shapes above — the user was right that
+everything was booked; only two recent payouts genuinely weren't.
+
+**How to apply:** when auditing, sum candidate FREE QB rows in a ±14d window
+against charge-net subsets before declaring a bookkeeping gap. The current model
+cannot represent one-QB-row↔many-charges or split-row ties; those stay visibly
+unlinked unless the model is extended (product decision, not a matcher bug).

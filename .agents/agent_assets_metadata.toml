@@ -120,3 +120,9 @@ id = "h2Nc3cajU4NSmRJYI4YhT"
 uri = "file://exports/flagged-pledges-remaining.csv"
 type = "table"
 title = "Remaining review queue (20 rows)"
+
+[[outputs]]
+id = "8hq3Wx2ItWmu5e___zxGS"
+uri = "file://exports/stripe-payout-qb-audit.md"
+type = "text"
+title = "Stripe payouts vs QuickBooks — full audit"
