@@ -764,7 +764,7 @@ paths:
       parameters:
         - { $ref: "#/components/parameters/IncludeArchivedQuery" }
         - { name: type, in: query, schema: { $ref: "#/components/schemas/RegionType" } }
-        - { name: search, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string }, description: "Case-insensitive match against name, displayPath, stateAbbreviation, and aliases." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -772,11 +772,34 @@ paths:
     post:
       operationId: createRegion
       tags: [regions]
+      description: "Admin-only structured creation. `displayPath` is derived server-side from canonical parentage and cannot be supplied."
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateRegionBody" } } } }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Region" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Forbidden (admin role required) }
         "409": { description: Conflict (slug already exists) }
+  /regions/containment:
+    get:
+      operationId: getRegionContainment
+      tags: [regions]
+      description: >-
+        Server-side containment derivation — the single authority for "which
+        regions are inside region X". For each requested id, returns every
+        region reachable recursively through canonical parentage
+        (parent_region_id) AND grouping memberships (region_memberships),
+        excluding the region itself. Used by containment-aware filters and by
+        pickers to flag redundant selections. Nothing is stored; this is
+        derived on demand.
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema: { type: array, items: { type: string } }
+          description: "Region ids to expand (max 200)."
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RegionContainmentList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /regions/{id}:
     get:
       operationId: getRegion
@@ -5172,7 +5195,7 @@ components:
         total: { type: integer }
 
     # ─── Enums ─────────────────────────────────────────────────────────────────
-    RegionType: { type: string, enum: [state, metro_area, city, neighborhood, region_within_state, multi_state_region, country, continent] }
+    RegionType: { type: string, enum: [state, metro_area, city, neighborhood, region_within_state, multi_state_region, country, continent, custom_region] }
     EntityRoleType: { type: string, enum: [organization, payment_intermediary, household] }
     ContactValidity: { type: string, enum: [valid, invalid, unknown] }
     EmailType: { type: string, enum: [work, personal, other] }
@@ -5365,18 +5388,25 @@ components:
     # ─── Regions ───────────────────────────────────────────────────────────────
     CreateRegionBody:
       type: object
-      required: [name]
+      required: [name, type]
+      description: "Admin-only structured region creation. `displayPath` is derived from canonical parentage server-side. `custom_region` groupings must have no parent and at least one member."
       properties:
-        name:        { type: string, minLength: 1, description: "Human-readable region name, e.g. 'Greater Boston'." }
-        displayPath: { type: string, description: "Full display path, e.g. 'United States, Massachusetts, Greater Boston'. Defaults to name when omitted." }
+        name:              { type: string, minLength: 1, description: "Human-readable region name, e.g. 'Greater Boston'." }
+        type:              { $ref: "#/components/schemas/RegionType" }
+        parentRegionId:    { type: string, nullable: true, description: "Canonical geographic parent (natural containment only, e.g. a city's state). Groupings use memberRegionIds instead." }
+        stateAbbreviation: { type: string, nullable: true }
+        memberRegionIds:   { type: array, items: { type: string }, description: "Grouping members (region_memberships). Required non-empty for custom_region." }
+        aliases:           { type: array, items: { type: string }, description: "Alternate search names, e.g. 'NYC'." }
     UpdateRegionBody:
       type: object
-      description: "Inline-editable simple fields for a region. The slug (`id`) is immutable and the parent region (relational) is edited on the detail page, not here."
+      description: "Editable fields for a region. The slug (`id`) is immutable; `displayPath` is derived from canonical parentage and recomputed (including descendants) when name or parentRegionId changes. `parentRegionId`, `memberRegionIds`, and `aliases` are admin-only."
       properties:
         name:              { type: string, minLength: 1 }
-        displayPath:       { type: string }
         stateAbbreviation: { type: string, nullable: true }
         type:              { allOf: [ { $ref: "#/components/schemas/RegionType" } ], nullable: true }
+        parentRegionId:    { type: string, nullable: true, description: "Admin-only. Cycle-checked; recomputes display_path for the region and its descendants." }
+        memberRegionIds:   { type: array, items: { type: string }, description: "Admin-only. Full-replace of the region's grouping members." }
+        aliases:           { type: array, items: { type: string }, description: "Admin-only. Full-replace of the region's aliases." }
     UpdateSchoolBody:
       type: object
       description: "Inline-editable simple scalar/enum fields for a school. Array/relational fields are edited on the detail page or synced upstream from Airtable."
@@ -5410,12 +5440,25 @@ components:
         archivedAt:         { type: string, format: date-time, nullable: true, description: "Soft-delete timestamp. Non-null = archived; only admins can view/restore." }
         createdAt:          { type: string, format: date-time }
         updatedAt:          { type: string, format: date-time }
+        aliases:            { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Alternate search names ('NYC', 'DC'). Managed by admins via PATCH aliases." }
+        memberRegionIds:    { type: array, items: { type: string }, nullable: true, readOnly: true, description: "Grouping members (region_memberships), non-recursive. Managed by admins via PATCH memberRegionIds." }
     RegionList:
       type: object
       required: [data, pagination]
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/Region" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+    RegionContainment:
+      type: object
+      required: [regionId, containedRegionIds]
+      properties:
+        regionId:           { type: string }
+        containedRegionIds: { type: array, items: { type: string }, description: "Every region recursively inside this one (canonical parentage + grouping memberships), excluding itself." }
+    RegionContainmentList:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/RegionContainment" } }
 
     # ─── Schools ───────────────────────────────────────────────────────────────
     School:

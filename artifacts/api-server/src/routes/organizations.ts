@@ -30,6 +30,7 @@ import {
   BulkArchiveOrganizationsBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
+import { expandRegionIdsForFilter } from "../lib/regionContainment";
 import {
   asyncHandler,
   newId,
@@ -267,8 +268,11 @@ router.get(
     {
       const ids = q.regionIds as string[] | undefined;
       if (ids && ids.length > 0) {
+        // Containment-aware: filtering by "Massachusetts" also matches orgs
+        // tagged with Boston, Greater Boston, etc. (derived, never stored).
+        const expanded = await expandRegionIdsForFilter(ids);
         filters.push(
-          sql`${organizations.regionIds} && ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::text[]`,
+          sql`${organizations.regionIds} && ARRAY[${sql.join(expanded.map((id) => sql`${id}`), sql`, `)}]::text[]`,
         );
       }
     }

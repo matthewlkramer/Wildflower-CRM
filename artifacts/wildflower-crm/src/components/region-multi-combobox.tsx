@@ -1,9 +1,5 @@
 import { useMemo, useState } from "react";
 import { Check, ChevronsUpDown, X } from "lucide-react";
-import {
-  useListRegions,
-  getListRegionsQueryKey,
-} from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,69 +16,102 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
-import { buildRegionIndex, regionDisplayName } from "@/components/region-picker";
-
-const QUERY_PARAMS = { limit: 1000 } as const;
+import { useIsAdmin } from "@/hooks/use-is-admin";
+import {
+  RegionTypeBadge,
+  groupRegionOptions,
+  matchesRegionQuery,
+  useRegionContainmentInfo,
+  useRegionOptions,
+  useRegionRecents,
+  type RegionPickerContext,
+} from "@/components/region-picker-core";
 
 /**
  * Controlled multi-select for `regionIds`, styled to sit inside a form/dialog.
- * A searchable popover picks regions; the current selection renders as
- * removable chips beneath the trigger. Selection-only (no inline create) —
- * use InlineEditMultiRegionPicker on detail rows when create is needed.
+ * Search-first (matches name, path, state abbreviation, and aliases),
+ * type-grouped with context-aware ordering, recents on top, type badges, and
+ * advisory-disabled redundant rows ("Already included through X") on
+ * candidates already contained in a selected region — labeled and visible,
+ * never hidden or auto-removed. Selection-only — creation lives in the
+ * admin-only structured dialog, not here.
  */
 export function RegionMultiCombobox({
   value,
   onChange,
   testId,
   placeholder = "Add region…",
+  context = "generic",
+  showRedundancyHints = false,
 }: {
   value: string[];
   onChange: (next: string[]) => void;
   testId?: string;
   placeholder?: string;
+  context?: RegionPickerContext;
+  showRedundancyHints?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
-  const { data } = useListRegions(QUERY_PARAMS, {
-    query: {
-      queryKey: getListRegionsQueryKey(QUERY_PARAMS),
-      staleTime: 5 * 60_000,
-    },
-  });
+  const { options, byId } = useRegionOptions();
+  const { recents, recordRecent } = useRegionRecents(context);
+  const { coveredBy } = useRegionContainmentInfo(showRedundancyHints ? value : []);
+  const isAdmin = useIsAdmin();
 
-  const { options, labelById } = useMemo(() => {
-    const regions = data?.data ?? [];
-    const byId = buildRegionIndex(regions);
-    const opts = regions.map((r) => ({
-      value: r.id,
-      label: regionDisplayName(r, byId),
-    }));
-    opts.sort((a, b) => a.label.localeCompare(b.label));
-    const lbl = new Map<string, string>(opts.map((o) => [o.value, o.label]));
-    // Pin any selected id missing from the fetched list (edge case) so a
-    // re-save doesn't silently drop it.
-    for (const id of value) {
-      if (!lbl.has(id)) {
-        lbl.set(id, `${id} (unknown)`);
-        opts.unshift({ value: id, label: `${id} (unknown)` });
-      }
-    }
-    return { options: opts, labelById: lbl };
-  }, [data, value]);
+  const labelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const o of options) m.set(o.id, o.label);
+    for (const id of value) if (!m.has(id)) m.set(id, `${id} (unknown)`);
+    return m;
+  }, [options, value]);
 
-  const term = query.trim().toLowerCase();
-  const visibleOptions = term
-    ? options.filter((o) => o.label.toLowerCase().includes(term))
-    : options;
+  const term = query.trim();
+  const visible = term ? options.filter((o) => matchesRegionQuery(o, term)) : options;
+  const groups = groupRegionOptions(visible, context);
+  const recentOptions = term
+    ? []
+    : recents.map((id) => byId.get(id)).filter((o): o is NonNullable<typeof o> => !!o);
 
   const toggle = (id: string) => {
     if (value.includes(id)) onChange(value.filter((x) => x !== id));
-    else onChange([...value, id]);
+    else {
+      onChange([...value, id]);
+      recordRecent(id);
+    }
   };
 
-  const triggerLabel =
-    value.length === 0 ? placeholder : `${value.length} selected`;
+  const triggerLabel = value.length === 0 ? placeholder : `${value.length} selected`;
+
+  const renderItem = (opt: { id: string; label: string; type: string | null }) => {
+    const checked = value.includes(opt.id);
+    const container = showRedundancyHints && !checked ? coveredBy.get(opt.id) : undefined;
+    return (
+      <CommandItem
+        key={opt.id}
+        value={opt.id}
+        onSelect={() => toggle(opt.id)}
+        disabled={!!container}
+        className={cn(container && "opacity-60")}
+        data-testid={testId ? `option-${testId}-${opt.id}` : undefined}
+      >
+        <Check
+          className={cn("mr-2 h-4 w-4 shrink-0", checked ? "opacity-100" : "opacity-0")}
+        />
+        <span className="truncate">{opt.label}</span>
+        {container ? (
+          <Badge
+            variant="outline"
+            className="ml-auto max-w-[14rem] shrink-0 truncate px-1.5 py-0 text-[10px] font-normal text-muted-foreground"
+          >
+            Already included through {labelById.get(container) ?? container}
+          </Badge>
+        ) : (
+          <RegionTypeBadge type={opt.type} />
+        )}
+      </CommandItem>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-1.5 min-w-0">
@@ -102,52 +131,46 @@ export function RegionMultiCombobox({
             className="h-8 w-full justify-between font-normal"
             data-testid={testId}
           >
-            <span
-              className={cn("truncate", value.length === 0 && "text-muted-foreground")}
-            >
+            <span className={cn("truncate", value.length === 0 && "text-muted-foreground")}>
               {triggerLabel}
             </span>
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="p-0 w-[--radix-popover-trigger-width] min-w-[260px]"
+          className="p-0 w-[--radix-popover-trigger-width] min-w-[280px]"
           align="start"
         >
           <Command shouldFilter={false}>
             <CommandInput
               value={query}
               onValueChange={setQuery}
-              placeholder="Search regions…"
+              placeholder="Search name, state, or alias…"
               data-testid={testId ? `${testId}-search` : undefined}
             />
             <CommandList className="max-h-[300px]">
-              {visibleOptions.length === 0 ? (
-                <CommandEmpty>No regions match.</CommandEmpty>
+              {visible.length === 0 ? (
+                <CommandEmpty>
+                  No regions match.
+                  {!isAdmin && (
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      Can't find this region? Ask an admin to add it.
+                    </span>
+                  )}
+                </CommandEmpty>
               ) : (
-                <CommandGroup>
-                  {visibleOptions.map((opt) => {
-                    const checked = value.includes(opt.value);
-                    return (
-                      <CommandItem
-                        key={opt.value}
-                        value={opt.value}
-                        onSelect={() => toggle(opt.value)}
-                        data-testid={
-                          testId ? `option-${testId}-${opt.value}` : undefined
-                        }
-                      >
-                        <Check
-                          className={cn(
-                            "mr-2 h-4 w-4 shrink-0",
-                            checked ? "opacity-100" : "opacity-0",
-                          )}
-                        />
-                        <span className="truncate">{opt.label}</span>
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
+                <>
+                  {recentOptions.length > 0 && (
+                    <CommandGroup heading="Recent">
+                      {recentOptions.map((o) => renderItem(o))}
+                    </CommandGroup>
+                  )}
+                  {groups.map((g) => (
+                    <CommandGroup key={g.key} heading={g.heading}>
+                      {g.options.map((o) => renderItem(o))}
+                    </CommandGroup>
+                  ))}
+                </>
               )}
             </CommandList>
             {value.length > 0 && (
@@ -172,9 +195,7 @@ export function RegionMultiCombobox({
         <div className="flex flex-wrap gap-1">
           {value.map((id) => (
             <Badge key={id} variant="secondary" className="gap-1 font-normal">
-              <span className="truncate max-w-[12rem]">
-                {labelById.get(id) ?? id}
-              </span>
+              <span className="truncate max-w-[12rem]">{labelById.get(id) ?? id}</span>
               <button
                 type="button"
                 aria-label="Remove region"

@@ -16,6 +16,7 @@ import {
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { userDisplayName } from "@/components/user-picker";
 import { regionDisplayName, buildRegionIndex } from "@/components/region-picker";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 import {
   INTERESTS_THEMATIC_SUGGESTIONS,
   INTERESTS_AGES_SUGGESTIONS,
@@ -72,7 +73,7 @@ const CONFIRM_THRESHOLD = 25;
 
 // ── BulkRegionCombobox ────────────────────────────────────────────────────
 // A searchable combobox for the region field in BulkEditDialog that also
-// shows a "Create '[query]'" option when no existing region matches.
+// Selection-only: region creation lives in the admin-only structured dialog.
 
 interface BulkRegionComboboxProps {
   value: string;
@@ -80,7 +81,6 @@ interface BulkRegionComboboxProps {
   disabled: boolean;
   nullable?: boolean;
   options: ReadonlyArray<{ value: string; label: string }>;
-  onRegionCreated: (id: string, label: string) => void;
 }
 
 function BulkRegionCombobox({
@@ -89,15 +89,10 @@ function BulkRegionCombobox({
   disabled,
   nullable,
   options,
-  onRegionCreated,
 }: BulkRegionComboboxProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
-  const createRegion = useCreateRegion();
-  const queryClient = useQueryClient();
-
-  const REGIONS_PARAMS = { limit: 1000 } as const;
+  const isAdmin = useIsAdmin();
 
   const trimmedQuery = query.trim();
   const filtered = trimmedQuery
@@ -108,29 +103,10 @@ function BulkRegionCombobox({
       )
     : options;
 
-  const showCreate = !!trimmedQuery && filtered.length === 0 && !creating;
-
   const selectedLabel =
     value === NULL_SENTINEL
       ? "— Clear —"
       : (options.find((o) => o.value === value)?.label ?? (value ? value : undefined));
-
-  const handleCreate = async () => {
-    if (!trimmedQuery || creating) return;
-    setCreating(true);
-    try {
-      const newRegion = await createRegion.mutateAsync({ data: { name: trimmedQuery } });
-      await queryClient.invalidateQueries({
-        queryKey: getListRegionsQueryKey(REGIONS_PARAMS),
-      });
-      onChange(newRegion.id);
-      onRegionCreated(newRegion.id, newRegion.name);
-      setOpen(false);
-      setQuery("");
-    } finally {
-      setCreating(false);
-    }
-  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -157,8 +133,15 @@ function BulkRegionCombobox({
             placeholder="Search regions…"
           />
           <CommandList>
-            {filtered.length === 0 && !showCreate ? (
-              trimmedQuery ? null : <CommandEmpty>No matches.</CommandEmpty>
+            {filtered.length === 0 ? (
+              <CommandEmpty>
+                No regions match.
+                {!isAdmin && (
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Can't find this region? Ask an admin to add it.
+                  </span>
+                )}
+              </CommandEmpty>
             ) : null}
             <CommandGroup>
               {nullable && (
@@ -181,18 +164,6 @@ function BulkRegionCombobox({
                 </CommandItem>
               ))}
             </CommandGroup>
-            {showCreate ? (
-              <CommandGroup heading="New region">
-                <CommandItem
-                  value={`__create__${trimmedQuery}`}
-                  onSelect={handleCreate}
-                  disabled={creating}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  {creating ? "Creating…" : `Create "${trimmedQuery}"`}
-                </CommandItem>
-              </CommandGroup>
-            ) : null}
           </CommandList>
         </Command>
       </PopoverContent>
@@ -664,7 +635,6 @@ export function BulkEditDialog({
             disabled={!d.enabled}
             nullable={f.nullable}
             options={regionOptions}
-            onRegionCreated={(id) => patchDraft(f.key, { value: id })}
           />
         );
         break;

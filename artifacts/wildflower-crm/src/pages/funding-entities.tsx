@@ -1043,6 +1043,7 @@ export default function Organizations() {
             selected={regionIdsSel}
             onChange={(v) => { setRegionIdsSel(v); setPage(1); selection.clear(); }}
             testId="select-funder-region"
+            context="interest"
           />
         ),
       },

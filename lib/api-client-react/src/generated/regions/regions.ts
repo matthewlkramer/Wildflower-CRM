@@ -23,9 +23,11 @@ import type {
   BadRequestResponse,
   CreateRegionBody,
   ForbiddenResponse,
+  GetRegionContainmentParams,
   ListRegionsParams,
   NotFoundResponse,
   Region,
+  RegionContainmentList,
   RegionList,
   UpdateRegionBody
 } from '../api.schemas';
@@ -117,6 +119,9 @@ export function useListRegions<TData = Awaited<ReturnType<typeof listRegions>>, 
 
 
 
+/**
+ * Admin-only structured creation. `displayPath` is derived server-side from canonical parentage and cannot be supplied.
+ */
 export const getCreateRegionUrl = () => {
 
 
@@ -181,7 +186,85 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getCreateRegionMutationOptions(options));
     }
-    export const getGetRegionUrl = (id: string,) => {
+    /**
+ * Server-side containment derivation — the single authority for "which regions are inside region X". For each requested id, returns every region reachable recursively through canonical parentage (parent_region_id) AND grouping memberships (region_memberships), excluding the region itself. Used by containment-aware filters and by pickers to flag redundant selections. Nothing is stored; this is derived on demand.
+ */
+export const getGetRegionContainmentUrl = (params: GetRegionContainmentParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/regions/containment?${stringifiedParams}` : `/api/regions/containment`
+}
+
+export const getRegionContainment = async (params: GetRegionContainmentParams, options?: RequestInit): Promise<RegionContainmentList> => {
+  
+  return customFetch<RegionContainmentList>(getGetRegionContainmentUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetRegionContainmentQueryKey = (params?: GetRegionContainmentParams,) => {
+    return [
+    `/api/regions/containment`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getGetRegionContainmentQueryOptions = <TData = Awaited<ReturnType<typeof getRegionContainment>>, TError = ErrorType<BadRequestResponse>>(params: GetRegionContainmentParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRegionContainment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRegionContainmentQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRegionContainment>>> = ({ signal }) => getRegionContainment(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRegionContainment>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRegionContainmentQueryResult = NonNullable<Awaited<ReturnType<typeof getRegionContainment>>>
+export type GetRegionContainmentQueryError = ErrorType<BadRequestResponse>
+
+
+
+export function useGetRegionContainment<TData = Awaited<ReturnType<typeof getRegionContainment>>, TError = ErrorType<BadRequestResponse>>(
+ params: GetRegionContainmentParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRegionContainment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRegionContainmentQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+export const getGetRegionUrl = (id: string,) => {
 
 
   

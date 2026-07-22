@@ -11,6 +11,7 @@ import {
   BulkArchivePeopleBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
+import { expandRegionIdsForFilter } from "../lib/regionContainment";
 import { asyncHandler, newId, normalizeArrayQuery, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
 import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate, reconcileArrayColumns } from "../lib/bulkUpdate";
@@ -299,10 +300,12 @@ router.get(
       filters.push(inArray(people.priority, priorityFilter.values as never[]));
     }
     // Array overlap filter: person must share at least one region with the requested set.
+    // Containment-aware: the requested ids expand to every contained region.
     {
       const ids = q.regionIds as string[] | undefined;
       if (ids && ids.length > 0) {
-        filters.push(sql`${people.regionIds} && ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::text[]`);
+        const expanded = await expandRegionIdsForFilter(ids);
+        filters.push(sql`${people.regionIds} && ARRAY[${sql.join(expanded.map((id) => sql`${id}`), sql`, `)}]::text[]`);
       }
     }
     // Presence filters on computed rollup fields (has value vs blank).

@@ -15,15 +15,21 @@ function region(partial: Partial<Region> & Pick<Region, "id" | "name">): Region 
   } as Region;
 }
 
-// A representative US hierarchy mirroring the seed data:
+// A representative US hierarchy mirroring the seed data AFTER the
+// membership reclassification (migration 0154): groupings (multi-state
+// regions, metros) no longer sit on the canonical parent chain — states
+// parent straight to the country and cities straight to their state, with
+// the old grouping links preserved as region_memberships (not modeled here;
+// these label helpers only read canonical parentage).
 //   United States (country)
-//     └─ Great Lakes Region (multi_state_region)
-//          └─ Minnesota (state, abbr MN)
-//     └─ New England (multi_state_region)
-//          └─ Massachusetts (state, abbr MA)
-//               └─ Greater Boston (metro_area)
-//                    └─ Boston (city)            ← parent is the metro
-//                         └─ Roxbury (neighborhood)
+//     ├─ Great Lakes Region (multi_state_region grouping; member: MN)
+//     ├─ New England (multi_state_region grouping; member: MA)
+//     ├─ Minnesota (state, abbr MN)
+//     └─ Massachusetts (state, abbr MA)
+//          ├─ Western Massachusetts (region_within_state)
+//          ├─ Greater Boston (metro_area grouping; member: Boston)
+//          └─ Boston (city)                     ← parent is the STATE
+//               └─ Roxbury (neighborhood)
 const unitedStates = region({
   id: "united_states",
   name: "United States",
@@ -42,10 +48,10 @@ const greatLakes = region({
 const minnesota = region({
   id: "united_states__minnesota",
   name: "Minnesota",
-  displayPath: "United States, Great Lakes Region, Minnesota",
+  displayPath: "United States, Minnesota",
   stateAbbreviation: "MN",
   type: "state",
-  parentRegionId: "great_lakes",
+  parentRegionId: "united_states",
 });
 
 const newEngland = region({
@@ -59,20 +65,18 @@ const newEngland = region({
 const massachusetts = region({
   id: "united_states__massachusetts",
   name: "Massachusetts",
-  displayPath: "United States, New England, Massachusetts",
+  displayPath: "United States, Massachusetts",
   stateAbbreviation: "MA",
   type: "state",
-  parentRegionId: "new_england",
+  parentRegionId: "united_states",
 });
 
-// A region_within_state sits between the state and its metros/cities,
-// e.g. "Western Massachusetts" inside Massachusetts. Its displayPath
-// still threads through the New England multi_state_region wrapper.
+// A region_within_state sits inside its state on the canonical chain,
+// e.g. "Western Massachusetts" inside Massachusetts.
 const westernMass = region({
   id: "united_states__massachusetts__western_massachusetts",
   name: "Western Massachusetts",
-  displayPath:
-    "United States, New England, Massachusetts, Western Massachusetts",
+  displayPath: "United States, Massachusetts, Western Massachusetts",
   type: "region_within_state",
   parentRegionId: "united_states__massachusetts",
 });
@@ -80,8 +84,7 @@ const westernMass = region({
 const greaterBoston = region({
   id: "united_states__massachusetts__greater_boston",
   name: "Greater Boston",
-  displayPath:
-    "United States, New England, Massachusetts, Greater Boston",
+  displayPath: "United States, Massachusetts, Greater Boston",
   type: "metro_area",
   parentRegionId: "united_states__massachusetts",
 });
@@ -89,17 +92,15 @@ const greaterBoston = region({
 const boston = region({
   id: "united_states__massachusetts__boston",
   name: "Boston",
-  displayPath:
-    "United States, New England, Massachusetts, Greater Boston, Boston",
+  displayPath: "United States, Massachusetts, Boston",
   type: "city",
-  parentRegionId: "united_states__massachusetts__greater_boston",
+  parentRegionId: "united_states__massachusetts",
 });
 
 const roxbury = region({
   id: "united_states__massachusetts__boston__roxbury",
   name: "Roxbury",
-  displayPath:
-    "United States, New England, Massachusetts, Greater Boston, Boston, Roxbury",
+  displayPath: "United States, Massachusetts, Boston, Roxbury",
   type: "neighborhood",
   parentRegionId: "united_states__massachusetts__boston",
 });
@@ -163,7 +164,7 @@ describe("regionDisplayName — type-aware labels", () => {
     expect(regionDisplayName(greaterBoston, byId)).toBe("Greater Boston, MA");
   });
 
-  it("renders a city as 'Name, ST', skipping the metro level", () => {
+  it("renders a city as 'Name, ST'", () => {
     expect(regionDisplayName(boston, byId)).toBe("Boston, MA");
   });
 
@@ -224,10 +225,8 @@ describe("regionDisplayName — multi-state name never leaks", () => {
 
 describe("regionDisplayName — without an index", () => {
   it("falls back to the displayPath label (US prefix stripped)", () => {
-    expect(regionDisplayName(boston)).toBe(
-      "New England, MA, Greater Boston, Boston",
-    );
-    expect(regionDisplayName(minnesota)).toBe("Great Lakes Region, MN");
+    expect(regionDisplayName(boston)).toBe("MA, Boston");
+    expect(regionDisplayName(minnesota)).toBe("MN");
   });
 
   it("renders the bare United States country as empty", () => {

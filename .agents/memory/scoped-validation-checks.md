@@ -52,6 +52,18 @@ run's global setup truncates all tables mid-first-run → flaky assertions and
 deadlocks. test:unit shares the same global setup, so it takes the lock too.
 Keep the flock if editing any api-server test script.
 
+## Incremental typecheck can false-green pre-existing errors
+
+`.tsbuildinfo` caches per-file diagnostics, so a scoped or even full typecheck
+can pass while real errors exist in files whose cached state predates a lib
+declaration change (seen when an upstream merge changed a column's nullability:
+5 genuine errors surfaced only after a clean rebuild). The completion-time
+validation environment rebuilds clean, so trust ITS failures over your local
+green runs. To reproduce locally, force a true rebuild: delete BOTH the lib
+`tsconfig.tsbuildinfo` files AND the lib `dist/` dirs — `tsc --build` trusts
+tsbuildinfo and will NOT re-emit outputs that were deleted out from under it
+(deleting dist alone yields TS6305 "output file has not been built").
+
 ## Merge-time generated-dir clobbering (parallel contract tasks)
 
 When two parallel tasks both touch `lib/api-spec/openapi.yaml`, each regenerates

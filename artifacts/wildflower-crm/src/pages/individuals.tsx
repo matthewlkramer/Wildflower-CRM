@@ -961,6 +961,7 @@ export default function Individuals() {
             onChange={(v) => { setRegionIdsSel(v); setPage(1); selection.clear(); }}
             testId="select-person-region"
             label="Home region"
+            context="home"
           />
         ),
       },

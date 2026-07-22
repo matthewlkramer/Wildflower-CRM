@@ -1,6 +1,6 @@
 ---
 name: Orval / React Query patterns and pitfalls
-description: Three concrete pitfalls from Orval-generated hooks: invalidation key prefix, custom query options shape, and coerce.boolean() query-param behavior.
+description: Four concrete pitfalls from Orval-generated hooks: invalidation key prefix, custom query options shape, coerce.boolean() query-param behavior, and comma-joined array query params.
 ---
 
 ## 1. Query-key invalidation must include the "/api" prefix
@@ -58,3 +58,21 @@ totals query.
 the param only when they mean `true`; absent = false. If an explicit false ever matters,
 model it in the OpenAPI spec as `enum: [true, false]` string + transform, or check
 `req.query.x === "true"` server-side rather than relying on the generated Zod schema.
+
+---
+
+## 4. Array query params arrive comma-joined, not repeated
+
+The generated client serializes array query params as ONE comma-joined value
+(`?ids=a,b`), not repeated params (`?ids=a&ids=b`). Express therefore hands the route a
+single string `"a,b"`; code that treats each element as an id silently looks up a bogus
+id and returns wrong/empty results (or 500s).
+
+**Design rule:** every route reading an array query param must pass it through
+`normalizeArrayQuery(req.query, ["ids", ...])` (in `artifacts/api-server/src/lib/helpers.ts`)
+before validation, and its integration test must include a comma-joined case alongside
+the repeated-param case — curl-style repeated params passing does NOT prove the
+generated client works.
+
+**Why:** the regions containment endpoint passed repeated-param tests but broke for the
+real frontend, which sent `?ids=a,b`.

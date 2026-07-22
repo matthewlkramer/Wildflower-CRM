@@ -35,6 +35,7 @@ export const RegionType = {
   multi_state_region: 'multi_state_region',
   country: 'country',
   continent: 'continent',
+  custom_region: 'custom_region',
 } as const;
 
 export type EntityRoleType = typeof EntityRoleType[keyof typeof EntityRoleType];
@@ -661,25 +662,39 @@ export interface UpdateCurrentUserBody {
   emailSyncMode?: EmailSyncMode;
 }
 
+/**
+ * Admin-only structured region creation. `displayPath` is derived from canonical parentage server-side. `custom_region` groupings must have no parent and at least one member.
+ */
 export interface CreateRegionBody {
   /**
    * Human-readable region name, e.g. 'Greater Boston'.
    * @minLength 1
    */
   name: string;
-  /** Full display path, e.g. 'United States, Massachusetts, Greater Boston'. Defaults to name when omitted. */
-  displayPath?: string;
+  type: RegionType;
+  /** Canonical geographic parent (natural containment only, e.g. a city's state). Groupings use memberRegionIds instead. */
+  parentRegionId?: string | null;
+  stateAbbreviation?: string | null;
+  /** Grouping members (region_memberships). Required non-empty for custom_region. */
+  memberRegionIds?: string[];
+  /** Alternate search names, e.g. 'NYC'. */
+  aliases?: string[];
 }
 
 /**
- * Inline-editable simple fields for a region. The slug (`id`) is immutable and the parent region (relational) is edited on the detail page, not here.
+ * Editable fields for a region. The slug (`id`) is immutable; `displayPath` is derived from canonical parentage and recomputed (including descendants) when name or parentRegionId changes. `parentRegionId`, `memberRegionIds`, and `aliases` are admin-only.
  */
 export interface UpdateRegionBody {
   /** @minLength 1 */
   name?: string;
-  displayPath?: string;
   stateAbbreviation?: string | null;
   type?: RegionType | null;
+  /** Admin-only. Cycle-checked; recomputes display_path for the region and its descendants. */
+  parentRegionId?: string | null;
+  /** Admin-only. Full-replace of the region's grouping members. */
+  memberRegionIds?: string[];
+  /** Admin-only. Full-replace of the region's aliases. */
+  aliases?: string[];
 }
 
 /**
@@ -722,11 +737,25 @@ export interface Region {
   archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Alternate search names ('NYC', 'DC'). Managed by admins via PATCH aliases. */
+  readonly aliases?: readonly string[] | null;
+  /** Grouping members (region_memberships), non-recursive. Managed by admins via PATCH memberRegionIds. */
+  readonly memberRegionIds?: readonly string[] | null;
 }
 
 export interface RegionList {
   data: Region[];
   pagination: Pagination;
+}
+
+export interface RegionContainment {
+  regionId: string;
+  /** Every region recursively inside this one (canonical parentage + grouping memberships), excluding itself. */
+  containedRegionIds: string[];
+}
+
+export interface RegionContainmentList {
+  data: RegionContainment[];
 }
 
 export interface School {
@@ -9320,6 +9349,9 @@ export type ListRegionsParams = {
  */
 includeArchived?: IncludeArchivedQueryParameter;
 type?: RegionType;
+/**
+ * Case-insensitive match against name, displayPath, stateAbbreviation, and aliases.
+ */
 search?: string;
 /**
  * @minimum 1
@@ -9330,6 +9362,13 @@ limit?: LimitParameter;
  * @minimum 1
  */
 page?: PageParameter;
+};
+
+export type GetRegionContainmentParams = {
+/**
+ * Region ids to expand (max 200).
+ */
+ids: string[];
 };
 
 export type ListSchoolsParams = {

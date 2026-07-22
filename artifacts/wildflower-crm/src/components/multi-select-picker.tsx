@@ -6,12 +6,6 @@ import {
   type ReactNode,
 } from "react";
 import { Check, ChevronsUpDown, Pencil, Plus, X } from "lucide-react";
-import {
-  useListRegions,
-  useCreateRegion,
-  getListRegionsQueryKey,
-} from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -34,8 +28,19 @@ import {
   EDIT_VALUE_CLICKABLE,
   makeEditValueClick,
 } from "@/components/inline-edit";
-import { regionDisplayName, buildRegionIndex } from "@/components/region-picker";
 import { formatEnum } from "@/lib/format";
+import {
+  RegionTypeBadge,
+  groupRegionOptions,
+  matchesRegionQuery,
+  useRegionContainmentInfo,
+  useRegionOptions,
+  useRegionRecents,
+  type RegionOption,
+  type RegionPickerContext,
+} from "@/components/region-picker-core";
+import { RegionCreateDialog } from "@/components/region-create-dialog";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 
 type SaveResult = unknown | Promise<unknown>;
 
@@ -481,78 +486,299 @@ export const INTERESTS_GOV_MODELS_SUGGESTIONS: ReadonlyArray<MultiSelectOption> 
 /* Multi-region picker                                                      */
 /* ──────────────────────────────────────────────────────────────────────── */
 
-const REGION_QUERY_PARAMS = { limit: 1000 } as const;
-
 /**
- * Inline-edit multi-region picker. Sources all regions (~568 rows, well
- * under the 1000 cap) from /api/regions and shows each region's full
- * displayPath so users can disambiguate same-named regions. Saves the
- * selection as a `string[]` of region ids; clears to `null` when empty.
- *
- * When no region matches the typed query, shows a "Create '[query]'" item
- * that POSTs a new region and immediately adds it to the selection.
+ * Inline-edit multi-region picker built on the shared region picker core:
+ * search-first (name, path, state abbreviation, alias), type-grouped for the
+ * picker context, recents, type badges, and advisory-disabled redundant rows
+ * ("Already included through X") when a candidate is already contained in a
+ * selected region — labeled and visible, never hidden or auto-removed.
+ * One-click create is retired — admins get a "New region…" entry that opens
+ * the structured create dialog; everyone else can only select.
+ * Saves as `string[]` of region ids; clears to `null` when empty.
  */
 export function InlineEditMultiRegionPicker({
   value,
   onSave,
   testIdBase,
   label = "Regions",
+  context = "interest",
 }: {
   value: string[];
   onSave: (next: string[] | null) => SaveResult;
   testIdBase?: string;
   label?: string;
+  context?: RegionPickerContext;
 }) {
-  const { data } = useListRegions(REGION_QUERY_PARAMS, {
-    query: {
-      queryKey: getListRegionsQueryKey(REGION_QUERY_PARAMS),
-      staleTime: 5 * 60_000,
-    },
-  });
-  const queryClient = useQueryClient();
-  const createRegion = useCreateRegion();
+  const [editing, setEditing] = useState(false);
+  const { busy, run } = useSaveRunner();
+  const [draft, setDraft] = useState<string[]>(value);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
 
-  const options: ReadonlyArray<MultiSelectOption> = useMemo(() => {
-    const regions = data?.data ?? [];
-    const byId = buildRegionIndex(regions);
-    const opts: MultiSelectOption[] = regions.map((r) => ({
-      value: r.id,
-      label: regionDisplayName(r, byId),
-    }));
-    opts.sort((a, b) => a.label.localeCompare(b.label));
-    // Defensive: pin unknown ids so re-saving doesn't silently drop them.
-    for (const v of value) {
-      if (!opts.some((o) => o.value === v)) {
-        opts.unshift({ value: v, label: `${v} (unknown)` });
-      }
+  const { options, byId } = useRegionOptions();
+  const { recents, recordRecent } = useRegionRecents(context);
+  const isAdmin = useIsAdmin();
+  const { coveredBy } = useRegionContainmentInfo(editing ? draft : []);
+
+  useEffect(() => {
+    if (editing) {
+      setDraft(value);
+      setQuery("");
+      setPopoverOpen(false);
     }
-    return opts;
-  }, [data, value]);
-  const labelMap = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const o of options) m.set(o.value, o.label);
-    return m;
-  }, [options]);
+  }, [editing, value]);
 
-  const handleCreateOption = async (name: string): Promise<string> => {
-    const newRegion = await createRegion.mutateAsync({ data: { name } });
-    await queryClient.invalidateQueries({
-      queryKey: getListRegionsQueryKey(REGION_QUERY_PARAMS),
+  useEffect(() => {
+    if (!popoverOpen) setQuery("");
+  }, [popoverOpen]);
+
+  const chipLabel = (v: string) => byId.get(v)?.label ?? v;
+
+  // Read mode: chips + pencil edit button.
+  if (!editing) {
+    return (
+      <div className={cn(INLINE_EDIT_GROUP, "flex items-start gap-2 min-w-0")}>
+        <div
+          className={cn(
+            "flex flex-wrap gap-1 flex-1 min-w-0 justify-end",
+            EDIT_VALUE_CLICKABLE,
+          )}
+          onClick={makeEditValueClick(() => setEditing(true))}
+          title={`Edit ${label}`}
+        >
+          {value.length === 0 ? (
+            <span className="text-muted-foreground">—</span>
+          ) : (
+            value.map((v) => (
+              <Badge
+                key={v}
+                variant="secondary"
+                data-testid={testIdBase ? `chip-${testIdBase}-${v}` : undefined}
+              >
+                {chipLabel(v)}
+              </Badge>
+            ))
+          )}
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground",
+            EDIT_PENCIL_REVEAL,
+          )}
+          onClick={() => setEditing(true)}
+          aria-label={`Edit ${label}`}
+          data-testid={testIdBase ? `button-edit-${testIdBase}` : undefined}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  // ── Edit mode ──
+  const term = query.trim();
+  const visible = term
+    ? options.filter((o) => matchesRegionQuery(o, term))
+    : options;
+  const groups = groupRegionOptions(visible, context);
+  const recentOptions = term
+    ? []
+    : recents.map((id) => byId.get(id)).filter((o): o is RegionOption => !!o);
+
+  const toggle = (v: string) => {
+    setDraft((d) => {
+      if (d.includes(v)) return d.filter((x) => x !== v);
+      recordRecent(v);
+      return [...d, v];
     });
-    return newRegion.id;
+  };
+  const removeChip = (v: string) => setDraft((d) => d.filter((x) => x !== v));
+
+  const arraysEqual = (a: string[], b: string[]) => {
+    if (a.length !== b.length) return false;
+    const sa = [...a].sort();
+    const sb = [...b].sort();
+    return sa.every((v, i) => v === sb[i]);
+  };
+  const dirty = !arraysEqual(draft, value);
+  const trySave = () => {
+    if (!dirty || busy) return;
+    const next = draft.length === 0 ? null : draft;
+    run(() => onSave(next), () => setEditing(false));
+  };
+
+  const renderItem = (o: RegionOption) => {
+    const checked = draft.includes(o.id);
+    const container = !checked ? coveredBy.get(o.id) : undefined;
+    return (
+      <CommandItem
+        key={o.id}
+        value={o.id}
+        onSelect={() => toggle(o.id)}
+        disabled={!!container}
+        className={cn(container && "opacity-60")}
+        data-testid={
+          testIdBase ? `select-${testIdBase}-option-${o.id}` : undefined
+        }
+      >
+        <Check
+          className={cn(
+            "mr-2 h-4 w-4 shrink-0",
+            checked ? "opacity-100" : "opacity-0",
+          )}
+        />
+        <span className="truncate">{o.label}</span>
+        {container ? (
+          <Badge
+            variant="outline"
+            className="ml-auto max-w-[14rem] shrink-0 truncate px-1.5 py-0 text-[10px] font-normal text-muted-foreground"
+          >
+            Already included through {chipLabel(container)}
+          </Badge>
+        ) : (
+          <RegionTypeBadge type={o.type} />
+        )}
+      </CommandItem>
+    );
   };
 
   return (
-    <InlineEditMultiSelect
-      label={label}
-      testIdBase={testIdBase}
-      value={value}
-      options={options}
-      renderChipLabel={(v) => labelMap.get(v) ?? v}
-      onSave={onSave}
-      onCreateOption={handleCreateOption}
-      placeholder="Add region…"
-    />
+    <div className="flex flex-col gap-2 min-w-0">
+      <div className="flex flex-wrap gap-1 min-w-0">
+        {draft.length === 0 ? (
+          <span className="text-muted-foreground text-xs">—</span>
+        ) : (
+          draft.map((v) => (
+            <Badge
+              key={v}
+              variant="secondary"
+              className="gap-1 pr-1"
+              data-testid={testIdBase ? `chip-${testIdBase}-${v}` : undefined}
+            >
+              {chipLabel(v)}
+              <button
+                type="button"
+                onClick={() => removeChip(v)}
+                disabled={busy}
+                aria-label={`Remove ${chipLabel(v)}`}
+                className="rounded hover:bg-muted-foreground/10"
+                data-testid={
+                  testIdBase ? `button-remove-${testIdBase}-${v}` : undefined
+                }
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))
+        )}
+      </div>
+
+      <div className="flex items-center gap-1 min-w-0">
+        <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              role="combobox"
+              size="sm"
+              className="h-8 min-w-0 flex-1 justify-between font-normal"
+              disabled={busy}
+              data-testid={testIdBase ? `select-${testIdBase}` : undefined}
+            >
+              <span className="truncate">Add region…</span>
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            className="p-0 w-[--radix-popover-trigger-width] min-w-[280px]"
+            align="start"
+          >
+            <Command shouldFilter={false}>
+              <CommandInput
+                value={query}
+                onValueChange={setQuery}
+                placeholder="Search name, state, or alias…"
+                data-testid={
+                  testIdBase ? `select-${testIdBase}-search` : undefined
+                }
+              />
+              <CommandList className="max-h-[300px]">
+                {visible.length === 0 && !isAdmin ? (
+                  <CommandEmpty>
+                    No regions match.
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      Can't find this region? Ask an admin to add it.
+                    </span>
+                  </CommandEmpty>
+                ) : null}
+                {recentOptions.length > 0 && (
+                  <CommandGroup heading="Recent">
+                    {recentOptions.map((o) => renderItem(o))}
+                  </CommandGroup>
+                )}
+                {groups.map((g) => (
+                  <CommandGroup key={g.key} heading={g.heading}>
+                    {g.options.map((o) => renderItem(o))}
+                  </CommandGroup>
+                ))}
+                {isAdmin && (
+                  <CommandGroup heading="Admin">
+                    <CommandItem
+                      value="__create__"
+                      onSelect={() => {
+                        setPopoverOpen(false);
+                        setCreateOpen(true);
+                      }}
+                      data-testid={
+                        testIdBase ? `select-${testIdBase}-create` : undefined
+                      }
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      New region…
+                    </CommandItem>
+                  </CommandGroup>
+                )}
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+        <Button
+          type="button"
+          size="sm"
+          className="h-8"
+          disabled={!dirty || busy}
+          onClick={trySave}
+          data-testid={testIdBase ? `button-save-${testIdBase}` : undefined}
+        >
+          {busy ? "Saving…" : "Save"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8"
+          disabled={busy}
+          onClick={() => setEditing(false)}
+          data-testid={testIdBase ? `button-cancel-${testIdBase}` : undefined}
+        >
+          Cancel
+        </Button>
+      </div>
+      {isAdmin && (
+        <RegionCreateDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          initialName={term}
+          onCreated={(id) =>
+            setDraft((d) => (d.includes(id) ? d : [...d, id]))
+          }
+        />
+      )}
+    </div>
   );
 }
 

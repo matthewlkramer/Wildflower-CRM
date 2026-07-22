@@ -9,6 +9,9 @@ export const regionTypeEnum = pgEnum("region_type", [
   "multi_state_region",
   "country",
   "continent",
+  // Admin-defined business grouping (e.g. a funder's "Priority Markets").
+  // Has NO natural parent; its scope comes solely from region_memberships.
+  "custom_region",
 ]);
 
 export const entityRoleTypeEnum = pgEnum("entity_role_type", [

@@ -17,8 +17,8 @@ export const listRegionsQueryPageDefault = 1;
 
 export const ListRegionsQueryParams = zod.object({
   "includeArchived": zod.coerce.boolean().optional().describe('Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.'),
-  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent']).optional(),
-  "search": zod.coerce.string().optional(),
+  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent', 'custom_region']).optional(),
+  "search": zod.coerce.string().optional().describe('Case-insensitive match against name, displayPath, stateAbbreviation, and aliases.'),
   "limit": zod.coerce.number().min(1).max(listRegionsQueryLimitMax).default(listRegionsQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listRegionsQueryPageDefault)
 })
@@ -29,11 +29,13 @@ export const ListRegionsResponse = zod.object({
   "name": zod.string(),
   "displayPath": zod.string().describe('Comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`). Use for UI display.'),
   "stateAbbreviation": zod.string().nullish(),
-  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent']).nullish(),
+  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent', 'custom_region']).nullish(),
   "parentRegionId": zod.string().nullish(),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
-  "updatedAt": zod.string().datetime({})
+  "updatedAt": zod.string().datetime({}),
+  "aliases": zod.array(zod.string()).nullish().describe('Alternate search names (\'NYC\', \'DC\'). Managed by admins via PATCH aliases.'),
+  "memberRegionIds": zod.array(zod.string()).nullish().describe('Grouping members (region_memberships), non-recursive. Managed by admins via PATCH memberRegionIds.')
 })),
   "pagination": zod.object({
   "page": zod.number(),
@@ -42,12 +44,33 @@ export const ListRegionsResponse = zod.object({
 })
 })
 
+/**
+ * Admin-only structured creation. `displayPath` is derived server-side from canonical parentage and cannot be supplied.
+ */
 
 
 
 export const CreateRegionBody = zod.object({
   "name": zod.string().min(1).describe('Human-readable region name, e.g. \'Greater Boston\'.'),
-  "displayPath": zod.string().optional().describe('Full display path, e.g. \'United States, Massachusetts, Greater Boston\'. Defaults to name when omitted.')
+  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent', 'custom_region']),
+  "parentRegionId": zod.string().nullish().describe('Canonical geographic parent (natural containment only, e.g. a city\'s state). Groupings use memberRegionIds instead.'),
+  "stateAbbreviation": zod.string().nullish(),
+  "memberRegionIds": zod.array(zod.string()).optional().describe('Grouping members (region_memberships). Required non-empty for custom_region.'),
+  "aliases": zod.array(zod.string()).optional().describe('Alternate search names, e.g. \'NYC\'.')
+}).describe('Admin-only structured region creation. `displayPath` is derived from canonical parentage server-side. `custom_region` groupings must have no parent and at least one member.')
+
+/**
+ * Server-side containment derivation — the single authority for "which regions are inside region X". For each requested id, returns every region reachable recursively through canonical parentage (parent_region_id) AND grouping memberships (region_memberships), excluding the region itself. Used by containment-aware filters and by pickers to flag redundant selections. Nothing is stored; this is derived on demand.
+ */
+export const GetRegionContainmentQueryParams = zod.object({
+  "ids": zod.array(zod.coerce.string()).describe('Region ids to expand (max 200).')
+})
+
+export const GetRegionContainmentResponse = zod.object({
+  "data": zod.array(zod.object({
+  "regionId": zod.string(),
+  "containedRegionIds": zod.array(zod.string()).describe('Every region recursively inside this one (canonical parentage + grouping memberships), excluding itself.')
+}))
 })
 
 export const GetRegionParams = zod.object({
@@ -59,11 +82,13 @@ export const GetRegionResponse = zod.object({
   "name": zod.string(),
   "displayPath": zod.string().describe('Comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`). Use for UI display.'),
   "stateAbbreviation": zod.string().nullish(),
-  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent']).nullish(),
+  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent', 'custom_region']).nullish(),
   "parentRegionId": zod.string().nullish(),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
-  "updatedAt": zod.string().datetime({})
+  "updatedAt": zod.string().datetime({}),
+  "aliases": zod.array(zod.string()).nullish().describe('Alternate search names (\'NYC\', \'DC\'). Managed by admins via PATCH aliases.'),
+  "memberRegionIds": zod.array(zod.string()).nullish().describe('Grouping members (region_memberships), non-recursive. Managed by admins via PATCH memberRegionIds.')
 })
 
 export const UpdateRegionParams = zod.object({
@@ -75,21 +100,25 @@ export const UpdateRegionParams = zod.object({
 
 export const UpdateRegionBody = zod.object({
   "name": zod.string().min(1).optional(),
-  "displayPath": zod.string().optional(),
   "stateAbbreviation": zod.string().nullish(),
-  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent']).nullish()
-}).describe('Inline-editable simple fields for a region. The slug (`id`) is immutable and the parent region (relational) is edited on the detail page, not here.')
+  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent', 'custom_region']).nullish(),
+  "parentRegionId": zod.string().nullish().describe('Admin-only. Cycle-checked; recomputes display_path for the region and its descendants.'),
+  "memberRegionIds": zod.array(zod.string()).optional().describe('Admin-only. Full-replace of the region\'s grouping members.'),
+  "aliases": zod.array(zod.string()).optional().describe('Admin-only. Full-replace of the region\'s aliases.')
+}).describe('Editable fields for a region. The slug (`id`) is immutable; `displayPath` is derived from canonical parentage and recomputed (including descendants) when name or parentRegionId changes. `parentRegionId`, `memberRegionIds`, and `aliases` are admin-only.')
 
 export const UpdateRegionResponse = zod.object({
   "id": zod.string().describe('Human-readable slug PK, e.g. `united_states__minnesota__saint_paul`. Built from the region\'s name plus its included-type ancestors (continent \/ country \/ state \/ city \/ neighborhood); intermediate aggregation layers (multi_state_region, region_within_state, metro_area) are skipped.'),
   "name": zod.string(),
   "displayPath": zod.string().describe('Comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`). Use for UI display.'),
   "stateAbbreviation": zod.string().nullish(),
-  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent']).nullish(),
+  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent', 'custom_region']).nullish(),
   "parentRegionId": zod.string().nullish(),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
-  "updatedAt": zod.string().datetime({})
+  "updatedAt": zod.string().datetime({}),
+  "aliases": zod.array(zod.string()).nullish().describe('Alternate search names (\'NYC\', \'DC\'). Managed by admins via PATCH aliases.'),
+  "memberRegionIds": zod.array(zod.string()).nullish().describe('Grouping members (region_memberships), non-recursive. Managed by admins via PATCH memberRegionIds.')
 })
 
 export const ArchiveRegionParams = zod.object({
@@ -101,11 +130,13 @@ export const ArchiveRegionResponse = zod.object({
   "name": zod.string(),
   "displayPath": zod.string().describe('Comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`). Use for UI display.'),
   "stateAbbreviation": zod.string().nullish(),
-  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent']).nullish(),
+  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent', 'custom_region']).nullish(),
   "parentRegionId": zod.string().nullish(),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
-  "updatedAt": zod.string().datetime({})
+  "updatedAt": zod.string().datetime({}),
+  "aliases": zod.array(zod.string()).nullish().describe('Alternate search names (\'NYC\', \'DC\'). Managed by admins via PATCH aliases.'),
+  "memberRegionIds": zod.array(zod.string()).nullish().describe('Grouping members (region_memberships), non-recursive. Managed by admins via PATCH memberRegionIds.')
 })
 
 export const UnarchiveRegionParams = zod.object({
@@ -117,10 +148,12 @@ export const UnarchiveRegionResponse = zod.object({
   "name": zod.string(),
   "displayPath": zod.string().describe('Comma-separated full path including every ancestor (e.g. `United States, New England, Massachusetts, Greater Boston, Boston`). Use for UI display.'),
   "stateAbbreviation": zod.string().nullish(),
-  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent']).nullish(),
+  "type": zod.enum(['state', 'metro_area', 'city', 'neighborhood', 'region_within_state', 'multi_state_region', 'country', 'continent', 'custom_region']).nullish(),
   "parentRegionId": zod.string().nullish(),
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
-  "updatedAt": zod.string().datetime({})
+  "updatedAt": zod.string().datetime({}),
+  "aliases": zod.array(zod.string()).nullish().describe('Alternate search names (\'NYC\', \'DC\'). Managed by admins via PATCH aliases.'),
+  "memberRegionIds": zod.array(zod.string()).nullish().describe('Grouping members (region_memberships), non-recursive. Managed by admins via PATCH memberRegionIds.')
 })
 

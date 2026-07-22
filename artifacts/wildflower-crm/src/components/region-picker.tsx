@@ -1,12 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import {
   useListRegions,
-  useCreateRegion,
   getListRegionsQueryKey,
   type Region,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   EditTriggerRow,
   ActionButtons,
@@ -28,6 +26,17 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { abbreviateUsStates } from "@/lib/format";
+import {
+  RegionTypeBadge,
+  groupRegionOptions,
+  matchesRegionQuery,
+  useRegionOptions,
+  useRegionRecents,
+  type RegionOption,
+  type RegionPickerContext,
+} from "@/components/region-picker-core";
+import { RegionCreateDialog } from "@/components/region-create-dialog";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 
 const PAGE_SIZE = 1000;
 const QUERY_PARAMS = { limit: PAGE_SIZE } as const;
@@ -148,53 +157,34 @@ export function useRegionNameMap(): Map<string, string> {
 }
 
 /**
- * Inline-edit Region picker. Sources options from /api/regions and uses
- * regionDisplayName for both read-mode display and edit-mode dropdown labels,
- * so formatting is consistent with the multi-region picker.
+ * Inline-edit single-region picker. Search-first (name, path, state
+ * abbreviation, alias), type-grouped for the picker context, recents on top,
+ * type badges. One-click create is retired: admins get a "New region…" entry
+ * that opens the structured create dialog; non-admins can only select.
  */
 export function InlineEditRegionPicker({
   value,
   onSave,
   label = "Region",
   testIdBase,
+  context = "home",
 }: {
   value: string | null;
   onSave: (next: string | null) => unknown | Promise<unknown>;
   label?: string;
   testIdBase?: string;
+  context?: RegionPickerContext;
 }) {
-  const { data } = useListRegions(QUERY_PARAMS, {
-    query: {
-      queryKey: getListRegionsQueryKey(QUERY_PARAMS),
-      staleTime: 5 * 60_000,
-    },
-  });
-
-  const options: ReadonlyArray<{ value: string; label: string }> = useMemo(() => {
-    const regions = data?.data ?? [];
-    const byId = buildRegionIndex(regions);
-    const opts = regions.map((r) => ({
-      value: r.id,
-      label: regionDisplayName(r, byId),
-    }));
-    opts.sort((a, b) => a.label.localeCompare(b.label));
-    // If the current value isn't in the fetched list (shouldn't happen
-    // with a 1000-row cap covering ~568 regions, but defensive), pin it
-    // at the top so editing doesn't silently clear the selection.
-    if (value && !opts.some((o) => o.value === value)) {
-      opts.unshift({ value, label: `${value} (unknown)` });
-    }
-    return opts;
-  }, [data, value]);
+  const { options, byId } = useRegionOptions();
+  const { recents, recordRecent } = useRegionRecents(context);
+  const isAdmin = useIsAdmin();
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string | null>(value);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const { busy, run } = useSaveRunner();
-  const queryClient = useQueryClient();
-  const createRegion = useCreateRegion();
 
   useEffect(() => {
     if (editing) {
@@ -208,14 +198,13 @@ export function InlineEditRegionPicker({
     if (!popoverOpen) setQuery("");
   }, [popoverOpen]);
 
-  const readLabel = value
-    ? (options.find((o) => o.value === value)?.label ?? value)
-    : "—";
+  const labelFor = (id: string | null) =>
+    id ? (byId.get(id)?.label ?? `${id} (unknown)`) : null;
 
   if (!editing) {
     return (
       <EditTriggerRow
-        display={readLabel}
+        display={labelFor(value) ?? "—"}
         onEdit={() => setEditing(true)}
         testIdBase={testIdBase}
         ariaLabel={`Edit ${label}`}
@@ -223,24 +212,12 @@ export function InlineEditRegionPicker({
     );
   }
 
-  const selectedLabel = draft
-    ? (options.find((o) => o.value === draft)?.label ?? draft)
-    : null;
-
-  const term = query.trim().toLowerCase();
-  const visibleOptions = term
-    ? options.filter(
-        (o) =>
-          o.label.toLowerCase().includes(term) ||
-          o.value.toLowerCase().includes(term),
-      )
-    : options;
-
-  const trimmedQuery = query.trim();
-  const showCreate =
-    !!trimmedQuery &&
-    visibleOptions.length === 0 &&
-    !creating;
+  const term = query.trim();
+  const visible = term ? options.filter((o) => matchesRegionQuery(o, term)) : options;
+  const groups = groupRegionOptions(visible, context);
+  const recentOptions = term
+    ? []
+    : recents.map((id) => byId.get(id)).filter((o): o is RegionOption => !!o);
 
   const dirty = (draft ?? null) !== (value ?? null);
   const trySave = () => {
@@ -250,21 +227,23 @@ export function InlineEditRegionPicker({
   const select = (next: string | null) => {
     setDraft(next);
     setPopoverOpen(false);
+    if (next) recordRecent(next);
   };
 
-  const handleCreate = async () => {
-    if (!trimmedQuery || creating) return;
-    setCreating(true);
-    try {
-      const newRegion = await createRegion.mutateAsync({ data: { name: trimmedQuery } });
-      await queryClient.invalidateQueries({ queryKey: getListRegionsQueryKey(QUERY_PARAMS) });
-      setDraft(newRegion.id);
-      setPopoverOpen(false);
-      setQuery("");
-    } finally {
-      setCreating(false);
-    }
-  };
+  const renderItem = (o: RegionOption) => (
+    <CommandItem
+      key={o.id}
+      value={o.id}
+      onSelect={() => select(o.id)}
+      data-testid={testIdBase ? `select-${testIdBase}-option-${o.id}` : undefined}
+    >
+      <Check
+        className={cn("mr-2 h-4 w-4", draft === o.id ? "opacity-100" : "opacity-0")}
+      />
+      <span className="truncate">{o.label}</span>
+      <RegionTypeBadge type={o.type} />
+    </CommandItem>
+  );
 
   return (
     <div className="flex items-center gap-1 min-w-0">
@@ -280,27 +259,30 @@ export function InlineEditRegionPicker({
             data-testid={testIdBase ? `select-${testIdBase}` : undefined}
           >
             <span className="truncate">
-              {selectedLabel ?? `Select ${label.toLowerCase()}…`}
+              {labelFor(draft) ?? `Select ${label.toLowerCase()}…`}
             </span>
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="p-0 w-[--radix-popover-trigger-width] min-w-[260px]"
+          className="p-0 w-[--radix-popover-trigger-width] min-w-[280px]"
           align="start"
         >
           <Command shouldFilter={false}>
             <CommandInput
               value={query}
               onValueChange={setQuery}
-              placeholder={`Search ${label.toLowerCase()}…`}
-              data-testid={
-                testIdBase ? `select-${testIdBase}-search` : undefined
-              }
+              placeholder="Search name, state, or alias…"
+              data-testid={testIdBase ? `select-${testIdBase}-search` : undefined}
             />
-            <CommandList>
-              {visibleOptions.length === 0 && !showCreate ? (
-                trimmedQuery ? null : <CommandEmpty>No matches.</CommandEmpty>
+            <CommandList className="max-h-[300px]">
+              {visible.length === 0 && !isAdmin ? (
+                <CommandEmpty>
+                  No matches.
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Can't find this region? Ask an admin to add it.
+                  </span>
+                </CommandEmpty>
               ) : null}
               <CommandGroup>
                 <CommandItem
@@ -318,42 +300,34 @@ export function InlineEditRegionPicker({
                   />
                   <span className="text-muted-foreground">— None —</span>
                 </CommandItem>
-                {visibleOptions.map((o) => (
-                  <CommandItem
-                    key={o.value}
-                    value={o.value}
-                    onSelect={() => select(o.value)}
-                    data-testid={
-                      testIdBase
-                        ? `select-${testIdBase}-option-${o.value}`
-                        : undefined
-                    }
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        draft === o.value ? "opacity-100" : "opacity-0",
-                      )}
-                    />
-                    <span className="truncate">{o.label}</span>
-                  </CommandItem>
-                ))}
               </CommandGroup>
-              {showCreate ? (
-                <CommandGroup heading="New region">
+              {recentOptions.length > 0 && (
+                <CommandGroup heading="Recent">
+                  {recentOptions.map((o) => renderItem(o))}
+                </CommandGroup>
+              )}
+              {groups.map((g) => (
+                <CommandGroup key={g.key} heading={g.heading}>
+                  {g.options.map((o) => renderItem(o))}
+                </CommandGroup>
+              ))}
+              {isAdmin && (
+                <CommandGroup heading="Admin">
                   <CommandItem
-                    value={`__create__${trimmedQuery}`}
-                    onSelect={handleCreate}
-                    disabled={creating}
+                    value="__create__"
+                    onSelect={() => {
+                      setPopoverOpen(false);
+                      setCreateOpen(true);
+                    }}
                     data-testid={
                       testIdBase ? `select-${testIdBase}-create` : undefined
                     }
                   >
                     <Plus className="mr-2 h-4 w-4" />
-                    {creating ? "Creating…" : `Create "${trimmedQuery}"`}
+                    New region…
                   </CommandItem>
                 </CommandGroup>
-              ) : null}
+              )}
             </CommandList>
           </Command>
         </PopoverContent>
@@ -366,6 +340,14 @@ export function InlineEditRegionPicker({
         testIdBase={testIdBase}
         label={label}
       />
+      {isAdmin && (
+        <RegionCreateDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          initialName={term}
+          onCreated={(id) => setDraft(id)}
+        />
+      )}
     </div>
   );
 }

@@ -827,6 +827,8 @@ function PledgeAllocationDialog({
               testId="pa-regions"
               value={s.regionIds}
               onChange={(v) => set("regionIds", v)}
+              context="allocation"
+              showRedundancyHints
             />
           </DialogField>
 
@@ -1393,6 +1395,8 @@ function GiftAllocationDialog({
               testId="ga-regions"
               value={s.regionIds}
               onChange={(v) => set("regionIds", v)}
+              context="allocation"
+              showRedundancyHints
             />
           </DialogField>
 

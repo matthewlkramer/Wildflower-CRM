@@ -214,6 +214,7 @@ export default function Moves() {
           selected={regionIds}
           onChange={setRegionIds}
           testId="select-move-region"
+          context="interest"
         />
       </div>
 
