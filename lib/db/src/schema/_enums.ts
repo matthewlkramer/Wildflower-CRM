@@ -1171,3 +1171,16 @@ export const bankDepositComponentSourceEnum = pgEnum(
   "bank_deposit_component_source",
   ["qbo_inferred", "check_register", "bank_data", "manual"],
 );
+
+// Disposition of a QBO expected-vs-actual accounting comparison
+// (docs/adr-bank-spine-money-model.md, Phase 7). Accounting REVIEW state, not
+// a money ledger: `consistent` — QBO matches the expected posting;
+// `correction_needed` — a human should fix QBO (in QBO; the CRM never writes
+// back); `corrected` — the fix landed and a re-compare confirmed it;
+// `accepted_historical` — wrong but deliberately left (frozen history).
+export const qboAccountingDispositionEnum = pgEnum("qbo_accounting_disposition", [
+  "consistent",
+  "correction_needed",
+  "corrected",
+  "accepted_historical",
+]);
