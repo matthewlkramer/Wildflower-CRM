@@ -1133,3 +1133,54 @@ export const bankDepositSourceEnum = pgEnum("bank_deposit_source", [
   "plaid",
   "manual",
 ]);
+
+// The kind of real-world payment event a payment_units row represents. One
+// payment unit = ONE donor-level payment occurred, regardless of instrument.
+//   stripe_charge — a Stripe charge (1:1 with stripe_staged_charges)
+//   check         — a paper check (composed into a bank deposit via
+//                   bank_deposit_components; today inferred from QBO)
+//   direct_ach    — a direct ACH/bank transfer that is not a Stripe charge
+//   wire          — a wire transfer
+//   other         — anything else (rare)
+export const paymentUnitKindEnum = pgEnum("payment_unit_kind", [
+  "stripe_charge",
+  "check",
+  "direct_ach",
+  "wire",
+  "other",
+]);
+
+// Refund/dispute lifecycle of a payment unit. `received` is the normal state;
+// the others mirror processor refund/chargeback facts (Stripe today).
+export const paymentUnitLifecycleEnum = pgEnum("payment_unit_lifecycle", [
+  "received",
+  "partially_refunded",
+  "refunded",
+  "disputed",
+]);
+
+// Where a bank_deposit_components row (a check/direct payment composing a bank
+// deposit) came from. Ordered worst→best evidence; a component's source can be
+// upgraded in place when a better feed arrives, WITHOUT changing structure.
+//   qbo_inferred   — inferred from a QBO Deposit's lines / split children
+//                    (today's only source; imperfect, may need review)
+//   check_register — a deposited-checks register / remittance list
+//   bank_data      — a bank-native feed (e.g. Plaid, deposit images)
+//   manual         — hand-entered by a reviewer
+export const bankDepositComponentSourceEnum = pgEnum(
+  "bank_deposit_component_source",
+  ["qbo_inferred", "check_register", "bank_data", "manual"],
+);
+
+// Disposition of a QBO expected-vs-actual accounting comparison
+// (docs/adr-bank-spine-money-model.md, Phase 7). Accounting REVIEW state, not
+// a money ledger: `consistent` — QBO matches the expected posting;
+// `correction_needed` — a human should fix QBO (in QBO; the CRM never writes
+// back); `corrected` — the fix landed and a re-compare confirmed it;
+// `accepted_historical` — wrong but deliberately left (frozen history).
+export const qboAccountingDispositionEnum = pgEnum("qbo_accounting_disposition", [
+  "consistent",
+  "correction_needed",
+  "corrected",
+  "accepted_historical",
+]);
