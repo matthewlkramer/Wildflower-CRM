@@ -359,8 +359,9 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   (unresolved/partial/complete/overallocated) is DERIVED from
   `SUM(amount)` vs the deposit `amount`, never stored. The QBO-inferred backfill
   is migration 0162: one unit per non-excluded deposit-composing QBO row (split
-  children replace their parent; Stripe-tied and card-Donorbox rows are skipped
-  — that money is already unitized; an OFFLINE Donorbox row's unit carries the
+  children replace their parent; Stripe-tied, `funding_source='stripe'`
+  (unmarked payout lumps), and card-Donorbox rows are skipped — that money is
+  already unitized; an OFFLINE Donorbox row's unit carries the
   donorbox_donation_id pointer), paired to register deposits on exact
   TotalAmt+TxnDate; equal-amount/same-date classes pair deterministically by
   rank and set `ambiguous_deposit_match` (flag only, like

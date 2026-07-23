@@ -13,7 +13,12 @@
 -- deposit_header (its money is counted on the underlying Payment rows), not
 -- excluded, amount > 0, not a split PARENT (children replace it). Approved
 -- dedup exclusions — money already unitized elsewhere:
---   1. exclusion_reason IS NOT NULL (incl. processor_payout Stripe lumps);
+--   1. exclusion_reason IS NOT NULL (incl. processor_payout Stripe lumps),
+--      plus ANY funding_source='stripe' row: PROD holds ~$112K of QBO deposit
+--      lines that ARE Stripe payout lumps (payer 'Stripe', payout-shaped
+--      amounts) but were never marked processor_payout — that money flows
+--      through the payout → bank_deposit lane and is already unitized
+--      charge-by-charge, so unitizing the QBO mirror would double-count it;
 --   2. rows tied to a Stripe charge (source_links charge_qb_tie / charge_fee_row);
 --   3. rows donorbox_qb-tied to a CARD donation (stripe_charge_id present or a
 --      donorbox_charge link) — that money is the charge's unit. An OFFLINE
@@ -50,6 +55,7 @@ WITH scope AS (
   WHERE sp.qb_deposit_id IS NOT NULL
     AND sp.qb_entity_type <> 'deposit_header'
     AND sp.exclusion_reason IS NULL
+    AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
     AND sp.amount IS NOT NULL AND sp.amount > 0
     AND NOT EXISTS (SELECT 1 FROM staged_payments c WHERE c.split_parent_id = sp.id)
     AND NOT EXISTS (SELECT 1 FROM source_links t
@@ -96,6 +102,7 @@ WITH scope AS (
   WHERE sp.qb_deposit_id IS NOT NULL
     AND sp.qb_entity_type <> 'deposit_header'
     AND sp.exclusion_reason IS NULL
+    AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
     AND sp.amount IS NOT NULL AND sp.amount > 0
     AND EXISTS (SELECT 1 FROM payment_units pu WHERE pu.id = 'pu_' || sp.id)
 ),
@@ -145,9 +152,10 @@ SELECT
   'qbo_inferred',
   s.id,
   pr.ambiguous,
-  -- A row that claims Stripe/PayPal origin yet passed the dedup exclusions is
-  -- suspicious (probably SHOULD have been tied/excluded) — flag it.
-  COALESCE(s.funding_source IN ('stripe', 'paypal'), false)
+  -- A row that claims PayPal origin yet passed the dedup exclusions is
+  -- suspicious (probably processor money, not a deposit-composing payment) —
+  -- flag it. (funding_source='stripe' rows are excluded from scope entirely.)
+  COALESCE(s.funding_source = 'paypal', false)
 FROM scope s
 JOIN pairs pr
   ON pr.realm_id = s.realm_id AND pr.qb_deposit_id = s.qb_deposit_id
