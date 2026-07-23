@@ -6,7 +6,7 @@ description: All gift↔payment amount/window matching flows through lib/giftMat
 # One source of truth
 
 Every gift↔payment amount/date match predicate (QB staged-payment anchor, Stripe
-charge anchor, group-reconcile, ingest matcher, gift-candidate search) must build
+charge anchor, multi-match, ingest matcher, gift-candidate search) must build
 its amount bounds and window from `artifacts/api-server/src/lib/giftMatch.ts`, not
 hand-rolled `g.amount BETWEEN ...` fragments. Windows: `GIFT_MATCH_WINDOW_DAYS`
 (reconcile/proposal reads) vs `INGEST_GIFT_WINDOW_DAYS` (the insert-time matcher).

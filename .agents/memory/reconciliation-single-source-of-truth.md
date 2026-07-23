@@ -17,8 +17,8 @@ with an XOR pointer (`final_amount_stripe_charge_id` / `final_amount_qb_staged_p
 authoritative; QB only sources the amount when there is no Stripe charge.
 `stampGiftFinalAmount(tx, giftId, {source:'quickbooks',...})` is a **no-op
 (`skipped:true`)** when the gift is already Stripe-sourced. Both QB reconcile
-paths (single + group, `routes/quickbooks/matching.ts`) guard on `!stamp.skipped`
-before adjusting allocations. Regression: quickbooks-group-reconcile
+paths (single + multi-match, `routes/quickbooks/matching.ts`) guard on `!stamp.skipped`
+before adjusting allocations. Regression: quickbooks-multi-match.integration.test.ts
 "leaves a Stripe-sourced gift's final amount untouched when QB reconciles".
 
 **On confirm:** stamp the gift + mark the evidence row `reconciled` (the shared

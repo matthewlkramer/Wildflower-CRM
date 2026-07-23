@@ -57,4 +57,4 @@ random-victim deadlocks/failures in unrelated test files. If DDL is
 unavoidable, wrap drop→insert→re-add in ONE transaction with
 `SET LOCAL lock_timeout = '500ms'` and retry on 55P03/40P01 so the ALTER
 fails fast instead of camping in the lock queue (see
-quickbooks-group-reconcile.integration.test.ts seedNoDonorGift).
+quickbooks-multi-match.integration.test.ts seedNoDonorGift).

@@ -338,7 +338,7 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   `charge_fee_row`, `donorbox_qb`, `donorbox_charge`) with deterministic ids
   and lifecycle. Sole authority for evidence↔evidence ties; a claim blocks
   re-picking but is never itself status evidence.
-- `reconciliation_bundle_drafts`, `unit_groups` — workbench working state.
+- `reconciliation_bundle_drafts`, `unit_groups` — workbench working state. (`unit_groups` is deprecated: new group creation is retired — multi-match writes N counted `payment_applications` rows instead — and the table is slated for retirement per `docs/adr-linear-money-model.md` §7 step 3; it persists only for legacy groups.)
 
 ## Communications & workflow
 

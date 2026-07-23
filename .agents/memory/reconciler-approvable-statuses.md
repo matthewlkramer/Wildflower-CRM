@@ -21,10 +21,11 @@ as a destructive red toast — a real user-reported bug.
 the shared `APPROVABLE_STAGED_STATUSES` / `isStagedApprovable()` from
 `reconciliationGate.ts`, and gate every guarded UPDATE WHERE with
 `inArray(status, APPROVABLE_STAGED_STATUSES)`. The group-reconcile endpoint
-(`routes/quickbooks/matching.ts`) was the last holdout still hard-coding
-`status === 'pending'`; it now uses the shared `isStagedApprovable` too, so a
-grouped card whose representative is `pending` but whose member is a stranded
-`approved` row no longer 409s the whole group with `not_pending`.
+was the last holdout still hard-coding `status === 'pending'` before adopting
+`isStagedApprovable`; that endpoint is now RETIRED (410, 2026-07-23) — its
+successor `multi-match` (`routes/quickbooks/matching.ts`) gates on the DERIVED
+status being `pending` (`stagedStatusSql`), which already folds the stranded
+legacy `approved`-but-unlinked rows into `pending`, so the same lesson holds.
 
 ## An `approved` row with ALL THREE gift links NULL is a real, still-open state
 

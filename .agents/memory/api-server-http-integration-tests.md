@@ -8,9 +8,9 @@ description: How to write a DB-backed route test that boots the real Express app
 Most of `artifacts/api-server/src/__tests__/` is pure-function or compiled-SQL
 (`.toSQL()`) with a DUMMY `DATABASE_URL` — they never open a connection. When a
 task needs to assert real DB state transitions through a route (e.g. QuickBooks
-deposit group-reconcile / revert), write a live integration test instead.
+deposit multi-match / revert), write a live integration test instead.
 
-**Pattern** (see `quickbooks-group-reconcile.integration.test.ts`):
+**Pattern** (see `quickbooks-multi-match.integration.test.ts`):
 - Mock ONLY the Clerk gate: `vi.mock("../middlewares/requireAuth", ...)` to set
   `req.appUser = { id }` and call `next()`. Use `vi.hoisted` for the user id used
   inside the mock factory. Seed a real `users` row with that id (FK target for

@@ -5,6 +5,14 @@ description: The first-class polymorphic unit_groups association fully replaced 
 
 # unit_groups is the sole grouping store
 
+**STATUS (2026-07-23): deprecated — no new groups.** New group creation is
+retired (`POST /staged-payments/group` and `/group-reconcile` are 410
+`group_creation_retired` stubs); combining several QB rows into one gift now
+writes N counted `payment_applications` rows via multi-match, with NO group
+record. The `unit_groups` structure itself is slated for retirement in
+`docs/adr-linear-money-model.md` §7 step 3. Everything below describes the
+store as it exists for LEGACY groups only (ungroup/eject/reads still live).
+
 `unit_groups` + `unit_group_members` are the ONLY home for "these evidence units
 are really ONE gift" grouping. Membership is polymorphic — keyed by
 `(evidence_source, source_id)` with **no FK** on `source_id`;

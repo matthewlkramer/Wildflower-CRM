@@ -9,6 +9,10 @@ distinct ways, and only three of them live in columns on `staged_payments`:
 1. `matchedGiftId` — 1:1 match to an existing gift.
 2. `createdGiftId` — minted a new gift.
 3. `groupReconciledGiftId` — grouped into another row's gift (member rows).
+   *(Legacy-only as of 2026-07-23: for QB rows this state is read from
+   `unit_group_members` + counted ledger rows, not the dead pointer column, and
+   new group creation is retired — a multi-matched member resolves via a bare
+   counted `payment_applications` row, i.e. mechanically like form 4.)*
 4. **split** — one payment across several existing gifts. A split deliberately
    carries **NONE** of the three id columns; its resolution lives entirely in
    counted `payment_applications` rows (`evidence_source='quickbooks'`,

@@ -75,7 +75,11 @@ the server is the real boundary, a direct API call must not bypass):
 All other gates (pending-only, fee-band tolerance, gift single-donor XOR,
 gift-not-already-linked, partial-unique index) are unchanged.
 
-## Representative pattern (key design choice)
+## Representative pattern (key design choice) — HISTORICAL, no longer written
+*(Pointer-era: the ledger cutover removed ALL pointer writes — group-reconciled
+state is now `unit_group_members` + counted `payment_applications` rows, and
+new multi-match resolutions write bare counted rows with no representative at
+all. Kept only to read stale legacy values.)*
 ALL group members get `group_reconciled_gift_id = giftId`; only the
 **representative** (lowest id, `ids.sort()[0]`) ALSO gets `matched_gift_id =
 giftId`. This keeps the gift "linked" through the existing single-link path
@@ -88,13 +92,13 @@ the WHOLE group (checked FIRST in the revert route).
 **Why:** avoids inventing a new "linked" signal and a parallel revert path —
 the representative re-uses everything the single-match flow already does.
 
-## Workbench: grouped link-to-existing-gift must use group-reconcile (409 trap)
+## Workbench: grouped link-to-existing-gift must use multi-match (409 trap)
 The per-row approve endpoint REJECTS `link_existing_gift` on a row that is part
 of a source group — it 409s "this payment is part of a group, link the whole
-group" and points at `/staged-payments/group-reconcile`. So the reconciliation
-WORKBENCH (separate page from staged-payments.tsx) must detect
-`card.isSourceGroup && outcome==="link_existing_gift"` and route through
-group-reconcile for EVERY entry path (stage-confirm, re-target-to-gift,
+group". So the reconciliation WORKBENCH (separate page from staged-payments.tsx)
+must detect `card.isSourceGroup && outcome==="link_existing_gift"` and route
+through `POST /quickbooks/staged-payments/multi-match` (was group-reconcile,
+now a 410 stub) for EVERY entry path (stage-confirm, re-target-to-gift,
 bulk approve-all-high-confidence, one-click confirm-and-apply); non-grouped or
 non-link outcomes still use the per-row approve. A shared
 `buildGroupedLinkPayload(card, giftId)` returns null for non-group/<2-member
@@ -102,7 +106,7 @@ cards and otherwise sets `confirmMultiDate:true` (members lack `qbDepositId`, so
 multi-deposit can't be detected client-side — auto-pass is OK for source groups
 only). It no longer computes an amountMismatch flag (the override is gone, B1).
 **Money safety:** the server is the sole guard for a group-total↔gift amount
-mismatch — all client callers just stage/call group-reconcile and let the
+mismatch — all client callers just stage/call multi-match and let the
 `400 amount_mismatch` surface via the shared catch → `extractGateIssues` → toast
 (same path that already surfaces `multi_date_confirmation_required`). Bulk approve
 now STAGES out-of-band groups (was: silently skipped) and the apply fails visibly

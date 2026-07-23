@@ -13,6 +13,17 @@ was its own human-gated task. **Implementation status: Phases 2–5 have shipped
 per-phase status — the inline "Progress" notes under each phase are historical and
 now lag the code.**
 
+> **Superseded in part (2026-07-23):**
+> [`adr-linear-money-model.md`](adr-linear-money-model.md) supersedes this
+> document's `unit_groups` grouping design (§4.6b, the §6 group rows). The
+> "N counted ledger rows → one gift" shape this document targeted is live via
+> `POST /quickbooks/staged-payments/multi-match`, with **no** group record:
+> new group creation is retired (the group/group-reconcile endpoints are 410
+> stubs), and the `unit_groups` structure itself — although built — is slated
+> for retirement in ADR §7 step 3. Existing legacy groups keep
+> approve/ungroup/eject until then. Where this document presents `unit_groups`
+> as the durable end-state, the ADR wins.
+
 **Audience:** written for an engineer, with a plain-English overview first so a
 non-technical reader can follow the shape of the decision. Where it names a file
 or function, that is a pointer to *today's* code, not a promise it will keep that
@@ -386,10 +397,15 @@ with several allocation rows.**
   current merge hard-delete exception). This is the exact inverse of the Decision-6
   split (one gift → several one-restriction gifts).
 
-**(b) QB over-split → group units.** When one real deposit was booked in QB as
-several payments (to show different restrictions on parts of one gift), link those
-payment **units** together as a single group and match the group as one — without
-editing the QB rows.
+**(b) QB over-split → group units.** *[Superseded 2026-07-23 by
+[`adr-linear-money-model.md`](adr-linear-money-model.md): `unit_groups` was
+built as designed below, but new group creation is now retired — the workbench
+multi-select match writes N counted ledger rows directly, no group record —
+and the structure is slated for retirement in ADR §7 step 3. The text below is
+kept for the history of existing legacy groups.]* When one real deposit was
+booked in QB as several payments (to show different restrictions on parts of
+one gift), link those payment **units** together as a single group and match
+the group as one — without editing the QB rows.
 - *Today:* `staged_payments.source_group_id` already groups QB rows; group-approve
   mints one gift via a "representative + `group_reconciled_gift_id`" pointer dance.
 - *Target:* promote grouping into a first-class, durable, sync-safe association: a
@@ -525,14 +541,14 @@ already-reconciled over-splits — the common real case — without severing his
 
 | Scenario | Today | Target |
 | --- | --- | --- |
-| **Stock / brokerage gift** (many QB units → one gift, amounts differ, different dates) | group-reconcile "representative + `group_reconciled_gift_id`" + `confirmAmountMismatch` override | **N counted ledger rows** → one gift, each with its own `amount_applied`; within the fee band it reconciles automatically. Beyond the band (brokerage fees, a write-off) there is **no mismatch override** — the human corrects the gift amount to what actually landed and the SUM reconciles (B1). No representative, no second pointer column. |
+| **Stock / brokerage gift** (many QB units → one gift, amounts differ, different dates) | *was* group-reconcile "representative + `group_reconciled_gift_id`" + `confirmAmountMismatch` override — retired 2026-07-23; the target shape is live as `POST /quickbooks/staged-payments/multi-match` | **N counted ledger rows** → one gift, each with its own `amount_applied`; within the fee band it reconciles automatically. Beyond the band (brokerage fees, a write-off) there is **no mismatch override** — the human corrects the gift amount to what actually landed and the SUM reconciles (B1). No representative, no second pointer column. |
 | **Donorbox donation duplicating another source** (cross-source dedupe) | ad-hoc linked/excluded | the *settling* record is the **counted** unit — the QB payment for a pay-by-check, or the **Stripe charge** for a Donorbox-through-Stripe donation (clean 1:1 via `donation.stripe_charge_id`) — while the Donorbox row is a **corroborating** ledger row (or excluded `already_booked`). Same money signalled by Donorbox, counted once. |
 | **Donorbox PayPal → new-money unit** (no batch leg) | non-Stripe new-money worklist row | first-class **counted** unit that mints/links a gift. Flagged: PayPal units have **no Plane-1 settlement leg** (only Stripe payouts↔QB deposits are batch-reconciled) — they tie to the books only via an eventual QB deposit, if at all. A known gap, not solved here. |
 | **Bulk deposit** (one QB unit → many gifts) | `gift_evidence_links` corroboration | **N counted ledger rows** from one deposit unit to many gifts (M:N in the other direction); the deposit's own `amount_applied` sums across them within book-once. The deposit unit reads `partial` until its applied sum reaches its value, then `linked` (§4.4). |
 | **Restriction-split wire** (one $1M wire QB-booked as several restricted payments) | ad-hoc grouping | Two supported shapes, both **gift-grain** (Decision 6): (a) one multi-allocation CRM gift — tie all the QB payments to that single gift, reconciled when the SUM hits the gift total (no per-restriction check); (b, preferred when restriction-level ties matter) split into **several one-restriction gifts** and tie each QB payment 1:1 to its gift, which makes header-grain tie math restriction-correct for free. |
 | **Stripe payout matches an already-booked QB deposit** (old `conflict_approved` / conflict-keep) | payout flagged `conflict_approved`; a `confirmed_keep` path + a double-book gate guard the deposit's existing gift; per-track status so it doesn't read as a discrepancy | the *settlement* confirm is **Plane 1 only** (payout↔deposit, no gift) — no conflict enum, no keep/replace path. The real hazard (the deposit's coarse gift and the payout's per-charge Stripe gifts counting the same dollars twice) is handled by the **one-count-across-the-settlement-boundary** rule (§4.3): per-charge counted units supersede the coarse deposit→gift link (else the coarse gift stays the counted record). |
 | **Over-split CRM gift** (one grant entered as several gifts) | `/gifts-and-payments/merge` moves allocations + sums, but hard-deletes losers & 409s on any QB/Stripe link | ledger-aware **combine** (§4.6a): re-point each loser's counted/corroborating ledger rows onto the survivor, re-check book-once, recompute tie; one gift with N allocation rows; absorbed gifts archived, evidence untouched. |
-| **Over-split QB deposit** (one deposit booked as several restriction payments) | `source_group_id` + representative `group_reconciled_gift_id` mint | durable **`unit_groups`** association (§4.6b, polymorphic membership); matching the group writes one counted ledger row per member → one gift; QB rows never edited (INV-G). |
+| **Over-split QB deposit** (one deposit booked as several restriction payments) | `source_group_id` + representative `group_reconciled_gift_id` mint | durable **`unit_groups`** association (§4.6b, polymorphic membership); matching the group writes one counted ledger row per member → one gift; QB rows never edited (INV-G). *Superseded 2026-07-23: new group creation is retired — the same N-counted-rows shape now ships as multi-match with no group record; `unit_groups` is slated for retirement (see the header banner and [`adr-linear-money-model.md`](adr-linear-money-model.md)).* |
 | **Refunded / charged-back payment** (a QB refund record, or a Stripe refund/dispute) | Stripe-only propose-then-confirm reduces/archives the gift; QB refunds not detected | refund detection is first-class on **both** sources; the refund is a **reversing counted ledger row** that cancels its original (§4.2a), so the gift's counted SUM returns to 0 and it reads as **no payment at all**. Partial refund → `partial`; full refund/chargeback → `unreconciled` + archive per the propagation subsystem. |
 
 ---
@@ -581,6 +597,12 @@ Phase 1 (this document); Phases 2–7 were sequenced as follow-on tasks.
 >   actively read/written by live code (lane derivation, the gifts filter, QB
 >   matching/actions, financial corrections). Their "no longer read or written"
 >   comments are aspirational — these are **not** drop-ready yet.
+> - **Group mechanism collapse: SHIPPED (2026-07-23), beyond this document.**
+>   The stock group-reconcile "representative" dance is retired, and so is new
+>   group *creation* itself: `POST /staged-payments/multi-match` writes N counted
+>   ledger rows → one gift atomically, with no group record. `unit_groups`
+>   remains only for legacy groups and is slated for retirement — see
+>   [`adr-linear-money-model.md`](adr-linear-money-model.md) §7.
 
 1. **Ratify the spec** *(this task)*. Commit this document as the target. Lock
    INV-A…INV-G. No code behavior change.
@@ -616,6 +638,15 @@ Phase 1 (this document); Phases 2–7 were sequenced as follow-on tasks.
    A read-only **prod** run of `parity-stripe-donorbox-readflip.ts` was parity-clean
    (0 tie-status changes; the cross-source pairs it enumerates are exactly the ones
    precedence protects).
+
+   *Progress — group-mechanism collapse DONE (2026-07-23), but not as written
+   here.* The "stock group-reconcile → N counted ledger rows" collapse shipped as
+   `POST /staged-payments/multi-match`, and the `unit_groups` cleanup op this
+   phase describes is **superseded**: new group creation is retired (410) and the
+   built `unit_groups` structure is slated for retirement — see the §7 banner and
+   [`adr-linear-money-model.md`](adr-linear-money-model.md). Gift **combine** is
+   ledger-aware as designed (re-homes counted rows per anchor, archives absorbed
+   gifts).
 
    *Holdout — the money-total surface is intentionally still legacy, folded into
    Phase 4 (below).* `giftPaymentSummary.ts` (`settledGross` / `totalFees` /

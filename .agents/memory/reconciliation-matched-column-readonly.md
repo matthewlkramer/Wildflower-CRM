@@ -9,9 +9,9 @@ read-only: no group-select checkbox and no confirm/create/reject/ResolveMenu
 actions — only a static "Reconciled to <gift>" indicator.
 
 **Why:** the shared `renderReconCard`/`ReconCard` exposes a live "Confirm match"
-(ResolveMenu → confirmAndApply → group-reconcile) and a group-select checkbox. On
-a settled source-group card these route back into the server group-reconcile
-guard, which 409s ("one/more of these staged payments already resolved") because
+(ResolveMenu → confirmAndApply → multi-match) and a group-select checkbox. On
+a settled source-group card these route back into the server multi-match
+pending guard, which 409s (`not_pending`) because
 none of the member `staged_payments` are `pending` anymore. The original bug was a
 multi-row `reconciled` DAF source group whose "Confirm match" 409'd.
 

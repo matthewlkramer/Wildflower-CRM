@@ -131,8 +131,9 @@ responses. Ledger equivalents: mint ownership = `created_the_gift`; group-reconc
 vs direct = presence of a `unit_group_members(quickbooks, source_id)` row (the
 direct-match / cascade predicates require NOT EXISTS membership — a bare PA row is
 treated as a direct match). **How to apply:** tests must seed `payment_applications`
-rows (and `unit_groups`+`unit_group_members` for group-reconciled state), never the
-legacy columns; the STRIPE-charge pointers (`stripe_staged_charges.matched/created_gift_id`,
+rows (and `unit_groups`+`unit_group_members` when exercising LEGACY group-reconciled
+state — new group creation is retired 2026-07-23; multi-match writes bare counted
+rows with no membership), never the legacy columns; the STRIPE-charge pointers (`stripe_staged_charges.matched/created_gift_id`,
 `gift.final_amount_stripe_charge_id`) are still live and intentionally untouched.
 
 ## Untouched by design

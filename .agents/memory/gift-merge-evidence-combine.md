@@ -15,11 +15,11 @@ collision writes NOTHING (the tx commits a no-op and the route returns 409
 `reconciled_evidence_conflict` with a `conflict` kind). Otherwise it re-homes:
 the cash ledger (`payment_applications`, `link_role='counted'` only, grouped by
 anchor; same-anchor rows consolidate to one keeper with SUMmed `amount_applied`,
-never summing across link_role/anchor), the QB staged pointers (1 payment → clean
-direct match on survivor; ≥2 → GROUP: all `group_reconciled_gift_id`=survivor +
-one representative `matched_gift_id`=survivor, matched/created nulled first so the
-partial-uniques are free), the single Stripe/Donorbox pointer, and
-`gift_evidence_links` (dedupe on the (gift,kind,id) UNIQUE).
+never summing across link_role/anchor). The ledger re-home is the whole job now
+(`lib/giftCombine.ts`): the pointer-era mechanics this note used to describe
+(QB staged pointers, ≥2→group representative stamping, `gift_evidence_links`
+dedupe) are GONE — those columns/tables were dropped, and merge NEVER creates a
+unit group (group creation is retired app-wide, 2026-07-23).
 
 ## Still 409 (unrepresentable — single-valued targets)
 - `split_link`: a loser wired into a `staged_payment_splits` row, OR a survivor

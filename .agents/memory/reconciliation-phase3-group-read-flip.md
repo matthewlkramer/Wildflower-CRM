@@ -5,6 +5,12 @@ description: What the reconciliation-redesign Phase 3 flips vs. keeps legacy, wh
 
 # Phase 3 mechanism collapse — source-group read flip
 
+**Later development (2026-07-23):** new group creation has since been retired
+entirely (group/group-reconcile are 410 stubs; combining goes through
+multi-match writing N counted rows, no group record), and `unit_groups` itself
+is slated for retirement per `docs/adr-linear-money-model.md` §7 step 3. This
+note remains as history of the source_group_id → unit_group_members flip.
+
 Goal: flip group READS/GUARDS off legacy `staged_payments.source_group_id` +
 "representative + `group_reconciled_gift_id`" dance onto first-class
 `unit_group_members` (helpers in `lib/unitGroupMembership.ts`: `isGroupMember`,
