@@ -69,7 +69,9 @@ SELECT
   sc.gross_amount,
   sc.fee_amount,
   sc.net_amount,
-  COALESCE(sc.currency, 'USD'),
+  -- Stripe stores lowercase ('usd'); normalize to uppercase so payment_units
+  -- and bank_deposits agree and joins/comparisons never need case-folding.
+  upper(COALESCE(sc.currency, 'USD')),
   sc.date_received,
   CASE
     WHEN sc.disputed THEN 'disputed'
