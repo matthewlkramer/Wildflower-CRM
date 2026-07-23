@@ -72,6 +72,14 @@ export const bankDepositComponents = pgTable(
     // True when the inference is uncertain and a human should confirm the
     // composition (QBO errors are the reason this table exists as an interim).
     needsReview: boolean("needs_review").notNull().default(false),
+    // True when >1 equivalent register deposit (same amount/date) existed when
+    // this component's QBO Deposit was paired to `bank_deposit_id`, and a
+    // deterministic pairing was chosen. Mirrors
+    // `stripe_payouts.ambiguous_bank_match`: filterable, deliberately NO
+    // confirmation workflow (a swapped equal pair is economically inert).
+    ambiguousDepositMatch: boolean("ambiguous_deposit_match")
+      .notNull()
+      .default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
