@@ -64,7 +64,6 @@ function makeActions(): ClusterActions {
     openExclude: vi.fn(),
     reInclude: vi.fn(),
     openRevert: vi.fn(),
-    openEjectFromGroup: vi.fn(),
     openConfirmRefund: vi.fn(),
     openDismissRefund: vi.fn(),
     openFlag: vi.fn(),
@@ -136,14 +135,12 @@ function makePayoutCluster(opts: {
   state?: Record<string, unknown>;
   qbRecords?: Array<Record<string, unknown>>;
   anchorId?: string;
-  group?: Record<string, unknown> | null;
   aeComplete?: boolean;
 }): WorkbenchCluster {
   return ClusterItemSchema.parse({
     id: "stripe_payout:po_1",
     kind: "stripe_payout",
     anchorId: opts.anchorId ?? "po_1",
-    group: opts.group ?? null,
     title: "Test Payer",
     statusDetail: null,
     lenses: [],
@@ -695,125 +692,6 @@ describe("giftUnlinkOptions (relationship-specific unlink)", () => {
     expect(giftUnlinkOptions(single, cluster)).toHaveLength(1);
     expect(giftUnlinkOptions(single, cluster)[0].anchor.id).toBe("ch_a");
   });
-
-  function makeQbRecord(over: Record<string, unknown> = {}) {
-    return {
-      stagedPaymentId: "sp_1",
-      role: "anchor",
-      reference: null,
-      lineDescription: null,
-      memo: null,
-      amount: "30.00",
-      dateReceived: "2099-01-01",
-      paymentMethod: null,
-      linkedChargeId: null,
-      payerName: null,
-      qbEntityType: null,
-      qbEntityId: null,
-      attributedDonor: null,
-      ...over,
-    };
-  }
-
-  it("collapses a group-reconciled gift's member links into ONE honest option (server reverts the whole group)", () => {
-    const cluster = makePayoutCluster({
-      charges: [],
-      anchorId: "sp_rep",
-      group: { memberCount: 3, totalAmount: "90.00" },
-      qbRecords: [
-        makeQbRecord({ stagedPaymentId: "sp_rep", role: "anchor" }),
-        makeQbRecord({ stagedPaymentId: "sp_m1", role: "group_member" }),
-        makeQbRecord({ stagedPaymentId: "sp_m2", role: "group_member" }),
-      ],
-    });
-    const gift = makeGift({
-      linkedStagedPaymentIds: ["sp_rep", "sp_m1", "sp_m2"],
-    }) as unknown as WorkbenchCluster["gifts"][number];
-    const options = giftUnlinkOptions(gift, cluster);
-    // One collapsed option — never three per-member options the server can't honor.
-    expect(options).toHaveLength(1);
-    expect(options[0].anchor).toEqual({
-      kind: "staged",
-      id: "sp_rep",
-      label: "Jane Donor gift",
-    });
-    expect(options[0].source).toContain("QuickBooks group · 3 records");
-    expect(options[0].amount).toBe("$90");
-    expect(options[0].note).toContain("removes all of them together");
-    // The member list shows WHICH records leave together (amount/date each).
-    expect(options[0].members?.map((m) => m.id)).toEqual([
-      "sp_rep",
-      "sp_m1",
-      "sp_m2",
-    ]);
-    expect(options[0].members?.[0].amount).toBe("$30");
-    expect(options[0].members?.[0].date).toBeTruthy();
-  });
-
-  it("labels members without evidence details by id instead of hiding them", () => {
-    const cluster = makePayoutCluster({
-      charges: [],
-      anchorId: "sp_rep",
-      group: { memberCount: 2, totalAmount: "60.00" },
-      qbRecords: [
-        makeQbRecord({ stagedPaymentId: "sp_rep", role: "anchor" }),
-        makeQbRecord({ stagedPaymentId: "sp_m1", role: "group_member" }),
-      ],
-    });
-    const gift = makeGift({
-      linkedStagedPaymentIds: ["sp_rep", "sp_m1"],
-    }) as unknown as WorkbenchCluster["gifts"][number];
-    const options = giftUnlinkOptions(gift, cluster);
-    const members = options[0].members ?? [];
-    expect(members).toHaveLength(2);
-    // No lineDescription/reference/memo on the fixture → qbLabel falls back to the id.
-    expect(members[0].label).toBe("sp_rep");
-  });
-
-  it("keeps non-group links separate alongside the collapsed group option", () => {
-    const cluster = makePayoutCluster({
-      charges: [makeCharge({ chargeId: "ch_a" })],
-      anchorId: "sp_rep",
-      group: { memberCount: 2, totalAmount: "60.00" },
-      qbRecords: [
-        makeQbRecord({ stagedPaymentId: "sp_rep", role: "anchor" }),
-        makeQbRecord({ stagedPaymentId: "sp_m1", role: "group_member" }),
-        // A charge_tie QB row is NOT part of the unit group.
-        makeQbRecord({ stagedPaymentId: "sp_tie", role: "charge_tie" }),
-      ],
-    });
-    const gift = makeGift({
-      linkedChargeIds: ["ch_a"],
-      linkedStagedPaymentIds: ["sp_rep", "sp_m1", "sp_tie"],
-    }) as unknown as WorkbenchCluster["gifts"][number];
-    const options = giftUnlinkOptions(gift, cluster);
-    // charge + collapsed group + the non-group QB tie = 3 options.
-    expect(options).toHaveLength(3);
-    const group = options.find((o) => o.note != null);
-    expect(group?.source).toContain("2 records");
-    const tie = options.find((o) => o.anchor.id === "sp_tie");
-    expect(tie).toBeTruthy();
-    expect(tie?.note ?? null).toBeNull();
-  });
-
-  it("does NOT collapse when only one linked staged id is in the group (single-member revert is per-relationship)", () => {
-    const cluster = makePayoutCluster({
-      charges: [],
-      anchorId: "sp_rep",
-      group: { memberCount: 2, totalAmount: "60.00" },
-      qbRecords: [
-        makeQbRecord({ stagedPaymentId: "sp_rep", role: "anchor" }),
-        makeQbRecord({ stagedPaymentId: "sp_m1", role: "group_member" }),
-      ],
-    });
-    const gift = makeGift({
-      linkedStagedPaymentIds: ["sp_rep"],
-    }) as unknown as WorkbenchCluster["gifts"][number];
-    const options = giftUnlinkOptions(gift, cluster);
-    expect(options).toHaveLength(1);
-    expect(options[0].note ?? null).toBeNull();
-    expect(options[0].source).toContain("QuickBooks ·");
-  });
 });
 
 describe("gift-side match builders (Match to Stripe / QuickBooks)", () => {
@@ -896,7 +774,7 @@ describe("gift-side match builders (Match to Stripe / QuickBooks)", () => {
         matchQbRecord({ stagedPaymentId: "sp_tie", role: "charge_tie" }),
         matchQbRecord({
           stagedPaymentId: "sp_done",
-          role: "group_member",
+          role: "anchor",
         }),
       ],
       state: makeState({
@@ -978,48 +856,6 @@ describe("UnlinkChooserDialog", () => {
     });
   });
 
-  it("renders the group option's member records inline (amount/date/reference each)", () => {
-    const groupOption: UnlinkOption = {
-      anchor: { kind: "staged", id: "sp_rep", label: "Jane Donor gift" },
-      source: "QuickBooks group · 2 records reconciled together",
-      amount: "$90",
-      date: null,
-      note: "These 2 QuickBooks records were reconciled as one group — unlinking removes all of them together.",
-      members: [
-        {
-          id: "sp_rep",
-          label: "Deposit line A",
-          amount: "$30",
-          date: "Jan 1, 2099",
-          reference: "QB reference: 1042",
-        },
-        {
-          id: "sp_m1",
-          label: "Deposit line B",
-          amount: "$60",
-          date: null,
-          reference: null,
-        },
-      ],
-    };
-    render(
-      <UnlinkChooserDialog
-        open
-        onOpenChange={() => {}}
-        giftLabel="Jane Donor gift"
-        options={[groupOption]}
-        busy={false}
-        onPick={() => {}}
-      />,
-    );
-    expect(byBodyTestId("list-unlink-members-sp_rep")).toBeTruthy();
-    expect(byBodyTestId("text-unlink-member-sp_rep")).toBeTruthy();
-    expect(byBodyTestId("text-unlink-member-sp_m1")).toBeTruthy();
-    expect(document.body.textContent).toContain("Deposit line A");
-    expect(document.body.textContent).toContain("$30 · Jan 1, 2099");
-    expect(document.body.textContent).toContain("QB reference: 1042");
-    expect(document.body.textContent).toContain("Deposit line B");
-  });
 });
 
 const noopToggle = () => {};

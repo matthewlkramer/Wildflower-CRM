@@ -23,7 +23,6 @@ import { seedStripeApplication } from "./paymentApplicationsTestUtil";
  *   - the universe partitions into exactly three kinds, and a QB row that
  *     reconciles THROUGH a payout cluster (settlement-linked deposit, fee row,
  *     charge-tie row) NEVER appears as its own qb_standalone cluster,
- *   - a unit-group's representative carries the whole group (members hidden),
  *   - a gift with a counted QB/Stripe ledger row is NOT crm_only (but a
  *     Donorbox-only gift IS, flagged with the donorbox badge),
  *   - lens flags/counts (open, refunds, conflicts, excluded, completed) match
@@ -71,8 +70,6 @@ let schema: {
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   stagedPayments: Db["stagedPayments"];
-  unitGroups: Db["unitGroups"];
-  unitGroupMembers: Db["unitGroupMembers"];
   paymentApplications: Db["paymentApplications"];
   settlementLinks: Db["settlementLinks"];
   donorboxDonations: Db["donorboxDonations"];
@@ -88,7 +85,6 @@ let baseUrl = "";
 const payoutIds: string[] = [];
 const chargeIds: string[] = [];
 const stagedIds: string[] = [];
-const unitGroupIds: string[] = [];
 const giftIds: string[] = [];
 const donorboxIds: string[] = [];
 const codingFormRowIds: string[] = [];
@@ -330,7 +326,6 @@ async function seedDepositApplication(opts: {
 
 async function seedStaged(
   opts: {
-    group?: string | null;
     exclusionReason?: string | null;
     amount?: string;
     payerName?: string;
@@ -375,19 +370,6 @@ async function seedStaged(
       createdTheGift: false,
     });
   }
-  if (opts.group) {
-    await db
-      .insert(schema.unitGroups)
-      .values({ id: opts.group, createdByUserId: TEST_USER_ID })
-      .onConflictDoNothing();
-    if (!unitGroupIds.includes(opts.group)) unitGroupIds.push(opts.group);
-    await db.insert(schema.unitGroupMembers).values({
-      id: `ugm_${id}`,
-      groupId: opts.group,
-      evidenceSource: "quickbooks",
-      sourceId: id,
-    });
-  }
   return id;
 }
 
@@ -424,8 +406,6 @@ beforeAll(async () => {
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     stagedPayments: dbMod.stagedPayments,
-    unitGroups: dbMod.unitGroups,
-    unitGroupMembers: dbMod.unitGroupMembers,
     paymentApplications: dbMod.paymentApplications,
     settlementLinks: dbMod.settlementLinks,
     donorboxDonations: dbMod.donorboxDonations,
@@ -478,10 +458,6 @@ afterAll(async () => {
     await db
       .delete(schema.stripePayouts)
       .where(inArrayFn(schema.stripePayouts.id, payoutIds));
-  if (unitGroupIds.length)
-    await db
-      .delete(schema.unitGroups)
-      .where(inArrayFn(schema.unitGroups.id, unitGroupIds));
   if (stagedIds.length)
     await db
       .delete(schema.stagedPayments)
@@ -595,41 +571,6 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     expect(settled.coverage.state.information.state).toBe("accounting_pending");
     expect(completed.has(`stripe_payout:${pSettled}`)).toBe(false);
     expect(open.has(`stripe_payout:${pSettled}`)).toBe(true);
-  });
-
-  it("a unit-group representative carries the whole group", async () => {
-    const grp = `grp_${RUN}`;
-    const gGroup = await seedGift();
-    const m1 = await seedStaged({ group: grp, amount: "40.00" });
-    const m2 = await seedStaged({
-      group: grp,
-      amount: "35.00",
-      matchedGiftId: gGroup,
-    });
-
-    const { map: open } = await listClusters("all_open");
-    const rep = open.get(`qb_standalone:${m1}`);
-    expect(rep).toBeTruthy();
-    expect(open.has(`qb_standalone:${m2}`)).toBe(false);
-    expect(rep.group?.memberCount).toBe(2);
-    expect(rep.group?.totalAmount).toBe("75.00");
-    expect(rep.qbRecords.length).toBe(2);
-    const memberRec = rep.qbRecords.find((r: any) => r.role === "group_member");
-    expect(memberRec?.stagedPaymentId).toBe(m2);
-    // Per-record status retired from qbRecords — linkage lives ONLY in coverage.state.qbCards.
-    expect(memberRec?.status).toBeUndefined();
-    const memberCard = rep.coverage.state.qbCards.find(
-      (c: any) => c.qbRecordId === m2,
-    );
-    expect(memberCard?.state).toBe("matched_complete");
-    // The member's gift shows on the representative cluster.
-    const gift = rep.gifts.find((g: any) => g.giftId === gGroup);
-    expect(gift).toBeTruthy();
-    expect(gift.linkedStagedPaymentIds).toEqual([m2]);
-    // Still open: the representative itself is unmatched.
-    expect(rep.lenses).toContain("needs_donor_or_gift");
-    expect(rep.resolvedCount).toBe(1);
-    expect(rep.coverage.complete).toBe(false);
   });
 
   it("flags refunds, conflicts and excluded rows into their lenses", async () => {
@@ -1240,7 +1181,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
   // Cases covered:
   //   stripe_payout — charge-grain, bundle-grain, mixed-grain, refund (single
   //                   and partial), all-excluded
-  //   qb_standalone — simple, grouped
+  //   qb_standalone — simple, multi-matched siblings (each its own cluster)
   //   crm_only      — incomplete record, CRM-complete record (still not done:
   //                   payment/accounting always absent)
   describe("f_completed ↔ coverage.complete invariant", () => {
@@ -1437,24 +1378,28 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       expect(openRow.coverage.state.information.state).toBe("incomplete");
     });
 
-    // ── grouped qb_standalone ──────────────────────────────────────────────
-    it("grouped qb_standalone: all members matched to CRM-complete gifts → link_complete", async () => {
-      const grp = `grp_inv_${RUN}`;
+    // ── multi-matched siblings ─────────────────────────────────────────────
+    // Unit groups are retired (docs/adr-linear-money-model.md §7 step 3):
+    // rows that were once grouped never collapse under a representative —
+    // each matched QB row is its OWN qb_standalone cluster.
+    it("multi-matched siblings: each row matched to a CRM-complete gift is its own link_complete cluster", async () => {
       const g1 = await seedCompleteGift({ amount: "40.00" });
       const g2 = await seedCompleteGift({ amount: "35.00" });
-      const m1 = await seedStaged({ group: grp, amount: "40.00", matchedGiftId: g1 });
-      await seedStaged({ group: grp, amount: "35.00", matchedGiftId: g2 });
-      // m1 seeded first → lower seq suffix → m1 < m2 → m1 is the representative (MIN id).
+      const m1 = await seedStaged({ amount: "40.00", matchedGiftId: g1 });
+      const m2 = await seedStaged({ amount: "35.00", matchedGiftId: g2 });
 
       const { map: completed } = await listClusters("completed");
       const { map: linkComplete } = await listClusters("link_complete");
 
-      expect(completed.has(`qb_standalone:${m1}`)).toBe(false);
-      const doneRow = linkComplete.get(`qb_standalone:${m1}`);
-      expect(doneRow).toBeTruthy();
-      expect(doneRow.coverage.complete).toBe(false);
-      expect(doneRow.coverage.state.information.state).toBe("accounting_pending");
-      expect(doneRow.group?.memberCount).toBe(2);
+      for (const m of [m1, m2]) {
+        expect(completed.has(`qb_standalone:${m}`)).toBe(false);
+        const doneRow = linkComplete.get(`qb_standalone:${m}`);
+        expect(doneRow).toBeTruthy();
+        expect(doneRow.coverage.complete).toBe(false);
+        expect(doneRow.coverage.state.information.state).toBe("accounting_pending");
+        // No group envelope: one QB record per cluster.
+        expect(doneRow.qbRecords.length).toBe(1);
+      }
     });
 
     // ── crm_only ───────────────────────────────────────────────────────────

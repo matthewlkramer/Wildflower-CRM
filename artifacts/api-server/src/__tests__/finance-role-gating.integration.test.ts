@@ -155,14 +155,10 @@ const GATED: Array<{ name: string; path: string; body?: unknown }> = [
     path: `/api/staged-payments/${NOPE}/set-coding`,
     body: { objectCode: "4010" },
   },
-  // NOTE: /staged-payments/group is retired (410 tombstone, ungated) — group
-  // creation is gone (docs/adr-linear-money-model.md); only the live ungroup
-  // action on legacy groups remains finance-gated.
-  {
-    name: "ungroupStagedPayments",
-    path: `/api/staged-payments/ungroup`,
-    body: { stagedPaymentIds: [`${NOPE}_a`] },
-  },
+  // NOTE: /staged-payments/group, /staged-payments/ungroup and
+  // /staged-payments/:id/eject-from-group are retired (410 tombstones,
+  // ungated) — unit-group behavior is gone (docs/adr-linear-money-model.md),
+  // so there is no live group action left to finance-gate.
 ];
 
 // Non-accounting review actions that must stay open to every team member

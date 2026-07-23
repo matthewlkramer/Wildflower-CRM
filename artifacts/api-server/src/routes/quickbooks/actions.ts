@@ -5,8 +5,6 @@ import {
   stagedPayments,
   giftsAndPayments,
   entities,
-  unitGroups,
-  unitGroupMembers,
 } from "@workspace/db/schema";
 import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
 import {
@@ -28,7 +26,6 @@ import {
   SetStagedPaymentEntityBody,
   SetStagedPaymentFundingSourceBody,
   SetStagedPaymentCodingBody,
-  UngroupStagedPaymentsBody,
 } from "@workspace/api-zod";
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import { applyPaymentApplication } from "../../lib/paymentApplications";
@@ -43,7 +40,6 @@ import {
   stagedStatusIn,
 } from "../../lib/derivedStatus";
 import { giftHeaderColumns } from "../giftsAndPayments";
-import { isGroupMember } from "../../lib/unitGroupMembership";
 import {
   reconAudit,
   fmtMoney,
@@ -155,14 +151,6 @@ router.post(
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
     if (!existing) return notFound(res, "staged payment");
-    if (await isGroupMember(db, id)) {
-      res.status(409).json({
-        error: "source_group_member",
-        message:
-          "This payment is part of a group. Reconcile the whole group from its card.",
-      });
-      return;
-    }
     if (existing.status !== "pending") {
       res.status(409).json({
         error: "not_pending",
@@ -580,10 +568,9 @@ router.post(
 // ─── POST /staged-payments/group (RETIRED) ─────────────────────────────────
 // Tombstone: pre-match "same physical gift" groups are retired
 // (docs/adr-linear-money-model.md). Select the rows together in the workbench
-// and match them in one call with POST /staged-payments/multi-match. Existing
-// legacy groups remain readable (and still relax the multi-match coherence
-// key) until unit_groups is retired in the next step; /staged-payments/ungroup
-// still works for dismantling them.
+// and match them in one call with POST /staged-payments/multi-match. Stale
+// legacy unit_groups/unit_group_members rows remain in the DB until the
+// schema-drop step, but no behavior writes or dismantles them anymore.
 router.post("/staged-payments/group", (_req, res) => {
   res.status(410).json({
     error: "group_creation_retired",
@@ -592,135 +579,18 @@ router.post("/staged-payments/group", (_req, res) => {
   });
 });
 
-// ─── POST /staged-payments/ungroup ─────────────────────────────────────────
-// Remove the given rows from their unit group (delete their unit_group_members
-// rows). If this leaves a group with fewer than two members, the remaining
-// orphan is removed too and the empty unit_groups row is deleted (a group
-// requires >= 2). Pure review state; a no-op for rows that aren't grouped.
-router.post(
-  "/staged-payments/ungroup",
-  asyncHandler(async (req, res) => {
-    if (!requireFinance(req, res)) return;
-    const parsed = UngroupStagedPaymentsBody.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "validation_error",
-        message: "Request validation failed",
-        details: parsed.error.flatten(),
-      });
-      return;
-    }
-    const ids = Array.from(new Set(parsed.data.stagedPaymentIds));
-
-    const NOT_FOUND = "__not_found__";
-    let result: {
-      ungroupedIds: string[];
-      dissolvedGroupIds: string[];
-    } | null = null;
-    try {
-      await db.transaction(async (tx) => {
-        // Lock the target staged rows FOR UPDATE to serialize with group()
-        // (membership itself lives in unit_group_members now, but the units are
-        // the natural lock granularity shared with the group path).
-        const lockedTargets = await tx
-          .select({ id: stagedPayments.id })
-          .from(stagedPayments)
-          .where(inArray(stagedPayments.id, ids))
-          .for("update");
-        if (lockedTargets.length !== ids.length) throw new Error(NOT_FOUND);
-
-        // Read current membership from unit_group_members (the sole group store).
-        const memberships = await tx
-          .select({
-            sourceId: unitGroupMembers.sourceId,
-            groupId: unitGroupMembers.groupId,
-          })
-          .from(unitGroupMembers)
-          .where(
-            and(
-              eq(unitGroupMembers.evidenceSource, "quickbooks"),
-              inArray(unitGroupMembers.sourceId, ids),
-            ),
-          );
-        const affectedGroups = Array.from(
-          new Set(memberships.map((m) => m.groupId)),
-        );
-        const toClear = memberships.map((m) => m.sourceId);
-        const ungroupedIds: string[] = [...toClear];
-        if (toClear.length) {
-          await tx
-            .delete(unitGroupMembers)
-            .where(
-              and(
-                eq(unitGroupMembers.evidenceSource, "quickbooks"),
-                inArray(unitGroupMembers.sourceId, toClear),
-              ),
-            );
-          await tx
-            .update(stagedPayments)
-            .set({ updatedAt: new Date() })
-            .where(inArray(stagedPayments.id, toClear));
-        }
-
-        // Auto-dissolve any affected group now left with < 2 members (a group
-        // requires >= 2): clear the lone orphan too.
-        const dissolvedGroupIds: string[] = [];
-        for (const g of affectedGroups) {
-          const remaining = await tx
-            .select({ sourceId: unitGroupMembers.sourceId })
-            .from(unitGroupMembers)
-            .innerJoin(
-              stagedPayments,
-              eq(stagedPayments.id, unitGroupMembers.sourceId),
-            )
-            .where(
-              and(
-                eq(unitGroupMembers.groupId, g),
-                eq(unitGroupMembers.evidenceSource, "quickbooks"),
-              ),
-            )
-            .for("update");
-          if (remaining.length < 2) {
-            if (remaining.length === 1) {
-              const orphanId = remaining[0].sourceId;
-              await tx
-                .delete(unitGroupMembers)
-                .where(
-                  and(
-                    eq(unitGroupMembers.evidenceSource, "quickbooks"),
-                    eq(unitGroupMembers.sourceId, orphanId),
-                  ),
-                );
-              await tx
-                .update(stagedPayments)
-                .set({ updatedAt: new Date() })
-                .where(eq(stagedPayments.id, orphanId));
-              ungroupedIds.push(orphanId);
-            }
-            dissolvedGroupIds.push(g);
-          }
-        }
-
-        // Delete the group rows for fully-dissolved groups (their membership was
-        // already cleared above; the cascade FK would clear any remainder).
-        if (dissolvedGroupIds.length) {
-          await tx
-            .delete(unitGroups)
-            .where(inArray(unitGroups.id, dissolvedGroupIds));
-        }
-        result = {
-          ungroupedIds: Array.from(new Set(ungroupedIds)),
-          dissolvedGroupIds,
-        };
-      });
-    } catch (e) {
-      if (e instanceof Error && e.message === NOT_FOUND) {
-        return notFound(res, "staged payment");
-      }
-      throw e;
-    }
-    res.json(result);
-  }),
-);
+// ─── POST /staged-payments/ungroup (RETIRED) ───────────────────────────────
+// Tombstone: unit groups are retired (docs/adr-linear-money-model.md). There
+// is no group state to dismantle — a pending row is already independent, and
+// a matched member is undone individually with POST /staged-payments/:id/revert
+// (its counted payment_applications ledger row is the sole record of the
+// combined match).
+router.post("/staged-payments/ungroup", (_req, res) => {
+  res.status(410).json({
+    error: "group_creation_retired",
+    message:
+      "Unit groups are retired. Pending rows are already independent; revert a matched row individually with POST /staged-payments/:id/revert.",
+  });
+});
 
 export default router;

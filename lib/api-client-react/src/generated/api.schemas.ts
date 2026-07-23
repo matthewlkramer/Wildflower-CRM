@@ -2464,7 +2464,6 @@ export type GiftAuditReconciliationRecordLinkType = typeof GiftAuditReconciliati
 export const GiftAuditReconciliationRecordLinkType = {
   matched: 'matched',
   created: 'created',
-  group: 'group',
   split: 'split',
 } as const;
 
@@ -4053,7 +4052,7 @@ export interface ReconciliationCandidate {
   donorId?: string | null;
   /** For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting. */
   alreadyLinkedStagedPaymentId?: string | null;
-  /** For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or group-reconciled onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting. */
+  /** For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or multi-matched onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting. */
   alreadyLinkedGiftId?: string | null;
   /** Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can't currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409. */
   conflictReason?: string | null;
@@ -4291,21 +4290,7 @@ export const WorkbenchRowQbCardState = {
 } as const;
 
 /**
- * One member of a manual 'same physical gift' source group, summarized for the group card.
- */
-export interface ReconciliationCardGroupMember {
-  stagedPaymentId: string;
-  amount?: string | null;
-  dateReceived?: string | null;
-  payerName?: string | null;
-  qbDocNumber?: string | null;
-  fundingSource?: StagedPaymentFundingSource | null;
-  /** True for the single member that anchors the group card / carries the group's gift link on approve (the card's stagedPaymentId). */
-  isRepresentative: boolean;
-}
-
-/**
- * List item for the unified reconciler — one per QB staged payment (the anchor), OR one per manual 'same physical gift' source group (collapsed; stagedPaymentId is the representative member). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card.
+ * List item for the unified reconciler — one per QB staged payment (the anchor). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card.
  */
 export interface ReconciliationCard {
   stagedPaymentId: string;
@@ -4348,7 +4333,7 @@ export interface ReconciliationCard {
   giftState?: ReconciliationEdgeState;
   opportunityState?: ReconciliationEdgeState;
   hasStripeEvidence: boolean;
-  /** When set, this card is ONE Stripe charge (not the whole QB deposit): the active/needs-review/research queues expand a Stripe-payout-backed deposit into one card per backing charge. The card's identity is then the composite (stagedPaymentId, stripeChargeId); approve acts on this single charge → its own CRM gift. Null for non-Stripe rows, source-group cards, and the unexpanded (terminal) queues. */
+  /** When set, this card is ONE Stripe charge (not the whole QB deposit): the active/needs-review/research queues expand a Stripe-payout-backed deposit into one card per backing charge. The card's identity is then the composite (stagedPaymentId, stripeChargeId); approve acts on this single charge → its own CRM gift. Null for non-Stripe rows and the unexpanded (terminal) queues. */
   stripeChargeId?: string | null;
   stripePayoutId?: string | null;
   stripeChargeCount?: number | null;
@@ -4379,20 +4364,10 @@ export interface ReconciliationCard {
   exclusionReason?: StagedPaymentExclusionReason | null;
   /** Two independently-tracked reconciliation lanes (INV-4) for this anchor's money, derived read-only from status + donor/gift state: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped donor match). Replaces the single blended badge. */
   readonly reconciliationLanes?: ReconciliationLanes;
-  /** Origin of this money (Stripe, brokerage, DAF, …). For a group card this is the members' common source, or null when they differ. Distinct from qbPaymentMethod (the instrument) and the funding lane. */
+  /** Origin of this money (Stripe, brokerage, DAF, …). Distinct from qbPaymentMethod (the instrument) and the funding lane. */
   fundingSource?: StagedPaymentFundingSource | null;
-  /** Whether fundingSource was derived (auto) or human-pinned (manual). Null on a group card whose members disagree. */
+  /** Whether fundingSource was derived (auto) or human-pinned (manual). */
   fundingSourceProvenance?: StagedPaymentFundingSourceProvenance | null;
-  /** The unit group id when this card represents a manual 'same physical gift' group; null for a single staged payment. Derived from unit_group_members. */
-  sourceGroupId?: string | null;
-  /** True when this card collapses several staged payments a human grouped as one physical gift (rows in one unit group). The card's stagedPaymentId is the representative member; approve acts on the whole group. */
-  isSourceGroup: boolean;
-  /** Number of staged payments in the group (>= 2). Null when not a group. */
-  sourceGroupCount?: number | null;
-  /** Summed amount of all group members (the amount the group reconciles for). Null when not a group. */
-  sourceGroupTotalAmount?: string | null;
-  /** Compact per-member rows of the group, for display. Null when not a group. The representative is the card's stagedPaymentId. */
-  sourceGroupMembers?: ReconciliationCardGroupMember[] | null;
   objectCode?: string | null;
   objectCodeOverride?: string | null;
   revenueLocation?: string | null;
@@ -4405,7 +4380,7 @@ export interface ReconciliationCard {
   deferredRevenueReason?: string | null;
   /** Server-authoritative 3-state match verdict for the card's 'Status:' line: matched = money tied to a resolved CRM gift; proposal = the matcher has a candidate gift/donor a human still has to confirm; none = no candidate yet. Derived server-side (deriveCardVerdict) so the UI never re-derives it. */
   cardStatus: ReconciliationCardCardStatus;
-  /** Server-authoritative bucketing verdict: true when the card's gift link is fully settled — a resolved gift whose amount agrees with the evidence (group total for a group card, Stripe gross/net window when a charge backs the money, else the QB amount) within the approve gate's fee band (amountWithinFeeBand). Settled cards drop out of the review column; an amount-divergent resolved gift stays visible (still 'matched') so the rest of the money can be tied to it. Unknown amounts count as settled. */
+  /** Server-authoritative bucketing verdict: true when the card's gift link is fully settled — a resolved gift whose amount agrees with the evidence (Stripe gross/net window when a charge backs the money, else the QB amount) within the approve gate's fee band (amountWithinFeeBand). Settled cards drop out of the review column; an amount-divergent resolved gift stays visible (still 'matched') so the rest of the money can be tied to it. Unknown amounts count as settled. */
   settled: boolean;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -4885,16 +4860,14 @@ export interface ApproveCompleteMatchBody {
   switchGiftDonor?: boolean | null;
   /** For link_existing_gift ONLY: when true, re-source the existing gift from the Stripe charge selected in stripeChargeId, orphaning the charge that currently backs it (which returns to the unmatched-money queue as pending) and recording an audit entry — after explicit human confirmation in the UI. When omitted and the gift is already sourced from a DIFFERENT charge, the approve is blocked (409 consistency_gate, issue code gift_already_stripe_sourced) whose details carry the current backing charge (id, amount, payer, date) so the UI can describe the switch. */
   switchStripeSource?: boolean | null;
-  /** For link_existing_gift ONLY: when true, re-target the existing gift onto THIS payment even though another (incumbent) QuickBooks staged payment is already linked to it — disconnecting the incumbent and returning it to the unmatched/pending queue first, then linking this one, recording an audit entry — after explicit human confirmation in the UI. When omitted and the gift is already linked to a different staged payment, the approve is blocked (409 consistency_gate, issue code gift_already_qb_linked) whose details carry the incumbent payment (id, amount, payer, date) so the UI can describe the displacement. Composes with switchStripeSource so a Stripe-backed deposit resolves both conflicts in one confirmation. Only a DIRECT match incumbent is displaceable; a gift linked through a group or split is refused (409 incumbent_not_displaceable) — revert that first. */
+  /** For link_existing_gift ONLY: when true, re-target the existing gift onto THIS payment even though another (incumbent) QuickBooks staged payment is already linked to it — disconnecting the incumbent and returning it to the unmatched/pending queue first, then linking this one, recording an audit entry — after explicit human confirmation in the UI. When omitted and the gift is already linked to a different staged payment, the approve is blocked (409 consistency_gate, issue code gift_already_qb_linked) whose details carry the incumbent payment (id, amount, payer, date) so the UI can describe the displacement. Composes with switchStripeSource so a Stripe-backed deposit resolves both conflicts in one confirmation. Only a DIRECT match incumbent is displaceable; a gift linked through a split is refused (409 incumbent_not_displaceable) — revert that first. */
   displaceLinkedPayment?: boolean | null;
-  /** For link_existing_gift ONLY: when true, re-target THIS payment onto the selected gift even though the payment itself is already applied to a DIFFERENT gift (e.g. the sync worker auto-matched it to the wrong one of two identical donations) — the commit first unwinds the payment's own existing cash-application (removes its ledger rows, reverses its final-amount stamp on the OLD gift, re-derives that gift's pledge and QuickBooks tie status, records an audit entry on the old gift), then applies it to the newly selected gift — after explicit human confirmation in the UI. When omitted and the payment is already applied elsewhere, the approve is blocked (409 consistency_gate, issue code payment_already_applied) whose details carry the currently applied gift (id, name, amount, date) so the UI can describe the move. Composes with switchStripeSource and displaceLinkedPayment so all three conflicts resolve in one confirmation. Only a DIRECT own-match is movable; a payment applied through a group, a split, or one that minted its gift is refused — revert that first. */
+  /** For link_existing_gift ONLY: when true, re-target THIS payment onto the selected gift even though the payment itself is already applied to a DIFFERENT gift (e.g. the sync worker auto-matched it to the wrong one of two identical donations) — the commit first unwinds the payment's own existing cash-application (removes its ledger rows, reverses its final-amount stamp on the OLD gift, re-derives that gift's pledge and QuickBooks tie status, records an audit entry on the old gift), then applies it to the newly selected gift — after explicit human confirmation in the UI. When omitted and the payment is already applied elsewhere, the approve is blocked (409 consistency_gate, issue code payment_already_applied) whose details carry the currently applied gift (id, name, amount, date) so the UI can describe the move. Composes with switchStripeSource and displaceLinkedPayment so all three conflicts resolve in one confirmation. Only a DIRECT own-match is movable; a payment applied through a split, or one that minted its gift is refused — revert that first. */
   moveOwnApplication?: boolean | null;
   /** The Stripe charge whose GROSS becomes the gift's final amount (Stripe precedence). Omit for QB-only money (brokerage/check). */
   stripeChargeId?: string | null;
   /** Required to approve when the evidence amount and the gift amount fall outside the fee-band tolerance. */
   overrideAmountMismatchReason?: string | null;
-  /** For a SOURCE GROUP create_gift ONLY: when true, seed one gift allocation per grouped staged payment (sub_amount = that member's amount, entity from its attributed entityId) so the subcomponents become allocation rows summing to the gift total. When false/omitted the gift is header-only. Ignored for single (non-group) cards and for the opportunity outcomes (those seed allocations from the pledge). */
-  splitGroupIntoAllocations?: boolean | null;
 }
 
 export interface ReconciliationApproveResult {
@@ -5516,7 +5489,7 @@ export interface WorkbenchClusterCharge {
 }
 
 /**
- * How the row participates: anchor = the qb_standalone cluster's own row; deposit = the payout's settlement-linked deposit lump; fee = a processor-fee row linked via a charge; charge_tie = a per-charge QB tie; group_member = a fellow member of the anchor's unit group.
+ * How the row participates: anchor = the qb_standalone cluster's own row; deposit = the payout's settlement-linked deposit lump; fee = a processor-fee row linked via a charge; charge_tie = a per-charge QB tie.
  */
 export type WorkbenchClusterQbRecordRole = typeof WorkbenchClusterQbRecordRole[keyof typeof WorkbenchClusterQbRecordRole];
 
@@ -5526,7 +5499,6 @@ export const WorkbenchClusterQbRecordRole = {
   deposit: 'deposit',
   fee: 'fee',
   charge_tie: 'charge_tie',
-  group_member: 'group_member',
 } as const;
 
 /**
@@ -5557,7 +5529,7 @@ export type WorkbenchClusterQbRecordAttributedDonor = ({
 export interface WorkbenchClusterQbRecord {
   /** staged_payments.id */
   stagedPaymentId: string;
-  /** How the row participates: anchor = the qb_standalone cluster's own row; deposit = the payout's settlement-linked deposit lump; fee = a processor-fee row linked via a charge; charge_tie = a per-charge QB tie; group_member = a fellow member of the anchor's unit group. */
+  /** How the row participates: anchor = the qb_standalone cluster's own row; deposit = the payout's settlement-linked deposit lump; fee = a processor-fee row linked via a charge; charge_tie = a per-charge QB tie. */
   role: WorkbenchClusterQbRecordRole;
   /** Human-readable doc/payment reference. */
   reference?: string | null;
@@ -5572,7 +5544,7 @@ export interface WorkbenchClusterQbRecord {
   paymentMethod?: string | null;
   /** For fee / charge_tie roles: the stripe_staged_charges id the link runs through. */
   linkedChargeId?: string | null;
-  /** QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee / charge_tie / group_member. */
+  /** QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee / charge_tie. */
   payerName?: string | null;
   /** The QuickBooks transaction type this staged row came from — drives the 'View in QuickBooks' deep link (deposit_header deep-links to its Deposit). */
   qbEntityType?: WorkbenchClusterQbRecordQbEntityType;
@@ -5605,16 +5577,6 @@ export interface WorkbenchClusterSettlement {
   depositStagedPaymentId?: string | null;
   /** The already-approved gift a proposed tie collided with (drives the conflicts lens). */
   conflictGiftId?: string | null;
-}
-
-/**
- * Unit-group rollup when the qb_standalone anchor is a group representative.
- */
-export interface WorkbenchClusterGroup {
-  /** Total rows in the unit group (including the representative). */
-  memberCount: number;
-  /** Group total, major units. */
-  totalAmount?: string | null;
 }
 
 /**
@@ -6061,8 +6023,6 @@ export interface WorkbenchCluster {
   qbRecords: WorkbenchClusterQbRecord[];
   /** Null for non-payout kinds and for orphan payouts with no settlement link yet. */
   settlement?: WorkbenchClusterSettlement | null;
-  /** Present only when the qb_standalone anchor represents a unit group. */
-  group?: WorkbenchClusterGroup | null;
   /** Three-dimension canonical cluster state (donorPurpose / paymentTransaction / accountingEvidence). Always present for all cluster kinds. */
   coverage: WorkbenchClusterCoverage;
 }
@@ -7121,11 +7081,11 @@ export interface SplitStagedPaymentResponse {
 }
 
 /**
- * Match several selected staged payments to one existing gift, one counted ledger row per member, atomically. Members must share one bank deposit, or — when no deposit was captured — the same payer (legacy unit-group members bypass this).
+ * Match several selected staged payments to one existing gift, one counted ledger row per member, atomically. Members must share one bank deposit, or — when no deposit was captured — the same payer.
  */
 export interface MultiMatchStagedPaymentsBody {
   /**
-   * Ids of the staged payments to match. Must be at least two, all pending, and all sharing the same non-null qbDepositId, or — when none has a deposit — the same payer name (rows all in one legacy unit group bypass this coherence key).
+   * Ids of the staged payments to match. Must be at least two, all pending, and all sharing the same non-null qbDepositId, or — when none has a deposit — the same payer name.
    * @minItems 2
    */
   stagedPaymentIds: string[];
@@ -7177,22 +7137,6 @@ export interface RevertStagedPaymentMatchesResponse {
   requested: number;
 }
 
-export interface EjectStagedPaymentFromGroupResponse {
-  stagedPayment: StagedPayment;
-  /** The group's gift the ejected member was unlinked from (the remaining members stay reconciled to it). */
-  giftId: string;
-  /** The members still reconciled to the gift after ejection (sorted). */
-  remainingStagedPaymentIds: string[];
-  /** SUM of the remaining members' counted ledger amounts applied to the gift. */
-  remainingTotal?: string | null;
-  /** The gift's (untouched) human-entered amount, for the fee-band comparison. */
-  giftAmount?: string | null;
-  /** Whether the remaining evidence total still sits inside the fee band around the gift amount. When false, the derived quickbooks_tie_status shows amount_mismatch until the gift amount is corrected. */
-  remainingInFeeBand: boolean;
-  /** True when ejection left fewer than two members and the unit group was dissolved (the remaining member becomes a direct match). */
-  groupDissolved: boolean;
-}
-
 /**
  * File the staged payment under a non-gift exclusion category.
  */
@@ -7234,24 +7178,6 @@ export interface SetStagedPaymentCodingBody {
   codingFlags?: string[] | null;
   deferredRevenue?: DeferredRevenue | null;
   deferredRevenueReason?: string | null;
-}
-
-/**
- * Remove staged payments from their 'same physical gift' unit group. If removing rows leaves a group with fewer than two members, the remaining orphan is removed too and the empty group is deleted (a group requires >= 2).
- */
-export interface UngroupStagedPaymentsBody {
-  /**
-   * Ids of the staged payments to remove from their group. A no-op for rows that aren't grouped.
-   * @minItems 1
-   */
-  stagedPaymentIds: string[];
-}
-
-export interface UngroupStagedPaymentsResponse {
-  /** Ids removed from their unit group (includes any auto-dissolved orphans). */
-  ungroupedIds: string[];
-  /** Unit group ids that no longer exist after this call (fully dissolved). */
-  dissolvedGroupIds?: string[];
 }
 
 export interface CandidateThankYouEmail {

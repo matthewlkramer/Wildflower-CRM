@@ -2,10 +2,7 @@ import { Router, type IRouter } from "express";
 import { asyncHandler, notFound, paramId } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { RevertStagedPaymentMatchesBody } from "@workspace/api-zod";
-import {
-  revertOneStagedPayment,
-  ejectStagedPaymentFromGroup,
-} from "./shared";
+import { revertOneStagedPayment } from "./shared";
 import {
   reconAudit,
   fmtMoney,
@@ -51,62 +48,19 @@ router.post(
   }),
 );
 
-// ─── POST /staged-payments/:id/eject-from-group ────────────────────────────
-// Eject ONE member from a reconciled unit group; the rest of the group stays
-// reconciled to the gift (the whole-group revert above is the undo-everything
-// path). 409s carry a machine `error` + human message pointing at the right
-// alternative action.
-router.post(
-  "/staged-payments/:id/eject-from-group",
-  asyncHandler(async (req, res) => {
-    const user = getAppUser(req);
-    if (!user) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    const id = paramId(req);
-
-    const outcome = await ejectStagedPaymentFromGroup(id);
-    if (!outcome.ok) {
-      if (outcome.reason === "not_found") {
-        return notFound(res, "staged payment");
-      }
-      const messages: Record<Exclude<typeof outcome.reason, "not_found">, string> = {
-        not_in_group: "This payment is not part of a QuickBooks unit group.",
-        not_reconciled:
-          "The group is not reconciled to a gift yet — use ungroup to dismantle it instead.",
-        last_member:
-          "No other group member is reconciled to the gift — use the whole-group revert instead.",
-        excluded:
-          "An excluded payment is managed via the exclusion actions, not ejection.",
-      };
-      res.status(409).json({
-        error: outcome.reason,
-        message: messages[outcome.reason],
-      });
-      return;
-    }
-    void user;
-    // The ejection IS the undo of the mis-grouping — re-grouping is a fresh
-    // decision from the queue, so no undo pointer (same rule as revert above).
-    await reconAudit(req, {
-      action: "update",
-      entityType: "staged_payment",
-      entityId: id,
-      summary: `Ejected the QuickBooks payment from ${payerLabel(outcome.row?.payerName)} (${fmtMoney(outcome.row?.amount)}) from its reconciled group — ${outcome.remainingStagedPaymentIds.length} member(s) stay reconciled to the gift${outcome.groupDissolved ? "; the group dissolved to a direct match" : ""}`,
-      undo: null,
-    });
-    res.json({
-      stagedPayment: outcome.row,
-      giftId: outcome.giftId,
-      remainingStagedPaymentIds: outcome.remainingStagedPaymentIds,
-      remainingTotal: outcome.remainingTotal,
-      giftAmount: outcome.giftAmount,
-      remainingInFeeBand: outcome.remainingInFeeBand,
-      groupDissolved: outcome.groupDissolved,
-    });
-  }),
-);
+// ─── POST /staged-payments/:id/eject-from-group (RETIRED) ──────────────────
+// Tombstone: unit groups are retired (docs/adr-linear-money-model.md). Each
+// member's tie to the gift is its own counted payment_applications row, so
+// the plain revert above does exactly what ejection did — it undoes THIS
+// member only; every other payment reconciled to the same gift keeps its
+// counted row.
+router.post("/staged-payments/:id/eject-from-group", (_req, res) => {
+  res.status(410).json({
+    error: "group_creation_retired",
+    message:
+      "Unit groups are retired. Revert this payment directly with POST /staged-payments/:id/revert — other payments reconciled to the gift keep their reconciliation.",
+  });
+});
 
 // ─── POST /staged-payments/revert-matches ──────────────────────────────────
 // Bulk equivalent of the single revert above: reverts every revertible row

@@ -118,25 +118,6 @@ describe("deriveCardVerdict — settled bucketing", () => {
     ).toBe(false);
   });
 
-  it("uses the group total for a group card (ignoring the representative's own amount)", () => {
-    expect(
-      deriveCardVerdict({
-        resolvedGiftId: "gift_1",
-        resolvedGiftAmount: "300.00",
-        amount: "100.00",
-        sourceGroupTotalAmount: "300.00",
-      }).settled,
-    ).toBe(true);
-    expect(
-      deriveCardVerdict({
-        resolvedGiftId: "gift_1",
-        resolvedGiftAmount: "100.00",
-        amount: "100.00",
-        sourceGroupTotalAmount: "300.00",
-      }).settled,
-    ).toBe(false);
-  });
-
   it("opens the [net, gross] window when a Stripe charge backs the money", () => {
     // Gift booked at the NET behind a gross-amount charge — settled via the
     // known-net window (the QB-only band would reject it: 104.00 < 104.42).
@@ -161,17 +142,4 @@ describe("deriveCardVerdict — settled bucketing", () => {
     ).toBe(false);
   });
 
-  it("never applies a per-charge net to a group card", () => {
-    // A group reconciles for its combined total with the plain QB band; a
-    // stray net must not open a window around the wrong number.
-    expect(
-      deriveCardVerdict({
-        resolvedGiftId: "gift_1",
-        resolvedGiftAmount: "150.00",
-        amount: "100.00",
-        sourceGroupTotalAmount: "300.00",
-        stripeNetAmount: "150.00",
-      }).settled,
-    ).toBe(false);
-  });
 });

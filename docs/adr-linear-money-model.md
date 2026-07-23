@@ -6,11 +6,13 @@ last_verified: 2026-07-23
 # ADR: Linear money model — gift = payment event, bank-anchored evidence tree
 
 **Status:** Ratified 2026-07-23 (design discussion with owner; production-data
-analysis + architecture review). Implementation is under way — §7 steps 1–2
+analysis + architecture review). Implementation is under way — §7 steps 1–3
 are done (step 2: `POST /quickbooks/staged-payments/multi-match` writes N
 counted rows atomically; the group and group-reconcile endpoints are 410
-stubs, so no new unit groups can be created). Steps 3–6 are not started; see
-§7 for sequencing. Layer 1 (§2) is ratified coding semantics; Layer 2 (§3) is
+stubs, so no new unit groups can be created; step 3: every unit-group read
+and behavior is retired — nothing reads or writes `unit_groups` /
+`unit_group_members` any more; the tables persist as inert legacy data until
+step 4 drops them). Steps 4–6 are not started; see §7 for sequencing. Layer 1 (§2) is ratified coding semantics; Layer 2 (§3) is
 design-target — its QB grain (one entry per allocation) is a working
 assumption pending accountant confirmation (owner: "easy to roll up if
 wrong").
@@ -185,6 +187,18 @@ in `lib/db/migrations/` (evidence anchor ids from the 2026-07-23 analysis):
    null/zero amount is stamped matched but books no counted row (mirrors the
    pre-existing single-row paths), so its derived status can stay pending —
    either reject zero-amount members at selection or book a zero row.
+   **Done (2026-07-23):** every unit-group read and behavior is removed from
+   the server, frontend, and OpenAPI contract — the multi-match coherence-key
+   bypass (the last surviving read), workbench-cluster group envelopes
+   (representative/member collapse, `isSourceGroup`, group note/member lists),
+   whole-group revert fan-out, and ungroup/eject behavior are all gone; the
+   group lifecycle endpoints (`/group`, `/group-reconcile`, `/ungroup`,
+   `/:id/eject-from-group`) are 410 `group_creation_retired` tombstones, and
+   plain per-row revert is the single undo path. The zero-amount edge case is
+   resolved as reject-at-selection (`ZERO_AMOUNT` guard in multi-match). The
+   `unit_groups` / `unit_group_members` schema definitions are kept, marked
+   `@deprecated`, solely so existing prod rows survive for step 4's
+   verification, which then drops both tables.
 4. **Prod recoding** (§6) as reviewed idempotent migration SQL, applied by a
    human with `$PROD_DATABASE_URL`.
 5. **Counted-uniqueness constraint LAST**, in a migration ordered strictly

@@ -64,8 +64,10 @@ distinct QB-payment fact, not the queue-lifecycle enum).
 
 **QB gift-pointer columns are DROPPED (migration 0126).** `staged_payments.matched/
 created/group_reconciled_gift_id` no longer exist. Current QB linkage reads:
-mint ownership = `payment_applications.created_the_gift`; group-reconciled =
-`unit_group_members` row; direct match = bare PA counted row without membership.
+mint ownership = `payment_applications.created_the_gift`; match/multi-match =
+PA counted rows. Unit groups are fully retired (ADR linear-money-model §7
+step 3): nothing reads or writes `unit_groups`/`unit_group_members`; the
+tables sit inert until step 4 drops them.
 
 ---
 
@@ -95,9 +97,9 @@ entries for QB are archived in `legacy-reconciliation/index.md`.
 - [QuickBooks reconciler intermediary donor seed](quickbooks-intermediary-donor-seed.md) — when payer is Stripe/Donorbox/DAF, seed gift search with the donor pulled from the memo (after "from"/dash), conservatively.
 - [DAF sponsor is never the donor](quickbooks-daf-sponsor-attribution.md) — DAF sponsor = payment intermediary, not donor; matcher guard drops sponsor-as-org donor; historical cleanup SQL repoints to advisor or flags daf-donor-review.
 - [QB deposit memo wrong donor](quickbooks-deposit-memo-wrong-donor.md) — card payer label = QB memo, can name the WRONG donor; the payout's charges are authoritative; check screenshot image_<ms>.png epoch vs match_confirmed_at before claiming "didn't work".
-- [QuickBooks payment grouping](quickbooks-deposit-grouping.md) — NEW group creation RETIRED (410; ADR linear-money-model step 2): combine via multi-match writing N counted PA rows, no unit_group row. File now covers legacy-group behavior only (approve/ungroup/eject until step 3); cross-date needs confirmMultiDate.
-- [Grouped create-gift → optional allocation split](grouped-create-gift-allocations.md) — splitGroupIntoAllocations seeds one allocation per group member (no scaling); header-only otherwise; ignored on opp outcomes.
-- [Staged-payment funding source + grouping](staged-payment-funding-source-grouping.md) — funding_source=origin (≠ instrument ≠ derived lane); auto|manual provenance guards re-pull clobber; group-approve mints ONE gift atomically (count-guard or 409).
+- [QuickBooks payment grouping](quickbooks-deposit-grouping.md) — unit groups FULLY RETIRED (ADR linear-money-model step 3 done): all group endpoints 410; combine = multi-match (N counted PA rows, zero-amount rejected, confirmMultiDate cross-date); per-row revert is the only undo. File is historical.
+- [Grouped create-gift → optional allocation split](grouped-create-gift-allocations.md) — HISTORICAL (unit groups retired): group-aware create-gift + splitGroupIntoAllocations are gone; context for legacy data only.
+- [Staged-payment funding source + grouping](staged-payment-funding-source-grouping.md) — funding_source=origin (≠ instrument ≠ derived lane); auto|manual provenance guards re-pull clobber; grouping half HISTORICAL (unit groups retired).
 - [Forward gift intake](forward-gift-intake.md) — reconciliation suggests collectible pledges first; copies pledge allocs onto minted gift PROPORTIONALLY (last-row remainder); manual-form dup guard via pending-for-donor.
 - [Gift merge evidence combine](gift-merge-evidence-combine.md) — merge absorbs losers' reconciled evidence onto survivor (was 409-block) then archives them; still 409 on split/2+ Stripe/Donorbox; MUST reject archived participants or replay double-counts.
 - [Gift QB tie status](gift-qb-tie-status.md) — LIVE-derived at read time (`deriveGiftQbTieLiveExpr`; stored column DROPPED, applier retired, zero recompute call sites); per-source counted precedence qb>stripe>donorbox (never SUM); off-books exempts; audit view excludes off-books.

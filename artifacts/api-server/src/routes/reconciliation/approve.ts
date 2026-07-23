@@ -23,10 +23,6 @@ import {
 } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import {
-  groupMemberIdsFor,
-  isQbGroupMemberSql,
-} from "../../lib/unitGroupMembership";
-import {
   runConsistencyGate,
   isStagedApprovable,
 } from "../../lib/reconciliationGate";
@@ -72,7 +68,6 @@ type MintBody = Partial<DonorXor> & {
   stripeChargeId?: string | null;
   paymentIntermediaryId?: string | null;
   overrideAmountMismatchReason?: string | null;
-  splitGroupIntoAllocations?: boolean | null;
 };
 
 interface MintOpts {
@@ -88,24 +83,6 @@ interface MintOpts {
   /** Value of the response `createdPledge` flag. */
   createdPledge: boolean;
 }
-
-/**
- * Context for minting ONE gift from a source GROUP of staged payments (several
- * QuickBooks records that are one physical gift). `representativeId` owns the
- * mint (createdGiftId); every other member ties to it via groupReconciledGiftId;
- * the gift's final amount is `total` (the sum of every member's amount).
- */
-type GroupMintContext = {
-  representativeId: string;
-  memberIds: string[];
-  total: string;
-  /**
-   * Per-member rows (id, amount, attributed entity), used to seed one allocation
-   * per subcomponent when the operator opts into `splitGroupIntoAllocations`.
-   */
-  members: { id: string; amount: string | null; entityId: string | null }[];
-};
-
 
 /**
  * Shared in-tx mint path for the three create-* approve outcomes (create_gift,
@@ -134,7 +111,6 @@ async function mintGiftFromEvidence(
   stagedPaymentId: string,
   body: MintBody,
   opts: MintOpts,
-  group: GroupMintContext | null = null,
 ): Promise<void> {
   // Opportunity behavior is gated on the OUTCOME (opts.requireOpportunity), never
   // on the mere presence of body.opportunityId: the shared approve body allows
@@ -175,11 +151,11 @@ async function mintGiftFromEvidence(
 
   const stripeChargeId = body.stripeChargeId ?? null;
 
-  // Fast non-locking guard: every row to be minted must be OPEN (derived
-  // pending/match_proposed) with NO existing gift. For a source group this
-  // covers ALL members. (Minting is intentionally NOT idempotent — re-approving an
-  // already-booked row must not mint a second gift.)
-  const preIds = group ? group.memberIds : [stagedPaymentId];
+  // Fast non-locking guard: the row to be minted must be OPEN (derived
+  // pending/match_proposed) with NO existing gift. (Minting is intentionally
+  // NOT idempotent — re-approving an already-booked row must not mint a
+  // second gift.)
+  const preIds = [stagedPaymentId];
   const preRows = await db
     .select({
       status: stagedStatusSql,
@@ -199,7 +175,7 @@ async function mintGiftFromEvidence(
   // but when the caller selected a SPECIFIC pending charge of that settlement
   // (e.g. "record on a pledge" from a per-charge card of a multi-charge payout),
   // the remaining money is booked charge-anchored — the charge OWNS the mint,
-  // the QB lump stays untouched. Single-row only; groups keep the hard 409.
+  // the QB lump stays untouched.
   let chargeAnchoredIntent = false;
   for (const pre of preRows) {
     if (!isStagedApprovable(pre.status)) {
@@ -212,12 +188,12 @@ async function mintGiftFromEvidence(
         isBookedStatus(pre.status) &&
         pre.confirmedSettlementLink === true &&
         pre.hasLedgerLink === false;
-      if (settlementOnlyConfirmed && stripeChargeId && !group) {
+      if (settlementOnlyConfirmed && stripeChargeId) {
         chargeAnchoredIntent = true;
         continue;
       }
-      // No charge selected (or a group): the dead-end guidance stands — book
-      // the remaining money from the per-charge Stripe card instead.
+      // No charge selected: the dead-end guidance stands — book the
+      // remaining money from the per-charge Stripe card instead.
       res.status(409).json({
         error: "not_approvable",
         message: settlementOnlyConfirmed
@@ -271,11 +247,9 @@ async function mintGiftFromEvidence(
           .for("update");
       }
 
-      // Lock every member row (the single-row path locks just one; a source group
-      // locks ALL members, ordered by id to avoid deadlocks) and re-check each
-      // under the lock. `staged` is the representative — the evidence the gift
-      // HEADER is built from.
-      const lockIds = group ? group.memberIds : [stagedPaymentId];
+      // Lock the staged row and re-check it under the lock. `staged` is the
+      // evidence the gift HEADER is built from.
+      const lockIds = [stagedPaymentId];
       // Full row + the DERIVED status (the EXISTS arms — settlement link,
       // counted ledger row — can't be derived from the row alone, and a
       // split-resolved row carries none of the three gift-link columns).
@@ -317,7 +291,6 @@ async function mintGiftFromEvidence(
             row.hasLedgerLink === false;
           if (
             chargeAnchoredIntent &&
-            !group &&
             row.id === stagedPaymentId &&
             settlementOnlyConfirmed
           ) {
@@ -508,11 +481,7 @@ async function mintGiftFromEvidence(
       // Stripe GROSS is the precise amount when a charge is selected; else the QB
       // staged amount. This IS the minted gift's amount (no prior human figure),
       // so the gate's amount-band check is trivially satisfied.
-      const evidenceAmount = charge
-        ? charge.grossAmount
-        : group
-          ? group.total
-          : staged.amount;
+      const evidenceAmount = charge ? charge.grossAmount : staged.amount;
 
       // Donor: derived from the locked opportunity for the opp outcomes; else the
       // validated body donor (create_gift; bodyDonor is set on that branch).
@@ -590,13 +559,6 @@ async function mintGiftFromEvidence(
         paymentIntermediaryId: body.paymentIntermediaryId ?? null,
         convert: opts.convert,
         outcome: opts.outcome,
-        group: group
-          ? {
-              memberIds: group.memberIds,
-              members: group.members,
-              splitIntoAllocations: body.splitGroupIntoAllocations === true,
-            }
-          : null,
         userId: user.id,
         auditReq: req,
       });
@@ -682,124 +644,10 @@ router.post(
     }
     const body = parsed.data;
 
-    // ── Source group: approval acts on the WHOLE group ────────────────────────
-    // A staged row stamped with sourceGroupId is one slice of a single physical
-    // gift entered as several QuickBooks records. Resolve the whole group as a
-    // unit: the create-* outcomes mint ONE gift summing every member; linking an
-    // EXISTING gift ties all members at once via the group-reconcile endpoint, so
-    // it's rejected here with a redirect (this card endpoint mints only).
-    const groupRow = await db
-      .select({ id: stagedPayments.id })
-      .from(stagedPayments)
-      .where(eq(stagedPayments.id, stagedPaymentId))
-      .then((r) => r[0]);
-    if (!groupRow) return notFound(res, "staged payment");
-    // Group membership (and the group expansion below) reads from unit-group
-    // membership — the single source, docs/reconciliation-design.md §4.6b — not
-    // the legacy `source_group_id` pointer. `groupMemberIdsFor` returns [] for
-    // an ungrouped unit and the sorted members (incl. self) for a grouped one,
-    // so its first element is the deterministic representative (min id).
-    const memberIds = await groupMemberIdsFor(db, stagedPaymentId);
-    if (memberIds.length > 0) {
-      if (body.outcome === "link_existing_gift") {
-        res.status(409).json({
-          error: "source_group_use_reconcile",
-          message:
-            "This payment is part of a group. Link the whole group to an existing gift from its card.",
-        });
-        return;
-      }
-      // Build the group context: all members, a deterministic representative
-      // (min id) that owns the mint, and the combined total.
-      const members = await db
-        .select({
-          id: stagedPayments.id,
-          amount: stagedPayments.amount,
-          entityId: stagedPayments.entityId,
-        })
-        .from(stagedPayments)
-        .where(inArray(stagedPayments.id, memberIds));
-      const representativeId = memberIds[0];
-      const total = members
-        .reduce((acc, m) => acc + Number(m.amount ?? 0), 0)
-        .toFixed(2);
-
-      // Per-charge Stripe GROSS reconciliation can't be summed across a group yet:
-      // reject groups whose members carry a tied Stripe payout, or an explicit
-      // charge selection. Ungroup to reconcile those individually.
-      const stripeTied = await db
-        .select({ id: stripePayouts.id })
-        .from(settlementLinks)
-        .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
-        .where(inArray(settlementLinks.depositStagedPaymentId, memberIds))
-        .then((r) => r[0]);
-      if (stripeTied || body.stripeChargeId) {
-        res.status(409).json({
-          error: "source_group_stripe_unsupported",
-          message:
-            "Stripe-backed payments can't be minted as a group yet. Ungroup them to reconcile individually.",
-        });
-        return;
-      }
-
-      const group: GroupMintContext = {
-        representativeId,
-        memberIds,
-        total,
-        members,
-      };
-      if (body.outcome === "create_gift") {
-        await mintGiftFromEvidence(
-          req,
-          res,
-          user,
-          representativeId,
-          body,
-          {
-            outcome: "create_gift",
-            requireOpportunity: false,
-            convert: false,
-            createdPledge: false,
-          },
-          group,
-        );
-        return;
-      }
-      if (body.outcome === "create_gift_from_opportunity") {
-        await mintGiftFromEvidence(
-          req,
-          res,
-          user,
-          representativeId,
-          body,
-          {
-            outcome: "create_gift_from_opportunity",
-            requireOpportunity: true,
-            convert: false,
-            createdPledge: false,
-          },
-          group,
-        );
-        return;
-      }
-      if (body.outcome === "convert_to_pledge_and_first_payment") {
-        await mintGiftFromEvidence(
-          req,
-          res,
-          user,
-          representativeId,
-          body,
-          {
-            outcome: "convert_to_pledge_and_first_payment",
-            requireOpportunity: true,
-            convert: true,
-            createdPledge: true,
-          },
-          group,
-        );
-        return;
-      }
-    }
+    // Unit groups are retired (docs/adr-linear-money-model.md): a card
+    // approves exactly ONE staged payment — its own row. Several QB rows that
+    // are one physical gift are combined against one gift with
+    // POST /staged-payments/multi-match instead of group-approving here.
 
     // The three create-* outcomes all MINT a new gift from the QB evidence
     // (human-only); they share one in-tx helper. link_existing_gift falls through
@@ -855,14 +703,9 @@ router.post(
         // Ledger-derived link state (the legacy staged gift-link columns are
         // @deprecated and no longer written). `linkedGiftId` is the sole
         // resolved gift (NULL for a split); `mintedGiftId` marks a row that
-        // OWNS a created gift; group membership comes from unit_group_members.
+        // OWNS a created gift.
         linkedGiftId: qbLedgerSoleGiftIdForPayment(),
         mintedGiftId: qbLedgerMintedGiftIdForPayment(),
-        isGroupMember: sql<boolean>`EXISTS (
-          SELECT 1 FROM unit_group_members ugm
-          WHERE ugm.evidence_source = 'quickbooks'
-            AND ugm.source_id = ${stagedPayments.id}
-        )`,
       })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, stagedPaymentId))
@@ -888,16 +731,6 @@ router.post(
           error: "gift_already_linked",
           message:
             "This payment already owns a created gift. Revert that gift before linking it elsewhere.",
-        });
-        return;
-      }
-      if (pre.isGroupMember) {
-        // Group members can't be individually re-targeted without corrupting
-        // the group's combined booking.
-        res.status(409).json({
-          error: "not_approvable",
-          message:
-            "This payment is reconciled through a group. Revert the group first, then re-target.",
         });
         return;
       }
@@ -962,11 +795,10 @@ router.post(
             ...getTableColumns(stagedPayments),
             status: stagedStatusSql,
             // Ledger-derived link shape (the legacy staged gift-link columns
-            // are @deprecated and never read): the single counted gift, the
-            // minted gift, and QB group membership.
+            // are @deprecated and never read): the single counted gift and
+            // the minted gift.
             ledgerSoleGiftId: qbLedgerSoleGiftIdForPayment(),
             ledgerMintedGiftId: qbLedgerMintedGiftIdForPayment(),
-            ledgerGroupMember: isQbGroupMemberSql(),
           })
           .from(stagedPayments)
           .where(eq(stagedPayments.id, stagedPaymentId))
@@ -978,17 +810,16 @@ router.post(
             message: "staged payment not found",
           });
         }
-        // A confirmed DIRECT match (exactly one counted ledger row, not a mint,
-        // not a group member) may be re-targeted onto a different gift through
-        // the guarded move/displace flow below — the gate still composes
+        // A confirmed DIRECT match (exactly one counted ledger row, not a
+        // mint) may be re-targeted onto a different gift through the guarded
+        // move/displace flow below — the gate still composes
         // payment_already_applied unless the reviewer confirmed
         // moveOwnApplication. Every other confirmed shape (settlement-only,
-        // group, split, minted) stays closed.
+        // split, minted) stays closed.
         const openForRelink =
           isBookedStatus(staged.status) &&
           staged.ledgerSoleGiftId != null &&
-          staged.ledgerMintedGiftId == null &&
-          !staged.ledgerGroupMember;
+          staged.ledgerMintedGiftId == null;
         if (!isStagedApprovable(staged.status) && !openForRelink) {
           throw new ApproveAbort(409, {
             error: "not_approvable",
@@ -1067,10 +898,10 @@ router.post(
         // (excluding the TARGET gift, so re-approving the same link stays
         // idempotent). The move is offered ONLY for a plain worker auto-match:
         // the payment's counted ledger gift is the applied gift, and the
-        // row must not have minted a gift (guarded above), be
-        // group-reconciled, or be applied to several gifts (split). Any of those
-        // fall through with ownAppliedGiftId unset → the commit's hard 409 stands
-        // (revert the group/split first). When movable, load + lock the old gift
+        // row must not have minted a gift (guarded above) or be applied to
+        // several gifts (split). Any of those fall through with
+        // ownAppliedGiftId unset → the commit's hard 409 stands (revert the
+        // split first). When movable, load + lock the old gift
         // so the commit can unwind its stamp under the same locks. Locking a
         // SECOND gift after the target gift carries a rare deadlock risk under
         // concurrent cross-moves — Postgres aborts one txn (retryable),
@@ -1099,8 +930,7 @@ router.post(
         if (
           effectiveAppliedGiftId &&
           staged.ledgerSoleGiftId === effectiveAppliedGiftId &&
-          staged.ledgerMintedGiftId == null &&
-          !staged.ledgerGroupMember
+          staged.ledgerMintedGiftId == null
         ) {
           movableOwnApplication = effectiveAppliedGiftId;
           oldAppliedGift =

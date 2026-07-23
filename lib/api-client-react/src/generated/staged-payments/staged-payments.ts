@@ -24,7 +24,6 @@ import type {
   ConfirmStagedPaymentMatchesBody,
   ConfirmStagedPaymentMatchesResponse,
   DonorSearchList,
-  EjectStagedPaymentFromGroupResponse,
   ExcludeStagedPaymentBody,
   FinanceForbiddenResponse,
   GetPendingStagedMoneyForDonorParams,
@@ -48,9 +47,7 @@ import type {
   SplitStagedPaymentResponse,
   StagedGiftResponse,
   StagedPayment,
-  StagedPaymentList,
-  UngroupStagedPaymentsBody,
-  UngroupStagedPaymentsResponse
+  StagedPaymentList
 } from '../api.schemas';
 
 import { customFetch } from '../../custom-fetch';
@@ -1159,7 +1156,7 @@ link columns are cleared — its resolution lives entirely in the split
 links. Guards: the row is pending; at least two total links (existing
 gifts + optional remainder); each existing gift exists, carries a single
 valid donor, and is not already linked to ANY staged payment (matched,
-created, group-reconciled, or split); and the combined GROSS total
+created, multi-matched, or split); and the combined GROSS total
 (existing gifts + remainder) sits in the processor fee-band tolerance
 around the staged NET amount (sum >= staged * 0.9 - 1 AND sum <= staged *
 1.1 + 1). Reversible as a whole via the revert endpoint (unsplit).
@@ -1244,14 +1241,14 @@ payment_applications ledger rows alone express the combined outcome
 one coherent selection: they share ONE underlying bank Deposit (same
 qbDepositId), or — when no deposit was captured — they share the same
 payer name (e.g. a single wire, or a series of stock sales, split
-across several QuickBooks records). Rows that all belong to one legacy
-"same physical gift" unit group bypass the deposit/payer coherence
-check (the human already asserted the rows are one gift; the
-multi-date confirmation and amount-mismatch check still apply). No new
+across several QuickBooks records). No new
 gift is minted and QuickBooks is never written back. Every member is
 set to approved and books a counted payment_applications ledger row to
 the gift; the selection adopts the gift's donor (Donor XOR). Guards:
-at least two rows, all pending and unresolved; the gift exists with a
+at least two rows, all pending and unresolved; every member carries a
+positive amount (otherwise 400 zero_amount_member — a zero-amount row
+cannot book a counted ledger row, and matched-with-no-ledger-row is a
+contradiction the derived status model forbids); the gift exists with a
 single valid donor and is not already linked elsewhere; the members'
 combined total matches the gift amount within the processor fee-band
 tolerance. When the members do not all fall on the same date_received,
@@ -1413,12 +1410,11 @@ export const useGroupReconcileStagedPayments = <TError = ErrorType<void>,
     }
     /**
  * Retired by the linear money model (docs/adr-linear-money-model.md):
-pre-match "same physical gift" groups are no longer created; select
-the rows together in the workbench and match them in one call with
-POST /staged-payments/multi-match. Existing legacy groups remain
-readable (and still bypass the coherence key in multi-match) until
-unit_groups is retired. Always returns 410 with error
-`group_creation_retired`.
+pre-match "same physical gift" groups are no longer created or read;
+select the rows together in the workbench and match them in one call
+with POST /staged-payments/multi-match. Legacy unit_groups rows remain
+in the database (inert) until the tables are dropped. Always returns
+410 with error `group_creation_retired`.
 
  * @deprecated
  * @summary RETIRED — select the rows together and use multiMatchStagedPayments at match time.
@@ -1491,12 +1487,16 @@ export const useGroupStagedPayments = <TError = ErrorType<void>,
       return useMutation(getGroupStagedPaymentsMutationOptions(options));
     }
     /**
- * Removes the given rows from their unit group. If this leaves a group with
-fewer than two members, the remaining orphan is removed too and the empty
-group is deleted (a group requires >= 2). Does not change donor or gift
-links. A no-op for rows that aren't grouped.
+ * Retired by the linear money model (docs/adr-linear-money-model.md):
+unit groups are no longer created, read, or dismantled. The counted
+payment_applications ledger rows are the sole record of a combined
+match, so there is no group state to remove — a pending row is already
+independent, and a matched member is undone individually with
+POST /staged-payments/{id}/revert. Always returns 410 with error
+`group_creation_retired`.
 
- * @summary Remove staged payments from their "same physical gift" source group.
+ * @deprecated
+ * @summary RETIRED — unit groups are gone; a pending row needs no dismantling and a matched member reverts individually.
  */
 export const getUngroupStagedPaymentsUrl = () => {
 
@@ -1506,24 +1506,23 @@ export const getUngroupStagedPaymentsUrl = () => {
   return `/api/staged-payments/ungroup`
 }
 
-export const ungroupStagedPayments = async (ungroupStagedPaymentsBody: UngroupStagedPaymentsBody, options?: RequestInit): Promise<UngroupStagedPaymentsResponse> => {
+export const ungroupStagedPayments = async ( options?: RequestInit): Promise<unknown> => {
   
-  return customFetch<UngroupStagedPaymentsResponse>(getUngroupStagedPaymentsUrl(),
+  return customFetch<unknown>(getUngroupStagedPaymentsUrl(),
   {      
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      ungroupStagedPaymentsBody,)
+    method: 'POST'
+    
+    
   }
 );}
   
 
 
 
-export const getUngroupStagedPaymentsMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ungroupStagedPayments>>, TError,{data: BodyType<UngroupStagedPaymentsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof ungroupStagedPayments>>, TError,{data: BodyType<UngroupStagedPaymentsBody>}, TContext> => {
+export const getUngroupStagedPaymentsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ungroupStagedPayments>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ungroupStagedPayments>>, TError,void, TContext> => {
 
 const mutationKey = ['ungroupStagedPayments'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -1535,10 +1534,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ungroupStagedPayments>>, {data: BodyType<UngroupStagedPaymentsBody>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ungroupStagedPayments>>, void> = () => {
+          
 
-          return  ungroupStagedPayments(data,requestOptions)
+          return  ungroupStagedPayments(requestOptions)
         }
 
 
@@ -1549,18 +1548,19 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type UngroupStagedPaymentsMutationResult = NonNullable<Awaited<ReturnType<typeof ungroupStagedPayments>>>
-    export type UngroupStagedPaymentsMutationBody = BodyType<UngroupStagedPaymentsBody>
-    export type UngroupStagedPaymentsMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>
+    
+    export type UngroupStagedPaymentsMutationError = ErrorType<void>
 
     /**
- * @summary Remove staged payments from their "same physical gift" source group.
+ * @deprecated
+ * @summary RETIRED — unit groups are gone; a pending row needs no dismantling and a matched member reverts individually.
  */
-export const useUngroupStagedPayments = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ungroupStagedPayments>>, TError,{data: BodyType<UngroupStagedPaymentsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useUngroupStagedPayments = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ungroupStagedPayments>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof ungroupStagedPayments>>,
         TError,
-        {data: BodyType<UngroupStagedPaymentsBody>},
+        void,
         TContext
       > => {
       return useMutation(getUngroupStagedPaymentsMutationOptions(options));
@@ -1649,7 +1649,7 @@ export const useConfirmStagedPaymentMatches = <TError = ErrorType<BadRequestResp
 POST /staged-payments/{id}/revert, used to clear auto-applied matches off
 the Auto-matched queue in a single action. Each id is reverted only if it
 is in a revertible state (a match_proposed/match_confirmed row that was
-tied to an existing gift, auto-minted, group-reconciled, or split); the auto-minted
+tied to an existing gift, auto-minted, multi-matched, or split); the auto-minted
 gift is deleted, pre-existing gifts are untouched. Ids that are missing or
 not revertible (e.g. a manually-created gift) are silently skipped rather
 than failing the whole batch. The response reports which ids were reverted
@@ -1945,23 +1945,16 @@ export const useRevertStagedPayment = <TError = ErrorType<NotFoundResponse | voi
       return useMutation(getRevertStagedPaymentMutationOptions(options));
     }
     /**
- * Removes a single member from a group-reconciled QuickBooks unit group
-without reverting the whole group: the ejected member's counted
-payment_applications ledger row to the group's gift is deleted, its
-queue facts reset (back to pending, donor match kept), and its
-unit_group_members row removed. Every OTHER member keeps its counted
-ledger row, so the gift stays reconciled to the remaining members. If
-ejection leaves fewer than two members, the group is dissolved (the
-remaining member becomes an equivalent direct match). The gift's
-human-entered amount is never rewritten — the response reports the
-remaining evidence total and whether it still sits inside the fee band
-so the operator can correct the gift amount if needed (the derived
-quickbooks_tie_status surfaces any mismatch automatically).
-409s when the row is not in a group, the group is not reconciled yet
-(use ungroup instead), or no OTHER member holds a counted ledger row
-(use the whole-group revert instead).
+ * Retired by the linear money model (docs/adr-linear-money-model.md):
+unit groups are no longer read, so there is no group to eject from.
+POST /staged-payments/{id}/revert on the member does exactly what
+ejection did — it deletes that member's counted payment_applications
+ledger row and resets its queue facts, while every other payment
+reconciled to the same gift keeps its counted row. Always returns 410
+with error `group_creation_retired`.
 
- * @summary Eject ONE member from a reconciled QuickBooks unit group (the rest stay reconciled).
+ * @deprecated
+ * @summary RETIRED — use revertStagedPayment; each member's counted ledger row is undone individually.
  */
 export const getEjectStagedPaymentFromGroupUrl = (id: string,) => {
 
@@ -1971,9 +1964,9 @@ export const getEjectStagedPaymentFromGroupUrl = (id: string,) => {
   return `/api/staged-payments/${id}/eject-from-group`
 }
 
-export const ejectStagedPaymentFromGroup = async (id: string, options?: RequestInit): Promise<EjectStagedPaymentFromGroupResponse> => {
+export const ejectStagedPaymentFromGroup = async (id: string, options?: RequestInit): Promise<unknown> => {
   
-  return customFetch<EjectStagedPaymentFromGroupResponse>(getEjectStagedPaymentFromGroupUrl(id),
+  return customFetch<unknown>(getEjectStagedPaymentFromGroupUrl(id),
   {      
     ...options,
     method: 'POST'
@@ -1985,7 +1978,7 @@ export const ejectStagedPaymentFromGroup = async (id: string, options?: RequestI
 
 
 
-export const getEjectStagedPaymentFromGroupMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+export const getEjectStagedPaymentFromGroupMutationOptions = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>, TError,{id: string}, TContext> => {
 
@@ -2014,12 +2007,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type EjectStagedPaymentFromGroupMutationResult = NonNullable<Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>>
     
-    export type EjectStagedPaymentFromGroupMutationError = ErrorType<NotFoundResponse | void>
+    export type EjectStagedPaymentFromGroupMutationError = ErrorType<void>
 
     /**
- * @summary Eject ONE member from a reconciled QuickBooks unit group (the rest stay reconciled).
+ * @deprecated
+ * @summary RETIRED — use revertStagedPayment; each member's counted ledger row is undone individually.
  */
-export const useEjectStagedPaymentFromGroup = <TError = ErrorType<NotFoundResponse | void>,
+export const useEjectStagedPaymentFromGroup = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>,

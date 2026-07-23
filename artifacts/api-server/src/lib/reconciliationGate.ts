@@ -283,7 +283,6 @@ export function deriveCardVerdict(card: {
   giftState?: string | null;
   resolvedGiftAmount?: string | null;
   amount?: string | null;
-  sourceGroupTotalAmount?: string | null;
   stripeGrossAmount?: string | null;
   stripeNetAmount?: string | null;
 }): CardVerdict {
@@ -299,11 +298,8 @@ export function deriveCardVerdict(card: {
 
   let settled = false;
   if (card.resolvedGiftId) {
-    const isGroup = card.sourceGroupTotalAmount != null;
-    const evidence = isGroup
-      ? card.sourceGroupTotalAmount
-      : (card.stripeGrossAmount ?? card.amount ?? null);
-    const evidenceNet = isGroup ? null : (card.stripeNetAmount ?? null);
+    const evidence = card.stripeGrossAmount ?? card.amount ?? null;
+    const evidenceNet = card.stripeNetAmount ?? null;
     const gift = card.resolvedGiftAmount ?? null;
     settled =
       evidence == null || gift == null

@@ -32,7 +32,7 @@ import {
  * payouts AND standalone QuickBooks deposits/payments — without ever turning the
  * same money into two anchors. So these tests assert:
  *   - the list returns BOTH anchor kinds, and OMITS a QB row that is tied to a
- *     Stripe payout (matched / proposed / conflict), already grouped, or
+ *     Stripe payout (matched / proposed / conflict) or
  *     derived `excluded` (exclusion_reason set, incl. processor_payout),
  *   - the `confirmed` queue and the `source` filter bucket correctly,
  *   - assembling from a TIED QB id canonicalizes to the payout's single draft
@@ -86,8 +86,6 @@ let schema: {
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   stagedPayments: Db["stagedPayments"];
-  unitGroups: Db["unitGroups"];
-  unitGroupMembers: Db["unitGroupMembers"];
   paymentApplications: Db["paymentApplications"];
   reconciliationBundleDrafts: Db["reconciliationBundleDrafts"];
   settlementLinks: Db["settlementLinks"];
@@ -104,7 +102,6 @@ const draftIds: string[] = [];
 const payoutIds: string[] = [];
 const chargeIds: string[] = [];
 const stagedIds: string[] = [];
-const unitGroupIds: string[] = [];
 const seededGiftIds: string[] = [];
 const createdGiftIds: string[] = [];
 const createdDonorIds: string[] = [];
@@ -278,7 +275,6 @@ async function ledgerTies(chargeId: string): Promise<{
 }
 
 async function seedStaged(opts: {
-  group?: string | null;
   exclusionReason?: string | null;
   amount?: string;
   payerName?: string;
@@ -324,22 +320,6 @@ async function seedStaged(opts: {
       evidenceSource: "quickbooks",
       matchMethod: "system",
       createdTheGift: opts.createdGiftId != null,
-    });
-  }
-  // Grouping is now first-class: membership lives in unit_groups /
-  // unit_group_members (evidence_source='quickbooks', source_id=staged id), not
-  // on staged_payments. A grouped row must be OMITTED from anchor eligibility.
-  if (opts.group) {
-    await db
-      .insert(schema.unitGroups)
-      .values({ id: opts.group, createdByUserId: TEST_USER_ID })
-      .onConflictDoNothing();
-    unitGroupIds.push(opts.group);
-    await db.insert(schema.unitGroupMembers).values({
-      id: `ugm_${id}`,
-      groupId: opts.group,
-      evidenceSource: "quickbooks",
-      sourceId: id,
     });
   }
   return id;
@@ -417,8 +397,6 @@ beforeAll(async () => {
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     stagedPayments: dbMod.stagedPayments,
-    unitGroups: dbMod.unitGroups,
-    unitGroupMembers: dbMod.unitGroupMembers,
     paymentApplications: dbMod.paymentApplications,
     reconciliationBundleDrafts: dbMod.reconciliationBundleDrafts,
     settlementLinks: dbMod.settlementLinks,
@@ -478,11 +456,6 @@ afterAll(async () => {
     await db
       .delete(schema.stripePayouts)
       .where(inArrayFn(schema.stripePayouts.id, payoutIds));
-  // unit_group_members cascade off unit_groups; delete the groups this run made.
-  if (unitGroupIds.length)
-    await db
-      .delete(schema.unitGroups)
-      .where(inArrayFn(schema.unitGroups.id, unitGroupIds));
   if (stagedIds.length)
     await db
       .delete(schema.stagedPayments)
@@ -525,7 +498,7 @@ beforeEach(() => {
 });
 
 describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () => {
-  it("lists both sources in needs_review and omits tied/grouped/non-anchor QB rows", async () => {
+  it("lists both sources in needs_review and omits tied/non-anchor QB rows", async () => {
     // Eligible anchors (should appear).
     const pEligible = await seedPayout({ status: "unmatched" });
     await seedCharge(pEligible);
@@ -550,10 +523,7 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
       conflict: sConflict,
     });
 
-    // Already grouped, and derived-excluded rows (incl. processor_payout) → OMITTED.
-    const sGrouped = await seedStaged({
-      group: `grp_${RUN}`,
-    });
+    // Derived-excluded rows (incl. processor_payout) → OMITTED.
     const sProcessorPayout = await seedStaged({
       exclusionReason: "processor_payout",
     });
@@ -591,7 +561,6 @@ describe.skipIf(!HAS_DB)("Unified bundle-anchor enumeration (integration)", () =
     expect(map.has(`qb_staged_payment:${sMatched}`)).toBe(false);
     expect(map.has(`qb_staged_payment:${sProposed}`)).toBe(false);
     expect(map.has(`qb_staged_payment:${sConflict}`)).toBe(false);
-    expect(map.has(`qb_staged_payment:${sGrouped}`)).toBe(false);
     expect(map.has(`qb_staged_payment:${sProcessorPayout}`)).toBe(false);
     // Omitted: a clear non-Stripe origin (a check) is not a settlement anchor.
     expect(map.has(`qb_staged_payment:${sCheck}`)).toBe(false);

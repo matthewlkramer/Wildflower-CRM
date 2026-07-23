@@ -511,17 +511,11 @@ precedence over the QB net when a charge is selected; nothing is archived.
 Minting a gift is human-only. Idempotent: re-approving a reconciled card
 returns its current state.
 
-Source groups (a card whose stagedPaymentId belongs to a unit group)
-approve as a WHOLE: the create-* outcomes mint ONE gift whose amount sums
-every non-archived member, booking one counted payment_applications
-ledger row per member (the representative's row carries
-created_the_gift, so no slice can
-be reconciled twice); link_existing_gift is rejected (409
-source_group_use_reconcile) — link the whole group via group-reconcile
-instead; and a group whose members carry a tied Stripe payout, or an
-explicit Stripe charge selection, is rejected (409
-source_group_stripe_unsupported) since per-charge GROSS can't yet be
-summed across a group (ungroup to reconcile those individually).
+Cards approve one staged payment at a time. Legacy unit groups are
+retired (docs/adr-linear-money-model.md): a card that used to approve
+"as a group" now approves just its own row; several rows that are one
+physical gift are combined with POST /staged-payments/multi-match
+against one gift instead.
 
  * @summary Approve a card — link or human-mint a gift, enforcing all invariants server-side.
  */
@@ -1578,9 +1572,8 @@ from ANY anchor point:
     tied Stripe payout (checks, ACH, wires, direct gifts).
 A QB deposit that IS tied to a Stripe payout is deliberately OMITTED: it
 reconciles THROUGH the payout's bundle (assemble canonicalizes a tied QB id to
-its payout), so listing it separately would double-book the same money. Rows
-already grouped (a unit_group_members member) stay in the existing group-reconcile flow and
-are omitted here. Rejected/excluded QB rows are not anchors. Read-only.
+its payout), so listing it separately would double-book the same money.
+Rejected/excluded QB rows are not anchors. Read-only.
 
  * @summary List every settlement anchor the bundle workbench can reconcile — Stripe payouts AND standalone QuickBooks deposits/payments.
  */
@@ -1668,14 +1661,13 @@ unit of money work carrying all three facets (CRM gifts, transaction evidence,
 bank & accounting records), the money math (gross − fees = net = bank, gap) and
 a server-derived rollup status, so the workbench never re-derives state.
 Exactly three cluster kinds partition the universe (money-safety mirrors the
-bundle-anchor omission rules — a QB deposit settlement-linked to a payout,
-grouped into a unit group, or tied to a charge reconciles THROUGH that cluster
+bundle-anchor omission rules — a QB deposit settlement-linked to a payout
+or tied to a charge reconciles THROUGH that cluster
 and is never listed as its own row):
   • stripe_payout — a payout with its charges, per-charge gift links,
     settlement-linked QB deposit and linked processor-fee QB rows.
-  • qb_standalone — a QB staged payment/deposit with no payout, group or
-    charge/fee tie (checks, ACH, wires, direct gifts); a unit-group
-    representative row carries its group rollup.
+  • qb_standalone — a QB staged payment/deposit with no payout or
+    charge/fee tie (checks, ACH, wires, direct gifts).
   • crm_only — an on-books gift with NO counted QuickBooks or Stripe ledger
     row (a Donorbox-only tie does not disqualify — it renders as a badge);
     exempt/off-books gifts and reimbursable placeholders are omitted.

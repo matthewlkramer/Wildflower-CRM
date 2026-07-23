@@ -44,8 +44,7 @@ import {
 //
 //   stripe_payout — a payout with its charges, per-charge gift links, the
 //                   settlement-linked QB deposit and linked fee/tie QB rows.
-//   qb_standalone — a QB staged row with no payout/settlement/charge/fee tie;
-//                   a unit-group representative carries the whole group.
+//   qb_standalone — a QB staged row with no payout/settlement/charge/fee tie.
 //   crm_only      — an on-books gift with NO counted QB or Stripe ledger row
 //                   (Donorbox-only is fine — renders as a badge, not evidence).
 //
@@ -345,7 +344,7 @@ const feePairedAnchorExpr = (fee: string) => `(
 
 // qb_standalone half — eligibility mirrors the bundle-anchor omission rules
 // (a settlement-linked deposit, a charge-tied or fee row reconciles THROUGH
-// its payout cluster; grouped rows reconcile through their representative).
+// its payout cluster).
 // Parked fiscally-sponsored rows (sponsored-entity money with no gift yet)
 // mirror the queue workbench: they reconcile in their own worklist, not here.
 const qbEligible = `
@@ -356,32 +355,10 @@ const qbEligible = `
       AND srcl_e.lifecycle = 'confirmed'
       AND srcl_e.qb_staged_payment_id = s.id
   )
-  AND NOT EXISTS (
-    SELECT 1 FROM unit_group_members ugm
-    WHERE ugm.evidence_source = 'quickbooks' AND ugm.source_id = s.id
-      AND ugm.source_id <> (
-        SELECT MIN(ugm2.source_id) FROM unit_group_members ugm2
-        WHERE ugm2.group_id = ugm.group_id AND ugm2.evidence_source = 'quickbooks'
-      )
-  )
   AND NOT ${parkedFiscallyExpr("s")}
   AND NOT ${feeFoldedExpr("s")}`;
-const qbSiblingOpen = `EXISTS (
-  SELECT 1 FROM unit_group_members ugm
-  JOIN unit_group_members ugm2 ON ugm2.group_id = ugm.group_id AND ugm2.evidence_source = 'quickbooks'
-  JOIN staged_payments sm ON sm.id = ugm2.source_id
-  WHERE ugm.evidence_source = 'quickbooks' AND ugm.source_id = s.id
-    AND sm.id <> s.id AND ${qbOpenText("sm")}
-)`;
-const qbSiblingNonExcluded = `EXISTS (
-  SELECT 1 FROM unit_group_members ugm
-  JOIN unit_group_members ugm2 ON ugm2.group_id = ugm.group_id AND ugm2.evidence_source = 'quickbooks'
-  JOIN staged_payments sm ON sm.id = ugm2.source_id
-  WHERE ugm.evidence_source = 'quickbooks' AND ugm.source_id = s.id
-    AND sm.id <> s.id AND sm.exclusion_reason IS NULL
-)`;
-const qbNeedsGift = `(${qbOpenText("s")} OR ${qbSiblingOpen})`;
-const qbAllExcluded = `(s.exclusion_reason IS NOT NULL AND NOT ${qbSiblingNonExcluded})`;
+const qbNeedsGift = `${qbOpenText("s")}`;
+const qbAllExcluded = `(s.exclusion_reason IS NOT NULL)`;
 // QB line coding carries a DONATION marker — the same markers as the
 // donation-first guard in quickbooksExclusionRules.ts (a Donation item or a
 // 4000/4100-series donation income account). Lockstep: any change to
@@ -431,21 +408,13 @@ const allDepositLinkedGiftsComplete = `NOT EXISTS (
   WHERE sl_gc.payout_id = sp.id AND sl_gc.lifecycle = 'confirmed'
     AND NOT (${giftComplete})
 )`;
-// No QB-linked gift (own PA or any group sibling PA) fails giftComplete.
+// No QB-linked gift fails giftComplete.
 const allQbLinkedGiftsComplete = `NOT EXISTS (
   SELECT 1 FROM payment_applications pa_qgc
   JOIN gifts_and_payments g ON g.id = pa_qgc.gift_id
   WHERE pa_qgc.link_role = 'counted'
     AND NOT (${giftComplete})
-    AND (
-      pa_qgc.payment_id = s.id
-      OR pa_qgc.payment_id IN (
-        SELECT ugm_m.source_id FROM unit_group_members ugm_m
-        JOIN unit_group_members ugm_rep ON ugm_rep.group_id = ugm_m.group_id
-          AND ugm_rep.evidence_source = 'quickbooks'
-        WHERE ugm_rep.source_id = s.id AND ugm_m.evidence_source = 'quickbooks'
-      )
-    )
+    AND pa_qgc.payment_id = s.id
 )`;
 
 // crm_only half — an on-books gift with no counted QB/Stripe ledger row.
@@ -709,11 +678,6 @@ interface QbAnchorRow {
   qb_entity_type: string | null;
   qb_entity_id: string | null;
   split_parent_id: string | null;
-  group_id: string | null;
-  group_member_count: number | null;
-  group_total: string | null;
-  group_members: QbRecordJson[];
-  member_ids: string[] | null;
   folded_fees: QbRecordJson[];
   attributed_donor_kind: "organization" | "person" | "household" | null;
   attributed_donor_id: string | null;
@@ -1602,35 +1566,6 @@ router.get(
         s.qb_entity_type::text AS qb_entity_type,
         s.qb_entity_id,
         s.split_parent_id,
-        ugm.group_id AS group_id,
-        (SELECT count(*)::int FROM unit_group_members gm
-          WHERE gm.group_id = ugm.group_id AND gm.evidence_source = 'quickbooks') AS group_member_count,
-        (SELECT SUM(m.amount)::text FROM unit_group_members gm
-          JOIN staged_payments m ON m.id = gm.source_id
-          WHERE gm.group_id = ugm.group_id AND gm.evidence_source = 'quickbooks') AS group_total,
-        COALESCE((
-          SELECT json_agg(json_build_object(
-              'stagedPaymentId', m.id,
-              'role', 'group_member',
-              'reference', m.raw_reference,
-              'lineDescription', m.line_description,
-              'memo', m.qb_transaction_memo,
-              'amount', m.amount::text,
-              'dateReceived', m.date_received::text,
-              'paymentMethod', m.qb_payment_method,
-              'status', ${sql.raw(qbStatusCaseText("m"))},
-              'linkedChargeId', NULL,
-              'qbEntityType', m.qb_entity_type::text,
-              'qbEntityId', m.qb_entity_id,
-              'splitUnitParentId', m.split_parent_id
-            ))
-          FROM unit_group_members gm
-          JOIN staged_payments m ON m.id = gm.source_id
-          WHERE gm.group_id = ugm.group_id AND gm.evidence_source = 'quickbooks'
-            AND m.id <> s.id
-        ), '[]'::json) AS group_members,
-        (SELECT array_agg(gm.source_id) FROM unit_group_members gm
-          WHERE gm.group_id = ugm.group_id AND gm.evidence_source = 'quickbooks') AS member_ids,
         COALESCE((
           SELECT json_agg(json_build_object(
               'stagedPaymentId', nf.id,
@@ -1662,8 +1597,6 @@ router.get(
         COALESCE(s.organization_id, s.individual_giver_person_id, s.household_id) AS attributed_donor_id,
         COALESCE(o_cd.name, h_cd.name, ${sql.raw(personNameExpr("p_cd"))}) AS attributed_donor_name
       FROM staged_payments s
-      LEFT JOIN unit_group_members ugm
-        ON ugm.evidence_source = 'quickbooks' AND ugm.source_id = s.id
       LEFT JOIN organizations o_cd ON o_cd.id = s.organization_id
       LEFT JOIN people p_cd ON p_cd.id = s.individual_giver_person_id
       LEFT JOIN households h_cd ON h_cd.id = s.household_id
@@ -1672,14 +1605,8 @@ router.get(
       : Promise.resolve([]);
 
     const qbGiftsP: Promise<QbGiftRow[]> = qbIds.length
-      ? qbRowsP.then(async (qbRows) => {
-          const allMemberIds = new Set<string>();
-          for (const r of qbRows) {
-            allMemberIds.add(r.id);
-            for (const mid of r.member_ids ?? []) allMemberIds.add(mid);
-          }
-          if (allMemberIds.size === 0) return [];
-          const result = await db.execute(sql`
+      ? db
+          .execute(sql`
       SELECT
         pa_j.payment_id AS payment_id,
         g.id AS gift_id,
@@ -1698,9 +1625,8 @@ router.get(
       FROM payment_applications pa_j
       JOIN gifts_and_payments g ON g.id = pa_j.gift_id
       ${sql.raw(donorJoins)}
-      WHERE pa_j.link_role = 'counted' AND pa_j.payment_id IN (${inList([...allMemberIds])})`);
-          return result.rows as unknown as QbGiftRow[];
-        })
+      WHERE pa_j.link_role = 'counted' AND pa_j.payment_id IN (${inList(qbIds)})`)
+          .then((r) => r.rows as unknown as QbGiftRow[])
       : Promise.resolve([]);
 
     // Deposit-grain gifts: coarse §4.3 bookings that legitimately stay
@@ -1851,16 +1777,10 @@ router.get(
       else depositGiftsByDeposit.set(row.payment_id, [row]);
     }
 
-    // qb member id → anchor id, then gifts per anchor (dedupe, merge member ids)
-    const memberToAnchor = new Map<string, string>();
-    for (const r of qbRows) {
-      memberToAnchor.set(r.id, r.id);
-      for (const mid of r.member_ids ?? []) memberToAnchor.set(mid, r.id);
-    }
+    // qb anchor id → its gifts (dedupe by gift, merge linked payment ids)
     const qbGiftsByAnchor = new Map<string, Map<string, GiftOut>>();
     for (const row of qbGifts) {
-      const anchorId = memberToAnchor.get(row.payment_id);
-      if (!anchorId) continue;
+      const anchorId = row.payment_id;
       let gifts = qbGiftsByAnchor.get(anchorId);
       if (!gifts) {
         gifts = new Map();
@@ -2011,7 +1931,6 @@ router.get(
                 conflictGiftId: h.sl_conflict_gift_id,
               }
             : null,
-          group: null,
           coverage,
         };
       }
@@ -2046,7 +1965,6 @@ router.get(
                 splitUnitParentId: h.split_parent_id,
                 attributedDonor: anchorAttributedDonor,
               },
-              ...h.group_members,
               ...foldedFees,
             ]
           : [];
@@ -2061,10 +1979,7 @@ router.get(
         const resolved = countable.filter(
           (x) => qbCardStateOfStatus(x.status) === "matched_complete",
         ).length;
-        const isGroup = h?.group_id != null;
-        const statusDetail = isGroup
-          ? `${resolved} of ${total} group rows matched`
-          : (QB_STATUS_DETAIL[h?.status ?? "pending"] ?? null);
+        const statusDetail = QB_STATUS_DETAIL[h?.status ?? "pending"] ?? null;
         // gross − fee = net for a donation line with folded processor fees.
         const feeSum = foldedFees.reduce((acc, f) => acc + (Number(f.amount) || 0), 0);
         const grossNum = h?.amount != null ? Number(h.amount) : null;
@@ -2073,7 +1988,7 @@ router.get(
         // The QBO record IS both the payment-transaction evidence AND the
         // accounting evidence (dual-role, appears once in evidenceRecords).
         // Only donorPurpose may be incomplete (when no gift has been booked yet).
-        const qbExpectedAmount = isGroup ? (h?.group_total ?? null) : (h?.amount ?? null);
+        const qbExpectedAmount = h?.amount ?? null;
         const nonExcludedQb = countable.filter(
           (x) => qbCardStateOfStatus(x.status) !== "excluded",
         );
@@ -2210,11 +2125,9 @@ router.get(
           feeTotal: hasFees ? (-feeSum).toFixed(2) : null,
           refundTotal: null,
           adjustmentTotal: null,
-          netTotal: isGroup
-            ? (h?.group_total ?? null)
-            : hasFees
-              ? (grossNum + feeSum).toFixed(2)
-              : (h?.amount ?? null),
+          netTotal: hasFees
+            ? (grossNum + feeSum).toFixed(2)
+            : (h?.amount ?? null),
           bankAmount: h?.amount ?? null,
           gapAmount: null,
           resolvedCount: resolved,
@@ -2227,12 +2140,6 @@ router.get(
           // linkage state from coverage.state.qbCards.
           qbRecords: qbRecordsWithDonor.map(({ status: _status, ...rec }) => rec),
           settlement: null,
-          group: isGroup
-            ? {
-                memberCount: h?.group_member_count ?? 0,
-                totalAmount: h?.group_total ?? null,
-              }
-            : null,
           coverage: qbCoverage,
         };
       }
@@ -2291,7 +2198,6 @@ router.get(
         charges: [],
         qbRecords: [],
         settlement: null,
-        group: null,
         // crm_only: donor/purpose always complete (the gift IS the anchor);
         // payment and accounting evidence are always incomplete (cluster exists
         // precisely because there is no external transaction or QB record).

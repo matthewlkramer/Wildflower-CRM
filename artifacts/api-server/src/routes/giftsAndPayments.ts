@@ -2417,14 +2417,15 @@ router.get(
     // WHERE — the QuickBooks staged record(s) this gift ties to, sourced from the
     // authoritative cash-application ledger (payment_applications): one row per QB
     // payment applied to this gift, `amount` = the applied amount (the split
-    // sub-amount for split rows, the full staged amount for direct/group rows).
+    // sub-amount for split rows, the full staged amount for direct rows).
     // The staged_payments join supplies the QB record detail; the cosmetic
     // linkType label is derived from the ledger itself (the legacy staged
     // gift-link columns are @deprecated and no longer written): a payment
-    // whose counted rows fan out to >1 application is a split; a payment in a
-    // QuickBooks unit group booked its gift through the group; created comes
-    // straight from created_the_gift. Off-books gifts may still surface
-    // evidence if any exists, but it isn't required of them.
+    // whose counted rows fan out to >1 application is a split; created comes
+    // straight from created_the_gift. (Legacy unit_groups membership is no
+    // longer read — retired, docs/adr-linear-money-model.md; a multi-matched
+    // member's counted row renders as a direct match.) Off-books gifts may
+    // still surface evidence if any exists, but it isn't required of them.
     const ledgerRows = await db
       .select({
         stagedPaymentId: paymentApplications.paymentId,
@@ -2438,11 +2439,6 @@ router.get(
         qbPaymentMethod: stagedPayments.qbPaymentMethod,
         payerName: stagedPayments.payerName,
         dateReceived: stagedPayments.dateReceived,
-        isGroupMember: sql<boolean>`EXISTS (
-          SELECT 1 FROM unit_group_members ugm
-          WHERE ugm.evidence_source = 'quickbooks'
-            AND ugm.source_id = ${paymentApplications.paymentId}
-        )`,
         countedAppCount: sql<number>`(
           SELECT COUNT(*)::int FROM payment_applications pa2
           WHERE pa2.payment_id = ${paymentApplications.paymentId}
@@ -2470,9 +2466,7 @@ router.get(
         ? "split"
         : r.createdTheGift
           ? "created"
-          : r.isGroupMember
-            ? "group"
-            : "matched") as "matched" | "created" | "group" | "split",
+          : "matched") as "matched" | "created" | "split",
       realmId: r.realmId,
       qbEntityType: r.qbEntityType,
       qbEntityId: r.qbEntityId,
@@ -2500,11 +2494,6 @@ router.get(
         qbPaymentMethod: stagedPayments.qbPaymentMethod,
         payerName: stagedPayments.payerName,
         dateReceived: stagedPayments.dateReceived,
-        isGroupMember: sql<boolean>`EXISTS (
-          SELECT 1 FROM unit_group_members ugm
-          WHERE ugm.evidence_source = 'quickbooks'
-            AND ugm.source_id = ${paymentApplications.paymentId}
-        )`,
       })
       .from(paymentApplications)
       .innerJoin(
@@ -2520,14 +2509,13 @@ router.get(
       );
 
     // A corroborating row is never how a split books (splits write counted
-    // rows), so its label needs no split branch — matched/created/group only.
+    // rows), so its label needs no split branch — matched/created only.
     const corroboratingRecords = corroboratingRows.map((r) => ({
       stagedPaymentId: r.stagedPaymentId,
-      linkType: (r.createdTheGift
-        ? "created"
-        : r.isGroupMember
-          ? "group"
-          : "matched") as "matched" | "created" | "group" | "split",
+      linkType: (r.createdTheGift ? "created" : "matched") as
+        | "matched"
+        | "created"
+        | "split",
       realmId: r.realmId,
       qbEntityType: r.qbEntityType,
       qbEntityId: r.qbEntityId,

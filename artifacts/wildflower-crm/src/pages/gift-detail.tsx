@@ -994,7 +994,6 @@ const QB_LINK_TYPE_LABELS: Record<
 > = {
   matched: "Matched",
   created: "Created",
-  group: "Deposit group",
   split: "Split",
 };
 

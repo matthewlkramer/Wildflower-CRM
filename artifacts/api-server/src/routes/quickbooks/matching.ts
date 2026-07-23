@@ -46,10 +46,6 @@ import {
 import { giftHeaderColumns } from "../giftsAndPayments";
 import { amountWithinFeeBand } from "../../lib/reconciliationGate";
 import {
-  isGroupMember,
-  groupMemberIdsFor,
-} from "../../lib/unitGroupMembership";
-import {
   reconAudit,
   fmtMoney,
   payerLabel,
@@ -93,14 +89,6 @@ router.post(
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
     if (!existing) return notFound(res, "staged payment");
-    if (await isGroupMember(db, id)) {
-      res.status(409).json({
-        error: "source_group_member",
-        message:
-          "This payment is part of a group. Reconcile the whole group from its card.",
-      });
-      return;
-    }
     if (existing.status !== "pending") {
       res.status(409).json({
         error: "not_pending",
@@ -289,11 +277,8 @@ router.post(
 // Members must form one coherent selection: either they share ONE underlying
 // bank Deposit (qbDepositId), or they share the same payer name (a single
 // wire, or a series of stock sales, split across several QB records — each
-// often settling as its OWN bank deposit over several days). Rows that all
-// belong to one LEGACY unit group bypass the coherence key (the human already
-// asserted they are one gift) — that read survives until unit_groups is
-// retired in the next step. No new gift is minted and QuickBooks is never
-// written back. Guards: at least two rows; every row pending and not already
+// often settling as its OWN bank deposit over several days). No new gift is
+// minted and QuickBooks is never written back. Guards: at least two rows; every row pending and not already
 // resolved; when the rows span more than one date_received OR more than one
 // distinct deposit the caller must pass confirmMultiDate; the gift exists
 // with a single valid donor and is not already linked to any other staged
@@ -363,6 +348,7 @@ router.post(
     const NOT_GROUPABLE = "__not_groupable__";
     const MULTI_DATE = "__multi_date__";
     const AMOUNT_MISMATCH = "__amount_mismatch__";
+    const ZERO_AMOUNT = "__zero_amount__";
     const CONFLICT = "__conflict__";
 
     let toleranceDetail: { combinedTotal: number; giftAmount: number } | null =
@@ -414,29 +400,17 @@ router.post(
         // accept groups (e.g. one deposit batching DIFFERENT payers) that the UI
         // can never assemble, and — worse — would let a direct API call collapse
         // two different donors who happen to share a deposit into one gift.
-        // A human-stamped source group (every member belongs to the SAME
-        // `unit_groups` group) is an explicit "these are one physical gift"
-        // assertion, so it bypasses the deposit/payer coherence key that ad hoc
-        // selections must satisfy. The multi-date + amount-tolerance
-        // confirmations below still apply. Read from unit-group membership (the
-        // single source, docs/reconciliation-design.md §4.6b), not the legacy
-        // `source_group_id` pointer: the locked rows are one group iff they all
-        // sit in the representative row's group.
-        const groupSiblings = await groupMemberIdsFor(tx, locked[0].id);
-        const isSourceGroup =
-          groupSiblings.length > 0 &&
-          locked.every((r) => groupSiblings.includes(r.id));
-        if (!isSourceGroup) {
-          const keyOf = (r: (typeof locked)[number]): string | null => {
-            const payer = (r.payerName ?? "").trim().toLowerCase();
-            if (payer) return `payer:${payer}`;
-            if (r.qbDepositId) return `dep:${r.qbDepositId}`;
-            return null;
-          };
-          const groupKeys = new Set(locked.map(keyOf));
-          if (groupKeys.size !== 1 || groupKeys.has(null)) {
-            throw new Error(NOT_GROUPABLE);
-          }
+        // (Legacy unit_groups membership is no longer read — the retired
+        // tables are inert until dropped, docs/adr-linear-money-model.md.)
+        const keyOf = (r: (typeof locked)[number]): string | null => {
+          const payer = (r.payerName ?? "").trim().toLowerCase();
+          if (payer) return `payer:${payer}`;
+          if (r.qbDepositId) return `dep:${r.qbDepositId}`;
+          return null;
+        };
+        const groupKeys = new Set(locked.map(keyOf));
+        if (groupKeys.size !== 1 || groupKeys.has(null)) {
+          throw new Error(NOT_GROUPABLE);
         }
 
         // Grouping payments that cross a date OR deposit boundary risks
@@ -454,6 +428,14 @@ router.post(
         const needsConfirm = dateKeys.size > 1 || distinctDeposits.size > 1;
         if (needsConfirm && !confirmMultiDate) {
           throw new Error(MULTI_DATE);
+        }
+
+        // Every member must carry positive money: a zero/negative-amount row
+        // can't book a counted ledger row, so it would end up stamped
+        // "matched" with NO ledger record — a phantom match the revert path
+        // can't see. Reject the selection instead of silently skipping it.
+        if (locked.some((r) => !(r.amount && Number(r.amount) > 0))) {
+          throw new Error(ZERO_AMOUNT);
         }
 
         // Combined member total must sit in the fee-band tolerance around the
@@ -522,11 +504,12 @@ router.post(
         // payment → the group's gift (each payment fully applies to it; the
         // per-member amounts SUM to the group total).
         for (const member of locked) {
-          if (!(member.amount && Number(member.amount) > 0)) continue;
+          // Non-null: the ZERO_AMOUNT guard above rejected any member without
+          // a positive amount before we got here.
           await applyPaymentApplication(tx, {
             paymentId: member.id,
             giftId,
-            amountApplied: member.amount,
+            amountApplied: member.amount!,
             evidenceSource: "quickbooks",
             matchMethod: "human",
             confirmedByUserId: user.id,
@@ -569,6 +552,14 @@ router.post(
           message:
             "The combined deposit total doesn't match the selected gift within the fee tolerance. Correct the gift's amount to the combined total, then reconcile.",
           details: toleranceDetail,
+        });
+        return;
+      }
+      if (e instanceof Error && e.message === ZERO_AMOUNT) {
+        res.status(400).json({
+          error: "zero_amount_member",
+          message:
+            "Every selected payment must carry a positive amount. Remove the zero-amount row from the selection and try again.",
         });
         return;
       }
@@ -672,18 +663,6 @@ router.post(
         });
         return;
       }
-    }
-
-    // A grouped row is reconciled only as part of its whole group (the tx below
-    // re-checks pending under the row lock; this is the cheap up-front guard).
-    // Reads unit-group membership (the single source), not `source_group_id`.
-    if (await isGroupMember(db, id)) {
-      res.status(409).json({
-        error: "source_group_member",
-        message:
-          "This payment is part of a group. Reconcile the whole group from its card.",
-      });
-      return;
     }
 
     const NOT_FOUND = "__not_found__";

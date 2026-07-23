@@ -11,23 +11,24 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
 /**
- * End-to-end coverage for the LEGACY `unit_groups` lifecycle after group
- * creation was retired (docs/adr-linear-money-model.md).
+ * End-to-end coverage for the retired `unit_groups` endpoints
+ * (docs/adr-linear-money-model.md §7 step 3).
  *
- * `/staged-payments/group` is a 410 tombstone — no new groups can be formed.
- * Groups formed BEFORE the retirement live on in `unit_groups` +
- * `unit_group_members` until that store itself is retired, and
- * `/staged-payments/ungroup` (finance-gated) remains the way to dismantle
- * them. Legacy state is seeded directly in the DB — exactly what the retired
- * /group endpoint used to write. This suite proves:
- *   - POST /group          → 410 group_creation_retired, nothing written
- *   - ungroup below 2      → group auto-dissolves: unit_groups row + all membership gone
- *   - ungroup one of three → group survives with the remaining 2 members
- *   - ungroup an ungrouped row → 200 no-op (nothing ungrouped, nothing dissolved)
+ * ALL group lifecycle endpoints are now 410 tombstones — creation
+ * (`/staged-payments/group`), dismantling (`/staged-payments/ungroup`) and
+ * single-member ejection (`/staged-payments/:id/eject-from-group`). Legacy
+ * membership rows formed before the retirement remain in `unit_groups` +
+ * `unit_group_members` as inert data until that store itself is retired
+ * (step 4); NO endpoint reads or writes them any more. This suite seeds
+ * legacy state directly in the DB — exactly what the retired /group endpoint
+ * used to write — and proves:
+ *   - POST /group   → 410 group_creation_retired, nothing written
+ *   - POST /ungroup → 410 group_creation_retired, legacy membership untouched
+ *   - POST /:id/eject-from-group → 410, legacy membership untouched
  *
  * Same seam as the multi-match suites: only `requireAuth` is mocked to inject
- * a seeded user; the transaction, locking and the real code run. All rows use a
- * unique run prefix and are cleaned up. Skips without a real DB.
+ * a seeded user; the real app boots and serves. All rows use a unique run
+ * prefix and are cleaned up. Skips without a real DB.
  */
 
 const RAW_DB_URL = process.env.DATABASE_URL;
@@ -44,7 +45,8 @@ vi.mock("../middlewares/requireAuth", () => ({
     _res: unknown,
     next: () => void,
   ) => {
-    // admin passes the requireFinance gate on /ungroup.
+    // admin — proves the tombstones answer 410 even to a fully-permitted
+    // finance user (they are retired, not permission-gated).
     req.appUser = { id: TEST_USER_ID, role: "admin" };
     next();
   },
@@ -183,8 +185,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-  // unit_group_members cascade off unit_groups; ungroup may already have
-  // dissolved some seeded groups — deleting those ids is a no-op.
+  // unit_group_members cascade off unit_groups.
   if (seededGroupIds.length) {
     await db
       .delete(schema.unitGroups)
@@ -208,7 +209,7 @@ beforeEach(() => {
 });
 
 describe.skipIf(!HAS_DB)(
-  "legacy unit_groups: retired creation + live ungroup (integration)",
+  "retired unit_groups endpoints: 410 tombstones, legacy rows inert (integration)",
   () => {
     it("POST /group answers 410 group_creation_retired and writes nothing", async () => {
       const a = await seedStaged("50.00");
@@ -228,60 +229,37 @@ describe.skipIf(!HAS_DB)(
       expect(memberRows).toEqual([]);
     }, 30_000);
 
-    it("ungrouping below two auto-dissolves: unit_groups row + all membership gone", async () => {
+    it("POST /ungroup answers 410 and leaves legacy membership untouched", async () => {
       const a = await seedStaged("50.00");
       const b = await seedStaged("50.00");
       const ugId = await seedLegacyGroup([a, b]);
       expect(await groupExists(ugId)).toBe(true);
       expect(await membersOf(ugId)).toEqual([a, b].sort());
 
-      // Ungroup one member; the lone remaining orphan is auto-cleared, the
-      // group dissolves (< 2 members) and the unit_groups row + membership
-      // vanish.
       const res = await api("/api/staged-payments/ungroup", {
         stagedPaymentIds: [a],
       });
-      expect(res.status).toBe(200);
-      expect(res.json.ungroupedIds).toContain(a);
-      expect(res.json.dissolvedGroupIds).toContain(ugId);
+      expect(res.status).toBe(410);
+      expect(res.json.error).toBe("group_creation_retired");
 
-      expect(await groupExists(ugId)).toBe(false);
-      expect(await membersOf(ugId)).toEqual([]);
-      // Neither staged row belongs to any unit group anymore.
-      const memberRows = await db
-        .select({ sourceId: schema.unitGroupMembers.sourceId })
-        .from(schema.unitGroupMembers)
-        .where(inArrayFn(schema.unitGroupMembers.sourceId, [a, b]));
-      expect(memberRows).toEqual([]);
-    }, 30_000);
-
-    it("ungrouping one of three keeps the group with the remaining two members", async () => {
-      const a = await seedStaged("50.00");
-      const b = await seedStaged("50.00");
-      const c = await seedStaged("50.00");
-      const ugId = await seedLegacyGroup([a, b, c]);
-      expect(await membersOf(ugId)).toEqual([a, b, c].sort());
-
-      const res = await api("/api/staged-payments/ungroup", {
-        stagedPaymentIds: [c],
-      });
-      expect(res.status).toBe(200);
-      expect(res.json.dissolvedGroupIds).not.toContain(ugId);
-
-      // Group survives (>= 2), membership drops c only.
+      // The tombstone dismantles nothing: group + full membership survive as
+      // inert legacy data until the store itself is retired.
       expect(await groupExists(ugId)).toBe(true);
       expect(await membersOf(ugId)).toEqual([a, b].sort());
     }, 30_000);
 
-    it("ungrouping a row with no membership is a 200 no-op", async () => {
-      const lone = await seedStaged("50.00");
+    it("POST /:id/eject-from-group answers 410 and leaves legacy membership untouched", async () => {
+      const a = await seedStaged("50.00");
+      const b = await seedStaged("50.00");
+      const c = await seedStaged("50.00");
+      const ugId = await seedLegacyGroup([a, b, c]);
 
-      const res = await api("/api/staged-payments/ungroup", {
-        stagedPaymentIds: [lone],
-      });
-      expect(res.status).toBe(200);
-      expect(res.json.ungroupedIds).toEqual([]);
-      expect(res.json.dissolvedGroupIds).toEqual([]);
+      const res = await api(`/api/staged-payments/${c}/eject-from-group`);
+      expect(res.status).toBe(410);
+      expect(res.json.error).toBe("group_creation_retired");
+
+      expect(await groupExists(ugId)).toBe(true);
+      expect(await membersOf(ugId)).toEqual([a, b, c].sort());
     }, 30_000);
   },
 );

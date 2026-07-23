@@ -10,8 +10,6 @@ import {
   paymentIntermediaries,
   quickbooksHandlingRules,
   entities,
-  unitGroups,
-  unitGroupMembers,
 } from "@workspace/db/schema";
 import {
   and,
@@ -41,8 +39,6 @@ import {
   DEFAULT_GIFT_ID_SQL,
 } from "../../lib/paymentApplications";
 import { giftMatchAmountBounds } from "../../lib/giftMatch";
-import { groupMemberIdsFor } from "../../lib/unitGroupMembership";
-import { amountWithinFeeBand } from "../../lib/reconciliationGate";
 import { personDisplayNameSql } from "../../lib/personNameSql";
 import {
   stagedStatusSql,
@@ -565,64 +561,10 @@ export async function revertOneStagedPayment(
         );
       if (countedApps.length === 0) throw new Error(REVERT_NOT_REVERTIBLE);
 
-      // Group-aware: a deposit-group member reverts the WHOLE group back to
-      // pending. Membership comes from the unit_group_members table; the
-      // group's single gift from this member's counted ledger row (every
-      // member applies to the SAME pre-existing gift — a group reconciles to
-      // an existing gift, never a minted one, so no gift is deleted).
-      const groupIds = await groupMemberIdsFor(tx, id);
-      if (groupIds.length > 0) {
-        const gid = countedApps[0]?.giftId;
-        if (!gid) throw new Error(REVERT_NOT_REVERTIBLE);
-        // The group's pre-existing gift loses this evidence — recompute.
-        affectedGiftIds.add(gid);
-        // Every payment whose counted application ties it to the group gift
-        // gets its queue facts reset. Collect BEFORE deleting the ledger rows.
-        const memberApps = await tx
-          .select({ paymentId: paymentApplications.paymentId })
-          .from(paymentApplications)
-          .where(
-            and(
-              eq(paymentApplications.giftId, gid),
-              eq(paymentApplications.evidenceSource, "quickbooks"),
-              eq(paymentApplications.linkRole, "counted"),
-            ),
-          );
-        const memberIds = [
-          ...new Set(
-            memberApps
-              .map((m) => m.paymentId)
-              .filter((p): p is string => p != null),
-          ),
-        ];
-        await tx
-          .select({ id: stagedPayments.id })
-          .from(stagedPayments)
-          .where(inArray(stagedPayments.id, memberIds))
-          .for("update");
-        // The gift's `amount` was never overwritten by reconciliation, so
-        // there is no final-amount stamp to unwind (Task #757).
-        // Ledger cleanup: undo every member payment's QB cash-application to
-        // the group gift (the gift is pre-existing, not deleted).
-        await removePaymentApplicationsForGift(tx, gid);
-        await tx
-          .update(stagedPayments)
-          .set({
-            autoApplied: false,
-            matchConfirmedByUserId: null,
-            matchConfirmedAt: null,
-            approvedByUserId: null,
-            approvedAt: null,
-            updatedAt: new Date(),
-          })
-          .where(inArray(stagedPayments.id, memberIds));
-        const [row] = await tx
-          .select(stagedReturnColumns)
-          .from(stagedPayments)
-          .where(eq(stagedPayments.id, id));
-        result = row ?? null;
-        return;
-      }
+      // Unit groups are retired (docs/adr-linear-money-model.md): a legacy
+      // group member holds exactly ONE counted ledger row, so it reverts
+      // individually through the direct-match branch below — the other
+      // payments reconciled to the same gift keep their counted rows.
 
       // Split: one payment applied across SEVERAL existing gifts (>1 counted
       // rows). Delete the ledger rows and return the row to pending. The
@@ -706,227 +648,8 @@ export async function revertOneStagedPayment(
   return { ok: true, row: result };
 }
 
-// ─── eject ONE member from a reconciled group ──────────────────────────────
-// The whole-group revert above unwinds EVERY member; ejection removes just one
-// wrongly-grouped payment while the rest of the group stays reconciled to the
-// gift. The ejected row's counted ledger row is deleted and its queue facts
-// reset (donor match kept); the gift's human-entered amount is never rewritten
-// (the derived quickbooks_tie_status surfaces a mismatch, and the response
-// carries the remaining evidence total + fee-band flag for the operator).
-// If ejection leaves fewer than two members the group dissolves — the
-// remaining member's counted ledger row is unchanged, so it becomes an
-// equivalent DIRECT match (mirrors the ungroup dissolve rule: a lone member is
-// not a group).
-const EJECT_NOT_FOUND = "__eject_not_found__";
-const EJECT_NOT_IN_GROUP = "__eject_not_in_group__";
-const EJECT_NOT_RECONCILED = "__eject_not_reconciled__";
-const EJECT_LAST_MEMBER = "__eject_last_member__";
-const EJECT_EXCLUDED = "__eject_excluded__";
-
-export type EjectOutcome =
-  | {
-      ok: true;
-      row: StagedReturnRow | null;
-      giftId: string;
-      remainingStagedPaymentIds: string[];
-      remainingTotal: string | null;
-      giftAmount: string | null;
-      remainingInFeeBand: boolean;
-      groupDissolved: boolean;
-    }
-  | {
-      ok: false;
-      reason:
-        | "not_found"
-        | "not_in_group"
-        | "not_reconciled"
-        | "last_member"
-        | "excluded";
-    };
-
-export async function ejectStagedPaymentFromGroup(
-  id: string,
-): Promise<EjectOutcome> {
-  let success: Extract<EjectOutcome, { ok: true }> | null = null;
-  try {
-    await db.transaction(async (tx) => {
-      const locked = await tx
-        .select()
-        .from(stagedPayments)
-        .where(eq(stagedPayments.id, id))
-        .for("update")
-        .then((r) => r[0]);
-      if (!locked) throw new Error(EJECT_NOT_FOUND);
-      // An excluded row is managed via the exclusion actions, never ejected.
-      if (locked.exclusionReason != null) throw new Error(EJECT_EXCLUDED);
-
-      // Membership from the SOLE group store (unit_group_members).
-      const memberIds = await groupMemberIdsFor(tx, id);
-      if (memberIds.length === 0) throw new Error(EJECT_NOT_IN_GROUP);
-
-      // Repo lock order: member staged rows (sorted — groupMemberIdsFor
-      // already sorts), then the gift below.
-      await tx
-        .select({ id: stagedPayments.id })
-        .from(stagedPayments)
-        .where(inArray(stagedPayments.id, memberIds))
-        .for("update");
-
-      // The ejected member's own counted ledger row names the group's gift. No
-      // row ⇒ the group is not reconciled yet — dismantle it via ungroup.
-      const ownApps = await tx
-        .select({ giftId: paymentApplications.giftId })
-        .from(paymentApplications)
-        .where(
-          and(
-            eq(paymentApplications.paymentId, id),
-            eq(paymentApplications.evidenceSource, "quickbooks"),
-            eq(paymentApplications.linkRole, "counted"),
-          ),
-        );
-      const gid = ownApps[0]?.giftId;
-      if (!gid) throw new Error(EJECT_NOT_RECONCILED);
-
-      // At least one OTHER member must keep a counted row to the gift —
-      // otherwise ejection would strand a reconciled gift with zero evidence;
-      // that case is the whole-group revert.
-      const otherMemberIds = memberIds.filter((m) => m !== id);
-      const otherApps =
-        otherMemberIds.length === 0
-          ? []
-          : await tx
-              .select({
-                paymentId: paymentApplications.paymentId,
-                amountApplied: paymentApplications.amountApplied,
-              })
-              .from(paymentApplications)
-              .where(
-                and(
-                  inArray(paymentApplications.paymentId, otherMemberIds),
-                  eq(paymentApplications.giftId, gid),
-                  eq(paymentApplications.evidenceSource, "quickbooks"),
-                  eq(paymentApplications.linkRole, "counted"),
-                ),
-              );
-      if (otherApps.length === 0) throw new Error(EJECT_LAST_MEMBER);
-
-      // Lock the gift row (kept, but its evidence set changes).
-      const gift = await tx
-        .select({ id: giftsAndPayments.id, amount: giftsAndPayments.amount })
-        .from(giftsAndPayments)
-        .where(eq(giftsAndPayments.id, gid))
-        .for("update")
-        .then((r) => r[0]);
-
-      // Do NOT unstamp: the remaining members still back the gift's
-      // finalAmountSource='quickbooks' provenance, and the QB stamp never
-      // rewrote the human-entered amount anyway.
-
-      // Ledger cleanup: only THIS payment's cash-application goes.
-      await removePaymentApplicationsForPayment(tx, id);
-
-      // Queue facts reset — back to pending, donor match kept (same shape as
-      // the revert paths above).
-      const [row] = await tx
-        .update(stagedPayments)
-        .set({
-          autoApplied: false,
-          matchConfirmedByUserId: null,
-          matchConfirmedAt: null,
-          approvedByUserId: null,
-          approvedAt: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(stagedPayments.id, id))
-        .returning(stagedReturnColumns);
-
-      // Drop the ejected member's group membership; dissolve the group when
-      // fewer than two members remain (a lone member is not a group — the
-      // survivor's counted row makes it an equivalent direct match).
-      const selfMembership = await tx
-        .select({ groupId: unitGroupMembers.groupId })
-        .from(unitGroupMembers)
-        .where(
-          and(
-            eq(unitGroupMembers.evidenceSource, "quickbooks"),
-            eq(unitGroupMembers.sourceId, id),
-          ),
-        )
-        .then((r) => r[0]);
-      let groupDissolved = false;
-      if (selfMembership) {
-        await tx
-          .delete(unitGroupMembers)
-          .where(
-            and(
-              eq(unitGroupMembers.evidenceSource, "quickbooks"),
-              eq(unitGroupMembers.sourceId, id),
-            ),
-          );
-        const remainingMembers = await tx
-          .select({ sourceId: unitGroupMembers.sourceId })
-          .from(unitGroupMembers)
-          .where(
-            and(
-              eq(unitGroupMembers.groupId, selfMembership.groupId),
-              eq(unitGroupMembers.evidenceSource, "quickbooks"),
-            ),
-          );
-        if (remainingMembers.length < 2) {
-          groupDissolved = true;
-          await tx
-            .delete(unitGroupMembers)
-            .where(eq(unitGroupMembers.groupId, selfMembership.groupId));
-          await tx
-            .delete(unitGroups)
-            .where(eq(unitGroups.id, selfMembership.groupId));
-        }
-      }
-
-      // Touch the gift so list caches see the evidence change.
-      await tx
-        .update(giftsAndPayments)
-        .set({ updatedAt: new Date() })
-        .where(eq(giftsAndPayments.id, gid));
-
-      const remainingTotalNum = otherApps.reduce(
-        (acc, a) => acc + Number(a.amountApplied ?? 0),
-        0,
-      );
-      const remainingTotal = remainingTotalNum.toFixed(2);
-      const giftAmount = gift?.amount ?? null;
-      success = {
-        ok: true,
-        row: row ?? null,
-        giftId: gid,
-        remainingStagedPaymentIds: [
-          ...new Set(
-            otherApps
-              .map((a) => a.paymentId)
-              .filter((p): p is string => p != null),
-          ),
-        ].sort(),
-        remainingTotal,
-        giftAmount,
-        remainingInFeeBand: amountWithinFeeBand(remainingTotal, giftAmount),
-        groupDissolved,
-      };
-    });
-  } catch (e) {
-    if (e instanceof Error) {
-      if (e.message === EJECT_NOT_FOUND)
-        return { ok: false, reason: "not_found" };
-      if (e.message === EJECT_NOT_IN_GROUP)
-        return { ok: false, reason: "not_in_group" };
-      if (e.message === EJECT_NOT_RECONCILED)
-        return { ok: false, reason: "not_reconciled" };
-      if (e.message === EJECT_LAST_MEMBER)
-        return { ok: false, reason: "last_member" };
-      if (e.message === EJECT_EXCLUDED)
-        return { ok: false, reason: "excluded" };
-    }
-    throw e;
-  }
-  if (!success) throw new Error("ejectStagedPaymentFromGroup: no outcome");
-  return success;
-}
+// Unit-group ejection is retired (docs/adr-linear-money-model.md): each
+// member's tie to a gift is its own counted payment_applications row, so the
+// plain revertOneStagedPayment above does exactly what ejection did — it
+// undoes ONE payment while the others reconciled to the same gift keep their
+// counted rows.

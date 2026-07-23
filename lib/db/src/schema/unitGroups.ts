@@ -9,30 +9,20 @@ import { paymentApplicationEvidenceSourceEnum } from "./_enums";
 import { users } from "./users";
 
 /**
- * Durable "these evidence UNITS are really ONE gift" grouping (Plane 2 cleanup
- * op — docs/reconciliation-design.md §4.6b, Decision 7). Generalizes today's
- * `staged_payments.source_group_id` into a first-class, sync-safe association so
- * a grouped set persists and displays as one logical unit BEFORE and AFTER it is
- * matched to a gift, while the underlying evidence rows stay pristine for the
- * sync to re-own (INV-G).
+ * @deprecated RETIRED — docs/adr-linear-money-model.md §7 step 3.
  *
- * A `unit_groups` row is a pure CRM annotation (id + optional label/note + who
- * created it). Membership is POLYMORPHIC — `(evidence_source, source_id)` — the
- * SAME shape the `payment_applications` ledger uses, so grouping never needs a
- * column on three different evidence tables (staged_payments / stripe charges /
- * donorbox donations). `source_id` is a plain text id with NO foreign key
- * (mirroring the staging-table convention, e.g. coding_form_rows) because it is
- * polymorphic across three anchors and must not require a per-source FK.
+ * Unit grouping ("these evidence UNITS are really ONE gift") is replaced by
+ * the linear money model: multi-match books one counted
+ * `payment_applications` ledger row per member, and those ledger rows alone
+ * express the combined outcome. NOTHING reads or writes these tables anymore
+ * — no route, service, derivation, or frontend path. The group endpoints are
+ * 410 tombstones (`group_creation_retired`).
  *
- * Membership is EXCLUSIVE: a unit belongs to at most one group, enforced by a
- * UNIQUE(evidence_source, source_id). Once grouped, a unit matches ONLY via its
- * group (never individually) — the exclusivity guard the reconciler reads.
- *
- * Rollout note (additive dual-write phase — WS2): the group/ungroup endpoints
- * dual-write this table ALONGSIDE `staged_payments.source_group_id`; the
- * matcher/approve/revert paths are NOT yet flipped to read it (that is the WS1
- * mechanism collapse, strictly after this table's PROD parity). Backfilled from
- * today's `source_group_id` (>= 2 members) by migration 0088.
+ * The schema definitions are kept ONLY so the existing prod rows (legacy
+ * groups formed before the retirement) survive until §7 step 4, which
+ * verifies every legacy member is representable as counted ledger rows and
+ * then DROPS both tables via a reviewed migration. Do not add new readers or
+ * writers; do not revive group semantics.
  */
 export const unitGroups = pgTable("unit_groups", {
   // Deterministic `ug_<source_group_id>` when created from a staged-payment

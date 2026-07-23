@@ -31,7 +31,6 @@ import {
   useReconcileStagedPayment,
   useResolveStagedPayment,
   useResolveStripeStagedCharge,
-  useEjectStagedPaymentFromGroup,
   useRevertStagedPayment,
   useRevertStripeStagedCharge,
   useSplitStagedPayment,
@@ -195,7 +194,6 @@ export default function ReconciliationClustersPage() {
     anchor: AnchorRef;
     description: string;
   } | null>(null);
-  const [ejectFor, setEjectFor] = useState<AnchorRef | null>(null);
   const [refundFor, setRefundFor] = useState<{
     chargeId: string;
     kind: "refund" | "chargeback";
@@ -288,7 +286,6 @@ export default function ReconciliationClustersPage() {
   const excludeStagedM = useExcludeStagedPayment();
   const reIncludeStagedM = useReIncludeStagedPayment();
   const revertStagedM = useRevertStagedPayment();
-  const ejectFromGroupM = useEjectStagedPaymentFromGroup();
   const updateOppM = useUpdateOpportunityOrPledge();
   const updateGiftM = useUpdateGiftOrPayment();
   const confirmSettlementM = useConfirmSettlementLink();
@@ -316,7 +313,6 @@ export default function ReconciliationClustersPage() {
     excludeStagedM.isPending ||
     reIncludeStagedM.isPending ||
     revertStagedM.isPending ||
-    ejectFromGroupM.isPending ||
     updateOppM.isPending ||
     updateGiftM.isPending ||
     confirmSettlementM.isPending ||
@@ -711,28 +707,6 @@ export default function ReconciliationClustersPage() {
     }
   };
 
-  const handleEjectFromGroup = async () => {
-    if (!ejectFor) return;
-    const anchor = ejectFor;
-    try {
-      const res = await ejectFromGroupM.mutateAsync({ id: anchor.id });
-      setEjectFor(null);
-      invalidate();
-      toast({
-        title: "Removed from group",
-        description: res.remainingInFeeBand
-          ? `${anchor.label} is pending again; ${res.remainingStagedPaymentIds.length} member(s) stay reconciled and the remaining total still matches the gift.`
-          : `${anchor.label} is pending again; ${res.remainingStagedPaymentIds.length} member(s) stay reconciled — the remaining total (${formatCurrency(res.remainingTotal ?? "0")}) no longer matches the gift amount (${res.giftAmount != null ? formatCurrency(res.giftAmount) : "—"}), so the gift shows an amount mismatch until corrected.`,
-      });
-    } catch (err) {
-      toast({
-        title: "Couldn't remove from group",
-        description: apiErrorMessage(err) ?? errMessage(err),
-        variant: "destructive",
-      });
-    }
-  };
-
   // Undo dispatch: the rail entry names which EXISTING revert/re-include
   // endpoint reverses it and on which row. The server recorded the pointer at
   // action time; the target endpoint still enforces its own guards, so a stale
@@ -991,7 +965,6 @@ export default function ReconciliationClustersPage() {
     openExclude: (anchor) => setExcludeFor(anchor),
     reInclude: (anchor) => void handleReInclude(anchor),
     openRevert: (anchor, description) => setRevertFor({ anchor, description }),
-    openEjectFromGroup: (anchor) => setEjectFor(anchor),
     openConfirmRefund: (chargeId, kind, label) =>
       setRefundFor({ chargeId, kind, label }),
     openDismissRefund: (chargeId, label) => setDismissFor({ chargeId, label }),
@@ -1400,34 +1373,6 @@ export default function ReconciliationClustersPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Eject one member from a reconciled QB group */}
-      <AlertDialog
-        open={ejectFor != null}
-        onOpenChange={(v) => (!v && !busy ? setEjectFor(null) : null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove this record from its group?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {ejectFor
-                ? `Only ${ejectFor.label} is removed and returned to the queue — the other group members stay reconciled to the gift. The gift's amount is not changed; if the remaining records no longer add up to it, the gift will show an amount mismatch until you correct it.`
-                : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={busy}
-              onClick={() => void handleEjectFromGroup()}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              data-testid="button-confirm-eject-from-group"
-            >
-              Remove from group
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {/* Unlink relationship chooser — a gift with MULTIPLE linked evidence
           records picks exactly one relationship, then falls through to the
           same revert confirm above. */}
@@ -1442,9 +1387,7 @@ export default function ReconciliationClustersPage() {
           setUnlinkChooserFor(null);
           setRevertFor({
             anchor: option.anchor,
-            description: option.note
-              ? `Unlink “${giftLabel}” from ${option.source}. ${option.note} If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`
-              : `Unlink “${giftLabel}” from ${option.source}. Only this relationship is removed — other links stay. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
+            description: `Unlink “${giftLabel}” from ${option.source}. Only this relationship is removed — other links stay. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
           });
         }}
       />

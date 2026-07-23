@@ -842,30 +842,23 @@ export function qbLedgerMintedGiftIdForPayment(
 }
 
 /**
- * EXISTS a DIRECT (non-mint, non-group) counted QB application from the staged
+ * EXISTS a DIRECT (non-mint) counted QB application from the staged
  * payment to THIS gift. Ledger replacement for the legacy
- * `matched_gift_id = gift AND created_gift_id IS NULL AND
- * group_reconciled_gift_id IS NULL` shape guard (displacement / relink /
- * cascade-reset paths): the pair must be counted, must not be a mint, and the
- * payment must not be reconciled as a member of a QB deposit group (the legacy
- * group REPRESENTATIVE carried matched_gift_id too, and those guards
- * deliberately refused it). Both args are pre-qualified SQL exprs.
+ * `matched_gift_id = gift AND created_gift_id IS NULL` shape guard
+ * (displacement / relink / cascade-reset paths): the pair must be counted and
+ * must not be a mint. (Legacy unit_groups membership is no longer read —
+ * retired, docs/adr-linear-money-model.md; a multi-matched member's counted
+ * row IS a direct match.) Both args are pre-qualified SQL exprs.
  */
 export function qbLedgerDirectMatchExists(
   paymentIdSql: SQL,
   giftIdSql: SQL,
 ): SQL<boolean> {
-  return sql<boolean>`(
-    EXISTS (
-      SELECT 1 FROM payment_applications pa
-      WHERE pa.payment_id = ${paymentIdSql} AND pa.gift_id = ${giftIdSql}
-        AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
-        AND pa.created_the_gift = false
-    )
-    AND NOT EXISTS (
-      SELECT 1 FROM unit_group_members ugm
-      WHERE ugm.evidence_source = 'quickbooks' AND ugm.source_id = ${paymentIdSql}
-    )
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_applications pa
+    WHERE pa.payment_id = ${paymentIdSql} AND pa.gift_id = ${giftIdSql}
+      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+      AND pa.created_the_gift = false
   )`;
 }
 

@@ -32,7 +32,6 @@ import {
   chargeStatusSql,
   stagedStatusWhere,
 } from "../../lib/derivedStatus";
-import { isQbGroupMemberSql } from "../../lib/unitGroupMembership";
 import { qbCardStateOfStatus } from "./workbenchRowState";
 import { payoutStatusLabelSql } from "../../lib/settlementLink";
 import {
@@ -200,84 +199,6 @@ const stripeEvidenceExpr = sql<{
   LIMIT 1
 )`;
 
-// Collapse a manual "same physical gift" group into ONE card: only the group's
-// representative row (the min id among members, compared byte-wise via COLLATE
-// "C" so it matches the approve route's JS code-unit sort) is returned; ungrouped
-// rows (no unit_group_members membership) always pass. Membership now lives in
-// `unit_group_members` (evidence_source='quickbooks', source_id = staged id), not
-// the retired `staged_payments.source_group_id`. Applied to BOTH the page query
-// and the count so the pagination total is per-group.
-const groupRepresentativeWhere: SQL = sql`(
-  NOT ${isQbGroupMemberSql()}
-  OR ${stagedPayments.id} = (
-    SELECT MIN(m2.source_id COLLATE "C")
-    FROM unit_group_members m1
-    JOIN unit_group_members m2
-      ON m2.group_id = m1.group_id AND m2.evidence_source = 'quickbooks'
-    WHERE m1.evidence_source = 'quickbooks'
-      AND m1.source_id = ${stagedPayments.id}
-  )
-)`;
-
-// Group rollup for a representative card: member count, summed amount, the
-// members' COMMON funding source/provenance (null when they disagree), and a
-// compact per-member list (ordered by the same COLLATE "C" key so the first is
-// the representative). Null for an ungrouped row. The outer staged_payments row
-// is correlated into the subquery as the group key.
-const sourceGroupAggExpr = sql<{
-  count: number;
-  totalAmount: string;
-  commonFundingSource: string | null;
-  commonProvenance: string | null;
-  members: Array<{
-    stagedPaymentId: string;
-    amount: string | null;
-    dateReceived: string | null;
-    payerName: string | null;
-    qbDocNumber: string | null;
-    fundingSource: string | null;
-  }>;
-} | null>`(
-  CASE
-    WHEN NOT ${isQbGroupMemberSql()} THEN NULL
-    ELSE (
-      SELECT jsonb_build_object(
-        'count', COUNT(*)::int,
-        'totalAmount', COALESCE(SUM(m.amount), 0)::text,
-        'commonFundingSource',
-          CASE WHEN COUNT(*) = COUNT(m.funding_source)
-                AND COUNT(DISTINCT m.funding_source) = 1
-               THEN MIN(m.funding_source) ELSE NULL END,
-        'commonProvenance',
-          CASE WHEN COUNT(DISTINCT m.funding_source_provenance) = 1
-               THEN MIN(m.funding_source_provenance) ELSE NULL END,
-        'members', COALESCE(
-          jsonb_agg(
-            jsonb_build_object(
-              'stagedPaymentId', m.id,
-              'amount', m.amount::text,
-              'dateReceived', m.date_received::text,
-              'payerName', m.payer_name,
-              'qbDocNumber', m.qb_doc_number,
-              'fundingSource', m.funding_source
-            ) ORDER BY m.id COLLATE "C"
-          ),
-          '[]'::jsonb
-        )
-      )
-      FROM staged_payments m
-      JOIN unit_group_members mem
-        ON mem.source_id = m.id AND mem.evidence_source = 'quickbooks'
-      WHERE mem.group_id = (
-        SELECT g.group_id FROM unit_group_members g
-        WHERE g.evidence_source = 'quickbooks'
-          AND g.source_id = ${stagedPayments.id}
-        LIMIT 1
-      )
-    )
-  END
-)`;
-
 // Default reconciliation queue: the live work. `pending` rows are work UNLESS
 // they are attributed to a fiscally sponsored entity — that money is pass-through
 // for a sponsored project, so it is PARKED out of the main flow and only shown
@@ -288,7 +209,7 @@ const sourceGroupAggExpr = sql<{
 // A row already RESOLVED to a gift (derived match_confirmed) is DONE and stays
 // out of the live queue — it only re-enters while there is still Stripe to tie
 // in (a settlement link, proposed or confirmed, on the deposit). "Resolved"
-// covers ALL resolution forms: a 1:1 match, a mint, a group reconcile, OR a
+// covers ALL resolution forms: a 1:1 match, a mint, a multi-match, OR a
 // split. Resolution lives entirely in counted payment_applications ledger
 // rows anchored to the payment (the legacy pointer columns are retired), so
 // it must be detected via the ledger, otherwise a fully-split
@@ -436,18 +357,13 @@ router.get(
       );
       if (fsCond) conds.push(fsCond);
     }
-    // Always collapse source groups to their representative row (one card per
-    // group), in both the page and the count.
-    conds.push(groupRepresentativeWhere);
-
     // ── Per-charge expansion (LATERAL) ──────────────────────────────────────
     // For a Stripe-payout-backed QB staged payment, expand the deposit into one
     // row per backing Stripe charge so the reconciler matches at the charge →
     // CRM-gift grain (the QB payer is "Stripe"; the real donor lives on each
     // charge). The lateral correlates to the outer staged_payments row and only
-    // fires when (a) this is an expansion queue and (b) the row is NOT a manual
-    // source group (those stay one card). A non-Stripe row produces zero lateral
-    // rows, so the LEFT JOIN preserves it once with NULL charge columns.
+    // fires when this is an expansion queue. A non-Stripe row produces zero
+    // lateral rows, so the LEFT JOIN preserves it once with NULL charge columns.
     //
     // Donor name + resolved-gift facts are resolved via scalar subqueries
     // correlated on the REAL stripe_staged_charges columns (matched/created gift,
@@ -596,14 +512,13 @@ router.get(
         // LEFT JOIN NULL-extension, so it stays visible as its own piece of
         // work.
         sql`${shouldExpand ? sql`TRUE` : sql`FALSE`}
-          AND NOT ${isQbGroupMemberSql()}
           AND ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id}
           AND ${stripeStagedCharges.exclusionReason} IS NULL`,
       )
       .as("charge_unit");
 
     // Only surface UNRESOLVED charges (no gift linked yet). When the lateral
-    // returns no rows (non-Stripe / non-expansion / source group) chargeId is
+    // returns no rows (non-Stripe / non-expansion) chargeId is
     // NULL and the row is kept once; when ALL of a deposit's charges are resolved
     // the lateral rows are all filtered out and the deposit drops from the queue
     // ("settles when every charge is tied").
@@ -642,18 +557,6 @@ router.get(
           autoGiftPick: autoGiftPickExpr,
           cardReady: readyExpr,
           stripeEvidence: stripeEvidenceExpr,
-          // Grouping is now derived from unit_group_members (the retired
-          // staged_payments.source_group_id column is gone). Returns the unit
-          // group id (`ug_…`) for a grouped row, NULL otherwise. Non-representative
-          // members are already filtered out by groupRepresentativeWhere, so a
-          // returned grouped row is always its group's representative card.
-          sourceGroupId: sql<string | null>`(
-            SELECT ugm.group_id FROM unit_group_members ugm
-            WHERE ugm.evidence_source = 'quickbooks'
-              AND ugm.source_id = ${stagedPayments.id}
-            LIMIT 1
-          )`.as("source_group_id"),
-          sourceGroupAgg: sourceGroupAggExpr,
           recOppId: recCardOpp.id,
           recOppName: recCardOpp.name,
           chargeId: chargeSub.chargeId,
@@ -705,12 +608,6 @@ router.get(
       // (stagedPaymentId, stripeChargeId); donor/gift/amount/lanes come from the
       // charge, NOT the QB deposit header (whose payer is "Stripe").
       const isCharge = row.chargeId != null;
-      // A returned row carrying a sourceGroupId (its unit group id) is, by the
-      // representative filter, the group's anchor — this card stands in for the
-      // whole group. A charge card is never a group (the lateral requires the row
-      // is not a unit_group member).
-      const isSourceGroup = !isCharge && row.sourceGroupId != null;
-      const groupAgg = isSourceGroup ? row.sourceGroupAgg : null;
       const donorId = isCharge
         ? (row.chargeOrganizationId ??
           row.chargeIndividualGiverPersonId ??
@@ -785,22 +682,14 @@ router.get(
         proposedGiftId = row.chargeAutoGiftPick.id;
         proposedGiftName = row.chargeAutoGiftPick.name ?? null;
         proposedGiftDate = row.chargeAutoGiftPick.dateReceived ?? null;
-      } else if (
-        !isCharge &&
-        !isSourceGroup &&
-        row.autoGiftCount === 1 &&
-        row.autoGiftPick
-      ) {
-        // Auto gift proposals are matched on a SINGLE row's amount, so they are
-        // meaningless for a group (whose gift must net the combined total) —
-        // suppress them; the human mints/links the group's gift explicitly.
+      } else if (!isCharge && row.autoGiftCount === 1 && row.autoGiftPick) {
         giftState = "determined";
         proposedGiftId = row.autoGiftPick.id;
         proposedGiftName = row.autoGiftPick.name ?? null;
         proposedGiftDate = row.autoGiftPick.dateReceived ?? null;
       } else if (isCharge && (row.chargeAutoGiftCount ?? 0) > 1) {
         giftState = "ambiguous";
-      } else if (!isSourceGroup && (row.autoGiftCount ?? 0) > 1) {
+      } else if ((row.autoGiftCount ?? 0) > 1) {
         giftState = "ambiguous";
       } else {
         giftState = "none";
@@ -898,28 +787,8 @@ router.get(
         resolvedGiftAllocations: isCharge
           ? (row.chargeResolvedGiftAllocations ?? null)
           : (row.resolvedGiftAllocations ?? null),
-        fundingSource: isSourceGroup
-          ? (groupAgg?.commonFundingSource ?? null)
-          : (row.fundingSource ?? null),
-        fundingSourceProvenance: isSourceGroup
-          ? (groupAgg?.commonProvenance ?? null)
-          : (row.fundingSourceProvenance ?? null),
-        // A charge card is a single charge, never a source group.
-        sourceGroupId: isCharge ? null : (row.sourceGroupId ?? null),
-        isSourceGroup,
-        sourceGroupCount: groupAgg?.count ?? null,
-        sourceGroupTotalAmount: groupAgg?.totalAmount ?? null,
-        sourceGroupMembers: groupAgg
-          ? groupAgg.members.map((m) => ({
-              stagedPaymentId: m.stagedPaymentId,
-              amount: m.amount ?? null,
-              dateReceived: m.dateReceived ?? null,
-              payerName: m.payerName ?? null,
-              qbDocNumber: m.qbDocNumber ?? null,
-              fundingSource: m.fundingSource ?? null,
-              isRepresentative: m.stagedPaymentId === row.id,
-            }))
-          : null,
+        fundingSource: row.fundingSource ?? null,
+        fundingSourceProvenance: row.fundingSourceProvenance ?? null,
         // Revenue-accounting / QuickBooks coding snapshot (Task #449) — lives on
         // the staged payment now; surfaced read-only here so the workbench can
         // show + edit it inline without a second fetch.
@@ -932,10 +801,9 @@ router.get(
         codingFlags: row.codingFlags ?? null,
         deferredRevenue: row.deferredRevenue ?? null,
         deferredRevenueReason: row.deferredRevenueReason ?? null,
-        // A group card's readiness can't come from the single-row auto hint, and
-        // a charge card is approved through the per-charge Stripe flow (resolve →
+        // A charge card is approved through the per-charge Stripe flow (resolve →
         // create-gift), not the one-click QB anchor approve.
-        ready: !isCharge && !isSourceGroup && row.cardReady === true,
+        ready: !isCharge && row.cardReady === true,
         exclusionReason: row.exclusionReason ?? null,
         reconciliationLanes: deriveEvidenceLanes({
           cardState: laneCardState,

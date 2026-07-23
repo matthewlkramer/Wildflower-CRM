@@ -211,7 +211,7 @@ export interface MintGiftInTxArgs {
   opp: typeof opportunitiesAndPledges.$inferSelect | null;
   /** Opportunity id to attach the payment to + re-derive after commit, or null. */
   opportunityId: string | null;
-  /** The FINAL amount stamped on the gift (Stripe GROSS, group total, or QB amount). */
+  /** The FINAL amount stamped on the gift (Stripe GROSS or QB amount). */
   evidenceAmount: string | null;
   /** Optional payment-intermediary override from the request body. */
   paymentIntermediaryId: string | null;
@@ -219,18 +219,6 @@ export interface MintGiftInTxArgs {
   convert: boolean;
   /** The create-* outcome, echoed into the audit metadata. */
   outcome: string;
-  /** Source-group context (all members locked + approvable) or null (single row). */
-  group: {
-    memberIds: string[];
-    /** Per-member rows used to seed one allocation per subcomponent. */
-    members?: { id: string; amount: string | null; entityId: string | null }[];
-    /**
-     * When true (plain create_gift only), seed one gift allocation per grouped
-     * staged payment (sub_amount = that member's amount) instead of a header-only
-     * lump. Ignored when an opportunity seeds the allocations.
-     */
-    splitIntoAllocations?: boolean;
-  } | null;
   /** App user id stamped as the confirmer / mint owner. */
   userId: string;
   /** Request used for audit attribution. */
@@ -245,7 +233,7 @@ export interface MintGiftInTxArgs {
  * deletes the human mint). Not idempotent — the caller guards against minting a
  * second gift for a row that already has one.
  *
- * Caller contract: `staged` (+ all group members), `charge`, and `opp` are
+ * Caller contract: `staged`, `charge`, and `opp` are
  * already locked FOR UPDATE, re-checked approvable, and passed the consistency
  * gate. This performs ONLY the writes + audit; the caller runs the post-commit
  * appliers using the returned ids.
@@ -272,7 +260,6 @@ export async function mintGiftInTx(
     paymentIntermediaryId,
     convert,
     outcome,
-    group,
     userId,
     auditReq,
   } = args;
@@ -342,30 +329,11 @@ export async function mintGiftInTx(
   // loaded); plain create_gift has no opp and stays header-only.
   if (opp) {
     await copyPledgeAllocationsToGift(tx, opp.id, newGiftId, evidenceAmount);
-  } else if (
-    group?.splitIntoAllocations &&
-    group.members &&
-    group.members.length > 0
-  ) {
-    // Grouped create_gift, "split subcomponents into allocation rows": each
-    // grouped staged payment becomes one allocation (sub_amount = that member's
-    // amount, entity from its attributed entityId). The member amounts sum to
-    // the gift total (evidenceAmount) by construction, so no scaling is needed;
-    // scope beyond entity is left for the fundraiser to refine. The restriction
-    // axes / counts-toward-goal columns fall back to their NOT-NULL defaults.
-    await tx.insert(giftAllocations).values(
-      group.members.map((m) => ({
-        id: newId(),
-        giftId: newGiftId,
-        subAmount: m.amount,
-        entityId: m.entityId,
-      })),
-    );
   } else {
-    // Plain create_gift (no opp) or a grouped mint without allocation split:
-    // still seed ONE default full-amount allocation carrying the staged row's
-    // attributed entity, so the gift never lands scope-less. The fiscal year is
-    // derived from the payment date; other scope is left for the fundraiser.
+    // Plain create_gift (no opp): seed ONE default full-amount allocation
+    // carrying the staged row's attributed entity, so the gift never lands
+    // scope-less. The fiscal year is derived from the payment date; other
+    // scope is left for the fundraiser.
     await seedInitialGiftAllocation(tx, {
       giftId: newGiftId,
       amount: evidenceAmount,
@@ -423,46 +391,8 @@ export async function mintGiftInTx(
     });
   }
 
-  // Source group: every member's tie to the minted gift lives in its counted
-  // payment_applications ledger row (booked by the caller's applier) plus the
-  // unit_group_members membership, so the whole physical gift resolves as one
-  // unit and no slice can be re-reconciled into a second gift. The legacy
-  // group_reconciled_gift_id column was dropped (migration 0126).
-  // Members were locked + re-checked approvable by the caller.
-  if (group) {
-    const otherIds = group.memberIds.filter((id) => id !== stagedPaymentId);
-    if (otherIds.length > 0) {
-      const otherUpdated = await tx
-        .update(stagedPayments)
-        .set({
-          ...donor,
-          autoApplied: false,
-          matchStatus: "matched",
-          matchConfirmedByUserId: userId,
-          matchConfirmedAt: new Date(),
-          approvedByUserId: userId,
-          approvedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            inArray(stagedPayments.id, otherIds),
-            stagedStatusIn(APPROVABLE_STAGED_STATUSES),
-          ),
-        )
-        .returning({ id: stagedPayments.id });
-      // A source group reconciles atomically: every member must tie to the minted
-      // gift. They were locked + re-checked above, so a short count means one
-      // slipped state under us — abort the whole mint rather than leave a group
-      // half-reconciled.
-      if (otherUpdated.length !== otherIds.length) {
-        throw new ReconcileAbort(409, {
-          error: "group_member_not_approvable",
-          message: "One of the grouped payments changed state. Refresh and try again.",
-        });
-      }
-    }
-  }
+  // (Unit groups are retired — docs/adr-linear-money-model.md. A mint books
+  // exactly one QB anchor; combined matches go through multi-match instead.)
 
   // A selected Stripe charge is the precise GROSS source: the counted ledger
   // row booked below ties it to the gift (pointer columns retired) so it stays
@@ -526,10 +456,9 @@ export async function mintGiftInTx(
   }
 
   // Dual-write (Phase 2): book the QB cash-application ledger. The anchor staged
-  // payment CREATED this gift; each grouped member also applies its QB amount to
-  // the same gift. amountApplied is the QB-settled figure (staged.amount) —
-  // independent of a selected Stripe charge's GROSS, which sets the gift's amount
-  // but is tracked as separate Stripe evidence.
+  // payment CREATED this gift. amountApplied is the QB-settled figure
+  // (staged.amount) — independent of a selected Stripe charge's GROSS, which
+  // sets the gift's amount but is tracked as separate Stripe evidence.
   if (staged.amount && Number(staged.amount) > 0) {
     await applyPaymentApplication(tx, {
       paymentId: stagedPaymentId,
@@ -542,29 +471,6 @@ export async function mintGiftInTx(
       createdTheGift: true,
     });
   }
-  if (group) {
-    const memberIds = group.memberIds.filter((mid) => mid !== stagedPaymentId);
-    if (memberIds.length > 0) {
-      const members = await tx
-        .select({ id: stagedPayments.id, amount: stagedPayments.amount })
-        .from(stagedPayments)
-        .where(inArray(stagedPayments.id, memberIds));
-      for (const member of members) {
-        if (!(member.amount && Number(member.amount) > 0)) continue;
-        await applyPaymentApplication(tx, {
-          paymentId: member.id,
-          giftId: newGiftId,
-          amountApplied: member.amount,
-          evidenceSource: "quickbooks",
-          matchMethod: "human",
-          confirmedByUserId: userId,
-          confirmedAt: new Date(),
-          createdTheGift: false,
-        });
-      }
-    }
-  }
-
   await recordAudit(tx, auditReq, {
     action: "create",
     entityType: "gift",
@@ -575,16 +481,14 @@ export async function mintGiftInTx(
       stripeChargeId: charge?.id ?? null,
       opportunityId: opp?.id ?? null,
       outcome,
-      sourceGroupMemberIds: group ? group.memberIds : null,
     },
   });
 
-  // §4.3 supersede: if any of the deposits just booked is confirmed-settled
-  // against a payout whose per-charge Stripe rows already cover this gift, the
-  // coarse QB row demotes immediately (and vice-versa on later facts).
+  // §4.3 supersede: if the deposit just booked is confirmed-settled against a
+  // payout whose per-charge Stripe rows already cover this gift, the coarse QB
+  // row demotes immediately (and vice-versa on later facts).
   const rederiveGiftIds = await applySettlementSupersedeMany(tx, [
     stagedPaymentId,
-    ...(group ? group.memberIds : []),
   ]);
 
   return {
@@ -777,11 +681,11 @@ export async function linkGiftInTx(
     incumbentStagedPayment.id !== stagedPaymentId;
   if (displacedLinkedPayment && incumbentStagedPayment) {
     // Only a DIRECT match incumbent is safely displaceable one-at-a-time. A gift
-    // linked through a group or a split must be reverted deliberately —
-    // half-releasing it would corrupt the group/split invariant. Refuse it.
+    // linked through a split must be reverted deliberately — half-releasing it
+    // would corrupt the split invariant. Refuse it.
     // The shape is read from the LEDGER (the legacy gift-link columns are
     // @deprecated and no longer written): a counted non-mint QB application
-    // from the incumbent to THIS gift, with the incumbent not a group member.
+    // from the incumbent to THIS gift.
     const [dm] = await tx
       .select({
         ok: qbLedgerDirectMatchExists(
@@ -795,7 +699,7 @@ export async function linkGiftInTx(
       throw new ReconcileAbort(409, {
         error: "incumbent_not_displaceable",
         message:
-          "That gift is linked to another payment through a group or split. Revert that reconciliation first, then re-target.",
+          "That gift is linked to another payment through a split. Revert that reconciliation first, then re-target.",
       });
     }
     // The gift's `amount` was never overwritten by reconciliation (Task #757)

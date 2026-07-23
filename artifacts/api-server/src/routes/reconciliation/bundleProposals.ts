@@ -11,7 +11,6 @@ import {
 } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
 import { asyncHandler, notFound, parseOrBadRequest, newId } from "../../lib/helpers";
-import { isGroupMember } from "../../lib/unitGroupMembership";
 import { getAppUser } from "../../lib/appRequest";
 import { getViewer } from "../../lib/identityVisibility";
 import {
@@ -698,7 +697,6 @@ router.post(
                 paymentIntermediaryId: dp.paymentIntermediaryId ?? null,
                 convert: false,
                 outcome: "bundle_mint",
-                group: null,
                 userId,
                 auditReq: req,
               });
@@ -1080,13 +1078,8 @@ router.post(
         // `excluded` / `match_proposed` → permanent `deposit_unconfirmable`.
         // A stricter pending-only gate here previously blocked the repair path
         // with a misleading transient "refresh and retry" 409.
-        if (await isGroupMember(tx, pickedDepositId)) {
-          throw new ReconcileAbort(409, {
-            error: "deposit_grouped",
-            message:
-              "The chosen deposit belongs to a payment group and can't be settled directly.",
-          });
-        }
+        // (Unit groups are retired — no group-membership gate; a legacy
+        // grouped deposit is just a deposit.)
         // Exclusivity: a deposit may back only one payout's settlement. Say
         // WHICH kind of tie blocks the pick — a CONFIRMED link is permanent
         // (retrying can never help; code deposit_unconfirmable so the UI

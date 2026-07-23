@@ -21,8 +21,7 @@ import {
  *
  * Money-safety (no double-book): a QB deposit that IS tied to a Stripe payout is
  * OMITTED — it reconciles THROUGH the payout's bundle (assemble canonicalizes a
- * tied QB id to its payout). Rows already grouped (a unit_group_members member)
- * stay in the group-reconcile flow and are omitted. Rejected/excluded QB rows are not anchors
+ * tied QB id to its payout). Rejected/excluded QB rows are not anchors
  * (this also drops processor_payout exclusions). Read-only.
  */
 const router: IRouter = Router();
@@ -125,8 +124,8 @@ function stripeWhere(queue: AnchorQueue): SQL {
   }
 }
 
-// Standalone QB anchors: eligible (not grouped, not tied to a payout via a
-// settlement link, an active status) AND in the requested bucket.
+// Standalone QB anchors: eligible (not tied to a payout via a settlement
+// link, an active status) AND in the requested bucket.
 //
 // A standalone QB deposit is only worth surfacing as a "may still need a Stripe
 // payout tie" anchor when its origin is plausibly Stripe. Most deposits never
@@ -137,9 +136,6 @@ function stripeWhere(queue: AnchorQueue): SQL {
 // NULL (unknown — no signal either way, so never hide it).
 function qbWhere(queue: AnchorQueue): SQL {
   const eligible = sql`NOT EXISTS (
-      SELECT 1 FROM unit_group_members ugm
-      WHERE ugm.evidence_source = 'quickbooks' AND ugm.source_id = s.id
-    ) AND NOT EXISTS (
       SELECT 1 FROM settlement_links sl
       WHERE sl.deposit_staged_payment_id = s.id
     ) AND NOT EXISTS (

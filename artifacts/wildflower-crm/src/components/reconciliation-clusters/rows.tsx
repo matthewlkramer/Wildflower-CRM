@@ -60,8 +60,6 @@ export interface ClusterActions {
   reInclude: (anchor: AnchorRef) => void;
   /** Confirm-gated unlink/undo: reverts a booked link (may delete a minted gift). */
   openRevert: (anchor: AnchorRef, description: string) => void;
-  /** Confirm-gated: eject ONE member from a reconciled QB unit group — the other members stay reconciled to the gift. */
-  openEjectFromGroup: (anchor: AnchorRef) => void;
   openConfirmRefund: (
     chargeId: string,
     kind: "refund" | "chargeback",
@@ -156,7 +154,6 @@ const QB_ROLE_LABEL: Record<WorkbenchClusterQbRecord["role"], string> = {
   deposit: "Deposit",
   fee: "Processor fee",
   charge_tie: "Charge tie",
-  group_member: "Group member",
 };
 
 function fmt(v: string | null | undefined): string {
@@ -296,52 +293,7 @@ export function giftUnlinkOptions(
       date: c?.chargeDate ? formatDateShort(c.chargeDate) : null,
     });
   }
-  // Group-reconciled gifts: the server's revert endpoint reverts the WHOLE
-  // unit group when any member is reverted (group reconciliation is one
-  // atomic unit — every member applies to the same gift). Offering the
-  // members as separate "only this relationship is removed" options would be
-  // a lie, so collapse them into ONE honest option that says all the group's
-  // links are removed together.
-  const groupStagedIds =
-    cluster.group != null
-      ? new Set(
-          cluster.qbRecords
-            .filter((r) => r.role === "anchor" || r.role === "group_member")
-            .map((r) => r.stagedPaymentId),
-        )
-      : new Set<string>();
-  const linkedGroupIds = (gift.linkedStagedPaymentIds ?? []).filter((id) =>
-    groupStagedIds.has(id),
-  );
-  if (linkedGroupIds.length > 1) {
-    const preferred = linkedGroupIds.includes(cluster.anchorId ?? "")
-      ? (cluster.anchorId as string)
-      : linkedGroupIds[0];
-    options.push({
-      anchor: { kind: "staged", id: preferred, label },
-      source: `QuickBooks group · ${linkedGroupIds.length} records reconciled together`,
-      amount: cluster.group?.totalAmount != null ? fmt(cluster.group.totalAmount) : null,
-      date: null,
-      note: `These ${linkedGroupIds.length} QuickBooks records were reconciled as one group — unlinking removes all of them together.`,
-      // So the user can see WHICH records go away before confirming a
-      // whole-group unlink. Members missing from the (capped) cluster list
-      // fall back to an id-only label rather than being hidden.
-      members: linkedGroupIds.map((memberId) => {
-        const r = cluster.qbRecords.find(
-          (x) => x.stagedPaymentId === memberId,
-        );
-        return {
-          id: memberId,
-          label: r ? qbLabel(r) : `QuickBooks record ${memberId}`,
-          amount: r?.amount != null ? fmt(r.amount) : null,
-          date: r?.dateReceived ? formatDateShort(r.dateReceived) : null,
-          reference: r ? qbReferenceNote(r) : null,
-        };
-      }),
-    });
-  }
   for (const id of gift.linkedStagedPaymentIds ?? []) {
-    if (linkedGroupIds.length > 1 && groupStagedIds.has(id)) continue;
     const r = cluster.qbRecords.find((x) => x.stagedPaymentId === id);
     options.push({
       anchor: { kind: "staged", id, label },
@@ -592,7 +544,7 @@ function GiftCard({
             onClick: () =>
               actions.openRevert(
                 unlinkOptions[0].anchor,
-                `Unlink “${gift.name ?? gift.giftId}” from its evidence.${unlinkOptions[0].note ? ` ${unlinkOptions[0].note}` : ""} If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
+                `Unlink “${gift.name ?? gift.giftId}” from its evidence. If the gift was minted from this evidence it is deleted; a pre-existing gift is kept and just unlinked.`,
               ),
           }
         : {
@@ -619,7 +571,7 @@ function GiftCard({
               onClick: () =>
                 actions.openRevert(
                   qbUnlinkOptions[0].anchor,
-                  `Unlink “${gift.name ?? gift.giftId}” from its QuickBooks record.${qbUnlinkOptions[0].note ? ` ${qbUnlinkOptions[0].note}` : ""} If the gift was minted from this QB record it is deleted; a pre-existing gift is kept and just unlinked.`,
+                  `Unlink “${gift.name ?? gift.giftId}” from its QuickBooks record. If the gift was minted from this QB record it is deleted; a pre-existing gift is kept and just unlinked.`,
                 ),
             }
           : {
@@ -987,15 +939,12 @@ function QbCard({
   actions,
   rowState,
   payoutId,
-  grouped,
   appliedGiftName,
 }: {
   record: WorkbenchClusterQbRecord;
   actions: ClusterActions;
   rowState?: WorkbenchRowState | null;
   payoutId?: string;
-  /** True when this record belongs to the cluster's QB unit group (anchor or member). */
-  grouped?: boolean;
   /** Name of the gift this record's money is currently booked to, when a
       proposed/confirmed direct match exists (see appliedGiftFor). */
   appliedGiftName?: string | null;
@@ -1137,15 +1086,6 @@ function QbCard({
       );
     }
   } else if (linked) {
-    if (grouped) {
-      // Group-reconciled member: the plain revert unwinds the WHOLE group, so
-      // offer the surgical single-member ejection first.
-      menu.push({
-        label: "Remove from group — keep the rest reconciled",
-        destructive: true,
-        onClick: () => actions.openEjectFromGroup(anchor),
-      });
-    }
     menu.push(
       {
         label: "Unlink from CRM gift",
@@ -1153,9 +1093,7 @@ function QbCard({
         onClick: () =>
           actions.openRevert(
             anchor,
-            grouped
-              ? `Unlink the QuickBooks group from its gift. This record was reconciled as part of a group, so the WHOLE group is reverted back to the queue together.`
-              : `Unlink QuickBooks record from its gift. If the gift was minted from this QB record it is deleted; a pre-existing gift is kept and just unlinked.`,
+            `Unlink QuickBooks record from its gift. If the gift was minted from this QB record it is deleted; a pre-existing gift is kept and just unlinked.`,
           ),
       },
       {
@@ -1737,7 +1675,7 @@ function PayoutBundleRow({
         <div className="space-y-1.5">
           {cluster.qbRecords.length > 0 ? (
             cluster.qbRecords.map((r) => (
-              <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} grouped={cluster.group != null && (r.role === "anchor" || r.role === "group_member")} appliedGiftName={appliedGiftFor(cluster, r.stagedPaymentId)?.name ?? null} />
+              <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} appliedGiftName={appliedGiftFor(cluster, r.stagedPaymentId)?.name ?? null} />
             ))
           ) : (
             <SettlementGapSlot cluster={cluster} actions={actions} />
@@ -1939,7 +1877,7 @@ function PayoutBundleRow({
                   }
                 />
                 {tie ? (
-                  <QbCard record={tie} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} grouped={cluster.group != null && (tie.role === "anchor" || tie.role === "group_member")} appliedGiftName={appliedGiftFor(cluster, tie.stagedPaymentId)?.name ?? null} />
+                  <QbCard record={tie} actions={actions} rowState={cluster.coverage.state} payoutId={cluster.anchorId} appliedGiftName={appliedGiftFor(cluster, tie.stagedPaymentId)?.name ?? null} />
                 ) : (
                   <div className="text-[11px] text-muted-foreground/70 pt-2 pl-1">
                     ↳ part of the payout bundle above
@@ -2037,10 +1975,6 @@ function QbStandaloneRow({
           ))
         ) : cluster.coverage.state.flags.excluded ? (
           <ExcludedCard reason={cluster.statusDetail} />
-        ) : cluster.group ? (
-          <div className="text-[11px] text-muted-foreground italic pt-1">
-            Grouped payment ({cluster.group.memberCount} rows) — expand individual rows to act on each charge
-          </div>
         ) : stagedAnchor ? (
           <>
             {cluster.qbRecords.find((r) => r.role === "anchor")?.attributedDonor ? (
@@ -2069,7 +2003,7 @@ function QbStandaloneRow({
           instead of leaving a hollow middle column. */}
       <div className="col-span-2 space-y-1.5">
         {cluster.qbRecords.map((r) => (
-          <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage.state} grouped={cluster.group != null && (r.role === "anchor" || r.role === "group_member")} appliedGiftName={appliedGiftFor(cluster, r.stagedPaymentId)?.name ?? null} />
+          <QbCard key={`${r.role}-${r.stagedPaymentId}`} record={r} actions={actions} rowState={cluster.coverage.state} appliedGiftName={appliedGiftFor(cluster, r.stagedPaymentId)?.name ?? null} />
         ))}
         <div className="text-[11px] text-muted-foreground/70 pl-1 italic">
           {looksLikeStripeMoney

@@ -55,7 +55,6 @@ import {
   type GiftOrPaymentDetail,
   type SetStagedPaymentCodingBody,
   type DeferredRevenue,
-  type MultiMatchStagedPaymentsBody,
   type FlagForResearchBodyTargetType,
   type OpportunityOrPledge,
 } from "@workspace/api-client-react";
@@ -327,39 +326,6 @@ function money(v: string | null | undefined): string {
   });
 }
 
-/**
- * For a LEGACY grouped ("same physical gift" source group) card being linked to
- * an EXISTING gift, build the /staged-payments/multi-match payload (the
- * group-reconcile endpoint is retired; multi-match books each member as its own
- * counted application on the gift). Returns null when the card is not a source
- * group (the caller uses the per-row approve path). `confirmMultiDate` is
- * always true for a source group: forming the group was already the human
- * assertion that these rows are one physical gift (groups span dates/deposits
- * by design), and the client can't see member deposit ids to detect
- * multi-deposit anyway. When the members' combined total sits OUTSIDE the
- * gift's fee-band the server rejects with 400 amount_mismatch; there is no
- * override — the operator corrects the gift amount and retries.
- */
-function buildGroupedLinkPayload(
-  card: ReconciliationCard,
-  giftId: string,
-): {
-  payload: MultiMatchStagedPaymentsBody;
-} | null {
-  if (!card.isSourceGroup) return null;
-  const memberIds = (card.sourceGroupMembers ?? [])
-    .map((m) => m.stagedPaymentId)
-    .filter((id): id is string => !!id);
-  if (memberIds.length < 2) return null;
-  return {
-    payload: {
-      stagedPaymentIds: memberIds,
-      giftId,
-      confirmMultiDate: true,
-    },
-  };
-}
-
 // Supplemental chips for the badge row. The amount-delta and donor chips were
 // removed — the amount now lives on each side of the card and the donor name is
 // shown in the CRM-gift lane + the Status line — so only the Stripe-payout
@@ -388,14 +354,6 @@ interface StagedChange {
   body: ApproveCompleteMatchBody | null;
   /** Split body for kind === "split"; null otherwise. */
   splitBody?: SplitStagedPaymentBody | null;
-  /**
-   * Set for a legacy grouped ("same physical gift" source group) card linked
-   * to an EXISTING gift: applied via /staged-payments/multi-match (each member
-   * books its own counted application on the one gift) instead of the per-row
-   * approve endpoint, which 409s a grouped link. `body` is null for these;
-   * `stagedPaymentId` is the group's representative member.
-   */
-  multiMatch?: MultiMatchStagedPaymentsBody | null;
   /** Set after a failed Apply so the row stays staged with a reason. */
   failure?: string | null;
 }
@@ -404,7 +362,7 @@ interface StagedChange {
  * Stable identity for a card. A Stripe-payout-backed deposit is expanded into
  * one card per backing charge, so several cards share a `stagedPaymentId`; their
  * unique key is the composite `(stagedPaymentId, stripeChargeId)`. Non-charge
- * rows (and source-group cards) fall back to the bare `stagedPaymentId`.
+ * rows fall back to the bare `stagedPaymentId`.
  */
 function cardKey(c: ReconciliationCard): string {
   return c.stripeChargeId
@@ -565,14 +523,6 @@ export default function ReconciliationWorkbench() {
     giftId: string;
     stripe: StripeSourceConflict;
   } | null>(null);
-  // Creating a gift from a multi-payment group: hold the derived approve body
-  // here and ask whether each grouped subcomponent should become its own
-  // allocation row on the new gift (or a single header-only lump).
-  const [groupCreateGift, setGroupCreateGift] = useState<{
-    card: ReconciliationCard;
-    body: ApproveCompleteMatchBody;
-    memberCount: number;
-  } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // Multi-select "Match to one gift": gift-picker dialog + in-flight flag for
   // the /staged-payments/multi-match call it fires.
@@ -723,38 +673,6 @@ export default function ReconciliationWorkbench() {
     );
   }, []);
 
-  /**
-   * Stage a grouped link-to-existing-gift (whole legacy source group → one
-   * gift), applied via /staged-payments/multi-match. Drops any pending change
-   * for the representative OR any other group member, so a per-member action
-   * can't coexist with the whole-group link.
-   */
-  const stageGroupedLink = useCallback(
-    (
-      card: ReconciliationCard,
-      giftLabel: string,
-      payload: MultiMatchStagedPaymentsBody,
-    ) => {
-      const members = new Set(payload.stagedPaymentIds);
-      const change: StagedChange = {
-        key: card.stagedPaymentId,
-        kind: "retarget",
-        stagedPaymentId: card.stagedPaymentId,
-        label: card.payerName ?? "QuickBooks payment",
-        detail: `Re-target group (${payload.stagedPaymentIds.length} payments) → ${giftLabel}`,
-        body: null,
-        multiMatch: payload,
-      };
-      setStaged((prev) => [
-        ...prev.filter((s) => !members.has(s.stagedPaymentId)),
-        change,
-      ]);
-      setRetargetCard(null);
-      setSearchGiftCard(null);
-    },
-    [],
-  );
-
   /** Stage a split-across-gifts (+ optional remainder) change into the tray. */
   const stageSplit = useCallback(
     (
@@ -811,20 +729,6 @@ export default function ReconciliationWorkbench() {
         toast({ title: "Can't confirm yet", description: res });
         return;
       }
-      // A grouped card linking to an EXISTING gift must go through
-      // multi-match, not the per-row approve endpoint (it 409s).
-      if (
-        card.isSourceGroup &&
-        res.body.outcome === "link_existing_gift" &&
-        res.body.giftId
-      ) {
-        const grouped = buildGroupedLinkPayload(card, res.body.giftId);
-        if (grouped) {
-          const giftLabel = card.resolvedGiftName ?? "the matched gift";
-          stageGroupedLink(card, giftLabel, grouped.payload);
-          return;
-        }
-      }
       stage({
         key: card.stagedPaymentId,
         kind: "confirm",
@@ -834,14 +738,14 @@ export default function ReconciliationWorkbench() {
         body: res.body,
       });
     },
-    [deriveConfirmBody, stage, stageGroupedLink, toast],
+    [deriveConfirmBody, stage, toast],
   );
 
   /**
-   * Stage a confirm (or grouped link-to-existing-gift) for each given card,
-   * skipping any whose match graph no longer derives a valid body. Shared by the
-   * "approve all proposed" and the bulk-select "Approve" actions. Toggles
-   * `busy` while it works and returns per-run counts for the caller's toast.
+   * Stage a confirm for each given card, skipping any whose match graph no
+   * longer derives a valid body. Shared by the "approve all proposed" and the
+   * bulk-select "Approve" actions. Toggles `busy` while it works and returns
+   * per-run counts for the caller's toast.
    */
   const stageConfirmBatch = useCallback(
     async (
@@ -856,22 +760,6 @@ export default function ReconciliationWorkbench() {
           skipped += 1;
           continue;
         }
-        if (
-          card.isSourceGroup &&
-          res.body.outcome === "link_existing_gift" &&
-          res.body.giftId
-        ) {
-          const grouped = buildGroupedLinkPayload(card, res.body.giftId);
-          if (grouped) {
-            stageGroupedLink(
-              card,
-              card.resolvedGiftName ?? "the matched gift",
-              grouped.payload,
-            );
-            stagedOk += 1;
-            continue;
-          }
-        }
         stage({
           key: card.stagedPaymentId,
           kind: "confirm",
@@ -885,7 +773,7 @@ export default function ReconciliationWorkbench() {
       setBusy(false);
       return { stagedOk, skipped };
     },
-    [deriveConfirmBody, stage, stageGroupedLink],
+    [deriveConfirmBody, stage],
   );
 
   const approveAllHighConfidence = useCallback(async () => {
@@ -923,8 +811,6 @@ export default function ReconciliationWorkbench() {
             continue;
           }
           await splitStagedPayment(change.stagedPaymentId, change.splitBody);
-        } else if (change.multiMatch) {
-          await multiMatchStagedPayments(change.multiMatch);
         } else if (change.body) {
           await approveReconciliationCard(change.stagedPaymentId, change.body);
         } else {
@@ -945,10 +831,9 @@ export default function ReconciliationWorkbench() {
           let reached = false;
           try {
             const targetGiftId =
-              change.multiMatch?.giftId ??
-              (change.body?.outcome === "link_existing_gift"
+              change.body?.outcome === "link_existing_gift"
                 ? (change.body.giftId ?? null)
-                : null);
+                : null;
             const probe: ResolvedStateProbe = {
               kind: change.kind,
               stagedPaymentId: change.stagedPaymentId,
@@ -1370,42 +1255,6 @@ export default function ReconciliationWorkbench() {
           toast({ title: "Gift created from Stripe charge." });
           return;
         }
-        // A grouped card (several staged payments a fundraiser grouped into one
-        // physical gift) can't mint through the per-row create-gift endpoint —
-        // it 409s on any group member. Route it through the group-aware card
-        // approve path (`outcome: create_gift`), which mints ONE gift summing
-        // every member, tied to the card's matched donor. Reuse the same
-        // proposal-derived body as the confirm/link flows so the donor comes
-        // from the matched proposal.
-        if (card.isSourceGroup) {
-          setApplyingCardId(card.stagedPaymentId);
-          try {
-            const res = await deriveConfirmBody(card);
-            if (typeof res === "string") {
-              toast({ title: "Can't create gift yet", description: res });
-              return;
-            }
-            if (res.body.outcome !== "create_gift") {
-              toast({
-                title: "Can't create gift",
-                description:
-                  "This grouped payment already matches a gift — link the whole group to it from its card instead.",
-              });
-              return;
-            }
-            // Ask whether each grouped subcomponent should become its own
-            // allocation row on the new gift. The mint fires from the dialog.
-            setGroupCreateGift({
-              card,
-              body: res.body,
-              memberCount:
-                card.sourceGroupCount ?? card.sourceGroupMembers?.length ?? 0,
-            });
-          } finally {
-            setApplyingCardId(null);
-          }
-          return;
-        }
         await createGiftM.mutateAsync({ id: card.stagedPaymentId });
         invalidateAll();
         toast({ title: "Gift created from QuickBooks payment." });
@@ -1413,14 +1262,7 @@ export default function ReconciliationWorkbench() {
         toast({ title: "Couldn't create gift", description: errMessage(err) });
       }
     },
-    [
-      createGiftM,
-      createChargeGiftM,
-      deriveConfirmBody,
-      invalidateAll,
-      toast,
-      errMessage,
-    ],
+    [createGiftM, createChargeGiftM, invalidateAll, toast, errMessage],
   );
 
   // Book this unmatched payment as a PAYMENT on an existing pledge (the
@@ -1434,16 +1276,6 @@ export default function ReconciliationWorkbench() {
       card: ReconciliationCard,
       opp: Pick<OpportunityOrPledge, "id" | "name">,
     ) => {
-      // A grouped card can't approve through the per-row endpoint (it 409s on
-      // group members); ungroup first, then record each payment on its pledge.
-      if (card.isSourceGroup) {
-        toast({
-          title: "Can't record a grouped payment on a pledge",
-          description:
-            "Ungroup this first, then record each payment on its pledge individually.",
-        });
-        return;
-      }
       setApplyingCardId(card.stagedPaymentId);
       try {
         const body: ApproveCompleteMatchBody = {
@@ -1465,35 +1297,6 @@ export default function ReconciliationWorkbench() {
       }
     },
     [invalidateAll, toast, errMessage],
-  );
-
-  // Fires the grouped create-gift the operator confirmed in the dialog. `split`
-  // true → one allocation row per grouped payment; false → a single header-only
-  // gift. Either way the gift amount is the group total.
-  const applyGroupCreateGift = useCallback(
-    async (split: boolean) => {
-      if (!groupCreateGift) return;
-      const { card, body } = groupCreateGift;
-      setApplyingCardId(card.stagedPaymentId);
-      try {
-        await approveReconciliationCard(card.stagedPaymentId, {
-          ...body,
-          splitGroupIntoAllocations: split,
-        });
-        invalidateAll();
-        toast({
-          title: split
-            ? "Gift created with one allocation per grouped payment."
-            : "Gift created for the whole group.",
-        });
-        setGroupCreateGift(null);
-      } catch (err) {
-        toast({ title: "Couldn't create gift", description: errMessage(err) });
-      } finally {
-        setApplyingCardId(null);
-      }
-    },
-    [groupCreateGift, invalidateAll, toast, errMessage],
   );
 
   // A per-charge card needs the per-charge link-gift endpoint (instead of the
@@ -1633,14 +1436,6 @@ export default function ReconciliationWorkbench() {
       // Multi-charge Stripe payout: link this charge to the picked gift directly
       // (per-charge link-gift), bypassing the deposit-keyed staging tray.
       if (await tryLinkMultiChargeCard(card, gift)) return;
-      // Grouped ("same physical gift") cards can't link to an existing gift via
-      // the per-row approve endpoint (it 409s "link the whole group"); route
-      // them through /staged-payments/multi-match instead.
-      const grouped = buildGroupedLinkPayload(card, gift.id);
-      if (grouped) {
-        stageGroupedLink(card, gift.label, grouped.payload);
-        return;
-      }
       setBusy(true);
       const res = await deriveConfirmBody(card, gift);
       setBusy(false);
@@ -1659,7 +1454,7 @@ export default function ReconciliationWorkbench() {
       setRetargetCard(null);
       setSearchGiftCard(null);
     },
-    [tryLinkMultiChargeCard, deriveConfirmBody, stage, stageGroupedLink, toast],
+    [tryLinkMultiChargeCard, deriveConfirmBody, stage, toast],
   );
 
   // Immediately unlink a gift from the OTHER QuickBooks payment that currently
@@ -1701,28 +1496,6 @@ export default function ReconciliationWorkbench() {
         if (typeof res === "string") {
           toast({ title: "Can't confirm yet", description: res });
           return;
-        }
-        // A grouped card linking to an EXISTING gift must go through
-        // multi-match, not the per-row approve endpoint (it 409s).
-        if (
-          card.isSourceGroup &&
-          res.body.outcome === "link_existing_gift" &&
-          res.body.giftId
-        ) {
-          const grouped = buildGroupedLinkPayload(card, res.body.giftId);
-          if (grouped) {
-            // The server rejects an out-of-band group total with 400
-            // amount_mismatch; the catch below surfaces it so the operator can
-            // correct the gift amount and retry.
-            await multiMatchStagedPayments(grouped.payload);
-            invalidateAll();
-            setRetargetCard(null);
-            toast({
-              title: "Approved",
-              description: "Linked the group to the gift.",
-            });
-            return;
-          }
         }
         await approveReconciliationCard(card.stagedPaymentId, res.body);
         invalidateAll();
@@ -2433,16 +2206,6 @@ export default function ReconciliationWorkbench() {
           onUnlink={unlinkOwningStagedPayment}
         />
       )}
-      {groupCreateGift && (
-        <GroupCreateGiftDialog
-          memberCount={groupCreateGift.memberCount}
-          total={groupCreateGift.card.sourceGroupTotalAmount ?? null}
-          busy={applyingCardId === groupCreateGift.card.stagedPaymentId}
-          onCancel={() => setGroupCreateGift(null)}
-          onChoose={applyGroupCreateGift}
-        />
-      )}
-
       {/* Record this payment as a gift payment on an existing pledge */}
       {pledgeCard && (
         <RecordOnPledgeDialog
@@ -2814,8 +2577,6 @@ function ReconCard({
   // renders when both amounts are known, and a group's resolvedGiftAmount is
   // only set when a gift is actually resolved, so `settled` is exactly the
   // group-total-vs-gift comparison here.
-  const giftAmountNum = num(card.resolvedGiftAmount);
-  const groupMatchesGift = card.settled;
   const crmRecordLane = lanes.find((b) => b.key === "crmRecord");
   // Money already booked to the resolved gift via this payment's own counted
   // application (worker auto-match, proposed or confirmed). Said up front so a
@@ -2868,40 +2629,7 @@ function ReconCard({
             )}
           </div>
           <div className="font-medium">{qbPayerName ?? "Unknown payer"}</div>
-          {card.isSourceGroup && card.sourceGroupTotalAmount != null ? (
-            <>
-              <div className="text-lg font-semibold tabular-nums">
-                {money(card.sourceGroupTotalAmount)}
-                <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                  group total ·{" "}
-                  {card.sourceGroupCount ??
-                    card.sourceGroupMembers?.length ??
-                    0}{" "}
-                  payments
-                </span>
-              </div>
-              {card.sourceGroupMembers &&
-                card.sourceGroupMembers.length > 0 && (
-                  <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
-                    {card.sourceGroupMembers.map((m) => (
-                      <div
-                        key={m.stagedPaymentId}
-                        className="flex items-baseline justify-between gap-2"
-                      >
-                        <span className="truncate">
-                          {m.payerName ?? "—"}
-                          {m.qbDocNumber ? ` (#${m.qbDocNumber})` : ""}
-                          {m.dateReceived ? ` · ${m.dateReceived}` : ""}
-                        </span>
-                        <span className="shrink-0 tabular-nums">
-                          {money(m.amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-            </>
-          ) : card.stripeGrossAmount != null ? (
+          {card.stripeGrossAmount != null ? (
             <div className="text-sm font-semibold tabular-nums">
               {money(card.stripeGrossAmount)} gross
               <span className="font-normal text-muted-foreground">
@@ -3022,24 +2750,6 @@ function ReconCard({
                   {money(card.resolvedGiftAmount)}
                 </div>
               )}
-              {card.isSourceGroup &&
-                card.sourceGroupTotalAmount != null &&
-                giftAmountNum != null && (
-                  <div className="text-[11px]">
-                    {groupMatchesGift ? (
-                      <span className="text-emerald-700">
-                        Group total {money(card.sourceGroupTotalAmount)} matches
-                        this gift {money(card.resolvedGiftAmount)}.
-                      </span>
-                    ) : (
-                      <span className="text-amber-700">
-                        Group total {money(card.sourceGroupTotalAmount)} vs gift{" "}
-                        {money(card.resolvedGiftAmount)} — still off beyond the
-                        fee-band tolerance.
-                      </span>
-                    )}
-                  </div>
-                )}
               {donorMismatch && (
                 <div className="mt-1 rounded border border-amber-300 bg-amber-50 p-1.5 text-[11px] text-amber-800">
                   <span className="font-medium">Payer ≠ gift donor.</span> This
@@ -3661,63 +3371,6 @@ function CodingPanel({
         </div>
       </div>
     </div>
-  );
-}
-
-// ─── Grouped create-gift: split subcomponents into allocations? ───────────────
-
-/**
- * Shown when the operator clicks "Create gift" on a source-group card. A grouped
- * gift can either be a single header-only lump, or carry one allocation row per
- * grouped staged payment (each subcomponent's amount + attributed entity). The
- * member amounts already sum to the group total, so splitting never changes the
- * gift's amount — only how it's apportioned.
- */
-function GroupCreateGiftDialog({
-  memberCount,
-  total,
-  busy,
-  onCancel,
-  onChoose,
-}: {
-  memberCount: number;
-  total: string | null;
-  busy: boolean;
-  onCancel: () => void;
-  onChoose: (split: boolean) => void;
-}) {
-  return (
-    <Dialog open onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Split into allocation rows?</DialogTitle>
-          <DialogDescription>
-            This creates one gift of{" "}
-            <span className="font-medium tabular-nums">{money(total)}</span>
-            {memberCount > 0 ? ` from ${memberCount} grouped payments` : ""}. Do
-            you want each grouped payment to become its own allocation row on the
-            new gift, or a single header-only gift you can apportion later?
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter className="gap-2 sm:justify-between">
-          <Button variant="outline" onClick={onCancel} disabled={busy}>
-            Cancel
-          </Button>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => onChoose(false)}
-              disabled={busy}
-            >
-              Single gift line
-            </Button>
-            <Button onClick={() => onChoose(true)} disabled={busy}>
-              One allocation per payment
-            </Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

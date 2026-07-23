@@ -5,14 +5,18 @@ description: Manual grouping of staged payments sharing one bank deposit, reconc
 
 # QuickBooks deposit grouping
 
-**STATUS (2026-07-23): new group creation is RETIRED** — `POST
-/staged-payments/group` and `/group-reconcile` are 410 `group_creation_retired`
-stubs per `docs/adr-linear-money-model.md` §7 step 2. Combining several QB rows
-into one gift now goes through `POST /quickbooks/staged-payments/multi-match`,
-which writes N counted `payment_applications` rows atomically with NO
-`unit_groups` row. Everything below applies only to EXISTING legacy groups
-(which keep group-approve/ungroup/eject until step 3 retires the structure);
-the coherence-key and confirmMultiDate semantics were carried into multi-match.
+**STATUS (2026-07-23): unit groups are FULLY RETIRED — this file is
+HISTORICAL.** `docs/adr-linear-money-model.md` §7 step 3 is done: nothing
+reads or writes `unit_groups`/`unit_group_members` any more. All group
+lifecycle endpoints (`/group`, `/group-reconcile`, `/ungroup`,
+`/:id/eject-from-group`) are 410 `group_creation_retired` tombstones.
+Combining several QB rows into one gift goes through
+`POST /quickbooks/staged-payments/multi-match`, which writes N counted
+`payment_applications` rows atomically (zero-amount members rejected at
+selection; cross-date needs `confirmMultiDate` — semantics carried over from
+grouping). Per-row revert is the single undo path. The tables persist as
+inert legacy data only until step 4 verifies and drops them. Everything
+below is historical context for that era.
 
 Fundraisers MANUALLY group several QB staged payments and match the group to ONE
 existing CRM gift. Fee-band gated (combined member total ≈ gift amount),

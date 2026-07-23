@@ -261,7 +261,6 @@ type Card = {
   stripeNetAmount?: string | null;
   stripeFeeAmount?: string | null;
   resolvedGiftId?: string | null;
-  isSourceGroup?: boolean;
   ready?: boolean;
 };
 
@@ -559,7 +558,6 @@ describe.skipIf(!HAS_DB)(
       expect(cardA.stripeNetAmount).toBe("291.00");
       expect(cardA.stripeFeeAmount).toBe("9.00");
       expect(cardA.resolvedGiftId ?? null).toBeNull();
-      expect(cardA.isSourceGroup ?? false).toBe(false);
       // Charge cards are never bulk-approvable (per-charge action only).
       expect(cardA.ready ?? false).toBe(false);
 

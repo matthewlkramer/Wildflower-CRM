@@ -661,7 +661,7 @@ export const GetGiftAuditReconciliationResponse = zod.object({
 }).nullish(),
   "quickbooksRecords": zod.array(zod.object({
   "stagedPaymentId": zod.string(),
-  "linkType": zod.enum(['matched', 'created', 'group', 'split']).describe('How the gift is tied to this QuickBooks staged row.'),
+  "linkType": zod.enum(['matched', 'created', 'split']).describe('How the gift is tied to this QuickBooks staged row.'),
   "realmId": zod.string().nullish(),
   "qbEntityType": zod.string().nullish(),
   "qbEntityId": zod.string().nullish(),
@@ -674,7 +674,7 @@ export const GetGiftAuditReconciliationResponse = zod.object({
 }).describe('A QuickBooks record this gift appears in (\"where\"), derived read-only from the gift\'s QB linkage.')),
   "corroboratingRecords": zod.array(zod.object({
   "stagedPaymentId": zod.string(),
-  "linkType": zod.enum(['matched', 'created', 'group', 'split']).describe('How the gift is tied to this QuickBooks staged row.'),
+  "linkType": zod.enum(['matched', 'created', 'split']).describe('How the gift is tied to this QuickBooks staged row.'),
   "realmId": zod.string().nullish(),
   "qbEntityType": zod.string().nullish(),
   "qbEntityId": zod.string().nullish(),
