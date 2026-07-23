@@ -307,7 +307,13 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   lumps, per-charge gross records, and the sync watermark. Stripe↔QB
   reconciliation ties a QB deposit lump to its charges; the coarse QB-derived
   gift is archived and the QB row excluded (`processor_payout`, set only on
-  human confirm) so money isn't booked twice.
+  human confirm) so money isn't booked twice. `stripe_payouts.bank_deposit_id`
+  (UNIQUE) ties a payout directly to the ONE register-projected `bank_deposits`
+  row it settled as (docs/adr-bank-spine-money-model.md Phase 4) — a NEW
+  relationship, distinct from `settlement_links` (whose target is the QBO
+  Deposit `staged_payments` row; retired Phase 9). Inferred match
+  (amount+currency+date); >1 equivalent candidate sets `ambiguous_bank_match`
+  with a deterministic pairing — flag only, NO confirmation workflow.
 - `donorbox_donations` / `donorbox_sync_state` — Donorbox donor/purpose
   evidence (not transaction evidence).
 - `bank_transactions` — raw bank-register evidence, one row per register line,
