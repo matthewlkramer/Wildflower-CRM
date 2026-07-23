@@ -69,7 +69,7 @@ SELECT
   sc.gross_amount,
   sc.fee_amount,
   sc.net_amount,
-  COALESCE(sc.currency, 'USD'),
+  upper(COALESCE(sc.currency, 'USD')),  -- Stripe reports lowercase; bank side is uppercase
   sc.date_received,
   CASE
     WHEN sc.disputed THEN 'disputed'

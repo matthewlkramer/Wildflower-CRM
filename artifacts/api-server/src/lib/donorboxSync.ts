@@ -8,6 +8,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { refreshOpenBundleDrafts } from "./reconciliationBundleSync";
+import { recomputeBankSpineBestEffort } from "./bankSpineRecompute";
 import {
   isDonorboxConfigured,
   listDonations,
@@ -359,6 +360,10 @@ export async function syncDonorbox(
         // Donorbox enriches charges that settle inside Stripe payouts; refresh
         // open, un-overridden settlement-bundle drafts (best-effort; keeps overrides).
         await refreshOpenBundleDrafts();
+
+        // Bank-spine forward maintenance: fill donorbox pointers on units for
+        // newly-linked donations, annotate the ledger (best-effort).
+        await recomputeBankSpineBestEffort();
 
         logger.info(
           { pages, upserted, inserted, enrichment, newMoney, fullResync },

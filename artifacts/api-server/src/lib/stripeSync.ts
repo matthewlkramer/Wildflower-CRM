@@ -16,6 +16,7 @@ import { runChargeTiePass } from "./chargeQbTie";
 import { deriveRefundProposal, isFullyRefunded } from "./stripeRefund";
 import { sweepRefundedQbStagedPayments } from "./refundedChargeSweep";
 import { ensureBundleDraftsForAnchors } from "./reconciliationBundleSync";
+import { recomputeBankSpineBestEffort } from "./bankSpineRecompute";
 import {
   AnchorAlreadyCountedError,
   bookStripeChargeApplication,
@@ -902,6 +903,10 @@ export async function syncStripe(
       // advisory lock here).
       await runProposalPass();
       await runChargeTiePass();
+
+      // Bank-spine forward maintenance: mint units for new charges, match new
+      // payouts to bank deposits, annotate the ledger (best-effort).
+      await recomputeBankSpineBestEffort();
 
       return { payouts: payoutsSeen, staged, matched, autoApplied, refundProposals };
     } catch (e) {
