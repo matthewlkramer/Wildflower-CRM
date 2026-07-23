@@ -329,6 +329,17 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   (`stripe_payouts.bank_deposit_id`, Phase 4); a check deposit is composed of
   check `payment_units` via `bank_deposit_components` (Phase 3). Composition
   state (unresolved/partial/complete/overallocated) is DERIVED, never stored.
+- `payment_units` — the canonical **donor-level payment unit** (one row = one
+  real payment event; `kind` = stripe_charge | check | direct_ach | wire |
+  other). The single anchor `payment_applications` re-anchors onto in Phase 5
+  (collapsing its three source anchors to one). Carries NO donor identity/coding
+  (those stay on the gift) and NO parent pointer (a charge's parent is its
+  payout; a check's is a `bank_deposit_components` row). Pointers, each at most
+  one authority: `stripe_charge_id` (1:1, UNIQUE, required iff kind=stripe_charge),
+  `donorbox_donation_id` (UNIQUE — the single canonical Donorbox authority,
+  Phase 6), `source_staged_payment_id` (provisional QBO provenance for check
+  units, Phase 3; never an authority). Seeded 1:1 from non-excluded
+  `stripe_staged_charges` (`pu_<charge id>`); check units come in Phase 3.
 - `payment_applications` — the unit↔gift cash-application ledger. Each row
   anchors on exactly one evidence unit per `evidence_source` (`quickbooks` →
   `payment_id`, `stripe` → `stripe_charge_id`, `donorbox` →
