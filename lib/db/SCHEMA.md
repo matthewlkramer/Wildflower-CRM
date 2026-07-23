@@ -366,6 +366,13 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   TotalAmt+TxnDate; equal-amount/same-date classes pair deterministically by
   rank and set `ambiguous_deposit_match` (flag only, like
   `stripe_payouts.ambiguous_bank_match` — no review workflow).
+- `qbo_accounting_checks` — the QBO **expected-vs-actual accounting sidecar**
+  (Phase 7): one row per QBO record comparing the DERIVED expected posting
+  (from the resolved real chain) against what QBO actually says. jsonb
+  `expected`/`actual` snapshots + `disposition`
+  (consistent / correction_needed / corrected / accepted_historical).
+  Accounting REVIEW, never a money ledger; the CRM never writes to QBO —
+  `correction_needed` is a worklist for fixing QBO in QBO.
 - `payment_applications` — the unit↔gift cash-application ledger. Each row
   anchors on exactly one evidence unit per `evidence_source` (`quickbooks` →
   `payment_id`, `stripe` → `stripe_charge_id`, `donorbox` →
