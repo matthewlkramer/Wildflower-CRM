@@ -340,6 +340,19 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   Phase 6), `source_staged_payment_id` (provisional QBO provenance for check
   units, Phase 3; never an authority). Seeded 1:1 from non-excluded
   `stripe_staged_charges` (`pu_<charge id>`); check units come in Phase 3.
+- `bank_deposit_components` — the **components (checks / direct payments) that
+  compose a bank deposit** (docs/adr-bank-spine-money-model.md). One row ties a
+  check `payment_units` row to a `bank_deposits` row for an `amount`. ONLY for
+  payments that directly compose a deposit; Stripe charges are NOT components (a
+  charge composes a payout, the payout composes the deposit — Phase 4).
+  `UNIQUE(payment_unit_id)` — a check composes exactly one deposit. `source`
+  (`qbo_inferred` | `check_register` | `bank_data` | `manual`) records the
+  evidence and is upgraded in place when a better feed replaces QBO;
+  `source_staged_payment_id` keeps QBO provenance (never an authority);
+  `needs_review` flags uncertain inference. Composition state
+  (unresolved/partial/complete/overallocated) is DERIVED from
+  `SUM(amount)` vs the deposit `amount`, never stored. The QBO-inferred backfill
+  is a separate migration (0162) pending the composition-inference sign-off.
 - `payment_applications` — the unit↔gift cash-application ledger. Each row
   anchors on exactly one evidence unit per `evidence_source` (`quickbooks` →
   `payment_id`, `stripe` → `stripe_charge_id`, `donorbox` →

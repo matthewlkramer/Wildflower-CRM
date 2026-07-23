@@ -63,6 +63,7 @@ export * from "./donorboxSyncState";
 export * from "./bankTransactions";
 export * from "./bankDeposits";
 export * from "./paymentUnits";
+export * from "./bankDepositComponents";
 export * from "./connectionEnthusiasmHistory";
 export * from "./grantLeads";
 export * from "./auditLog";
