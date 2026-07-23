@@ -16,23 +16,16 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { asyncHandler, newId, notFound, paramId } from "../../lib/helpers";
+import { asyncHandler, notFound, paramId } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import {
   ReconcileStagedPaymentBody,
   MultiMatchStagedPaymentsBody,
   ConfirmStagedPaymentMatchesBody,
-  SplitStagedPaymentBody,
-  validateGiftInvariants,
 } from "@workspace/api-zod";
 import { donorOf, hasExactlyOneDonor } from "../../lib/quickbooksLink";
-import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import {
-  seedInitialGiftAllocation,
-  assertGiftHasAllocations,
-} from "../../lib/giftAllocationSeed";
-import { isGovernmentReimbursement } from "../../lib/quickbooksExclusionRules";
-import {
+  AnchorAlreadyCountedError,
   applyPaymentApplication,
   confirmPaymentApplicationsForPayment,
   qbLedgerExistsForGiftExcludingPayment,
@@ -240,6 +233,16 @@ router.post(
           error: "link_conflict",
           message:
             "That gift was just linked to another payment. Refresh and try again.",
+        });
+        return;
+      }
+      // Counted-uniqueness: this payment already carries a counted ledger row
+      // for a different gift (e.g. a lingering auto-match). Revert it first.
+      if (e instanceof AnchorAlreadyCountedError) {
+        res.status(409).json({
+          error: "payment_already_applied",
+          message:
+            "This payment is already applied to another gift (an existing match). Revert that reconciliation first, then re-target it here.",
         });
         return;
       }
@@ -571,6 +574,16 @@ router.post(
         });
         return;
       }
+      // Counted-uniqueness: a member already carries a counted ledger row for
+      // a different gift (e.g. a lingering auto-match). Revert it first.
+      if (e instanceof AnchorAlreadyCountedError) {
+        res.status(409).json({
+          error: "payment_already_applied",
+          message:
+            "One of these payments is already applied to another gift (an existing match). Revert that reconciliation first, then try again.",
+        });
+        return;
+      }
       throw e;
     }
 
@@ -593,327 +606,21 @@ router.post("/staged-payments/group-reconcile", (_req, res) => {
   });
 });
 
-// ─── POST /staged-payments/:id/split ───────────────────────────────────────
-// Split ONE staged payment across TWO OR MORE existing gifts (the case where a
-// single incoming-money record — e.g. a Stripe payout that nets fees into a
-// lump sum — covers several different donors' gifts). Each portion links to an
-// existing gift for that gift's own gross amount; no new gift is minted and
-// QuickBooks is never written back. The staged row's own donor / single-gift
-// link columns are cleared — its resolution lives entirely in counted
-// payment_applications rows (which derive match_confirmed). Guards: row pending; at
-// least two distinct gifts; each gift exists, carries a single valid donor, and
-// is not already linked anywhere (matched / created / group / split); combined
-// gross within the fee-band around the staged net amount. Reversible as a whole
-// (delete the ledger rows) via the split-aware revert above.
-router.post(
-  "/staged-payments/:id/split",
-  asyncHandler(async (req, res) => {
-    const user = getAppUser(req);
-    if (!user) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    const id = paramId(req);
-    const parsed = SplitStagedPaymentBody.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "validation_error",
-        message: "Request validation failed",
-        details: parsed.error.flatten(),
-      });
-      return;
-    }
-    // De-dupe the existing-gift ids. A split needs at least two TOTAL links —
-    // existing gifts plus an optional remainder gift minted for the leftover.
-    const giftIds = Array.from(new Set(parsed.data.giftIds));
-    const remainder = parsed.data.remainderGift ?? null;
-    const totalLinks = giftIds.length + (remainder ? 1 : 0);
-    if (totalLinks < 2) {
-      res.status(400).json({
-        error: "split_too_small",
-        message:
-          "Split across at least two links (existing gifts and/or a remainder gift).",
-      });
-      return;
-    }
-
-    // The remainder routes the leftover to a brand-new gift: positive amount and
-    // exactly one donor (Donor XOR) — validated up front for a clean 400.
-    let remainderAmount = 0;
-    if (remainder) {
-      remainderAmount = Number(remainder.amount ?? 0);
-      if (!(remainderAmount > 0)) {
-        res.status(400).json({
-          error: "validation_error",
-          message: "The remainder gift amount must be a positive number.",
-          details: { issues: [{ path: ["remainderGift", "amount"] }] },
-        });
-        return;
-      }
-      const donorIssues = validateGiftInvariants({
-        organizationId: remainder.organizationId ?? null,
-        individualGiverPersonId: remainder.individualGiverPersonId ?? null,
-        householdId: remainder.householdId ?? null,
-      });
-      if (donorIssues.length) {
-        res.status(400).json({
-          error: "validation_error",
-          message: "The remainder gift needs exactly one donor (Donor XOR).",
-          details: { issues: donorIssues },
-        });
-        return;
-      }
-    }
-
-    const NOT_FOUND = "__not_found__";
-    const NOT_PENDING = "__not_pending__";
-    const GIFT_NOT_FOUND = "__gift_not_found__";
-    const LINK_INVALID = "__link_invalid__";
-    const CONFLICT = "__conflict__";
-    const TOLERANCE = "__tolerance__";
-
-    let toleranceDetail: { combinedTotal: number; stagedAmount: number } | null =
-      null;
-    let splitTotal = 0;
-    let createdGiftId: string | null = null;
-    try {
-      await db.transaction(async (tx) => {
-        const locked = await tx
-          .select({
-            ...getTableColumns(stagedPayments),
-            status: stagedStatusSql.as("status"),
-          })
-          .from(stagedPayments)
-          .where(eq(stagedPayments.id, id))
-          .for("update")
-          .then((r) => r[0]);
-        if (!locked) throw new Error(NOT_FOUND);
-        if (locked.status !== "pending") throw new Error(NOT_PENDING);
-
-        // Load every target gift. Lock them so a concurrent reconcile/group/
-        // split can't grab one out from under us between the checks and inserts.
-        const gifts = await tx
-          .select()
-          .from(giftsAndPayments)
-          .where(inArray(giftsAndPayments.id, giftIds))
-          .for("update");
-        if (gifts.length !== giftIds.length) throw new Error(GIFT_NOT_FOUND);
-
-        // Each gift must carry a single valid donor (same guard the single-row
-        // and group reconcile paths use) — these are real donor gifts.
-        for (const gift of gifts) {
-          if (!hasExactlyOneDonor(donorOf(gift))) {
-            throw new Error(LINK_INVALID);
-          }
-        }
-
-        // No target gift may already be QB-linked to any staged payment. The
-        // ledger unifies direct + split + group-reconciled links, so one
-        // existence check replaces the legacy direct + split guards. (The row
-        // being split, `id`, has no ledger rows for these gifts yet — it is
-        // about to get them — so no exclusion is needed.)
-        const linkedElsewhere = await tx
-          .select({ giftId: paymentApplications.giftId })
-          .from(paymentApplications)
-          .where(
-            and(
-              inArray(paymentApplications.giftId, giftIds),
-              eq(paymentApplications.evidenceSource, "quickbooks"),
-            ),
-          )
-          .then((r) => r[0]);
-        if (linkedElsewhere) throw new Error(CONFLICT);
-
-        // Tolerance band around the staged NET amount. The gifts' summed GROSS
-        // total may run up to ~10% + $1 OVER (processor fees withheld before the
-        // lump-sum deposit) AND up to ~10% + $1 UNDER (rounding / small
-        // overpayments — e.g. a payout a little above the booked gifts). This is
-        // symmetric — deliberately looser on the low side than group-reconcile —
-        // so a payment slightly larger than the combined gifts still reconciles
-        // instead of being blocked.
-        const sumGifts = gifts.reduce(
-          (acc, g) => acc + Number(g.amount ?? 0),
-          0,
-        );
-        // Combined GROSS = existing gifts + the optional remainder gift.
-        const combinedTotal = sumGifts + remainderAmount;
-        const staged = Number(locked.amount ?? 0);
-        if (
-          !(combinedTotal >= staged * 0.9 - 1 && combinedTotal <= staged * 1.1 + 1)
-        ) {
-          toleranceDetail = { combinedTotal, stagedAmount: staged };
-          throw new Error(TOLERANCE);
-        }
-        splitTotal = combinedTotal;
-
-        // Mint the remainder gift HEADER (no allocations — same as every other
-        // QuickBooks mint; a fundraiser allocates afterward). Anchored to this
-        // staged payment so its QB tie derives `tied`. Donor XOR was validated
-        // up front.
-        if (remainder) {
-          createdGiftId = newId();
-          await tx.insert(giftsAndPayments).values({
-            ...buildGiftValuesFromStaged(
-              createdGiftId,
-              {
-                qbEntityType: locked.qbEntityType,
-                qbEntityId: locked.qbEntityId,
-                amount: remainder.amount,
-                dateReceived: locked.dateReceived,
-                payerName: locked.payerName,
-                rawReference: locked.rawReference,
-                organizationId: remainder.organizationId ?? null,
-                individualGiverPersonId:
-                  remainder.individualGiverPersonId ?? null,
-                householdId: remainder.householdId ?? null,
-                matchedPaymentIntermediaryId:
-                  locked.matchedPaymentIntermediaryId,
-              },
-              user.id,
-            ),
-            amount: remainder.amount,
-            // Provenance is the counted ledger row (created_the_gift = true,
-            // booked below); the transitional final-amount columns are retired
-            // (Task #757) and never written.
-          });
-          // Every gift needs at least one allocation (the sole home of money
-          // scope). The payment_applications rows below are QB link records, NOT
-          // allocations — seed a default full-amount line so the remainder gift is
-          // never scope-less. Carries the staged row's attributed entity + goal
-          // signal (mirrors the QuickBooks create-gift path).
-          await seedInitialGiftAllocation(tx, {
-            giftId: createdGiftId,
-            amount: remainder.amount,
-            dateReceived: locked.dateReceived,
-            entityId: locked.entityId,
-            countsTowardGoal: !isGovernmentReimbursement(locked),
-          });
-          await assertGiftHasAllocations(tx, createdGiftId);
-        }
-
-        // One QB cash-application ledger row per split target gift (amount =
-        // that gift's gross sub-amount) — the split's SOLE resolution record
-        // (the staged row keeps all three gift-link columns NULL). A write-skew
-        // race (two concurrent splits grabbing the same gift) is serialized by
-        // the target-gift FOR UPDATE locks above, taken before the
-        // linkedElsewhere ledger check. The summed GROSS sub-amounts can run
-        // slightly above the NET deposit, so pass a fee-band tolerance matching
-        // the route's band (staged*1.1+1) so the book-once guard accepts the
-        // full set.
-        const splitLedgerTolerance = Number(locked.amount ?? 0) * 0.1 + 1;
-        for (const g of gifts) {
-          if (!(g.amount && Number(g.amount) > 0)) continue;
-          await applyPaymentApplication(tx, {
-            paymentId: id,
-            giftId: g.id,
-            amountApplied: g.amount,
-            evidenceSource: "quickbooks",
-            matchMethod: "human",
-            confirmedByUserId: user.id,
-            confirmedAt: new Date(),
-            createdTheGift: false,
-            tolerance: splitLedgerTolerance,
-          });
-        }
-        if (createdGiftId) {
-          await applyPaymentApplication(tx, {
-            paymentId: id,
-            giftId: createdGiftId,
-            amountApplied: remainder!.amount,
-            evidenceSource: "quickbooks",
-            matchMethod: "human",
-            confirmedByUserId: user.id,
-            confirmedAt: new Date(),
-            createdTheGift: true,
-            tolerance: splitLedgerTolerance,
-          });
-        }
-
-        // Mark the staged row resolved. Its own donor columns are NOT
-        // authoritative for a split (the money spans several donors), so clear
-        // them. The legacy single-gift link columns are @deprecated and no
-        // longer written (a split's resolution lives entirely in the counted
-        // ledger rows above).
-        await tx
-          .update(stagedPayments)
-          .set({
-            organizationId: null,
-            individualGiverPersonId: null,
-            householdId: null,
-            autoApplied: false,
-            matchStatus: "matched",
-            matchMethod: "manual",
-            matchConfirmedByUserId: user.id,
-            matchConfirmedAt: new Date(),
-            approvedByUserId: user.id,
-            approvedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          // No derived-pending re-check here: the row was verified pending
-          // under its FOR UPDATE lock at the top of this tx, and the counted
-          // ledger rows just inserted above ARE the resolution — the row
-          // already derives match_confirmed by design at this point.
-          .where(eq(stagedPayments.id, id));
-      });
-    } catch (e) {
-      if (e instanceof Error && e.message === NOT_FOUND) {
-        return notFound(res, "staged payment");
-      }
-      if (e instanceof Error && e.message === GIFT_NOT_FOUND) {
-        return notFound(res, "gift");
-      }
-      if (e instanceof Error && e.message === NOT_PENDING) {
-        res.status(409).json({
-          error: "not_pending",
-          message: "This staged payment has already been resolved.",
-        });
-        return;
-      }
-      if (e instanceof Error && e.message === LINK_INVALID) {
-        res.status(400).json({
-          error: "link_invalid",
-          message: "Cannot split this payment across that gift.",
-          details: {
-            issues: [
-              {
-                path: ["giftIds"],
-                message: "One of the selected gifts has no donor.",
-              },
-            ],
-          },
-        });
-        return;
-      }
-      if (e instanceof Error && e.message === CONFLICT) {
-        res.status(409).json({
-          error: "link_conflict",
-          message:
-            "One of those gifts is already linked to a payment. Refresh and try again.",
-        });
-        return;
-      }
-      if (e instanceof Error && e.message === TOLERANCE) {
-        res.status(400).json({
-          error: "amount_mismatch",
-          message:
-            "The gifts' combined total doesn't match the payment within the fee tolerance.",
-          details: toleranceDetail,
-        });
-        return;
-      }
-      throw e;
-    }
-
-    const allGiftIds = createdGiftId ? [...giftIds, createdGiftId] : giftIds;
-
-    res.json({
-      stagedPaymentId: id,
-      giftIds: allGiftIds,
-      splitTotal: splitTotal.toFixed(2),
-      createdGiftId,
-    });
-  }),
-);
+// ─── POST /staged-payments/:id/split (RETIRED) ─────────────────────────────
+// Tombstone: gift-side splitting is retired by the linear money model
+// (docs/adr-linear-money-model.md rule 5 + §7 step 5). One counted
+// payment_applications row per evidence anchor is enforced by a partial
+// unique index, so fanning ONE staged payment out across several gifts is no
+// longer representable. Divide the evidence row instead with
+// POST /reconciliation/staged-payments/:id/split-units, then match each child
+// unit to its own gift through the normal flows.
+router.post("/staged-payments/:id/split", (_req, res) => {
+  res.status(410).json({
+    error: "gift_side_split_retired",
+    message:
+      "Gift-side splitting is retired. Split the payment into child units (Reconciliation → Split into units), then match each unit to its gift.",
+  });
+});
 
 // ─── POST /staged-payments/confirm-matches ─────────────────────────────────
 // Bulk equivalent of confirm-match: stamp many auto-applied/suggested matches

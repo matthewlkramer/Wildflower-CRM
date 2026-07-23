@@ -33,12 +33,10 @@ import {
   useResolveStripeStagedCharge,
   useRevertStagedPayment,
   useRevertStripeStagedCharge,
-  useSplitStagedPayment,
   useUpdateGiftOrPayment,
   useUpdateOpportunityOrPledge,
   type GiftOrPayment,
   type GiftOrPaymentDetail,
-  type SplitStagedPaymentBody,
   type StagedPaymentExclusionReason,
   type WorkbenchClusterQbRecord,
   type WorkbenchLens,
@@ -75,7 +73,6 @@ import {
   type StripeSourceConflict,
 } from "@/lib/reconciliation";
 import { MergeGiftsDialog } from "@/components/gift-merge-dialogs";
-import { SplitEditorDialog } from "@/components/reconciliation-split-editor";
 import type { DonorType } from "@/components/entity-picker";
 import {
   DonorResolveDialog,
@@ -239,8 +236,6 @@ export default function ReconciliationClustersPage() {
   // "Group with another gift" — combine the row's gifts via the shared merge dialog.
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
-  // "Split into reconciliation units" on a QB card.
-  const [splitFor, setSplitFor] = useState<WorkbenchClusterQbRecord | null>(null);
 
   // Debounce free-text search so we don't refetch per keystroke.
   useEffect(() => {
@@ -295,7 +290,6 @@ export default function ReconciliationClustersPage() {
   const revertStripePayoutReconciliationM = useRevertStripePayoutReconciliation();
   const resolveWithdrawalM = useResolveStripePayoutWithdrawal();
   const revertWithdrawalM = useRevertStripePayoutWithdrawal();
-  const splitM = useSplitStagedPayment();
   const approveCardM = useApproveReconciliationCard();
 
   const busy =
@@ -320,7 +314,6 @@ export default function ReconciliationClustersPage() {
     rejectChargeQbTieM.isPending ||
     rejectSettlementProposalM.isPending ||
     revertStripePayoutReconciliationM.isPending ||
-    splitM.isPending ||
     approveCardM.isPending;
 
   const invalidate = useCallback(() => {
@@ -368,36 +361,6 @@ export default function ReconciliationClustersPage() {
     if (ids.length < 2) return;
     setMergeGiftIds(ids);
     setMergeOpen(true);
-  };
-
-  // Split one staged QB payment into parts (fee-band aware shared editor).
-  // Unlike the queue workbench there is no staging tray here — the split
-  // applies immediately.
-  const handleSplitStage = async (
-    body: SplitStagedPaymentBody,
-    detail: string,
-  ) => {
-    if (!splitFor) return;
-    try {
-      await splitM.mutateAsync({ id: splitFor.stagedPaymentId, data: body });
-      setSplitFor(null);
-      invalidate();
-      toast({ title: "Payment split", description: detail });
-    } catch (err) {
-      if (is409(err)) {
-        toast({
-          title: "The record changed — try again.",
-          description: apiErrorMessage(err) ?? errMessage(err),
-        });
-        invalidate();
-      } else {
-        toast({
-          title: "Couldn't split",
-          description: errMessage(err),
-          variant: "destructive",
-        });
-      }
-    }
   };
 
   // Confirm the server-proposed match on a per-charge card: fetch the linked
@@ -991,7 +954,6 @@ export default function ReconciliationClustersPage() {
     openUnlinkChooser: (giftLabel, options) =>
       setUnlinkChooserFor({ giftLabel, options }),
     openMergeGifts,
-    openSplitStaged: (record) => setSplitFor(record),
     confirmChargeProposal: (chargeId, label, depositStagedPaymentId) =>
       void handleConfirmChargeProposal(chargeId, label, depositStagedPaymentId),
   };
@@ -1582,31 +1544,6 @@ export default function ReconciliationClustersPage() {
         loadError={mergeLoadError}
         onDone={() => invalidate()}
       />
-
-      {/* "Split into reconciliation units" — shared fee-band split editor. */}
-      {splitFor ? (
-        <SplitEditorDialog
-          anchor={{
-            stagedPaymentId: splitFor.stagedPaymentId,
-            amount: splitFor.amount ?? null,
-            payerName:
-              splitFor.payerName ??
-              splitFor.lineDescription ??
-              splitFor.memo ??
-              splitFor.reference ??
-              null,
-            dateReceived: splitFor.dateReceived ?? null,
-            paymentMethod: splitFor.paymentMethod ?? null,
-            reference: splitFor.reference ?? null,
-          }}
-          busy={splitM.isPending}
-          stageLabel="Split payment"
-          onClose={() => {
-            if (!splitM.isPending) setSplitFor(null);
-          }}
-          onStage={(body, detail) => void handleSplitStage(body, detail)}
-        />
-      ) : null}
     </div>
   );
 }

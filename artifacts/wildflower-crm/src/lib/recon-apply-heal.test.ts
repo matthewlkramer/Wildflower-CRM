@@ -52,9 +52,9 @@ describe("isAlreadyResolvedError", () => {
 describe("changeReachedIntendedState", () => {
   const sp = "sp_1";
 
-  it("treats a split as applied once the payment shows as a resolved done card", () => {
+  it("treats a no-target change (create-a-new-gift) as applied once the payment shows as a resolved done card", () => {
     const probe: ResolvedStateProbe = {
-      kind: "split",
+      kind: "confirm",
       stagedPaymentId: sp,
       targetGiftId: null,
     };
@@ -65,9 +65,9 @@ describe("changeReachedIntendedState", () => {
     ).toBe(true);
   });
 
-  it("keeps a split unapplied when the payment is not yet a resolved done card", () => {
+  it("keeps a no-target change unapplied when the payment is not yet a resolved done card", () => {
     const probe: ResolvedStateProbe = {
-      kind: "split",
+      kind: "confirm",
       stagedPaymentId: sp,
       targetGiftId: null,
     };

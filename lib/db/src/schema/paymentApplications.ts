@@ -149,6 +149,26 @@ export const paymentApplications = pgTable(
       .where(
         sql`${t.donorboxDonationId} IS NOT NULL AND ${t.linkRole} = 'counted'`,
       ),
+    // Counted-uniqueness invariant (linear money model, docs/adr-linear-money-
+    // model.md §7 step 5): at most ONE counted ledger row per evidence anchor,
+    // full stop — one anchor's money settles one gift. Single-column partials,
+    // so they subsume the pair uniques above for counted rows; the pair uniques
+    // REMAIN because they are the ON CONFLICT arbiters applyPaymentApplication
+    // upserts through (a same-gift re-apply conflicts on both indexes for the
+    // same row, so DO UPDATE still fires; a different-gift insert hits only
+    // these → 23505 backstop behind the service-layer
+    // AnchorAlreadyCountedError guard).
+    uniqueIndex("payment_applications_payment_id_counted_uq")
+      .on(t.paymentId)
+      .where(sql`${t.paymentId} IS NOT NULL AND ${t.linkRole} = 'counted'`),
+    uniqueIndex("payment_applications_stripe_charge_id_counted_uq")
+      .on(t.stripeChargeId)
+      .where(sql`${t.stripeChargeId} IS NOT NULL AND ${t.linkRole} = 'counted'`),
+    uniqueIndex("payment_applications_donorbox_donation_id_counted_uq")
+      .on(t.donorboxDonationId)
+      .where(
+        sql`${t.donorboxDonationId} IS NOT NULL AND ${t.linkRole} = 'counted'`,
+      ),
     // Corroborating dedupe (Phase 5) — mirrors gift_evidence_links'
     // (gift, evidence) unique: a given evidence row corroborates a given gift AT
     // MOST ONCE per anchor. Disjoint from the counted uniques above (partial on

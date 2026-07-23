@@ -114,8 +114,6 @@ export interface ClusterActions {
   openUnlinkChooser: (giftLabel: string, options: UnlinkOption[]) => void;
   /** Combine several of the row's gifts into ONE gift (shared MergeGiftsDialog). */
   openMergeGifts: (giftIds: string[]) => void;
-  /** Split one QB staged payment across several gifts (shared SplitEditorDialog). Finance-gated. */
-  openSplitStaged: (record: WorkbenchClusterQbRecord) => void;
   /** Approve the server-proposed match for a per-charge card via its deposit's reconciliation graph. */
   confirmChargeProposal: (
     chargeId: string,
@@ -1133,32 +1131,15 @@ function QbCard({
     );
   }
   if (!isFee) {
-    // Split acts on the staged QB row itself — only meaningful while the
-    // row is still open (not reconciled into a gift, not excluded). (Grouping
-    // QB rows is retired: match several rows to one gift from the queue
-    // workbench's multi-select bar instead.)
-    const rowOpenReason = excluded
-      ? "Excluded rows can't be changed — re-include first"
-      : linked
-        ? "Already reconciled to a gift — unlink first"
-        : null;
-    menu.push(
-      isFinance
-        ? isSplitUnit
-          ? {
-              label: "Split into reconciliation units",
-              disabledReason:
-                "Already a split unit — split the original QuickBooks row instead",
-            }
-          : rowOpenReason
-            ? { label: "Split into reconciliation units", disabledReason: rowOpenReason }
-            : {
-                label: "Split into reconciliation units",
-                onClick: () => actions.openSplitStaged(record),
-              }
-        : { label: "Split into reconciliation units", disabledReason: "Finance team only" },
-      { label: "View QB record", onClick: () => actions.openQbDetail(record, linkage) },
-    );
+    // (Gift-side splitting is retired: a deposit that bundles several money
+    // events is divided evidence-side into child UNITS — an admin/API action —
+    // then each child unit is matched normally. Grouping QB rows is also
+    // retired: match several rows to one gift from the queue workbench's
+    // multi-select bar instead.)
+    menu.push({
+      label: "View QB record",
+      onClick: () => actions.openQbDetail(record, linkage),
+    });
   }
   menu.push(
     {

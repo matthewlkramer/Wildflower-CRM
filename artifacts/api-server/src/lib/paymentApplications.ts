@@ -84,6 +84,26 @@ export function checkBookOnce(args: BookOnceCheckArgs): BookOnceResult {
   return { ok: overage <= 0, total, cap, overage: overage > 0 ? overage : 0 };
 }
 
+/** Thrown by applyPaymentApplication when the evidence anchor already carries
+ * a counted ledger row for a DIFFERENT gift. One counted row per anchor is the
+ * linear-money-model invariant (docs/adr-linear-money-model.md §7 step 5),
+ * enforced here as a clean domain error and backstopped by the partial unique
+ * indexes `payment_applications_*_counted_uq`. Legitimate re-point flows
+ * delete the old counted row in the same transaction before re-applying, so
+ * they never see this. */
+export class AnchorAlreadyCountedError extends Error {
+  constructor(
+    public readonly anchorId: string,
+    public readonly existingGiftId: string,
+    public readonly attemptedGiftId: string,
+  ) {
+    super(
+      `evidence anchor ${anchorId} already carries a counted ledger row for gift ${existingGiftId}; cannot also count it toward gift ${attemptedGiftId}`,
+    );
+    this.name = "AnchorAlreadyCountedError";
+  }
+}
+
 /** Thrown by applyPaymentApplication when the live SUM would over-apply a
  * payment beyond its value + tolerance. */
 export class PaymentOverApplicationError extends Error {
@@ -290,10 +310,12 @@ export async function applyPaymentApplication(
   // 1. Resolve + lock the anchor (serializes concurrent applications of it).
   const anchor = await resolveAndLockAnchor(tx, args);
 
-  // 2. Live SUM already booked to OTHER gifts against THIS anchor (counted).
+  // 2. Live state already booked to OTHER gifts against THIS anchor (counted).
   const sumRows = await tx
     .select({
       sum: sql<string>`coalesce(sum(${paymentApplications.amountApplied}), 0)`,
+      count: sql<number>`count(*)::int`,
+      existingGiftId: sql<string | null>`min(${paymentApplications.giftId})`,
     })
     .from(paymentApplications)
     .where(
@@ -304,6 +326,22 @@ export async function applyPaymentApplication(
       ),
     );
   const otherSum = sumRows[0]?.sum ?? "0";
+
+  // 2b. Counted-uniqueness invariant (linear money model §7 step 5): ONE
+  //     counted row per evidence anchor. Any live counted row for a different
+  //     gift is a hard conflict regardless of amounts — the fee-band split
+  //     era, where several counted rows could share one anchor, is retired.
+  //     Re-point flows delete the old counted row earlier in this same tx, so
+  //     this read sees the post-delete state and passes. The partial unique
+  //     indexes back this guard at the DB layer.
+  const otherCount = sumRows[0]?.count ?? 0;
+  if (otherCount > 0) {
+    throw new AnchorAlreadyCountedError(
+      anchor.id,
+      sumRows[0]?.existingGiftId ?? "unknown",
+      args.giftId,
+    );
+  }
 
   // 3. Pure book-once guard.
   const result = checkBookOnce({

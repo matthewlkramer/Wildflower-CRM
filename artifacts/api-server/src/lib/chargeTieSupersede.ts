@@ -4,6 +4,7 @@ import type { db } from "@workspace/db";
 import { paymentApplications, stagedPayments, stripeStagedCharges } from "@workspace/db/schema";
 import { and, eq, isNotNull, ne, or, sql } from "drizzle-orm";
 import {
+  AnchorAlreadyCountedError,
   applyPaymentApplication,
   checkBookOnce,
   type PaymentApplicationMatchMethod,
@@ -358,22 +359,32 @@ export async function applyChargeTieSupersedePairs(
       // Conservative skip: booking stays on the QB row — safe, visible,
       // converged by a later re-run once the conflicting booking clears.
       if (!guard.ok) return false;
-      await applyPaymentApplication(tx, {
-        evidenceSource: "stripe",
-        stripeChargeId: pair.chargeId,
-        giftId: row.giftId,
-        giftAllocationId: row.giftAllocationId,
-        // COPY the human-ratified amount (exact-cents contract: it equals the
-        // charge gross or net) — never re-stamp the gross over a net booking.
-        amountApplied: row.amountApplied as string,
-        // First-class supersede discriminator (revert deletes by it); the
-        // note below keeps the source QB row id as human-readable trail.
-        matchMethod: "charge_tie_supersede",
-        confirmedByUserId: row.confirmedByUserId,
-        confirmedAt: row.confirmedAt,
-        note: marker,
-        createdTheGift: false,
-      });
+      try {
+        await applyPaymentApplication(tx, {
+          evidenceSource: "stripe",
+          stripeChargeId: pair.chargeId,
+          giftId: row.giftId,
+          giftAllocationId: row.giftAllocationId,
+          // COPY the human-ratified amount (exact-cents contract: it equals the
+          // charge gross or net) — never re-stamp the gross over a net booking.
+          amountApplied: row.amountApplied as string,
+          // First-class supersede discriminator (revert deletes by it); the
+          // note below keeps the source QB row id as human-readable trail.
+          matchMethod: "charge_tie_supersede",
+          confirmedByUserId: row.confirmedByUserId,
+          confirmedAt: row.confirmedAt,
+          note: marker,
+          createdTheGift: false,
+        });
+      } catch (e) {
+        // Counted-uniqueness conservative skip: the charge already carries a
+        // counted row for a DIFFERENT gift (amounts small enough to pass the
+        // gross-cap pre-check above, e.g. after a partial refund demotion).
+        // Same semantics as the guard skip — booking stays on the QB row,
+        // converged by a later re-run once the conflicting booking clears.
+        if (e instanceof AnchorAlreadyCountedError) return false;
+        throw e;
+      }
       return true;
     };
 

@@ -81,7 +81,6 @@ function makeActions(): ClusterActions {
     unmatchPledge: vi.fn(),
     openUnlinkChooser: vi.fn(),
     openMergeGifts: vi.fn(),
-    openSplitStaged: vi.fn(),
     confirmChargeProposal: vi.fn(),
   };
 }

@@ -269,7 +269,7 @@ export function extractGateIssues(err: unknown): string[] {
 }
 
 /**
- * The staged-payment resolve endpoints (split / reconcile / group) are
+ * The staged-payment resolve endpoints (reconcile / multi-match) are
  * NOT idempotent: once a row flips from `pending` to a terminal state they
  * return `409 { error: "not_pending" }` ("This staged payment has already been
  * resolved."). If a successful apply's response was lost (network/timeout) or the
@@ -290,11 +290,10 @@ export function isAlreadyResolvedError(err: unknown): boolean {
  * A staged change awaiting Apply, reduced to just what's needed to decide whether
  * an already-resolved staged payment reached the outcome the reviewer staged.
  * `targetGiftId` is the existing gift a confirm/re-target/group links to; it is
- * null for outcomes without a single pre-chosen gift (create-a-new-gift, or a
- * split across several gifts).
+ * null for outcomes without a single pre-chosen gift (create-a-new-gift).
  */
 export interface ResolvedStateProbe {
-  kind: "confirm" | "retarget" | "split";
+  kind: "confirm" | "retarget";
   stagedPaymentId: string;
   targetGiftId: string | null;
 }
@@ -307,7 +306,7 @@ export interface ResolvedStateProbe {
  * DIFFERENT state by a sync or another user) keeps the change with a calm
  * "already resolved" note.
  *
- *  - split / create-a-new-gift (no `targetGiftId`) → intended when the row now
+ *  - create-a-new-gift (no `targetGiftId`) → intended when the row now
  *              appears as a resolved "done" card at all (the money is booked).
  *  - confirm / re-target / group (a specific `targetGiftId`) → intended only
  *              when a resolved "done" card for the row ties to THAT gift.

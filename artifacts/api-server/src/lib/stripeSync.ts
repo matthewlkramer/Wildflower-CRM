@@ -17,6 +17,7 @@ import { deriveRefundProposal, isFullyRefunded } from "./stripeRefund";
 import { sweepRefundedQbStagedPayments } from "./refundedChargeSweep";
 import { ensureBundleDraftsForAnchors } from "./reconciliationBundleSync";
 import {
+  AnchorAlreadyCountedError,
   bookStripeChargeApplication,
   PaymentOverApplicationError,
   qbLedgerExistsForGift,
@@ -474,10 +475,12 @@ async function stripeAutoApply(
       return true;
     });
   } catch (e) {
-    // A concurrent tie (partial-unique 23505) or an over-application leaves the
-    // charge pending for human review — never a hard failure of the sync run.
+    // A concurrent tie (partial-unique 23505), an over-application, or an
+    // anchor already counted toward another gift leaves the charge pending for
+    // human review — never a hard failure of the sync run.
     if (isUniqueViolation(e)) return false;
     if (e instanceof PaymentOverApplicationError) return false;
+    if (e instanceof AnchorAlreadyCountedError) return false;
     throw e;
   }
 }

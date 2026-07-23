@@ -14,6 +14,7 @@ import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { newId } from "./helpers";
 import { buildGiftValuesFromStaged } from "./quickbooksGift";
 import {
+  AnchorAlreadyCountedError,
   applyPaymentApplication,
   bookStripeChargeApplication,
   PaymentOverApplicationError,
@@ -826,14 +827,19 @@ export async function linkGiftInTx(
         createdTheGift: false,
       });
     } catch (e) {
-      // The book-once guard refuses to over-apply this payment: it is still
+      // The ledger guards refuse to re-target this payment: it is still
       // holding a COUNTED cash-application to a DIFFERENT gift (e.g. the QB
       // worker's auto-match left it `approved` with a system ledger row). A
-      // re-target here would apply one payment's money to two gifts. Surface it
-      // as a handled 409 (like every other in-tx conflict) instead of letting a
-      // raw PaymentOverApplicationError escape to the global 500 handler. The
+      // re-target here would apply one payment's money to two gifts —
+      // AnchorAlreadyCountedError is the counted-uniqueness invariant (one
+      // counted row per anchor), PaymentOverApplicationError the amount cap.
+      // Surface both as a handled 409 (like every other in-tx conflict)
+      // instead of letting a raw error escape to the global 500 handler. The
       // reviewer must revert that existing match before re-targeting.
-      if (e instanceof PaymentOverApplicationError) {
+      if (
+        e instanceof AnchorAlreadyCountedError ||
+        e instanceof PaymentOverApplicationError
+      ) {
         throw new ReconcileAbort(409, {
           error: "payment_already_applied",
           message:

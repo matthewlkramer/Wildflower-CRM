@@ -8,10 +8,6 @@ import {
 } from "react";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
-  SplitEditorDialog,
-  feeRemainder,
-} from "@/components/reconciliation-split-editor";
-import {
   GiftSearchDialog,
   giftDonorName,
 } from "@/components/gift-search-dialog";
@@ -38,7 +34,6 @@ import {
   multiMatchStagedPayments,
   listReconciliationCards,
   searchReconciliationNode,
-  splitStagedPayment,
   useListGiftsAndPayments,
   useListGiftsMissingQb,
   useRematchStagedPayments,
@@ -49,7 +44,6 @@ import {
   type ReconciliationCard,
   type ReconciliationCandidate,
   type ApproveCompleteMatchBody,
-  type SplitStagedPaymentBody,
   type StagedPaymentExclusionReason,
   type GiftOrPayment,
   type GiftOrPaymentDetail,
@@ -326,6 +320,36 @@ function money(v: string | null | undefined): string {
   });
 }
 
+// Processor fee-band helpers (formerly exported by the retired split editor —
+// the gift-side split flow is gone, but the lineage strip still explains a
+// gross-gift vs net-deposit gap as the processor fee).
+const FEE_BAND_FLOOR = 0.9;
+const FEE_BAND_CEIL = 1.1;
+
+/** Does the applied total sit inside the processor fee-band? */
+function withinFeeBand(applied: number, total: number): boolean {
+  if (total <= 0) return Math.abs(applied) < 0.005;
+  return (
+    applied >= total * FEE_BAND_FLOOR - 1 &&
+    applied <= total * FEE_BAND_CEIL + 1
+  );
+}
+
+/**
+ * When the gift (gross) exceeds the QB deposit (net) by an amount that sits
+ * inside the processor fee-band, that difference IS the processor fee, not an
+ * over-application. Returns the fee, else null.
+ */
+function feeRemainder(
+  paymentTotal: number | null,
+  applied: number | null,
+): number | null {
+  if (paymentTotal == null || applied == null) return null;
+  if (applied <= paymentTotal) return null;
+  if (!withinFeeBand(applied, paymentTotal)) return null;
+  return +(applied - paymentTotal).toFixed(2);
+}
+
 // Supplemental chips for the badge row. The amount-delta and donor chips were
 // removed — the amount now lives on each side of the card and the donor name is
 // shown in the CRM-gift lane + the Status line — so only the Stripe-payout
@@ -342,7 +366,7 @@ function evidenceBullets(card: ReconciliationCard): string[] {
 
 // ─── Pending tray model ─────────────────────────────────────────────────────
 
-type StagedKind = "confirm" | "retarget" | "split";
+type StagedKind = "confirm" | "retarget";
 
 interface StagedChange {
   key: string;
@@ -350,10 +374,8 @@ interface StagedChange {
   stagedPaymentId: string;
   label: string;
   detail: string;
-  /** Approve body for confirm / retarget; null for split. */
+  /** Approve body for confirm / retarget. */
   body: ApproveCompleteMatchBody | null;
-  /** Split body for kind === "split"; null otherwise. */
-  splitBody?: SplitStagedPaymentBody | null;
   /** Set after a failed Apply so the row stays staged with a reason. */
   failure?: string | null;
 }
@@ -489,7 +511,6 @@ export default function ReconciliationWorkbench() {
   const [writeOffCard, setWriteOffCard] = useState<ReconciliationCard | null>(
     null,
   );
-  const [splitCard, setSplitCard] = useState<ReconciliationCard | null>(null);
   const [excludeCard, setExcludeCard] = useState<ReconciliationCard | null>(
     null,
   );
@@ -673,31 +694,6 @@ export default function ReconciliationWorkbench() {
     );
   }, []);
 
-  /** Stage a split-across-gifts (+ optional remainder) change into the tray. */
-  const stageSplit = useCallback(
-    (
-      card: ReconciliationCard,
-      splitBody: SplitStagedPaymentBody,
-      detail: string,
-    ) => {
-      stage({
-        key: `split:${card.stagedPaymentId}`,
-        kind: "split",
-        stagedPaymentId: card.stagedPaymentId,
-        label: card.payerName ?? "Staged payment",
-        detail,
-        body: null,
-        splitBody,
-      });
-      setSplitCard(null);
-      toast({
-        title: "Split staged",
-        description: "Review the tray, then Apply to CRM.",
-      });
-    },
-    [stage, toast],
-  );
-
   /** Fetch the card's graph and derive the auto-proposal approve body. */
   const deriveConfirmBody = useCallback(
     async (
@@ -805,13 +801,7 @@ export default function ReconciliationWorkbench() {
     let applied = 0;
     for (const change of staged) {
       try {
-        if (change.kind === "split") {
-          if (!change.splitBody) {
-            remaining.push({ ...change, failure: "Missing split body." });
-            continue;
-          }
-          await splitStagedPayment(change.stagedPaymentId, change.splitBody);
-        } else if (change.body) {
+        if (change.body) {
           await approveReconciliationCard(change.stagedPaymentId, change.body);
         } else {
           remaining.push({ ...change, failure: "Missing action body." });
@@ -1674,7 +1664,6 @@ export default function ReconciliationWorkbench() {
         onWriteOffPledge={() => setWriteOffCard(card)}
         onChangeDonor={() => setDonorCard(card)}
         onExclude={() => setExcludeCard(card)}
-        onSplit={() => setSplitCard(card)}
         onGroup={() => {
           toggleSelect(key);
           toast({
@@ -2228,23 +2217,6 @@ export default function ReconciliationWorkbench() {
         />
       )}
 
-      {/* Split-across-gifts editor */}
-      {splitCard && (
-        <SplitEditorDialog
-          anchor={{
-            stagedPaymentId: splitCard.stagedPaymentId,
-            amount: splitCard.amount ?? null,
-            payerName:
-              splitCard.stripeChargeDonorName ?? splitCard.payerName ?? null,
-            dateReceived: splitCard.dateReceived ?? null,
-            paymentMethod: splitCard.qbPaymentMethod ?? null,
-            reference: splitCard.rawReference ?? null,
-          }}
-          onClose={() => setSplitCard(null)}
-          onStage={(body, detail) => stageSplit(splitCard, body, detail)}
-        />
-      )}
-
       {/* Flag a staged payment for research → Cleanup Queue */}
       {researchCard && (
         <FlagForResearchDialog
@@ -2363,13 +2335,12 @@ function ResolveMenu({
   onWriteOffPledge,
   onChangeDonor,
   onExclude,
-  onSplit,
   onGroup,
   onFlagResearch,
 }: {
   card: ReconciliationCard;
   busy: boolean;
-  /** Per-charge card: deposit-level actions (split / group / exclude) are off. */
+  /** Per-charge card: deposit-level actions (group / exclude) are off. */
   isCharge?: boolean;
   onConfirm: () => void;
   onRetarget: () => void;
@@ -2379,7 +2350,6 @@ function ResolveMenu({
   onWriteOffPledge: () => void;
   onChangeDonor: () => void;
   onExclude: () => void;
-  onSplit: () => void;
   onGroup: () => void;
   onFlagResearch: () => void;
 }) {
@@ -2443,19 +2413,16 @@ function ResolveMenu({
             "Exclude payment",
             "reason: vendor, reimbursement, loan…",
           )}
-        {/* Split / Group restructure the QB deposit; they don't apply to a
-            single Stripe charge (already the finest matching unit). */}
+        {/* Group restructures the QB deposit; it doesn't apply to a single
+            Stripe charge (already the finest matching unit). A deposit that
+            genuinely bundles several money events is split into UNITS on the
+            deposit row (Stripe-style child units), not into gifts here. */}
         {!isCharge && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
               Restructure
             </DropdownMenuLabel>
-            {MI(
-              onSplit,
-              "Split payment across gifts",
-              "one payment → many gifts",
-            )}
             {MI(
               onGroup,
               "Match payments → one gift",
@@ -2499,7 +2466,6 @@ function ReconCard({
   onWriteOffPledge,
   onChangeDonor,
   onExclude,
-  onSplit,
   onGroup,
   onFlagResearch,
   onUnstage,
@@ -2522,7 +2488,6 @@ function ReconCard({
   onWriteOffPledge: () => void;
   onChangeDonor: () => void;
   onExclude: () => void;
-  onSplit: () => void;
   onGroup: () => void;
   onFlagResearch: () => void;
   onUnstage: () => void;
@@ -2949,7 +2914,6 @@ function ReconCard({
                 onWriteOffPledge={onWriteOffPledge}
                 onChangeDonor={onChangeDonor}
                 onExclude={onExclude}
-                onSplit={onSplit}
                 onGroup={onGroup}
                 onFlagResearch={onFlagResearch}
               />
