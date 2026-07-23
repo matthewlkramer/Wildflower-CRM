@@ -445,6 +445,29 @@ describe.skipIf(!HAS_DB)("charge-tie supersede (DB)", () => {
     expect(chRows).toHaveLength(1); // no marked copy minted
   });
 
+  it("move is SKIPPED when the charge is counted for a DIFFERENT gift within the cap", async () => {
+    const gift = await seedGift();
+    const otherGift = await seedGift();
+    const sp = await seedQbStagedPayment();
+    // NET booking (99.71) so the copy + the other gift's small counted row
+    // (1.00) stay UNDER the 103.00 gross cap — the old book-once pre-check
+    // alone would allow the move; the counted-uniqueness guard inside
+    // applyPaymentApplication must conservatively skip it instead.
+    const qbPaId = await seedQbLedgerRow(sp, gift, { amount: "99.71" });
+    const ch = await seedCharge({ linkedTo: sp });
+    await seedChargeLedgerRow(ch, otherGift, { amount: "1.00" });
+
+    const affected = await apply([{ chargeId: ch, qbStagedPaymentId: sp }]);
+    expect(affected).toEqual([]);
+
+    const qbRows = await readQbRows(sp);
+    expect(qbRows[0].id).toBe(qbPaId);
+    expect(qbRows[0].linkRole).toBe("counted"); // booking stayed QB-side
+    const chRows = await readChargeRows(ch);
+    expect(chRows).toHaveLength(1); // only the other gift's row; no copy
+    expect(chRows[0].giftId).toBe(otherGift);
+  });
+
   it("promote drops the stale crumb when a fresh counted row raced ahead", async () => {
     const gift = await seedGift();
     const sp = await seedQbStagedPayment();

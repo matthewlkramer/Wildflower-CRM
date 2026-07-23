@@ -6,13 +6,17 @@ last_verified: 2026-07-23
 # ADR: Linear money model — gift = payment event, bank-anchored evidence tree
 
 **Status:** Ratified 2026-07-23 (design discussion with owner; production-data
-analysis + architecture review). Implementation is under way — §7 steps 1–3
+analysis + architecture review). Implementation is under way — §7 steps 1–4
 are done (step 2: `POST /quickbooks/staged-payments/multi-match` writes N
 counted rows atomically; the group and group-reconcile endpoints are 410
 stubs, so no new unit groups can be created; step 3: every unit-group read
 and behavior is retired — nothing reads or writes `unit_groups` /
 `unit_group_members` any more; the tables persist as inert legacy data until
-step 4 drops them). Steps 4–6 are not started; see §7 for sequencing. Layer 1 (§2) is ratified coding semantics; Layer 2 (§3) is
+their post-verification drop; step 4: the 0157 recoding was applied to prod
+2026-07-23 — every prod evidence unit now carries at most one counted row).
+Step 5 (counted-uniqueness) is code-complete — domain guard, DB partial
+unique indexes, and gift-side split retirement — with its index migration
+awaiting human apply. Step 6 is not started; see §7 for sequencing. Layer 1 (§2) is ratified coding semantics; Layer 2 (§3) is
 design-target — its QB grain (one entry per allocation) is a working
 assumption pending accountant confirmation (owner: "easy to roll up if
 wrong").
@@ -200,14 +204,23 @@ in `lib/db/migrations/` (evidence anchor ids from the 2026-07-23 analysis):
    `@deprecated`, solely so existing prod rows survive for step 4's
    verification, which then drops both tables.
 4. **Prod recoding** (§6) as reviewed idempotent migration SQL, applied by a
-   human with `$PROD_DATABASE_URL`. **Written (2026-07-23), awaiting human
-   apply:** `lib/db/migrations/0157_recode_counted_duplicate_units.sql`
+   human with `$PROD_DATABASE_URL`.
+   **Applied to prod (2026-07-23):**
+   `lib/db/migrations/0157_recode_counted_duplicate_units.sql`
    (runbook: `lib/db/migrations/0157_RUNBOOK.md`). Deviations from the §6
    table are recorded inline above. The `unit_groups` /
    `unit_group_members` table drop is deliberately NOT in 0157 — it ships as
    a separate later file once 0157 is verified in prod.
 5. **Counted-uniqueness constraint LAST**, in a migration ordered strictly
    after the recoding file — never before, or the prod migration fails.
+   **Done in code (2026-07-23):** `applyPaymentApplication` throws
+   `AnchorAlreadyCountedError` (step 2b guard) when an anchor already
+   carries a counted row for a different gift; three partial unique indexes
+   (`payment_applications_<payment_id|stripe_charge_id|donorbox_donation_id>_counted_uq`,
+   `WHERE link_role = 'counted'`) back the guard at the DB layer (pushed to
+   dev); the gift-side split endpoint is a 410 `split_retired` tombstone and
+   all split UI is removed. **Awaiting human apply:**
+   `lib/db/migrations/0158_counted_uniqueness_index.sql`.
 6. Layer 2 (bank-anchored counted role, prescription list, verification lens,
    missing "QB deposit with no bank line" lens) as a follow-on project once
    the accountants confirm the per-allocation grain.

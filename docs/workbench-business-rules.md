@@ -546,8 +546,6 @@ Relationship actions create, confirm, change, or remove links between evidence r
 * Confirm proposed match
 * Unmatch
 * Replace match
-* Group
-* Split
 * Move a card to another row
 * Remove a card from a row
 * Repair a broken pledge relationship

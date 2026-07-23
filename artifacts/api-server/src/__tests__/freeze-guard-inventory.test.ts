@@ -162,10 +162,9 @@ const EXPECTED: Record<string, FileClass> = {
     classification: "exempt",
     reason: "QuickBooks approve/mint engine (system ground-truth).",
   },
-  "routes/quickbooks/matching.ts": {
-    classification: "exempt",
-    reason: "QuickBooks matching/mint engine (system ground-truth).",
-  },
+  // routes/quickbooks/matching.ts dropped out of the inventory when the
+  // gift-side split-apply write path was retired (linear money model §7
+  // step 5 — the endpoint is now a 410 tombstone with no gift writes).
   "routes/quickbooks/shared.ts": {
     classification: "exempt",
     reason: "QuickBooks revert hard-delete (system reversal of its own mint).",

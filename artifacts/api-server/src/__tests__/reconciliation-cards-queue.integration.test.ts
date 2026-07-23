@@ -149,11 +149,11 @@ async function seedStaged(opts: {
   return id;
 }
 
-// Link a staged payment to a pre-existing gift as part of a SPLIT: the staged
-// row carries NONE of the matched/created/group id columns — its resolution
-// lives entirely in counted payment_applications ledger rows (what the split
-// route writes).
-async function seedSplit(
+// Link a staged payment to a pre-existing gift purely through the ledger: the
+// staged row carries NONE of the matched/created/group id columns — its
+// resolution lives entirely in its ONE counted payment_applications row
+// (counted-uniqueness, linear money model §7 step 5).
+async function seedLedgerResolved(
   stagedPaymentId: string,
   giftId: string,
   subAmount: string,
@@ -441,30 +441,30 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
     expect(done.has(approvedMatchedId)).toBe(true);
   }, 30_000);
 
-  it("excludes an approved SPLIT payment and a group-reconciled row (resolution not in the id columns)", async () => {
-    // The reported bug (Frey Foundation): a payment split across two existing
-    // gifts kept showing as unlinked money. A split carries NONE of
-    // matchedGiftId / createdGiftId / groupReconciledGiftId — its resolution
-    // lives entirely in counted payment_applications rows — so the old
-    // predicate (which only checked matched/created) wrongly re-admitted it to
-    // the live queue.
-    const splitGiftA = await seedGift("60.00");
-    const splitGiftB = await seedGift("40.00");
+  it("excludes a ledger-resolved payment and a group-reconciled row (resolution not in the id columns)", async () => {
+    // The reported bug (Frey Foundation): a payment whose resolution lives
+    // ONLY in the counted payment_applications ledger kept showing as
+    // unlinked money. Such a row carries NONE of matchedGiftId /
+    // createdGiftId / groupReconciledGiftId, so the old predicate (which
+    // only checked matched/created) wrongly re-admitted it to the live
+    // queue. (Historically this was the gift-side split flow; under the
+    // linear money model an anchor carries exactly ONE counted row.)
+    const splitGiftA = await seedGift("100.00");
     const splitId = await seedStaged({
-      label: "approved-split-nostripe",
+      label: "approved-ledger-nostripe",
       amount: "100.00",
     });
-    await seedSplit(splitId, splitGiftA, "60.00");
-    await seedSplit(splitId, splitGiftB, "40.00");
+    await seedLedgerResolved(splitId, splitGiftA, "100.00");
 
-    // A split that STILL has Stripe to tie in remains real work — the
-    // settlement_link re-admits it (mirrors the matched+stripe leg above).
+    // A ledger-resolved row that STILL has Stripe to tie in remains real
+    // work — the settlement_link re-admits it (mirrors the matched+stripe
+    // leg above).
     const splitGiftC = await seedGift("100.00");
     const splitStripeId = await seedStaged({
-      label: "approved-split-stripe",
+      label: "approved-ledger-stripe",
       amount: "100.00",
     });
-    await seedSplit(splitStripeId, splitGiftC, "100.00");
+    await seedLedgerResolved(splitStripeId, splitGiftC, "100.00");
     await seedPayoutFor(splitStripeId);
 
     // A group-reconciled member row (counted ledger row from a group
