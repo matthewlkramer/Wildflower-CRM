@@ -20,7 +20,7 @@ Entry points, in reading order for any non-trivial change:
 3. For reconciliation: `docs/reconciliation-status.md` (current state) →
    `docs/workbench-business-rules.md` (ratified semantics) →
    `docs/reconciliation-design.md` (target model) →
-   `docs/adr-source-link-ledger.md` (proposed evidence↔evidence ledger).
+   `docs/adr-source-link-ledger.md` (evidence↔evidence ledger — implemented; `source_links` is live) and `docs/adr-linear-money-model.md` (ratified linear money model: gift = one payment event, unit-group retirement, bank-anchored target).
 4. `lib/db/SCHEMA.md` — per-table reference; the Drizzle code in
    `lib/db/src/schema/*.ts` (+ `_enums.ts`) is the ultimate truth for what
    physically exists.

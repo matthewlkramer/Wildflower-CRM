@@ -278,15 +278,14 @@ exactly one counted representation per dollar.
 > visible (`derivedStatus.ts`: `stagedChargeTieExists` vs
 > `stagedChargeTieLinkExists`).
 
-> **Claim-pointer retirement (ADR, 2026-07).** The remaining unit-grain
-> evidence↔evidence pointers — `linked_qb_staged_payment_id`,
+> **Claim-pointer retirement (ADR, 2026-07 — IMPLEMENTED 2026-07-21).** The
+> unit-grain evidence↔evidence pointers — `linked_qb_staged_payment_id`,
 > `proposed_qb_staged_payment_id`, `linked_fee_qb_staged_payment_id` on
-> `stripe_staged_charges`, and the `donorbox_donations` counterparts — are
-> FROZEN (add no new pointer columns). Their replacement (one `source_links`
-> claims table with DB-enforced cardinality, lifecycle/provenance, and a
-> structured supersession `match_method` retiring the
-> `charge_tie_supersede:` note marker) and its prod-safe phased migration are
-> specified in [`adr-source-link-ledger.md`](adr-source-link-ledger.md).
+> `stripe_staged_charges`, and the `donorbox_donations` counterparts — were
+> replaced by the `source_links` claims table and physically dropped in
+> migration 0149. `source_links` is the sole authority for these claims; never
+> add a sibling pointer column. See
+> [`adr-source-link-ledger.md`](adr-source-link-ledger.md).
 
 ### 4.4 One derived status per record per plane (no new stored columns)
 
@@ -498,6 +497,15 @@ per-gift and per-unit and avoids a second grain of "reconciled." Revisit only if
 manual splitting proves too costly in practice.
 
 ### Decision 7 — How do we model the two cleanup ops (combine gifts / group units)? → **Group via a durable `unit_groups` table; combine via a ledger-aware merge; both additive over immutable evidence.**
+
+> **SUPERSEDED on the grouping half (2026-07-23).**
+> [`adr-linear-money-model.md`](adr-linear-money-model.md) retires
+> `unit_groups`/`unit_group_members` (and the legacy `source_group_id`):
+> multi-select match writes N counted ledger rows atomically, and the ledger
+> alone expresses the combined outcome. That ADR also migrates the counted
+> anchor for non-Stripe money from QB payment rows to bank-deposit units in
+> its Layer 2 target. The gift-combine half of this decision stands.
+
 Unit grouping becomes a first-class `unit_groups` record + polymorphic membership
 (§4.6b), generalizing today's `staged_payments.source_group_id`. Gift combine
 re-points the losers' ledger rows onto the survivor rather than blocking on a

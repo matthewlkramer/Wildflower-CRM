@@ -317,8 +317,8 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   field values; `occurrence` disambiguates legitimate intra-file repeats — the
   max count seen in any single file; unique on source+key+occurrence makes
   re-imports idempotent). Read-only after import; never mints gifts, never
-  anchors `payment_applications` rows, and carries NO foreign keys — any future
-  cross-evidence tie goes through the `source_links` ledger once implemented.
+  anchors `payment_applications` rows, and carries NO foreign keys — any
+  cross-evidence tie goes through the `source_links` ledger (implemented).
 - `payment_applications` — the unit↔gift cash-application ledger. Each row
   anchors on exactly one evidence unit per `evidence_source` (`quickbooks` →
   `payment_id`, `stripe` → `stripe_charge_id`, `donorbox` →

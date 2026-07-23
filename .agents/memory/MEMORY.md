@@ -18,7 +18,7 @@ code/docs and update or archive the stale memory.
 
 ## Domain indexes
 
-- [Money sync and reconciliation](money-sync-reconciliation.md) — QuickBooks, Stripe, Donorbox ingest, payment applications, settlement links, source-link plan, workbench lessons. Read the canonical reconciliation docs before individual notes.
+- [Money sync and reconciliation](money-sync-reconciliation.md) — QuickBooks, Stripe, Donorbox ingest, payment applications, settlement links, source links (live), workbench lessons. Read the canonical reconciliation docs before individual notes.
 - [Email and calendar](email-calendar-sync.md) — Gmail/Calendar sync, open tracking, email intelligence, Flodesk, dedup.
 - [CRM domain notes](crm-domain-notes.md) — gifts/pledges, donors/orgs/people, lists/dashboards, tasks/ingestion/admin feature lessons.
 - [Platform and delivery notes](platform-and-delivery-notes.md) — build/env, API plumbing, prod-migration and data-operation gotchas.

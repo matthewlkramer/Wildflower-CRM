@@ -39,9 +39,13 @@ unverified and confirm against code before relying on it.
    actions). Normative.
 3. [`reconciliation-design.md`](reconciliation-design.md) — target money and
    relationship model.
-4. [`adr-source-link-ledger.md`](adr-source-link-ledger.md) — proposed
-   evidence↔evidence ledger (not yet implemented; the source-specific pointers
-   it replaces are frozen).
+4. [`adr-source-link-ledger.md`](adr-source-link-ledger.md) — evidence↔evidence
+   ledger (**implemented**; `source_links` is the sole authority — the
+   source-specific pointer columns it replaced were dropped in migration 0149).
+5. [`adr-linear-money-model.md`](adr-linear-money-model.md) — **ratified**
+   coding rules (gift = one payment event; meaning splits on allocations;
+   expectations on the pledge) and the bank-anchored linear target model,
+   including unit-group retirement and the production recoding inventory.
 
 ## Other canonical documents
 

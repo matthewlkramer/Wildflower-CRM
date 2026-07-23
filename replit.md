@@ -71,9 +71,9 @@ current-status document.
 6. **Canonical money relationships.** Use:
    - `payment_applications` for payment/evidence unit → CRM gift;
    - `settlement_links` for Stripe payout → QuickBooks deposit;
-   - `source_links` only after its ADR is implemented for evidence ↔ evidence
-     (until then the existing source-specific pointers are frozen — never add a
-     sibling pointer).
+   - `source_links` for evidence ↔ evidence (implemented; the old
+     source-specific pointer columns are dropped — never add a sibling
+     pointer column).
 7. **Refunds are transaction facts.** A processed refund removes or reduces live
    payment evidence. It does not, by itself, archive the CRM gift, rewrite donor
    intent, or prove the gift was never paid. There is no anticipatory refund
