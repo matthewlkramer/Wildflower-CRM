@@ -378,11 +378,12 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   `payment_id`, `stripe` → `stripe_charge_id`, `donorbox` →
   `donorbox_donation_id`; enforced by per-source CHECKs). `payment_unit_id`
   (Phase 5, 0164) is the successor anchor — backfilled from whichever source
-  anchor the row carries and dual-written forward; NOT yet unique (two legacy
-  counted rows can describe the same unit, e.g. a quickbooks row and the
-  donorbox row for one offline check) — consolidation to ONE counted row per
-  unit is the parity-gated cutover, after which the three source anchors demote
-  to provenance and the three counted-uniques collapse to one. `link_role`
+  anchor the row carries and dual-written forward; counted-UNIQUE since 0167
+  (Phase 9a): ONE counted row per canonical unit — same-(unit, gift) duplicate
+  descriptions (e.g. a quickbooks row and the donorbox row for one offline
+  check) were consolidated by 0167 and are consolidated-on-write by
+  `applyPaymentApplication` going forward; the three source anchors demote to
+  provenance at read cutover. `link_role`
   (`counted` / `corroborating`) — money reads SUM only `counted` rows;
   `amount_applied` must be > 0 on counted rows. Book-once is enforced by
   **partial unique indexes per evidence anchor** — one counted unique and one
