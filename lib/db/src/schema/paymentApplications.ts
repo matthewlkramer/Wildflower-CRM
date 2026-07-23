@@ -14,6 +14,7 @@ import { giftsAndPayments } from "./giftsAndPayments";
 import { giftAllocations } from "./giftAllocations";
 import { stripeStagedCharges } from "./stripeStagedCharges";
 import { donorboxDonations } from "./donorboxDonations";
+import { paymentUnits } from "./paymentUnits";
 import { users } from "./users";
 import {
   paymentApplicationEvidenceSourceEnum,
@@ -104,6 +105,19 @@ export const paymentApplications = pgTable(
       () => donorboxDonations.id,
       { onDelete: "set null" },
     ),
+    // ── The successor anchor (docs/adr-bank-spine-money-model.md, Phase 5) ──
+    // The canonical payment_units row this application's money is. Backfilled
+    // from whichever of the three source anchors the row carries (0164) and
+    // dual-written going forward; the three source anchors demote to
+    // provenance at read cutover, collapsing the three counted-unique indexes
+    // to ONE on this column. NOT yet unique: two legacy counted rows (e.g. a
+    // quickbooks row and the donorbox row for the same offline check) can
+    // describe the SAME unit — consolidation to one counted row per unit is
+    // the gated cutover step, verified by parity first. NULL = the anchor has
+    // no unit yet (e.g. an undeposited QB payment).
+    paymentUnitId: text("payment_unit_id").references(() => paymentUnits.id, {
+      onDelete: "restrict",
+    }),
     matchMethod: paymentApplicationMatchMethodEnum("match_method")
       .notNull()
       .default("system"),
@@ -183,6 +197,7 @@ export const paymentApplications = pgTable(
       .where(
         sql`${t.stripeChargeId} IS NOT NULL AND ${t.linkRole} = 'corroborating'`,
       ),
+    index("payment_applications_payment_unit_id_idx").on(t.paymentUnitId),
     index("payment_applications_gift_id_idx").on(t.giftId),
     index("payment_applications_gift_allocation_id_idx").on(t.giftAllocationId),
     index("payment_applications_payment_id_idx").on(t.paymentId),
