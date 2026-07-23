@@ -5,6 +5,7 @@
 import type { db } from "@workspace/db";
 import {
   paymentApplications,
+  paymentUnits,
   stagedPayments,
   stripeStagedCharges,
   donorboxDonations,
@@ -303,6 +304,31 @@ async function resolveAndLockAnchor(
  *  4. Upserts the (anchor_id, gift_id) row via the per-anchor UNIQUE key —
  *     re-runs replace the amount instead of duplicating.
  */
+/**
+ * Resolve the canonical payment_units row for the anchor (bank-spine dual
+ * write, docs/adr-bank-spine-money-model.md Phase 5b). Returns null when the
+ * unit does not exist yet — the post-sync recompute annotates the row later
+ * (same NULL-tolerant contract as the 0164 backfill).
+ */
+async function resolvePaymentUnitId(
+  tx: Tx,
+  evidenceSource: PaymentApplicationEvidenceSource,
+  anchorId: string,
+): Promise<string | null> {
+  const where =
+    evidenceSource === "quickbooks"
+      ? eq(paymentUnits.sourceStagedPaymentId, anchorId)
+      : evidenceSource === "stripe"
+        ? eq(paymentUnits.stripeChargeId, anchorId)
+        : eq(paymentUnits.donorboxDonationId, anchorId);
+  const row = await tx
+    .select({ id: paymentUnits.id })
+    .from(paymentUnits)
+    .where(where)
+    .then((r) => r[0]);
+  return row?.id ?? null;
+}
+
 export async function applyPaymentApplication(
   tx: Tx,
   args: ApplyPaymentApplicationArgs,
@@ -356,8 +382,14 @@ export async function applyPaymentApplication(
   //    link_role / lifecycle keep their column defaults (counted / confirmed)
   //    for every current caller, so they are intentionally not written here.
   const now = new Date();
+  const paymentUnitId = await resolvePaymentUnitId(
+    tx,
+    args.evidenceSource,
+    anchor.id,
+  );
   const values = {
     paymentId: args.paymentId ?? null,
+    paymentUnitId,
     giftId: args.giftId,
     giftAllocationId: args.giftAllocationId ?? null,
     amountApplied: args.amountApplied,

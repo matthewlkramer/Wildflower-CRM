@@ -33,6 +33,7 @@ import {
 } from "./quickbooksRules";
 import { buildGiftValuesFromStaged } from "./quickbooksGift";
 import { refreshOpenBundleDrafts } from "./reconciliationBundleSync";
+import { recomputeBankSpineBestEffort } from "./bankSpineRecompute";
 import { proposePayoutMatches } from "./stripeReconcile";
 import { proposeChargeQbTies } from "./chargeQbTie";
 import {
@@ -941,6 +942,10 @@ export async function syncQuickbooks(
     // A QB pull can change deposit amounts / ties behind existing settlement
     // bundles. Refresh open, un-overridden drafts (best-effort; keeps overrides).
     await refreshOpenBundleDrafts();
+
+    // Bank-spine forward maintenance: infer check units/components from new
+    // QBO deposit rows, annotate the ledger (best-effort).
+    await recomputeBankSpineBestEffort();
 
     return { pulled: pulled.length, staged, matched, autoApplied };
   });
