@@ -18,7 +18,6 @@ import {
   useExcludeStagedPayment,
   useExcludeStripeStagedCharge,
   useGetCurrentUser,
-  useGroupStagedPayments,
   useLinkStripeChargeToGift,
   useRejectChargeQbTie,
   useRejectSettlementProposal,
@@ -83,7 +82,6 @@ import {
   DonorResolveDialog,
   EvidenceChooserDialog,
   ExcludeReasonDialog,
-  GroupQbDialog,
   QbRecordDetailDialog,
   UnlinkChooserDialog,
   type EvidencePickOption,
@@ -243,9 +241,8 @@ export default function ReconciliationClustersPage() {
   // "Group with another gift" — combine the row's gifts via the shared merge dialog.
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
-  // "Split into reconciliation units" / "Group QuickBooks records" on a QB card.
+  // "Split into reconciliation units" on a QB card.
   const [splitFor, setSplitFor] = useState<WorkbenchClusterQbRecord | null>(null);
-  const [groupFor, setGroupFor] = useState<WorkbenchClusterQbRecord | null>(null);
 
   // Debounce free-text search so we don't refetch per keystroke.
   useEffect(() => {
@@ -302,7 +299,6 @@ export default function ReconciliationClustersPage() {
   const resolveWithdrawalM = useResolveStripePayoutWithdrawal();
   const revertWithdrawalM = useRevertStripePayoutWithdrawal();
   const splitM = useSplitStagedPayment();
-  const groupM = useGroupStagedPayments();
   const approveCardM = useApproveReconciliationCard();
 
   const busy =
@@ -329,7 +325,6 @@ export default function ReconciliationClustersPage() {
     rejectSettlementProposalM.isPending ||
     revertStripePayoutReconciliationM.isPending ||
     splitM.isPending ||
-    groupM.isPending ||
     approveCardM.isPending;
 
   const invalidate = useCallback(() => {
@@ -407,58 +402,6 @@ export default function ReconciliationClustersPage() {
         });
       }
     }
-  };
-
-  // Group several staged QB rows into ONE reconciliation unit. A donor
-  // conflict is a deliberate two-step (same confirm flow as the queue
-  // workbench): the server rejects (400) with error="donor_conflict", the
-  // human confirms, we retry with confirmDonorConflict=true.
-  const handleGroupQb = async (otherIds: string[]) => {
-    if (!groupFor) return;
-    const ids = Array.from(new Set([groupFor.stagedPaymentId, ...otherIds]));
-    if (ids.length < 2) return;
-    const run = (confirmDonorConflict: boolean) =>
-      groupM.mutateAsync({
-        data: { stagedPaymentIds: ids, confirmDonorConflict },
-      });
-    try {
-      await run(false);
-    } catch (err) {
-      const code =
-        err && typeof err === "object" && "data" in err
-          ? (err as { data?: { error?: string } }).data?.error
-          : undefined;
-      if (
-        code === "donor_conflict" &&
-        window.confirm(
-          "These payments resolve to more than one donor. Group them into one gift anyway?",
-        )
-      ) {
-        try {
-          await run(true);
-        } catch (retryErr) {
-          toast({
-            title: "Couldn't group",
-            description: errMessage(retryErr),
-            variant: "destructive",
-          });
-          return;
-        }
-      } else {
-        toast({
-          title: "Couldn't group",
-          description: errMessage(err),
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-    setGroupFor(null);
-    invalidate();
-    toast({
-      title: `Grouped ${ids.length} records`,
-      description: "They now reconcile as one unit into one gift.",
-    });
   };
 
   // Confirm the server-proposed match on a per-charge card: fetch the linked
@@ -1076,7 +1019,6 @@ export default function ReconciliationClustersPage() {
       setUnlinkChooserFor({ giftLabel, options }),
     openMergeGifts,
     openSplitStaged: (record) => setSplitFor(record),
-    openGroupQb: (record) => setGroupFor(record),
     confirmChargeProposal: (chargeId, label, depositStagedPaymentId) =>
       void handleConfirmChargeProposal(chargeId, label, depositStagedPaymentId),
   };
@@ -1722,17 +1664,6 @@ export default function ReconciliationClustersPage() {
           onStage={(body, detail) => void handleSplitStage(body, detail)}
         />
       ) : null}
-
-      {/* "Group QuickBooks records" — pick sibling staged rows to group. */}
-      <GroupQbDialog
-        record={groupFor}
-        open={!!groupFor}
-        onOpenChange={(v) => {
-          if (!v && !groupM.isPending) setGroupFor(null);
-        }}
-        busy={groupM.isPending}
-        onSubmit={(ids) => void handleGroupQb(ids)}
-      />
     </div>
   );
 }

@@ -18,16 +18,20 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
 /**
- * End-to-end coverage for the QuickBooks deposit-grouping operator path.
+ * End-to-end coverage for the QuickBooks multi-match operator path
+ * (docs/adr-linear-money-model.md — the replacement for group-then-match).
  *
  * Unlike the rest of this suite (pure functions / compiled SQL with no live
  * database), this exercises the real route handlers against the dev Postgres so
  * it can assert the actual DB state transitions the SQL preserve-on-conflict
- * unit tests can't see: grouping 2+ staged rows that share one bank deposit,
- * reconciling the group to ONE existing gift inside the fee band (durable
- * `unit_group_members` membership + one counted `payment_applications` ledger
- * row per member), fee-band rejection, and the group-aware revert that reverts
- * the WHOLE group.
+ * unit tests can't see: matching 2+ staged rows that share one bank deposit to
+ * ONE existing gift inside the fee band (one counted `payment_applications`
+ * ledger row per member and — the ADR's core invariant — NO `unit_groups` /
+ * `unit_group_members` rows written), fee-band rejection, PER-ROW revert (no
+ * group semantics for multi-matched rows), the LEGACY unit-group paths that
+ * survive until unit_groups is retired (coherence-key bypass, whole-group
+ * revert, single-member ejection), and the 410 tombstones on the retired
+ * /group and /group-reconcile endpoints.
  *
  * The only seam we mock is the Clerk auth gate (`requireAuth`) — we inject a
  * seeded test user so the handlers run with a real `appUser`; everything else
@@ -42,7 +46,7 @@ const HAS_DB =
   !!RAW_DB_URL && !/test:test@localhost:5432\/test/.test(RAW_DB_URL);
 
 const { TEST_USER_ID } = vi.hoisted(() => ({
-  TEST_USER_ID: `qb_grp_test_user_${Date.now()}`,
+  TEST_USER_ID: `qb_mm_test_user_${Date.now()}`,
 }));
 
 // Replace the Clerk-backed auth gate with one that injects our seeded user.
@@ -52,14 +56,14 @@ vi.mock("../middlewares/requireAuth", () => ({
     _res: unknown,
     next: () => void,
   ) => {
-    // role matches the seeded DB user; some routes (e.g. the bare /group
-    // action) gate on appUser.role via requireFinance.
+    // role matches the seeded DB user; some routes gate on appUser.role via
+    // requireFinance.
     req.appUser = { id: TEST_USER_ID, role: "admin" };
     next();
   },
 }));
 
-const RUN = `qbgrp_${Date.now()}`;
+const RUN = `qbmm_${Date.now()}`;
 const ORG_ID = `${RUN}_org`;
 const PERSON_ID = `${RUN}_person`;
 const HOUSEHOLD_ID = `${RUN}_household`;
@@ -78,6 +82,8 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
+  unitGroups: Db["unitGroups"];
+  unitGroupMembers: Db["unitGroupMembers"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -86,8 +92,8 @@ let server: Server;
 let baseUrl = "";
 
 // A monotonically increasing suffix so each test gets fresh, uniquely-ordered
-// staged-row ids (the route picks the lexicographically smallest id as the
-// "representative", so deterministic ordering lets us assert which row it is).
+// staged-row ids (deterministic ordering lets us assert the sorted id lists the
+// route returns).
 let gen = 0;
 function nextGiftId(): string {
   gen += 1;
@@ -195,11 +201,16 @@ async function seedNoDonorGift(amount: string): Promise<string> {
   throw lastErr;
 }
 
-/** Seed a pending staged row sharing the run's single deposit. */
+/**
+ * Seed a pending staged row. Defaults to the run's single shared deposit and
+ * no payer; tests exercising the legacy-group coherence bypass override the
+ * deposit/payer to build deliberately incoherent selections.
+ */
 async function seedStaged(
   giftId: string,
   label: string,
   amount: string,
+  opts: { depositId?: string | null; payerName?: string | null } = {},
 ): Promise<string> {
   const id = stagedId(giftId, label);
   await db.insert(schema.stagedPayments).values({
@@ -209,7 +220,8 @@ async function seedStaged(
     qbEntityId: id,
     qbLineId: label,
     amount,
-    qbDepositId: DEPOSIT_ID,
+    qbDepositId: opts.depositId === undefined ? DEPOSIT_ID : opts.depositId,
+    payerName: opts.payerName ?? null,
     organizationId: ORG_ID,
   });
   return id;
@@ -226,7 +238,49 @@ async function readStaged(id: string) {
   return row;
 }
 
+/** All quickbooks unit-group co-members of a row (itself included), sorted. */
+async function groupMembershipIds(anyMemberId: string): Promise<string[]> {
+  const rows = await db.execute(
+    sqlFn`SELECT m2.source_id FROM unit_group_members m1
+          JOIN unit_group_members m2 ON m2.group_id = m1.group_id
+            AND m2.evidence_source = 'quickbooks'
+          WHERE m1.evidence_source = 'quickbooks'
+            AND m1.source_id = ${anyMemberId}`,
+  );
+  return (rows.rows as { source_id: string }[])
+    .map((r) => r.source_id)
+    .sort();
+}
+
+/**
+ * Seed a LEGACY unit group directly in the DB. Group creation via the API is
+ * retired (410), but pre-existing groups formed before the retirement must
+ * keep working: they relax the multi-match coherence key, revert as a whole,
+ * and support single-member ejection. This writes what the retired /group
+ * endpoint used to.
+ */
+let groupGen = 0;
+async function seedLegacyGroup(memberIds: string[]): Promise<string> {
+  groupGen += 1;
+  const gid = `${RUN}_ug_${String(groupGen).padStart(3, "0")}`;
+  await db.insert(schema.unitGroups).values({
+    id: gid,
+    createdByUserId: TEST_USER_ID,
+  });
+  await db.insert(schema.unitGroupMembers).values(
+    memberIds.map((sourceId) => ({
+      id: `ugm_${sourceId}`,
+      groupId: gid,
+      evidenceSource: "quickbooks" as const,
+      sourceId,
+    })),
+  );
+  seededGroupIds.push(gid);
+  return gid;
+}
+
 const seededGiftIds: string[] = [];
+const seededGroupIds: string[] = [];
 // Stripe charge ids seeded for the Stripe-precedence regression; their gift
 // pointers (RESTRICT) are cleared in afterAll before the charges are deleted.
 const seededChargeIds: string[] = [];
@@ -244,6 +298,8 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
+    unitGroups: dbMod.unitGroups,
+    unitGroupMembers: dbMod.unitGroupMembers,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -259,16 +315,16 @@ beforeAll(async () => {
   });
   await db.insert(schema.organizations).values({
     id: ORG_ID,
-    name: `QB Group Test Org ${RUN}`,
+    name: `QB Multi-Match Test Org ${RUN}`,
   });
   // Donor targets for the individual-giver / household adoption cases.
   await db.insert(schema.people).values({
     id: PERSON_ID,
-    fullName: `QB Group Test Person ${RUN}`,
+    fullName: `QB Multi-Match Test Person ${RUN}`,
   });
   await db.insert(schema.households).values({
     id: HOUSEHOLD_ID,
-    name: `QB Group Test Household ${RUN}`,
+    name: `QB Multi-Match Test Household ${RUN}`,
   });
 
   const { default: app } = await import("../app");
@@ -287,6 +343,13 @@ afterAll(async () => {
   // must be cleared before the staged rows can be deleted. Delete the staged
   // rows, then the gifts (which cascade-clears any allocation-review rows).
   await clearPaymentApplicationsForRealm(REALM_ID);
+  // Seeded legacy groups (membership cascades off unit_groups). Ejection /
+  // dissolution may already have removed some — delete is a no-op for those.
+  if (seededGroupIds.length) {
+    await db
+      .delete(schema.unitGroups)
+      .where(inArrayFn(schema.unitGroups.id, seededGroupIds));
+  }
   await db
     .delete(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.realmId, REALM_ID));
@@ -330,66 +393,72 @@ beforeEach(() => {
   if (!HAS_DB) {
     // Surface the reason in the runner instead of silently passing.
     console.warn(
-      "[quickbooks-group-reconcile] skipped: no live DATABASE_URL configured",
+      "[quickbooks-multi-match] skipped: no live DATABASE_URL configured",
     );
   }
 });
 
 describe.skipIf(!HAS_DB)(
-  "QuickBooks deposit group-reconcile + group-aware revert (integration)",
+  "QuickBooks multi-match + per-row revert + legacy-group paths (integration)",
   () => {
-    it("groups members sharing a deposit and reconciles them to one in-band gift", async () => {
+    it("matches members sharing a deposit to one in-band gift WITHOUT writing a unit group", async () => {
       // Gift 100.00; two deposit members 50 + 50 = 100 → inside the fee band.
       const giftId = await seedGift("100.00");
       seededGiftIds.push(giftId);
-      const repId = await seedStaged(giftId, "a", "50.00");
-      const memberId = await seedStaged(giftId, "b", "50.00");
+      const aId = await seedStaged(giftId, "a", "50.00");
+      const bId = await seedStaged(giftId, "b", "50.00");
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
-        // Pass out of order to prove the route picks the smallest id as rep.
-        stagedPaymentIds: [memberId, repId],
+        // Pass out of order to prove the route de-dupes and sorts.
+        stagedPaymentIds: [bId, aId],
       });
 
       expect(res.status).toBe(200);
-      expect(res.json.representativeStagedPaymentId).toBe(repId);
+      expect(res.json.gift.id).toBe(giftId);
+      expect(res.json.stagedPaymentIds).toEqual([aId, bId].sort());
+      // The retired response field must not come back.
+      expect(res.json.representativeStagedPaymentId).toBeUndefined();
 
-      const rep = await readStaged(repId);
-      const member = await readStaged(memberId);
+      const a = await readStaged(aId);
+      const b = await readStaged(bId);
 
-      // Every member (representative included) carries its own counted ledger
-      // row applying its amount to the group's gift.
-      expect(rep.status).toBe("match_confirmed");
-      expect(await qbSoleGiftIdForPayment(repId)).toBe(giftId);
-      // The donor was adopted from the gift.
-      expect(rep.organizationId).toBe(ORG_ID);
+      // Every member carries its own counted ledger row applying its amount
+      // to the gift; the donor was adopted from the gift.
+      for (const row of [a, b]) {
+        expect(row.status).toBe("match_confirmed");
+        expect(await qbSoleGiftIdForPayment(row.id)).toBe(giftId);
+        expect(row.organizationId).toBe(ORG_ID);
+      }
 
-      expect(member.status).toBe("match_confirmed");
-      expect(await qbSoleGiftIdForPayment(memberId)).toBe(giftId);
+      // ADR linear-money-model core invariant: NO unit group is created — the
+      // counted ledger rows alone express the combined outcome.
+      expect(await groupMembershipIds(aId)).toEqual([]);
+      expect(await groupMembershipIds(bId)).toEqual([]);
     }, 30_000);
 
     it("adopts an individual-giver donor and nulls the other donor FKs", async () => {
       // Gift donor is an individual giver; staged rows seed with an org donor,
-      // which must be replaced by the gift's individual donor on reconcile.
+      // which must be replaced by the gift's individual donor on match.
       const giftId = await seedGiftWithDonor("80.00", {
         individualGiverPersonId: PERSON_ID,
       });
       seededGiftIds.push(giftId);
-      const repId = await seedStaged(giftId, "a", "40.00");
-      const memberId = await seedStaged(giftId, "b", "40.00");
+      const aId = await seedStaged(giftId, "a", "40.00");
+      const bId = await seedStaged(giftId, "b", "40.00");
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
-        stagedPaymentIds: [memberId, repId],
+        stagedPaymentIds: [bId, aId],
       });
 
       expect(res.status).toBe(200);
-      expect(res.json.representativeStagedPaymentId).toBe(repId);
+      expect(res.json.stagedPaymentIds).toEqual([aId, bId].sort());
 
-      const rep = await readStaged(repId);
-      const member = await readStaged(memberId);
+      const a = await readStaged(aId);
+      const b = await readStaged(bId);
 
-      for (const row of [rep, member]) {
+      for (const row of [a, b]) {
         // The individual donor is stamped; the other two FKs are nulled.
         expect(row.individualGiverPersonId).toBe(PERSON_ID);
         expect(row.organizationId).toBeNull();
@@ -404,21 +473,20 @@ describe.skipIf(!HAS_DB)(
         householdId: HOUSEHOLD_ID,
       });
       seededGiftIds.push(giftId);
-      const repId = await seedStaged(giftId, "a", "40.00");
-      const memberId = await seedStaged(giftId, "b", "40.00");
+      const aId = await seedStaged(giftId, "a", "40.00");
+      const bId = await seedStaged(giftId, "b", "40.00");
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
-        stagedPaymentIds: [memberId, repId],
+        stagedPaymentIds: [bId, aId],
       });
 
       expect(res.status).toBe(200);
-      expect(res.json.representativeStagedPaymentId).toBe(repId);
 
-      const rep = await readStaged(repId);
-      const member = await readStaged(memberId);
+      const a = await readStaged(aId);
+      const b = await readStaged(bId);
 
-      for (const row of [rep, member]) {
+      for (const row of [a, b]) {
         // The household donor is stamped; the other two FKs are nulled.
         expect(row.householdId).toBe(HOUSEHOLD_ID);
         expect(row.organizationId).toBeNull();
@@ -444,22 +512,22 @@ describe.skipIf(!HAS_DB)(
       });
       seededGiftIds.push(giftId);
 
-      const repId = await seedStaged(giftId, "a", "50.00");
-      const memberId = await seedStaged(giftId, "b", "50.00");
+      const aId = await seedStaged(giftId, "a", "50.00");
+      const bId = await seedStaged(giftId, "b", "50.00");
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
-        stagedPaymentIds: [memberId, repId],
+        stagedPaymentIds: [bId, aId],
       });
       expect(res.status).toBe(200);
 
       // The QB evidence is reconciled (linkage recorded) ...
-      const rep = await readStaged(repId);
-      const member = await readStaged(memberId);
-      expect(rep.status).toBe("match_confirmed");
-      expect(member.status).toBe("match_confirmed");
-      expect(await qbSoleGiftIdForPayment(repId)).toBe(giftId);
-      expect(await qbSoleGiftIdForPayment(memberId)).toBe(giftId);
+      const a = await readStaged(aId);
+      const b = await readStaged(bId);
+      expect(a.status).toBe("match_confirmed");
+      expect(b.status).toBe("match_confirmed");
+      expect(await qbSoleGiftIdForPayment(aId)).toBe(giftId);
+      expect(await qbSoleGiftIdForPayment(bId)).toBe(giftId);
 
       // ... but the gift stays Stripe-sourced — QB never overrides GROSS.
       const [gift] = await db
@@ -469,14 +537,14 @@ describe.skipIf(!HAS_DB)(
       expect(gift.amount).toBe("100.00");
     }, 30_000);
 
-    it("rejects reconciling to a gift with no donor and leaves rows untouched", async () => {
+    it("rejects matching to a gift with no donor and leaves rows untouched", async () => {
       // Gift carries zero donors → no donor to adopt → 400 link_invalid.
       const giftId = await seedNoDonorGift("60.00");
       seededGiftIds.push(giftId);
       const aId = await seedStaged(giftId, "a", "30.00");
       const bId = await seedStaged(giftId, "b", "30.00");
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
@@ -496,14 +564,14 @@ describe.skipIf(!HAS_DB)(
 
     it("rejects an out-of-tolerance combined total with 400 amount_mismatch (no override) without touching the rows", async () => {
       // Gift 200.00 vs combined 100.00 → 200 > 100*1.1+1 = 111 → over band.
-      // There is no confirm-override anymore: the group is rejected outright and
-      // the operator must correct the gift amount to the combined total.
+      // There is no confirm-override anymore: the selection is rejected outright
+      // and the operator must correct the gift amount to the combined total.
       const giftId = await seedGift("200.00");
       seededGiftIds.push(giftId);
       const aId = await seedStaged(giftId, "a", "50.00");
       const bId = await seedStaged(giftId, "b", "50.00");
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
@@ -524,17 +592,17 @@ describe.skipIf(!HAS_DB)(
       }
     }, 30_000);
 
-    it("reconciles an out-of-tolerance group once the gift amount is corrected to the combined total (the appreciated-stock case)", async () => {
+    it("matches an out-of-tolerance selection once the gift amount is corrected to the combined total (the appreciated-stock case)", async () => {
       // Stock gift booked at 1,000,000 but the sale proceeds came to a hair
       // over (1,012,780.49) — above the fee band, which only tolerates the
       // deposit landing BELOW the gift. There is no override: the operator must
-      // correct the gift's amount to the combined total, then reconcile.
+      // correct the gift's amount to the combined total, then match.
       const giftId = await seedGift("1000000.00");
       seededGiftIds.push(giftId);
       const aId = await seedStaged(giftId, "a", "512780.49");
       const bId = await seedStaged(giftId, "b", "500000.00");
 
-      const blocked = await api("/api/staged-payments/group-reconcile", {
+      const blocked = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
@@ -545,21 +613,19 @@ describe.skipIf(!HAS_DB)(
         giftAmount: 1000000,
       });
 
-      // Correct the gift's amount to the combined total, then reconcile.
+      // Correct the gift's amount to the combined total, then match.
       await db
         .update(schema.giftsAndPayments)
         .set({ amount: "1012780.49" })
         .where(eqFn(schema.giftsAndPayments.id, giftId));
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
 
       expect(res.status).toBe(200);
-      expect(res.json.representativeStagedPaymentId).toBe(
-        [aId, bId].sort()[0],
-      );
+      expect(res.json.stagedPaymentIds).toEqual([aId, bId].sort());
 
       const a = await readStaged(aId);
       const b = await readStaged(bId);
@@ -569,32 +635,128 @@ describe.skipIf(!HAS_DB)(
       }
     }, 30_000);
 
-    it("group-aware revert clears the whole group back to pending", async () => {
+    it("reverts PER ROW: reverting one multi-matched member leaves the others matched", async () => {
+      // With no unit group written, there are no group semantics to revert:
+      // each member's counted ledger row is undone individually via the normal
+      // revert path (docs/adr-linear-money-model.md).
       const giftId = await seedGift("90.00");
       seededGiftIds.push(giftId);
-      const repId = await seedStaged(giftId, "a", "30.00");
-      const m1Id = await seedStaged(giftId, "b", "30.00");
-      const m2Id = await seedStaged(giftId, "c", "30.00");
+      const aId = await seedStaged(giftId, "a", "30.00");
+      const bId = await seedStaged(giftId, "b", "30.00");
+      const cId = await seedStaged(giftId, "c", "30.00");
 
-      const grouped = await api("/api/staged-payments/group-reconcile", {
+      const matched = await api("/api/staged-payments/multi-match", {
         giftId,
-        stagedPaymentIds: [repId, m1Id, m2Id],
+        stagedPaymentIds: [aId, bId, cId],
       });
-      expect(grouped.status).toBe(200);
-      expect(grouped.json.representativeStagedPaymentId).toBe(repId);
+      expect(matched.status).toBe(200);
+      expect(matched.json.stagedPaymentIds).toEqual([aId, bId, cId].sort());
 
-      // Revert from a NON-representative member: the whole group must revert,
-      // clearing every member's counted ledger rows.
-      const reverted = await api(`/api/staged-payments/${m1Id}/revert`);
+      // Revert ONE member: only that row returns to pending.
+      const reverted = await api(`/api/staged-payments/${bId}/revert`);
       expect(reverted.status).toBe(200);
 
-      for (const id of [repId, m1Id, m2Id]) {
+      const b = await readStaged(bId);
+      expect(b.status).toBe("pending");
+      expect(await qbCountedRowsForPayment(bId)).toHaveLength(0);
+      expect(b.approvedByUserId).toBeNull();
+      expect(b.matchConfirmedAt).toBeNull();
+
+      // The other two members stay matched to the gift.
+      for (const id of [aId, cId]) {
+        const row = await readStaged(id);
+        expect(row.status).toBe("match_confirmed");
+        expect(await qbSoleGiftIdForPayment(id)).toBe(giftId);
+      }
+
+      // Reverting the remaining members individually clears everything; the
+      // pre-existing gift is never deleted by a revert.
+      for (const id of [aId, cId]) {
+        const r = await api(`/api/staged-payments/${id}/revert`);
+        expect(r.status).toBe(200);
+      }
+      for (const id of [aId, bId, cId]) {
+        const row = await readStaged(id);
+        expect(row.status).toBe("pending");
+        expect(await qbCountedRowsForPayment(id)).toHaveLength(0);
+      }
+      const [gift] = await db
+        .select()
+        .from(schema.giftsAndPayments)
+        .where(eqFn(schema.giftsAndPayments.id, giftId));
+      expect(gift).toBeTruthy();
+    }, 30_000);
+
+    // ─── legacy unit-group paths ─────────────────────────────────────────
+    // Group CREATION is retired, but groups formed before the retirement must
+    // keep working until unit_groups itself is retired: they bypass the
+    // coherence key on multi-match, they revert as a WHOLE, and they support
+    // single-member ejection. Legacy state is seeded directly in the DB —
+    // exactly what the retired /group endpoint used to write.
+
+    it("a legacy unit group bypasses the coherence key on multi-match, and reverts as a WHOLE group", async () => {
+      const giftId = await seedGift("100.00");
+      seededGiftIds.push(giftId);
+      // Deliberately incoherent: different payers AND different deposits —
+      // an ad hoc selection of these rows can never match.
+      const aId = await seedStaged(giftId, "a", "50.00", {
+        depositId: `${RUN}_byp_depA`,
+        payerName: "Legacy Payer One",
+      });
+      const bId = await seedStaged(giftId, "b", "50.00", {
+        depositId: `${RUN}_byp_depB`,
+        payerName: "Legacy Payer Two",
+      });
+
+      // Without a group the selection is rejected — the coherence key holds.
+      const adHoc = await api("/api/staged-payments/multi-match", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+        confirmMultiDate: true,
+      });
+      expect(adHoc.status).toBe(400);
+      expect(adHoc.json.error).toBe("not_groupable");
+
+      // A human-stamped legacy group is an explicit "these are one physical
+      // gift" assertion: the same selection now bypasses the coherence key.
+      await seedLegacyGroup([aId, bId]);
+
+      // The multi-date/deposit confirmation still applies to legacy groups.
+      const unconfirmed = await api("/api/staged-payments/multi-match", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+      });
+      expect(unconfirmed.status).toBe(400);
+      expect(unconfirmed.json.error).toBe("multi_date_confirmation_required");
+
+      const res = await api("/api/staged-payments/multi-match", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+        confirmMultiDate: true,
+      });
+      expect(res.status).toBe(200);
+      for (const id of [aId, bId]) {
+        const row = await readStaged(id);
+        expect(row.status).toBe("match_confirmed");
+        expect(await qbSoleGiftIdForPayment(id)).toBe(giftId);
+      }
+      // The legacy membership is read, never rewritten.
+      expect(await groupMembershipIds(aId)).toEqual([aId, bId].sort());
+
+      // Group-aware revert: reverting ONE member of a legacy group reverts
+      // the WHOLE group back to pending.
+      const reverted = await api(`/api/staged-payments/${aId}/revert`);
+      expect(reverted.status).toBe(200);
+      for (const id of [aId, bId]) {
         const row = await readStaged(id);
         expect(row.status).toBe("pending");
         expect(await qbCountedRowsForPayment(id)).toHaveLength(0);
         expect(row.approvedByUserId).toBeNull();
         expect(row.matchConfirmedAt).toBeNull();
       }
+      // Revert undoes the match, not the grouping: membership survives (the
+      // ungroup action is the removal path for legacy groups).
+      expect(await groupMembershipIds(aId)).toEqual([aId, bId].sort());
 
       // The pre-existing gift is never deleted by a group revert.
       const [gift] = await db
@@ -604,36 +766,24 @@ describe.skipIf(!HAS_DB)(
       expect(gift).toBeTruthy();
     }, 30_000);
 
-    // ─── single-member ejection ──────────────────────────────────────────
+    // ─── single-member ejection (legacy groups only) ─────────────────────
     // POST /staged-payments/:id/eject-from-group removes ONE member while the
     // rest of the group stays reconciled (the whole-group revert above is the
-    // undo-everything path).
+    // undo-everything path). Only legacy groups have membership to eject from.
 
-    async function groupMembershipIds(anyMemberId: string): Promise<string[]> {
-      const rows = await db.execute(
-        sqlFn`SELECT m2.source_id FROM unit_group_members m1
-              JOIN unit_group_members m2 ON m2.group_id = m1.group_id
-                AND m2.evidence_source = 'quickbooks'
-              WHERE m1.evidence_source = 'quickbooks'
-                AND m1.source_id = ${anyMemberId}`,
-      );
-      return (rows.rows as { source_id: string }[])
-        .map((r) => r.source_id)
-        .sort();
-    }
-
-    it("ejects one member from a 3-member group; the others stay reconciled and the gift is kept", async () => {
+    it("ejects one member from a reconciled 3-member legacy group; the others stay reconciled and the gift is kept", async () => {
       const giftId = await seedGift("90.00");
       seededGiftIds.push(giftId);
       const aId = await seedStaged(giftId, "a", "30.00");
       const bId = await seedStaged(giftId, "b", "30.00");
       const cId = await seedStaged(giftId, "c", "30.00");
+      await seedLegacyGroup([aId, bId, cId]);
 
-      const grouped = await api("/api/staged-payments/group-reconcile", {
+      const matched = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId, cId],
       });
-      expect(grouped.status).toBe(200);
+      expect(matched.status).toBe(200);
 
       const res = await api(`/api/staged-payments/${bId}/eject-from-group`);
       expect(res.status).toBe(200);
@@ -671,17 +821,18 @@ describe.skipIf(!HAS_DB)(
       expect(gift.amount).toBe("90.00");
     }, 30_000);
 
-    it("ejecting from a 2-member group dissolves the group; the survivor stays reconciled as a direct match", async () => {
+    it("ejecting from a 2-member legacy group dissolves the group; the survivor stays reconciled as a direct match", async () => {
       const giftId = await seedGift("100.00");
       seededGiftIds.push(giftId);
       const aId = await seedStaged(giftId, "a", "50.00");
       const bId = await seedStaged(giftId, "b", "50.00");
+      await seedLegacyGroup([aId, bId]);
 
-      const grouped = await api("/api/staged-payments/group-reconcile", {
+      const matched = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
-      expect(grouped.status).toBe(200);
+      expect(matched.status).toBe(200);
 
       const res = await api(`/api/staged-payments/${aId}/eject-from-group`);
       expect(res.status).toBe(200);
@@ -710,7 +861,8 @@ describe.skipIf(!HAS_DB)(
     }, 30_000);
 
     it("409s: not in a group / group not reconciled / excluded / 404 missing", async () => {
-      // Not in a group: a plain pending row.
+      // Not in a group: a plain pending row (multi-matched rows also hit this —
+      // they never gain membership).
       const giftId = await seedGift("50.00");
       seededGiftIds.push(giftId);
       const loneId = await seedStaged(giftId, "a", "50.00");
@@ -720,15 +872,13 @@ describe.skipIf(!HAS_DB)(
       expect(notInGroup.status).toBe(409);
       expect(notInGroup.json.error).toBe("not_in_group");
 
-      // Group not reconciled yet: build a bare group via the group action.
+      // Group not reconciled yet: a bare legacy group (membership without any
+      // counted ledger rows — what the retired /group action used to leave).
       const gift2 = await seedGift("100.00");
       seededGiftIds.push(gift2);
       const g1 = await seedStaged(gift2, "a", "50.00");
       const g2 = await seedStaged(gift2, "b", "50.00");
-      const groupedOnly = await api("/api/staged-payments/group", {
-        stagedPaymentIds: [g1, g2],
-      });
-      expect(groupedOnly.status).toBe(200);
+      await seedLegacyGroup([g1, g2]);
       const notReconciled = await api(
         `/api/staged-payments/${g1}/eject-from-group`,
       );
@@ -754,6 +904,36 @@ describe.skipIf(!HAS_DB)(
         `/api/staged-payments/${RUN}_nope/eject-from-group`,
       );
       expect(missing.status).toBe(404);
+    }, 30_000);
+
+    // ─── retired endpoints ───────────────────────────────────────────────
+
+    it("the retired /group and /group-reconcile endpoints answer 410 group_creation_retired and touch nothing", async () => {
+      const giftId = await seedGift("100.00");
+      seededGiftIds.push(giftId);
+      const aId = await seedStaged(giftId, "a", "50.00");
+      const bId = await seedStaged(giftId, "b", "50.00");
+
+      const group = await api("/api/staged-payments/group", {
+        stagedPaymentIds: [aId, bId],
+      });
+      expect(group.status).toBe(410);
+      expect(group.json.error).toBe("group_creation_retired");
+
+      const groupReconcile = await api("/api/staged-payments/group-reconcile", {
+        giftId,
+        stagedPaymentIds: [aId, bId],
+      });
+      expect(groupReconcile.status).toBe(410);
+      expect(groupReconcile.json.error).toBe("group_creation_retired");
+
+      // Nothing was written: rows still pending, no membership, no ledger rows.
+      for (const id of [aId, bId]) {
+        const row = await readStaged(id);
+        expect(row.status).toBe("pending");
+        expect(await qbCountedRowsForPayment(id)).toHaveLength(0);
+        expect(await groupMembershipIds(id)).toEqual([]);
+      }
     }, 30_000);
   },
 );

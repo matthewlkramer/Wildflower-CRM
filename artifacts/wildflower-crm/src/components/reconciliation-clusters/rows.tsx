@@ -118,8 +118,6 @@ export interface ClusterActions {
   openMergeGifts: (giftIds: string[]) => void;
   /** Split one QB staged payment across several gifts (shared SplitEditorDialog). Finance-gated. */
   openSplitStaged: (record: WorkbenchClusterQbRecord) => void;
-  /** Group several QB staged rows into one reconciliation unit. Finance-gated. */
-  openGroupQb: (record: WorkbenchClusterQbRecord) => void;
   /** Approve the server-proposed match for a per-charge card via its deposit's reconciliation graph. */
   confirmChargeProposal: (
     chargeId: string,
@@ -1197,22 +1195,16 @@ function QbCard({
     );
   }
   if (!isFee) {
-    // Group/split act on the staged QB row itself — only meaningful while the
-    // row is still open (not reconciled into a gift, not excluded).
+    // Split acts on the staged QB row itself — only meaningful while the
+    // row is still open (not reconciled into a gift, not excluded). (Grouping
+    // QB rows is retired: match several rows to one gift from the queue
+    // workbench's multi-select bar instead.)
     const rowOpenReason = excluded
       ? "Excluded rows can't be changed — re-include first"
       : linked
         ? "Already reconciled to a gift — unlink first"
         : null;
     menu.push(
-      isFinance
-        ? rowOpenReason
-          ? { label: "Group QuickBooks records", disabledReason: rowOpenReason }
-          : {
-              label: "Group QuickBooks records",
-              onClick: () => actions.openGroupQb(record),
-            }
-        : { label: "Group QuickBooks records", disabledReason: "Finance team only" },
       isFinance
         ? isSplitUnit
           ? {

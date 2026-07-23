@@ -5,6 +5,15 @@ description: Manual grouping of staged payments sharing one bank deposit, reconc
 
 # QuickBooks deposit grouping
 
+**STATUS (2026-07-23): new group creation is RETIRED** — `POST
+/staged-payments/group` and `/group-reconcile` are 410 `group_creation_retired`
+stubs per `docs/adr-linear-money-model.md` §7 step 2. Combining several QB rows
+into one gift now goes through `POST /quickbooks/staged-payments/multi-match`,
+which writes N counted `payment_applications` rows atomically with NO
+`unit_groups` row. Everything below applies only to EXISTING legacy groups
+(which keep group-approve/ungroup/eject until step 3 retires the structure);
+the coherence-key and confirmMultiDate semantics were carried into multi-match.
+
 Fundraisers MANUALLY group several QB staged payments and match the group to ONE
 existing CRM gift. Fee-band gated (combined member total ≈ gift amount),
 reversible, idempotent under re-sync. No auto-grouping, no mint, no QB writeback.

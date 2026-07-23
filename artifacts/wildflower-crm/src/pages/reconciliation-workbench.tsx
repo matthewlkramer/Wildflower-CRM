@@ -11,6 +11,10 @@ import {
   SplitEditorDialog,
   feeRemainder,
 } from "@/components/reconciliation-split-editor";
+import {
+  GiftSearchDialog,
+  giftDonorName,
+} from "@/components/gift-search-dialog";
 import { Link, useLocation, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -23,7 +27,6 @@ import {
   useExcludeStagedPayment,
   useReIncludeStagedPayment,
   useSetStagedPaymentCoding,
-  useGroupStagedPayments,
   useResolveStripeStagedCharge,
   useCreateGiftFromStripeStagedCharge,
   useLinkStripeChargeToGift,
@@ -32,7 +35,7 @@ import {
   useGetGiftAllocationCodingPreview,
   getGetReconciliationGraphQueryOptions,
   approveReconciliationCard,
-  groupReconcileStagedPayments,
+  multiMatchStagedPayments,
   listReconciliationCards,
   searchReconciliationNode,
   splitStagedPayment,
@@ -52,7 +55,7 @@ import {
   type GiftOrPaymentDetail,
   type SetStagedPaymentCodingBody,
   type DeferredRevenue,
-  type GroupReconcileStagedPaymentsBody,
+  type MultiMatchStagedPaymentsBody,
   type FlagForResearchBodyTargetType,
   type OpportunityOrPledge,
 } from "@workspace/api-client-react";
@@ -325,21 +328,23 @@ function money(v: string | null | undefined): string {
 }
 
 /**
- * For a grouped ("same physical gift" source group) card being linked to an
- * EXISTING gift, build the /staged-payments/group-reconcile payload. Returns
- * null when the card is not a source group (the caller uses the per-row approve
- * path). `confirmMultiDate` is always true for a source group: forming the
- * group was already the human assertion that these rows are one physical gift
- * (groups span dates/deposits by design), and the client can't see member
- * deposit ids to detect multi-deposit anyway. When the members' combined total
- * sits OUTSIDE the gift's fee-band the server rejects with 400 amount_mismatch;
- * there is no override — the operator corrects the gift amount and retries.
+ * For a LEGACY grouped ("same physical gift" source group) card being linked to
+ * an EXISTING gift, build the /staged-payments/multi-match payload (the
+ * group-reconcile endpoint is retired; multi-match books each member as its own
+ * counted application on the gift). Returns null when the card is not a source
+ * group (the caller uses the per-row approve path). `confirmMultiDate` is
+ * always true for a source group: forming the group was already the human
+ * assertion that these rows are one physical gift (groups span dates/deposits
+ * by design), and the client can't see member deposit ids to detect
+ * multi-deposit anyway. When the members' combined total sits OUTSIDE the
+ * gift's fee-band the server rejects with 400 amount_mismatch; there is no
+ * override — the operator corrects the gift amount and retries.
  */
 function buildGroupedLinkPayload(
   card: ReconciliationCard,
   giftId: string,
 ): {
-  payload: GroupReconcileStagedPaymentsBody;
+  payload: MultiMatchStagedPaymentsBody;
 } | null {
   if (!card.isSourceGroup) return null;
   const memberIds = (card.sourceGroupMembers ?? [])
@@ -384,13 +389,13 @@ interface StagedChange {
   /** Split body for kind === "split"; null otherwise. */
   splitBody?: SplitStagedPaymentBody | null;
   /**
-   * Set for a grouped ("same physical gift" source group) card linked to an
-   * EXISTING gift: applied via /staged-payments/group-reconcile (which ties the
-   * whole group to one gift) instead of the per-row approve endpoint, which
-   * 409s a grouped link. `body` is null for these; `stagedPaymentId` is the
-   * group's representative member.
+   * Set for a legacy grouped ("same physical gift" source group) card linked
+   * to an EXISTING gift: applied via /staged-payments/multi-match (each member
+   * books its own counted application on the one gift) instead of the per-row
+   * approve endpoint, which 409s a grouped link. `body` is null for these;
+   * `stagedPaymentId` is the group's representative member.
    */
-  groupReconcile?: GroupReconcileStagedPaymentsBody | null;
+  multiMatch?: MultiMatchStagedPaymentsBody | null;
   /** Set after a failed Apply so the row stays staged with a reason. */
   failure?: string | null;
 }
@@ -569,6 +574,10 @@ export default function ReconciliationWorkbench() {
     memberCount: number;
   } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Multi-select "Match to one gift": gift-picker dialog + in-flight flag for
+  // the /staged-payments/multi-match call it fires.
+  const [bulkMatchOpen, setBulkMatchOpen] = useState(false);
+  const [bulkMatching, setBulkMatching] = useState(false);
   // Bulk "flag for research" over the currently-selected review cards. Snapshot
   // the targets when the dialog opens so clearing the selection doesn't empty it.
   const [bulkFlagOpen, setBulkFlagOpen] = useState(false);
@@ -715,16 +724,16 @@ export default function ReconciliationWorkbench() {
   }, []);
 
   /**
-   * Stage a grouped link-to-existing-gift (whole source group → one gift),
-   * applied via /staged-payments/group-reconcile. Drops any pending change for
-   * the representative OR any other group member, so a per-member action can't
-   * coexist with the whole-group link.
+   * Stage a grouped link-to-existing-gift (whole legacy source group → one
+   * gift), applied via /staged-payments/multi-match. Drops any pending change
+   * for the representative OR any other group member, so a per-member action
+   * can't coexist with the whole-group link.
    */
   const stageGroupedLink = useCallback(
     (
       card: ReconciliationCard,
       giftLabel: string,
-      payload: GroupReconcileStagedPaymentsBody,
+      payload: MultiMatchStagedPaymentsBody,
     ) => {
       const members = new Set(payload.stagedPaymentIds);
       const change: StagedChange = {
@@ -734,7 +743,7 @@ export default function ReconciliationWorkbench() {
         label: card.payerName ?? "QuickBooks payment",
         detail: `Re-target group (${payload.stagedPaymentIds.length} payments) → ${giftLabel}`,
         body: null,
-        groupReconcile: payload,
+        multiMatch: payload,
       };
       setStaged((prev) => [
         ...prev.filter((s) => !members.has(s.stagedPaymentId)),
@@ -803,7 +812,7 @@ export default function ReconciliationWorkbench() {
         return;
       }
       // A grouped card linking to an EXISTING gift must go through
-      // group-reconcile, not the per-row approve endpoint (it 409s).
+      // multi-match, not the per-row approve endpoint (it 409s).
       if (
         card.isSourceGroup &&
         res.body.outcome === "link_existing_gift" &&
@@ -914,8 +923,8 @@ export default function ReconciliationWorkbench() {
             continue;
           }
           await splitStagedPayment(change.stagedPaymentId, change.splitBody);
-        } else if (change.groupReconcile) {
-          await groupReconcileStagedPayments(change.groupReconcile);
+        } else if (change.multiMatch) {
+          await multiMatchStagedPayments(change.multiMatch);
         } else if (change.body) {
           await approveReconciliationCard(change.stagedPaymentId, change.body);
         } else {
@@ -936,7 +945,7 @@ export default function ReconciliationWorkbench() {
           let reached = false;
           try {
             const targetGiftId =
-              change.groupReconcile?.giftId ??
+              change.multiMatch?.giftId ??
               (change.body?.outcome === "link_existing_gift"
                 ? (change.body.giftId ?? null)
                 : null);
@@ -1116,7 +1125,6 @@ export default function ReconciliationWorkbench() {
   const revertStagedPaymentM = useRevertStagedPayment();
   const excludeM = useExcludeStagedPayment();
   const reIncludeM = useReIncludeStagedPayment();
-  const groupM = useGroupStagedPayments();
   // Per-charge actions: a Stripe-payout-backed deposit is expanded into one card
   // per backing charge; each charge resolves/mints on its OWN Stripe
   // charge id (not the QB deposit-level staged-payment endpoints).
@@ -1130,7 +1138,6 @@ export default function ReconciliationWorkbench() {
     createGiftM.isPending ||
     excludeM.isPending ||
     reIncludeM.isPending ||
-    groupM.isPending ||
     resolveChargeM.isPending ||
     createChargeGiftM.isPending ||
     linkChargeGiftM.isPending;
@@ -1148,10 +1155,10 @@ export default function ReconciliationWorkbench() {
   // Every review/QBO card in the column is selectable, INCLUDING per-charge cards
   // expanded from a multi-charge Stripe payout. Bulk Flag-for-research
   // routes each card to the right endpoint. Bulk Approve and the floating
-  // "Group into one gift" bar are deposit-level only — they disable themselves
+  // "Match to one gift" bar are deposit-level only — they disable themselves
   // whenever a charge is in the selection. Selection reuses `selectedIds` (shared
-  // with the group bar), keyed by cardKey (a charge's key is a composite, never a
-  // bare stagedPaymentId — so group actions derive ids from the non-charge subset).
+  // with the match bar), keyed by cardKey (a charge's key is a composite, never a
+  // bare stagedPaymentId — so match actions derive ids from the non-charge subset).
   const selectableReviewCards = useMemo(
     () => donorNotCredited,
     [donorNotCredited],
@@ -1165,14 +1172,15 @@ export default function ReconciliationWorkbench() {
     [selectableReviewCards, selectedIds],
   );
   const selectedReviewCount = selectedReviewCards.length;
-  // Grouping merges QB deposits into one gift, so it can't act on an individual
-  // Stripe charge and disables itself when one is selected; `groupableReviewCards`
-  // is the non-charge subset it acts on. Bulk Approve/Flag handle charges.
+  // Multi-select match books QB deposits onto one gift, so it can't act on an
+  // individual Stripe charge and disables itself when one is selected;
+  // `matchableReviewCards` is the non-charge subset it acts on. Bulk
+  // Approve/Flag handle charges.
   const chargeSelected = useMemo(
     () => selectedReviewCards.some((c) => !!c.stripeChargeId),
     [selectedReviewCards],
   );
-  const groupableReviewCards = useMemo(
+  const matchableReviewCards = useMemo(
     () => selectedReviewCards.filter((c) => !c.stripeChargeId),
     [selectedReviewCards],
   );
@@ -1627,7 +1635,7 @@ export default function ReconciliationWorkbench() {
       if (await tryLinkMultiChargeCard(card, gift)) return;
       // Grouped ("same physical gift") cards can't link to an existing gift via
       // the per-row approve endpoint (it 409s "link the whole group"); route
-      // them through /staged-payments/group-reconcile instead.
+      // them through /staged-payments/multi-match instead.
       const grouped = buildGroupedLinkPayload(card, gift.id);
       if (grouped) {
         stageGroupedLink(card, gift.label, grouped.payload);
@@ -1695,7 +1703,7 @@ export default function ReconciliationWorkbench() {
           return;
         }
         // A grouped card linking to an EXISTING gift must go through
-        // group-reconcile, not the per-row approve endpoint (it 409s).
+        // multi-match, not the per-row approve endpoint (it 409s).
         if (
           card.isSourceGroup &&
           res.body.outcome === "link_existing_gift" &&
@@ -1706,7 +1714,7 @@ export default function ReconciliationWorkbench() {
             // The server rejects an out-of-band group total with 400
             // amount_mismatch; the catch below surfaces it so the operator can
             // correct the gift amount and retry.
-            await groupReconcileStagedPayments(grouped.payload);
+            await multiMatchStagedPayments(grouped.payload);
             invalidateAll();
             setRetargetCard(null);
             toast({
@@ -1794,46 +1802,66 @@ export default function ReconciliationWorkbench() {
     [reIncludeM, invalidateAll, toast, errMessage],
   );
 
-  const handleGroupSelected = useCallback(async () => {
-    // Grouping is deposit-level: a charge card's key is a composite, not a bare
-    // stagedPaymentId, so only the non-charge selected cards can be grouped.
-    const ids = groupableReviewCards.map((c) => c.stagedPaymentId);
-    if (ids.length < 2) return;
-    const run = (confirmDonorConflict: boolean) =>
-      groupM.mutateAsync({
-        data: { stagedPaymentIds: ids, confirmDonorConflict },
-      });
-    try {
-      await run(false);
-    } catch (err) {
-      const code =
-        err && typeof err === "object" && "data" in err
-          ? (err as { data?: { error?: string } }).data?.error
-          : undefined;
-      if (
-        code === "donor_conflict" &&
-        window.confirm(
-          "These payments resolve to more than one donor. Group them into one gift anyway?",
-        )
-      ) {
+  /**
+   * Multi-select "Match to one gift" (replaces the retired "Group into one
+   * gift" action): the operator picks an EXISTING gift and every selected
+   * deposit row books its own counted payment application on it, atomically,
+   * via /staged-payments/multi-match — no unit_group row is created. Matching
+   * is deposit-level: a charge card's key is a composite, not a bare
+   * stagedPaymentId, so only the non-charge selected cards participate. Rows
+   * spanning more than one date or deposit need an explicit human confirmation
+   * (400 multi_date_confirmation_required → confirm → retry with
+   * confirmMultiDate). A combined total outside the gift's fee band rejects
+   * with 400 amount_mismatch and has no override — the operator corrects the
+   * gift amount and retries.
+   */
+  const handleBulkMatchPick = useCallback(
+    async (gift: GiftOrPayment) => {
+      const ids = matchableReviewCards.map((c) => c.stagedPaymentId);
+      if (ids.length < 2) return;
+      const giftLabel = gift.name ?? giftDonorName(gift);
+      const run = (confirmMultiDate: boolean) =>
+        multiMatchStagedPayments({
+          stagedPaymentIds: ids,
+          giftId: gift.id,
+          ...(confirmMultiDate ? { confirmMultiDate: true } : {}),
+        });
+      setBulkMatching(true);
+      try {
         try {
-          await run(true);
-        } catch (retryErr) {
-          toast({ title: "Couldn't group", description: errMessage(retryErr) });
-          return;
+          await run(false);
+        } catch (err) {
+          const code =
+            err && typeof err === "object" && "data" in err
+              ? (err as { data?: { error?: string } }).data?.error
+              : undefined;
+          if (
+            code === "multi_date_confirmation_required" &&
+            window.confirm(
+              "These payments span more than one date or deposit. Match them all to this gift anyway?",
+            )
+          ) {
+            await run(true);
+          } else {
+            throw err;
+          }
         }
-      } else {
-        toast({ title: "Couldn't group", description: errMessage(err) });
+      } catch (err) {
+        toast({ title: "Couldn't match", description: errMessage(err) });
         return;
+      } finally {
+        setBulkMatching(false);
       }
-    }
-    setSelectedIds(new Set());
-    invalidateAll();
-    toast({
-      title: `Grouped ${ids.length} payments`,
-      description: "Reconcile the group from its card in Needs review.",
-    });
-  }, [groupableReviewCards, groupM, invalidateAll, toast, errMessage]);
+      setBulkMatchOpen(false);
+      setSelectedIds(new Set());
+      invalidateAll();
+      toast({
+        title: `Matched ${ids.length} payments`,
+        description: `Each now books as its own payment on “${giftLabel}”.`,
+      });
+    },
+    [matchableReviewCards, invalidateAll, toast, errMessage],
+  );
 
   // Shared card renderer for the Needs review / QBO-only / Research queues.
   const renderReconCard = (
@@ -1877,8 +1905,8 @@ export default function ReconciliationWorkbench() {
         onGroup={() => {
           toggleSelect(key);
           toast({
-            title: "Selected for grouping",
-            description: "Pick another payment, then Group into one gift.",
+            title: "Selected for matching",
+            description: "Pick another payment, then Match to one gift.",
           });
         }}
         onFlagResearch={() => setResearchCard(card)}
@@ -2476,7 +2504,7 @@ export default function ReconciliationWorkbench() {
         onDone={clearSelectedReview}
       />
 
-      {/* Group selected → one gift (Review / QBO-only buckets) */}
+      {/* Match selected → one gift (Review / QBO-only buckets) */}
       {tab === "gift" &&
         selectedIds.size > 0 && (
           <div className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border bg-card px-4 py-2 shadow-xl">
@@ -2485,22 +2513,25 @@ export default function ReconciliationWorkbench() {
             </span>
             <Button
               size="sm"
-              onClick={handleGroupSelected}
+              onClick={() => setBulkMatchOpen(true)}
               disabled={
-                actionBusy || chargeSelected || groupableReviewCards.length < 2
+                actionBusy ||
+                bulkMatching ||
+                chargeSelected ||
+                matchableReviewCards.length < 2
               }
               title={
                 chargeSelected
-                  ? "Grouping applies to deposit cards only — deselect the Stripe charge cards to group."
+                  ? "Matching applies to deposit cards only — deselect the Stripe charge cards first."
                   : undefined
               }
             >
-              {groupM.isPending ? (
+              {bulkMatching ? (
                 <Loader2 className="mr-1 h-4 w-4 animate-spin" />
               ) : (
                 <Layers className="mr-1 h-4 w-4" />
               )}
-              Group into one gift
+              Match to one gift
             </Button>
             <button
               type="button"
@@ -2511,6 +2542,20 @@ export default function ReconciliationWorkbench() {
             </button>
           </div>
         )}
+
+      {/* Multi-select match: pick the ONE existing gift the selected deposit
+          rows all belong to — each books its own counted payment application. */}
+      <GiftSearchDialog
+        open={bulkMatchOpen}
+        onOpenChange={(o) => {
+          if (!bulkMatching) setBulkMatchOpen(o);
+        }}
+        busy={bulkMatching}
+        title="Match selected payments to one gift"
+        description={`Pick the existing gift these ${matchableReviewCards.length} QuickBooks payments belong to. Each payment books as its own application on that gift.`}
+        footnote="The payments' combined total must sit within the gift's fee-band tolerance — otherwise correct the gift amount and retry."
+        onPick={(g) => void handleBulkMatchPick(g)}
+      />
 
       {/* Change donor dialog */}
       {donorCard && (
@@ -2650,7 +2695,7 @@ function ResolveMenu({
             )}
             {MI(
               onGroup,
-              "Group payments → one gift",
+              "Match payments → one gift",
               "select rows that fund one gift",
             )}
           </>

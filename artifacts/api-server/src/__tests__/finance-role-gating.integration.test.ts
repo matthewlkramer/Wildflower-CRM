@@ -155,11 +155,9 @@ const GATED: Array<{ name: string; path: string; body?: unknown }> = [
     path: `/api/staged-payments/${NOPE}/set-coding`,
     body: { objectCode: "4010" },
   },
-  {
-    name: "groupStagedPayments",
-    path: `/api/staged-payments/group`,
-    body: { stagedPaymentIds: [`${NOPE}_a`, `${NOPE}_b`] },
-  },
+  // NOTE: /staged-payments/group is retired (410 tombstone, ungated) — group
+  // creation is gone (docs/adr-linear-money-model.md); only the live ungroup
+  // action on legacy groups remains finance-gated.
   {
     name: "ungroupStagedPayments",
     path: `/api/staged-payments/ungroup`,

@@ -5,8 +5,6 @@ import {
   giftsAndPayments,
   giftAllocations,
   paymentApplications,
-  unitGroups,
-  unitGroupMembers,
 } from "@workspace/db/schema";
 import {
   and,
@@ -22,7 +20,7 @@ import { asyncHandler, newId, notFound, paramId } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import {
   ReconcileStagedPaymentBody,
-  GroupReconcileStagedPaymentsBody,
+  MultiMatchStagedPaymentsBody,
   ConfirmStagedPaymentMatchesBody,
   SplitStagedPaymentBody,
   validateGiftInvariants,
@@ -282,34 +280,37 @@ router.post(
   }),
 );
 
-// ─── POST /staged-payments/group-reconcile ─────────────────────────────────
-// Manually group several staged payments into a single unit and reconcile the
-// GROUP to ONE existing CRM gift (which typically carries multiple allocations).
-// Members must form one coherent group: either they share ONE underlying bank
-// Deposit (qbDepositId), or they share the same payer name (a single wire, or a
-// series of stock sales, split across several QB records — each often settling
-// as its OWN bank deposit over several days). No new gift is minted and
-// QuickBooks is never written back. Guards: at least two rows; every row pending
-// and not already resolved; all rows share one grouping key (deposit, or payer);
-// when the rows span more than one date_received OR more than one distinct
-// deposit the caller must pass confirmMultiDate; the gift exists with a single
-// valid donor and is not
-// already linked to any other staged row; the members' combined total sits in
-// the fee-band tolerance around the gift amount. On success EVERY member books
-// a counted QB cash-application ledger row → the gift, and the members' group
-// membership is made durable in `unit_groups` (the legacy pointer columns are
-// @deprecated and no longer written). Reversible as a whole
-// via the group-aware revert. Idempotent: re-running with the same rows already
-// grouped is blocked by the not-pending guard.
+// ─── POST /staged-payments/multi-match ─────────────────────────────────────
+// Match several staged payments — selected together in the workbench — to ONE
+// existing CRM gift (which typically carries multiple allocations). The ADR
+// linear-money-model (docs/adr-linear-money-model.md) replacement for
+// group-then-match: NO unit group is created; the counted ledger rows alone
+// express the combined outcome (one per member, booked in one transaction).
+// Members must form one coherent selection: either they share ONE underlying
+// bank Deposit (qbDepositId), or they share the same payer name (a single
+// wire, or a series of stock sales, split across several QB records — each
+// often settling as its OWN bank deposit over several days). Rows that all
+// belong to one LEGACY unit group bypass the coherence key (the human already
+// asserted they are one gift) — that read survives until unit_groups is
+// retired in the next step. No new gift is minted and QuickBooks is never
+// written back. Guards: at least two rows; every row pending and not already
+// resolved; when the rows span more than one date_received OR more than one
+// distinct deposit the caller must pass confirmMultiDate; the gift exists
+// with a single valid donor and is not already linked to any other staged
+// row; the members' combined total sits in the fee-band tolerance around the
+// gift amount. On success EVERY member books a counted QB cash-application
+// ledger row → the gift. Each member reverts individually via the normal
+// revert path (no group semantics). Idempotent: re-running with the same rows
+// already matched is blocked by the not-pending guard.
 router.post(
-  "/staged-payments/group-reconcile",
+  "/staged-payments/multi-match",
   asyncHandler(async (req, res) => {
     const user = getAppUser(req);
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    const parsed = GroupReconcileStagedPaymentsBody.safeParse(req.body);
+    const parsed = MultiMatchStagedPaymentsBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
         error: "validation_error",
@@ -320,13 +321,13 @@ router.post(
     }
     const { giftId } = parsed.data;
     const confirmMultiDate = parsed.data.confirmMultiDate === true;
-    // De-dupe and sort for a deterministic representative (smallest id).
+    // De-dupe and sort for deterministic processing order.
     const ids = Array.from(new Set(parsed.data.stagedPaymentIds)).sort();
     if (ids.length < 2) {
       res.status(400).json({
-        error: "group_too_small",
+        error: "selection_too_small",
         message:
-          "Group at least two staged payments to reconcile as a unit.",
+          "Select at least two staged payments to match as one gift.",
       });
       return;
     }
@@ -364,7 +365,6 @@ router.post(
     const AMOUNT_MISMATCH = "__amount_mismatch__";
     const CONFLICT = "__conflict__";
 
-    const representativeId = ids[0];
     let toleranceDetail: { combinedTotal: number; giftAmount: number } | null =
       null;
     try {
@@ -491,34 +491,10 @@ router.post(
           .then((r) => r[0]);
         if (conflict) throw new Error(CONFLICT);
 
-        // Make the group durable in `unit_groups` (the sole group store —
-        // docs/reconciliation-design.md §4.6b): an ad hoc coherent selection
-        // becomes a first-class group at reconcile time; a source group is
-        // already recorded. With the legacy pointer columns retired, ugm
-        // membership is what marks these rows as group-reconciled (the audit
-        // view's "group" label, and the direct-match guards' group exclusion).
-        if (!isSourceGroup) {
-          const unitGroupId = newId();
-          await tx
-            .insert(unitGroups)
-            .values({ id: unitGroupId, createdByUserId: user.id });
-          await tx
-            .delete(unitGroupMembers)
-            .where(
-              and(
-                eq(unitGroupMembers.evidenceSource, "quickbooks"),
-                inArray(unitGroupMembers.sourceId, ids),
-              ),
-            );
-          await tx.insert(unitGroupMembers).values(
-            ids.map((sid) => ({
-              id: `ugm_${sid}`,
-              groupId: unitGroupId,
-              evidenceSource: "quickbooks" as const,
-              sourceId: sid,
-            })),
-          );
-        }
+        // NO unit group is written (ADR linear-money-model): the counted
+        // ledger rows booked below are the sole record of the combined
+        // outcome. An existing LEGACY group is left untouched — its
+        // membership read above only relaxes the coherence key.
 
         // Permanent EVIDENCE tied to the gift (never archived, never a second
         // gift): the counted ledger rows booked below derive the terminal
@@ -610,10 +586,21 @@ router.post(
     res.json({
       gift,
       stagedPaymentIds: ids,
-      representativeStagedPaymentId: representativeId,
     });
   }),
 );
+
+// ─── POST /staged-payments/group-reconcile (RETIRED) ───────────────────────
+// Tombstone: group-then-match is replaced by /staged-payments/multi-match
+// (docs/adr-linear-money-model.md — group creation is retired; the counted
+// ledger rows alone express a combined match).
+router.post("/staged-payments/group-reconcile", (_req, res) => {
+  res.status(410).json({
+    error: "group_creation_retired",
+    message:
+      "Group-reconcile is retired. Select the rows together and match them with POST /staged-payments/multi-match.",
+  });
+});
 
 // ─── POST /staged-payments/:id/split ───────────────────────────────────────
 // Split ONE staged payment across TWO OR MORE existing gifts (the case where a

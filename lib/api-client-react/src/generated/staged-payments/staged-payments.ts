@@ -29,12 +29,10 @@ import type {
   FinanceForbiddenResponse,
   GetPendingStagedMoneyForDonorParams,
   GiftCandidateList,
-  GroupReconcileStagedPaymentsBody,
-  GroupReconcileStagedPaymentsResponse,
-  GroupStagedPaymentsBody,
-  GroupStagedPaymentsResponse,
   ListStagedPaymentGiftWindowParams,
   ListStagedPaymentsParams,
+  MultiMatchStagedPaymentsBody,
+  MultiMatchStagedPaymentsResponse,
   NotFoundResponse,
   PendingDonorMoney,
   QuickbooksStagedPaymentSummary,
@@ -1237,34 +1235,114 @@ export const useSplitStagedPayment = <TError = ErrorType<BadRequestResponse | No
       return useMutation(getSplitStagedPaymentMutationOptions(options));
     }
     /**
- * Manually groups two or more staged payments into a single unit and
-reconciles the GROUP as a whole to one already-recorded gift (typically a
-multi-allocation gift). Members must form one coherent group: they share
-ONE underlying bank Deposit (same qbDepositId), or — when no deposit was
-captured — they share the same payer name (e.g. a single wire, or a
-series of stock sales, split across several QuickBooks records). No new
-gift is minted and QuickBooks is never written back. Every member is set
-to approved and books a counted payment_applications ledger row to the
-gift; the members' group membership is recorded durably in unit_groups.
-The group adopts the gift's donor (Donor XOR). Guards: at least two rows,
-all pending and unresolved, all sharing one grouping key (deposit or
-payer) — OR all already belonging to one "same physical gift" unit
-group (sharing a single unit group id), which bypasses the
-deposit/payer coherence check since the human already asserted the rows
-are one gift (the multi-date confirmation and amount-mismatch check below
-still apply); the gift exists with a single valid donor and is not already
-linked elsewhere, and the members' combined total matches the gift amount
-within the processor fee-band tolerance. When the grouped payments do not
-all fall on the same date_received, or carry more than one distinct
-(non-null) bank deposit, `confirmMultiDate` must be true (otherwise
+ * Reconciles two or more staged payments — selected together in the
+workbench — to one already-recorded gift (typically a multi-allocation
+gift). This is the ADR linear-money-model replacement for
+group-then-match: NO unit group is created; the counted
+payment_applications ledger rows alone express the combined outcome
+(one row per member, all booked in one transaction). Members must form
+one coherent selection: they share ONE underlying bank Deposit (same
+qbDepositId), or — when no deposit was captured — they share the same
+payer name (e.g. a single wire, or a series of stock sales, split
+across several QuickBooks records). Rows that all belong to one legacy
+"same physical gift" unit group bypass the deposit/payer coherence
+check (the human already asserted the rows are one gift; the
+multi-date confirmation and amount-mismatch check still apply). No new
+gift is minted and QuickBooks is never written back. Every member is
+set to approved and books a counted payment_applications ledger row to
+the gift; the selection adopts the gift's donor (Donor XOR). Guards:
+at least two rows, all pending and unresolved; the gift exists with a
+single valid donor and is not already linked elsewhere; the members'
+combined total matches the gift amount within the processor fee-band
+tolerance. When the members do not all fall on the same date_received,
+or carry more than one distinct (non-null) bank deposit,
+`confirmMultiDate` must be true (otherwise
 400 multi_date_confirmation_required) — this guards against collapsing
 unrelated same-payer gifts. When the combined total falls OUTSIDE the
-fee-band tolerance (e.g. stock/securities gifts whose sale proceeds differ
-from the booked value), the request is rejected 400 amount_mismatch;
-correct the gift's amount to the combined total, then reconcile.
-Reversible as a whole via the revert endpoint.
+fee-band tolerance (e.g. stock/securities gifts whose sale proceeds
+differ from the booked value), the request is rejected
+400 amount_mismatch; correct the gift's amount to the combined total,
+then match. Each member is individually reversible via the normal
+revert endpoint (no whole-group revert is needed — reverting one row
+leaves the others' counted rows in place).
 
- * @summary Group several staged payments and reconcile them as one unit to an existing gift.
+ * @summary Match several selected staged payments to ONE existing gift (one counted ledger row per member, atomically).
+ */
+export const getMultiMatchStagedPaymentsUrl = () => {
+
+
+  
+
+  return `/api/staged-payments/multi-match`
+}
+
+export const multiMatchStagedPayments = async (multiMatchStagedPaymentsBody: MultiMatchStagedPaymentsBody, options?: RequestInit): Promise<MultiMatchStagedPaymentsResponse> => {
+  
+  return customFetch<MultiMatchStagedPaymentsResponse>(getMultiMatchStagedPaymentsUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      multiMatchStagedPaymentsBody,)
+  }
+);}
+  
+
+
+
+export const getMultiMatchStagedPaymentsMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof multiMatchStagedPayments>>, TError,{data: BodyType<MultiMatchStagedPaymentsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof multiMatchStagedPayments>>, TError,{data: BodyType<MultiMatchStagedPaymentsBody>}, TContext> => {
+
+const mutationKey = ['multiMatchStagedPayments'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof multiMatchStagedPayments>>, {data: BodyType<MultiMatchStagedPaymentsBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  multiMatchStagedPayments(data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MultiMatchStagedPaymentsMutationResult = NonNullable<Awaited<ReturnType<typeof multiMatchStagedPayments>>>
+    export type MultiMatchStagedPaymentsMutationBody = BodyType<MultiMatchStagedPaymentsBody>
+    export type MultiMatchStagedPaymentsMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Match several selected staged payments to ONE existing gift (one counted ledger row per member, atomically).
+ */
+export const useMultiMatchStagedPayments = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof multiMatchStagedPayments>>, TError,{data: BodyType<MultiMatchStagedPaymentsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof multiMatchStagedPayments>>,
+        TError,
+        {data: BodyType<MultiMatchStagedPaymentsBody>},
+        TContext
+      > => {
+      return useMutation(getMultiMatchStagedPaymentsMutationOptions(options));
+    }
+    /**
+ * Retired by the linear money model (docs/adr-linear-money-model.md):
+group-then-match is replaced by POST /staged-payments/multi-match,
+which books the same counted ledger rows WITHOUT creating a unit
+group. Always returns 410 with error `group_creation_retired`.
+
+ * @deprecated
+ * @summary RETIRED — use multiMatchStagedPayments.
  */
 export const getGroupReconcileStagedPaymentsUrl = () => {
 
@@ -1274,24 +1352,23 @@ export const getGroupReconcileStagedPaymentsUrl = () => {
   return `/api/staged-payments/group-reconcile`
 }
 
-export const groupReconcileStagedPayments = async (groupReconcileStagedPaymentsBody: GroupReconcileStagedPaymentsBody, options?: RequestInit): Promise<GroupReconcileStagedPaymentsResponse> => {
+export const groupReconcileStagedPayments = async ( options?: RequestInit): Promise<unknown> => {
   
-  return customFetch<GroupReconcileStagedPaymentsResponse>(getGroupReconcileStagedPaymentsUrl(),
+  return customFetch<unknown>(getGroupReconcileStagedPaymentsUrl(),
   {      
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      groupReconcileStagedPaymentsBody,)
+    method: 'POST'
+    
+    
   }
 );}
   
 
 
 
-export const getGroupReconcileStagedPaymentsMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof groupReconcileStagedPayments>>, TError,{data: BodyType<GroupReconcileStagedPaymentsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof groupReconcileStagedPayments>>, TError,{data: BodyType<GroupReconcileStagedPaymentsBody>}, TContext> => {
+export const getGroupReconcileStagedPaymentsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof groupReconcileStagedPayments>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof groupReconcileStagedPayments>>, TError,void, TContext> => {
 
 const mutationKey = ['groupReconcileStagedPayments'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -1303,10 +1380,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof groupReconcileStagedPayments>>, {data: BodyType<GroupReconcileStagedPaymentsBody>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof groupReconcileStagedPayments>>, void> = () => {
+          
 
-          return  groupReconcileStagedPayments(data,requestOptions)
+          return  groupReconcileStagedPayments(requestOptions)
         }
 
 
@@ -1317,38 +1394,34 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type GroupReconcileStagedPaymentsMutationResult = NonNullable<Awaited<ReturnType<typeof groupReconcileStagedPayments>>>
-    export type GroupReconcileStagedPaymentsMutationBody = BodyType<GroupReconcileStagedPaymentsBody>
-    export type GroupReconcileStagedPaymentsMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+    
+    export type GroupReconcileStagedPaymentsMutationError = ErrorType<void>
 
     /**
- * @summary Group several staged payments and reconcile them as one unit to an existing gift.
+ * @deprecated
+ * @summary RETIRED — use multiMatchStagedPayments.
  */
-export const useGroupReconcileStagedPayments = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof groupReconcileStagedPayments>>, TError,{data: BodyType<GroupReconcileStagedPaymentsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useGroupReconcileStagedPayments = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof groupReconcileStagedPayments>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof groupReconcileStagedPayments>>,
         TError,
-        {data: BodyType<GroupReconcileStagedPaymentsBody>},
+        void,
         TContext
       > => {
       return useMutation(getGroupReconcileStagedPaymentsMutationOptions(options));
     }
     /**
- * Marks two or more staged payments as a single "same physical gift"
-group, stored in the polymorphic unit_groups / unit_group_members tables.
-The returned sourceGroupId is the unit group id. UNLIKE group-reconcile
-(which ties a deposit's members to ONE existing gift at reconcile time),
-this groups FREELY across different bank deposits AND dates and BEFORE
-any gift exists — for a gift a donor entered as several QuickBooks
-records. It only records the grouping: it does NOT change any donor or
-gift link and never reconciles by itself. Guards: at least two distinct,
-existing, non-archived, still-unreconciled rows; rows already in another
-group are rejected unless they are all already in the same group
-(idempotent). When the members resolve to more than one distinct donor,
-confirmDonorConflict must be true (else 400 donor_conflict). The group is
-exactly the rows carrying the id; reconcile it as a unit on the card.
+ * Retired by the linear money model (docs/adr-linear-money-model.md):
+pre-match "same physical gift" groups are no longer created; select
+the rows together in the workbench and match them in one call with
+POST /staged-payments/multi-match. Existing legacy groups remain
+readable (and still bypass the coherence key in multi-match) until
+unit_groups is retired. Always returns 410 with error
+`group_creation_retired`.
 
- * @summary Group separately-entered QuickBooks records that are really ONE physical gift.
+ * @deprecated
+ * @summary RETIRED — select the rows together and use multiMatchStagedPayments at match time.
  */
 export const getGroupStagedPaymentsUrl = () => {
 
@@ -1358,24 +1431,23 @@ export const getGroupStagedPaymentsUrl = () => {
   return `/api/staged-payments/group`
 }
 
-export const groupStagedPayments = async (groupStagedPaymentsBody: GroupStagedPaymentsBody, options?: RequestInit): Promise<GroupStagedPaymentsResponse> => {
+export const groupStagedPayments = async ( options?: RequestInit): Promise<unknown> => {
   
-  return customFetch<GroupStagedPaymentsResponse>(getGroupStagedPaymentsUrl(),
+  return customFetch<unknown>(getGroupStagedPaymentsUrl(),
   {      
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      groupStagedPaymentsBody,)
+    method: 'POST'
+    
+    
   }
 );}
   
 
 
 
-export const getGroupStagedPaymentsMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof groupStagedPayments>>, TError,{data: BodyType<GroupStagedPaymentsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof groupStagedPayments>>, TError,{data: BodyType<GroupStagedPaymentsBody>}, TContext> => {
+export const getGroupStagedPaymentsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof groupStagedPayments>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof groupStagedPayments>>, TError,void, TContext> => {
 
 const mutationKey = ['groupStagedPayments'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -1387,10 +1459,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof groupStagedPayments>>, {data: BodyType<GroupStagedPaymentsBody>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof groupStagedPayments>>, void> = () => {
+          
 
-          return  groupStagedPayments(data,requestOptions)
+          return  groupStagedPayments(requestOptions)
         }
 
 
@@ -1401,18 +1473,19 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type GroupStagedPaymentsMutationResult = NonNullable<Awaited<ReturnType<typeof groupStagedPayments>>>
-    export type GroupStagedPaymentsMutationBody = BodyType<GroupStagedPaymentsBody>
-    export type GroupStagedPaymentsMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>
+    
+    export type GroupStagedPaymentsMutationError = ErrorType<void>
 
     /**
- * @summary Group separately-entered QuickBooks records that are really ONE physical gift.
+ * @deprecated
+ * @summary RETIRED — select the rows together and use multiMatchStagedPayments at match time.
  */
-export const useGroupStagedPayments = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof groupStagedPayments>>, TError,{data: BodyType<GroupStagedPaymentsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useGroupStagedPayments = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof groupStagedPayments>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof groupStagedPayments>>,
         TError,
-        {data: BodyType<GroupStagedPaymentsBody>},
+        void,
         TContext
       > => {
       return useMutation(getGroupStagedPaymentsMutationOptions(options));

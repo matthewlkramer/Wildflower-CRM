@@ -7121,25 +7121,24 @@ export interface SplitStagedPaymentResponse {
 }
 
 /**
- * Group several staged payments and reconcile the whole group to one existing gift. Members must share one bank deposit, or — when no deposit was captured — the same payer.
+ * Match several selected staged payments to one existing gift, one counted ledger row per member, atomically. Members must share one bank deposit, or — when no deposit was captured — the same payer (legacy unit-group members bypass this).
  */
-export interface GroupReconcileStagedPaymentsBody {
+export interface MultiMatchStagedPaymentsBody {
   /**
-   * Ids of the staged payments to group. Must be at least two, all pending, and all sharing the same non-null qbDepositId, or — when none has a deposit — the same payer name.
+   * Ids of the staged payments to match. Must be at least two, all pending, and all sharing the same non-null qbDepositId, or — when none has a deposit — the same payer name (rows all in one legacy unit group bypass this coherence key).
    * @minItems 2
    */
   stagedPaymentIds: string[];
-  /** The existing gift the group reconciles to. */
+  /** The existing gift every member's counted ledger row books to. */
   giftId: string;
-  /** Must be true when the grouped payments do not all share the same date_received, or carry more than one distinct (non-null) bank deposit. Guards against accidentally collapsing unrelated same-payer gifts (e.g. recurring donations) or two genuinely separate deposits into one. The client prompts the operator to confirm before sending this. */
+  /** Must be true when the selected payments do not all share the same date_received, or carry more than one distinct (non-null) bank deposit. Guards against accidentally collapsing unrelated same-payer gifts (e.g. recurring donations) or two genuinely separate deposits into one. The client prompts the operator to confirm before sending this. */
   confirmMultiDate?: boolean;
 }
 
-export interface GroupReconcileStagedPaymentsResponse {
+export interface MultiMatchStagedPaymentsResponse {
   gift: GiftOrPayment;
+  /** The matched member ids (deduplicated, sorted). Every member books its own counted payment_applications ledger row to the gift. */
   stagedPaymentIds: string[];
-  /** The deterministic group representative (min id among members). Informational only — every member books its own counted payment_applications ledger row to the gift. */
-  representativeStagedPaymentId: string;
 }
 
 /**
@@ -7235,30 +7234,6 @@ export interface SetStagedPaymentCodingBody {
   codingFlags?: string[] | null;
   deferredRevenue?: DeferredRevenue | null;
   deferredRevenueReason?: string | null;
-}
-
-/**
- * Mark two or more staged payments as ONE physical gift entered separately in QuickBooks (a 'same physical gift' group), stored in the unit_groups / unit_group_members tables. Does not change donor or gift links and never reconciles by itself.
- */
-export interface GroupStagedPaymentsBody {
-  /**
-   * Ids of the staged payments to group. Must be at least two distinct, existing, non-archived, still-unreconciled rows. Rows already in another group are rejected unless they are all already in the same group (idempotent re-group).
-   * @minItems 2
-   */
-  stagedPaymentIds: string[];
-  /** Must be true when the members already resolve to more than one distinct donor. Guards against grouping unrelated gifts. Without it such a group is rejected 400 donor_conflict. The client prompts the operator to confirm before sending this. */
-  confirmDonorConflict?: boolean;
-}
-
-export interface GroupStagedPaymentsResponse {
-  /** The unit group id shared by every member. */
-  sourceGroupId: string;
-  /** All member ids now belonging to the unit group. */
-  stagedPaymentIds: string[];
-  /** The deterministic representative member (the one the group card is anchored on and that carries the gift link on group approve). */
-  representativeStagedPaymentId: string;
-  /** Summed amount of all members. */
-  totalAmount?: string | null;
 }
 
 /**

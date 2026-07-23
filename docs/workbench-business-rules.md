@@ -385,7 +385,7 @@ A single large QuickBooks record linked to several smaller transactions is not a
 | Match to CRM gift                                    | Raw, enriched, or partially matched                                    |
 | Match to transaction                                 | Raw, enriched, or partially matched                                    |
 | Confirm proposed match                               | A match has been proposed                                              |
-| Group QuickBooks records                             | Two or more records jointly represent one accounting event             |
+| Match several records to one CRM gift                | Two or more open records belong to the same gift — each books its own counted payment application on that gift, atomically (replaces the retired "Group QuickBooks records" pre-match grouping; see [`adr-linear-money-model.md`](adr-linear-money-model.md)) |
 | Split QuickBooks record into reconciliation units    | One accounting record needs to be represented as several subcomponents |
 | Unmatch from CRM gift                                | Any QuickBooks record with a CRM relationship                          |
 | Unmatch from transaction                             | Any QuickBooks record with a transaction relationship                  |

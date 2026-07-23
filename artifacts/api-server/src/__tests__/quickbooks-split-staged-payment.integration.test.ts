@@ -472,12 +472,13 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     expect(sharedClaims.length).toBe(1);
   }, 30_000);
 
-  it("serializes a split and a group-reconcile racing for the same gift → exactly one wins", async () => {
+  it("serializes a split and a multi-match racing for the same gift → exactly one wins", async () => {
     // Same cross-table invariant as the reconcile race, but against the
-    // group-reconcile path (writes group_reconciled_gift_id). Both paths now
-    // lock the gift row FOR UPDATE (staged → gift), so the shared gift can only
-    // be claimed in one place. The two grp rows share payer+date with null
-    // deposit ids, forming one coherent group summing to the gift amount.
+    // multi-match path (counted ledger rows only, no group written). Both
+    // paths lock the gift row FOR UPDATE (staged → gift), so the shared gift
+    // can only be claimed in one place. The two grp rows share payer+date with
+    // null deposit ids, forming one coherent selection summing to the gift
+    // amount.
     const shared = await seedGift("600.00");
     const other = await seedGift("400.00");
     const splitSp = await seedStaged("980.00");
@@ -488,7 +489,7 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
       api(`/api/staged-payments/${splitSp}/split`, {
         giftIds: [shared, other],
       }),
-      api(`/api/staged-payments/group-reconcile`, {
+      api(`/api/staged-payments/multi-match`, {
         giftId: shared,
         stagedPaymentIds: [grpA, grpB],
       }),
@@ -502,7 +503,7 @@ describe.skipIf(!HAS_DB)("QuickBooks split staged payment (integration)", () => 
     expect(conflicts).toBe(1);
 
     // The shared gift is claimed in exactly ONE place: either the split's
-    // ledger rows (anchored to splitSp) or group-reconcile ledger rows on the
+    // ledger rows (anchored to splitSp) or multi-match ledger rows on the
     // grp member rows.
     const sharedClaims = await db
       .select()

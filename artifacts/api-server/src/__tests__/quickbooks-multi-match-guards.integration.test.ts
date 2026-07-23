@@ -18,10 +18,10 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
 /**
- * End-to-end coverage for the QuickBooks deposit group-reconcile GUARDRAILS.
+ * End-to-end coverage for the QuickBooks multi-match GUARDRAILS.
  *
- * Companion to `quickbooks-group-reconcile.integration.test.ts` (which covers
- * the happy path + revert). This file asserts the route's grouping-key +
+ * Companion to `quickbooks-multi-match.integration.test.ts` (which covers
+ * the happy path + revert). This file asserts the route's coherence-key +
  * rejection paths each return the right status/error AND (for rejections) leave
  * every row untouched:
  *   - DIFFERENT deposits, NO/empty payer               → 400 not_groupable
@@ -32,8 +32,8 @@ import type { Server } from "node:http";
  *   - same payer, DIFFERENT dates, confirmMultiDate    → 200, reconciled
  *   - same payer, one real + one null date (mixed)     → multi-date gate applies
  *   - one row already resolved/approved                → 409 not_pending
- *   - gift already linked to a staged row outside group → 409 link_conflict
- *   - fewer than two rows                              → 400 group_too_small
+ *   - gift already linked to a staged row outside selection → 409 link_conflict
+ *   - fewer than two rows                              → 400 selection_too_small
  *
  * Same seam as the companion suite: only the Clerk auth gate (`requireAuth`) is
  * mocked to inject a seeded test user; transactions, locking, the deposit/
@@ -238,7 +238,7 @@ afterAll(async () => {
 beforeEach(() => {
   if (!HAS_DB) {
     console.warn(
-      "[quickbooks-group-reconcile-guards] skipped: no live DATABASE_URL configured",
+      "[quickbooks-multi-match-guards] skipped: no live DATABASE_URL configured",
     );
   }
 });
@@ -253,7 +253,7 @@ async function expectUntouchedPending(id: string) {
 }
 
 describe.skipIf(!HAS_DB)(
-  "QuickBooks deposit group-reconcile guardrails (integration)",
+  "QuickBooks multi-match guardrails (integration)",
   () => {
     it("rejects rows from DIFFERENT deposits with 400 not_groupable and changes nothing", async () => {
       const giftId = await seedGift("100.00");
@@ -266,7 +266,7 @@ describe.skipIf(!HAS_DB)(
         depositId: `${RUN}_depB`,
       });
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
@@ -283,7 +283,7 @@ describe.skipIf(!HAS_DB)(
       const aId = await seedStaged(giftId, "a", "50.00", { depositId: null });
       const bId = await seedStaged(giftId, "b", "50.00", { depositId: null });
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
@@ -308,7 +308,7 @@ describe.skipIf(!HAS_DB)(
         dateReceived: "2025-07-25",
       });
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
@@ -343,7 +343,7 @@ describe.skipIf(!HAS_DB)(
         dateReceived: "2025-01-01",
       });
 
-      const blocked = await api("/api/staged-payments/group-reconcile", {
+      const blocked = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
@@ -352,7 +352,7 @@ describe.skipIf(!HAS_DB)(
       await expectUntouchedPending(aId);
       await expectUntouchedPending(bId);
 
-      const ok = await api("/api/staged-payments/group-reconcile", {
+      const ok = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
         confirmMultiDate: true,
@@ -382,7 +382,7 @@ describe.skipIf(!HAS_DB)(
         dateReceived: "2018-06-15",
       });
 
-      const blocked = await api("/api/staged-payments/group-reconcile", {
+      const blocked = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
@@ -391,7 +391,7 @@ describe.skipIf(!HAS_DB)(
       await expectUntouchedPending(aId);
       await expectUntouchedPending(bId);
 
-      const ok = await api("/api/staged-payments/group-reconcile", {
+      const ok = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
         confirmMultiDate: true,
@@ -425,7 +425,7 @@ describe.skipIf(!HAS_DB)(
         dateReceived: "2018-06-15",
       });
 
-      const noFlags = await api("/api/staged-payments/group-reconcile", {
+      const noFlags = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
@@ -434,7 +434,7 @@ describe.skipIf(!HAS_DB)(
       await expectUntouchedPending(aId);
       await expectUntouchedPending(bId);
 
-      const dateOnly = await api("/api/staged-payments/group-reconcile", {
+      const dateOnly = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
         confirmMultiDate: true,
@@ -451,7 +451,7 @@ describe.skipIf(!HAS_DB)(
         .set({ amount: "1012780.49" })
         .where(inArrayFn(schema.giftsAndPayments.id, [giftId]));
 
-      const corrected = await api("/api/staged-payments/group-reconcile", {
+      const corrected = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
         confirmMultiDate: true,
@@ -481,7 +481,7 @@ describe.skipIf(!HAS_DB)(
         dateReceived: "2018-06-15",
       });
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
@@ -506,7 +506,7 @@ describe.skipIf(!HAS_DB)(
         dateReceived: "2018-06-15",
       });
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
         confirmMultiDate: true,
@@ -537,7 +537,7 @@ describe.skipIf(!HAS_DB)(
         dateReceived: null,
       });
 
-      const blocked = await api("/api/staged-payments/group-reconcile", {
+      const blocked = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
@@ -546,7 +546,7 @@ describe.skipIf(!HAS_DB)(
       await expectUntouchedPending(aId);
       await expectUntouchedPending(bId);
 
-      const ok = await api("/api/staged-payments/group-reconcile", {
+      const ok = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
         confirmMultiDate: true,
@@ -576,7 +576,7 @@ describe.skipIf(!HAS_DB)(
         dateReceived: "2025-01-01",
       });
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
         confirmMultiDate: true,
@@ -603,7 +603,7 @@ describe.skipIf(!HAS_DB)(
         linkedGiftId: otherGiftId,
       });
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [pendingId, resolvedId],
       });
@@ -634,7 +634,7 @@ describe.skipIf(!HAS_DB)(
         autoApplied: true,
       });
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [pendingId, strandedId],
       });
@@ -665,7 +665,7 @@ describe.skipIf(!HAS_DB)(
         linkedGiftId: giftId,
       });
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [aId, bId],
       });
@@ -684,14 +684,15 @@ describe.skipIf(!HAS_DB)(
     }, 30_000);
 
     it("rejects a single-row array at the schema layer with 400 validation_error and changes nothing", async () => {
-      // A literal one-element array never reaches the route's group_too_small
-      // guard: the request schema (minItems: 2) rejects it first.
+      // A literal one-element array never reaches the route's
+      // selection_too_small guard: the request schema (minItems: 2) rejects it
+      // first.
       const giftId = await seedGift("50.00");
       const onlyId = await seedStaged(giftId, "a", "50.00", {
         depositId: `${RUN}_dep_small`,
       });
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [onlyId],
       });
@@ -702,22 +703,22 @@ describe.skipIf(!HAS_DB)(
       await expectUntouchedPending(onlyId);
     }, 30_000);
 
-    it("collapses duplicate ids to one row → 400 group_too_small and changes nothing", async () => {
+    it("collapses duplicate ids to one row → 400 selection_too_small and changes nothing", async () => {
       // Two distinct ids pass the schema's minItems:2, but the route de-dupes
-      // before counting, so the same row twice is a group of one — this is the
-      // path that actually reaches the route's group_too_small guard.
+      // before counting, so the same row twice is a selection of one — this is
+      // the path that actually reaches the route's selection_too_small guard.
       const giftId = await seedGift("50.00");
       const onlyId = await seedStaged(giftId, "a", "50.00", {
         depositId: `${RUN}_dep_dup`,
       });
 
-      const res = await api("/api/staged-payments/group-reconcile", {
+      const res = await api("/api/staged-payments/multi-match", {
         giftId,
         stagedPaymentIds: [onlyId, onlyId],
       });
 
       expect(res.status).toBe(400);
-      expect(res.json.error).toBe("group_too_small");
+      expect(res.json.error).toBe("selection_too_small");
 
       await expectUntouchedPending(onlyId);
     }, 30_000);

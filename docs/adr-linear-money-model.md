@@ -6,7 +6,10 @@ last_verified: 2026-07-23
 # ADR: Linear money model — gift = payment event, bank-anchored evidence tree
 
 **Status:** Ratified 2026-07-23 (design discussion with owner; production-data
-analysis + architecture review). Nothing in this ADR is implemented yet; see
+analysis + architecture review). Implementation is under way — §7 steps 1–2
+are done (step 2: `POST /quickbooks/staged-payments/multi-match` writes N
+counted rows atomically; the group and group-reconcile endpoints are 410
+stubs, so no new unit groups can be created). Steps 3–6 are not started; see
 §7 for sequencing. Layer 1 (§2) is ratified coding semantics; Layer 2 (§3) is
 design-target — its QB grain (one entry per allocation) is a working
 assumption pending accountant confirmation (owner: "easy to roll up if
@@ -163,12 +166,25 @@ in `lib/db/migrations/` (evidence anchor ids from the 2026-07-23 analysis):
 1. **This ADR + doc-drift fixes** (done in the same change as this file).
 2. **Workbench multi-select match** writing N counted rows atomically — built
    *before* touching unit groups so there is never a window with no combine
-   mechanism. Stops new group creation.
+   mechanism. Stops new group creation. **Done (2026-07-23):**
+   `POST /quickbooks/staged-payments/multi-match` (open to all team members —
+   CRM-side matching; errors: `selection_too_small`, `not_pending`,
+   `not_groupable`, `multi_date_confirmation_required`, `amount_mismatch`,
+   `link_conflict`, `link_invalid`); `POST /staged-payments/group` and
+   `/group-reconcile` return 410 `group_creation_retired`; the workbench
+   multi-select bar is now "Match to one gift", the clusters "Group QuickBooks
+   records" action is removed, and legacy source-group cards re-link via
+   multi-match with `confirmMultiDate`. Ungroup/eject remain for existing
+   groups until step 3.
 3. **`unit_groups` retirement**: reads, guards, `source_group_id` +
    `unitGroupMembership.ts`, group logic across ~13 server files
    (reconciliationGraph, reconciliationCommit, workbenchClusters, quickbooks
    actions/matching/shared, approve, cards, bundleAnchors, bundleProposals,
-   giftsAndPayments, giftCombine 409 guards) and their tests.
+   giftsAndPayments, giftCombine 409 guards) and their tests. Also decide the
+   multi-match edge case carried over from step 2: a selected member with a
+   null/zero amount is stamped matched but books no counted row (mirrors the
+   pre-existing single-row paths), so its derived status can stay pending —
+   either reject zero-amount members at selection or book a zero row.
 4. **Prod recoding** (§6) as reviewed idempotent migration SQL, applied by a
    human with `$PROD_DATABASE_URL`.
 5. **Counted-uniqueness constraint LAST**, in a migration ordered strictly

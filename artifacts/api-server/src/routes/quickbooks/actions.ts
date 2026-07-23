@@ -28,7 +28,6 @@ import {
   SetStagedPaymentEntityBody,
   SetStagedPaymentFundingSourceBody,
   SetStagedPaymentCodingBody,
-  GroupStagedPaymentsBody,
   UngroupStagedPaymentsBody,
 } from "@workspace/api-zod";
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
@@ -578,214 +577,20 @@ router.post(
   }),
 );
 
-// ─── POST /staged-payments/group ───────────────────────────────────────────
-// Mark two or more staged payments as ONE physical gift entered separately in
-// QuickBooks (a "same physical gift" group). Membership is stored in the
-// polymorphic unit_groups / unit_group_members tables (the retired
-// staged_payments.source_group_id column is gone); the returned `sourceGroupId`
-// is the unit group id (`ug_…`). Pure review state — it never changes donor or
-// gift links and never reconciles by itself; the reconciliation card collapses
-// the members into one group card and approval acts on the whole group.
-router.post(
-  "/staged-payments/group",
-  asyncHandler(async (req, res) => {
-    if (!requireFinance(req, res)) return;
-    const parsed = GroupStagedPaymentsBody.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "validation_error",
-        message: "Request validation failed",
-        details: parsed.error.flatten(),
-      });
-      return;
-    }
-    const user = getAppUser(req);
-    const confirmDonorConflict = parsed.data.confirmDonorConflict === true;
-    const ids = Array.from(new Set(parsed.data.stagedPaymentIds)).sort();
-    if (ids.length < 2) {
-      res.status(400).json({
-        error: "group_too_small",
-        message: "Group at least two distinct staged payments together.",
-      });
-      return;
-    }
-
-    const NOT_FOUND = "__not_found__";
-    const NOT_GROUPABLE = "__not_groupable__";
-    const DIFF_GROUP = "__diff_group__";
-    const DONOR_CONFLICT = "__donor_conflict__";
-
-    let result: {
-      sourceGroupId: string;
-      stagedPaymentIds: string[];
-      representativeStagedPaymentId: string;
-      totalAmount: string | null;
-    } | null = null;
-    try {
-      await db.transaction(async (tx) => {
-        const locked = await tx
-          .select({
-            ...getTableColumns(stagedPayments),
-            status: stagedStatusSql.as("status"),
-          })
-          .from(stagedPayments)
-          .where(inArray(stagedPayments.id, ids))
-          .for("update");
-        if (locked.length !== ids.length) throw new Error(NOT_FOUND);
-
-        // Only still-unreconciled rows can be grouped (a group is reconciled as
-        // a unit; grouping resolved money is meaningless). The derived status
-        // covers gift links AND settlement/split evidence.
-        for (const row of locked) {
-          if (
-            row.status === "match_confirmed" ||
-            row.status === "match_proposed"
-          ) {
-            throw new Error(NOT_GROUPABLE);
-          }
-        }
-
-        // Existing-group rule: forming a fresh group requires every member to be
-        // currently ungrouped. If all members already share ONE group it is an
-        // idempotent re-group (return that id). Any other mix (some grouped, or
-        // two different groups) is rejected — ungroup first. Membership is read
-        // from `unit_group_members` (the source of truth now that
-        // `staged_payments.source_group_id` is retired).
-        const existingMemberships = await tx
-          .select({
-            sourceId: unitGroupMembers.sourceId,
-            groupId: unitGroupMembers.groupId,
-          })
-          .from(unitGroupMembers)
-          .where(
-            and(
-              eq(unitGroupMembers.evidenceSource, "quickbooks"),
-              inArray(unitGroupMembers.sourceId, ids),
-            ),
-          );
-        const groupBySource = new Map(
-          existingMemberships.map((m) => [m.sourceId, m.groupId]),
-        );
-        const anyUngrouped = ids.some((id) => !groupBySource.has(id));
-        const distinctGroups = Array.from(
-          new Set(existingMemberships.map((m) => m.groupId)),
-        );
-        let unitGroupId: string;
-        if (distinctGroups.length === 0) {
-          unitGroupId = `ug_${newId()}`;
-        } else if (distinctGroups.length === 1 && !anyUngrouped) {
-          unitGroupId = distinctGroups[0];
-        } else {
-          throw new Error(DIFF_GROUP);
-        }
-
-        // Donor-conflict guard: more than one distinct (non-null) donor key
-        // across the members means they may be unrelated gifts.
-        const donorKeys = new Set(
-          locked
-            .map(
-              (r) =>
-                r.organizationId ??
-                r.individualGiverPersonId ??
-                r.householdId ??
-                null,
-            )
-            .filter((k): k is string => k != null),
-        );
-        if (donorKeys.size > 1 && !confirmDonorConflict) {
-          throw new Error(DONOR_CONFLICT);
-        }
-
-        // Write the durable unit_groups association (the sole group store).
-        // Repoint the passed units into this group idempotently: ensure the
-        // group row exists, drop any stale membership for these units, then
-        // (re)insert one row per member.
-        await tx
-          .insert(unitGroups)
-          .values({ id: unitGroupId, createdByUserId: user?.id ?? null })
-          .onConflictDoNothing({ target: unitGroups.id });
-        await tx
-          .delete(unitGroupMembers)
-          .where(
-            and(
-              eq(unitGroupMembers.evidenceSource, "quickbooks"),
-              inArray(unitGroupMembers.sourceId, ids),
-            ),
-          );
-        await tx.insert(unitGroupMembers).values(
-          ids.map((sid) => ({
-            id: `ugm_${sid}`,
-            groupId: unitGroupId,
-            evidenceSource: "quickbooks" as const,
-            sourceId: sid,
-          })),
-        );
-        // Touch updatedAt so list caches keyed off the staged rows refresh.
-        await tx
-          .update(stagedPayments)
-          .set({ updatedAt: new Date() })
-          .where(inArray(stagedPayments.id, ids));
-
-        // Recompute full membership (an idempotent re-group may already include
-        // rows beyond the passed ids), the deterministic representative (min id
-        // among members) and the combined total.
-        const members = await tx
-          .select({
-            id: stagedPayments.id,
-            amount: stagedPayments.amount,
-          })
-          .from(stagedPayments)
-          .innerJoin(
-            unitGroupMembers,
-            and(
-              eq(unitGroupMembers.sourceId, stagedPayments.id),
-              eq(unitGroupMembers.evidenceSource, "quickbooks"),
-            ),
-          )
-          .where(eq(unitGroupMembers.groupId, unitGroupId));
-        const memberIds = members.map((m) => m.id).sort();
-        const total = members.reduce((acc, m) => acc + Number(m.amount ?? 0), 0);
-
-        result = {
-          sourceGroupId: unitGroupId,
-          stagedPaymentIds: memberIds,
-          representativeStagedPaymentId: memberIds[0] ?? ids[0],
-          totalAmount: members.length ? total.toFixed(2) : null,
-        };
-      });
-    } catch (e) {
-      if (e instanceof Error && e.message === NOT_FOUND) {
-        return notFound(res, "staged payment");
-      }
-      if (e instanceof Error && e.message === NOT_GROUPABLE) {
-        res.status(409).json({
-          error: "not_groupable",
-          message:
-            "Only non-archived, unreconciled staged payments can be grouped.",
-        });
-        return;
-      }
-      if (e instanceof Error && e.message === DIFF_GROUP) {
-        res.status(409).json({
-          error: "different_group",
-          message:
-            "One or more of these payments is already in a different group. Ungroup them first.",
-        });
-        return;
-      }
-      if (e instanceof Error && e.message === DONOR_CONFLICT) {
-        res.status(400).json({
-          error: "donor_conflict",
-          message:
-            "These payments resolve to more than one donor. Confirm you want to group them anyway.",
-        });
-        return;
-      }
-      throw e;
-    }
-    res.json(result);
-  }),
-);
+// ─── POST /staged-payments/group (RETIRED) ─────────────────────────────────
+// Tombstone: pre-match "same physical gift" groups are retired
+// (docs/adr-linear-money-model.md). Select the rows together in the workbench
+// and match them in one call with POST /staged-payments/multi-match. Existing
+// legacy groups remain readable (and still relax the multi-match coherence
+// key) until unit_groups is retired in the next step; /staged-payments/ungroup
+// still works for dismantling them.
+router.post("/staged-payments/group", (_req, res) => {
+  res.status(410).json({
+    error: "group_creation_retired",
+    message:
+      "Pre-match groups are retired. Select the rows together and match them with POST /staged-payments/multi-match.",
+  });
+});
 
 // ─── POST /staged-payments/ungroup ─────────────────────────────────────────
 // Remove the given rows from their unit group (delete their unit_group_members

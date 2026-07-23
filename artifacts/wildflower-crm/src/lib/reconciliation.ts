@@ -470,7 +470,7 @@ export function extractQbLinkConflict(err: unknown): QbLinkConflict | null {
  * Presentation-only derivation from facts already on the wire:
  *  - a per-charge card re-sources through the Stripe switch flow, not the
  *    own-application move, so it never gets this note;
- *  - a source group re-links via group-reconcile (different guard);
+ *  - a legacy source group re-links via multi-match (different guard);
  *  - `qbCardState` match_proposed / matched_* means the money is counted into
  *    the resolved gift (the worker books the application at proposal time).
  * Returns null when the money isn't currently booked to a gift.

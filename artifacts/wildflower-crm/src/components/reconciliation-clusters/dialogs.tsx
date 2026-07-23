@@ -1,8 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ExternalLink, Loader2, Lock, Sparkles } from "lucide-react";
 import {
-  listReconciliationCards,
-  type ReconciliationCard,
   type StagedPaymentExclusionReason,
   type WorkbenchClusterQbRecord,
 } from "@workspace/api-client-react";
@@ -16,12 +14,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { DonorFieldPicker, type DonorType } from "@/components/entity-picker";
-import { useDebounce } from "@/hooks/use-debounce";
 import {
   EXCLUSION_REASON_LABELS,
   MANUAL_EXCLUSION_FAMILIES,
@@ -708,195 +703,6 @@ export function QbRecordDetailDialog({
           ) : null}
           <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Group QuickBooks records ─────────────────────────────────────────────────
-
-/**
- * Pick other staged QB rows to group with `record` into ONE reconciliation
- * unit (same endpoint as the queue workbench's multi-select "Group" action).
- * Per the app-wide picker rule, unpickable rows stay visible — grayed out with
- * the blocking reason labeled — so a mis-derived status is easy to spot.
- */
-export function GroupQbDialog({
-  record,
-  open,
-  onOpenChange,
-  busy,
-  onSubmit,
-}: {
-  record: WorkbenchClusterQbRecord | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  busy: boolean;
-  /** Called with the OTHER staged payment ids picked (the caller prepends the anchor's own id). */
-  onSubmit: (stagedPaymentIds: string[]) => void;
-}) {
-  const [q, setQ] = useState("");
-  const debouncedQ = useDebounce(q.trim());
-  const [results, setResults] = useState<ReconciliationCard[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  // Monotonic sequence so a slow earlier response can't clobber a newer search.
-  const searchSeq = useRef(0);
-
-  // Fresh state per open.
-  useEffect(() => {
-    if (open) {
-      setQ("");
-      setPicked(new Set());
-    }
-  }, [open, record?.stagedPaymentId]);
-
-  useEffect(() => {
-    if (!open) return;
-    const seq = ++searchSeq.current;
-    setSearching(true);
-    listReconciliationCards({
-      ...(debouncedQ ? { q: debouncedQ } : {}),
-      limit: 20,
-    })
-      .then((res) => {
-        if (seq === searchSeq.current) setResults(res.data ?? []);
-      })
-      .catch(() => {
-        if (seq === searchSeq.current) setResults([]);
-      })
-      .finally(() => {
-        if (seq === searchSeq.current) setSearching(false);
-      });
-  }, [open, debouncedQ]);
-
-  if (!record) return null;
-
-  /** Blocking reason for a result row, or null when pickable. */
-  const blockReason = (c: ReconciliationCard): string | null => {
-    if (c.stagedPaymentId === record.stagedPaymentId)
-      return "This is the row being grouped";
-    if (c.stripeChargeId)
-      return "Stripe charge-level card — grouping applies to whole QB rows";
-    // Derived per-record QB card vocabulary (coverage.state.qbCards) — the one
-    // per-record QB status source; never read the raw staged-payment status.
-    // Any matched_* variant is already counted into a gift, so it can't be
-    // regrouped without unmatching first.
-    if (c.qbCardState.startsWith("matched"))
-      return "Already reconciled to a gift";
-    if (c.qbCardState === "excluded") return "Excluded — re-include first";
-    return null;
-  };
-
-  const toggle = (id: string) => {
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Group QuickBooks records</DialogTitle>
-          <DialogDescription>
-            Pick the other staged QuickBooks rows that belong to the same money
-            event as{" "}
-            <span className="font-medium">
-              {record.reference ?? record.memo ?? "this record"}
-            </span>
-            {record.amount != null ? ` (${formatCurrency(record.amount)})` : ""}.
-            The group reconciles as one unit into one gift.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="relative">
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search payer, reference, or memo…"
-            data-testid="input-group-qb-search"
-          />
-          {searching ? (
-            <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
-          ) : null}
-        </div>
-
-        <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border p-1">
-          {results.length === 0 && !searching ? (
-            <p className="py-6 text-center text-xs text-muted-foreground">
-              No open staged payments match.
-            </p>
-          ) : (
-            results.map((c) => {
-              const reason = blockReason(c);
-              const key = `${c.stagedPaymentId}:${c.stripeChargeId ?? ""}`;
-              const checked = picked.has(c.stagedPaymentId);
-              return (
-                <label
-                  key={key}
-                  className={`flex items-start gap-2 rounded px-2 py-1.5 text-sm ${
-                    reason
-                      ? "cursor-not-allowed opacity-50"
-                      : "cursor-pointer hover:bg-muted"
-                  }`}
-                >
-                  <Checkbox
-                    className="mt-0.5"
-                    checked={checked}
-                    disabled={!!reason || busy}
-                    onCheckedChange={() => toggle(c.stagedPaymentId)}
-                    data-testid={`checkbox-group-qb-${c.stagedPaymentId}`}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate font-medium">
-                        {c.payerName ?? c.rawReference ?? "(no payer)"}
-                      </span>
-                      <span className="shrink-0 tabular-nums">
-                        {c.amount != null ? formatCurrency(c.amount) : "—"}
-                      </span>
-                    </span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {[
-                        c.dateReceived ? formatDateShort(c.dateReceived) : null,
-                        c.qbDocNumber ?? c.rawReference,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                    {reason ? (
-                      <span className="block text-xs italic text-muted-foreground">
-                        {reason}
-                      </span>
-                    ) : null}
-                  </span>
-                </label>
-              );
-            })
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button
-            variant="ghost"
-            onClick={() => onOpenChange(false)}
-            disabled={busy}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={() => onSubmit(Array.from(picked))}
-            disabled={busy || picked.size < 1}
-            data-testid="button-group-qb-submit"
-          >
-            {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-            Group {picked.size + 1} records
           </Button>
         </DialogFooter>
       </DialogContent>

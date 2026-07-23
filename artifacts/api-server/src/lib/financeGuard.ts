@@ -23,8 +23,10 @@ import { getAppUser } from "./appRequest";
 //     POST /quickbooks/staged-payments/:id/exclude
 //     POST /quickbooks/staged-payments/:id/re-include
 //     POST /quickbooks/staged-payments/:id/set-coding
-//     POST /quickbooks/staged-payments/group
 //     POST /quickbooks/staged-payments/ungroup
+//   (POST /quickbooks/staged-payments/multi-match is deliberately OPEN — it is
+//   CRM-side matching, same class as reconcile/approve/link-gift. The retired
+//   group and group-reconcile endpoints are 410 stubs.)
 //
 // Deliberately OPEN to all team members (§7.3 non-finance list): donor
 // identification (resolve / set-entity / set-funding-source), gift create &

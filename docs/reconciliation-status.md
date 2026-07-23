@@ -1,6 +1,6 @@
 ---
 status: current-status
-last_verified: 2026-07-22
+last_verified: 2026-07-23
 verification_basis: >
   Relationship-authority table and derived-status claims verified against code
   on 2026-07-21 (commit d68abae9). Drift items are labeled individually:
@@ -28,6 +28,7 @@ canonical boundary first (see `replit.md`).
 | Staged/charge statuses | Derived from facts via the shared builders in `derivedStatus.ts`; no stored status columns (Donorbox's stored lifecycle is mapped to the shared vocabulary at every emit point). A QB deposit claimed by a confirmed settlement link or confirmed charge tie derives `excluded` (settled by the Stripe side; no stored `exclusion_reason`). A whole-deposit `deposit_header` row (staged when every line of a bank Deposit re-records an already-ingested Payment/SalesReceipt) also derives `excluded` by entity type alone — it is settlement evidence, never donation-review work; a confirmed settlement link naming it still derives `match_confirmed`. A stored exclusion does NOT disqualify a deposit from settlement matching — exclusion and settlement eligibility are independent facts |
 | Workbench UI | The cluster view is the current design, superseding the older six-queue workbench described in earlier documents |
 | Manual gift creation on a pledge | Blocked at `POST /gifts-and-payments` (`manual_gift_on_pledge_blocked`, Task #788) — pledge payments are minted from QuickBooks evidence via reconciliation. Sole escape hatch: the explicit finance-gated `offBooksException` request flag (money that never hits QuickBooks); the flag is never persisted. Minted gifts inherit scope from the pledge's remaining plan (`copyPledgeAllocationsToGift`, stamped via `gift_allocations.source_pledge_allocation_id`) |
+| Several QB rows → one gift | `POST /quickbooks/staged-payments/multi-match` writes N `payment_applications` counted rows atomically (no `unit_group` row; open to all team members — CRM-side matching). Pre-match grouping is retired: `POST /staged-payments/group` and `/group-reconcile` return 410 `group_creation_retired`. Existing `unit_groups` still render as legacy source-group cards (re-linked via multi-match) and keep ungroup/eject until [`adr-linear-money-model.md`](adr-linear-money-model.md) §7 step 3 retires the structure |
 
 ## Ratified rules with known or suspected implementation gaps
 

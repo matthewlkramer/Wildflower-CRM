@@ -1225,46 +1225,50 @@ export const SplitStagedPaymentResponse = zod.object({
 })
 
 /**
- * Manually groups two or more staged payments into a single unit and
-reconciles the GROUP as a whole to one already-recorded gift (typically a
-multi-allocation gift). Members must form one coherent group: they share
-ONE underlying bank Deposit (same qbDepositId), or — when no deposit was
-captured — they share the same payer name (e.g. a single wire, or a
-series of stock sales, split across several QuickBooks records). No new
-gift is minted and QuickBooks is never written back. Every member is set
-to approved and books a counted payment_applications ledger row to the
-gift; the members' group membership is recorded durably in unit_groups.
-The group adopts the gift's donor (Donor XOR). Guards: at least two rows,
-all pending and unresolved, all sharing one grouping key (deposit or
-payer) — OR all already belonging to one "same physical gift" unit
-group (sharing a single unit group id), which bypasses the
-deposit/payer coherence check since the human already asserted the rows
-are one gift (the multi-date confirmation and amount-mismatch check below
-still apply); the gift exists with a single valid donor and is not already
-linked elsewhere, and the members' combined total matches the gift amount
-within the processor fee-band tolerance. When the grouped payments do not
-all fall on the same date_received, or carry more than one distinct
-(non-null) bank deposit, `confirmMultiDate` must be true (otherwise
+ * Reconciles two or more staged payments — selected together in the
+workbench — to one already-recorded gift (typically a multi-allocation
+gift). This is the ADR linear-money-model replacement for
+group-then-match: NO unit group is created; the counted
+payment_applications ledger rows alone express the combined outcome
+(one row per member, all booked in one transaction). Members must form
+one coherent selection: they share ONE underlying bank Deposit (same
+qbDepositId), or — when no deposit was captured — they share the same
+payer name (e.g. a single wire, or a series of stock sales, split
+across several QuickBooks records). Rows that all belong to one legacy
+"same physical gift" unit group bypass the deposit/payer coherence
+check (the human already asserted the rows are one gift; the
+multi-date confirmation and amount-mismatch check still apply). No new
+gift is minted and QuickBooks is never written back. Every member is
+set to approved and books a counted payment_applications ledger row to
+the gift; the selection adopts the gift's donor (Donor XOR). Guards:
+at least two rows, all pending and unresolved; the gift exists with a
+single valid donor and is not already linked elsewhere; the members'
+combined total matches the gift amount within the processor fee-band
+tolerance. When the members do not all fall on the same date_received,
+or carry more than one distinct (non-null) bank deposit,
+`confirmMultiDate` must be true (otherwise
 400 multi_date_confirmation_required) — this guards against collapsing
 unrelated same-payer gifts. When the combined total falls OUTSIDE the
-fee-band tolerance (e.g. stock/securities gifts whose sale proceeds differ
-from the booked value), the request is rejected 400 amount_mismatch;
-correct the gift's amount to the combined total, then reconcile.
-Reversible as a whole via the revert endpoint.
+fee-band tolerance (e.g. stock/securities gifts whose sale proceeds
+differ from the booked value), the request is rejected
+400 amount_mismatch; correct the gift's amount to the combined total,
+then match. Each member is individually reversible via the normal
+revert endpoint (no whole-group revert is needed — reverting one row
+leaves the others' counted rows in place).
 
- * @summary Group several staged payments and reconcile them as one unit to an existing gift.
+ * @summary Match several selected staged payments to ONE existing gift (one counted ledger row per member, atomically).
  */
-export const groupReconcileStagedPaymentsBodyStagedPaymentIdsMin = 2;
+export const multiMatchStagedPaymentsBodyStagedPaymentIdsMin = 2;
 
 
 
-export const GroupReconcileStagedPaymentsBody = zod.object({
-  "stagedPaymentIds": zod.array(zod.string()).min(groupReconcileStagedPaymentsBodyStagedPaymentIdsMin).describe('Ids of the staged payments to group. Must be at least two, all pending, and all sharing the same non-null qbDepositId, or — when none has a deposit — the same payer name.'),
-  "giftId": zod.string().describe('The existing gift the group reconciles to.'),
-  "confirmMultiDate": zod.boolean().optional().describe('Must be true when the grouped payments do not all share the same date_received, or carry more than one distinct (non-null) bank deposit. Guards against accidentally collapsing unrelated same-payer gifts (e.g. recurring donations) or two genuinely separate deposits into one. The client prompts the operator to confirm before sending this.')
-}).describe('Group several staged payments and reconcile the whole group to one existing gift. Members must share one bank deposit, or — when no deposit was captured — the same payer.')
+export const MultiMatchStagedPaymentsBody = zod.object({
+  "stagedPaymentIds": zod.array(zod.string()).min(multiMatchStagedPaymentsBodyStagedPaymentIdsMin).describe('Ids of the staged payments to match. Must be at least two, all pending, and all sharing the same non-null qbDepositId, or — when none has a deposit — the same payer name (rows all in one legacy unit group bypass this coherence key).'),
+  "giftId": zod.string().describe('The existing gift every member\'s counted ledger row books to.'),
+  "confirmMultiDate": zod.boolean().optional().describe('Must be true when the selected payments do not all share the same date_received, or carry more than one distinct (non-null) bank deposit. Guards against accidentally collapsing unrelated same-payer gifts (e.g. recurring donations) or two genuinely separate deposits into one. The client prompts the operator to confirm before sending this.')
+}).describe('Match several selected staged payments to one existing gift, one counted ledger row per member, atomically. Members must share one bank deposit, or — when no deposit was captured — the same payer (legacy unit-group members bypass this).')
 
-export const GroupReconcileStagedPaymentsResponse = zod.object({
+export const MultiMatchStagedPaymentsResponse = zod.object({
   "gift": zod.object({
   "id": zod.string(),
   "legacyGiftId": zod.string().nullish(),
@@ -1352,41 +1356,7 @@ export const GroupReconcileStagedPaymentsResponse = zod.object({
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 }),
-  "stagedPaymentIds": zod.array(zod.string()),
-  "representativeStagedPaymentId": zod.string().describe('The deterministic group representative (min id among members). Informational only — every member books its own counted payment_applications ledger row to the gift.')
-})
-
-/**
- * Marks two or more staged payments as a single "same physical gift"
-group, stored in the polymorphic unit_groups / unit_group_members tables.
-The returned sourceGroupId is the unit group id. UNLIKE group-reconcile
-(which ties a deposit's members to ONE existing gift at reconcile time),
-this groups FREELY across different bank deposits AND dates and BEFORE
-any gift exists — for a gift a donor entered as several QuickBooks
-records. It only records the grouping: it does NOT change any donor or
-gift link and never reconciles by itself. Guards: at least two distinct,
-existing, non-archived, still-unreconciled rows; rows already in another
-group are rejected unless they are all already in the same group
-(idempotent). When the members resolve to more than one distinct donor,
-confirmDonorConflict must be true (else 400 donor_conflict). The group is
-exactly the rows carrying the id; reconcile it as a unit on the card.
-
- * @summary Group separately-entered QuickBooks records that are really ONE physical gift.
- */
-export const groupStagedPaymentsBodyStagedPaymentIdsMin = 2;
-
-
-
-export const GroupStagedPaymentsBody = zod.object({
-  "stagedPaymentIds": zod.array(zod.string()).min(groupStagedPaymentsBodyStagedPaymentIdsMin).describe('Ids of the staged payments to group. Must be at least two distinct, existing, non-archived, still-unreconciled rows. Rows already in another group are rejected unless they are all already in the same group (idempotent re-group).'),
-  "confirmDonorConflict": zod.boolean().optional().describe('Must be true when the members already resolve to more than one distinct donor. Guards against grouping unrelated gifts. Without it such a group is rejected 400 donor_conflict. The client prompts the operator to confirm before sending this.')
-}).describe('Mark two or more staged payments as ONE physical gift entered separately in QuickBooks (a \'same physical gift\' group), stored in the unit_groups \/ unit_group_members tables. Does not change donor or gift links and never reconciles by itself.')
-
-export const GroupStagedPaymentsResponse = zod.object({
-  "sourceGroupId": zod.string().describe('The unit group id shared by every member.'),
-  "stagedPaymentIds": zod.array(zod.string()).describe('All member ids now belonging to the unit group.'),
-  "representativeStagedPaymentId": zod.string().describe('The deterministic representative member (the one the group card is anchored on and that carries the gift link on group approve).'),
-  "totalAmount": zod.string().nullish().describe('Summed amount of all members.')
+  "stagedPaymentIds": zod.array(zod.string()).describe('The matched member ids (deduplicated, sorted). Every member books its own counted payment_applications ledger row to the gift.')
 })
 
 /**
