@@ -152,15 +152,15 @@ in `lib/db/migrations/` (evidence anchor ids from the 2026-07-23 analysis):
 
 | Anchor (staged payment) | Today | Target |
 | --- | --- | --- |
-| `4Jn9XEMRrTWvBKKRiMU4f` Omidyar $1M | 2 gifts (FY20/FY21) | 1 gift, 2 FY allocations; pledge expected payments backfilled |
-| `4svk9IxogJIjkx65k097w` Omidyar $1M | 2 gifts (FY18/FY19) | 1 gift, 2 FY allocations; same |
+| `4Jn9XEMRrTWvBKKRiMU4f` Omidyar $1M | 2 gifts (FY20/FY21) | ~~1 gift, 2 FY allocations~~ **split-unit into 2×$500k children, one per gift** (deviation, ratified 2026-07-23: the two gifts sit on two *different* pledges — FY18–20 and FY21–23 — and `paid` is a gift-header rollup, so a single merged gift would corrupt one pledge's paid; a split is the truthful shape). Pledge expected payments backfilled on both pledges. |
+| `4svk9IxogJIjkx65k097w` Omidyar $1M | 2 gifts (FY18/FY19) | 1 gift, 2 FY allocations; pledge expected payments backfilled |
 | `57hcboHFPuX4qdljSM449` Kao $10k | 2 gifts share 1 QB row | split-unit into 2×$5k children, one per check gift |
 | `AkvrooAk4pfsKl1lKWKvz` McKnight $25k | 2 identical $12.5k gifts | merge into 1 gift (entry artifact) |
 | `WWbM-Xk_oxrSHO4zm6NT6` AOL fund $3.5k | Downey $875 + Gates $2,625 gifts | 1 gift, donor Gates, fund as payment intermediary, employee detail in memo |
 | `a0BRZPHlxfgrW1Z0_sRis` LISC Q2 $8,578.61 | 2 gifts (GV + LISC CO) | 1 gift; GV regrant as direct-to-school allocation |
-| `i9nY0GFAjF76PpdSAqbxS` LISC Q1 $7,712.50 | 2 gifts | same pattern |
-| `bllTXRZplXrsjM2VD7ws9` Nash $200k | 3 gifts | 1 gift, 3 allocations |
-| `jpy0gpkGm_1U-_RKbLcux` Sep Kamvar $478,660.14 | 3 gifts | 1 gift, 3 allocations |
+| `i9nY0GFAjF76PpdSAqbxS` LISC Q1 $7,712.50 | 2 gifts summing $7,712.00 | same pattern; the gift is corrected UP 50¢ to the money actually received (the GV allocation absorbs it) |
+| `bllTXRZplXrsjM2VD7ws9` Nash $200k | 3 gifts (2 under Indira Foundation) | 1 gift under the household (the actual wire payer), **6 allocations** — the "3 allocations" here meant money buckets; the school-designation grain (Sundrops, Flame Lily, Lotus, Goldenrod) is preserved as-is |
+| `jpy0gpkGm_1U-_RKbLcux` Sep Kamvar $478,660.14 | 3 gifts | 1 gift, **4 allocations** — Rising Tide consolidates ($126,436.14 + $200,000 = $326,436.14); the partnership passthrough, AZ gen-ops, and Northern-NJ gen-ops rows move intact (region grain preserved) |
 | `y8JJig930lOjP9c9HN3uR` Frey $60k | 2 gifts (FY24/FY25 renewals) | 1 gift, 2 allocations, one Wildflower-restricted for FY26; one pledge with 2 expected payments |
 
 ## 7. Sequencing (minimizes drift; prod recoding is human-gated)
@@ -200,7 +200,12 @@ in `lib/db/migrations/` (evidence anchor ids from the 2026-07-23 analysis):
    `@deprecated`, solely so existing prod rows survive for step 4's
    verification, which then drops both tables.
 4. **Prod recoding** (§6) as reviewed idempotent migration SQL, applied by a
-   human with `$PROD_DATABASE_URL`.
+   human with `$PROD_DATABASE_URL`. **Written (2026-07-23), awaiting human
+   apply:** `lib/db/migrations/0157_recode_counted_duplicate_units.sql`
+   (runbook: `lib/db/migrations/0157_RUNBOOK.md`). Deviations from the §6
+   table are recorded inline above. The `unit_groups` /
+   `unit_group_members` table drop is deliberately NOT in 0157 — it ships as
+   a separate later file once 0157 is verified in prod.
 5. **Counted-uniqueness constraint LAST**, in a migration ordered strictly
    after the recoding file — never before, or the prod migration fails.
 6. Layer 2 (bank-anchored counted role, prescription list, verification lens,

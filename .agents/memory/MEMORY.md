@@ -42,6 +42,7 @@ code/docs and update or archive the stale memory.
 - [Publish diffs the dev DB, not code](publish-diffs-dev-database.md) — stale dev DB → destructive reverts + skipped additive creates (→500); reconcile dev forward then re-publish; prod NEVER gets CREATE EXTENSION ([extensions](publish-flow-extensions.md)).
 - [cross-env DB schema drift](cross-env-db-schema-drift.md) — successor task's dev DB lacks predecessor's new column; fix additively via SQL, never blunt push (drops unrelated drifted columns = data loss).
 - [Data migration runs after Publish](data-migration-publish-ordering.md) — prod seed/backfill SQL dies "relation does not exist" unless Publish (schema diff) ran first; no BEGIN/COMMIT in a `psql -1` file.
+- [Prod-only migration rehearsal](prod-only-migration-rehearsal.md) — when dev lacks the prod rows, parse/plan-check via read-only PGOPTIONS + RAISE→WARNING sed; compensate with pre/postflight DO invariants.
 - [Drizzle SQL pitfalls](drizzle-pitfalls.md) — 7 runtime-only footguns invisible to typecheck: ANY(array) cast, outer-paren syntax, top-level-field unqualify, ORDER BY ordinal, alias collision, alias ordering, .desc() index churn.
 - [Orval / React Query patterns](orval-guide.md) — /api invalidation prefix; query options need queryKey; coerce.boolean "false"→true; array query params arrive comma-joined (normalizeArrayQuery).
 - [api-server HTTP integration tests](api-server-http-integration-tests.md) — DB-backed route test pattern: mock requireAuth, boot app.listen(0)+fetch, raise hook timeouts, skipIf no real DB.
