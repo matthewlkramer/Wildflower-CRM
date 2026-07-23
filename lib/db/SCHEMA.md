@@ -39,7 +39,7 @@ Sync ownership and operational resync commands:
 | Fundraising pipeline | `opportunities_and_pledges`, `pledge_allocations`, `pledge_expected_payments` | Planned asks, commitments, restrictions, collection plans |
 | Received money | `gifts_and_payments`, `gift_allocations` | Actual donor credit and received-money scope |
 | Payment evidence | `staged_payments`, `stripe_payouts`, `stripe_staged_charges`, `donorbox_donations`, `bank_transactions` | Imported evidence that money moved |
-| Reconciliation relationships | `payment_applications`, `settlement_links`, `source_links` | Authoritative links among evidence and CRM records |
+| Reconciliation relationships | `payment_applications`, `source_links` | Authoritative links among evidence and CRM records |
 | Internal dimensions | `entities`, `fiscal_years`, `fiscal_year_entity_goals`, `fundable_projects`, `schools`, `charters`, `regions`, `fundraising_campaigns` | Allocation and reporting dimensions |
 | Communications | `email_messages`, `calendar_events`, `interactions`, `notes`, `meeting_notes`, tracking/sync-state tables | Synced and manual touches |
 | AI / workflow | `email_proposals`, `email_intel_prompts`, `grant_leads`, `tasks`, `task_proposals`, `cleanup_queue` | Proposals, tasks, review queues |
@@ -101,8 +101,9 @@ mutation.
 - `payment_applications` is the **sole** unit↔gift cash-application ledger
   (evidence unit → CRM gift). Header grain (`gift_id`, never an allocation;
   `gift_allocation_id` is a narrowing annotation only).
-- `settlement_links` is the sole payout↔deposit relationship (Stripe payout →
-  QuickBooks deposit lump); at most one link per payout.
+- `staged_payments.settled_stripe_payout_id` is the sole payout↔deposit
+  relationship (Stripe payout → QuickBooks deposit lump) — a plain pairing
+  fact, unique per payout; the `settlement_links` workflow table is retired.
 - `source_links` is the sole unit↔unit evidence↔evidence claim ledger
   (charge↔QB tie, charge fee row, Donorbox↔QB, Donorbox↔charge). It replaced
   the retired source-specific pointer columns — **never reintroduce pointer
@@ -294,7 +295,7 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   be split. The sync keeps the representation exclusive both ways: staging
   direct lines deletes a now-superfluous header, and staging a header deletes
   now-stale direct-line rows — in both directions only unreferenced (no
-  settlement link / source link / ledger row) and, for line rows, still-open
+  settled payout pairing / source link / ledger row) and, for line rows, still-open
   (`pending`/`excluded`) rows are removed.
   Status / exclusion-reason / match-status enums; classification and entity
   attribution each carry an `auto` vs `manual` source (a manual pin survives
@@ -310,8 +311,8 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   human confirm) so money isn't booked twice. `stripe_payouts.bank_deposit_id`
   (UNIQUE) ties a payout directly to the ONE register-projected `bank_deposits`
   row it settled as (docs/adr-bank-spine-money-model.md Phase 4) — a NEW
-  relationship, distinct from `settlement_links` (whose target is the QBO
-  Deposit `staged_payments` row; retired Phase 9). Inferred match
+  relationship, distinct from the QBO pairing
+  (`staged_payments.settled_stripe_payout_id`). Inferred match
   (amount+currency+date); >1 equivalent candidate sets `ambiguous_bank_match`
   with a deterministic pairing — flag only, NO confirmation workflow.
 - `donorbox_donations` / `donorbox_sync_state` — Donorbox donor/purpose
@@ -391,10 +392,6 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   donation × gift) — plus the service helper's transactional row-lock and
   per-anchor SUM validation. Both the unit and gift FKs are RESTRICT.
   `created_the_gift` preserves the mint-ownership signal.
-- `settlement_links` — one row ties a Stripe payout to its QB deposit lump
-  (no donor, no amount split); exclusive per payout (deterministic
-  `sl_<payout_id>` PK + UNIQUE). The payout's settlement status is a pure
-  derivation over this table.
 - `source_links` — unit↔unit evidence claims (`charge_qb_tie`,
   `charge_fee_row`, `donorbox_qb`, `donorbox_charge`) with deterministic ids
   and lifecycle. Sole authority for evidence↔evidence ties; a claim blocks

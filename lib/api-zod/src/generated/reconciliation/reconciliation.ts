@@ -73,7 +73,7 @@ export const ListReconciliationCardsResponse = zod.object({
   "stripeChargeId": zod.string().nullish().describe('When set, this card is ONE Stripe charge (not the whole QB deposit): the active\/needs-review\/research queues expand a Stripe-payout-backed deposit into one card per backing charge. The card\'s identity is then the composite (stagedPaymentId, stripeChargeId); approve acts on this single charge → its own CRM gift. Null for non-Stripe rows and the unexpanded (terminal) queues.'),
   "stripePayoutId": zod.string().nullish(),
   "stripeChargeCount": zod.number().nullish(),
-  "stripeReconciliationStatus": zod.string().nullish().describe('Reconciliation state of the Stripe payout backing this money (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when there is no Stripe evidence.'),
+  "stripeReconciliationStatus": zod.string().nullish().describe('Pairing state of the Stripe payout backing this money (unmatched | confirmed_reconciled); null when there is no Stripe evidence.'),
   "stripeChargeDonorName": zod.string().nullish().describe('Payer\/customer name (or resolved donor) on the Stripe charge — the real donor, not the \'Stripe\' processor name that appears as the QB payer. Set for a per-charge card (stripeChargeId present) and for a single-charge payout; null for an un-expanded multi-charge payout or non-Stripe money.'),
   "stripeGrossAmount": zod.string().nullish().describe('Gross amount (major units) of the Stripe charge for this card; set for a per-charge card or a single-charge payout, null otherwise.'),
   "stripeNetAmount": zod.string().nullish().describe('Net amount deposited (gross − processor fee) for the Stripe charge for this card; set for a per-charge card or a single-charge payout, null otherwise.'),
@@ -175,7 +175,7 @@ export const GetReconciliationGraphResponse = zod.object({
   "feeAmount": zod.string().nullish(),
   "netAmount": zod.string().nullish(),
   "chargeCount": zod.number().nullish(),
-  "reconciliationStatus": zod.string().nullish().describe('The Stripe payout\'s QB-reconciliation state (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when no payout\/charge backs this money.')
+  "reconciliationStatus": zod.string().nullish().describe('The Stripe payout\'s QB pairing state (unmatched | confirmed_reconciled); null when no payout\/charge backs this money.')
 }).nullish()
 }).describe('Cross-source evidence backing a card. QB is always present (the anchor). Stripe is present only when a Stripe charge\/payout backs the same money (brokerage\/check have none).'),
   "ready": zod.boolean().describe('True when a confident, non-conflicting selection exists for the required nodes (donor + gift) so the card can be one-click approved.'),
@@ -219,7 +219,7 @@ export const GetReconciliationLineageResponse = zod.object({
   "chargeCount": zod.number().nullish(),
   "arrivalDate": zod.string().date().nullish(),
   "status": zod.string().nullish(),
-  "reconciliationStatus": zod.string().nullish().describe('The payout\'s QB-reconciliation state (proposed | conflict_approved | confirmed_reconciled | unmatched | …).'),
+  "reconciliationStatus": zod.string().nullish().describe('The payout\'s QB pairing state (unmatched | confirmed_reconciled).'),
   "linkSource": zod.enum(['pulled', 'qb_confirmed', 'stripe_pulled', 'stripe_confirmed']).describe('HOW a lineage leg was tied to the anchor.\npulled: from a Stripe-pulled join key (payout↔QB tie, or charge.stripePayoutId).\nqb_confirmed: a reviewer-confirmed link directly to the QB staged row (charge.linkedQbStagedPaymentId \/ donation.linkedQbStagedPaymentId).\nstripe_pulled: a Donorbox donation tied to a Stripe charge via the pulled donation.stripeChargeId key.\nstripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).\n')
 }).nullish().describe('The Stripe payout tied to this deposit (null when no Stripe payout backs the money).'),
   "charges": zod.array(zod.object({
@@ -434,12 +434,12 @@ export const SearchReconciliationQbStagedResponse = zod.object({
 })
 
 /**
- * Free search over ORPHAN Stripe payouts (no settlement link at all) by
+ * Free search over ORPHAN Stripe payouts (no settled QB lump) by
 payout-id text / amount / date window — the reverse of qb-search. Powers
 the Settlement report's "Missing payout" resolve box: a standalone
 QuickBooks deposit anchor uses this to hunt the payout it should settle
-against. Payouts already tied (proposed or confirmed) are omitted — they
-belong to another deposit's bundle. Read-only.
+against. Payouts already paired are omitted — they belong to another
+deposit's bundle. Read-only.
 
  * @summary Criteria-based Stripe payout search (reverse of qb-search; not anchored to a card).
  */
@@ -490,73 +490,49 @@ export const SearchReconciliationPayoutsResponse = zod.object({
 })
 
 /**
- * Deletes the PROPOSED settlement link for one Stripe payout, dropping the
-auto-proposed payout↔deposit tie so the Settlement report shows it as an
-un-proposed orphan again. Money is untouched: nothing is excluded and no
-gift is minted. A CONFIRMED link is never rejected here (revert is a
-separate reconciliation path) — attempting to reject a confirmed tie is a
-409. Rejecting a payout with no proposed link is a no-op success.
+ * Records the Plane-1 payout↔deposit pairing fact
+(staged_payments.settled_stripe_payout_id) for ONE Stripe payout —
+without touching the per-charge → gift booking (Plane 2), which the
+Gift report owns. The proposed/confirmed settlement lifecycle is
+retired: the deterministic accounting recompute pairs most payouts
+automatically; this route is the human escape hatch for the ambiguous
+remainder. The write is FILL-ONLY — it never repoints an existing
+pairing (fix mistakes in QuickBooks; the accounting sidecar surfaces
+expected-vs-actual mismatches as correction_needed).
 
- * @summary Dismiss a PROPOSED payout↔deposit settlement tie.
- */
-export const RejectSettlementProposalParams = zod.object({
-  "payoutId": zod.coerce.string()
-})
+Behaviour:
+  • already paired            → idempotent success (kind `already_confirmed`,
+    returning the ACTUAL paired deposit — never repointed).
+  • unpaired + depositStagedPaymentId body → pair with that QB lump.
+    A deposit that already booked its own money is paired
+    linkage-only (kind `confirmed_linkage_only`; the booking stands);
+    otherwise kind `confirmed_reconciled` and the §4.3 supersede
+    demotes the deposit's coarse counted rows.
+  • unpaired + no deposit     → 400 (nothing to pair).
 
-export const RejectSettlementProposalResponse = zod.object({
-  "rejected": zod.boolean().describe('True when a proposed link was deleted; false when there was no proposed link to reject (no-op).')
-})
-
-/**
- * Confirms the settlement link for ONE Stripe payout — the Plane-1
-payout↔deposit tie ONLY — without touching the per-charge → gift booking
-(Plane 2), which the Gift report owns. Approving a "linked" (proposed)
-settlement is therefore one click: the tie is stamped confirmed and the
-QuickBooks deposit is marked reconciled so the coarse deposit can never
-credit donors on top of the individual per-charge Stripe gifts (that
-deposit→reconciled flip IS the double-count guard).
-
-Behaviour by the payout's current settlement-link state:
-  • proposed (clean)                → confirm; deposit pending → reconciled.
-  • proposed + already-booked deposit (legacy `approved`, e.g. a split
-    whose money lives in counted payment_applications rows or a
-    gift-linked lump) → LINKAGE-ONLY confirm: the tie is stamped and the
-    deposit is left untouched (kind `confirmed_linkage_only`). An
-    approved deposit with NO provable booking is refused with a
-    permanent 409 `deposit_not_booked` — resolve it in QuickBooks
-    review first.
-  • proposed + approved-QB-gift conflict → keep the existing gift; confirm
-    the linkage only (deposit + gift untouched).
-  • already confirmed               → idempotent success (no re-book).
-  • no link + depositStagedPaymentId body → propose that payout↔deposit tie,
-    then confirm it (powers the Settlement report Resolve box in BOTH
-    directions: a payout anchor picking a deposit, or a deposit anchor
-    picking a payout).
-  • no link + no deposit            → 400 (nothing to confirm).
-
- * @summary Confirm a payout↔deposit settlement tie (Plane 1 only).
+ * @summary Record the payout↔deposit pairing fact (Plane 1 only).
  */
 export const ConfirmSettlementLinkParams = zod.object({
   "payoutId": zod.coerce.string()
 })
 
 export const ConfirmSettlementLinkBody = zod.object({
-  "depositStagedPaymentId": zod.string().nullish().describe('QB deposit staged-payment id to tie to this payout before confirming (resolve). Omit when a proposed link already exists.'),
-  "overrideExclusion": zod.boolean().optional().describe('Deliberate human override for a deposit that was excluded from review: re-includes the picked deposit (clears its exclusion, pinning classification_source=\'manual\') in the same transaction, then confirms normally. Only honored together with an explicitly picked depositStagedPaymentId — never applied to an already-proposed link. Default false: an excluded deposit is refused with a 409.')
-}).describe('Optional resolve payload. When the payout has NO settlement link yet, a\ndepositStagedPaymentId proposes that payout↔deposit tie before confirming\n(the Settlement report\'s Resolve box, in either direction). Omit it to\nconfirm an already-proposed tie.\n')
+  "depositStagedPaymentId": zod.string().nullish().describe('QB deposit staged-payment id to pair with this payout. Required when the payout is unpaired.'),
+  "overrideExclusion": zod.boolean().optional().describe('Deliberate human override for a deposit that was excluded from review: re-includes the picked deposit (clears its exclusion, pinning classification_source=\'manual\') in the same transaction, then pairs normally. Only honored together with an explicitly picked depositStagedPaymentId. Default false: an excluded deposit is refused with a 409.')
+}).describe('Resolve payload. When the payout is unpaired, depositStagedPaymentId\npicks the QB deposit lump to pair it with (the Settlement report\'s\nResolve box, in either direction). Optional only for the idempotent\nalready-paired case.\n')
 
 export const ConfirmSettlementLinkResponse = zod.object({
-  "confirmed": zod.boolean().describe('True when the settlement link is confirmed after this call.'),
-  "kind": zod.enum(['confirmed_reconciled', 'confirmed_linkage_only', 'conflict_kept', 'already_confirmed']).describe('Which path ran: a clean pending-deposit confirm, a linkage-only confirm against an already-booked (approved) deposit that was left untouched, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link.'),
+  "confirmed": zod.boolean().describe('True when the pairing fact exists after this call.'),
+  "kind": zod.enum(['confirmed_reconciled', 'confirmed_linkage_only', 'already_confirmed']).describe('Which path ran: a clean pairing (coarse counted rows superseded), a linkage-only pairing against a deposit that already booked its own money (left untouched), or an idempotent no-op on an already-paired payout.'),
   "payoutId": zod.string(),
-  "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit the confirmed link ties to (null only if the link\'s deposit pointer had degraded).')
+  "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit lump carrying the pairing.')
 })
 
 /**
  * Atomically confirms per-charge QuickBooks ties for ONE Stripe payout —
 the settlement path for payouts the bookkeeper booked as individual QB
 rows (one per donation) instead of a single deposit lump, so no
-payout↔deposit settlement link will ever exist.
+payout↔deposit pairing will ever exist.
 
 Two modes, by body:
   • NO qbStagedPaymentIds — approve the SYSTEM-PROPOSED ties: every
@@ -616,8 +592,8 @@ QB row remains a candidate for OTHER charges, and a manual human
 "Tie selected" still overrides the dismissal.
 
 Plane 1 only: money is untouched — no gift is minted or changed, no QB
-row's status/donor changes, and settlement links are never touched.
-409 when the charge carries no proposed tie (nothing to reject) or is
+row's status/donor changes, and the settled payout pairing is never
+touched. 409 when the charge carries no proposed tie (nothing to reject) or is
 already confirmed-tied (revert is a separate path).
 
  * @summary Reject ONE proposed charge-grain Stripe↔QuickBooks tie.
@@ -638,7 +614,7 @@ bookkeeper bundled several distinct money events into one QB row (e.g.
 a deposit that nets a donation against a clawed-back failed payout).
 The parent stays the untouched sync-owned QuickBooks mirror; the
 children are additive CRM rows that participate everywhere real rows
-do — charge ties, settlement links, cash applications — and may be
+do — charge ties, settled payout pairing, cash applications — and may be
 NEGATIVE (a clawback unit). Unit amounts must sum to EXACTLY the
 parent's amount (signed, to the cent).
 
@@ -683,7 +659,7 @@ export const SplitStagedPaymentIntoUnitsResponse = zod.object({
  * Deletes ALL synthetic child units of a split QuickBooks staged row and
 returns the parent to the open review flow (its derived status was
 never stored). Refused (409) while any unit still carries
-reconciliation evidence — a tie, settlement link, or linked gift —
+reconciliation evidence — a tie, settled pairing, or linked gift —
 revert those first. The hard delete here is the documented soft-delete
 exception: units are synthetic CRM-created rows with zero claims.
 
@@ -710,7 +686,7 @@ original proposal is NOT restored, and the pair is not remembered as
 dismissed — a later proposal pass may re-propose it.
 
 Plane 1 only: money is untouched — no gift is minted or changed, no QB
-row's donor changes, and settlement links are never touched. 409 when
+row's donor changes, and the settled payout pairing is never touched. 409 when
 the charge carries no confirmed tie (a merely-PROPOSED tie is rejected
 via the reject endpoint instead).
 
@@ -930,32 +906,10 @@ export const ListReconciliationBundleAnchorsResponse = zod.object({
   "lineItemNames": zod.array(zod.string()).nullish().describe('QB anchor only: line item names captured at pull time.'),
   "lineAccountNames": zod.array(zod.string()).nullish().describe('QB anchor only: line account names captured at pull time.'),
   "lineClasses": zod.array(zod.string()).nullish().describe('QB anchor only: line class names captured at pull time.'),
-  "statusLabel": zod.string().describe('Raw source status for the display badge: the Stripe payout\'s reconciliation status (derived from its settlement link), or the QB staged-payment status.'),
-  "batchStatus": zod.enum(['settled', 'proposed', 'orphan']).describe('Derived Plane-1 settlement status for one anchor (design §4.4 batch), used by the\nSettlement report to group anchors into its three columns. settled: a confirmed\npayout↔deposit settlement link exists. proposed: only a proposed link exists\n(awaiting human confirm — the \"needs review\" filter). orphan: no settlement link\n(a Stripe payout that never booked to a deposit, or a standalone QB deposit with no\npayout). Combined with anchorType this fully places a row: Stripe orphan → the\n\"missing deposit\" column; QB orphan → the \"missing payout\" column.\n'),
+  "statusLabel": zod.string().describe('Raw source status for the display badge: the Stripe payout\'s pairing status (unmatched | confirmed_reconciled), or the QB staged-payment status.'),
+  "batchStatus": zod.enum(['settled', 'orphan']).describe('Derived Plane-1 settlement status for one anchor (design §4.4 batch), used by the\nSettlement report to group anchors. settled: a QB lump carries the settled payout\npairing, or every charge is individually tied. orphan: no pairing (a Stripe payout\nthat never booked to a deposit, or a standalone QB deposit with no payout).\nCombined with anchorType this fully places a row: Stripe orphan → the\n\"missing deposit\" column; QB orphan → the \"missing payout\" column.\n'),
   "chargeTiesProposed": zod.number().nullish().describe('Stripe payout only: charges carrying a PROPOSED (unconfirmed) per-charge QuickBooks tie — >0 makes the Missing-deposit card approvable at charge grain. Null for QB anchors.'),
   "chargeTiesConfirmed": zod.number().nullish().describe('Stripe payout only: charges with a CONFIRMED per-charge QuickBooks tie. Null for QB anchors.'),
-  "proposedMatch": zod.object({
-  "counterpartType": zod.enum(['qb_staged_payment', 'stripe_payout']).describe('The settlement anchor a bundle reconciles: a QuickBooks deposit (staged_payments) or a Stripe payout (stripe_payouts).'),
-  "counterpartId": zod.string().describe('staged_payments.id or stripe_payouts.id of the proposed counterpart.'),
-  "amount": zod.string().nullish().describe('Counterpart amount, major units.'),
-  "date": zod.string().date().nullish().describe('Counterpart date (QB date received or Stripe arrival date).'),
-  "payerName": zod.string().nullish().describe('Counterpart payer name.'),
-  "chargeCount": zod.number().nullish().describe('Stripe charges behind the counterpart payout; null for a QB deposit.'),
-  "lineDescription": zod.string().nullish().describe('QB counterpart\'s deposit line \/ memo description (the proposed deposit for a Stripe payout).'),
-  "memo": zod.string().nullish().describe('QB counterpart\'s transaction-level memo (PrivateNote).'),
-  "reference": zod.string().nullish().describe('QB counterpart\'s human-readable reference (doc\/payment ref).'),
-  "lineItemNames": zod.array(zod.string()).nullish().describe('QB counterpart\'s line item names captured at pull time.'),
-  "lineAccountNames": zod.array(zod.string()).nullish().describe('QB counterpart\'s line account names captured at pull time.'),
-  "lineClasses": zod.array(zod.string()).nullish().describe('QB counterpart\'s line class names captured at pull time.'),
-  "conflictGiftId": zod.string().nullish().describe('The already-approved QB gift the proposal collided with (a conflict tie awaiting a keep decision), if any.'),
-  "conflictGift": zod.object({
-  "id": zod.string().describe('gifts_and_payments.id of the conflicting (kept-on-approve) gift.'),
-  "name": zod.string().nullish().describe('Gift name.'),
-  "donorName": zod.string().nullish().describe('Gift donor display name (organization \/ household \/ person).'),
-  "amount": zod.string().nullish().describe('Gift amount (major units).'),
-  "date": zod.string().date().nullish().describe('Gift date received.')
-}).describe('The already-booked CRM gift a proposed settlement tie collided with —\nthe QB deposit was ALREADY approved into this gift, so confirming the\nsettlement keeps the gift and just records the payout↔deposit linkage.\nEnough display facts to explain the decision on the card.\n').nullish().describe('Display summary of that conflicting gift (name, donor, amount, date) so the card can explain the keep decision without another fetch. Null when conflictGiftId is null or the gift row no longer exists.')
-}).describe('A proposed settlement counterpart for a bundle anchor — the QB deposit\nproposed for a Stripe payout (today the only populated direction; a QB\ndeposit tied to a payout is reconciled THROUGH the payout and never\nsurfaces as its own anchor).\n').nullish().describe('The proposed counterpart for this anchor, populated ONLY when a\n`proposed` (not-yet-confirmed) settlement link exists — enough to\nrender the proposed match inline and drive approve\/reject without\nfirst assembling the full draft. Null for orphan or settled anchors.\n'),
   "readiness": zod.object({
   "ready": zod.boolean(),
   "warningCount": zod.number(),
@@ -1026,7 +980,7 @@ export const ListWorkbenchClustersResponse = zod.object({
   "totalCount": zod.number().nullish().describe('Non-excluded evidence rows in the cluster. Null for crm_only.'),
   "chargeCount": zod.number().nullish().describe('TRUE total charges behind a payout (charges[] is capped, mirrors bundle-anchors).'),
   "statusDetail": zod.string().nullish().describe('Server-composed one-line diagnostic (e.g. \'3 of 4 charges matched · no deposit tie yet\'). Still needed: the UI shows it as the reason on an excluded cluster\'s card. Row STATUS words themselves derive from coverage.state, not from this field.'),
-  "lenses": zod.array(zod.enum(['all_open', 'needs_donor_or_gift', 'needs_accounting', 'settlement_gaps', 'conflicts', 'refunds', 'excluded_qb_says_donation', 'excluded', 'completed', 'link_complete', 'attention_required', 'crm_only']).describe('A lens is a saved filter over the cluster list — linkage-only in this phase\n(record-adequacy lenses like \"missing key info\" are additive later).\nall_open: any cluster with unresolved work (everything except completed and\npurely-excluded clusters). needs_donor_or_gift: some evidence row still lacks\na confirmed CRM gift\/donor (pending or match_proposed). needs_accounting:\nmoney with no accounting side — a crm_only gift, or a payout with no settled\ndeposit (settlement link missing or still proposed). settlement_gaps: a\npayout whose Stripe-reported net (gross − fees) disagrees with the amount\nthat actually arrived at the bank — the money doesn\'t add up regardless of\nlinkage state. conflicts: a proposed settlement tie collided with an\nalready-approved gift. refunds: a charge carries a proposed\nrefund\/chargeback propagation awaiting a human decision.\nexcluded_qb_says_donation: an excluded QB cluster whose line coding carries\na donation marker (a Donation item or a 4000\/4100-series donation income\naccount) — likely wrongly excluded, surfaced for review.\nexcluded: every evidence row in the cluster is excluded. completed: all\nlinkage work done (evidence confirmed into gifts; payout settled).\nA cluster carries EVERY lens it belongs to in `lenses` so dots and rail\ncounts agree.\n')).describe('Every lens this cluster belongs to (drives dots; agrees with lensCounts by construction).'),
+  "lenses": zod.array(zod.enum(['all_open', 'needs_donor_or_gift', 'needs_accounting', 'settlement_gaps', 'conflicts', 'refunds', 'excluded_qb_says_donation', 'excluded', 'completed', 'link_complete', 'attention_required', 'crm_only']).describe('A lens is a saved filter over the cluster list — linkage-only in this phase\n(record-adequacy lenses like \"missing key info\" are additive later).\nall_open: any cluster with unresolved work (everything except completed and\npurely-excluded clusters). needs_donor_or_gift: some evidence row still lacks\na confirmed CRM gift\/donor (pending or match_proposed). needs_accounting:\nmoney with no accounting side — a crm_only gift, or a payout with no settled\ndeposit (no pairing fact). settlement_gaps: a\npayout whose Stripe-reported net (gross − fees) disagrees with the amount\nthat actually arrived at the bank — the money doesn\'t add up regardless of\nlinkage state. conflicts: retired (always empty) — conflict states rode\nthe removed settlement propose\/confirm workflow. refunds: a charge carries a proposed\nrefund\/chargeback propagation awaiting a human decision.\nexcluded_qb_says_donation: an excluded QB cluster whose line coding carries\na donation marker (a Donation item or a 4000\/4100-series donation income\naccount) — likely wrongly excluded, surfaced for review.\nexcluded: every evidence row in the cluster is excluded. completed: all\nlinkage work done (evidence confirmed into gifts; payout settled).\nA cluster carries EVERY lens it belongs to in `lenses` so dots and rail\ncounts agree.\n')).describe('Every lens this cluster belongs to (drives dots; agrees with lensCounts by construction).'),
   "gifts": zod.array(zod.object({
   "giftId": zod.string().describe('gifts_and_payments.id'),
   "opportunityId": zod.string().nullish().describe('The gift\'s linked opportunity\/pledge id, when it is a payment against one. Enables opportunity-level actions (e.g. setting loss_type) straight from the workbench.'),
@@ -1083,10 +1037,9 @@ export const ListWorkbenchClustersResponse = zod.object({
 }).nullish().describe('Donor identified on this specific QB row via the Identify action. Present for anchor\/deposit roles when a donor has been identified; null otherwise.')
 }).describe('One QuickBooks staged row in the cluster\'s bank-and-accounting facet. Per-record linkage state is NOT carried here — read the matching coverage.state.qbCards entry (keyed by stagedPaymentId), the one source of truth.')),
   "settlement": zod.object({
-  "lifecycle": zod.enum(['proposed', 'confirmed']).describe('proposed = awaiting human confirm (a needs_accounting\/conflict signal); confirmed = settled.'),
-  "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit lump named by the link.'),
-  "conflictGiftId": zod.string().nullish().describe('The already-approved gift a proposed tie collided with (drives the conflicts lens).')
-}).describe('The payout↔deposit settlement tie facts for a stripe_payout cluster.').nullish().describe('Null for non-payout kinds and for orphan payouts with no settlement link yet.'),
+  "lifecycle": zod.enum(['confirmed', 'exempt']).describe('confirmed = a settled QB lump carries the pairing; exempt = negative payout (withdrawal).'),
+  "depositStagedPaymentId": zod.string().nullish().describe('The settled QB deposit lump (null for exempt).')
+}).describe('The payout↔deposit pairing facts for a stripe_payout cluster, derived read-only from staged_payments.settled_stripe_payout_id (confirmed) or a negative payout amount (exempt — a Stripe withdrawal that never reaches the bank as a deposit).').nullish().describe('Null for non-payout kinds and for orphan payouts with no settlement link yet.'),
   "coverage": zod.object({
   "evidenceRecords": zod.array(zod.object({
   "id": zod.string().describe('External record id: stripe_staged_charges.id (ch_…), staged_payments.id, etc.'),
@@ -1167,7 +1120,7 @@ export const ListWorkbenchClustersResponse = zod.object({
   "conflict": zod.boolean(),
   "attentionRequired": zod.boolean().describe('True when a pending refund blocks audit_ready status.')
 }),
-  "settlementLinkState": zod.enum(['unlinked', 'proposed_full', 'proposed_partial', 'proposed_conflict', 'confirmed', 'exempt']).describe('State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only. `exempt` = human-resolved as needing no QB deposit (e.g. a negative payout \/ Stripe withdrawal).').nullish().describe('Present for all stripe_payout clusters (\'unlinked\' when no settlement relationship exists); absent for other cluster kinds.'),
+  "settlementLinkState": zod.enum(['unlinked', 'confirmed', 'exempt']).describe('State of the payout↔deposit pairing fact for stripe_payout clusters. Absent for qb_standalone and crm_only. `confirmed` = a settled QB lump carries the pairing; `exempt` = a negative payout (Stripe withdrawal — no bank deposit ever reaches QuickBooks).').nullish().describe('Present for all stripe_payout clusters (\'unlinked\' when no pairing exists); absent for other cluster kinds.'),
   "qbCards": zod.array(zod.object({
   "qbRecordId": zod.string(),
   "state": zod.enum(['raw', 'enriched', 'match_proposed', 'matched_complete', 'matched_partial_qb_surplus', 'matched_partial_external_surplus', 'matched_conflict', 'excluded']).describe('Derived display state for one QB evidence card. Also carries the record\'s linkage vocabulary: raw = no candidate gift yet (pending); match_proposed = candidate awaiting human confirm; matched_\* = counted into a gift; excluded = marked not-a-donation. enriched is reserved for the future fill-out-QB documentation workflow.'),
@@ -1266,7 +1219,7 @@ export const AssembleReconciliationBundleResponse = zod.object({
   "tie": zod.object({
   "payoutId": zod.string().nullish().describe('The Stripe payout (po_...) backing this bundle, when one exists.'),
   "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit lump (staged_payments) tied to the payout.'),
-  "status": zod.enum(['unmatched', 'proposed', 'conflict_approved', 'confirmed_reconciled']).describe('Where a Stripe payout sits in the QuickBooks reconciliation lifecycle, DERIVED read-only from the authoritative settlement_links row (payoutStatusFromLink). unmatched: no settlement link. proposed: a link exists (lifecycle=proposed) with no conflict gift. conflict_approved: a proposed link whose deposit was already approved into a gift (needs keep\/replace). confirmed_reconciled: lifecycle=confirmed — the per-charge Stripe gifts are the source of truth and the QB deposit lump is marked reconciled (kept, never archived).').nullable().describe('Current payout↔deposit reconciliation status; null for pure-QB money with no payout.'),
+  "status": zod.enum(['unmatched', 'confirmed_reconciled']).describe('Whether a Stripe payout is paired with its QuickBooks deposit lump, DERIVED read-only from the pairing fact (staged_payments.settled_stripe_payout_id). unmatched: no settled QB lump. confirmed_reconciled: a QB lump carries the pairing — the per-charge Stripe gifts are the source of truth and the lump is settlement evidence (kept, never archived).').nullable().describe('Current payout↔deposit reconciliation status; null for pure-QB money with no payout.'),
   "action": zod.enum(['confirm_tie', 'none', 'conflict']).describe('What confirm will do: confirm_tie stamps the payout↔deposit reconciliation; none = nothing to tie; conflict = the deposit is already a gift, needs a keep\/replace decision first.'),
   "payoutNetAmount": zod.string().nullish(),
   "depositAmount": zod.string().nullish(),
@@ -1396,7 +1349,7 @@ export const GetReconciliationBundleResponse = zod.object({
   "tie": zod.object({
   "payoutId": zod.string().nullish().describe('The Stripe payout (po_...) backing this bundle, when one exists.'),
   "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit lump (staged_payments) tied to the payout.'),
-  "status": zod.enum(['unmatched', 'proposed', 'conflict_approved', 'confirmed_reconciled']).describe('Where a Stripe payout sits in the QuickBooks reconciliation lifecycle, DERIVED read-only from the authoritative settlement_links row (payoutStatusFromLink). unmatched: no settlement link. proposed: a link exists (lifecycle=proposed) with no conflict gift. conflict_approved: a proposed link whose deposit was already approved into a gift (needs keep\/replace). confirmed_reconciled: lifecycle=confirmed — the per-charge Stripe gifts are the source of truth and the QB deposit lump is marked reconciled (kept, never archived).').nullable().describe('Current payout↔deposit reconciliation status; null for pure-QB money with no payout.'),
+  "status": zod.enum(['unmatched', 'confirmed_reconciled']).describe('Whether a Stripe payout is paired with its QuickBooks deposit lump, DERIVED read-only from the pairing fact (staged_payments.settled_stripe_payout_id). unmatched: no settled QB lump. confirmed_reconciled: a QB lump carries the pairing — the per-charge Stripe gifts are the source of truth and the lump is settlement evidence (kept, never archived).').nullable().describe('Current payout↔deposit reconciliation status; null for pure-QB money with no payout.'),
   "action": zod.enum(['confirm_tie', 'none', 'conflict']).describe('What confirm will do: confirm_tie stamps the payout↔deposit reconciliation; none = nothing to tie; conflict = the deposit is already a gift, needs a keep\/replace decision first.'),
   "payoutNetAmount": zod.string().nullish(),
   "depositAmount": zod.string().nullish(),
@@ -1555,7 +1508,7 @@ export const DeriveReconciliationBundleResponse = zod.object({
   "tie": zod.object({
   "payoutId": zod.string().nullish().describe('The Stripe payout (po_...) backing this bundle, when one exists.'),
   "depositStagedPaymentId": zod.string().nullish().describe('The QB deposit lump (staged_payments) tied to the payout.'),
-  "status": zod.enum(['unmatched', 'proposed', 'conflict_approved', 'confirmed_reconciled']).describe('Where a Stripe payout sits in the QuickBooks reconciliation lifecycle, DERIVED read-only from the authoritative settlement_links row (payoutStatusFromLink). unmatched: no settlement link. proposed: a link exists (lifecycle=proposed) with no conflict gift. conflict_approved: a proposed link whose deposit was already approved into a gift (needs keep\/replace). confirmed_reconciled: lifecycle=confirmed — the per-charge Stripe gifts are the source of truth and the QB deposit lump is marked reconciled (kept, never archived).').nullable().describe('Current payout↔deposit reconciliation status; null for pure-QB money with no payout.'),
+  "status": zod.enum(['unmatched', 'confirmed_reconciled']).describe('Whether a Stripe payout is paired with its QuickBooks deposit lump, DERIVED read-only from the pairing fact (staged_payments.settled_stripe_payout_id). unmatched: no settled QB lump. confirmed_reconciled: a QB lump carries the pairing — the per-charge Stripe gifts are the source of truth and the lump is settlement evidence (kept, never archived).').nullable().describe('Current payout↔deposit reconciliation status; null for pure-QB money with no payout.'),
   "action": zod.enum(['confirm_tie', 'none', 'conflict']).describe('What confirm will do: confirm_tie stamps the payout↔deposit reconciliation; none = nothing to tie; conflict = the deposit is already a gift, needs a keep\/replace decision first.'),
   "payoutNetAmount": zod.string().nullish(),
   "depositAmount": zod.string().nullish(),

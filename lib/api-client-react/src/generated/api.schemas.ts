@@ -3410,32 +3410,6 @@ export interface StripeRematchSummary {
 }
 
 /**
- * Result of the admin historical Stripe→QuickBooks reconciliation proposal pass over ALL payouts (including prior-account rows). Every match is a PROPOSAL — a human confirms each; nothing is minted or archived.
- */
-export interface StripeHistoricalProposalSummary {
-  /** False when the pass was skipped (a sync/rematch/proposal run was already holding the lock, or the Stripe connector was unavailable). */
-  ran: boolean;
-  /** Payouts examined this pass. */
-  payoutsScanned: number;
-  /** Payouts newly moved to a proposed QB-deposit match. */
-  proposalsCreated: number;
-  /** Payouts whose candidate QB deposit was already approved into a gift (conflict_approved). */
-  conflictsFound: number;
-  /** Payouts already in a confirmed/reconciled state, left untouched. */
-  alreadyResolved: number;
-  /** Payouts with no QB deposit candidate. */
-  unmatched: number;
-  /** Donor-less Stripe charges re-scored for a donor hint (charge-grain backfill for single-donation payouts with no deposit lump). */
-  chargesScanned: number;
-  /** Charges that gained a donor hint this pass, surfacing them in the per-charge review queue. DONOR-ONLY — never mints or reconciles. */
-  chargesRematched: number;
-  /** Charges (inside payouts with no settlement link) that ended the pass with a PROPOSED per-charge QuickBooks tie — the individually-booked-payout match a human approves on the Settlement report. Proposals only; never confirms. */
-  chargeTiesProposed?: number;
-  /** Stale per-charge QuickBooks tie proposals cleared this pass (candidate disappeared, or the payout gained a settlement link). */
-  chargeTiesCleared?: number;
-}
-
-/**
  * 'deposit-lump' = tie payout↔deposit (multi-charge or a deposit-typed exact row exists); 'charge-payment' = single donation booked as a donor payment, match at the charge grain; 'none' = no exact QB row, needs manual review.
  */
 export type StripeUntiedPayoutDiagnosticRowSuggestedGrain = typeof StripeUntiedPayoutDiagnosticRowSuggestedGrain[keyof typeof StripeUntiedPayoutDiagnosticRowSuggestedGrain];
@@ -3788,10 +3762,6 @@ export interface StripeStagedCharge {
   payoutNetTotal?: string | null;
   payoutArrivalDate?: string | null;
   payoutStatus?: string | null;
-  /** Non-destructive QuickBooks supersede audit for this charge's payout: none | excluded_pending | conflict_approved. 'conflict_approved' blocks minting a per-charge gift here. */
-  payoutQbSupersedeStatus?: string | null;
-  /** The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved. */
-  payoutQbConflictGiftId?: string | null;
   /** Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt). */
   readonly reconciliationLanes?: ReconciliationLanes;
   /** Donorbox donation facts for this Stripe charge (joined 1:1 by donorbox_donations.stripe_charge_id = id), present when the charge originated from a Donorbox donation. Enrichment only — never mints a gift. Present on list reads; omitted from bare mutation responses. */
@@ -3804,42 +3774,26 @@ export interface StripeStagedChargeList {
 }
 
 /**
- * Where a Stripe payout sits in the QuickBooks reconciliation lifecycle, DERIVED read-only from the authoritative settlement_links row (payoutStatusFromLink). unmatched: no settlement link. proposed: a link exists (lifecycle=proposed) with no conflict gift. conflict_approved: a proposed link whose deposit was already approved into a gift (needs keep/replace). confirmed_reconciled: lifecycle=confirmed — the per-charge Stripe gifts are the source of truth and the QB deposit lump is marked reconciled (kept, never archived).
+ * Whether a Stripe payout is paired with its QuickBooks deposit lump, DERIVED read-only from the pairing fact (staged_payments.settled_stripe_payout_id). unmatched: no settled QB lump. confirmed_reconciled: a QB lump carries the pairing — the per-charge Stripe gifts are the source of truth and the lump is settlement evidence (kept, never archived).
  */
 export type StripePayoutReconciliationStatus = typeof StripePayoutReconciliationStatus[keyof typeof StripePayoutReconciliationStatus];
 
 
 export const StripePayoutReconciliationStatus = {
   unmatched: 'unmatched',
-  proposed: 'proposed',
-  conflict_approved: 'conflict_approved',
   confirmed_reconciled: 'confirmed_reconciled',
 } as const;
 
 /**
- * Which reconciliation bucket to list. unmatched: no QB deposit candidate yet (stray Stripe). proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state (incl. confirmed_reconciled). all: every non-unmatched payout.
+ * Which pairing bucket to list. unmatched: no settled QB deposit lump (stray Stripe). confirmed: paired with a settled QB lump. all: every payout.
  */
 export type StripePayoutReconciliationQueue = typeof StripePayoutReconciliationQueue[keyof typeof StripePayoutReconciliationQueue];
 
 
 export const StripePayoutReconciliationQueue = {
   unmatched: 'unmatched',
-  proposed: 'proposed',
-  conflict: 'conflict',
   confirmed: 'confirmed',
   all: 'all',
-} as const;
-
-/**
- * The settlement_links lifecycle for this payout (null when there is no link). The reconciliation status is derived from this + the conflict gift via payoutStatusFromLink.
- */
-export type StripePayoutReconciliationSettlementLifecycle = typeof StripePayoutReconciliationSettlementLifecycle[keyof typeof StripePayoutReconciliationSettlementLifecycle] | null;
-
-
-export const StripePayoutReconciliationSettlementLifecycle = {
-  proposed: 'proposed',
-  confirmed: 'confirmed',
-  exempt: 'exempt',
 } as const;
 
 export interface StripePayoutReconciliation {
@@ -3856,53 +3810,18 @@ export interface StripePayoutReconciliation {
   refundTotal?: string | null;
   netTotal?: string | null;
   chargeCount?: number | null;
-  /** The settlement_links lifecycle for this payout (null when there is no link). The reconciliation status is derived from this + the conflict gift via payoutStatusFromLink. */
-  settlementLifecycle?: StripePayoutReconciliationSettlementLifecycle;
   depositId?: string | null;
   depositAmount?: string | null;
   depositDateReceived?: string | null;
   depositPayerName?: string | null;
   depositStatus?: string | null;
-  conflictGiftAmount?: string | null;
-  conflictGiftDate?: string | null;
-  /** Set once a confirm-replace archives this gift (kept, never deleted). */
-  conflictGiftArchivedAt?: string | null;
-  conflictGiftDonorName?: string | null;
-  /** Two-lane reconciliation status (INV-4) for this payout, derived read-only from the settlement link: funding = unlinked (no link)→proposed (lifecycle=proposed)→confirmed (lifecycle=confirmed). crmRecord is null — a payout is a batch with no single donor. */
+  /** Two-lane reconciliation status (INV-4) for this payout, derived read-only from the pairing fact: funding = unlinked (no settled lump) → confirmed (settled lump exists); exempt for a negative payout (Stripe withdrawal — no bank deposit). crmRecord is null — a payout is a batch with no single donor. */
   readonly reconciliationLanes?: ReconciliationLanes;
 }
 
 export interface StripePayoutReconciliationList {
   data: StripePayoutReconciliation[];
   pagination: Pagination;
-}
-
-export type StripePayoutReconciliationResultKind = typeof StripePayoutReconciliationResultKind[keyof typeof StripePayoutReconciliationResultKind];
-
-
-export const StripePayoutReconciliationResultKind = {
-  confirmed_reconciled: 'confirmed_reconciled',
-  confirmed_linkage_only: 'confirmed_linkage_only',
-  confirmed_excluded: 'confirmed_excluded',
-  confirmed_keep: 'confirmed_keep',
-  confirmed_replace: 'confirmed_replace',
-  reverted: 'reverted',
-  resolved_withdrawal: 'resolved_withdrawal',
-} as const;
-
-/**
- * Outcome of a payout reconciliation confirm/revert transition.
- */
-export interface StripePayoutReconciliationResult {
-  ok: boolean;
-  kind: StripePayoutReconciliationResultKind;
-  payoutId: string;
-  /** The QB deposit lump that was excluded/relinked, when applicable. */
-  stagedPaymentId?: string | null;
-  /** The QB-derived gift archived by a confirm-replace (kept, never deleted). */
-  archivedGiftId?: string | null;
-  /** The gift un-archived by reverting a confirm-replace. */
-  restoredGiftId?: string | null;
 }
 
 /**
@@ -4088,7 +4007,7 @@ export type ReconciliationEvidenceStripe = {
   feeAmount?: string | null;
   netAmount?: string | null;
   chargeCount?: number | null;
-  /** The Stripe payout's QB-reconciliation state (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when no payout/charge backs this money. */
+  /** The Stripe payout's QB pairing state (unmatched | confirmed_reconciled); null when no payout/charge backs this money. */
   reconciliationStatus?: string | null;
 } | null;
 
@@ -4214,7 +4133,7 @@ export type SettlementLineagePayout = {
   chargeCount?: number | null;
   arrivalDate?: string | null;
   status?: string | null;
-  /** The payout's QB-reconciliation state (proposed | conflict_approved | confirmed_reconciled | unmatched | …). */
+  /** The payout's QB pairing state (unmatched | confirmed_reconciled). */
   reconciliationStatus?: string | null;
   linkSource: SettlementLineageLinkSource;
 } | null;
@@ -4337,7 +4256,7 @@ export interface ReconciliationCard {
   stripeChargeId?: string | null;
   stripePayoutId?: string | null;
   stripeChargeCount?: number | null;
-  /** Reconciliation state of the Stripe payout backing this money (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when there is no Stripe evidence. */
+  /** Pairing state of the Stripe payout backing this money (unmatched | confirmed_reconciled); null when there is no Stripe evidence. */
   stripeReconciliationStatus?: string | null;
   /** Payer/customer name (or resolved donor) on the Stripe charge — the real donor, not the 'Stripe' processor name that appears as the QB payer. Set for a per-charge card (stripeChargeId present) and for a single-charge payout; null for an un-expanded multi-charge payout or non-Stripe money. */
   stripeChargeDonorName?: string | null;
@@ -4462,22 +4381,17 @@ export interface PayoutSearchList {
   data: PayoutSearchCandidate[];
 }
 
-export interface RejectSettlementProposalResult {
-  /** True when a proposed link was deleted; false when there was no proposed link to reject (no-op). */
-  rejected: boolean;
-}
-
 /**
- * Optional resolve payload. When the payout has NO settlement link yet, a
-depositStagedPaymentId proposes that payout↔deposit tie before confirming
-(the Settlement report's Resolve box, in either direction). Omit it to
-confirm an already-proposed tie.
+ * Resolve payload. When the payout is unpaired, depositStagedPaymentId
+picks the QB deposit lump to pair it with (the Settlement report's
+Resolve box, in either direction). Optional only for the idempotent
+already-paired case.
 
  */
 export interface ConfirmSettlementLinkBody {
-  /** QB deposit staged-payment id to tie to this payout before confirming (resolve). Omit when a proposed link already exists. */
+  /** QB deposit staged-payment id to pair with this payout. Required when the payout is unpaired. */
   depositStagedPaymentId?: string | null;
-  /** Deliberate human override for a deposit that was excluded from review: re-includes the picked deposit (clears its exclusion, pinning classification_source='manual') in the same transaction, then confirms normally. Only honored together with an explicitly picked depositStagedPaymentId — never applied to an already-proposed link. Default false: an excluded deposit is refused with a 409. */
+  /** Deliberate human override for a deposit that was excluded from review: re-includes the picked deposit (clears its exclusion, pinning classification_source='manual') in the same transaction, then pairs normally. Only honored together with an explicitly picked depositStagedPaymentId. Default false: an excluded deposit is refused with a 409. */
   overrideExclusion?: boolean;
 }
 
@@ -4571,7 +4485,7 @@ export interface UnsplitStagedPaymentUnitsResult {
 }
 
 /**
- * Which path ran: a clean pending-deposit confirm, a linkage-only confirm against an already-booked (approved) deposit that was left untouched, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link.
+ * Which path ran: a clean pairing (coarse counted rows superseded), a linkage-only pairing against a deposit that already booked its own money (left untouched), or an idempotent no-op on an already-paired payout.
  */
 export type ConfirmSettlementLinkResultKind = typeof ConfirmSettlementLinkResultKind[keyof typeof ConfirmSettlementLinkResultKind];
 
@@ -4579,17 +4493,16 @@ export type ConfirmSettlementLinkResultKind = typeof ConfirmSettlementLinkResult
 export const ConfirmSettlementLinkResultKind = {
   confirmed_reconciled: 'confirmed_reconciled',
   confirmed_linkage_only: 'confirmed_linkage_only',
-  conflict_kept: 'conflict_kept',
   already_confirmed: 'already_confirmed',
 } as const;
 
 export interface ConfirmSettlementLinkResult {
-  /** True when the settlement link is confirmed after this call. */
+  /** True when the pairing fact exists after this call. */
   confirmed: boolean;
-  /** Which path ran: a clean pending-deposit confirm, a linkage-only confirm against an already-booked (approved) deposit that was left untouched, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link. */
+  /** Which path ran: a clean pairing (coarse counted rows superseded), a linkage-only pairing against a deposit that already booked its own money (left untouched), or an idempotent no-op on an already-paired payout. */
   kind: ConfirmSettlementLinkResultKind;
   payoutId: string;
-  /** The QB deposit the confirmed link ties to (null only if the link's deposit pointer had degraded). */
+  /** The QB deposit lump carrying the pairing. */
   depositStagedPaymentId?: string | null;
 }
 
@@ -5178,11 +5091,11 @@ export interface BundleAnchorInput {
 }
 
 /**
- * Anchor-centric triage bucket for the unified bundle-anchor list (NOT the
-Stripe-only propose/conflict tie states). needs_review: anchors awaiting
-reconciliation (Stripe payouts not yet confirmed — unmatched/proposed/conflict;
-QB deposits still pending). confirmed: already reconciled (Stripe confirmed_*;
-QB approved/reconciled). all: every eligible anchor.
+ * Anchor-centric triage bucket for the unified bundle-anchor list.
+needs_review: anchors awaiting reconciliation (Stripe payouts with no
+settled QB lump; QB deposits still pending). confirmed: already
+reconciled (paired/charge-tied Stripe payouts; QB approved/reconciled).
+all: every eligible anchor.
 
  */
 export type BundleAnchorQueue = typeof BundleAnchorQueue[keyof typeof BundleAnchorQueue];
@@ -5196,11 +5109,10 @@ export const BundleAnchorQueue = {
 
 /**
  * Derived Plane-1 settlement status for one anchor (design §4.4 batch), used by the
-Settlement report to group anchors into its three columns. settled: a confirmed
-payout↔deposit settlement link exists. proposed: only a proposed link exists
-(awaiting human confirm — the "needs review" filter). orphan: no settlement link
-(a Stripe payout that never booked to a deposit, or a standalone QB deposit with no
-payout). Combined with anchorType this fully places a row: Stripe orphan → the
+Settlement report to group anchors. settled: a QB lump carries the settled payout
+pairing, or every charge is individually tied. orphan: no pairing (a Stripe payout
+that never booked to a deposit, or a standalone QB deposit with no payout).
+Combined with anchorType this fully places a row: Stripe orphan → the
 "missing deposit" column; QB orphan → the "missing payout" column.
 
  */
@@ -5209,66 +5121,8 @@ export type SettlementBatchStatus = typeof SettlementBatchStatus[keyof typeof Se
 
 export const SettlementBatchStatus = {
   settled: 'settled',
-  proposed: 'proposed',
   orphan: 'orphan',
 } as const;
-
-/**
- * The already-booked CRM gift a proposed settlement tie collided with —
-the QB deposit was ALREADY approved into this gift, so confirming the
-settlement keeps the gift and just records the payout↔deposit linkage.
-Enough display facts to explain the decision on the card.
-
- */
-export interface BundleAnchorConflictGift {
-  /** gifts_and_payments.id of the conflicting (kept-on-approve) gift. */
-  id: string;
-  /** Gift name. */
-  name?: string | null;
-  /** Gift donor display name (organization / household / person). */
-  donorName?: string | null;
-  /** Gift amount (major units). */
-  amount?: string | null;
-  /** Gift date received. */
-  date?: string | null;
-}
-
-/**
- * A proposed settlement counterpart for a bundle anchor — the QB deposit
-proposed for a Stripe payout (today the only populated direction; a QB
-deposit tied to a payout is reconciled THROUGH the payout and never
-surfaces as its own anchor).
-
- */
-export interface BundleAnchorProposedMatch {
-  counterpartType: BundleAnchorType;
-  /** staged_payments.id or stripe_payouts.id of the proposed counterpart. */
-  counterpartId: string;
-  /** Counterpart amount, major units. */
-  amount?: string | null;
-  /** Counterpart date (QB date received or Stripe arrival date). */
-  date?: string | null;
-  /** Counterpart payer name. */
-  payerName?: string | null;
-  /** Stripe charges behind the counterpart payout; null for a QB deposit. */
-  chargeCount?: number | null;
-  /** QB counterpart's deposit line / memo description (the proposed deposit for a Stripe payout). */
-  lineDescription?: string | null;
-  /** QB counterpart's transaction-level memo (PrivateNote). */
-  memo?: string | null;
-  /** QB counterpart's human-readable reference (doc/payment ref). */
-  reference?: string | null;
-  /** QB counterpart's line item names captured at pull time. */
-  lineItemNames?: string[] | null;
-  /** QB counterpart's line account names captured at pull time. */
-  lineAccountNames?: string[] | null;
-  /** QB counterpart's line class names captured at pull time. */
-  lineClasses?: string[] | null;
-  /** The already-approved QB gift the proposal collided with (a conflict tie awaiting a keep decision), if any. */
-  conflictGiftId?: string | null;
-  /** Display summary of that conflicting gift (name, donor, amount, date) so the card can explain the keep decision without another fetch. Null when conflictGiftId is null or the gift row no longer exists. */
-  conflictGift?: BundleAnchorConflictGift | null;
-}
 
 /**
  * Cached confirm-readiness taken from the anchor's latest bundle-draft snapshot summary.
@@ -5317,25 +5171,39 @@ export interface BundleAnchor {
   lineAccountNames?: string[] | null;
   /** QB anchor only: line class names captured at pull time. */
   lineClasses?: string[] | null;
-  /** Raw source status for the display badge: the Stripe payout's reconciliation status (derived from its settlement link), or the QB staged-payment status. */
+  /** Raw source status for the display badge: the Stripe payout's pairing status (unmatched | confirmed_reconciled), or the QB staged-payment status. */
   statusLabel: string;
   batchStatus: SettlementBatchStatus;
   /** Stripe payout only: charges carrying a PROPOSED (unconfirmed) per-charge QuickBooks tie — >0 makes the Missing-deposit card approvable at charge grain. Null for QB anchors. */
   chargeTiesProposed?: number | null;
   /** Stripe payout only: charges with a CONFIRMED per-charge QuickBooks tie. Null for QB anchors. */
   chargeTiesConfirmed?: number | null;
-  /** The proposed counterpart for this anchor, populated ONLY when a
-`proposed` (not-yet-confirmed) settlement link exists — enough to
-render the proposed match inline and drive approve/reject without
-first assembling the full draft. Null for orphan or settled anchors.
- */
-  proposedMatch?: BundleAnchorProposedMatch | null;
   /** Cached confirm-readiness from the anchor's most-recent bundle-draft
 snapshot (a hint for the card's approve affordance; the confirm
 endpoint always re-derives and re-gates). Null when no draft has been
 assembled yet.
  */
   readiness?: BundleAnchorReadiness | null;
+}
+
+/**
+ * The already-booked CRM gift a proposed settlement tie collided with —
+the QB deposit was ALREADY approved into this gift, so confirming the
+settlement keeps the gift and just records the payout↔deposit linkage.
+Enough display facts to explain the decision on the card.
+
+ */
+export interface BundleAnchorConflictGift {
+  /** gifts_and_payments.id of the conflicting (kept-on-approve) gift. */
+  id: string;
+  /** Gift name. */
+  name?: string | null;
+  /** Gift donor display name (organization / household / person). */
+  donorName?: string | null;
+  /** Gift amount (major units). */
+  amount?: string | null;
+  /** Gift date received. */
+  date?: string | null;
 }
 
 export interface BundleAnchorListResponse {
@@ -5350,11 +5218,11 @@ all_open: any cluster with unresolved work (everything except completed and
 purely-excluded clusters). needs_donor_or_gift: some evidence row still lacks
 a confirmed CRM gift/donor (pending or match_proposed). needs_accounting:
 money with no accounting side — a crm_only gift, or a payout with no settled
-deposit (settlement link missing or still proposed). settlement_gaps: a
+deposit (no pairing fact). settlement_gaps: a
 payout whose Stripe-reported net (gross − fees) disagrees with the amount
 that actually arrived at the bank — the money doesn't add up regardless of
-linkage state. conflicts: a proposed settlement tie collided with an
-already-approved gift. refunds: a charge carries a proposed
+linkage state. conflicts: retired (always empty) — conflict states rode
+the removed settlement propose/confirm workflow. refunds: a charge carries a proposed
 refund/chargeback propagation awaiting a human decision.
 excluded_qb_says_donation: an excluded QB cluster whose line coding carries
 a donation marker (a Donation item or a 4000/4100-series donation income
@@ -5557,26 +5425,24 @@ export interface WorkbenchClusterQbRecord {
 }
 
 /**
- * proposed = awaiting human confirm (a needs_accounting/conflict signal); confirmed = settled.
+ * confirmed = a settled QB lump carries the pairing; exempt = negative payout (withdrawal).
  */
 export type WorkbenchClusterSettlementLifecycle = typeof WorkbenchClusterSettlementLifecycle[keyof typeof WorkbenchClusterSettlementLifecycle];
 
 
 export const WorkbenchClusterSettlementLifecycle = {
-  proposed: 'proposed',
   confirmed: 'confirmed',
+  exempt: 'exempt',
 } as const;
 
 /**
- * The payout↔deposit settlement tie facts for a stripe_payout cluster.
+ * The payout↔deposit pairing facts for a stripe_payout cluster, derived read-only from staged_payments.settled_stripe_payout_id (confirmed) or a negative payout amount (exempt — a Stripe withdrawal that never reaches the bank as a deposit).
  */
 export interface WorkbenchClusterSettlement {
-  /** proposed = awaiting human confirm (a needs_accounting/conflict signal); confirmed = settled. */
+  /** confirmed = a settled QB lump carries the pairing; exempt = negative payout (withdrawal). */
   lifecycle: WorkbenchClusterSettlementLifecycle;
-  /** The QB deposit lump named by the link. */
+  /** The settled QB deposit lump (null for exempt). */
   depositStagedPaymentId?: string | null;
-  /** The already-approved gift a proposed tie collided with (drives the conflicts lens). */
-  conflictGiftId?: string | null;
 }
 
 /**
@@ -5616,16 +5482,13 @@ export const WorkbenchRowInformationCompleteness = {
 } as const;
 
 /**
- * State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only. `exempt` = human-resolved as needing no QB deposit (e.g. a negative payout / Stripe withdrawal).
+ * State of the payout↔deposit pairing fact for stripe_payout clusters. Absent for qb_standalone and crm_only. `confirmed` = a settled QB lump carries the pairing; `exempt` = a negative payout (Stripe withdrawal — no bank deposit ever reaches QuickBooks).
  */
 export type WorkbenchRowSettlementLinkState = typeof WorkbenchRowSettlementLinkState[keyof typeof WorkbenchRowSettlementLinkState];
 
 
 export const WorkbenchRowSettlementLinkState = {
   unlinked: 'unlinked',
-  proposed_full: 'proposed_full',
-  proposed_partial: 'proposed_partial',
-  proposed_conflict: 'proposed_conflict',
   confirmed: 'confirmed',
   exempt: 'exempt',
 } as const;
@@ -5795,7 +5658,7 @@ export interface WorkbenchRowState {
   linkage: WorkbenchRowStateLinkage;
   information: WorkbenchRowStateInformation;
   flags: WorkbenchRowStateFlags;
-  /** Present for all stripe_payout clusters ('unlinked' when no settlement relationship exists); absent for other cluster kinds. */
+  /** Present for all stripe_payout clusters ('unlinked' when no pairing exists); absent for other cluster kinds. */
   settlementLinkState?: WorkbenchRowSettlementLinkState | null;
   qbCards: WorkbenchRowQbCardEntry[];
   transactions: WorkbenchRowTransactionEntry[];
@@ -10360,7 +10223,7 @@ page?: PageParameter;
 
 export type ListStripePayoutReconciliationsParams = {
 /**
- * Which queue to list (default proposed).
+ * Which queue to list (default all).
  */
 queue?: StripePayoutReconciliationQueue;
 /**

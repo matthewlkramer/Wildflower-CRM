@@ -20,10 +20,6 @@ import {
   useGetCurrentUser,
   useLinkStripeChargeToGift,
   useRejectChargeQbTie,
-  useRejectSettlementProposal,
-  useResolveStripePayoutWithdrawal,
-  useRevertStripePayoutWithdrawal,
-  useRevertStripePayoutReconciliation,
   useListWorkbenchClusters,
   useListWorkbenchRecentChanges,
   useReIncludeStagedPayment,
@@ -223,12 +219,6 @@ export default function ReconciliationClustersPage() {
     /** Linkage word from coverage.state.qbCards — the one per-record QB status source. */
     linkage: string;
   } | null>(null);
-  const [revertSettlementFor, setRevertSettlementFor] = useState<{
-    payoutId: string;
-    label: string;
-    /** When set, this is a "Replace settlement relationship": after a successful revert, re-open the deposit search seeded with these values. */
-    replaceSearch?: { amount: string | null; date: string | null };
-  } | null>(null);
   const [unlinkChooserFor, setUnlinkChooserFor] = useState<{
     giftLabel: string;
     options: UnlinkOption[];
@@ -286,10 +276,6 @@ export default function ReconciliationClustersPage() {
   const confirmSettlementM = useConfirmSettlementLink();
   const confirmMatchM = useConfirmStagedPaymentMatch();
   const rejectChargeQbTieM = useRejectChargeQbTie();
-  const rejectSettlementProposalM = useRejectSettlementProposal();
-  const revertStripePayoutReconciliationM = useRevertStripePayoutReconciliation();
-  const resolveWithdrawalM = useResolveStripePayoutWithdrawal();
-  const revertWithdrawalM = useRevertStripePayoutWithdrawal();
   const approveCardM = useApproveReconciliationCard();
 
   const busy =
@@ -312,8 +298,6 @@ export default function ReconciliationClustersPage() {
     confirmSettlementM.isPending ||
     confirmMatchM.isPending ||
     rejectChargeQbTieM.isPending ||
-    rejectSettlementProposalM.isPending ||
-    revertStripePayoutReconciliationM.isPending ||
     approveCardM.isPending;
 
   const invalidate = useCallback(() => {
@@ -855,71 +839,6 @@ export default function ReconciliationClustersPage() {
     }
   };
 
-  const handleRemoveSettlementProposal = async (payoutId: string) => {
-    try {
-      await rejectSettlementProposalM.mutateAsync({ payoutId });
-      invalidate();
-      toast({ title: "Proposal removed", description: "The settlement proposal was cleared; the payout is back to unlinked." });
-    } catch (err) {
-      toast({ title: "Couldn't remove proposal", description: errMessage(err), variant: "destructive" });
-    }
-  };
-
-  const handleResolveWithdrawal = async (payoutId: string) => {
-    try {
-      await resolveWithdrawalM.mutateAsync({ id: payoutId });
-      invalidate();
-      toast({
-        title: "Resolved as withdrawal",
-        description:
-          "This negative payout is marked as a Stripe withdrawal — no QuickBooks deposit is expected.",
-      });
-    } catch (err) {
-      toast({
-        title: "Couldn't resolve as withdrawal",
-        description: apiErrorMessage(err) ?? errMessage(err),
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleRevertWithdrawal = async (payoutId: string) => {
-    try {
-      await revertWithdrawalM.mutateAsync({ id: payoutId });
-      invalidate();
-      toast({
-        title: "Withdrawal resolution reverted",
-        description: "The payout is back to needing a settlement decision.",
-      });
-    } catch (err) {
-      toast({
-        title: "Couldn't revert withdrawal resolution",
-        description: apiErrorMessage(err) ?? errMessage(err),
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleRevertSettlement = async () => {
-    if (!revertSettlementFor) return;
-    const { payoutId, replaceSearch } = revertSettlementFor;
-    try {
-      await revertStripePayoutReconciliationM.mutateAsync({ id: payoutId });
-      setRevertSettlementFor(null);
-      invalidate();
-      if (replaceSearch) {
-        // Replace flow: the wrong settlement is now unwound — go straight into
-        // the deposit search so the right one can be picked and confirmed.
-        setSettlementSearchFor({ payoutId, ...replaceSearch });
-        toast({ title: "Settlement reverted", description: "Pick the correct QuickBooks deposit to complete the replacement." });
-      } else {
-        toast({ title: "Settlement reverted", description: "The confirmed settlement was reverted to proposed." });
-      }
-    } catch (err) {
-      toast({ title: "Couldn't revert settlement", description: errMessage(err), variant: "destructive" });
-    }
-  };
-
   const actions: ClusterActions = {
     busy,
     openLinkGift: (anchor) => setLinkGiftFor(anchor),
@@ -938,12 +857,6 @@ export default function ReconciliationClustersPage() {
     openSettlementSearch: (args) => setSettlementSearchFor(args),
     isFinanceOrAdmin: me?.role === "finance" || me?.role === "admin",
     openQbDetail: (record, linkage) => setQbDetailFor({ record, linkage }),
-    removeSettlementProposal: (payoutId, _label) => void handleRemoveSettlementProposal(payoutId),
-    resolveWithdrawal: (payoutId) => void handleResolveWithdrawal(payoutId),
-    revertWithdrawal: (payoutId) => void handleRevertWithdrawal(payoutId),
-    revertSettlement: (payoutId, label) => setRevertSettlementFor({ payoutId, label }),
-    replaceSettlement: (payoutId, label, search) =>
-      setRevertSettlementFor({ payoutId, label, replaceSearch: search }),
     rejectChargeQbTie: (chargeId) => void handleRejectChargeQbTie(chargeId),
     confirmProposedMatch: (stagedPaymentId, label) =>
       void handleConfirmProposedMatch(stagedPaymentId, label),
@@ -1490,39 +1403,6 @@ export default function ReconciliationClustersPage() {
           busy={busy}
         />
       ) : null}
-
-      {/* Revert confirmed settlement — confirm before acting (irreversible if charges are booked) */}
-      <AlertDialog open={!!revertSettlementFor} onOpenChange={(v) => { if (!v) setRevertSettlementFor(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {revertSettlementFor?.replaceSearch
-                ? "Replace settlement relationship?"
-                : "Revert confirmed settlement?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This will undo the confirmed payout reconciliation for{" "}
-              <strong>{revertSettlementFor?.label ?? "this deposit"}</strong> and return it to a
-              proposed state.
-              {revertSettlementFor?.replaceSearch
-                ? " The deposit search will then open so you can pick and confirm the correct QuickBooks deposit."
-                : ""}{" "}
-              The server will refuse if any of the payout’s Stripe charges have
-              already been booked into a gift.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => void handleRevertSettlement()}
-              data-testid="button-confirm-revert-settlement"
-            >
-              {revertSettlementFor?.replaceSearch ? "Revert and re-search" : "Revert settlement"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <QbRecordDetailDialog
         open={!!qbDetailFor}

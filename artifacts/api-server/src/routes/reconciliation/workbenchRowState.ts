@@ -122,12 +122,9 @@ export type CrmCardEntry = {
 
 export type SettlementLinkState =
   | "unlinked"
-  | "proposed_full"
-  | "proposed_partial"
-  | "proposed_conflict"
   | "confirmed"
-  // Human-resolved Stripe withdrawal (negative payout): no QB deposit will
-  // ever exist, so the payout is exempt from settlement matching.
+  // Stripe withdrawal (negative payout): no QB deposit will ever exist, so
+  // the payout is exempt from settlement matching.
   | "exempt";
 
 /**

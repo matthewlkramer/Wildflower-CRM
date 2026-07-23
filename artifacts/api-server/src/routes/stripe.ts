@@ -13,7 +13,6 @@ import {
   households,
   people,
   paymentIntermediaries,
-  settlementLinks,
   paymentApplications,
 } from "@workspace/db/schema";
 import {
@@ -89,17 +88,6 @@ import {
   dismissRefundPropagation,
   isFullyRefunded,
 } from "../lib/stripeRefund";
-import {
-  confirmPendingQbDeposit,
-  confirmKeepApprovedQbGift,
-  confirmReplaceApprovedQbGift,
-  revertPayoutQbConfirmation,
-  resolvePayoutAsWithdrawal,
-  revertWithdrawalResolution,
-  type ConfirmRevertResult,
-} from "../lib/stripeConfirm";
-import { proposePayoutMatches } from "../lib/stripeReconcile";
-import { proposeChargeQbTies } from "../lib/chargeQbTie";
 // Write-path guard vocabulary: DerivedStatus predicates/constants ONLY (see
 // the decision note in lib/derivedStatus.ts). qbCardStateOfStatus is used
 // below strictly for READ-path card projections, never lifecycle guards.
@@ -214,9 +202,6 @@ const stagedSelect = {
   payoutNetTotal: stripePayouts.netTotal,
   payoutArrivalDate: stripePayouts.arrivalDate,
   payoutStatus: stripePayouts.status,
-  // A conflict gift on the payout's settlement link blocks minting a
-  // duplicate per-charge gift (the KEEP/REPLACE decision is still open).
-  payoutQbConflictGiftId: settlementLinks.conflictGiftId,
 };
 
 function withJoins<T extends PgSelect>(q: T) {
@@ -246,10 +231,6 @@ function withJoins<T extends PgSelect>(q: T) {
     .leftJoin(
       stripePayouts,
       eq(stripePayouts.id, stripeStagedCharges.stripePayoutId),
-    )
-    .leftJoin(
-      settlementLinks,
-      eq(settlementLinks.payoutId, stripeStagedCharges.stripePayoutId),
     );
 }
 
@@ -873,7 +854,6 @@ router.post(
     // status stays pending → TOCTOU).
     const NOT_PENDING = "__staged_not_pending__";
     const INVARIANT = "__staged_invariant__";
-    const QB_CONFLICT = "__qb_conflict__";
     let lockedIssues: InvariantIssue[] = [];
     const supersedeGiftIds: string[] = [];
     try {
@@ -895,30 +875,6 @@ router.post(
           )
         ) {
           throw new Error(NOT_PENDING);
-        }
-
-        // Non-destructive QuickBooks reconciliation guard: if this charge's
-        // payout was matched to an ALREADY-APPROVED QB net lump (a conflict
-        // awaiting the human's KEEP/REPLACE decision), minting a per-charge gift
-        // here would double-count. Block until that conflict is resolved in the
-        // reconciliation queue (we never mutate QB data). Set by the proposal
-        // pass; inert (unmatched) until a proposal lands on an approved lump.
-        if (locked.stripePayoutId) {
-          // Read-flip: the settlement link is authoritative. Block when the
-          // payout's money is ALREADY booked as a QB-derived gift — a link
-          // carrying a conflict gift, whether an unresolved conflict (proposed
-          // link + conflict gift) or a confirmed "keep" that left that gift in
-          // place (confirmed link + conflict gift). A link with no conflict gift
-          // reconciled a bare deposit into no gift, so per-charge gifts are still
-          // the correct booking — allow it.
-          const link = await tx
-            .select({ conflictGiftId: settlementLinks.conflictGiftId })
-            .from(settlementLinks)
-            .where(eq(settlementLinks.payoutId, locked.stripePayoutId))
-            .then((r) => r[0]);
-          if (link?.conflictGiftId) {
-            throw new Error(QB_CONFLICT);
-          }
         }
 
         const donor = {
@@ -997,14 +953,6 @@ router.post(
         res.status(409).json({
           error: "not_pending",
           message: "This staged charge has already been resolved.",
-        });
-        return;
-      }
-      if (e instanceof Error && e.message === QB_CONFLICT) {
-        res.status(409).json({
-          error: "qb_conflict",
-          message:
-            "This payout is already booked as an approved QuickBooks lump. Resolve the QuickBooks side before creating per-charge gifts.",
         });
         return;
       }
@@ -1553,85 +1501,9 @@ router.post(
   }),
 );
 
-// ─── POST /stripe/reconciliation/propose-historical ────────────────────────
-// One-time admin "stitch": re-run Stripe→QuickBooks payout-match proposals over
-// ALL payouts, including prior-account rows the incremental sync never saw (it
-// only proposes for payouts pulled in its own run). Proposals only — every match
-// stays in a proposed/conflict state for a human to confirm; never mints or
-// archives anything. Idempotent: re-running simply re-evaluates.
-router.post(
-  "/stripe/reconciliation/propose-historical",
-  asyncHandler(async (req, res) => {
-    if (!requireAdmin(req, res)) return;
-    try {
-      const result = await proposePayoutMatches();
-      if (!result.ran) {
-        res.json({
-          ran: false,
-          payoutsScanned: 0,
-          proposalsCreated: 0,
-          conflictsFound: 0,
-          alreadyResolved: 0,
-          unmatched: 0,
-          chargesScanned: 0,
-          chargesRematched: 0,
-          chargeTiesProposed: 0,
-          chargeTiesCleared: 0,
-        });
-        return;
-      }
-      // Single-donation payouts have no deposit lump to settle against, so the
-      // payout↔deposit pass above intentionally leaves them untied — their money
-      // belongs at the charge grain. Run the donor-backfill rematch over ALL
-      // still-pending/donor-less charges so those historical charges surface (with
-      // a donor hint) in the per-charge review queue where a human ties them to a
-      // gift. DONOR-ONLY — never mints or reconciles (proposal-only guarantee).
-      const rematch = await rematchStripeCharges();
-      // Step 3 — charge-grain QB tie proposals for "individually-booked"
-      // payouts (the bookkeeper recorded one QB row per donation, so no
-      // deposit lump exists for the payout↔deposit pass to find). Proposals
-      // only — a human approves each tie on the Settlement report.
-      const chargeTies = await proposeChargeQbTies();
-      const [counts] = await db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(stripePayouts);
-      const total = counts?.total ?? 0;
-      const scanned = result.evaluated;
-      const summary = {
-        ran: true,
-        payoutsScanned: scanned,
-        proposalsCreated: result.proposed,
-        conflictsFound: result.conflicts,
-        // Payouts not scanned are already in a confirmed/reconciled terminal state.
-        alreadyResolved: Math.max(0, total - scanned),
-        // Scanned payouts that ended with no QB-deposit candidate.
-        unmatched: Math.max(0, scanned - result.proposed - result.conflicts),
-        // Charge-grain donor backfill (step 2): charges examined and donor-hinted.
-        chargesScanned: rematch.scanned,
-        chargesRematched: rematch.matched,
-        // Charge-grain QB tie proposals (step 3).
-        chargeTiesProposed: chargeTies.ran ? chargeTies.proposed : 0,
-        chargeTiesCleared: chargeTies.ran ? chargeTies.cleared : 0,
-      };
-      req.log.info(summary, "Historical Stripe→QB reconciliation proposal pass");
-      res.json(summary);
-    } catch (e) {
-      logger.error(
-        { err: e },
-        "Historical Stripe reconciliation proposal failed",
-      );
-      res.status(502).json({
-        error: "proposal_failed",
-        message:
-          e instanceof Error ? e.message : "Historical reconciliation failed",
-      });
-    }
-  }),
-);
-
 // ─── GET /stripe/reconciliation/untied-diagnostic ──────────────────────────
 // Read-only triage for finance: for every UNTIED positive Stripe payout (no
-// settlement link), find the nearest penny-exact QuickBooks row at ANY date and
+// settled QBO lump), find the nearest penny-exact QuickBooks row at ANY date and
 // report its type ('deposit' vs 'payment'), the date gap, and a suggested match
 // grain. Purely diagnostic — surfaces where the money likely sits in QB so a
 // human can confirm proposals and chase the genuine orphans. Writes nothing.
@@ -1660,7 +1532,6 @@ router.get(
         to_char(m.date_received, 'YYYY-MM-DD') AS qb_date_received,
         m.date_gap_days
       FROM stripe_payouts p
-      LEFT JOIN settlement_links sl ON sl.payout_id = p.id
       LEFT JOIN LATERAL (
         SELECT
           sp.qb_entity_type,
@@ -1675,7 +1546,10 @@ router.get(
           (sp.qb_entity_type = 'deposit') DESC
         LIMIT 1
       ) m ON true
-      WHERE sl.id IS NULL
+      WHERE NOT EXISTS (
+          SELECT 1 FROM staged_payments sl
+          WHERE sl.settled_stripe_payout_id = p.id
+        )
         AND COALESCE(p.amount, p.net_total) > 0
       ORDER BY p.arrival_date DESC NULLS LAST
     `);
@@ -1762,88 +1636,46 @@ router.get(
   }),
 );
 
-// ─── Stripe payout ↔ QuickBooks reconciliation queue ───────────────────────
-// The proposal pass (stripeReconcile.ts) classifies each payout against the QB
-// deposit lumps; humans confirm/revert here (stripeConfirm.ts). This queue lists
-// payouts that need or have had a reconciliation decision. Under D4 a confirm
-// stamps the gift's final amount and marks its QB/Stripe evidence `reconciled`
-// (permanent — never archived or excluded); nothing changes until a human
-// confirms — propose-then-confirm. The legacy confirmed_excluded/keep/replace
-// statuses survive only to revert rows confirmed under the pre-D4 model.
+// ─── Stripe payout ↔ QuickBooks settlement report ──────────────────────────
+// Read-only. The payout ↔ QBO-lump pairing is a plain fact
+// (staged_payments.settled_stripe_payout_id), filled deterministically by the
+// accounting recompute (lib/qboAccountingRecompute.ts) — the propose/confirm/
+// revert settlement workflow is retired. Expected-vs-actual discrepancies for
+// paired lumps surface in qbo_accounting_checks, not here.
 
-type ReconQueue = "unmatched" | "proposed" | "conflict" | "confirmed" | "all";
-const RECON_QUEUES = [
-  "unmatched",
-  "proposed",
-  "conflict",
-  "confirmed",
-  "all",
-] as const;
-// Read-flip: recon queue buckets derive from the AUTHORITATIVE settlement link
-// (leftJoined on the payout), not the legacy enum:
-//   unmatched → no link · proposed → proposed link, no conflict gift ·
-//   conflict → proposed link WITH a conflict gift · confirmed → confirmed link ·
-//   all → any link. Every caller must leftJoin settlementLinks on payoutId.
+type ReconQueue = "unmatched" | "confirmed" | "all";
+const RECON_QUEUES = ["unmatched", "confirmed", "all"] as const;
+
+// The QBO deposit lump this payout settled into (unique per payout).
+const settledDeposit = alias(stagedPayments, "settled_deposit");
+
 function reconQueueWhere(queue: ReconQueue) {
   switch (queue) {
     case "unmatched":
-      // Stray Stripe: a payout with no settlement link (found no QuickBooks
-      // deposit candidate). These never appear in the active queues above.
-      return isNull(settlementLinks.id);
-    case "proposed":
-      return and(
-        eq(settlementLinks.lifecycle, "proposed"),
-        isNull(settlementLinks.conflictGiftId),
-      );
-    case "conflict":
-      return and(
-        eq(settlementLinks.lifecycle, "proposed"),
-        isNotNull(settlementLinks.conflictGiftId),
-      );
+      // Stray Stripe: a payout with no settled QBO lump.
+      return isNull(settledDeposit.id);
     case "confirmed":
-      return eq(settlementLinks.lifecycle, "confirmed");
+      return isNotNull(settledDeposit.id);
     case "all":
-      return isNotNull(settlementLinks.id);
+      return undefined;
   }
 }
 
-// The QB deposit currently relevant to the payout's state (matched once
-// confirmed, else the proposed/conflicting candidate), and the already-approved
-// gift a conflict would replace, joined read-only for display.
-const activeDeposit = alias(stagedPayments, "active_deposit");
-const conflictGift = alias(giftsAndPayments, "conflict_gift");
-const conflictOrg = alias(organizations, "conflict_org");
-const conflictHousehold = alias(households, "conflict_household");
-const conflictPerson = alias(people, "conflict_person");
-
-// The authoritative settlement state lives in settlement_links and is exposed
-// via settlementLifecycle + the derived reconciliationLanes.
 const payoutResponseColumns = getTableColumns(stripePayouts);
 
 const reconSelect = {
   ...payoutResponseColumns,
-  settlementLifecycle: settlementLinks.lifecycle,
-  depositId: activeDeposit.id,
-  depositAmount: activeDeposit.amount,
-  depositDateReceived: activeDeposit.dateReceived,
-  depositPayerName: activeDeposit.payerName,
+  depositId: settledDeposit.id,
+  depositAmount: settledDeposit.amount,
+  depositDateReceived: settledDeposit.dateReceived,
+  depositPayerName: settledDeposit.payerName,
   // Derived status for the ALIASED deposit row. The shared base-table
   // fragment can't be interpolated here (drizzle renders alias columns
   // unqualified inside sql``), so the SAME derivation comes from the
   // single-source alias-parameterized builder.
-  depositStatus: sql<string>`${sql.raw(qbStatusCaseText("active_deposit"))}`.as(
+  depositStatus: sql<string>`${sql.raw(qbStatusCaseText("settled_deposit"))}`.as(
     "deposit_status",
   ),
-  conflictGiftAmount: conflictGift.amount,
-  conflictGiftDate: conflictGift.dateReceived,
-  conflictGiftArchivedAt: conflictGift.archivedAt,
-  conflictGiftDonorName: sql<string | null>`
-    COALESCE(
-      ${conflictOrg.name},
-      ${conflictHousehold.name},
-      ${personDisplayNameSql(conflictPerson)}
-    )
-  `.as("conflict_gift_donor_name"),
 };
 
 // ─── GET /stripe-payouts/reconciliation ────────────────────────────────────
@@ -1854,7 +1686,7 @@ router.get(
       typeof req.query["queue"] === "string" ? req.query["queue"] : "";
     const queue: ReconQueue = (RECON_QUEUES as readonly string[]).includes(raw)
       ? (raw as ReconQueue)
-      : "proposed";
+      : "all";
     const { limit, offset, page } = parsePagination(req.query);
     const where = reconQueueWhere(queue);
 
@@ -1862,20 +1694,9 @@ router.get(
       db
         .select(reconSelect)
         .from(stripePayouts)
-        .leftJoin(settlementLinks, eq(settlementLinks.payoutId, stripePayouts.id))
         .leftJoin(
-          activeDeposit,
-          eq(activeDeposit.id, settlementLinks.depositStagedPaymentId),
-        )
-        .leftJoin(conflictGift, eq(conflictGift.id, settlementLinks.conflictGiftId))
-        .leftJoin(conflictOrg, eq(conflictOrg.id, conflictGift.organizationId))
-        .leftJoin(
-          conflictHousehold,
-          eq(conflictHousehold.id, conflictGift.householdId),
-        )
-        .leftJoin(
-          conflictPerson,
-          eq(conflictPerson.id, conflictGift.individualGiverPersonId),
+          settledDeposit,
+          eq(settledDeposit.settledStripePayoutId, stripePayouts.id),
         )
         .where(where)
         .orderBy(desc(stripePayouts.arrivalDate), desc(stripePayouts.id))
@@ -1884,7 +1705,10 @@ router.get(
       db
         .select({ value: count() })
         .from(stripePayouts)
-        .leftJoin(settlementLinks, eq(settlementLinks.payoutId, stripePayouts.id))
+        .leftJoin(
+          settledDeposit,
+          eq(settledDeposit.settledStripePayoutId, stripePayouts.id),
+        )
         .where(where)
         .then((r) => r[0]),
     ]);
@@ -1892,156 +1716,13 @@ router.get(
     res.json({
       data: rows.map((row) => ({
         ...row,
-        reconciliationLanes: derivePayoutLanes(
-          row.settlementLifecycle ? { lifecycle: row.settlementLifecycle } : null,
-        ),
+        reconciliationLanes: derivePayoutLanes({
+          settled: row.depositId != null,
+          withdrawal: row.amount != null && Number(row.amount) < 0,
+        }),
       })),
       pagination: { page, limit, total: totalRow?.value ?? 0 },
     });
-  }),
-);
-
-// Map a stripeConfirm discriminated result onto an HTTP response. not_found →
-// 404; every other typed transition failure (stale state, charges booked) → 409.
-// On success, first recompute the QB tie status of every gift whose ledger rows
-// the §4.3 settlement-supersede recompute demoted/promoted inside the
-// transition (post-commit, own connection — mirrors the other route tails).
-async function respondReconResult(
-  res: Response,
-  result: ConfirmRevertResult,
-): Promise<void> {
-  if (result.ok) {
-    res.json(result);
-    return;
-  }
-  res
-    .status(result.code === "not_found" ? 404 : 409)
-    .json({ error: result.code, message: result.message });
-}
-
-// ─── POST /stripe-payouts/:id/confirm-exclude ──────────────────────────────
-// proposed → confirmed_reconciled (D4): mark the pending QB deposit lump
-// `reconciled` — permanent evidence, no longer excluded (processor_payout) or
-// archived — and link it to this payout. (Route path is kept for client
-// compatibility; the deposit is reconciled, not excluded.)
-router.post(
-  "/stripe-payouts/:id/confirm-exclude",
-  asyncHandler(async (req, res) => {
-    if (!requireFinance(req, res)) return;
-    const user = getAppUser(req);
-    if (!user) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    await respondReconResult(
-      res,
-      await confirmPendingQbDeposit({ payoutId: paramId(req), userId: user.id }),
-    );
-  }),
-);
-
-// ─── POST /stripe-payouts/:id/confirm-keep ─────────────────────────────────
-// conflict_approved → confirmed_reconciled (D4): the existing approved QB gift
-// stands; we only record the payout linkage. Touches no gift or deposit.
-router.post(
-  "/stripe-payouts/:id/confirm-keep",
-  asyncHandler(async (req, res) => {
-    if (!requireFinance(req, res)) return;
-    const user = getAppUser(req);
-    if (!user) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    await respondReconResult(
-      res,
-      await confirmKeepApprovedQbGift({ payoutId: paramId(req), userId: user.id }),
-    );
-  }),
-);
-
-// ─── POST /stripe-payouts/:id/confirm-replace ──────────────────────────────
-// Retired under D4: the coarse QB-derived gift is never archived/replaced — a
-// genuine coarse-vs-granular conflict returns manual_review_required (409).
-// Route kept for client compatibility and to revert rows confirmed
-// (confirmed_replace) under the pre-D4 model.
-router.post(
-  "/stripe-payouts/:id/confirm-replace",
-  asyncHandler(async (req, res) => {
-    if (!requireFinance(req, res)) return;
-    const user = getAppUser(req);
-    if (!user) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    await respondReconResult(
-      res,
-      await confirmReplaceApprovedQbGift({
-        payoutId: paramId(req),
-        userId: user.id,
-      }),
-    );
-  }),
-);
-
-// ─── POST /stripe-payouts/:id/revert-reconciliation ────────────────────────
-// Undo a confirm back to its prior proposal state. A confirmed_replace revert is
-// refused (409 charges_already_booked) once any of the payout's Stripe charges
-// have been booked into a gift.
-router.post(
-  "/stripe-payouts/:id/revert-reconciliation",
-  asyncHandler(async (req, res) => {
-    if (!requireFinance(req, res)) return;
-    const user = getAppUser(req);
-    if (!user) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    await respondReconResult(
-      res,
-      await revertPayoutQbConfirmation({
-        payoutId: paramId(req),
-        userId: user.id,
-      }),
-    );
-  }),
-);
-
-// ─── POST /stripe-payouts/:id/resolve-withdrawal ───────────────────────────
-// Human-gated terminal state for a NEGATIVE payout (a Stripe withdrawal — no
-// deposit ever reaches QuickBooks): write an EXEMPT settlement link (no
-// deposit) so the payout stops rendering as a missing settlement link. The
-// state derives entirely from that link — no stored status.
-router.post(
-  "/stripe-payouts/:id/resolve-withdrawal",
-  asyncHandler(async (req, res) => {
-    if (!requireFinance(req, res)) return;
-    const user = getAppUser(req);
-    if (!user) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    await respondReconResult(
-      res,
-      await resolvePayoutAsWithdrawal({ payoutId: paramId(req), userId: user.id }),
-    );
-  }),
-);
-
-// ─── POST /stripe-payouts/:id/revert-withdrawal ────────────────────────────
-// Undo a withdrawal resolution: remove the exempt settlement link.
-router.post(
-  "/stripe-payouts/:id/revert-withdrawal",
-  asyncHandler(async (req, res) => {
-    if (!requireFinance(req, res)) return;
-    const user = getAppUser(req);
-    if (!user) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    await respondReconResult(
-      res,
-      await revertWithdrawalResolution({ payoutId: paramId(req), userId: user.id }),
-    );
   }),
 );
 

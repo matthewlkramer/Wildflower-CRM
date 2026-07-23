@@ -7,7 +7,6 @@ import {
   quickbooksHandlingRules,
   organizations,
   fundableProjects,
-  settlementLinks,
   sourceLinks,
   paymentApplications,
 } from "@workspace/db/schema";
@@ -34,7 +33,6 @@ import {
 import { buildGiftValuesFromStaged } from "./quickbooksGift";
 import { refreshOpenBundleDrafts } from "./reconciliationBundleSync";
 import { recomputeBankSpineBestEffort } from "./bankSpineRecompute";
-import { proposePayoutMatches } from "./stripeReconcile";
 import { proposeChargeQbTies } from "./chargeQbTie";
 import {
   applyPaymentApplication,
@@ -155,7 +153,7 @@ export function buildStagedLineUpsert(
  * ids (one ≤500-id chunk). A header exists ONLY because its deposit yielded
  * zero direct-line rows; when a later QB edit gives the deposit direct lines,
  * the line rows are the representation and the header is a duplicate. A header
- * that review work already references — a settlement link, a source link, or a
+ * that review work already references — a settled-payout pairing, a source link, or a
  * ledger row (the last should be impossible by guard, but is checked for
  * safety) — is KEPT so a human resolution is never silently destroyed.
  *
@@ -173,7 +171,7 @@ export function buildSuperfluousHeaderDelete(
         eq(stagedPayments.realmId, realmId),
         eq(stagedPayments.qbEntityType, "deposit_header"),
         inArray(stagedPayments.qbEntityId, qbDepositIds),
-        sql`NOT EXISTS (SELECT 1 FROM ${settlementLinks} WHERE ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id})`,
+        sql`${stagedPayments.settledStripePayoutId} IS NULL`,
         sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
         sql`NOT EXISTS (SELECT 1 FROM ${paymentApplications} WHERE ${paymentApplications.paymentId} = ${stagedPayments.id})`,
       ),
@@ -191,8 +189,9 @@ export function buildSuperfluousHeaderDelete(
  * header).
  *
  * Guards (all must hold, per row):
- *   - same three reference guards as the header delete (settlement link,
- *     source link, ledger row) — review work is never silently destroyed;
+ *   - same three reference guards as the header delete (settled-payout
+ *     pairing, source link, ledger row) — review work is never silently
+ *     destroyed;
  *   - derived status still open (`pending` / `excluded`) — a human-resolved
  *     line row is kept even if unreferenced (e.g. a manual confirmation),
  *     mirroring the "never clobber a manual resolution" upsert rule.
@@ -212,7 +211,7 @@ export function buildSuperfluousLineDelete(
         eq(stagedPayments.qbEntityType, "deposit"),
         inArray(stagedPayments.qbEntityId, qbDepositIds),
         stagedStatusIn(["pending", "excluded"]),
-        sql`NOT EXISTS (SELECT 1 FROM ${settlementLinks} WHERE ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id})`,
+        sql`${stagedPayments.settledStripePayoutId} IS NULL`,
         sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
         sql`NOT EXISTS (SELECT 1 FROM ${paymentApplications} WHERE ${paymentApplications.paymentId} = ${stagedPayments.id})`,
       ),
@@ -904,7 +903,7 @@ export async function syncQuickbooks(
     // If a later QB edit gives the deposit direct lines (this pull staged
     // them), the line rows are the representation and the header is a
     // duplicate — delete it, UNLESS review work already references it (a
-    // settlement link, a source link, or a ledger row — the last should be
+    // settled-payout pairing, a source link, or a ledger row — the last should be
     // impossible by guard, but is checked for safety). A referenced header is
     // kept so a human resolution is never silently destroyed.
     if (directLineDepositIds.size > 0) {
@@ -956,13 +955,14 @@ export async function syncQuickbooks(
 
   // QuickBooks bookings often land days/weeks AFTER their Stripe payout was
   // synced, and the Stripe sync alone would never revisit those payouts. Run
-  // the FULL (unscoped) Stripe↔QB matching passes after every QB ingest so
-  // late-booked rows get proposed without an admin button. The public wrappers
-  // take the per-account "stripe" advisory lock themselves (we released the
-  // QB lock above), are idempotent, and no-op when Stripe is not connected.
-  // Best-effort: a matching failure must not fail the QB sync itself.
+  // the FULL (unscoped) charge↔QB tie pass after every QB ingest so
+  // late-booked rows get proposed without an admin button. (Payout↔lump
+  // pairing is deterministic and handled by the bank-spine recompute's QBO
+  // comparer.) The public wrapper takes the per-account "stripe" advisory
+  // lock itself (we released the QB lock above), is idempotent, and no-ops
+  // when Stripe is not connected. Best-effort: a matching failure must not
+  // fail the QB sync itself.
   try {
-    await proposePayoutMatches();
     await proposeChargeQbTies();
   } catch (e) {
     logger.error(

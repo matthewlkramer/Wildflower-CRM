@@ -7,9 +7,9 @@ import {
   stagedPayments,
   stripePayouts,
   giftsAndPayments,
-  settlementLinks,
+  paymentApplications,
 } from "@workspace/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { asyncHandler, notFound, parseOrBadRequest, newId } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { getViewer } from "../../lib/identityVisibility";
@@ -20,7 +20,6 @@ import {
   DeriveReconciliationBundleBody,
   ConfirmReconciliationBundleParams,
   ConfirmReconciliationBundleBody,
-  RejectSettlementProposalParams,
   ConfirmSettlementLinkParams,
   ConfirmSettlementLinkBody,
 } from "@workspace/api-zod";
@@ -47,20 +46,14 @@ import {
   excludeChargeInTx,
   excludeStagedInTx,
 } from "../../lib/reconciliationBundleCommit";
-import {
-  confirmPendingQbDepositInTx,
-  confirmKeepApprovedQbGiftInTx,
-  TransitionError,
-} from "../../lib/stripeConfirm";
 import { isSettlementLump } from "../../lib/settlementLump";
-import { stagedStatusWhere } from "../../lib/derivedStatus";
+import {
+  stagedStatusWhere,
+  deriveStagedPaymentStatus,
+} from "../../lib/derivedStatus";
 import { donorOf, donorsMatch, type LinkDonor } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
-import {
-  deleteSettlementLink,
-  upsertSettlementLink,
-} from "../../lib/settlementLink";
-import { proposeSettlementLink } from "../../lib/settlementWriter";
+import { applySettlementSupersedeMany } from "../../lib/settlementSupersede";
 
 /**
  * Reactive "settlement bundle" reconciliation endpoints.
@@ -185,14 +178,16 @@ async function canonicalizeAnchor(
   anchorId: string,
 ): Promise<{ anchorType: BundleAnchorType; anchorId: string }> {
   if (anchorType !== "qb_staged_payment") return { anchorType, anchorId };
-  // Authoritative source of the payout↔deposit tie is settlement_links; its
-  // deposit covers every lifecycle (proposed/confirmed and the conflict tie),
-  // so this subsumes the legacy matched/proposed/qbConflict pointer OR.
+  // Authoritative source of the payout↔deposit tie is the pairing fact on the
+  // QBO row (staged_payments.settled_stripe_payout_id).
   const tied = await conn
     .select({ id: stripePayouts.id })
-    .from(settlementLinks)
-    .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
-    .where(eq(settlementLinks.depositStagedPaymentId, anchorId))
+    .from(stagedPayments)
+    .innerJoin(
+      stripePayouts,
+      eq(stripePayouts.id, stagedPayments.settledStripePayoutId),
+    )
+    .where(eq(stagedPayments.id, anchorId))
     .then((r) => r[0]);
   return tied
     ? { anchorType: "stripe_payout" as const, anchorId: tied.id }
@@ -575,23 +570,41 @@ router.post(
           });
         }
 
-        // ── TIE FIRST: stamp the payout↔deposit reconciliation. ──
+        // ── TIE FIRST: stamp the payout↔deposit pairing fact (fill-only —
+        // never repoints an existing pairing; a payout backs at most one QBO
+        // lump via the partial unique index). §4.3 supersede then demotes the
+        // deposit's coarse counted QB rows so SUM readers never double-count.
         let tieConfirmed = false;
         const tie = proposal.tie;
-        if (tie && tie.action === "confirm_tie" && tie.payoutId) {
-          if (tie.status === "proposed") {
-            const tieRes = await confirmPendingQbDepositInTx(tx, {
-              payoutId: tie.payoutId,
-              userId,
-            });
-            giftTieIds.push(...tieRes.rederiveGiftIds);
-            tieConfirmed = true;
-          } else if (tie.status === "conflict_approved") {
-            const tieRes = await confirmKeepApprovedQbGiftInTx(tx, {
-              payoutId: tie.payoutId,
-              userId,
-            });
-            giftTieIds.push(...tieRes.rederiveGiftIds);
+        if (
+          tie &&
+          tie.action === "confirm_tie" &&
+          tie.payoutId &&
+          tie.depositStagedPaymentId
+        ) {
+          const paired = await tx
+            .update(stagedPayments)
+            .set({
+              settledStripePayoutId: tie.payoutId,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(stagedPayments.id, tie.depositStagedPaymentId),
+                isNull(stagedPayments.settledStripePayoutId),
+                sql`NOT EXISTS (
+                  SELECT 1 FROM staged_payments t
+                  WHERE t.settled_stripe_payout_id = ${tie.payoutId}
+                )`,
+              ),
+            )
+            .returning({ id: stagedPayments.id });
+          if (paired.length > 0) {
+            giftTieIds.push(
+              ...(await applySettlementSupersedeMany(tx, [
+                tie.depositStagedPaymentId,
+              ])),
+            );
             tieConfirmed = true;
           }
         }
@@ -845,21 +858,6 @@ router.post(
         res.status(e.httpStatus).json(e.payload);
         return;
       }
-      if (e instanceof TransitionError) {
-        // `deposit_not_booked` / `deposit_unconfirmable` are PERMANENT
-        // rejections (no provable booking / row can never back a settlement) —
-        // surface their own codes so the card UI can render them verbatim
-        // instead of the "changed — refreshed" drift toast.
-        res.status(409).json({
-          error:
-            e.code === "deposit_not_booked" ||
-            e.code === "deposit_unconfirmable"
-              ? e.code
-              : "tie_transition",
-          message: e.message,
-        });
-        return;
-      }
       throw e;
     }
 
@@ -874,65 +872,18 @@ router.post(
   }),
 );
 
-// ─── POST /reconciliation/settlement-links/:payoutId/reject ──────────────────
-// Dismiss a PROPOSED payout↔deposit tie: delete the proposed settlement link so
-// the Settlement report shows the payout as an un-proposed orphan again. Money is
-// untouched (nothing excluded, no gift minted). A CONFIRMED link is never rejected
-// here (revert is a separate path) → 409. No proposed link → no-op success.
-router.post(
-  "/reconciliation/settlement-links/:payoutId/reject",
-  asyncHandler(async (req, res) => {
-    if (!requireFinance(req, res)) return;
-    const params = parseOrBadRequest(
-      RejectSettlementProposalParams,
-      req.params,
-      res,
-    );
-    if (!params) return;
-
-    const link = await db
-      .select({ lifecycle: settlementLinks.lifecycle })
-      .from(settlementLinks)
-      .where(eq(settlementLinks.payoutId, params.payoutId))
-      .then((r) => r[0]);
-
-    if (!link) {
-      res.json({ rejected: false });
-      return;
-    }
-    if (link.lifecycle === "confirmed") {
-      res.status(409).json({
-        error: "settlement_confirmed",
-        message: "This settlement tie is confirmed; use revert, not reject.",
-      });
-      return;
-    }
-
-    await deleteSettlementLink(db, params.payoutId);
-    res.json({ rejected: true });
-  }),
-);
-
 // ─── POST /reconciliation/settlement-links/:payoutId/confirm ─────────────────
-// Confirm the Plane-1 payout↔deposit settlement tie ONLY (docs/reconciliation-
-// design.md §4.3/§4.4) — decoupled from the Plane-2 per-charge → gift booking the
-// Gift report owns. This is what lets a "linked" (proposed) settlement approve in
-// ONE click: we never re-derive the whole per-charge bundle here, so a charge that
-// still needs a donor/gift decision no longer blocks confirming the settlement.
+// Record the Plane-1 payout↔deposit pairing FACT (docs/reconciliation-design.md
+// §4.3/§4.4) — decoupled from the Plane-2 per-charge → gift booking the Gift
+// report owns. The proposed/confirmed lifecycle is retired: the deterministic
+// accounting recompute pairs most payouts automatically; this route is the
+// human escape hatch for the ambiguous remainder. The write is FILL-ONLY —
+// it never repoints an existing pairing (revert = fix in QuickBooks; the
+// accounting sidecar surfaces mismatches as correction_needed).
 //
-// Money-safety: confirming stamps the deposit `reconciled`, which IS the double-
-// count guard — the coarse deposit can never also credit donors on top of the
-// individual per-charge Stripe gifts. Charges keep being credited via the Gift
-// report, exactly once.
-//
-// State machine (mirrors the tie step the bundle confirm used, minus the bundle):
-//   • proposed, no conflict gift → confirmPendingQbDepositInTx (deposit → reconciled;
-//     if the deposit is already `approved` and provably booked, the confirm is
-//     LINKAGE-ONLY: the tie is stamped and the deposit is left untouched)
-//   • proposed + conflict gift   → confirmKeepApprovedQbGiftInTx (keep the gift)
-//   • already confirmed          → idempotent success
-//   • no link + body deposit     → propose the tie, then confirm (Resolve, both dirs)
-//   • no link + no deposit       → 400
+// Money-safety: after pairing, §4.3 supersede demotes the deposit's coarse
+// counted QB rows so the lump can never also credit donors on top of the
+// individual per-charge Stripe gifts.
 router.post(
   "/reconciliation/settlement-links/:payoutId/confirm",
   asyncHandler(async (req, res) => {
@@ -951,17 +902,12 @@ router.post(
     const body = parseOrBadRequest(ConfirmSettlementLinkBody, req.body, res);
     if (!body) return;
 
-    const userId = user.id;
     const payoutId = params.payoutId;
     const pickedDepositId = body.depositStagedPaymentId ?? null;
 
-    // Gifts whose ledger rows changed in the §4.3 settlement-supersede
-    // recompute inside the commit — tie status recomputed post-commit.
-    const supersedeGiftIds: string[] = [];
     try {
       const result = await db.transaction(async (tx) => {
-        // Lock the payout so the link read + path decision stay consistent with
-        // the confirm primitives (which re-lock the same row FOR UPDATE).
+        // Lock the payout so the pairing read + decision stay consistent.
         const payout = await tx
           .select({ id: stripePayouts.id })
           .from(stripePayouts)
@@ -975,78 +921,33 @@ router.post(
           });
         }
 
-        const link = await tx
-          .select({
-            lifecycle: settlementLinks.lifecycle,
-            conflictGiftId: settlementLinks.conflictGiftId,
-            depositStagedPaymentId: settlementLinks.depositStagedPaymentId,
-          })
-          .from(settlementLinks)
-          .where(eq(settlementLinks.payoutId, payoutId))
-          .then((r) => r[0] ?? null);
-
-        // Already settled — idempotent success (never re-book). Note: if the
-        // caller picked a DIFFERENT deposit than the confirmed one, we still
-        // return success with the ACTUAL depositStagedPaymentId — the UI can
-        // detect the mismatch from the response; a confirmed tie is only ever
-        // changed via the explicit revert path.
-        if (link?.lifecycle === "confirmed") {
+        // Already paired — idempotent success (never re-book). If the caller
+        // picked a DIFFERENT deposit than the paired one, we still return
+        // success with the ACTUAL depositStagedPaymentId — the UI can detect
+        // the mismatch from the response; a pairing is never repointed here.
+        const existing = await tx
+          .select({ id: stagedPayments.id })
+          .from(stagedPayments)
+          .where(eq(stagedPayments.settledStripePayoutId, payoutId))
+          .then((r) => r[0]);
+        if (existing) {
           return {
             confirmed: true,
             kind: "already_confirmed" as const,
             payoutId,
-            depositStagedPaymentId: link.depositStagedPaymentId,
+            depositStagedPaymentId: existing.id,
           };
         }
 
-        // A proposed tie exists → confirm it on its current shape.
-        if (link?.lifecycle === "proposed") {
-          if (link.conflictGiftId) {
-            const r = await confirmKeepApprovedQbGiftInTx(tx, {
-              payoutId,
-              userId,
-            });
-            supersedeGiftIds.push(...r.rederiveGiftIds);
-            return {
-              confirmed: true,
-              kind: "conflict_kept" as const,
-              payoutId,
-              depositStagedPaymentId: r.stagedPaymentId,
-            };
-          }
-          const r = await confirmPendingQbDepositInTx(tx, { payoutId, userId });
-          supersedeGiftIds.push(...r.rederiveGiftIds);
-          return {
-            confirmed: true,
-            kind:
-              r.kind === "confirmed_linkage_only"
-                ? ("confirmed_linkage_only" as const)
-                : ("confirmed_reconciled" as const),
-            payoutId,
-            depositStagedPaymentId: r.stagedPaymentId,
-          };
-        }
-
-        // No settlement link at all → Resolve: propose the caller's chosen
-        // payout↔deposit tie, then confirm it in the same transaction.
         if (!pickedDepositId) {
           throw new ReconcileAbort(400, {
             error: "no_deposit",
             message:
-              "This payout has no proposed deposit. Pick a QuickBooks deposit to tie before confirming.",
+              "This payout has no paired deposit. Pick a QuickBooks deposit to pair before confirming.",
           });
         }
         const deposit = await tx
-          .select({
-            id: stagedPayments.id,
-            qbEntityType: stagedPayments.qbEntityType,
-            payerName: stagedPayments.payerName,
-            lineDescription: stagedPayments.lineDescription,
-            qbTransactionMemo: stagedPayments.qbTransactionMemo,
-            rawReference: stagedPayments.rawReference,
-            qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
-            exclusionReason: stagedPayments.exclusionReason,
-          })
+          .select()
           .from(stagedPayments)
           .where(eq(stagedPayments.id, pickedDepositId))
           .for("update")
@@ -1057,10 +958,9 @@ router.post(
             message: "The chosen QuickBooks deposit no longer exists.",
           });
         }
-        // Lump eligibility mirrors the propose pass + confirm primitive
-        // (settlementLump.ts): a deposit-typed row OR a mis-typed net lump with
-        // a stripe/misc signal. A donor-name payment row is PERMANENTLY
-        // ineligible (charge grain), not transient drift.
+        // Lump eligibility (settlementLump.ts): a deposit-typed row OR a
+        // mis-typed net lump with a stripe/misc signal. A donor-name payment
+        // row is PERMANENTLY ineligible (charge grain), not transient drift.
         if (!isSettlementLump(deposit)) {
           throw new ReconcileAbort(409, {
             error: "deposit_unconfirmable",
@@ -1068,52 +968,44 @@ router.post(
               "The chosen QuickBooks row is an individual donor payment, not a Stripe settlement lump — it can't back this settlement. Match it at the charge grain instead.",
           });
         }
-        // No status pre-gate here: the confirm primitive re-derives the
-        // deposit's status under the same lock and handles every arm —
-        // `pending` → full confirm (deposit stamped reconciled),
-        // `match_confirmed` + not settled elsewhere → LINKAGE-ONLY confirm
-        // (the tie is recorded and §4.3 supersede demotes the deposit's coarse
-        // counted QB rows so the money is never double-counted — this is the
-        // repair path for a deposit that was booked before its payout tie),
-        // `excluded` / `match_proposed` → permanent `deposit_unconfirmable`.
-        // A stricter pending-only gate here previously blocked the repair path
-        // with a misleading transient "refresh and retry" 409.
-        // (Unit groups are retired — no group-membership gate; a legacy
-        // grouped deposit is just a deposit.)
-        // Exclusivity: a deposit may back only one payout's settlement. Say
-        // WHICH kind of tie blocks the pick — a CONFIRMED link is permanent
-        // (retrying can never help; code deposit_unconfirmable so the UI
-        // renders the destructive toast), while a PROPOSED link is resolvable
-        // by rejecting the other proposal.
-        const otherLink = await tx
-          .select({ lifecycle: settlementLinks.lifecycle })
-          .from(settlementLinks)
-          .where(eq(settlementLinks.depositStagedPaymentId, pickedDepositId))
-          .then((r) => r[0]);
-        if (otherLink?.lifecycle === "confirmed") {
+        // Exclusivity: a deposit backs at most one payout's settlement.
+        if (deposit.settledStripePayoutId) {
           throw new ReconcileAbort(409, {
             error: "deposit_unconfirmable",
             message:
               "This QuickBooks deposit is already reconciled against a different Stripe payout, so it can't back this settlement too. Pick a different deposit.",
           });
         }
-        if (otherLink) {
-          throw new ReconcileAbort(409, {
-            error: "deposit_already_tied",
-            message:
-              "This QuickBooks deposit is already proposed as the match for a different Stripe payout. Confirm or reject that proposal first, or pick a different deposit.",
-          });
-        }
+
+        // Derive the deposit's status from facts: its counted ledger rows (the
+        // sole gift-link source) — the pairing-elsewhere case was rejected
+        // above, so hasConfirmedSettlementLink is false here.
+        const hasCountedLedgerRows = await tx
+          .select({ id: paymentApplications.id })
+          .from(paymentApplications)
+          .where(
+            and(
+              eq(paymentApplications.paymentId, pickedDepositId),
+              eq(paymentApplications.linkRole, "counted"),
+            ),
+          )
+          .limit(1)
+          .then((r) => r.length > 0);
+        const depositStatus = deriveStagedPaymentStatus({
+          ...deposit,
+          hasCountedApplication: hasCountedLedgerRows,
+        });
 
         // Deliberate human override for an excluded lump: the picker labels
         // excluded rows (never hides them) and lets a second click assert
-        // "this IS the payout's money". Re-include it exactly like the
-        // /staged-payments/:id/re-include primitive — clear the exclusion and
-        // pin classification_source='manual' so the re-runnable classifier
-        // never re-excludes it — under the FOR UPDATE lock already held, then
-        // fall through to the normal pending confirm. Without the flag the
-        // confirm primitive still 409s (deposit_unconfirmable) as before.
-        if (body.overrideExclusion && deposit.exclusionReason != null) {
+        // "this IS the payout's money" — clear the exclusion and pin
+        // classification_source='manual' so the re-runnable classifier never
+        // re-excludes it, under the FOR UPDATE lock already held.
+        if (
+          body.overrideExclusion &&
+          depositStatus === "excluded" &&
+          deposit.exclusionReason != null
+        ) {
           await tx
             .update(stagedPayments)
             .set({
@@ -1127,46 +1019,68 @@ router.post(
                 stagedStatusWhere.excluded,
               ),
             );
+        } else if (depositStatus === "excluded") {
+          // Say exactly WHICH terminal state blocks the confirm — the card
+          // toast surfaces this message verbatim.
+          const reason = deposit.exclusionReason
+            ? ` (${String(deposit.exclusionReason).replace(/_/g, " ")})`
+            : "";
+          throw new ReconcileAbort(409, {
+            error: "deposit_unconfirmable",
+            message: `This QuickBooks payment was excluded from review${reason}, so it can't back a settlement. If it was excluded by mistake, un-exclude it in Finance Reconciliation first, then retry.`,
+          });
+        } else if (depositStatus === "match_proposed") {
+          throw new ReconcileAbort(409, {
+            error: "deposit_unconfirmable",
+            message:
+              "This QuickBooks deposit has an auto-proposed gift match still awaiting review. Confirm or reject that match in Finance Reconciliation first, then retry the settlement.",
+          });
         }
 
-        await upsertSettlementLink(
-          tx,
-          payoutId,
-          proposeSettlementLink(pickedDepositId, null),
-        );
-        const r = await confirmPendingQbDepositInTx(tx, { payoutId, userId });
-        supersedeGiftIds.push(...r.rederiveGiftIds);
+        // Fill-only pairing write; the partial unique index is the
+        // belt-and-suspenders against a racing pairing of the same payout.
+        const paired = await tx
+          .update(stagedPayments)
+          .set({
+            settledStripePayoutId: payoutId,
+            classificationSource: "manual",
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(stagedPayments.id, pickedDepositId),
+              isNull(stagedPayments.settledStripePayoutId),
+            ),
+          )
+          .returning({ id: stagedPayments.id });
+        if (!paired.length) {
+          throw new ReconcileAbort(409, {
+            error: "deposit_unconfirmable",
+            message:
+              "This QuickBooks deposit was just paired elsewhere. Refresh and retry.",
+          });
+        }
+
+        // §4.3 supersede: the deposit's coarse counted QB rows may now be
+        // covered by the payout's per-charge counted Stripe rows — recompute
+        // in-tx so SUM readers never see the same dollars twice.
+        await applySettlementSupersedeMany(tx, [pickedDepositId]);
+
         return {
           confirmed: true,
-          // Mirror the proposed-arm mapping: an already-booked deposit takes
-          // the linkage-only arm and must SAY so, not claim a full reconcile.
-          kind:
-            r.kind === "confirmed_linkage_only"
-              ? ("confirmed_linkage_only" as const)
-              : ("confirmed_reconciled" as const),
+          // A deposit that already booked its own money takes the
+          // linkage-only arm (the pairing is evidence; the booking stands).
+          kind: hasCountedLedgerRows
+            ? ("confirmed_linkage_only" as const)
+            : ("confirmed_reconciled" as const),
           payoutId,
-          depositStagedPaymentId: r.stagedPaymentId,
+          depositStagedPaymentId: pickedDepositId,
         };
       });
       res.json(result);
     } catch (e) {
       if (e instanceof ReconcileAbort) {
         res.status(e.httpStatus).json(e.payload);
-        return;
-      }
-      if (e instanceof TransitionError) {
-        // `deposit_not_booked` / `deposit_unconfirmable` are PERMANENT
-        // rejections (no provable booking / row can never back a settlement) —
-        // surface their own codes so the card UI can render them verbatim
-        // instead of the "changed — refreshed" drift toast.
-        res.status(409).json({
-          error:
-            e.code === "deposit_not_booked" ||
-            e.code === "deposit_unconfirmable"
-              ? e.code
-              : "tie_transition",
-          message: e.message,
-        });
         return;
       }
       throw e;

@@ -461,10 +461,7 @@ router.post(
                 AND srcl.qb_staged_payment_id = "staged_payments"."id"
               LIMIT 1
             )`,
-            settlementLinked: sql<boolean>`EXISTS (
-              SELECT 1 FROM settlement_links sl
-              WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
-            )`,
+            settlementLinked: sql<boolean>`(${stagedPayments.settledStripePayoutId} IS NOT NULL)`,
           })
           .from(stagedPayments)
           .where(inArray(stagedPayments.id, qbIds));
@@ -480,7 +477,7 @@ router.post(
             conflictIssues.push({
               qbStagedPaymentId: c.qbId,
               reason:
-                "QuickBooks row is already a payout settlement-link deposit.",
+                "QuickBooks row is already a payout's settled deposit lump.",
             });
           }
         }

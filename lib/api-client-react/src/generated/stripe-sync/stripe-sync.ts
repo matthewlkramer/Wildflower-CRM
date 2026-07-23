@@ -21,7 +21,6 @@ import type {
 
 import type {
   ForbiddenResponse,
-  StripeHistoricalProposalSummary,
   StripeRematchSummary,
   StripeResyncStatus,
   StripeSyncStatus,
@@ -397,76 +396,7 @@ export function useGetStripeResyncStatus<TData = Awaited<ReturnType<typeof getSt
 
 
 /**
- * @summary Re-run Stripe→QuickBooks payout-match proposals across ALL payouts, including prior-account rows never seen by incremental sync (admin only). Proposals only — every match stays in a proposed/conflict state for a human to confirm; never mints or archives anything.
- */
-export const getProposeHistoricalStripeReconciliationUrl = () => {
-
-
-  
-
-  return `/api/stripe/reconciliation/propose-historical`
-}
-
-export const proposeHistoricalStripeReconciliation = async ( options?: RequestInit): Promise<StripeHistoricalProposalSummary> => {
-  
-  return customFetch<StripeHistoricalProposalSummary>(getProposeHistoricalStripeReconciliationUrl(),
-  {      
-    ...options,
-    method: 'POST'
-    
-    
-  }
-);}
-  
-
-
-
-export const getProposeHistoricalStripeReconciliationMutationOptions = <TError = ErrorType<ForbiddenResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof proposeHistoricalStripeReconciliation>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof proposeHistoricalStripeReconciliation>>, TError,void, TContext> => {
-
-const mutationKey = ['proposeHistoricalStripeReconciliation'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-      
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof proposeHistoricalStripeReconciliation>>, void> = () => {
-          
-
-          return  proposeHistoricalStripeReconciliation(requestOptions)
-        }
-
-
-
-        
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type ProposeHistoricalStripeReconciliationMutationResult = NonNullable<Awaited<ReturnType<typeof proposeHistoricalStripeReconciliation>>>
-    
-    export type ProposeHistoricalStripeReconciliationMutationError = ErrorType<ForbiddenResponse | void>
-
-    /**
- * @summary Re-run Stripe→QuickBooks payout-match proposals across ALL payouts, including prior-account rows never seen by incremental sync (admin only). Proposals only — every match stays in a proposed/conflict state for a human to confirm; never mints or archives anything.
- */
-export const useProposeHistoricalStripeReconciliation = <TError = ErrorType<ForbiddenResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof proposeHistoricalStripeReconciliation>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof proposeHistoricalStripeReconciliation>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getProposeHistoricalStripeReconciliationMutationOptions(options));
-    }
-    /**
- * @summary Read-only triage of untied Stripe payouts (no settlement link). Per payout, reports whether a penny-exact QuickBooks row exists at ANY date, that row's type ('deposit' vs 'payment'), the date gap, and the suggested match grain — so finance can see coverage and triage the genuine orphans. Reads nothing outside QuickBooks/Stripe staging; writes nothing (admin only).
+ * @summary Read-only triage of untied Stripe payouts (no settled QB lump). Per payout, reports whether a penny-exact QuickBooks row exists at ANY date, that row's type ('deposit' vs 'payment'), the date gap, and the suggested match grain — so finance can see coverage and triage the genuine orphans. Reads nothing outside QuickBooks/Stripe staging; writes nothing (admin only).
  */
 export const getGetUntiedStripePayoutDiagnosticUrl = () => {
 
@@ -521,7 +451,7 @@ export type GetUntiedStripePayoutDiagnosticQueryError = ErrorType<ForbiddenRespo
 
 
 /**
- * @summary Read-only triage of untied Stripe payouts (no settlement link). Per payout, reports whether a penny-exact QuickBooks row exists at ANY date, that row's type ('deposit' vs 'payment'), the date gap, and the suggested match grain — so finance can see coverage and triage the genuine orphans. Reads nothing outside QuickBooks/Stripe staging; writes nothing (admin only).
+ * @summary Read-only triage of untied Stripe payouts (no settled QB lump). Per payout, reports whether a penny-exact QuickBooks row exists at ANY date, that row's type ('deposit' vs 'payment'), the date gap, and the suggested match grain — so finance can see coverage and triage the genuine orphans. Reads nothing outside QuickBooks/Stripe staging; writes nothing (admin only).
  */
 
 export function useGetUntiedStripePayoutDiagnostic<TData = Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>, TError = ErrorType<ForbiddenResponse>>(

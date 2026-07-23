@@ -49,7 +49,6 @@ import type {
   ReconciliationMatchNodeType,
   ReconciliationSearchList,
   RejectChargeQbTieResult,
-  RejectSettlementProposalResult,
   RevertChargeQbTieResult,
   SearchReconciliationNodeParams,
   SearchReconciliationPayoutsParams,
@@ -683,12 +682,12 @@ export function useSearchReconciliationQbStaged<TData = Awaited<ReturnType<typeo
 
 
 /**
- * Free search over ORPHAN Stripe payouts (no settlement link at all) by
+ * Free search over ORPHAN Stripe payouts (no settled QB lump) by
 payout-id text / amount / date window — the reverse of qb-search. Powers
 the Settlement report's "Missing payout" resolve box: a standalone
 QuickBooks deposit anchor uses this to hunt the payout it should settle
-against. Payouts already tied (proposed or confirmed) are omitted — they
-belong to another deposit's bundle. Read-only.
+against. Payouts already paired are omitted — they belong to another
+deposit's bundle. Read-only.
 
  * @summary Criteria-based Stripe payout search (reverse of qb-search; not anchored to a card).
  */
@@ -771,109 +770,27 @@ export function useSearchReconciliationPayouts<TData = Awaited<ReturnType<typeof
 
 
 /**
- * Deletes the PROPOSED settlement link for one Stripe payout, dropping the
-auto-proposed payout↔deposit tie so the Settlement report shows it as an
-un-proposed orphan again. Money is untouched: nothing is excluded and no
-gift is minted. A CONFIRMED link is never rejected here (revert is a
-separate reconciliation path) — attempting to reject a confirmed tie is a
-409. Rejecting a payout with no proposed link is a no-op success.
+ * Records the Plane-1 payout↔deposit pairing fact
+(staged_payments.settled_stripe_payout_id) for ONE Stripe payout —
+without touching the per-charge → gift booking (Plane 2), which the
+Gift report owns. The proposed/confirmed settlement lifecycle is
+retired: the deterministic accounting recompute pairs most payouts
+automatically; this route is the human escape hatch for the ambiguous
+remainder. The write is FILL-ONLY — it never repoints an existing
+pairing (fix mistakes in QuickBooks; the accounting sidecar surfaces
+expected-vs-actual mismatches as correction_needed).
 
- * @summary Dismiss a PROPOSED payout↔deposit settlement tie.
- */
-export const getRejectSettlementProposalUrl = (payoutId: string,) => {
+Behaviour:
+  • already paired            → idempotent success (kind `already_confirmed`,
+    returning the ACTUAL paired deposit — never repointed).
+  • unpaired + depositStagedPaymentId body → pair with that QB lump.
+    A deposit that already booked its own money is paired
+    linkage-only (kind `confirmed_linkage_only`; the booking stands);
+    otherwise kind `confirmed_reconciled` and the §4.3 supersede
+    demotes the deposit's coarse counted rows.
+  • unpaired + no deposit     → 400 (nothing to pair).
 
-
-  
-
-  return `/api/reconciliation/settlement-links/${payoutId}/reject`
-}
-
-export const rejectSettlementProposal = async (payoutId: string, options?: RequestInit): Promise<RejectSettlementProposalResult> => {
-  
-  return customFetch<RejectSettlementProposalResult>(getRejectSettlementProposalUrl(payoutId),
-  {      
-    ...options,
-    method: 'POST'
-    
-    
-  }
-);}
-  
-
-
-
-export const getRejectSettlementProposalMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectSettlementProposal>>, TError,{payoutId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof rejectSettlementProposal>>, TError,{payoutId: string}, TContext> => {
-
-const mutationKey = ['rejectSettlementProposal'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-      
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectSettlementProposal>>, {payoutId: string}> = (props) => {
-          const {payoutId} = props ?? {};
-
-          return  rejectSettlementProposal(payoutId,requestOptions)
-        }
-
-
-
-        
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type RejectSettlementProposalMutationResult = NonNullable<Awaited<ReturnType<typeof rejectSettlementProposal>>>
-    
-    export type RejectSettlementProposalMutationError = ErrorType<FinanceForbiddenResponse | void>
-
-    /**
- * @summary Dismiss a PROPOSED payout↔deposit settlement tie.
- */
-export const useRejectSettlementProposal = <TError = ErrorType<FinanceForbiddenResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectSettlementProposal>>, TError,{payoutId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof rejectSettlementProposal>>,
-        TError,
-        {payoutId: string},
-        TContext
-      > => {
-      return useMutation(getRejectSettlementProposalMutationOptions(options));
-    }
-    /**
- * Confirms the settlement link for ONE Stripe payout — the Plane-1
-payout↔deposit tie ONLY — without touching the per-charge → gift booking
-(Plane 2), which the Gift report owns. Approving a "linked" (proposed)
-settlement is therefore one click: the tie is stamped confirmed and the
-QuickBooks deposit is marked reconciled so the coarse deposit can never
-credit donors on top of the individual per-charge Stripe gifts (that
-deposit→reconciled flip IS the double-count guard).
-
-Behaviour by the payout's current settlement-link state:
-  • proposed (clean)                → confirm; deposit pending → reconciled.
-  • proposed + already-booked deposit (legacy `approved`, e.g. a split
-    whose money lives in counted payment_applications rows or a
-    gift-linked lump) → LINKAGE-ONLY confirm: the tie is stamped and the
-    deposit is left untouched (kind `confirmed_linkage_only`). An
-    approved deposit with NO provable booking is refused with a
-    permanent 409 `deposit_not_booked` — resolve it in QuickBooks
-    review first.
-  • proposed + approved-QB-gift conflict → keep the existing gift; confirm
-    the linkage only (deposit + gift untouched).
-  • already confirmed               → idempotent success (no re-book).
-  • no link + depositStagedPaymentId body → propose that payout↔deposit tie,
-    then confirm it (powers the Settlement report Resolve box in BOTH
-    directions: a payout anchor picking a deposit, or a deposit anchor
-    picking a payout).
-  • no link + no deposit            → 400 (nothing to confirm).
-
- * @summary Confirm a payout↔deposit settlement tie (Plane 1 only).
+ * @summary Record the payout↔deposit pairing fact (Plane 1 only).
  */
 export const getConfirmSettlementLinkUrl = (payoutId: string,) => {
 
@@ -931,7 +848,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type ConfirmSettlementLinkMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | void>
 
     /**
- * @summary Confirm a payout↔deposit settlement tie (Plane 1 only).
+ * @summary Record the payout↔deposit pairing fact (Plane 1 only).
  */
 export const useConfirmSettlementLink = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmSettlementLink>>, TError,{payoutId: string;data: BodyType<ConfirmSettlementLinkBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -947,7 +864,7 @@ export const useConfirmSettlementLink = <TError = ErrorType<BadRequestResponse |
  * Atomically confirms per-charge QuickBooks ties for ONE Stripe payout —
 the settlement path for payouts the bookkeeper booked as individual QB
 rows (one per donation) instead of a single deposit lump, so no
-payout↔deposit settlement link will ever exist.
+payout↔deposit pairing will ever exist.
 
 Two modes, by body:
   • NO qbStagedPaymentIds — approve the SYSTEM-PROPOSED ties: every
@@ -1056,8 +973,8 @@ QB row remains a candidate for OTHER charges, and a manual human
 "Tie selected" still overrides the dismissal.
 
 Plane 1 only: money is untouched — no gift is minted or changed, no QB
-row's status/donor changes, and settlement links are never touched.
-409 when the charge carries no proposed tie (nothing to reject) or is
+row's status/donor changes, and the settled payout pairing is never
+touched. 409 when the charge carries no proposed tie (nothing to reject) or is
 already confirmed-tied (revert is a separate path).
 
  * @summary Reject ONE proposed charge-grain Stripe↔QuickBooks tie.
@@ -1134,7 +1051,7 @@ bookkeeper bundled several distinct money events into one QB row (e.g.
 a deposit that nets a donation against a clawed-back failed payout).
 The parent stays the untouched sync-owned QuickBooks mirror; the
 children are additive CRM rows that participate everywhere real rows
-do — charge ties, settlement links, cash applications — and may be
+do — charge ties, settled payout pairing, cash applications — and may be
 NEGATIVE (a clawback unit). Unit amounts must sum to EXACTLY the
 parent's amount (signed, to the cent).
 
@@ -1220,7 +1137,7 @@ export const useSplitStagedPaymentIntoUnits = <TError = ErrorType<BadRequestResp
  * Deletes ALL synthetic child units of a split QuickBooks staged row and
 returns the parent to the open review flow (its derived status was
 never stored). Refused (409) while any unit still carries
-reconciliation evidence — a tie, settlement link, or linked gift —
+reconciliation evidence — a tie, settled pairing, or linked gift —
 revert those first. The hard delete here is the documented soft-delete
 exception: units are synthetic CRM-created rows with zero claims.
 
@@ -1304,7 +1221,7 @@ original proposal is NOT restored, and the pair is not remembered as
 dismissed — a later proposal pass may re-propose it.
 
 Plane 1 only: money is untouched — no gift is minted or changed, no QB
-row's donor changes, and settlement links are never touched. 409 when
+row's donor changes, and the settled payout pairing is never touched. 409 when
 the charge carries no confirmed tie (a merely-PROPOSED tie is rejected
 via the reject endpoint instead).
 

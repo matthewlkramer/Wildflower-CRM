@@ -22,7 +22,7 @@
 // writes NOTHING and returns the collision so the route can 409 with a clean,
 // no-op rollback.
 import type { db } from "@workspace/db";
-import { paymentApplications, settlementLinks } from "@workspace/db/schema";
+import { paymentApplications } from "@workspace/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -274,18 +274,6 @@ export async function absorbGiftEvidenceIntoSurvivor(
   // The legacy gifts_and_payments.final_amount_qb_staged_payment_id pointer is
   // @deprecated and no longer written or read — stamp provenance is derived
   // from the counted QB ledger, whose rows §3 just moved to the survivor.
-
-  // ── 8. Re-point the conflict-kept gift pointer ─────────────────────────────
-  // A `conflict_approved` settlement KEEPS an already-approved QB deposit gift as
-  // the single source of truth (`settlement_links.conflict_gift_id`). The FK is
-  // ON DELETE SET NULL, but merge ARCHIVES losers (soft-delete) rather than
-  // deleting them, so a pointer at a merged-away kept gift would otherwise
-  // survive pointing at a tombstone — and the conflict-keep double-book guard
-  // compares that pointer to the deposit's gift link. Follow it to the survivor.
-  await tx
-    .update(settlementLinks)
-    .set({ conflictGiftId: survivorId, updatedAt: now })
-    .where(inArray(settlementLinks.conflictGiftId, loserIds));
 
   return { collision: null };
 }

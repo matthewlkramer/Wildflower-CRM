@@ -11,7 +11,6 @@ import { withSyncLock } from "./syncLock";
 import { chargeStatusIn, chargeStatusWhere } from "./derivedStatus";
 import { getUncachableStripeClient } from "./stripeClient";
 import { scoreStripeCharge } from "./stripeMatch";
-import { runProposalPass } from "./stripeReconcile";
 import { runChargeTiePass } from "./chargeQbTie";
 import { deriveRefundProposal, isFullyRefunded } from "./stripeRefund";
 import { sweepRefundedQbStagedPayments } from "./refundedChargeSweep";
@@ -895,13 +894,12 @@ export async function syncStripe(
       // trace is now refunded money (idempotent, one guarded UPDATE).
       await sweepRefundedQbStagedPayments();
 
-      // FULL (unscoped) matching passes on every scheduled run — not just for
+      // FULL (unscoped) charge-tie pass on every scheduled run — not just for
       // the payouts seen this run. QuickBooks bookings lag Stripe payouts by
-      // days/weeks, so older payouts only get their lump / charge-tie
-      // proposals when the passes re-run over everything. Both passes are
-      // idempotent and lock-free (we already hold the per-account "stripe"
-      // advisory lock here).
-      await runProposalPass();
+      // days/weeks, so older payouts only get their charge-tie proposals when
+      // the pass re-runs over everything. Idempotent and lock-free (we already
+      // hold the per-account "stripe" advisory lock here). Payout↔lump pairing
+      // is handled by the deterministic accounting recompute below.
       await runChargeTiePass();
 
       // Bank-spine forward maintenance: mint units for new charges, match new
@@ -944,23 +942,20 @@ export interface StripeBackfillSummary {
   staged: number;
   matched: number;
   autoApplied: number;
-  proposed: number;
-  conflicts: number;
-  cleared: number;
 }
 
 /**
  * Historical backfill. Pulls payouts CREATED within [from, to] (open-ended end
  * when `to` is omitted), stages their charges + payout rollups with
  * `enrichAllStatuses` (refresh read-only Stripe facts on already-staged rows
- * without disturbing review state), then runs the payout↔QB-deposit proposal
- * pass over exactly the payouts it touched.
+ * without disturbing review state). Payout↔QB pairing for the backfilled
+ * payouts is picked up by the next accounting recompute.
  *
  * UNLIKE syncStripe this NEVER moves the ongoing watermark and never seeds sync
  * state: it is a bounded, repeatable admin pull of the back-catalogue that the
  * first-run watermark intentionally skipped, leaving the ongoing cursor exactly
  * where it is. Advisory-locked per account under the "stripe" tag so it
- * serializes with the ongoing sync (no nested lock around the proposal pass).
+ * serializes with the ongoing sync.
  */
 export async function syncStripeBackfill(opts: {
   from: Date;
@@ -972,9 +967,6 @@ export async function syncStripeBackfill(opts: {
     staged: 0,
     matched: 0,
     autoApplied: 0,
-    proposed: 0,
-    conflicts: 0,
-    cleared: 0,
   };
 
   let client: { stripe: Stripe; accountId: string | null };
@@ -1015,12 +1007,8 @@ export async function syncStripeBackfill(opts: {
       autoApplied += r.autoApplied;
     }
 
-    const prop = seenIds.length
-      ? await runProposalPass(seenIds)
-      : { evaluated: 0, proposed: 0, conflicts: 0, cleared: 0 };
-
-    // Newly-backfilled refund facts + newly-proposed links can complete a QB
-    // row's refunded Stripe trace — sweep after the proposal pass.
+    // Newly-backfilled refund facts can complete a QB row's refunded Stripe
+    // trace — sweep after staging.
     await sweepRefundedQbStagedPayments();
 
     logger.info(
@@ -1028,8 +1016,6 @@ export async function syncStripeBackfill(opts: {
         accountId,
         payouts: payoutsSeen,
         staged,
-        proposed: prop.proposed,
-        conflicts: prop.conflicts,
       },
       "Stripe backfill complete",
     );
@@ -1039,9 +1025,6 @@ export async function syncStripeBackfill(opts: {
       staged,
       matched,
       autoApplied,
-      proposed: prop.proposed,
-      conflicts: prop.conflicts,
-      cleared: prop.cleared,
     };
   });
 

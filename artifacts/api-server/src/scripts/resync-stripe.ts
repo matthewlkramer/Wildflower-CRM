@@ -12,9 +12,8 @@
  * `syncStripe`, so it takes the same per-account advisory lock and will never
  * collide with the scheduled run.
  *
- * After it completes, run the historical proposal pass
- * (POST /stripe/reconciliation/propose-historical, or the "Propose historical
- * matches" admin button) to tie the freshly-pulled payouts to their QB deposits.
+ * After it completes, the next scheduled sync's accounting recompute pairs the
+ * freshly-pulled payouts with their QB deposit lumps deterministically.
  */
 import { logger } from "../lib/logger";
 import { syncStripe } from "../lib/stripeSync";

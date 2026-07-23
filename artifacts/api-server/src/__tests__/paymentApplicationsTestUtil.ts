@@ -263,3 +263,33 @@ export async function clearPaymentApplicationsForChargeIds(
     .delete(paymentApplications)
     .where(inArray(paymentApplications.stripeChargeId, chargeIds));
 }
+
+/**
+ * Clear canonical payment units minted for a set of Stripe charges (with their
+ * deposit components and ledger annotations). The post-sync bank-spine
+ * recompute in a concurrently running suite can mint units for ANY pending
+ * charge in the shared test DB, so a teardown that deletes its charges must
+ * clear these RESTRICT-parented rows first.
+ */
+export async function clearPaymentUnitsForChargeIds(
+  chargeIds: string[],
+): Promise<void> {
+  if (!chargeIds.length) return;
+  const { db, bankDepositComponents, paymentApplications, paymentUnits } =
+    await import("@workspace/db");
+  const { inArray } = await import("drizzle-orm");
+  const unitIds = db
+    .select({ id: paymentUnits.id })
+    .from(paymentUnits)
+    .where(inArray(paymentUnits.stripeChargeId, chargeIds));
+  await db
+    .delete(bankDepositComponents)
+    .where(inArray(bankDepositComponents.paymentUnitId, unitIds));
+  await db
+    .update(paymentApplications)
+    .set({ paymentUnitId: null })
+    .where(inArray(paymentApplications.paymentUnitId, unitIds));
+  await db
+    .delete(paymentUnits)
+    .where(inArray(paymentUnits.stripeChargeId, chargeIds));
+}

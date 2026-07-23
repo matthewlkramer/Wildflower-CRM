@@ -224,10 +224,8 @@ describe("buildSuperfluousHeaderDelete — reference guards", () => {
     expect(lower).toContain('"staged_payments"."qb_entity_id" in (');
   });
 
-  it("keeps any header that review work references (settlement / source link / ledger row)", () => {
-    expect(lower).toContain(
-      'not exists (select 1 from "settlement_links"',
-    );
+  it("keeps any header that review work references (settled pairing / source link / ledger row)", () => {
+    expect(lower).toContain('"settled_stripe_payout_id" is null');
     expect(lower).toContain('not exists (select 1 from "source_links"');
     expect(lower).toContain(
       'not exists (select 1 from "payment_applications"',
@@ -250,10 +248,8 @@ describe("buildSuperfluousLineDelete — reverse-transition guards", () => {
     // asserted indirectly by the status guard below being line-only.
   });
 
-  it("keeps any line that review work references (settlement / source link / ledger row)", () => {
-    expect(lower).toContain(
-      'not exists (select 1 from "settlement_links"',
-    );
+  it("keeps any line that review work references (settled pairing / source link / ledger row)", () => {
+    expect(lower).toContain('"settled_stripe_payout_id" is null');
     expect(lower).toContain('not exists (select 1 from "source_links"');
     expect(lower).toContain(
       'not exists (select 1 from "payment_applications"',

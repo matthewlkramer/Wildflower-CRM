@@ -6,15 +6,10 @@ import { getAppUser } from "./appRequest";
 // remove, replace, or unmatch ACCOUNTING relationships, or change QuickBooks
 // treatment. Enforced-endpoint inventory (keep in sync when adding routes):
 //
-//   Settlement links (payout ↔ QB deposit):
+//   Settled payout pairing (payout ↔ QB deposit):
 //     POST /reconciliation/settlement-links/:payoutId/confirm
-//     POST /reconciliation/settlement-links/:payoutId/reject
 //     POST /reconciliation/bundle-proposals/:draftId/confirm
 //     POST /reconciliation/bundles/:stagedPaymentId/confirm-ties
-//     POST /stripe-payouts/:id/confirm-exclude
-//     POST /stripe-payouts/:id/confirm-keep
-//     POST /stripe-payouts/:id/confirm-replace
-//     POST /stripe-payouts/:id/revert-reconciliation
 //   Charge ↔ QB ties:
 //     POST /reconciliation/payouts/:payoutId/charge-ties/confirm
 //     POST /reconciliation/charges/:chargeId/qb-tie/reject

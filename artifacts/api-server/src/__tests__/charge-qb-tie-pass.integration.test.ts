@@ -47,7 +47,6 @@ let schema: {
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   stagedPayments: Db["stagedPayments"];
-  settlementLinks: Db["settlementLinks"];
   sourceLinks: Db["sourceLinks"];
   sourceLinkId: Db["sourceLinkId"];
 };
@@ -164,7 +163,6 @@ beforeAll(async () => {
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     stagedPayments: dbMod.stagedPayments,
-    settlementLinks: dbMod.settlementLinks,
     sourceLinks: dbMod.sourceLinks,
     sourceLinkId: dbMod.sourceLinkId,
   };
@@ -215,7 +213,7 @@ describe.skipIf(!HAS_DB)("runChargeTiePass (DB)", () => {
         payerName: "Beard, Hilary",
       });
 
-      // ── Fixture 2: payout WITH a settlement link (lump path owns it) whose
+      // ── Fixture 2: payout WITH a settled QBO lump (lump path owns it) whose
       // charge carries a stale proposal → must clear, payout out of scope.
       const po2 = await seedPayout({ amount: AMT_B, arrivalDate: "2026-02-10" });
       const qbDep = await seedQbRow({
@@ -223,13 +221,10 @@ describe.skipIf(!HAS_DB)("runChargeTiePass (DB)", () => {
         dateReceived: "2026-02-11",
         payerName: "Stripe",
       });
-      await db.insert(schema.settlementLinks).values({
-        id: `sl_${po2}`,
-        payoutId: po2,
-        depositStagedPaymentId: qbDep,
-        lifecycle: "proposed",
-        provenance: "system",
-      });
+      await db
+        .update(schema.stagedPayments)
+        .set({ settledStripePayoutId: po2 })
+        .where(eqFn(schema.stagedPayments.id, qbDep));
       const ch2 = await seedCharge({
         payoutId: po2,
         grossAmount: AMT_B,

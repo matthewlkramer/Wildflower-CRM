@@ -2,10 +2,9 @@ import { db } from "@workspace/db";
 import {
   stagedPayments,
   paymentApplications,
-  settlementLinks,
   sourceLinks,
 } from "@workspace/db/schema";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { ReconcileAbort } from "./reconciliationCommit";
 
 /**
@@ -14,7 +13,7 @@ import { ReconcileAbort } from "./reconciliationCommit";
  *
  * The parent stays the untouched sync-owned QuickBooks mirror; the children
  * are additive CRM associations that participate everywhere real rows do
- * (charge ties, settlement links, cash applications). While children exist
+ * (charge ties, settled payout pairings, cash applications). While children exist
  * the parent derives `excluded` (qbHasSplitChildrenText — resolved
  * elsewhere) and every matcher/picker skips it; unsplitting restores it.
  *
@@ -25,7 +24,7 @@ import { ReconcileAbort } from "./reconciliationCommit";
  *     `(split_parent_id IS NULL) = (qb_entity_id IS NOT NULL)` only pins the
  *     shape, the nesting ban lives here);
  *   - the parent carries NO live claims at split time: no cash application,
- *     no settlement link (any lifecycle), no CONFIRMED source_link naming it.
+ *     no settled payout pairing, no CONFIRMED source_link naming it.
  *     Its PROPOSED ties/links are cleared as part of the split (a machine
  *     guess must not block the human's stronger statement);
  *   - unsplit requires every child to be claim-free.
@@ -74,8 +73,9 @@ async function childrenOf(tx: Tx, parentId: string) {
     .for("update");
 }
 
-/** Ids among `rowIds` that carry ANY claim: a cash application, a settlement
- * link (any lifecycle), or a source_link (any type/lifecycle) naming them. */
+/** Ids among `rowIds` that carry ANY claim: a cash application, a settled
+ * payout pairing (settled_stripe_payout_id), or a source_link (any
+ * type/lifecycle) naming them. */
 async function claimedIdsAmong(tx: Tx, rowIds: string[]): Promise<Set<string>> {
   if (rowIds.length === 0) return new Set();
   const [apps, setl, links] = await Promise.all([
@@ -84,9 +84,14 @@ async function claimedIdsAmong(tx: Tx, rowIds: string[]): Promise<Set<string>> {
       .from(paymentApplications)
       .where(inArray(paymentApplications.paymentId, rowIds)),
     tx
-      .select({ id: settlementLinks.depositStagedPaymentId })
-      .from(settlementLinks)
-      .where(inArray(settlementLinks.depositStagedPaymentId, rowIds)),
+      .select({ id: stagedPayments.id })
+      .from(stagedPayments)
+      .where(
+        and(
+          inArray(stagedPayments.id, rowIds),
+          isNotNull(stagedPayments.settledStripePayoutId),
+        ),
+      ),
     tx
       .select({ id: sourceLinks.qbStagedPaymentId })
       .from(sourceLinks)
@@ -192,9 +197,14 @@ export async function splitStagedPaymentIntoUnits(
       .where(eq(paymentApplications.paymentId, parentId))
       .limit(1),
     tx
-      .select({ id: settlementLinks.id })
-      .from(settlementLinks)
-      .where(eq(settlementLinks.depositStagedPaymentId, parentId))
+      .select({ id: stagedPayments.id })
+      .from(stagedPayments)
+      .where(
+        and(
+          eq(stagedPayments.id, parentId),
+          isNotNull(stagedPayments.settledStripePayoutId),
+        ),
+      )
       .limit(1),
     tx
       .select({ id: sourceLinks.id })

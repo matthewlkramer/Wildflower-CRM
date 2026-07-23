@@ -4,7 +4,6 @@ import {
   stagedPayments,
   stripePayouts,
   stripeStagedCharges,
-  settlementLinks,
   donorboxDonations,
   organizations,
   people,
@@ -12,7 +11,6 @@ import {
 } from "@workspace/db/schema";
 import { eq, inArray, or, sql } from "drizzle-orm";
 import { asyncHandler, notFound } from "../../lib/helpers";
-import { payoutStatusFromLink } from "../../lib/settlementLink";
 import { chargeStatusSql } from "../../lib/derivedStatus";
 import { stripeLedgerCountedExistsForCharge } from "../../lib/paymentApplications";
 import { personDisplayNameSql } from "../../lib/personNameSql";
@@ -49,10 +47,9 @@ router.get(
 
     if (!staged) return notFound(res, "reconciliation card");
 
-    // ── Stripe payout tied to this deposit (confirmed or proposed) ─────────
-    // Resolved through the authoritative settlement_links row (one
-    // `deposit_staged_payment_id`, covering proposed / confirmed / conflict),
-    // not the legacy pointer columns.
+    // ── Stripe payout settled into this deposit lump ─────────────────────
+    // Resolved through the pairing fact on the QBO row
+    // (staged_payments.settled_stripe_payout_id, 0168).
     const [payoutRow] = await db
       .select({
         id: stripePayouts.id,
@@ -63,12 +60,13 @@ router.get(
         chargeCount: stripePayouts.chargeCount,
         arrivalDate: stripePayouts.arrivalDate,
         status: stripePayouts.status,
-        lifecycle: settlementLinks.lifecycle,
-        conflictGiftId: settlementLinks.conflictGiftId,
       })
-      .from(settlementLinks)
-      .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
-      .where(eq(settlementLinks.depositStagedPaymentId, id))
+      .from(stagedPayments)
+      .innerJoin(
+        stripePayouts,
+        eq(stripePayouts.id, stagedPayments.settledStripePayoutId),
+      )
+      .where(eq(stagedPayments.id, id))
       .limit(1);
 
     const payout = payoutRow
@@ -81,7 +79,7 @@ router.get(
           chargeCount: payoutRow.chargeCount,
           arrivalDate: payoutRow.arrivalDate,
           status: payoutRow.status,
-          reconciliationStatus: payoutStatusFromLink(payoutRow),
+          reconciliationStatus: "confirmed_reconciled",
           linkSource: "pulled" as LinkSource,
         }
       : null;

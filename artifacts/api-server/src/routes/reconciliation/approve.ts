@@ -6,7 +6,6 @@ import {
   opportunitiesAndPledges,
   stripeStagedCharges,
   stripePayouts,
-  settlementLinks,
 } from "@workspace/db/schema";
 import { and, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import { asyncHandler, newId, notFound } from "../../lib/helpers";
@@ -216,21 +215,19 @@ async function mintGiftFromEvidence(
     }
   }
 
-  // Payouts tied to this staged row — a selected charge must belong to one, and
-  // they're the lock targets that serialize us against stripeConfirm.
+  // Payout settled into this staged row (pairing fact on the QBO row) — a
+  // selected charge must belong to it, and it's the lock target that
+  // serializes concurrent money paths.
   const stagedPayoutRows = await db
-    .select({ id: stripePayouts.id, lifecycle: settlementLinks.lifecycle })
-    .from(settlementLinks)
-    .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
-    .where(eq(settlementLinks.depositStagedPaymentId, stagedPaymentId));
-  // ALL tied payouts (any lifecycle) drive the normal path — locks, the
-  // unreconciled-charge gate, and Stripe stamping all consider proposed links.
+    .select({ id: stripePayouts.id })
+    .from(stagedPayments)
+    .innerJoin(
+      stripePayouts,
+      eq(stripePayouts.id, stagedPayments.settledStripePayoutId),
+    )
+    .where(eq(stagedPayments.id, stagedPaymentId));
   const stagedPayoutIds = stagedPayoutRows.map((r) => r.id);
-  // Only CONFIRMED settlements anchor the charge-side escape hatch — a
-  // merely-proposed link's payout must not pass the wrong-payout guard.
-  const confirmedPayoutIds = stagedPayoutRows
-    .filter((r) => r.lifecycle === "confirmed")
-    .map((r) => r.id);
+  const confirmedPayoutIds = stagedPayoutIds;
 
   const newGiftId = newId();
   const supersedeGiftIds: string[] = [];
@@ -753,14 +750,18 @@ router.post(
       // dead-end.
     }
 
-    // Payouts tied to this staged row — a selected charge must belong to one,
-    // and they're the lock targets that serialize us against stripeConfirm.
-    // (Read-only; the charge↔payout membership is re-validated by the gate.)
+    // Payout settled into this staged row (pairing fact on the QBO row) — a
+    // selected charge must belong to it; it's the lock target that serializes
+    // concurrent money paths. (Read-only; the charge↔payout membership is
+    // re-validated by the gate.)
     const stagedPayoutRows = await db
       .select({ id: stripePayouts.id })
-      .from(settlementLinks)
-      .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
-      .where(eq(settlementLinks.depositStagedPaymentId, stagedPaymentId));
+      .from(stagedPayments)
+      .innerJoin(
+        stripePayouts,
+        eq(stripePayouts.id, stagedPayments.settledStripePayoutId),
+      )
+      .where(eq(stagedPayments.id, stagedPaymentId));
     const stagedPayoutIds = stagedPayoutRows.map((r) => r.id);
 
     // Pledges whose derived fields must be recomputed AFTER commit (a newly

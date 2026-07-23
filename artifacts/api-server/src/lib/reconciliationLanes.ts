@@ -89,34 +89,27 @@ export function deriveEvidenceLanes(i: EvidenceLaneInput): ReconciliationLanes {
   return { funding, crmRecord };
 }
 
-// The minimal shape of a payout's settlement_links mirror row this deriver reads
-// (§4.4 batch). `null` / `undefined` = no link at all = an orphan payout.
-export interface PayoutSettlementLinkLike {
-  lifecycle: "proposed" | "confirmed" | "exempt";
+// The payout facts this deriver reads (the settlement_links workflow is
+// retired — 0168): `settled` = a QBO deposit row carries the
+// settled_stripe_payout_id pairing fact; `withdrawal` = a negative payout
+// (money leaving Stripe — no bank deposit ever reaches QuickBooks).
+export interface PayoutSettlementFacts {
+  settled: boolean;
+  withdrawal: boolean;
 }
 
 // A Stripe payout is a batch (gross − fees = net) with no single donor, so only
-// the funding lane applies; crmRecord is null. Post S5 read-flip its funding lane
-// is derived from the payout's `settlement_links` mirror (§4.4 batch), NOT the
-// legacy 7-value qb_reconciliation_status: a `confirmed` link = settled money
-// (funding=confirmed), a `proposed` link = an unconfirmed tie (proposed), no link
-// = orphan (unlinked); the reserved `exempt` lifecycle maps straight to exempt.
-//
-// One deliberate delta vs the retired status mapping: a legacy `confirmed_excluded`
-// payout mirrors as a CONFIRMED settlement link, so it now reads funding=confirmed
-// (it IS a confirmed settlement — the coarse QB lump was suppressed so the
-// per-charge Stripe gifts aren't double-counted; the exclusion is a Plane-2 fact on
-// staged_payments.exclusion_reason, not a payout-settlement state), where the old
-// status mapping read it as `exempt`.
+// the funding lane applies; crmRecord is null. Its funding lane derives from
+// plain facts: a settled QBO lump = confirmed, a withdrawal = exempt,
+// otherwise unlinked. There is no `proposed` state — payout↔lump pairing is
+// deterministic, and discrepancies surface in qbo_accounting_checks.
 export function derivePayoutLanes(
-  link: PayoutSettlementLinkLike | null | undefined,
+  facts: PayoutSettlementFacts,
 ): ReconciliationLanes {
-  const funding: ReconciliationLaneStatus = !link
-    ? "unlinked"
-    : link.lifecycle === "exempt"
+  const funding: ReconciliationLaneStatus = facts.settled
+    ? "confirmed"
+    : facts.withdrawal
       ? "exempt"
-      : link.lifecycle === "confirmed"
-        ? "confirmed"
-        : "proposed";
+      : "unlinked";
   return { funding, crmRecord: null };
 }

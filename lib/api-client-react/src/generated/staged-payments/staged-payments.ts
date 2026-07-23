@@ -1152,8 +1152,8 @@ divided evidence-side with POST
 /reconciliation/staged-payments/{id}/split-units (children sum exactly
 to the parent), then each child unit is matched to its own gift
 through the normal flows. A Stripe payout deposit is never split
-gift-side: its charges are the counted evidence and the payout ties to
-the deposit via a settlement link. Always returns 410 with error
+gift-side: its charges are the counted evidence and the payout pairs with
+the deposit via the settled pairing fact. Always returns 410 with error
 `gift_side_split_retired`.
 
  * @deprecated

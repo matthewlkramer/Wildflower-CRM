@@ -25,9 +25,10 @@ import { sql, type SQL } from "drizzle-orm";
  *                         pointer columns — staged_payments AND
  *                         stripe_staged_charges matched/created — are
  *                         @deprecated, never read, never written)
- *                       - a CONFIRMED settlement link naming this row as the
- *                         QB deposit lump (QB only — the deposit is settled
- *                         against a Stripe payout, its money booked per-charge)
+ *                       - the settled-payout pairing fact naming this row as
+ *                         the QB deposit lump (QB only — the deposit is
+ *                         settled against a Stripe payout, its money booked
+ *                         per-charge; settled_stripe_payout_id, 0168)
  *                       - a BOOKED charge-grain tie claiming this row (QB
  *                         only — a confirmed source_links charge_qb_tie row
  *                         names it from a Stripe charge AND that charge itself
@@ -192,10 +193,11 @@ export function qbCountedExistsText(alias: string): string {
   return `EXISTS (SELECT 1 FROM "payment_applications" "pa_ds" WHERE "pa_ds"."payment_id" = ${a}."id" AND "pa_ds"."link_role" = 'counted')`;
 }
 
-/** EXISTS: a confirmed settlement link names QB row `alias` as the deposit lump. */
+/** QB row `alias` is the settled QBO lump of a Stripe payout (the plain
+ *  pairing fact that replaced the settlement_links workflow, 0168). */
 export function qbSettledExistsText(alias: string): string {
   const a = quotedSqlAlias(alias);
-  return `EXISTS (SELECT 1 FROM "settlement_links" "sl_ds" WHERE "sl_ds"."deposit_staged_payment_id" = ${a}."id" AND "sl_ds"."lifecycle" = 'confirmed')`;
+  return `(${a}."settled_stripe_payout_id" IS NOT NULL)`;
 }
 
 /** EXISTS: a BOOKED charge-grain tie claims QB row `alias` — some Stripe
@@ -351,7 +353,7 @@ export function chargeConfirmedText(alias: string): string {
 const QB = "staged_payments";
 const QBA = quotedSqlAlias(QB);
 
-/** EXISTS: a confirmed settlement link names this row as the deposit lump. */
+/** This row is the settled QBO lump of a Stripe payout (0168 pairing fact). */
 export const stagedConfirmedSettlementLinkExists: SQL<boolean> = sql.raw(
   qbSettledExistsText(QB),
 ) as SQL<boolean>;

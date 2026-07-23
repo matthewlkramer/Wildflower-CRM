@@ -17,7 +17,6 @@ import {
   peopleEntityRoles,
   stripeStagedCharges,
   stripePayouts,
-  settlementLinks,
   donorboxDonations,
   paymentApplications,
   sourceLinks,
@@ -218,7 +217,6 @@ import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { deriveGiftQbTieLiveExpr, type GiftQbTie } from "../lib/giftQbTie";
 import { requireFinance } from "../lib/financeGuard";
 import { deriveGiftTypeExpr } from "../lib/giftTypeDerived";
-import { payoutStatusFromLink } from "../lib/settlementLink";
 import { absorbGiftEvidenceIntoSurvivor } from "../lib/giftCombine";
 import {
   qbLedgerExistsForGift,
@@ -2253,10 +2251,6 @@ router.get(
         payoutFee: stripePayouts.feeTotal,
         payoutNet: stripePayouts.netTotal,
         payoutChargeCount: stripePayouts.chargeCount,
-        // Reconciliation status is DERIVED from the authoritative settlement
-        // link (payoutStatusFromLink), never the deprecated mirror column.
-        linkLifecycle: settlementLinks.lifecycle,
-        linkConflictGiftId: settlementLinks.conflictGiftId,
         depositId: stagedPayments.id,
         depositAmount: stagedPayments.amount,
         depositDate: stagedPayments.dateReceived,
@@ -2275,15 +2269,11 @@ router.get(
         stripePayouts,
         eq(stripePayouts.id, stripeStagedCharges.stripePayoutId),
       )
-      // Payout↔deposit tie now reads from the authoritative settlement_links row
-      // (single `deposit_staged_payment_id`), not the legacy pointer columns.
-      .leftJoin(
-        settlementLinks,
-        eq(settlementLinks.payoutId, stripePayouts.id),
-      )
+      // Payout↔deposit tie reads from the settled-payout pairing fact
+      // (staged_payments.settled_stripe_payout_id, 0168).
       .leftJoin(
         stagedPayments,
-        eq(stagedPayments.id, settlementLinks.depositStagedPaymentId),
+        eq(stagedPayments.settledStripePayoutId, stripePayouts.id),
       )
       .where(sql`${stripeLedgerGiftIdForCharge()} = ${id}`)
       .orderBy(
@@ -2315,14 +2305,11 @@ router.get(
             feeTotal: row.payoutFee,
             netTotal: row.payoutNet,
             chargeCount: row.payoutChargeCount,
-            reconciliationStatus: payoutStatusFromLink(
-              row.linkLifecycle
-                ? {
-                    lifecycle: row.linkLifecycle,
-                    conflictGiftId: row.linkConflictGiftId,
-                  }
-                : null,
-            ),
+            // Settled iff a QB deposit row carries the pairing fact (the
+            // proposed/conflict workflow states are retired).
+            reconciliationStatus: row.depositId
+              ? "confirmed_reconciled"
+              : "unmatched",
           }
         : null,
       qbDeposit: row?.depositId

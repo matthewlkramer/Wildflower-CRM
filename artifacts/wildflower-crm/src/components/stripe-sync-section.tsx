@@ -4,7 +4,6 @@ import {
   useRunStripeSync,
   useResyncStripeFull,
   useGetStripeResyncStatus,
-  useProposeHistoricalStripeReconciliation,
   useGetUntiedStripePayoutDiagnostic,
   getGetStripeResyncStatusQueryKey,
   getGetUntiedStripePayoutDiagnosticQueryKey,
@@ -84,29 +83,6 @@ export default function StripeSyncSection() {
     },
   });
 
-  const proposeHistorical = useProposeHistoricalStripeReconciliation({
-    mutation: {
-      onSuccess: (data) => {
-        toast({
-          title: "Historical matches proposed",
-          description: data.ran
-            ? `Scanned ${data.payoutsScanned} payouts: ${data.proposalsCreated} new proposals, ${data.conflictsFound} conflicts, ${data.unmatched} unmatched. Charge-grain: ${data.chargesRematched}/${data.chargesScanned} charges donor-hinted, ${data.chargeTiesProposed ?? 0} QB ties proposed${(data.chargeTiesCleared ?? 0) > 0 ? ` (${data.chargeTiesCleared} stale cleared)` : ""}.`
-            : "Pass skipped (already running, or no Stripe connection).",
-        });
-        void qc.invalidateQueries({
-          queryKey: getGetUntiedStripePayoutDiagnosticQueryKey(),
-        });
-      },
-      onError: (e: unknown) => {
-        toast({
-          title: "Proposal pass failed",
-          description: e instanceof Error ? e.message : "Unknown error",
-          variant: "destructive",
-        });
-      },
-    },
-  });
-
   const [showDiagnostic, setShowDiagnostic] = useState(false);
   const diagnosticQ = useGetUntiedStripePayoutDiagnostic({
     query: {
@@ -148,23 +124,12 @@ export default function StripeSyncSection() {
           >
             {resyncRunning ? "Re-pulling all…" : "Full re-pull"}
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => proposeHistorical.mutate()}
-            disabled={proposeHistorical.isPending || resyncRunning}
-            data-testid="stripe-propose-historical"
-            title="Re-run Stripe→QuickBooks payout-match proposals across all payouts (including the freshly backfilled ones). Proposals only — a human confirms each."
-          >
-            {proposeHistorical.isPending
-              ? "Proposing…"
-              : "Propose historical matches"}
-          </Button>
-        </div>
+</div>
         <p className="text-xs text-muted-foreground">
           "Sync now" only pulls payouts since the last sync. Use "Full re-pull"
           to backfill older payouts that predate the sync (it runs in the
-          background and keeps all review state), then "Propose historical
-          matches" to tie them to their QuickBooks deposits for review.
+          background and keeps all review state); the next sync's accounting
+          pass pairs them with their QuickBooks deposits automatically.
         </p>
         {resync && resync.status !== "idle" ? (
           <div className="text-sm" data-testid="stripe-resync-status">

@@ -3,20 +3,18 @@ import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
 } from "./paymentApplicationsTestUtil";
-import { proposeSettlementLink } from "../lib/settlementWriter";
 
 /**
  * DB-backed coverage for the §4.3 settlement supersede
- * (settlementSupersede.ts + its stripeConfirm wiring): when a coarse QB
- * deposit lump is CONFIRMED-settled against a Stripe payout AND a gift's money
- * is fully re-expressed by that payout's per-charge counted Stripe rows, the
- * deposit's coarse counted QB row DEMOTES to `corroborating` (amount kept) —
- * and PROMOTES back once the coverage fact goes away (revert). Exercises the
- * real transactions against dev Postgres:
- *   - confirm (booked deposit, covered) → linkage-only confirm demotes the QB
- *     row in-tx and surfaces the gift in rederiveGiftIds,
- *   - revert → promotes it back (bookedIndependently counts demoted rows),
- *   - confirm with NO per-charge coverage → nothing demoted,
+ * (settlementSupersede.ts): when a coarse QB deposit lump is SETTLED against a
+ * Stripe payout (the `settled_stripe_payout_id` pairing fact) AND a gift's
+ * money is fully re-expressed by that payout's per-charge counted Stripe rows,
+ * the deposit's coarse counted QB row DEMOTES to `corroborating` (amount kept)
+ * — and PROMOTES back once the coverage fact goes away (pairing cleared).
+ * Exercises the real transactions against dev Postgres:
+ *   - settled + covered → recompute demotes the QB row and surfaces the gift,
+ *   - pairing cleared → recompute promotes it back,
+ *   - settled with NO per-charge coverage → nothing demoted,
  *   - corrections-flow corroborating rows (NULL amount) are never touched,
  *   - promote drops the stale crumb when a fresh counted row raced ahead,
  *   - promote is conservatively SKIPPED when the book-once guard would be
@@ -42,7 +40,6 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   giftAllocations: Db["giftAllocations"];
   stripeStagedCharges: Db["stripeStagedCharges"];
-  settlementLinks: Db["settlementLinks"];
   paymentApplications: Db["paymentApplications"];
   organizations: Db["organizations"];
   users: Db["users"];
@@ -50,7 +47,6 @@ let schema: {
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let andFn: (typeof import("drizzle-orm"))["and"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
-let confirm: typeof import("../lib/stripeConfirm");
 let supersede: typeof import("../lib/settlementSupersede");
 
 const payoutIds: string[] = [];
@@ -112,10 +108,8 @@ async function seedQbRow(
   return id;
 }
 
-async function seedPayout(over?: {
-  depositId?: string | null;
-  lifecycle?: "proposed" | "confirmed";
-}): Promise<string> {
+/** A payout, optionally SETTLED against `depositId` via the pairing fact. */
+async function seedPayout(over?: { depositId?: string | null }): Promise<string> {
   const id = nextId("po");
   await db.insert(schema.stripePayouts).values({
     id,
@@ -126,19 +120,19 @@ async function seedPayout(over?: {
   });
   payoutIds.push(id);
   if (over?.depositId) {
-    const link = proposeSettlementLink(over.depositId, null);
-    await db.insert(schema.settlementLinks).values({
-      id: `sl_${id}`,
-      payoutId: id,
-      depositStagedPaymentId: link.depositStagedPaymentId,
-      conflictGiftId: link.conflictGiftId,
-      lifecycle: over.lifecycle ?? link.lifecycle,
-      provenance: link.provenance,
-      confirmedByUserId: over.lifecycle === "confirmed" ? USER_ID : null,
-      confirmedAt: over.lifecycle === "confirmed" ? new Date() : null,
-    });
+    await db
+      .update(schema.stagedPayments)
+      .set({ settledStripePayoutId: id })
+      .where(eqFn(schema.stagedPayments.id, over.depositId));
   }
   return id;
+}
+
+async function clearPairing(dep: string): Promise<void> {
+  await db
+    .update(schema.stagedPayments)
+    .set({ settledStripePayoutId: null })
+    .where(eqFn(schema.stagedPayments.id, dep));
 }
 
 /** A settled Stripe charge on `payoutId` + its counted per-charge ledger row
@@ -198,7 +192,6 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     giftAllocations: dbMod.giftAllocations,
     stripeStagedCharges: dbMod.stripeStagedCharges,
-    settlementLinks: dbMod.settlementLinks,
     paymentApplications: dbMod.paymentApplications,
     organizations: dbMod.organizations,
     users: dbMod.users,
@@ -206,7 +199,6 @@ beforeAll(async () => {
   eqFn = drizzle.eq;
   andFn = drizzle.and;
   inArrayFn = drizzle.inArray;
-  confirm = await import("../lib/stripeConfirm");
   supersede = await import("../lib/settlementSupersede");
 
   await db.insert(schema.users).values({
@@ -230,14 +222,14 @@ afterAll(async () => {
     await db
       .delete(schema.stripeStagedCharges)
       .where(inArrayFn(schema.stripeStagedCharges.id, chargeIds));
-  if (payoutIds.length)
-    await db
-      .delete(schema.stripePayouts)
-      .where(inArrayFn(schema.stripePayouts.id, payoutIds));
   if (stagedIds.length)
     await db
       .delete(schema.stagedPayments)
       .where(inArrayFn(schema.stagedPayments.id, stagedIds));
+  if (payoutIds.length)
+    await db
+      .delete(schema.stripePayouts)
+      .where(inArrayFn(schema.stripePayouts.id, payoutIds));
   if (giftIds.length) {
     await db
       .delete(schema.giftAllocations)
@@ -253,23 +245,19 @@ afterAll(async () => {
 });
 
 describe.skipIf(!HAS_DB)("settlement supersede (DB)", () => {
-  it("confirm demotes the covered coarse QB row; revert promotes it back", async () => {
+  it("settling demotes the covered coarse QB row; clearing the pairing promotes it back", async () => {
     const gift = await seedGift();
     const dep = await seedDeposit();
     const paId = await seedQbRow(dep, gift); // counted 1000.00 (net lump)
     const po = await seedPayout({ depositId: dep });
     await seedCountedCharge(po, gift); // counted Stripe 1030.00 (gross)
 
-    // CONFIRM: the deposit is already booked → linkage-only confirm; the QB
-    // row is now fully re-expressed by the payout's per-charge row → demote.
-    const c = await confirm.confirmPendingQbDeposit({
-      payoutId: po,
-      userId: USER_ID,
-    });
-    expect(c.ok).toBe(true);
-    if (!c.ok) return;
-    expect(c.kind).toBe("confirmed_linkage_only");
-    expect(c.rederiveGiftIds).toEqual([gift]);
+    // SETTLED: the QB row is fully re-expressed by the payout's per-charge
+    // row → demote.
+    const affected = await db.transaction((tx) =>
+      supersede.applySettlementSupersedeMany(tx, [dep]),
+    );
+    expect(affected).toEqual([gift]);
 
     let rows = await readQbRows(dep);
     expect(rows).toHaveLength(1);
@@ -283,16 +271,12 @@ describe.skipIf(!HAS_DB)("settlement supersede (DB)", () => {
     );
     expect(rerun).toEqual([]);
 
-    // REVERT: coverage fact gone → promote back to counted (the demoted row
-    // counts as bookedIndependently, so the deposit itself is untouched).
-    const r = await confirm.revertPayoutQbConfirmation({
-      payoutId: po,
-      userId: USER_ID,
-    });
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.kind).toBe("reverted");
-    expect(r.rederiveGiftIds).toEqual([gift]);
+    // Pairing cleared: coverage fact gone → promote back to counted.
+    await clearPairing(dep);
+    const promoted = await db.transaction((tx) =>
+      supersede.applySettlementSupersedeMany(tx, [dep]),
+    );
+    expect(promoted).toEqual([gift]);
 
     rows = await readQbRows(dep);
     expect(rows).toHaveLength(1);
@@ -300,7 +284,7 @@ describe.skipIf(!HAS_DB)("settlement supersede (DB)", () => {
     expect(rows[0].amountApplied).toBe("1000.00");
   });
 
-  it("confirm WITHOUT per-charge coverage demotes nothing", async () => {
+  it("settled WITHOUT per-charge coverage demotes nothing", async () => {
     const gift = await seedGift();
     const otherGift = await seedGift();
     const dep = await seedDeposit();
@@ -309,14 +293,10 @@ describe.skipIf(!HAS_DB)("settlement supersede (DB)", () => {
     // The payout's counted Stripe money belongs to a DIFFERENT gift.
     await seedCountedCharge(po, otherGift);
 
-    const c = await confirm.confirmPendingQbDeposit({
-      payoutId: po,
-      userId: USER_ID,
-    });
-    expect(c.ok).toBe(true);
-    if (!c.ok) return;
-    expect(c.kind).toBe("confirmed_linkage_only");
-    expect(c.rederiveGiftIds).toEqual([]);
+    const affected = await db.transaction((tx) =>
+      supersede.applySettlementSupersedeMany(tx, [dep]),
+    );
+    expect(affected).toEqual([]);
 
     const rows = await readQbRows(dep);
     expect(rows).toHaveLength(1);
@@ -342,13 +322,10 @@ describe.skipIf(!HAS_DB)("settlement supersede (DB)", () => {
     const po = await seedPayout({ depositId: dep });
     await seedCountedCharge(po, gift);
 
-    const c = await confirm.confirmPendingQbDeposit({
-      payoutId: po,
-      userId: USER_ID,
-    });
-    expect(c.ok).toBe(true);
-    if (!c.ok) return;
-    expect(c.rederiveGiftIds).toEqual([gift]);
+    const affected = await db.transaction((tx) =>
+      supersede.applySettlementSupersedeMany(tx, [dep]),
+    );
+    expect(affected).toEqual([gift]);
 
     const rows = await readQbRows(dep);
     const byId = new Map(rows.map((r) => [r.id, r]));
@@ -363,8 +340,8 @@ describe.skipIf(!HAS_DB)("settlement supersede (DB)", () => {
     const gift = await seedGift();
     const dep = await seedDeposit();
     // A demoted crumb AND a fresh counted booking for the same (payment, gift)
-    // pair; no confirmed link → the crumb wants to promote, but the counted
-    // partial UNIQUE forbids two — delete the crumb instead.
+    // pair; no pairing → the crumb wants to promote, but the counted partial
+    // UNIQUE forbids two — delete the crumb instead.
     const crumbId = await seedQbRow(dep, gift, {
       amount: "1000.00",
       linkRole: "corroborating",
@@ -406,12 +383,11 @@ describe.skipIf(!HAS_DB)("settlement supersede (DB)", () => {
     expect(crumb?.amountApplied).toBe("1000.00");
   });
 
-  it("applySupersedeForPayoutInTx resolves the payout's deposit through ANY link lifecycle", async () => {
+  it("applySupersedeForPayoutInTx resolves the payout's settled deposit through the pairing fact", async () => {
     const gift = await seedGift();
     const dep = await seedDeposit();
     await seedQbRow(dep, gift);
-    // Link already CONFIRMED (e.g. tie settled first, charge booked after).
-    const po = await seedPayout({ depositId: dep, lifecycle: "confirmed" });
+    const po = await seedPayout({ depositId: dep });
     await seedCountedCharge(po, gift);
 
     const affected = await db.transaction((tx) =>
@@ -422,7 +398,7 @@ describe.skipIf(!HAS_DB)("settlement supersede (DB)", () => {
     const rows = await readQbRows(dep);
     expect(rows[0].linkRole).toBe("corroborating");
 
-    // Payout with no settlement link at all → no-op.
+    // Payout with no settled deposit at all → no-op.
     const bare = await seedPayout();
     const none = await db.transaction((tx) =>
       supersede.applySupersedeForPayoutInTx(tx, bare),

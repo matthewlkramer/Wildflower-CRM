@@ -3,7 +3,6 @@ import { db } from "@workspace/db";
 import {
   cleanupQueue,
   opportunitiesAndPledges,
-  settlementLinks,
   stagedPayments,
   users,
 } from "@workspace/db/schema";
@@ -108,10 +107,8 @@ router.get(
             ),
             (
               SELECT ${stagedPayments.payerName}
-              FROM ${settlementLinks}
-              JOIN ${stagedPayments}
-                ON ${stagedPayments.id} = ${settlementLinks.depositStagedPaymentId}
-              WHERE ${settlementLinks.payoutId} = ${cleanupQueue.targetId}
+              FROM ${stagedPayments}
+              WHERE ${stagedPayments.settledStripePayoutId} = ${cleanupQueue.targetId}
                 AND ${cleanupQueue.targetType} = 'stripe_payout'
               LIMIT 1
             )
@@ -293,15 +290,11 @@ async function enrich(
     payoutIds.length > 0
       ? db
           .select({
-            id: settlementLinks.payoutId,
+            id: stagedPayments.settledStripePayoutId,
             name: stagedPayments.payerName,
           })
-          .from(settlementLinks)
-          .innerJoin(
-            stagedPayments,
-            eq(stagedPayments.id, settlementLinks.depositStagedPaymentId),
-          )
-          .where(inArray(settlementLinks.payoutId, payoutIds))
+          .from(stagedPayments)
+          .where(inArray(stagedPayments.settledStripePayoutId, payoutIds))
       : Promise.resolve([]),
     userIds.length > 0
       ? db

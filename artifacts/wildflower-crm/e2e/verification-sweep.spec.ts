@@ -16,9 +16,8 @@
  *   F7  — gift-detail Thank-you panel + Grant letter upload (upload exercised
  *         on the seeded gift, never a shared record).
  *   F8  — link a gift to the cost-reimbursement pledge via the pledge picker.
- *   F9  — admin sees "Replace settlement relationship" enabled on a confirmed
- *         settlement deposit card; confirm dialog opens; we cancel (no
- *         mutation of shared dev data).
+ *   F9  — (retired — the settlement replace workflow was removed with
+ *         settlement_links; pairing is a plain fact now).
  *   F10 — approving link_existing_gift on an already-applied payment returns
  *         the specific 409 message (API-level via the authed page context).
  *   F11 — /coding-form-import renders pending coding rows as admin.
@@ -33,8 +32,6 @@ const TEST_EMAIL = "e2e-recon-test+clerk_test@wildflowerschools.org";
 // Shared dev-DB fixture ids (verified present before this run)
 const VALHALLA_ORG = "reckPTy4zg4oZr9dw";
 const CR_PLEDGE = "recbBm2mvG1eRHraa"; // "Valhalla FY22-23" cost-reimbursement pledge
-const CONFIRMED_PAYOUT = "reconapv_1783095601846_po_004";
-const CONFIRMED_DEPOSIT_SP = "reconapv_1783095601846_sp_003";
 const APPLIED_SP = "reconapv_1783097494335_sp_086"; // applied (linked, not minted) to gift_084
 const OTHER_GIFT = "rec3lwPNOcPgVjoPI"; // a different gift for the 409 attempt
 const SHARED_GIFT_WITH_PLEDGE = "recGllOSEJWeRsonI"; // Valhalla FY22 (read-only checks)
@@ -311,50 +308,6 @@ test("F8: pledge picker save is blocked by the evidence-only guard (409, no muta
     ),
   );
   expect(post.rows[0].opportunity_id).toBeNull();
-});
-
-/* ---------- F9: replace settlement relationship (admin-gated) ---------- */
-
-test("F9: admin sees enabled 'Replace settlement relationship'; confirm dialog opens (cancelled — no mutation)", async ({ page }) => {
-  await page.goto("/reconciliation/clusters");
-
-  // The confirmed-settlement payout lives in a completed-ish lens; try in order.
-  const row = page.getByTestId(`cluster-row-stripe_payout:${CONFIRMED_PAYOUT}`);
-  // Server-side search narrows the list (and defeats pagination) before the lens sweep.
-  await page.getByTestId("input-cluster-search").fill(CONFIRMED_PAYOUT);
-  await page.waitForTimeout(1000);
-  let found = false;
-  for (const lens of [
-    "completed",
-    "link_complete",
-    "all_open",
-    "attention_required",
-    "settlement_gaps",
-    "excluded",
-    "conflicts",
-  ]) {
-    await page.getByTestId(`button-lens-${lens}`).click();
-    await page.getByTestId("text-cluster-total").waitFor();
-    if (await row.isVisible().catch(() => false)) { found = true; break; }
-  }
-  expect(found, `cluster row for ${CONFIRMED_PAYOUT} not found in any lens`).toBeTruthy();
-
-  await row.click(); // expand
-  await page.getByTestId(`button-qb-menu-${CONFIRMED_DEPOSIT_SP}`).click();
-  const item = page.getByRole("menuitem", { name: "Replace settlement relationship" });
-  await expect(item).toBeVisible();
-  await expect(item).not.toHaveAttribute("aria-disabled", "true");
-  await item.click();
-
-  await expect(page.getByText("Replace settlement relationship?")).toBeVisible();
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByText("Replace settlement relationship?")).not.toBeVisible();
-
-  // Prove nothing changed.
-  const still = await withDb((c) =>
-    c.query(`SELECT lifecycle FROM settlement_links WHERE payout_id = $1`, [CONFIRMED_PAYOUT]),
-  );
-  expect(still.rows[0]?.lifecycle).toBe("confirmed");
 });
 
 /* ---------- F10: already-applied payment 409 ---------- */

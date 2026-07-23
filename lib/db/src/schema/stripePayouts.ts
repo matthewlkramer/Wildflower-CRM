@@ -25,9 +25,8 @@ import { bankDeposits } from "./bankDeposits";
  * A payout settles as exactly ONE real bank deposit. `bank_deposit_id` records
  * that tie directly on the payout (UNIQUE — one payout per deposit). This is a
  * NEW relationship to the register-projected `bank_deposits` spine — DISTINCT
- * from `settlement_links`, whose target is a QBO *Deposit* row
- * (`staged_payments`); settlement_links stays until Phase 9 and folds into the
- * QBO accounting-verification role. The match is inferred (amount + currency +
+ * from the QBO pairing (`staged_payments.settled_stripe_payout_id`), whose
+ * target is a QBO *Deposit* row. The match is inferred (amount + currency +
  * arrival/deposit date, trace when available); when >1 equivalent deposit
  * existed at match time `ambiguous_bank_match` is set and a deterministic
  * pairing is used — NO confirmation workflow (a swapped equal-amount/same-day

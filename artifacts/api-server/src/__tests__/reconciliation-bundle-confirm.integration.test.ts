@@ -212,9 +212,9 @@ afterAll(async () => {
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
 
   // `payment_applications` (Plane-2 ledger booked by the per-charge mint) FKs the
-  // gift ON DELETE RESTRICT, so clear it before the gifts. (`settlement_links`
-  // needs no explicit cleanup: its payout FK cascades on the stripePayouts delete
-  // below.)
+  // gift ON DELETE RESTRICT, so clear it before the gifts. (The settled payout
+  // pairing needs no explicit cleanup: `settled_stripe_payout_id` is SET NULL
+  // on the stripePayouts delete below.)
   if (createdGiftIds.length)
     await db
       .delete(schema.paymentApplications)
