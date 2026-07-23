@@ -88,6 +88,15 @@ rules below, not a modeling need.
 
 ## 3. Target end-state (Layer 2 — the linear tree)
 
+> **Superseded (2026-07-23) by
+> [`adr-bank-spine-money-model.md`](adr-bank-spine-money-model.md).** That ADR
+> takes this Layer-2 tree further: it makes the real-world money objects
+> first-class tables (`bank_deposits`, `payment_units`, `bank_deposit_components`)
+> and demotes QBO (`staged_payments`) to a downstream accounting mirror +
+> check-inference source, retiring `settlement_links` and the
+> `staged_payments` split machinery. The tree shape below is unchanged; only its
+> physical realization moves. Layers 1–2 coding rules (§2) carry over verbatim.
+
 Reconciliation becomes a tree rooted at the bank statement. Every node has
 exactly one parent; splits happen only by subdividing a node into child
 units; meaning splits happen only at allocations.

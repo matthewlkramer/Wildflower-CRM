@@ -319,6 +319,16 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   re-imports idempotent). Read-only after import; never mints gifts, never
   anchors `payment_applications` rows, and carries NO foreign keys — any
   cross-evidence tie goes through the `source_links` ledger (implemented).
+- `bank_deposits` — **the SPINE of the bank-anchored money model**
+  (docs/adr-bank-spine-money-model.md). One row per real bank credit. Today a
+  curated PROJECTION of a deposit-type `bank_transactions` row
+  (`source='qbo_register_export'`, `deposit > 0`) — QBO's mirror of the bank
+  feed — recorded by `source_bank_transaction_id` (UNIQUE, so the projection is
+  1:1/idempotent). Repopulated from a bank-native feed (`plaid`) or `manual`
+  entry later WITHOUT schema change. A Stripe payout settles as one bank deposit
+  (`stripe_payouts.bank_deposit_id`, Phase 4); a check deposit is composed of
+  check `payment_units` via `bank_deposit_components` (Phase 3). Composition
+  state (unresolved/partial/complete/overallocated) is DERIVED, never stored.
 - `payment_applications` — the unit↔gift cash-application ledger. Each row
   anchors on exactly one evidence unit per `evidence_source` (`quickbooks` →
   `payment_id`, `stripe` → `stripe_charge_id`, `donorbox` →

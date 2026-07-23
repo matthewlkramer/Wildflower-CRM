@@ -46,6 +46,13 @@ unverified and confirm against code before relying on it.
    coding rules (gift = one payment event; meaning splits on allocations;
    expectations on the pledge) and the bank-anchored linear target model,
    including unit-group retirement and the production recoding inventory.
+   (§3's Layer-2 physical target is **superseded** by the ADR below.)
+6. [`adr-bank-spine-money-model.md`](adr-bank-spine-money-model.md) —
+   **ratified** successor: bank deposit is the spine; `bank_deposits`,
+   `payment_units`, `bank_deposit_components` become first-class tables and QBO
+   (`staged_payments` → `qbo_payment_records`) demotes to a downstream
+   accounting mirror + check-inference source. Governs the reconciliation
+   physical model going forward; implemented in prod-safe phases.
 
 ## Other canonical documents
 

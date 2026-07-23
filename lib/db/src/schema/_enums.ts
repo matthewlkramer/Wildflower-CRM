@@ -1116,3 +1116,20 @@ export const bankTransactionSourceEnum = pgEnum("bank_transaction_source", [
   "qbo_register_export",
   "plaid",
 ]);
+
+// ──────────────────────────────────────────────────────────────────
+// Bank-anchored money model (docs/adr-bank-spine-money-model.md)
+// ──────────────────────────────────────────────────────────────────
+
+// Where a curated bank_deposits row was sourced from. The bank deposit is the
+// SPINE of the money model; QBO is only a temporary inference source until a
+// bank-native feed (Plaid / check images) replaces it.
+//   qbo_register_export — projected from a deposit-type bank_transactions row
+//                         (QBO's mirror of the bank feed; today's only source)
+//   plaid               — future live bank feed
+//   manual              — hand-entered deposit (rare; e.g. a correction)
+export const bankDepositSourceEnum = pgEnum("bank_deposit_source", [
+  "qbo_register_export",
+  "plaid",
+  "manual",
+]);
