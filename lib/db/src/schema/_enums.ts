@@ -1133,3 +1133,28 @@ export const bankDepositSourceEnum = pgEnum("bank_deposit_source", [
   "plaid",
   "manual",
 ]);
+
+// The kind of real-world payment event a payment_units row represents. One
+// payment unit = ONE donor-level payment occurred, regardless of instrument.
+//   stripe_charge — a Stripe charge (1:1 with stripe_staged_charges)
+//   check         — a paper check (composed into a bank deposit via
+//                   bank_deposit_components; today inferred from QBO)
+//   direct_ach    — a direct ACH/bank transfer that is not a Stripe charge
+//   wire          — a wire transfer
+//   other         — anything else (rare)
+export const paymentUnitKindEnum = pgEnum("payment_unit_kind", [
+  "stripe_charge",
+  "check",
+  "direct_ach",
+  "wire",
+  "other",
+]);
+
+// Refund/dispute lifecycle of a payment unit. `received` is the normal state;
+// the others mirror processor refund/chargeback facts (Stripe today).
+export const paymentUnitLifecycleEnum = pgEnum("payment_unit_lifecycle", [
+  "received",
+  "partially_refunded",
+  "refunded",
+  "disputed",
+]);
