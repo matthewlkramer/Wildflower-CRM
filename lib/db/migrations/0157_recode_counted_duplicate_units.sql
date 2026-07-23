@@ -35,6 +35,13 @@
 --     §6 are the money buckets; collapsing would destroy school/region grain).
 --   * LISC Q1 FY24: gift corrected UP 50¢ to the money actually received
 --     ($7,712.50); the GV direct-to-school allocation absorbs the 50¢.
+--   * Frey (user ruling 2026-07-23): the FY24 renewal was in fact paid by its
+--     OWN $30,000 check (2024-05-30) that sat matched-but-unaccounted in the
+--     workbench. The FY24 gift therefore becomes a STANDALONE gift (detached
+--     from the pledge, NOT archived) whose counted row re-points to that
+--     check. The pledge becomes FY25–FY26, $60,000, paid in full by the
+--     single 2025-04-08 wire: one gift with fy2025 + fy2026 ($30k each)
+--     allocations, the FY26 one Wildflower-restricted.
 
 -- ═════════════════════════════════════════════════════════════════════════
 -- PREFLIGHT — invariants that must hold BEFORE and AFTER (safe on re-run)
@@ -44,7 +51,8 @@ DO $$
 DECLARE
   n int;
 BEGIN
-  -- The 10 anchor evidence units exist with the expected amounts.
+  -- The 11 anchor evidence units exist with the expected amounts
+  -- (10 cluster anchors + Frey's standalone FY24 check).
   SELECT count(*) INTO n FROM staged_payments
    WHERE (id, amount) IN (
      ('4svk9IxogJIjkx65k097w', 1000000.00),
@@ -56,9 +64,10 @@ BEGIN
      ('i9nY0GFAjF76PpdSAqbxS', 7712.50),
      ('bllTXRZplXrsjM2VD7ws9', 200000.00),
      ('jpy0gpkGm_1U-_RKbLcux', 478660.14),
-     ('y8JJig930lOjP9c9HN3uR', 60000.00));
-  IF n <> 10 THEN
-    RAISE EXCEPTION '0157 preflight: expected 10 anchor units with the recorded amounts, found %', n;
+     ('y8JJig930lOjP9c9HN3uR', 60000.00),
+     ('2fDjAxyTfYL0h1Jx8xyd1', 30000.00));
+  IF n <> 11 THEN
+    RAISE EXCEPTION '0157 preflight: expected 11 anchor units with the recorded amounts, found %', n;
   END IF;
 
   -- The two split parents carry no settlement/source-link claims (the runtime
@@ -79,6 +88,17 @@ BEGIN
   SELECT count(*) INTO n FROM fiscal_years WHERE id = 'fy2026';
   IF n <> 1 THEN
     RAISE EXCEPTION '0157 preflight: fiscal_years is missing the fy2026 row';
+  END IF;
+
+  -- Frey: the 2024-05-30 $30k check must carry no payment application other
+  -- than the FY24 gift's re-pointed counted row (B8 writes exactly that one;
+  -- the guard tolerates a re-run). Anything else means prod has drifted from
+  -- the analyzed snapshot.
+  SELECT count(*) INTO n FROM payment_applications
+   WHERE payment_id = '2fDjAxyTfYL0h1Jx8xyd1'
+     AND id <> 'd8bc0ac1-3d5d-4504-b1ac-bbe3861bbba6';
+  IF n <> 0 THEN
+    RAISE EXCEPTION '0157 preflight: % unexpected payment_applications on the Frey 2024-05-30 check', n;
   END IF;
 END $$;
 
@@ -400,20 +420,45 @@ UPDATE payment_applications
  WHERE id = 'JwsxZhXUp7uOPcuZ40ZDw'
    AND amount_applied IS DISTINCT FROM 478660.14;
 
--- ── B8. Frey (y8JJ…, $60,000, 2025-04-08) ──────────────────────────────────
--- One Frey Foundation wire (via the Minneapolis Foundation) covering both
--- pledged installments at once. Survivor = the FY25 gift (it already carries
--- the intermediary). The second $30k books to FY26, Wildflower-restricted
--- (ADR §6). Pledge allocations stay FY24+FY25 — once money lands, gift
--- allocations are canonical and the pledge plan is history by design.
-UPDATE gift_allocations
-   SET gift_id = 'rechXgpevejd0ZO8c',
-       grant_year = 'fy2026',
-       other_restriction_type = 'wf_restricted',
-       updated_at = now()
- WHERE id = 'synth-ga-recJtIJR0PemacXLE'
-   AND gift_id = 'recJtIJR0PemacXLE';
+-- ── B8. Frey — TWO real money events (user ruling 2026-07-23) ──────────────
+-- Not a merge. The QB evidence shows two Frey Foundation payments:
+--   * $30,000 check, 2024-05-30 (2fDj…) — the FY24 renewal, paid on its own.
+--     It sat 'matched' in the workbench but carried NO counted row, while the
+--     FY24 gift was wrongly counted against the 2025 wire.
+--   * $60,000 wire, 2025-04-08 (y8JJ…, via the Minneapolis Foundation) —
+--     pays the FY25–FY26 pledge in full.
+-- Recoding: the FY24 gift (recJtIJR0PemacXLE) becomes a STANDALONE gift —
+-- detached from the pledge, dated to its actual check, counted against 2fDj…
+-- (this also cures the matched-but-unaccounted drift on that unit). The FY25
+-- gift (rechXgpevejd0ZO8c) becomes the pledge's single $60,000 payment with
+-- two $30k allocations: fy2025 and fy2026 (Wildflower-restricted, per the
+-- user's next-fiscal-year rule). The pledge is retitled FY25–FY26 and its
+-- plan allocations retag to fy2025 + fy2026.
 
+-- FY24 gift: standalone, on its real money date; keeps its fy2024 allocation.
+UPDATE gifts_and_payments
+   SET opportunity_id = NULL,
+       date_received = DATE '2024-05-30',
+       updated_at = now()
+ WHERE id = 'recJtIJR0PemacXLE'
+   AND (opportunity_id IS NOT NULL
+     OR date_received IS DISTINCT FROM DATE '2024-05-30');
+
+UPDATE gifts_and_payments
+   SET memo_description = COALESCE(NULLIF(memo_description, '') || E'\n', '')
+         || '$30,000 Frey Foundation check received 2024-05-30 — the FY24 renewal, paid separately; formerly recorded as an installment on the FY25–FY26 pledge and mis-counted against the 2025 $60,000 wire. [0157]',
+       updated_at = now()
+ WHERE id = 'recJtIJR0PemacXLE'
+   AND (memo_description IS NULL OR position('[0157]' in memo_description) = 0);
+
+-- Re-point its counted row from the wire onto the 2024 check (not deleted —
+-- the application is correct, it was anchored to the wrong evidence unit).
+UPDATE payment_applications
+   SET payment_id = '2fDjAxyTfYL0h1Jx8xyd1', updated_at = now()
+ WHERE id = 'd8bc0ac1-3d5d-4504-b1ac-bbe3861bbba6'
+   AND payment_id = 'y8JJig930lOjP9c9HN3uR';
+
+-- FY25 gift becomes the pledge's single $60,000 payment…
 UPDATE gifts_and_payments
    SET amount = 60000.00,
        date_received = DATE '2025-04-08',
@@ -426,21 +471,42 @@ UPDATE gifts_and_payments
 
 UPDATE gifts_and_payments
    SET memo_description = COALESCE(NULLIF(memo_description, '') || E'\n', '')
-         || 'Single $60,000 Frey Foundation wire received 2025-04-08 (via the Minneapolis Foundation), covering both pledged installments; formerly recorded as separate FY24 and FY25 $30,000 gifts. The second $30,000 is booked to FY26, Wildflower-restricted. [0157]',
+         || 'Single $60,000 Frey Foundation wire received 2025-04-08 (via the Minneapolis Foundation), paying the FY25–FY26 pledge in full: $30,000 for FY25 and $30,000 for FY26 (Wildflower-restricted). The FY24 renewal was paid separately by a 2024-05-30 check. [0157]',
        updated_at = now()
  WHERE id = 'rechXgpevejd0ZO8c'
    AND (memo_description IS NULL OR position('[0157]' in memo_description) = 0);
 
-UPDATE gifts_and_payments
-   SET archived_at = now(), updated_at = now()
- WHERE id = 'recJtIJR0PemacXLE' AND archived_at IS NULL;
-
-DELETE FROM payment_applications WHERE id = 'd8bc0ac1-3d5d-4504-b1ac-bbe3861bbba6';
+-- …with a NEW fy2026 allocation mirroring its fy2025 sibling (same region /
+-- usage / entity grain), Wildflower-restricted.
+INSERT INTO gift_allocations (
+  id, gift_id, sub_amount, grant_year, intended_usage, region_ids, entity_id,
+  regional_restriction_type, other_restriction_type, time_restriction_type,
+  counts_toward_goal
+)
+SELECT '0157-ga-rechXgpevejd0ZO8c-fy2026', ga.gift_id, 30000.00, 'fy2026',
+       ga.intended_usage, ga.region_ids, ga.entity_id,
+       ga.regional_restriction_type, 'wf_restricted', ga.time_restriction_type,
+       ga.counts_toward_goal
+  FROM gift_allocations ga
+ WHERE ga.id = 'synth-ga-rechXgpevejd0ZO8c'
+ON CONFLICT (id) DO NOTHING;
 
 UPDATE payment_applications
    SET amount_applied = 60000.00, updated_at = now()
  WHERE id = 'bae7f11d-27b8-40dc-a683-947fd203c88a'
    AND amount_applied IS DISTINCT FROM 60000.00;
+
+-- Pledge header + plan allocations now say what the pledge IS: $60,000 for
+-- FY25 + FY26 (the fy2024 plan row retags to fy2026; amounts unchanged).
+UPDATE opportunities_and_pledges
+   SET name = 'Frey FY25-26', updated_at = now()
+ WHERE id = 'receJJXlRMjmar0y6'
+   AND name IS DISTINCT FROM 'Frey FY25-26';
+
+UPDATE pledge_allocations
+   SET grant_year = 'fy2026', updated_at = now()
+ WHERE id = 'recJEP1GUMzzPt1xv'
+   AND grant_year = 'fy2024';
 
 -- ═════════════════════════════════════════════════════════════════════════
 -- C. PLEDGE EXPECTED-PAYMENTS BACKFILL (historical schedule; fiscal-year
@@ -455,8 +521,8 @@ VALUES
   ('0157-pep-recmvAyYs3BB65oET-fy2021', 'recmvAyYs3BB65oET', DATE '2020-07-01', 500000.00, 'historical schedule backfill (0157)'),
   ('0157-pep-recmvAyYs3BB65oET-fy2022', 'recmvAyYs3BB65oET', DATE '2021-07-01', 500000.00, 'historical schedule backfill (0157)'),
   ('0157-pep-recmvAyYs3BB65oET-fy2023', 'recmvAyYs3BB65oET', DATE '2022-07-01', 500000.00, 'historical schedule backfill (0157)'),
-  ('0157-pep-receJJXlRMjmar0y6-1',      'receJJXlRMjmar0y6', DATE '2024-03-15', 30000.00,  'historical schedule backfill (0157) — originally recorded FY24 renewal date'),
-  ('0157-pep-receJJXlRMjmar0y6-2',      'receJJXlRMjmar0y6', DATE '2024-07-01', 30000.00,  'historical schedule backfill (0157) — FY25 installment')
+  ('0157-pep-receJJXlRMjmar0y6-1',      'receJJXlRMjmar0y6', DATE '2024-07-01', 30000.00,  'historical schedule backfill (0157) — FY25 installment'),
+  ('0157-pep-receJJXlRMjmar0y6-2',      'receJJXlRMjmar0y6', DATE '2025-07-01', 30000.00,  'historical schedule backfill (0157) — FY26 installment (both paid upfront by the 2025-04-08 wire)')
 ON CONFLICT (id) DO NOTHING;
 
 -- ═════════════════════════════════════════════════════════════════════════
@@ -613,7 +679,7 @@ BEGIN
      WHERE sp.id IN (
        '4svk9IxogJIjkx65k097w','AkvrooAk4pfsKl1lKWKvz','WWbM-Xk_oxrSHO4zm6NT6',
        'a0BRZPHlxfgrW1Z0_sRis','i9nY0GFAjF76PpdSAqbxS','bllTXRZplXrsjM2VD7ws9',
-       'jpy0gpkGm_1U-_RKbLcux','y8JJig930lOjP9c9HN3uR',
+       'jpy0gpkGm_1U-_RKbLcux','y8JJig930lOjP9c9HN3uR','2fDjAxyTfYL0h1Jx8xyd1',
        '4Jn9XEMRrTWvBKKRiMU4f:split:1','4Jn9XEMRrTWvBKKRiMU4f:split:2',
        '57hcboHFPuX4qdljSM449:split:1','57hcboHFPuX4qdljSM449:split:2')
      GROUP BY sp.id, sp.amount
@@ -632,22 +698,49 @@ BEGIN
          'recAjHdhK9R6eEAi1','reckelLlxExPB5C6e','recRfzkuB6wB6QlRr',
          'recfNNQt6xxEfcQNz','rec5MgcANAINnbNL1','recReHXt8wdJxqRwL',
          'recYeA9b5NLTUTWUE','recaRy7Df5cVDP39A','recgULJNTegkP2JVW',
-         'rec5a0mpX29ZUeJrU','62FZlSLpjELvIk-cFaBDE','rechXgpevejd0ZO8c')
+         'rec5a0mpX29ZUeJrU','62FZlSLpjELvIk-cFaBDE','rechXgpevejd0ZO8c',
+         'recJtIJR0PemacXLE')
      GROUP BY g.id, g.amount
     HAVING COALESCE(SUM(ga.sub_amount), 0) IS DISTINCT FROM g.amount) x;
   IF n <> 0 THEN
     RAISE EXCEPTION '0157 postflight: % surviving gifts whose allocation sum <> amount', n;
   END IF;
 
-  -- E6. The 10 loser gifts are archived; the 12 survivors are not.
+  -- E6. The 9 loser gifts are archived; the survivors are not.
   SELECT count(*) INTO n FROM gifts_and_payments
    WHERE archived_at IS NULL
      AND id IN ('recgLkgoCHL05n7mZ','recrmfdpKoADPXlWx','recGpltnPNwQQXuQ3',
                 'rec3oRv55Z6Roz2XO','recqQHz5vP7iOaLZd','rec2twqm58PjFRhhf',
-                'rec6B0yqPIR47JbIa','reczOdxsO03GKyiVs','recGLjt4K2Tvwullp',
-                'recJtIJR0PemacXLE');
+                'rec6B0yqPIR47JbIa','reczOdxsO03GKyiVs','recGLjt4K2Tvwullp');
   IF n <> 0 THEN
     RAISE EXCEPTION '0157 postflight: % loser gifts not archived', n;
+  END IF;
+
+  -- E6b. The Frey FY24 gift is LIVE, standalone, on its real money date, and
+  --      counted against the 2024-05-30 check.
+  SELECT count(*) INTO n FROM gifts_and_payments g
+   WHERE g.id = 'recJtIJR0PemacXLE'
+     AND g.archived_at IS NULL
+     AND g.opportunity_id IS NULL
+     AND g.amount = 30000.00
+     AND g.date_received = DATE '2024-05-30'
+     AND EXISTS (SELECT 1 FROM payment_applications pa
+                  WHERE pa.id = 'd8bc0ac1-3d5d-4504-b1ac-bbe3861bbba6'
+                    AND pa.gift_id = g.id
+                    AND pa.payment_id = '2fDjAxyTfYL0h1Jx8xyd1'
+                    AND pa.link_role = 'counted'
+                    AND pa.amount_applied = 30000.00);
+  IF n <> 1 THEN
+    RAISE EXCEPTION '0157 postflight: Frey FY24 standalone gift state is wrong';
+  END IF;
+
+  -- E6c. The Frey pledge plan reads FY25 + FY26 (one $30k row each).
+  SELECT count(*) INTO n FROM pledge_allocations
+   WHERE pledge_or_opportunity_id = 'receJJXlRMjmar0y6'
+     AND grant_year IN ('fy2025','fy2026')
+     AND sub_amount = 30000.00;
+  IF n <> 2 THEN
+    RAISE EXCEPTION '0157 postflight: Frey pledge allocations not FY25+FY26 (found %)', n;
   END IF;
 
   -- E7. paid parity on EVERY opportunity reachable from a touched gift
@@ -682,8 +775,10 @@ END $$;
 --      WHERE payment_id IS NOT NULL AND link_role = 'counted'
 --      GROUP BY payment_id HAVING count(*) > 1) d;
 --
---   -- The 4 recoded pledges (expect cash_in / complete, paid as before,
---   --  except recXg24nW0jTUOyE4 which gains the 50¢: 50,799.50):
+--   -- The 4 recoded pledges (expect cash_in / complete; recXg24nW0jTUOyE4
+--   --  gains the 50¢: 50,799.50; the Frey pledge receJJXlRMjmar0y6 stays
+--   --  paid 60,000 — now one $60k gift instead of two $30k gifts, with the
+--   --  FY24 $30k moved off-pledge as a standalone gift):
 --   SELECT id, status::text, stage::text, awarded_amount, paid
 --     FROM opportunities_and_pledges
 --    WHERE id IN ('recL1luStEQ05Ca9r','recmvAyYs3BB65oET',

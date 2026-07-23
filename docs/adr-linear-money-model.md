@@ -161,7 +161,7 @@ in `lib/db/migrations/` (evidence anchor ids from the 2026-07-23 analysis):
 | `i9nY0GFAjF76PpdSAqbxS` LISC Q1 $7,712.50 | 2 gifts summing $7,712.00 | same pattern; the gift is corrected UP 50¢ to the money actually received (the GV allocation absorbs it) |
 | `bllTXRZplXrsjM2VD7ws9` Nash $200k | 3 gifts (2 under Indira Foundation) | 1 gift under the household (the actual wire payer), **6 allocations** — the "3 allocations" here meant money buckets; the school-designation grain (Sundrops, Flame Lily, Lotus, Goldenrod) is preserved as-is |
 | `jpy0gpkGm_1U-_RKbLcux` Sep Kamvar $478,660.14 | 3 gifts | 1 gift, **4 allocations** — Rising Tide consolidates ($126,436.14 + $200,000 = $326,436.14); the partnership passthrough, AZ gen-ops, and Northern-NJ gen-ops rows move intact (region grain preserved) |
-| `y8JJig930lOjP9c9HN3uR` Frey $60k | 2 gifts (FY24/FY25 renewals) | 1 gift, 2 allocations, one Wildflower-restricted for FY26; one pledge with 2 expected payments |
+| `y8JJig930lOjP9c9HN3uR` Frey $60k | 2 gifts (FY24/FY25 renewals) | ~~1 gift, 2 allocations covering both pledged installments~~ **two real money events** (deviation, ratified 2026-07-23: prod also holds a matched-but-uncounted $30k check `2fDjAxyTfYL0h1Jx8xyd1` received 2024-05-30 — the FY24 renewal was paid on its own). The FY24 gift becomes a standalone gift counted against that check (detached from the pledge, not archived); the pledge becomes **Frey FY25-26** ($60k), paid in full by the single wire: 1 gift, fy2025 + fy2026 allocations (FY26 Wildflower-restricted), 2 fiscal-year-anchored expected payments |
 
 ## 7. Sequencing (minimizes drift; prod recoding is human-gated)
 
