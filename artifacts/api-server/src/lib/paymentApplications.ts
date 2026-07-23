@@ -369,6 +369,49 @@ export async function applyPaymentApplication(
     );
   }
 
+  // 2c. UNIT-level counted uniqueness (bank-spine ADR, 0167): one counted row
+  //     per canonical payment unit. A counted row for the SAME unit via a
+  //     DIFFERENT source anchor (offline check booked from both its QB row
+  //     and its Donorbox donation) is the same real payment: same gift → the
+  //     old description is consolidated away (this write supersedes it);
+  //     different gift → hard conflict, same as 2b. Runs before the upsert so
+  //     the 0167 unique index never fires a raw 23505.
+  const paymentUnitId = await resolvePaymentUnitId(
+    tx,
+    args.evidenceSource,
+    anchor.id,
+  );
+  if (paymentUnitId !== null) {
+    const unitRows = await tx
+      .select({
+        id: paymentApplications.id,
+        giftId: paymentApplications.giftId,
+      })
+      .from(paymentApplications)
+      .where(
+        and(
+          eq(paymentApplications.paymentUnitId, paymentUnitId),
+          // IS DISTINCT FROM: rows via another source carry NULL in this
+          // anchor's column, and plain <> would drop them.
+          sql`${anchor.ledgerColumn} IS DISTINCT FROM ${anchor.id}`,
+          eq(paymentApplications.linkRole, "counted"),
+        ),
+      );
+    const conflicting = unitRows.find((r) => r.giftId !== args.giftId);
+    if (conflicting) {
+      throw new AnchorAlreadyCountedError(
+        paymentUnitId,
+        conflicting.giftId,
+        args.giftId,
+      );
+    }
+    for (const dup of unitRows) {
+      await tx
+        .delete(paymentApplications)
+        .where(eq(paymentApplications.id, dup.id));
+    }
+  }
+
   // 3. Pure book-once guard.
   const result = checkBookOnce({
     paymentAmount: anchor.cap,
@@ -382,11 +425,6 @@ export async function applyPaymentApplication(
   //    link_role / lifecycle keep their column defaults (counted / confirmed)
   //    for every current caller, so they are intentionally not written here.
   const now = new Date();
-  const paymentUnitId = await resolvePaymentUnitId(
-    tx,
-    args.evidenceSource,
-    anchor.id,
-  );
   const values = {
     paymentId: args.paymentId ?? null,
     paymentUnitId,
