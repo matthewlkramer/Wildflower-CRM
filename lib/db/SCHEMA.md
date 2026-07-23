@@ -358,7 +358,13 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   `needs_review` flags uncertain inference. Composition state
   (unresolved/partial/complete/overallocated) is DERIVED from
   `SUM(amount)` vs the deposit `amount`, never stored. The QBO-inferred backfill
-  is a separate migration (0162) pending the composition-inference sign-off.
+  is migration 0162: one unit per non-excluded deposit-composing QBO row (split
+  children replace their parent; Stripe-tied and card-Donorbox rows are skipped
+  — that money is already unitized; an OFFLINE Donorbox row's unit carries the
+  donorbox_donation_id pointer), paired to register deposits on exact
+  TotalAmt+TxnDate; equal-amount/same-date classes pair deterministically by
+  rank and set `ambiguous_deposit_match` (flag only, like
+  `stripe_payouts.ambiguous_bank_match` — no review workflow).
 - `payment_applications` — the unit↔gift cash-application ledger. Each row
   anchors on exactly one evidence unit per `evidence_source` (`quickbooks` →
   `payment_id`, `stripe` → `stripe_charge_id`, `donorbox` →
