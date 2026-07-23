@@ -17,9 +17,12 @@
 -- exactly one payout. Ambiguous cases (>1 equivalent deposit, e.g. two same-day
 -- same-amount payouts) are LEFT UNMATCHED here and handled by the forward
 -- matcher, which sets ambiguous_bank_match=true and a deterministic pairing (no
--- confirmation workflow). Date tolerance is exact (arrival_date = deposit_date)
--- for the backfill; loosening it is a follow-up decision. The UNIQUE index is
--- the hard backstop against any double-claim.
+-- confirmation workflow). Date tolerance is a forward window (deposit_date in
+-- [arrival_date, arrival_date + 5 days]): Stripe's arrival_date is when funds
+-- LEAVE Stripe, and PROD data shows the deposit posts at the bank ~1 business
+-- day later (never before), so an exact-date rule matches almost nothing. The
+-- unambiguous-1:1 requirement still applies across the whole window, and the
+-- UNIQUE index is the hard backstop against any double-claim.
 --
 -- WHY SAFE: additive columns (idempotent) + an idempotent recompute (re-run
 -- skips already-matched payouts and already-claimed deposits). No row is ever
@@ -42,7 +45,8 @@ WITH cand AS (
   FROM stripe_payouts p
   JOIN bank_deposits d
     ON d.amount = p.amount
-   AND d.deposit_date = p.arrival_date
+   AND d.deposit_date >= p.arrival_date
+   AND d.deposit_date <= p.arrival_date + INTERVAL '5 days'
    AND upper(d.currency) = upper(COALESCE(p.currency, 'USD'))
   WHERE p.status = 'paid'
     AND p.amount IS NOT NULL
