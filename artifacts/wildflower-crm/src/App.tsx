@@ -37,6 +37,7 @@ import FundableProjects from "@/pages/fundable-projects";
 import Campaigns from "@/pages/campaigns";
 import Settings from "@/pages/settings";
 import ReconciliationClusters from "@/pages/reconciliation-clusters";
+import ReconciliationDeposits from "@/pages/reconciliation-deposits";
 import EmailIntelligence from "@/pages/email-intelligence";
 import GrantLeads from "@/pages/grant-leads";
 import EmailTracking from "@/pages/email-tracking";
@@ -221,8 +222,9 @@ function ClerkProviderWithRoutes() {
           <Route path="/stripe-staged-charges"><Redirect to="/reconciliation/clusters" /></Route>
           <Route path="/stripe-reconciliation"><Redirect to="/reconciliation/clusters" /></Route>
           <Route path="/donorbox-review"><Redirect to="/reconciliation/clusters" /></Route>
-          <Route path="/reconciliation"><Redirect to="/reconciliation/clusters" /></Route>
-          <Route path="/reconciliation-workbench"><Redirect to="/reconciliation/clusters" /></Route>
+          <Route path="/reconciliation"><Redirect to="/reconciliation/deposits" /></Route>
+          <Route path="/reconciliation-workbench"><Redirect to="/reconciliation/deposits" /></Route>
+          <Route path="/reconciliation/deposits"><ProtectedRoute component={ReconciliationDeposits} /></Route>
           <Route path="/reconciliation/clusters"><ProtectedRoute component={ReconciliationClusters} /></Route>
           <Route path="/moves"><ProtectedRoute component={Moves} /></Route>
           <Route path="/interactions"><ProtectedRoute component={Interactions} /></Route>
