@@ -159,6 +159,41 @@ async function seedUnit(
   return unitId;
 }
 
+async function seedDepositQboComponent(
+  depositId: string,
+  amount: string,
+  {
+    fundingSource,
+    exclusionReason,
+  }: { fundingSource?: "stripe"; exclusionReason?: "earned_income" | "membership" } = {},
+): Promise<void> {
+  const stagedPaymentId = nextId("qbo_staged");
+  const qbDepositId = nextId("qbo_deposit");
+  const componentId = nextId("qbo_component");
+  await db.insert(schema.stagedPayments).values({
+    id: stagedPaymentId,
+    realmId: RUN,
+    qbEntityType: "deposit",
+    qbEntityId: qbDepositId,
+    qbDepositId,
+    dateReceived: "2099-12-31",
+    amount,
+    fundingSource,
+    exclusionReason,
+  });
+  stagedIds.push(stagedPaymentId);
+  await db.insert(schema.depositQboComponents).values({
+    id: componentId,
+    bankDepositId: depositId,
+    realmId: RUN,
+    qbDepositId,
+    stagedPaymentId,
+    amount,
+    matchBasis: "deposit_header_exact",
+  });
+  depositQboComponentIds.push(componentId);
+}
+
 async function listDeposits(lens: string, q?: string, limit = "100") {
   const params = new URLSearchParams({ lens, limit });
   if (q) params.set("q", q);
@@ -372,6 +407,49 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       exclusionReason: "membership",
       amount: "125.00",
     });
+  });
+
+  it("carries excluded Stripe transfer deposits into not fundraising without open-work lenses", async () => {
+    const deposit = await seedDeposit("STRIPE   TRANSFER earned income", "125.00");
+    await seedDepositQboComponent(deposit, "125.00", {
+      fundingSource: "stripe",
+      exclusionReason: "earned_income",
+    });
+
+    const notFundraising = await listDeposits("not_fundraising", "STRIPE   TRANSFER earned");
+    expect(notFundraising.data.some((item: any) => item.anchorId === deposit)).toBe(true);
+
+    const ambiguous = await listDeposits("ambiguous_pairing", "STRIPE   TRANSFER earned");
+    expect(ambiguous.data.some((item: any) => item.anchorId === deposit)).toBe(false);
+
+    const allOpen = await listDeposits("all_open", "STRIPE   TRANSFER earned");
+    expect(allOpen.data.some((item: any) => item.anchorId === deposit)).toBe(false);
+  });
+
+  it("keeps non-excluded payout-less Stripe transfers unresolved, not ambiguous", async () => {
+    const deposit = await seedDeposit("STRIPE   TRANSFER unresolved income", "126.00");
+    await seedDepositQboComponent(deposit, "126.00", { fundingSource: "stripe" });
+
+    const unresolved = await listDeposits("unresolved_composition", "STRIPE   TRANSFER unresolved");
+    expect(unresolved.data.some((item: any) => item.anchorId === deposit)).toBe(true);
+
+    const ambiguous = await listDeposits("ambiguous_pairing", "STRIPE   TRANSFER unresolved");
+    expect(ambiguous.data.some((item: any) => item.anchorId === deposit)).toBe(false);
+  });
+
+  it("retains ambiguity for a genuinely ambiguous payout match", async () => {
+    const deposit = await seedDeposit("Genuine payout tie");
+    await seedPayout("100.00", deposit, true);
+
+    const ambiguous = await listDeposits("ambiguous_pairing", "Genuine payout tie");
+    expect(ambiguous.data.some((item: any) => item.anchorId === deposit)).toBe(true);
+  });
+
+  it("keeps regular unresolved deposits in all open", async () => {
+    const deposit = await seedDeposit("Regular unresolved deposit", "127.00");
+
+    const allOpen = await listDeposits("all_open", "Regular unresolved");
+    expect(allOpen.data.some((item: any) => item.anchorId === deposit)).toBe(true);
   });
 
   it("confirms and dismisses provisional QBO components", async () => {
