@@ -5863,6 +5863,7 @@ export type WorkbenchDepositCompositionKind = typeof WorkbenchDepositComposition
 
 export const WorkbenchDepositCompositionKind = {
   stripe_payout: 'stripe_payout',
+  stripe_unlinked: 'stripe_unlinked',
   components: 'components',
   unresolved: 'unresolved',
 } as const;
@@ -5911,6 +5912,20 @@ export type WorkbenchDepositCompositionUnitsItem = {
 export interface WorkbenchDepositComposition {
   kind: WorkbenchDepositCompositionKind;
   payoutId: string | null;
+  /** Stripe payout arrival date. */
+  payoutDate?: string | null;
+  /** Authoritative Stripe payout gross total. */
+  grossTotal?: string | null;
+  /** Authoritative Stripe payout processor-fee total. */
+  feeTotal?: string | null;
+  /** Authoritative Stripe payout refund total. */
+  refundTotal?: string | null;
+  /** Authoritative Stripe payout adjustment total. */
+  adjustmentTotal?: string | null;
+  /** Authoritative Stripe payout net total; gross − fees − refunds + adjustments. */
+  netTotal?: string | null;
+  /** Total charges behind the payout. */
+  chargeCount?: number | null;
   /** Amount explained by the authoritative payout or component rows. */
   explainedAmount: string;
   /** Deposit amount not explained by known composition. */
@@ -5940,6 +5955,20 @@ export interface WorkbenchDepositAccountingCheck {
   expected?: WorkbenchDepositAccountingCheckExpected;
   actual?: WorkbenchDepositAccountingCheckActual;
   note?: string | null;
+  dateReceived?: string | null;
+  amount?: string | null;
+  qbTransactionMemo?: string | null;
+  lineDescription?: string | null;
+  qbLocation?: string | null;
+  revenueLocation?: string | null;
+  qbDocNumber?: string | null;
+  qbCheckNumber?: string | null;
+  payerName?: string | null;
+  qbPayerType?: string | null;
+  entityId?: string | null;
+  qbEntityType?: string | null;
+  qbDepositId?: string | null;
+  exclusionReason?: string | null;
 }
 
 export type WorkbenchDepositKind = typeof WorkbenchDepositKind[keyof typeof WorkbenchDepositKind];
@@ -5958,6 +5987,30 @@ export type WorkbenchDepositBank = {
   memo: string | null;
 };
 
+export type WorkbenchDepositCharge = WorkbenchClusterCharge & ({
+  refunded?: boolean | null;
+  amountRefunded?: string | null;
+  refundPropagationStatus?: string | null;
+  refundPropagationKind?: string | null;
+  refundProposedAmount?: string | null;
+  exclusionReason?: string | null;
+  /** Imported Stripe charge status from raw_charge.status. */
+  status?: string | null;
+  /** Imported Stripe captured flag from raw_charge.captured. */
+  captured?: boolean | null;
+});
+
+export type WorkbenchDepositQbRecord = WorkbenchClusterQbRecord & ({
+  qbTransactionMemo?: string | null;
+  qbLocation?: string | null;
+  revenueLocation?: string | null;
+  qbDocNumber?: string | null;
+  qbCheckNumber?: string | null;
+  entityId?: string | null;
+  qbPayerType?: string | null;
+  exclusionReason?: string | null;
+});
+
 export interface WorkbenchDeposit {
   /** Stable key: 'bank_deposit:<bank_deposits.id>'. */
   id: string;
@@ -5972,8 +6025,8 @@ export interface WorkbenchDeposit {
   bank: WorkbenchDepositBank;
   composition: WorkbenchDepositComposition;
   gifts: WorkbenchClusterGift[];
-  charges: WorkbenchClusterCharge[];
-  qbRecords: WorkbenchClusterQbRecord[];
+  charges: WorkbenchDepositCharge[];
+  qbRecords: WorkbenchDepositQbRecord[];
   accountingChecks: WorkbenchDepositAccountingCheck[];
   coverage: WorkbenchClusterCoverage;
 }

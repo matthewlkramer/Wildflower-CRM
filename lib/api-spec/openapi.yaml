@@ -9195,8 +9195,15 @@ components:
       properties:
         kind:
           type: string
-          enum: [stripe_payout, components, unresolved]
+          enum: [stripe_payout, stripe_unlinked, components, unresolved]
         payoutId: { type: string, nullable: true }
+        payoutDate: { type: string, format: date, nullable: true, description: "Stripe payout arrival date." }
+        grossTotal: { type: string, nullable: true, description: "Authoritative Stripe payout gross total." }
+        feeTotal: { type: string, nullable: true, description: "Authoritative Stripe payout processor-fee total." }
+        refundTotal: { type: string, nullable: true, description: "Authoritative Stripe payout refund total." }
+        adjustmentTotal: { type: string, nullable: true, description: "Authoritative Stripe payout adjustment total." }
+        netTotal: { type: string, nullable: true, description: "Authoritative Stripe payout net total; gross − fees − refunds + adjustments." }
+        chargeCount: { type: integer, nullable: true, description: "Total charges behind the payout." }
         explainedAmount: { type: string, description: "Amount explained by the authoritative payout or component rows." }
         unexplainedAmount: { type: string, description: "Deposit amount not explained by known composition." }
         components:
@@ -9234,6 +9241,20 @@ components:
         expected: { type: object, nullable: true, additionalProperties: true }
         actual: { type: object, nullable: true, additionalProperties: true }
         note: { type: string, nullable: true }
+        dateReceived: { type: string, format: date, nullable: true }
+        amount: { type: string, nullable: true }
+        qbTransactionMemo: { type: string, nullable: true }
+        lineDescription: { type: string, nullable: true }
+        qbLocation: { type: string, nullable: true }
+        revenueLocation: { type: string, nullable: true }
+        qbDocNumber: { type: string, nullable: true }
+        qbCheckNumber: { type: string, nullable: true }
+        payerName: { type: string, nullable: true }
+        qbPayerType: { type: string, nullable: true }
+        entityId: { type: string, nullable: true }
+        qbEntityType: { type: string, nullable: true }
+        qbDepositId: { type: string, nullable: true }
+        exclusionReason: { type: string, nullable: true }
     WorkbenchDeposit:
       type: object
       required: [id, kind, anchorId, status, lenses, bank, composition, gifts, charges, qbRecords, accountingChecks, coverage]
@@ -9257,12 +9278,38 @@ components:
             memo: { type: string, nullable: true }
         composition: { $ref: "#/components/schemas/WorkbenchDepositComposition" }
         gifts: { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterGift" } }
-        charges: { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterCharge" } }
-        qbRecords: { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterQbRecord" } }
+        charges: { type: array, items: { $ref: "#/components/schemas/WorkbenchDepositCharge" } }
+        qbRecords: { type: array, items: { $ref: "#/components/schemas/WorkbenchDepositQbRecord" } }
         accountingChecks:
           type: array
           items: { $ref: "#/components/schemas/WorkbenchDepositAccountingCheck" }
         coverage: { $ref: "#/components/schemas/WorkbenchClusterCoverage" }
+    WorkbenchDepositCharge:
+      allOf:
+        - $ref: "#/components/schemas/WorkbenchClusterCharge"
+        - type: object
+          properties:
+            refunded: { type: boolean, nullable: true }
+            amountRefunded: { type: string, nullable: true }
+            refundPropagationStatus: { type: string, nullable: true }
+            refundPropagationKind: { type: string, nullable: true }
+            refundProposedAmount: { type: string, nullable: true }
+            exclusionReason: { type: string, nullable: true }
+            status: { type: string, nullable: true, description: "Imported Stripe charge status from raw_charge.status." }
+            captured: { type: boolean, nullable: true, description: "Imported Stripe captured flag from raw_charge.captured." }
+    WorkbenchDepositQbRecord:
+      allOf:
+        - $ref: "#/components/schemas/WorkbenchClusterQbRecord"
+        - type: object
+          properties:
+            qbTransactionMemo: { type: string, nullable: true }
+            qbLocation: { type: string, nullable: true }
+            revenueLocation: { type: string, nullable: true }
+            qbDocNumber: { type: string, nullable: true }
+            qbCheckNumber: { type: string, nullable: true }
+            entityId: { type: string, nullable: true }
+            qbPayerType: { type: string, nullable: true }
+            exclusionReason: { type: string, nullable: true }
     WorkbenchDepositLensCounts:
       type: object
       required: [all_open, unresolved_composition, ambiguous_pairing, needs_gift, accounting_corrections, refunds, completed, not_fundraising]

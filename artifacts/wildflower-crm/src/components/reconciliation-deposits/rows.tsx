@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, CircleAlert, Landmark } from "lucide-react";
 import type {
   WorkbenchDeposit,
   WorkbenchDepositAccountingCheck,
+  WorkbenchDepositQbRecord,
   WorkbenchDepositLens,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort } from "@/lib/format";
@@ -81,6 +82,16 @@ export function DepositGridHeader() {
 
 function Composition({ deposit }: { deposit: WorkbenchDeposit }) {
   const composition = deposit.composition;
+  if (composition.kind === "stripe_unlinked") {
+    return (
+      <div className="rounded-md border border-amber-300 bg-amber-50/60 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
+        <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Stripe payout — not yet paired</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          The bank memo identifies a Stripe settlement, but no payout is linked yet.
+        </p>
+      </div>
+    );
+  }
   if (composition.kind === "unresolved") {
     return (
       <div className="rounded-md border border-amber-300 bg-amber-50/60 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
@@ -92,12 +103,16 @@ function Composition({ deposit }: { deposit: WorkbenchDeposit }) {
     );
   }
   if (composition.kind === "stripe_payout") {
+    const refundLines = deposit.charges.filter((charge) => charge.refunded || Number(charge.amountRefunded ?? 0) > 0 || charge.refundPropagationKind != null || charge.refundPropagationStatus === "proposed");
     return (
       <div className="space-y-1.5">
         <div className="rounded-md border border-emerald-200 bg-emerald-50/50 px-2.5 py-2 dark:border-emerald-900 dark:bg-emerald-950/30">
-          <p className="text-xs font-semibold">Stripe payout</p>
+          <p className="text-xs font-semibold">Stripe payout · {money(composition.netTotal)} net</p>
           <p className="text-[11px] text-muted-foreground">
-            {composition.payoutId} · {deposit.charges.length} charge{deposit.charges.length === 1 ? "" : "s"}
+            {composition.payoutDate ? formatDateShort(composition.payoutDate) : "Undated"} · {composition.payoutId} · {composition.chargeCount ?? deposit.charges.length} charge{(composition.chargeCount ?? deposit.charges.length) === 1 ? "" : "s"}
+          </p>
+          <p className="mt-1 text-[10px] tabular-nums text-muted-foreground">
+            Gross {money(composition.grossTotal)} − fees {money(composition.feeTotal)} − refunds {money(composition.refundTotal)} + adjustments {money(composition.adjustmentTotal)} = {money(composition.netTotal)} = bank {money(deposit.bank.amount)}
           </p>
         </div>
         {deposit.charges.slice(0, 3).map((charge) => (
@@ -109,6 +124,12 @@ function Composition({ deposit }: { deposit: WorkbenchDeposit }) {
         {deposit.charges.length > 3 ? (
           <p className="text-[10px] text-muted-foreground">+{deposit.charges.length - 3} more charges</p>
         ) : null}
+        {refundLines.map((charge) => (
+          <div key={`${charge.chargeId}-refund`} className="flex items-center justify-between rounded border border-rose-200 bg-rose-50/50 px-2 py-1 text-[11px] text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+            <span className="truncate">Refund · {charge.payerName ?? charge.chargeId}</span>
+            <span className="tabular-nums">−{money(charge.amountRefunded ?? charge.refundProposedAmount)}</span>
+          </div>
+        ))}
       </div>
     );
   }
@@ -129,18 +150,30 @@ function Composition({ deposit }: { deposit: WorkbenchDeposit }) {
   );
 }
 
-function Accounting({ checks }: { checks: WorkbenchDepositAccountingCheck[] }) {
-  if (!checks.length) {
+function accountingLabel(record: WorkbenchDepositAccountingCheck | WorkbenchDepositQbRecord): string {
+  return record.qbTransactionMemo ?? ("memo" in record ? record.memo : null) ?? record.lineDescription ?? record.stagedPaymentId;
+}
+
+function Accounting({ checks, records }: { checks: WorkbenchDepositAccountingCheck[]; records: WorkbenchDepositQbRecord[] }) {
+  const items = [...checks, ...records];
+  if (!items.length) {
     return <span className="text-xs text-muted-foreground">No accounting check</span>;
   }
   return (
     <div className="space-y-1.5">
-      {checks.map((check) => (
-        <div key={check.id} className="flex items-center justify-between gap-2 rounded-md border bg-card px-2.5 py-1.5">
-          <span className="truncate text-[11px]">{check.note ?? check.stagedPaymentId}</span>
-          <Badge variant={checkTone(check.disposition)} className="shrink-0 text-[10px]">
-            {check.disposition.replace("_", " ")}
-          </Badge>
+      {items.map((check) => (
+        <div key={"id" in check ? check.id : check.stagedPaymentId} className="flex items-center justify-between gap-2 rounded-md border bg-card px-2.5 py-1.5">
+          <span className="min-w-0">
+            <span className="block truncate text-[11px]">{accountingLabel(check)}</span>
+            <span className="block truncate text-[10px] text-muted-foreground">
+              {check.dateReceived ?? "Undated"} · {money(check.amount)} · {check.qbLocation ?? check.revenueLocation ?? "No location"} · {check.payerName ?? check.entityId ?? check.qbPayerType ?? "No entity"}
+            </span>
+          </span>
+          {"disposition" in check ? (
+            <Badge variant={checkTone(check.disposition)} className="shrink-0 text-[10px]">
+              {check.disposition.replace("_", " ")}
+            </Badge>
+          ) : null}
         </div>
       ))}
     </div>
@@ -205,7 +238,9 @@ export function DepositRow({ deposit, expanded, onToggle, actions: suppliedActio
           {deposit.gifts.length ? deposit.gifts.map((gift) => (
             <div key={gift.giftId} className="rounded-md border bg-card px-2.5 py-1.5">
               <p className="truncate text-xs font-semibold">{gift.name ?? gift.giftId}</p>
-              <p className="truncate text-[11px] text-muted-foreground">{gift.donorName ?? "Donor not identified"}</p>
+              <p className="truncate text-[11px] text-muted-foreground">
+                {gift.donorKind ? `${gift.donorKind} · ` : ""}{gift.donorName ?? "Donor not identified"}
+              </p>
               <p className="text-[11px] tabular-nums">{money(gift.amount)}</p>
               <div className="mt-1 flex flex-wrap gap-1">
                 <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openMatchEvidence(gift.giftId, gift.name ?? gift.giftId, evidenceOptions)}>Match evidence</button>
@@ -236,7 +271,7 @@ export function DepositRow({ deposit, expanded, onToggle, actions: suppliedActio
             </div>
           )) : <span className="text-xs text-muted-foreground">No CRM gifts linked</span>}
         </span>
-        <span onClick={(event) => event.stopPropagation()}><Accounting checks={deposit.accountingChecks} /></span>
+        <span onClick={(event) => event.stopPropagation()}><Accounting checks={deposit.accountingChecks} records={deposit.qbRecords} /></span>
       </div>
       {expanded ? (
         <div className="grid gap-3 border-t bg-muted/20 px-4 py-3 lg:grid-cols-3">
