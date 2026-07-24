@@ -10,11 +10,11 @@ const { TEST_USER_ID } = vi.hoisted(() => ({
 
 vi.mock("../middlewares/requireAuth", () => ({
   requireAuth: (
-    req: { appUser?: { id: string } },
+    req: { appUser?: { id: string; role: string } },
     _res: unknown,
     next: () => void,
   ) => {
-    req.appUser = { id: TEST_USER_ID };
+    req.appUser = { id: TEST_USER_ID, role: "admin" };
     next();
   },
 }));
@@ -27,6 +27,7 @@ const payoutIds: string[] = [];
 const unitIds: string[] = [];
 const componentIds: string[] = [];
 const stagedIds: string[] = [];
+const depositQboComponentIds: string[] = [];
 const accountingCheckIds: string[] = [];
 let db: (typeof import("@workspace/db"))["db"];
 let schema: typeof import("@workspace/db");
@@ -115,6 +116,11 @@ async function listDeposits(lens: string, q?: string, limit = "100") {
   return result.json;
 }
 
+async function requestJson(method: string, path: string) {
+  const response = await fetch(`${baseUrl}${path}`, { method });
+  return { status: response.status, json: response.status === 204 ? null : await response.json() };
+}
+
 beforeAll(async () => {
   if (!HAS_DB) return;
   schema = await import("@workspace/db");
@@ -146,6 +152,9 @@ afterAll(async () => {
   }
   if (accountingCheckIds.length) {
     await db.delete(schema.qboAccountingChecks).where(inArrayFn(schema.qboAccountingChecks.id, accountingCheckIds));
+  }
+  if (depositQboComponentIds.length) {
+    await db.delete(schema.depositQboComponents).where(inArrayFn(schema.depositQboComponents.id, depositQboComponentIds));
   }
   if (stagedIds.length) {
     await db.delete(schema.stagedPayments).where(inArrayFn(schema.stagedPayments.id, stagedIds));
@@ -235,5 +244,76 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(row?.lenses).toContain("unresolved_composition");
     expect(row?.coverage.state).toBeTruthy();
     expect(row?.coverage.state.flags).toBeTruthy();
+  });
+
+  it("surfaces provisional QBO composition and exclusion-driven classification", async () => {
+    const deposit = await seedDeposit("Membership deposit", "125.00");
+    const stagedPaymentId = nextId("provisional_staged");
+    const componentId = nextId("provisional_component");
+    await db.insert(schema.stagedPayments).values({
+      id: stagedPaymentId,
+      realmId: RUN,
+      qbEntityType: "deposit",
+      qbEntityId: nextId("provisional_qb"),
+      qbDepositId: nextId("provisional_deposit"),
+      dateReceived: "2099-12-31",
+      amount: "125.00",
+      payerName: "Example Membership",
+      exclusionReason: "membership",
+    });
+    stagedIds.push(stagedPaymentId);
+    await db.insert(schema.depositQboComponents).values({
+      id: componentId,
+      bankDepositId: deposit,
+      realmId: RUN,
+      qbDepositId: nextId("provisional_group"),
+      stagedPaymentId,
+      amount: "125.00",
+      matchBasis: "deposit_header_exact",
+    });
+    depositQboComponentIds.push(componentId);
+
+    const result = await listDeposits("not_fundraising", "Membership deposit");
+    const row = result.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.notFundraisingReason).toBe("membership");
+    expect(row?.composition.kind).toBe("qbo_provisional");
+    expect(row?.composition.components[0]).toMatchObject({
+      unconfirmed: true,
+      source: "qbo_provisional",
+      exclusionReason: "membership",
+      amount: "125.00",
+    });
+  });
+
+  it("confirms and dismisses provisional QBO components", async () => {
+    const deposit = await seedDeposit("Provisional action deposit", "80.00");
+    const stagedPaymentId = nextId("action_staged");
+    const componentId = nextId("action_component");
+    await db.insert(schema.stagedPayments).values({
+      id: stagedPaymentId,
+      realmId: RUN,
+      qbEntityType: "deposit",
+      qbEntityId: nextId("action_qb"),
+      qbDepositId: nextId("action_deposit"),
+      dateReceived: "2099-12-31",
+      amount: "80.00",
+    });
+    stagedIds.push(stagedPaymentId);
+    await db.insert(schema.depositQboComponents).values({
+      id: componentId,
+      bankDepositId: deposit,
+      realmId: RUN,
+      qbDepositId: nextId("action_group"),
+      stagedPaymentId,
+      amount: "80.00",
+      matchBasis: "deposit_header_ambiguous",
+    });
+    depositQboComponentIds.push(componentId);
+
+    const confirmed = await requestJson("POST", `/api/reconciliation/deposit-qbo-components/${componentId}/confirm`);
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.json).toMatchObject({ id: componentId, confirmed: true });
+    const dismissed = await requestJson("DELETE", `/api/reconciliation/deposit-qbo-components/${componentId}`);
+    expect(dismissed.status).toBe(204);
   });
 });

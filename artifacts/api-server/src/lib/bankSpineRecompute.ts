@@ -274,6 +274,89 @@ export async function recomputeBankSpine(): Promise<void> {
     ON CONFLICT (id) DO NOTHING
   `);
 
+  // 4c. Provisional accounting-only decomposition of QBO Deposit member
+  //     lines. This deliberately includes excluded staged payments and does
+  //     not require a payment_unit: it is evidence for the accounting column,
+  //     never counted money. Real bank components win and are excluded by
+  //     source_staged_payment_id; payout-claimed deposits stay on the Stripe
+  //     authority path.
+  await db.execute(sql`
+    WITH scope AS (
+      SELECT sp.*
+      FROM staged_payments sp
+      WHERE sp.qb_deposit_id IS NOT NULL
+        AND sp.qb_entity_type <> 'deposit_header'
+        AND sp.amount IS NOT NULL AND sp.amount > 0
+        AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
+        AND NOT EXISTS (SELECT 1 FROM staged_payments child WHERE child.split_parent_id = sp.id)
+    ),
+    depinfo AS (
+      SELECT g.realm_id, g.qb_deposit_id,
+        (SELECT (h.qb_raw->>'TotalAmt')::numeric
+         FROM staged_payments h
+         WHERE h.realm_id = g.realm_id
+           AND h.qb_entity_id = g.qb_deposit_id
+           AND h.qb_entity_type IN ('deposit', 'deposit_header')
+           AND h.qb_raw ? 'TotalAmt'
+         ORDER BY h.id LIMIT 1) AS total,
+        (SELECT COALESCE((h.qb_raw->>'TxnDate')::date, h.date_received)
+         FROM staged_payments h
+         WHERE h.realm_id = g.realm_id
+           AND h.qb_entity_id = g.qb_deposit_id
+           AND h.qb_entity_type IN ('deposit', 'deposit_header')
+         ORDER BY h.id LIMIT 1) AS txn_date
+      FROM (SELECT DISTINCT realm_id, qb_deposit_id FROM scope) g
+    ),
+    qside AS (
+      SELECT *,
+        count(*) OVER (PARTITION BY total, txn_date) AS class_n,
+        row_number() OVER (PARTITION BY total, txn_date ORDER BY realm_id, qb_deposit_id) AS rn
+      FROM depinfo
+      WHERE total IS NOT NULL AND txn_date IS NOT NULL
+    ),
+    bside AS (
+      SELECT d.id, d.amount, d.deposit_date,
+        count(*) OVER (PARTITION BY d.amount, d.deposit_date) AS class_n,
+        row_number() OVER (PARTITION BY d.amount, d.deposit_date ORDER BY d.id) AS rn
+      FROM bank_deposits d
+      WHERE d.source = 'bank_csv_export'
+        AND NOT EXISTS (SELECT 1 FROM stripe_payouts p WHERE p.bank_deposit_id = d.id)
+    ),
+    pairs AS (
+      SELECT q.realm_id, q.qb_deposit_id, b.id AS bank_deposit_id,
+        (q.class_n > 1 OR b.class_n > 1) AS ambiguous
+      FROM qside q
+      JOIN bside b
+        ON b.amount = q.total
+       AND b.deposit_date = q.txn_date
+       AND b.rn = q.rn
+    )
+    INSERT INTO deposit_qbo_components (
+      id, bank_deposit_id, realm_id, qb_deposit_id, staged_payment_id,
+      amount, match_basis
+    )
+    SELECT
+      'dqc_' || m.id,
+      p.bank_deposit_id,
+      m.realm_id,
+      m.qb_deposit_id,
+      m.id,
+      m.amount,
+      CASE WHEN p.ambiguous
+        THEN 'deposit_header_ambiguous'::deposit_qbo_match_basis
+        ELSE 'deposit_header_exact'::deposit_qbo_match_basis
+      END
+    FROM scope m
+    JOIN pairs p
+      ON p.realm_id = m.realm_id AND p.qb_deposit_id = m.qb_deposit_id
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM bank_deposit_components real_component
+      WHERE real_component.source_staged_payment_id = m.id
+    )
+    ON CONFLICT (id) DO NOTHING
+  `);
+
   // 5. Donorbox pointer on card units (0165): pulled charge id first, then the
   //    human donorbox_charge link. NULL-only + cardinality-guarded.
   await db.execute(sql`

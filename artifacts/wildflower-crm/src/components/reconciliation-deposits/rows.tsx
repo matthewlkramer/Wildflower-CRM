@@ -41,6 +41,8 @@ export interface DepositRowProps {
   expanded: boolean;
   onToggle: () => void;
   actions?: ClusterActions;
+  onConfirmProvisional?: (id: string) => void;
+  onDismissProvisional?: (id: string) => void;
 }
 
 const NOOP_ACTIONS: ClusterActions = {
@@ -80,7 +82,17 @@ export function DepositGridHeader() {
   );
 }
 
-function Composition({ deposit }: { deposit: WorkbenchDeposit }) {
+function Composition({
+  deposit,
+  actions,
+  onConfirmProvisional,
+  onDismissProvisional,
+}: {
+  deposit: WorkbenchDeposit;
+  actions: ClusterActions;
+  onConfirmProvisional?: (id: string) => void;
+  onDismissProvisional?: (id: string) => void;
+}) {
   const composition = deposit.composition;
   if (composition.kind === "stripe_unlinked") {
     return (
@@ -136,13 +148,22 @@ function Composition({ deposit }: { deposit: WorkbenchDeposit }) {
   return (
     <div className="space-y-1.5">
       {composition.components.map((component) => (
-        <div key={component.componentId} className="flex items-center justify-between rounded-md border bg-card px-2.5 py-1.5 text-[11px]">
+        <div key={component.componentId} className={`flex items-center justify-between rounded-md border px-2.5 py-1.5 text-[11px] ${component.unconfirmed ? "border-amber-300 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/30" : "bg-card"}`}>
           <span className="flex min-w-0 items-center gap-1.5 truncate">
             {component.needsReview || component.ambiguousDepositMatch ? <CircleAlert className="h-3 w-3 shrink-0 text-amber-600" /> : null}
-            <span className="font-medium">{component.kind.replace("_", " ")}</span>
-            <span className="truncate text-muted-foreground">{component.paymentUnitId}</span>
+            <span className="font-medium">{component.label ?? component.kind.replace("_", " ")}</span>
+            {component.unconfirmed ? <Badge variant="outline" className="shrink-0 border-amber-400 text-[9px] text-amber-700">Unconfirmed</Badge> : null}
+            {component.exclusionReason ? <Badge variant="secondary" className="shrink-0 text-[9px]">{component.exclusionReason.replaceAll("_", " ")}</Badge> : null}
           </span>
-          <span className="tabular-nums">{money(component.amount)}</span>
+          <span className="flex shrink-0 items-center gap-2">
+            <span className="tabular-nums">{money(component.amount)}</span>
+            {component.unconfirmed && component.componentId && actions.isFinanceOrAdmin ? (
+              <>
+                <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => onConfirmProvisional?.(component.componentId)}>Confirm</button>
+                <button type="button" className="text-[10px] text-muted-foreground hover:underline" onClick={() => onDismissProvisional?.(component.componentId)}>Dismiss</button>
+              </>
+            ) : null}
+          </span>
         </div>
       ))}
       {!composition.components.length ? <span className="text-xs text-muted-foreground">No components</span> : null}
@@ -169,11 +190,15 @@ function Accounting({ checks, records }: { checks: WorkbenchDepositAccountingChe
               {check.dateReceived ?? "Undated"} · {money(check.amount)} · {check.qbLocation ?? check.revenueLocation ?? "No location"} · {check.payerName ?? check.entityId ?? check.qbPayerType ?? "No entity"}
             </span>
           </span>
-          {"disposition" in check ? (
-            <Badge variant={checkTone(check.disposition)} className="shrink-0 text-[10px]">
-              {check.disposition.replace("_", " ")}
-            </Badge>
-          ) : null}
+          <span className="flex shrink-0 items-center gap-1">
+            {"unconfirmed" in check && check.unconfirmed ? <Badge variant="outline" className="border-amber-400 text-[9px] text-amber-700">Unconfirmed</Badge> : null}
+            {check.exclusionReason ? <Badge variant="secondary" className="text-[9px]">{check.exclusionReason.replaceAll("_", " ")}</Badge> : null}
+            {"disposition" in check ? (
+              <Badge variant={checkTone(check.disposition)} className="text-[10px]">
+                {check.disposition.replace("_", " ")}
+              </Badge>
+            ) : null}
+          </span>
         </div>
       ))}
     </div>
@@ -200,7 +225,7 @@ function qbPreview(record: WorkbenchDeposit["qbRecords"][number]): EvidencePrevi
   };
 }
 
-export function DepositRow({ deposit, expanded, onToggle, actions: suppliedActions }: DepositRowProps) {
+export function DepositRow({ deposit, expanded, onToggle, actions: suppliedActions, onConfirmProvisional, onDismissProvisional }: DepositRowProps) {
   const actions = suppliedActions ?? NOOP_ACTIONS;
   const isNotFundraising = deposit.lenses.includes("not_fundraising");
   const evidenceOptions: EvidencePickOption[] = [
@@ -226,14 +251,14 @@ export function DepositRow({ deposit, expanded, onToggle, actions: suppliedActio
         <span className="min-w-0">
           <span className="flex items-center gap-1.5 text-sm font-semibold tabular-nums">
             {money(deposit.bank.amount)}
-            {isNotFundraising ? <Badge variant="outline" className="text-[9px]">Not fundraising</Badge> : null}
+            {isNotFundraising ? <Badge variant="outline" className="text-[9px]">Not fundraising{deposit.notFundraisingReason ? ` · ${deposit.notFundraisingReason.replaceAll("_", " ")}` : ""}</Badge> : null}
           </span>
           <span className="mt-1 block text-[11px] text-muted-foreground">
             {deposit.date ? formatDateShort(deposit.date) : "Undated"} · {deposit.bank.account ?? "Wells Fargo"}
           </span>
           <span className="mt-1 block truncate text-[11px] text-muted-foreground">{deposit.bank.memo ?? deposit.bank.reference ?? deposit.anchorId}</span>
         </span>
-        <span onClick={(event) => event.stopPropagation()}><Composition deposit={deposit} /></span>
+        <span onClick={(event) => event.stopPropagation()}><Composition deposit={deposit} actions={actions} onConfirmProvisional={onConfirmProvisional} onDismissProvisional={onDismissProvisional} /></span>
         <span onClick={(event) => event.stopPropagation()} className="space-y-1.5">
           {deposit.gifts.length ? deposit.gifts.map((gift) => (
             <div key={gift.giftId} className="rounded-md border bg-card px-2.5 py-1.5">

@@ -31,6 +31,7 @@ import type {
   ConfirmChargeTiesResult,
   ConfirmSettlementLinkBody,
   ConfirmSettlementLinkResult,
+  DepositQboComponentMutationResult,
   FinanceForbiddenResponse,
   GiftMissingQbList,
   IncompleteGiftList,
@@ -89,7 +90,7 @@ export const getListReconciliationCardsUrl = (params?: ListReconciliationCardsPa
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -101,16 +102,16 @@ export const getListReconciliationCardsUrl = (params?: ListReconciliationCardsPa
 }
 
 export const listReconciliationCards = async (params?: ListReconciliationCardsParams, options?: RequestInit): Promise<ReconciliationCardList> => {
-  
+
   return customFetch<ReconciliationCardList>(getListReconciliationCardsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -121,7 +122,7 @@ export const getListReconciliationCardsQueryKey = (params?: ListReconciliationCa
     ] as const;
     }
 
-    
+
 export const getListReconciliationCardsQueryOptions = <TData = Awaited<ReturnType<typeof listReconciliationCards>>, TError = ErrorType<unknown>>(params?: ListReconciliationCardsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReconciliationCards>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -129,13 +130,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListReconciliationCardsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listReconciliationCards>>> = ({ signal }) => listReconciliationCards(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listReconciliationCards>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -150,7 +151,7 @@ export type ListReconciliationCardsQueryError = ErrorType<unknown>
 
 export function useListReconciliationCards<TData = Awaited<ReturnType<typeof listReconciliationCards>>, TError = ErrorType<unknown>>(
  params?: ListReconciliationCardsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReconciliationCards>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListReconciliationCardsQueryOptions(params,options)
@@ -176,22 +177,22 @@ disambiguation.
 export const getGetReconciliationGraphUrl = (stagedPaymentId: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/cards/${stagedPaymentId}/graph`
 }
 
 export const getReconciliationGraph = async (stagedPaymentId: string, options?: RequestInit): Promise<ReconciliationGraph> => {
-  
+
   return customFetch<ReconciliationGraph>(getGetReconciliationGraphUrl(stagedPaymentId),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -202,7 +203,7 @@ export const getGetReconciliationGraphQueryKey = (stagedPaymentId: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetReconciliationGraphQueryOptions = <TData = Awaited<ReturnType<typeof getReconciliationGraph>>, TError = ErrorType<NotFoundResponse>>(stagedPaymentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReconciliationGraph>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -210,13 +211,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetReconciliationGraphQueryKey(stagedPaymentId);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getReconciliationGraph>>> = ({ signal }) => getReconciliationGraph(stagedPaymentId, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(stagedPaymentId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReconciliationGraph>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -231,7 +232,7 @@ export type GetReconciliationGraphQueryError = ErrorType<NotFoundResponse>
 
 export function useGetReconciliationGraph<TData = Awaited<ReturnType<typeof getReconciliationGraph>>, TError = ErrorType<NotFoundResponse>>(
  stagedPaymentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReconciliationGraph>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetReconciliationGraphQueryOptions(stagedPaymentId,options)
@@ -259,22 +260,22 @@ a reviewer confirmation). Any leg is empty/null when it doesn't apply
 export const getGetReconciliationLineageUrl = (stagedPaymentId: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/cards/${stagedPaymentId}/lineage`
 }
 
 export const getReconciliationLineage = async (stagedPaymentId: string, options?: RequestInit): Promise<SettlementLineage> => {
-  
+
   return customFetch<SettlementLineage>(getGetReconciliationLineageUrl(stagedPaymentId),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -285,7 +286,7 @@ export const getGetReconciliationLineageQueryKey = (stagedPaymentId: string,) =>
     ] as const;
     }
 
-    
+
 export const getGetReconciliationLineageQueryOptions = <TData = Awaited<ReturnType<typeof getReconciliationLineage>>, TError = ErrorType<NotFoundResponse>>(stagedPaymentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReconciliationLineage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -293,13 +294,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetReconciliationLineageQueryKey(stagedPaymentId);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getReconciliationLineage>>> = ({ signal }) => getReconciliationLineage(stagedPaymentId, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(stagedPaymentId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReconciliationLineage>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -314,7 +315,7 @@ export type GetReconciliationLineageQueryError = ErrorType<NotFoundResponse>
 
 export function useGetReconciliationLineage<TData = Awaited<ReturnType<typeof getReconciliationLineage>>, TError = ErrorType<NotFoundResponse>>(
  stagedPaymentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReconciliationLineage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetReconciliationLineageQueryOptions(stagedPaymentId,options)
@@ -342,22 +343,22 @@ Stripe, or Donorbox and mints no gifts (enrich, don't mint).
 export const getConfirmBundleCrossProcessorTiesUrl = (stagedPaymentId: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/bundles/${stagedPaymentId}/confirm-ties`
 }
 
 export const confirmBundleCrossProcessorTies = async (stagedPaymentId: string, options?: RequestInit): Promise<BundleTieResult> => {
-  
+
   return customFetch<BundleTieResult>(getConfirmBundleCrossProcessorTiesUrl(stagedPaymentId),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -372,7 +373,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>, {stagedPaymentId: string}> = (props) => {
@@ -383,13 +384,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ConfirmBundleCrossProcessorTiesMutationResult = NonNullable<Awaited<ReturnType<typeof confirmBundleCrossProcessorTies>>>
-    
+
     export type ConfirmBundleCrossProcessorTiesMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>
 
     /**
@@ -423,7 +424,7 @@ export const getSearchReconciliationNodeUrl = (nodeType: ReconciliationMatchNode
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -436,16 +437,16 @@ export const getSearchReconciliationNodeUrl = (nodeType: ReconciliationMatchNode
 
 export const searchReconciliationNode = async (nodeType: ReconciliationMatchNodeType,
     params?: SearchReconciliationNodeParams, options?: RequestInit): Promise<ReconciliationSearchList> => {
-  
+
   return customFetch<ReconciliationSearchList>(getSearchReconciliationNodeUrl(nodeType,params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -457,7 +458,7 @@ export const getSearchReconciliationNodeQueryKey = (nodeType: ReconciliationMatc
     ] as const;
     }
 
-    
+
 export const getSearchReconciliationNodeQueryOptions = <TData = Awaited<ReturnType<typeof searchReconciliationNode>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(nodeType: ReconciliationMatchNodeType,
     params?: SearchReconciliationNodeParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationNode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
@@ -466,13 +467,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getSearchReconciliationNodeQueryKey(nodeType,params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof searchReconciliationNode>>> = ({ signal }) => searchReconciliationNode(nodeType,params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(nodeType), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationNode>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -488,7 +489,7 @@ export type SearchReconciliationNodeQueryError = ErrorType<BadRequestResponse | 
 export function useSearchReconciliationNode<TData = Awaited<ReturnType<typeof searchReconciliationNode>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
  nodeType: ReconciliationMatchNodeType,
     params?: SearchReconciliationNodeParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationNode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getSearchReconciliationNodeQueryOptions(nodeType,params,options)
@@ -523,16 +524,16 @@ against one gift instead.
 export const getApproveReconciliationCardUrl = (stagedPaymentId: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/cards/${stagedPaymentId}/approve`
 }
 
 export const approveReconciliationCard = async (stagedPaymentId: string,
     approveCompleteMatchBody: ApproveCompleteMatchBody, options?: RequestInit): Promise<ReconciliationApproveResult> => {
-  
+
   return customFetch<ReconciliationApproveResult>(getApproveReconciliationCardUrl(stagedPaymentId),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -540,7 +541,7 @@ export const approveReconciliationCard = async (stagedPaymentId: string,
       approveCompleteMatchBody,)
   }
 );}
-  
+
 
 
 
@@ -555,7 +556,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof approveReconciliationCard>>, {stagedPaymentId: string;data: BodyType<ApproveCompleteMatchBody>}> = (props) => {
@@ -566,7 +567,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -609,7 +610,7 @@ export const getSearchReconciliationQbStagedUrl = (params?: SearchReconciliation
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -621,16 +622,16 @@ export const getSearchReconciliationQbStagedUrl = (params?: SearchReconciliation
 }
 
 export const searchReconciliationQbStaged = async (params?: SearchReconciliationQbStagedParams, options?: RequestInit): Promise<ReconciliationSearchList> => {
-  
+
   return customFetch<ReconciliationSearchList>(getSearchReconciliationQbStagedUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -641,7 +642,7 @@ export const getSearchReconciliationQbStagedQueryKey = (params?: SearchReconcili
     ] as const;
     }
 
-    
+
 export const getSearchReconciliationQbStagedQueryOptions = <TData = Awaited<ReturnType<typeof searchReconciliationQbStaged>>, TError = ErrorType<BadRequestResponse>>(params?: SearchReconciliationQbStagedParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationQbStaged>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -649,13 +650,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getSearchReconciliationQbStagedQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof searchReconciliationQbStaged>>> = ({ signal }) => searchReconciliationQbStaged(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationQbStaged>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -670,7 +671,7 @@ export type SearchReconciliationQbStagedQueryError = ErrorType<BadRequestRespons
 
 export function useSearchReconciliationQbStaged<TData = Awaited<ReturnType<typeof searchReconciliationQbStaged>>, TError = ErrorType<BadRequestResponse>>(
  params?: SearchReconciliationQbStagedParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationQbStaged>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getSearchReconciliationQbStagedQueryOptions(params,options)
@@ -697,7 +698,7 @@ export const getSearchReconciliationPayoutsUrl = (params?: SearchReconciliationP
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -709,16 +710,16 @@ export const getSearchReconciliationPayoutsUrl = (params?: SearchReconciliationP
 }
 
 export const searchReconciliationPayouts = async (params?: SearchReconciliationPayoutsParams, options?: RequestInit): Promise<PayoutSearchList> => {
-  
+
   return customFetch<PayoutSearchList>(getSearchReconciliationPayoutsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -729,7 +730,7 @@ export const getSearchReconciliationPayoutsQueryKey = (params?: SearchReconcilia
     ] as const;
     }
 
-    
+
 export const getSearchReconciliationPayoutsQueryOptions = <TData = Awaited<ReturnType<typeof searchReconciliationPayouts>>, TError = ErrorType<BadRequestResponse>>(params?: SearchReconciliationPayoutsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationPayouts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -737,13 +738,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getSearchReconciliationPayoutsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof searchReconciliationPayouts>>> = ({ signal }) => searchReconciliationPayouts(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationPayouts>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -758,7 +759,7 @@ export type SearchReconciliationPayoutsQueryError = ErrorType<BadRequestResponse
 
 export function useSearchReconciliationPayouts<TData = Awaited<ReturnType<typeof searchReconciliationPayouts>>, TError = ErrorType<BadRequestResponse>>(
  params?: SearchReconciliationPayoutsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchReconciliationPayouts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getSearchReconciliationPayoutsQueryOptions(params,options)
@@ -772,6 +773,146 @@ export function useSearchReconciliationPayouts<TData = Awaited<ReturnType<typeof
 
 
 /**
+ * Finance/admin review only. Confirmation records accounting review and never promotes the row into the counted bank-spine money model.
+ * @summary Confirm a provisional QBO decomposition row for a bank deposit.
+ */
+export const getConfirmDepositQboComponentUrl = (id: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposit-qbo-components/${id}/confirm`
+}
+
+export const confirmDepositQboComponent = async (id: string, options?: RequestInit): Promise<DepositQboComponentMutationResult> => {
+
+  return customFetch<DepositQboComponentMutationResult>(getConfirmDepositQboComponentUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getConfirmDepositQboComponentMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmDepositQboComponent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof confirmDepositQboComponent>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['confirmDepositQboComponent'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmDepositQboComponent>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  confirmDepositQboComponent(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConfirmDepositQboComponentMutationResult = NonNullable<Awaited<ReturnType<typeof confirmDepositQboComponent>>>
+
+    export type ConfirmDepositQboComponentMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Confirm a provisional QBO decomposition row for a bank deposit.
+ */
+export const useConfirmDepositQboComponent = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmDepositQboComponent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof confirmDepositQboComponent>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getConfirmDepositQboComponentMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Deletes the provisional accounting-plane row and never changes the counted bank-spine money model.
+ * @summary Dismiss a provisional QBO decomposition row.
+ */
+export const getDismissDepositQboComponentUrl = (id: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposit-qbo-components/${id}`
+}
+
+export const dismissDepositQboComponent = async (id: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDismissDepositQboComponentUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDismissDepositQboComponentMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissDepositQboComponent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof dismissDepositQboComponent>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['dismissDepositQboComponent'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissDepositQboComponent>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  dismissDepositQboComponent(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DismissDepositQboComponentMutationResult = NonNullable<Awaited<ReturnType<typeof dismissDepositQboComponent>>>
+
+    export type DismissDepositQboComponentMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Dismiss a provisional QBO decomposition row.
+ */
+export const useDismissDepositQboComponent = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissDepositQboComponent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof dismissDepositQboComponent>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDismissDepositQboComponentMutationOptions(options));
+    }
+    /**
  * Records the Plane-1 payout↔deposit pairing fact
 (staged_payments.settled_stripe_payout_id) for ONE Stripe payout —
 without touching the per-charge → gift booking (Plane 2), which the
@@ -797,16 +938,16 @@ Behaviour:
 export const getConfirmSettlementLinkUrl = (payoutId: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/settlement-links/${payoutId}/confirm`
 }
 
 export const confirmSettlementLink = async (payoutId: string,
     confirmSettlementLinkBody?: ConfirmSettlementLinkBody, options?: RequestInit): Promise<ConfirmSettlementLinkResult> => {
-  
+
   return customFetch<ConfirmSettlementLinkResult>(getConfirmSettlementLinkUrl(payoutId),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -814,7 +955,7 @@ export const confirmSettlementLink = async (payoutId: string,
       confirmSettlementLinkBody,)
   }
 );}
-  
+
 
 
 
@@ -829,7 +970,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmSettlementLink>>, {payoutId: string;data: BodyType<ConfirmSettlementLinkBody>}> = (props) => {
@@ -840,7 +981,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -901,16 +1042,16 @@ row leaves the "Needs payout tie" column.
 export const getConfirmPayoutChargeTiesUrl = (payoutId: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/payouts/${payoutId}/charge-ties/confirm`
 }
 
 export const confirmPayoutChargeTies = async (payoutId: string,
     confirmChargeTiesBody?: ConfirmChargeTiesBody, options?: RequestInit): Promise<ConfirmChargeTiesResult> => {
-  
+
   return customFetch<ConfirmChargeTiesResult>(getConfirmPayoutChargeTiesUrl(payoutId),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -918,7 +1059,7 @@ export const confirmPayoutChargeTies = async (payoutId: string,
       confirmChargeTiesBody,)
   }
 );}
-  
+
 
 
 
@@ -933,7 +1074,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmPayoutChargeTies>>, {payoutId: string;data: BodyType<ConfirmChargeTiesBody>}> = (props) => {
@@ -944,7 +1085,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -984,22 +1125,22 @@ already confirmed-tied (revert is a separate path).
 export const getRejectChargeQbTieUrl = (chargeId: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/charges/${chargeId}/qb-tie/reject`
 }
 
 export const rejectChargeQbTie = async (chargeId: string, options?: RequestInit): Promise<RejectChargeQbTieResult> => {
-  
+
   return customFetch<RejectChargeQbTieResult>(getRejectChargeQbTieUrl(chargeId),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1014,7 +1155,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectChargeQbTie>>, {chargeId: string}> = (props) => {
@@ -1025,13 +1166,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RejectChargeQbTieMutationResult = NonNullable<Awaited<ReturnType<typeof rejectChargeQbTie>>>
-    
+
     export type RejectChargeQbTieMutationError = ErrorType<FinanceForbiddenResponse | void>
 
     /**
@@ -1070,16 +1211,16 @@ several gifts; this splits the QB EVIDENCE row itself.
 export const getSplitStagedPaymentIntoUnitsUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/staged-payments/${id}/split-units`
 }
 
 export const splitStagedPaymentIntoUnits = async (id: string,
     splitStagedPaymentUnitsBody: SplitStagedPaymentUnitsBody, options?: RequestInit): Promise<SplitStagedPaymentUnitsResult> => {
-  
+
   return customFetch<SplitStagedPaymentUnitsResult>(getSplitStagedPaymentIntoUnitsUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1087,7 +1228,7 @@ export const splitStagedPaymentIntoUnits = async (id: string,
       splitStagedPaymentUnitsBody,)
   }
 );}
-  
+
 
 
 
@@ -1102,7 +1243,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof splitStagedPaymentIntoUnits>>, {id: string;data: BodyType<SplitStagedPaymentUnitsBody>}> = (props) => {
@@ -1113,7 +1254,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1148,22 +1289,22 @@ exception: units are synthetic CRM-created rows with zero claims.
 export const getRevertStagedPaymentSplitUnitsUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/staged-payments/${id}/unsplit-units`
 }
 
 export const revertStagedPaymentSplitUnits = async (id: string, options?: RequestInit): Promise<UnsplitStagedPaymentUnitsResult> => {
-  
+
   return customFetch<UnsplitStagedPaymentUnitsResult>(getRevertStagedPaymentSplitUnitsUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1178,7 +1319,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof revertStagedPaymentSplitUnits>>, {id: string}> = (props) => {
@@ -1189,13 +1330,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RevertStagedPaymentSplitUnitsMutationResult = NonNullable<Awaited<ReturnType<typeof revertStagedPaymentSplitUnits>>>
-    
+
     export type RevertStagedPaymentSplitUnitsMutationError = ErrorType<FinanceForbiddenResponse | void>
 
     /**
@@ -1232,22 +1373,22 @@ via the reject endpoint instead).
 export const getRevertChargeQbTieUrl = (chargeId: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/charges/${chargeId}/qb-tie/revert`
 }
 
 export const revertChargeQbTie = async (chargeId: string, options?: RequestInit): Promise<RevertChargeQbTieResult> => {
-  
+
   return customFetch<RevertChargeQbTieResult>(getRevertChargeQbTieUrl(chargeId),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1262,7 +1403,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof revertChargeQbTie>>, {chargeId: string}> = (props) => {
@@ -1273,13 +1414,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RevertChargeQbTieMutationResult = NonNullable<Awaited<ReturnType<typeof revertChargeQbTie>>>
-    
+
     export type RevertChargeQbTieMutationError = ErrorType<FinanceForbiddenResponse | void>
 
     /**
@@ -1315,7 +1456,7 @@ export const getListGiftsMissingQbUrl = (params?: ListGiftsMissingQbParams,) => 
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -1327,16 +1468,16 @@ export const getListGiftsMissingQbUrl = (params?: ListGiftsMissingQbParams,) => 
 }
 
 export const listGiftsMissingQb = async (params?: ListGiftsMissingQbParams, options?: RequestInit): Promise<GiftMissingQbList> => {
-  
+
   return customFetch<GiftMissingQbList>(getListGiftsMissingQbUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1347,7 +1488,7 @@ export const getListGiftsMissingQbQueryKey = (params?: ListGiftsMissingQbParams,
     ] as const;
     }
 
-    
+
 export const getListGiftsMissingQbQueryOptions = <TData = Awaited<ReturnType<typeof listGiftsMissingQb>>, TError = ErrorType<BadRequestResponse>>(params?: ListGiftsMissingQbParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGiftsMissingQb>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -1355,13 +1496,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListGiftsMissingQbQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listGiftsMissingQb>>> = ({ signal }) => listGiftsMissingQb(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGiftsMissingQb>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1376,7 +1517,7 @@ export type ListGiftsMissingQbQueryError = ErrorType<BadRequestResponse>
 
 export function useListGiftsMissingQb<TData = Awaited<ReturnType<typeof listGiftsMissingQb>>, TError = ErrorType<BadRequestResponse>>(
  params?: ListGiftsMissingQbParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGiftsMissingQb>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListGiftsMissingQbQueryOptions(params,options)
@@ -1408,7 +1549,7 @@ export const getListIncompleteGiftsUrl = (params?: ListIncompleteGiftsParams,) =
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -1420,16 +1561,16 @@ export const getListIncompleteGiftsUrl = (params?: ListIncompleteGiftsParams,) =
 }
 
 export const listIncompleteGifts = async (params?: ListIncompleteGiftsParams, options?: RequestInit): Promise<IncompleteGiftList> => {
-  
+
   return customFetch<IncompleteGiftList>(getListIncompleteGiftsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1440,7 +1581,7 @@ export const getListIncompleteGiftsQueryKey = (params?: ListIncompleteGiftsParam
     ] as const;
     }
 
-    
+
 export const getListIncompleteGiftsQueryOptions = <TData = Awaited<ReturnType<typeof listIncompleteGifts>>, TError = ErrorType<BadRequestResponse>>(params?: ListIncompleteGiftsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listIncompleteGifts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -1448,13 +1589,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListIncompleteGiftsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listIncompleteGifts>>> = ({ signal }) => listIncompleteGifts(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listIncompleteGifts>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1469,7 +1610,7 @@ export type ListIncompleteGiftsQueryError = ErrorType<BadRequestResponse>
 
 export function useListIncompleteGifts<TData = Awaited<ReturnType<typeof listIncompleteGifts>>, TError = ErrorType<BadRequestResponse>>(
  params?: ListIncompleteGiftsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listIncompleteGifts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListIncompleteGiftsQueryOptions(params,options)
@@ -1500,7 +1641,7 @@ export const getListReconciliationBundleAnchorsUrl = (params?: ListReconciliatio
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -1512,16 +1653,16 @@ export const getListReconciliationBundleAnchorsUrl = (params?: ListReconciliatio
 }
 
 export const listReconciliationBundleAnchors = async (params?: ListReconciliationBundleAnchorsParams, options?: RequestInit): Promise<BundleAnchorListResponse> => {
-  
+
   return customFetch<BundleAnchorListResponse>(getListReconciliationBundleAnchorsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1532,7 +1673,7 @@ export const getListReconciliationBundleAnchorsQueryKey = (params?: ListReconcil
     ] as const;
     }
 
-    
+
 export const getListReconciliationBundleAnchorsQueryOptions = <TData = Awaited<ReturnType<typeof listReconciliationBundleAnchors>>, TError = ErrorType<unknown>>(params?: ListReconciliationBundleAnchorsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReconciliationBundleAnchors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -1540,13 +1681,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListReconciliationBundleAnchorsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listReconciliationBundleAnchors>>> = ({ signal }) => listReconciliationBundleAnchors(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listReconciliationBundleAnchors>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1561,7 +1702,7 @@ export type ListReconciliationBundleAnchorsQueryError = ErrorType<unknown>
 
 export function useListReconciliationBundleAnchors<TData = Awaited<ReturnType<typeof listReconciliationBundleAnchors>>, TError = ErrorType<unknown>>(
  params?: ListReconciliationBundleAnchorsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReconciliationBundleAnchors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListReconciliationBundleAnchorsQueryOptions(params,options)
@@ -1602,7 +1743,7 @@ export const getListWorkbenchClustersUrl = (params?: ListWorkbenchClustersParams
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -1614,16 +1755,16 @@ export const getListWorkbenchClustersUrl = (params?: ListWorkbenchClustersParams
 }
 
 export const listWorkbenchClusters = async (params?: ListWorkbenchClustersParams, options?: RequestInit): Promise<WorkbenchClusterListResponse> => {
-  
+
   return customFetch<WorkbenchClusterListResponse>(getListWorkbenchClustersUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1634,7 +1775,7 @@ export const getListWorkbenchClustersQueryKey = (params?: ListWorkbenchClustersP
     ] as const;
     }
 
-    
+
 export const getListWorkbenchClustersQueryOptions = <TData = Awaited<ReturnType<typeof listWorkbenchClusters>>, TError = ErrorType<BadRequestResponse>>(params?: ListWorkbenchClustersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchClusters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -1642,13 +1783,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListWorkbenchClustersQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listWorkbenchClusters>>> = ({ signal }) => listWorkbenchClusters(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchClusters>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1663,7 +1804,7 @@ export type ListWorkbenchClustersQueryError = ErrorType<BadRequestResponse>
 
 export function useListWorkbenchClusters<TData = Awaited<ReturnType<typeof listWorkbenchClusters>>, TError = ErrorType<BadRequestResponse>>(
  params?: ListWorkbenchClustersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchClusters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListWorkbenchClustersQueryOptions(params,options)
@@ -1689,7 +1830,7 @@ export const getListWorkbenchDepositsUrl = (params?: ListWorkbenchDepositsParams
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -1701,16 +1842,16 @@ export const getListWorkbenchDepositsUrl = (params?: ListWorkbenchDepositsParams
 }
 
 export const listWorkbenchDeposits = async (params?: ListWorkbenchDepositsParams, options?: RequestInit): Promise<WorkbenchDepositListResponse> => {
-  
+
   return customFetch<WorkbenchDepositListResponse>(getListWorkbenchDepositsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1721,7 +1862,7 @@ export const getListWorkbenchDepositsQueryKey = (params?: ListWorkbenchDepositsP
     ] as const;
     }
 
-    
+
 export const getListWorkbenchDepositsQueryOptions = <TData = Awaited<ReturnType<typeof listWorkbenchDeposits>>, TError = ErrorType<BadRequestResponse>>(params?: ListWorkbenchDepositsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchDeposits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -1729,13 +1870,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListWorkbenchDepositsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listWorkbenchDeposits>>> = ({ signal }) => listWorkbenchDeposits(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchDeposits>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1750,7 +1891,7 @@ export type ListWorkbenchDepositsQueryError = ErrorType<BadRequestResponse>
 
 export function useListWorkbenchDeposits<TData = Awaited<ReturnType<typeof listWorkbenchDeposits>>, TError = ErrorType<BadRequestResponse>>(
  params?: ListWorkbenchDepositsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchDeposits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListWorkbenchDepositsQueryOptions(params,options)
@@ -1781,22 +1922,22 @@ Read-only; not admin-gated (the workbench itself is team-wide).
 export const getListWorkbenchRecentChangesUrl = () => {
 
 
-  
+
 
   return `/api/reconciliation/workbench-recent-changes`
 }
 
 export const listWorkbenchRecentChanges = async ( options?: RequestInit): Promise<WorkbenchRecentChangesResponse> => {
-  
+
   return customFetch<WorkbenchRecentChangesResponse>(getListWorkbenchRecentChangesUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1807,7 +1948,7 @@ export const getListWorkbenchRecentChangesQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getListWorkbenchRecentChangesQueryOptions = <TData = Awaited<ReturnType<typeof listWorkbenchRecentChanges>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchRecentChanges>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -1815,13 +1956,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListWorkbenchRecentChangesQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listWorkbenchRecentChanges>>> = ({ signal }) => listWorkbenchRecentChanges({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchRecentChanges>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1836,7 +1977,7 @@ export type ListWorkbenchRecentChangesQueryError = ErrorType<unknown>
 
 export function useListWorkbenchRecentChanges<TData = Awaited<ReturnType<typeof listWorkbenchRecentChanges>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchRecentChanges>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListWorkbenchRecentChangesQueryOptions(options)
@@ -1863,15 +2004,15 @@ preserved). Server-authoritative — UI-supplied locks are never trusted.
 export const getAssembleReconciliationBundleUrl = () => {
 
 
-  
+
 
   return `/api/reconciliation/bundle-proposals`
 }
 
 export const assembleReconciliationBundle = async (bundleAnchorInput: BundleAnchorInput, options?: RequestInit): Promise<ReconciliationBundleProposal> => {
-  
+
   return customFetch<ReconciliationBundleProposal>(getAssembleReconciliationBundleUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1879,7 +2020,7 @@ export const assembleReconciliationBundle = async (bundleAnchorInput: BundleAnch
       bundleAnchorInput,)
   }
 );}
-  
+
 
 
 
@@ -1894,7 +2035,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof assembleReconciliationBundle>>, {data: BodyType<BundleAnchorInput>}> = (props) => {
@@ -1905,7 +2046,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1937,22 +2078,22 @@ when the live source rows drifted from the cached snapshot.
 export const getGetReconciliationBundleUrl = (draftId: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/bundle-proposals/${draftId}`
 }
 
 export const getReconciliationBundle = async (draftId: string, options?: RequestInit): Promise<ReconciliationBundleProposal> => {
-  
+
   return customFetch<ReconciliationBundleProposal>(getGetReconciliationBundleUrl(draftId),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1963,7 +2104,7 @@ export const getGetReconciliationBundleQueryKey = (draftId: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetReconciliationBundleQueryOptions = <TData = Awaited<ReturnType<typeof getReconciliationBundle>>, TError = ErrorType<NotFoundResponse>>(draftId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReconciliationBundle>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -1971,13 +2112,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetReconciliationBundleQueryKey(draftId);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getReconciliationBundle>>> = ({ signal }) => getReconciliationBundle(draftId, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(draftId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReconciliationBundle>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1992,7 +2133,7 @@ export type GetReconciliationBundleQueryError = ErrorType<NotFoundResponse>
 
 export function useGetReconciliationBundle<TData = Awaited<ReturnType<typeof getReconciliationBundle>>, TError = ErrorType<NotFoundResponse>>(
  draftId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReconciliationBundle>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetReconciliationBundleQueryOptions(draftId,options)
@@ -2016,16 +2157,16 @@ Bumps the draft revision. Never clobbers other rows' overrides.
 export const getDeriveReconciliationBundleUrl = (draftId: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/bundle-proposals/${draftId}/derive`
 }
 
 export const deriveReconciliationBundle = async (draftId: string,
     bundleOverridesInput: BundleOverridesInput, options?: RequestInit): Promise<ReconciliationBundleProposal> => {
-  
+
   return customFetch<ReconciliationBundleProposal>(getDeriveReconciliationBundleUrl(draftId),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -2033,7 +2174,7 @@ export const deriveReconciliationBundle = async (draftId: string,
       bundleOverridesInput,)
   }
 );}
-  
+
 
 
 
@@ -2048,7 +2189,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deriveReconciliationBundle>>, {draftId: string;data: BodyType<BundleOverridesInput>}> = (props) => {
@@ -2059,7 +2200,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -2097,16 +2238,16 @@ research/excluded rows mint nothing.
 export const getConfirmReconciliationBundleUrl = (draftId: string,) => {
 
 
-  
+
 
   return `/api/reconciliation/bundle-proposals/${draftId}/confirm`
 }
 
 export const confirmReconciliationBundle = async (draftId: string,
     bundleConfirmInput: BundleConfirmInput, options?: RequestInit): Promise<ReconciliationBundleConfirmResult> => {
-  
+
   return customFetch<ReconciliationBundleConfirmResult>(getConfirmReconciliationBundleUrl(draftId),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -2114,7 +2255,7 @@ export const confirmReconciliationBundle = async (draftId: string,
       bundleConfirmInput,)
   }
 );}
-  
+
 
 
 
@@ -2129,7 +2270,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmReconciliationBundle>>, {draftId: string;data: BodyType<BundleConfirmInput>}> = (props) => {
@@ -2140,7 +2281,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -2162,4 +2303,3 @@ export const useConfirmReconciliationBundle = <TError = ErrorType<BadRequestResp
       > => {
       return useMutation(getConfirmReconciliationBundleMutationOptions(options));
     }
-    
