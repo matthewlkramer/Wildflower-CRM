@@ -7,6 +7,8 @@ import { useToast } from "@/hooks/use-toast";
 import {
   getListWorkbenchDepositsQueryKey,
   getListWorkbenchRecentChangesQueryKey,
+  getListDepositCandidatePayoutsQueryKey,
+  getListPayoutCandidateDepositsQueryKey,
   getGetGiftOrPaymentQueryKey,
   getGetGiftOrPaymentQueryOptions,
   useConfirmSettlementLink,
@@ -25,6 +27,12 @@ import {
   useResolveStripeStagedCharge,
   useListWorkbenchDeposits,
   useListWorkbenchRecentChanges,
+  useListDepositCandidatePayouts,
+  useLinkPayoutDeposit,
+  useUnlinkPayoutDeposit,
+  useListPayoutCandidateDeposits,
+  type DepositCandidatePayout,
+  type PayoutCandidateDeposit,
   useReIncludeStagedPayment,
   useReIncludeStripeStagedCharge,
   useRevertStagedPayment,
@@ -36,6 +44,7 @@ import {
   type WorkbenchDepositLens,
   type WorkbenchRecentChange,
 } from "@workspace/api-client-react";
+import { formatCurrency } from "@/lib/format";
 import { DepositGridHeader, DepositRow, DEPOSIT_LENSES } from "@/components/reconciliation-deposits/rows";
 import { GiftSearchDialog } from "@/components/gift-search-dialog";
 import { MergeGiftsDialog } from "@/components/gift-merge-dialogs";
@@ -91,6 +100,8 @@ export default function ReconciliationDepositsPage() {
   const confirmSettlement = useConfirmSettlementLink();
   const confirmDepositQbo = useConfirmDepositQboComponent();
   const dismissDepositQbo = useDismissDepositQboComponent();
+  const linkPayout = useLinkPayoutDeposit();
+  const unlinkPayout = useUnlinkPayoutDeposit();
   const deposits = data?.data ?? [];
   const canManageAccounting = data?.viewerCanManageAccounting ?? false;
   const total = data?.pagination.total ?? 0;
@@ -105,11 +116,26 @@ export default function ReconciliationDepositsPage() {
   const [refundFor, setRefundFor] = useState<{ chargeId: string; kind: "refund" | "chargeback"; label: string } | null>(null);
   const [dismissFor, setDismissFor] = useState<{ chargeId: string; label: string } | null>(null);
   const [settlementSearchFor, setSettlementSearchFor] = useState<{ payoutId: string; amount: string | null; date: string | null } | null>(null);
+  const [linkPayoutFor, setLinkPayoutFor] = useState<string | null>(null);
+  const [unlinkPayoutFor, setUnlinkPayoutFor] = useState<string | null>(null);
+  const [payoutCandidateFor, setPayoutCandidateFor] = useState<string | null>(null);
+  const candidatePayouts = useListDepositCandidatePayouts(linkPayoutFor ?? "", {
+    query: {
+      enabled: linkPayoutFor != null,
+      queryKey: getListDepositCandidatePayoutsQueryKey(linkPayoutFor ?? ""),
+    },
+  });
+  const candidateDeposits = useListPayoutCandidateDeposits(payoutCandidateFor ?? "", {
+    query: {
+      enabled: payoutCandidateFor != null,
+      queryKey: getListPayoutCandidateDepositsQueryKey(payoutCandidateFor ?? ""),
+    },
+  });
   const [qbDetailFor, setQbDetailFor] = useState<{ record: WorkbenchClusterQbRecord; linkage: string } | null>(null);
   const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
   const mergeQueries = useQueries({ queries: mergeGiftIds.map((id) => getGetGiftOrPaymentQueryOptions(id, { query: { enabled: mergeGiftIds.length > 0, queryKey: getGetGiftOrPaymentQueryKey(id) } })) });
   const mergeRecords = useMemo<GiftOrPaymentDetail[]>(() => mergeQueries.map((query) => query.data).filter((record): record is GiftOrPaymentDetail => !!record), [mergeQueries]);
-  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending;
+  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: getListWorkbenchDepositsQueryKey() });
@@ -162,6 +188,9 @@ export default function ReconciliationDepositsPage() {
     openFlagGift: () => undefined,
     openMarkLoss: () => undefined,
     openSettlementSearch: setSettlementSearchFor,
+    openLinkDepositPayout: setLinkPayoutFor,
+    openLinkPayoutDeposit: setPayoutCandidateFor,
+    openUnlinkPayoutDeposit: setUnlinkPayoutFor,
     isFinanceOrAdmin: canManageAccounting && (me?.role === "finance" || me?.role === "admin"),
     openQbDetail: (record, linkage) => setQbDetailFor({ record, linkage }),
     rejectChargeQbTie: () => undefined,
@@ -280,6 +309,79 @@ export default function ReconciliationDepositsPage() {
       <ExcludeReasonDialog open={excludeFor != null} onOpenChange={(open) => { if (!open) setExcludeFor(null); }} recordLabel={excludeFor?.label ?? "this record"} busy={busy} onSubmit={(reason) => void handleExclude(reason)} />
       <AlertDialog open={revertFor != null} onOpenChange={(open) => { if (!open && !busy) setRevertFor(null); }}>
         <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Unlink this match?</AlertDialogTitle><AlertDialogDescription>{revertFor?.description}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={() => void handleRevert()}>Unlink</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={linkPayoutFor != null} onOpenChange={(open) => { if (!open && !busy) setLinkPayoutFor(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Link Stripe payout</AlertDialogTitle>
+            <AlertDialogDescription>Choose the paid payout that settled this bank deposit.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-72 space-y-2 overflow-y-auto">
+            {candidatePayouts.isLoading ? <p className="text-sm text-muted-foreground">Loading candidate payouts…</p> : candidatePayouts.isError ? <p className="text-sm text-destructive">Could not load candidate payouts.</p> : candidatePayouts.data?.data.length ? candidatePayouts.data.data.map((candidate: DepositCandidatePayout) => (
+              <button
+                key={candidate.payoutId}
+                type="button"
+                className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm hover:bg-muted"
+                disabled={busy}
+                onClick={() => {
+                  if (!linkPayoutFor) return;
+                  void linkPayout.mutateAsync({ payoutId: candidate.payoutId, data: { bankDepositId: linkPayoutFor } }).then(() => {
+                    setLinkPayoutFor(null);
+                    invalidate();
+                  });
+                }}
+              >
+                <span>
+                  <span className="block font-medium">{candidate.payoutId}</span>
+                  <span className="block text-xs text-muted-foreground">{candidate.arrivalDate} · {formatCurrency(candidate.amount)} {candidate.currency}</span>
+                </span>
+                {candidate.currentBankDepositId ? <span className="text-right text-[11px] text-muted-foreground">currently on {candidate.currentDepositDate ?? "undated"}{candidate.ambiguous ? " · ambiguous" : ""}</span> : <span className="text-[11px] text-muted-foreground">unlinked</span>}
+              </button>
+            )) : <p className="text-sm text-muted-foreground">No matching paid payouts found in the candidate window.</p>}
+          </div>
+          <AlertDialogFooter><AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={unlinkPayoutFor != null} onOpenChange={(open) => { if (!open && !busy) setUnlinkPayoutFor(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>Unlink payout?</AlertDialogTitle><AlertDialogDescription>This removes only the Stripe payout → bank deposit tie. It does not change payment applications, bank components, payment units, or gifts.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={busy} onClick={() => { if (!unlinkPayoutFor) return; void unlinkPayout.mutateAsync({ payoutId: unlinkPayoutFor }).then(() => { setUnlinkPayoutFor(null); invalidate(); }); }}>Unlink payout</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={payoutCandidateFor != null} onOpenChange={(open) => { if (!open && !busy) setPayoutCandidateFor(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Link payout to a different deposit</AlertDialogTitle>
+            <AlertDialogDescription>Choose a free bank deposit after the payout arrival date.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-72 space-y-2 overflow-y-auto">
+            {candidateDeposits.isLoading ? <p className="text-sm text-muted-foreground">Loading candidate deposits…</p> : candidateDeposits.isError ? <p className="text-sm text-destructive">Could not load candidate deposits.</p> : candidateDeposits.data?.data.length ? candidateDeposits.data.data.map((candidate: PayoutCandidateDeposit) => (
+              <button
+                key={candidate.bankDepositId}
+                type="button"
+                className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm hover:bg-muted"
+                disabled={busy}
+                onClick={() => {
+                  if (!payoutCandidateFor) return;
+                  void linkPayout.mutateAsync({ payoutId: payoutCandidateFor, data: { bankDepositId: candidate.bankDepositId } }).then(() => {
+                    setPayoutCandidateFor(null);
+                    invalidate();
+                  });
+                }}
+              >
+                <span>
+                  <span className="block font-medium">{candidate.depositDate} · {formatCurrency(candidate.amount)} {candidate.currency}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{candidate.memo ?? candidate.bankDepositId}</span>
+                </span>
+                <span className="text-right text-[11px] text-muted-foreground">{candidate.claimed ? `currently claimed${candidate.ambiguous ? " · ambiguous" : ""}` : "free"}</span>
+              </button>
+            )) : <p className="text-sm text-muted-foreground">No matching deposits found in the candidate window.</p>}
+          </div>
+          <AlertDialogFooter><AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel></AlertDialogFooter>
+        </AlertDialogContent>
       </AlertDialog>
       <AlertDialog open={refundFor != null} onOpenChange={(open) => { if (!open && !busy) setRefundFor(null); }}>
         <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirm {refundFor?.kind === "chargeback" ? "chargeback" : "refund"}?</AlertDialogTitle><AlertDialogDescription>This removes the transaction from live payment evidence without changing the gift.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={() => { if (!refundFor) return; void confirmRefund.mutateAsync({ id: refundFor.chargeId }).then(() => { setRefundFor(null); invalidate(); }); }}>Confirm</AlertDialogAction></AlertDialogFooter></AlertDialogContent>

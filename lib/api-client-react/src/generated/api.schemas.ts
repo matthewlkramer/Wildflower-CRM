@@ -5950,6 +5950,8 @@ export interface WorkbenchDepositComposition {
   netTotal?: string | null;
   /** Total charges behind the payout. */
   chargeCount?: number | null;
+  /** True when the payout→deposit tie was a deterministic guess among >1 equal-amount/date deposits (ambiguous_bank_match). Finance/admin can re-link. */
+  payoutAmbiguous?: boolean | null;
   /** Amount explained by the authoritative payout or component rows. */
   explainedAmount: string;
   /** Deposit amount not explained by known composition. */
@@ -5993,6 +5995,36 @@ export interface WorkbenchDepositAccountingCheck {
   qbEntityType?: string | null;
   qbDepositId?: string | null;
   exclusionReason?: string | null;
+}
+
+export interface DepositCandidatePayout {
+  payoutId: string;
+  arrivalDate: string;
+  amount: string;
+  currency: string;
+  currentBankDepositId: string | null;
+  currentDepositDate: string | null;
+  ambiguous: boolean;
+}
+
+export interface PayoutDepositLink {
+  payoutId: string;
+  bankDepositId: string;
+}
+
+export interface PayoutCandidateDeposit {
+  bankDepositId: string;
+  depositDate: string;
+  amount: string;
+  currency: string;
+  memo: string | null;
+  claimed: boolean;
+  ambiguous: boolean;
+}
+
+export interface InlineError {
+  error: string;
+  message: string;
 }
 
 export type WorkbenchDepositKind = typeof WorkbenchDepositKind[keyof typeof WorkbenchDepositKind];
@@ -10859,6 +10891,18 @@ days?: number;
  * @maximum 100
  */
 limit?: number;
+};
+
+export type ListDepositCandidatePayouts200 = {
+  data: DepositCandidatePayout[];
+};
+
+export type LinkPayoutDepositBody = {
+  bankDepositId: string;
+};
+
+export type ListPayoutCandidateDeposits200 = {
+  data: PayoutCandidateDeposit[];
 };
 
 export type ListGiftsMissingQbParams = {

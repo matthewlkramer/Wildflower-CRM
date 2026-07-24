@@ -742,6 +742,7 @@ router.get(
           adjustmentTotal: r.payout_adjustment,
           netTotal: r.payout_net,
           chargeCount: r.payout_charge_count,
+          payoutAmbiguous: r.payout_ambiguous,
           explainedAmount: r.payout_id
             ? r.amount
             : [...r.components, ...r.provisional_components].reduce((sum, c) => sum + amount(c.amount), 0).toFixed(2),
@@ -870,6 +871,232 @@ router.delete(
     `);
     if (!result.rows.length) {
       res.status(404).json({ error: "not_found", message: "Provisional QBO component not found." });
+      return;
+    }
+    res.status(204).send();
+  }),
+);
+
+router.get(
+  "/reconciliation/deposits/:bankDepositId/candidate-payouts",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const depositResult = await db.execute(sql`
+      SELECT id, amount::text AS amount, currency, deposit_date::text AS deposit_date
+      FROM bank_deposits
+      WHERE id = ${req.params.bankDepositId}
+    `);
+    const deposit = (depositResult.rows as Array<{
+      id: string;
+      amount: string;
+      currency: string;
+      deposit_date: string;
+    }>)[0];
+    if (!deposit) {
+      res.status(404).json({ error: "not_found", message: "Bank deposit not found." });
+      return;
+    }
+    const result = await db.execute(sql`
+      SELECT
+        p.id AS payout_id,
+        p.arrival_date::text AS arrival_date,
+        p.amount::text AS amount,
+        p.currency,
+        p.bank_deposit_id AS current_bank_deposit_id,
+        bd.deposit_date::text AS current_deposit_date,
+        COALESCE(p.ambiguous_bank_match, false) AS ambiguous
+      FROM stripe_payouts p
+      LEFT JOIN bank_deposits bd ON bd.id = p.bank_deposit_id
+      WHERE p.status = 'paid'
+        AND p.amount = ${deposit.amount}::numeric
+        AND upper(p.currency) = upper(${deposit.currency})
+        AND p.arrival_date BETWEEN (${deposit.deposit_date}::date - INTERVAL '10 days')
+          AND (${deposit.deposit_date}::date + INTERVAL '2 days')
+        AND (
+          p.bank_deposit_id IS NULL
+          OR (p.bank_deposit_id <> ${deposit.id} AND p.ambiguous_bank_match = true)
+        )
+      ORDER BY p.arrival_date ASC, p.id ASC
+    `);
+    res.json({
+      data: (result.rows as Array<{
+        payout_id: string;
+        arrival_date: string;
+        amount: string;
+        currency: string;
+        current_bank_deposit_id: string | null;
+        current_deposit_date: string | null;
+        ambiguous: boolean;
+      }>).map((row) => ({
+        payoutId: row.payout_id,
+        arrivalDate: row.arrival_date,
+        amount: row.amount,
+        currency: row.currency,
+        currentBankDepositId: row.current_bank_deposit_id,
+        currentDepositDate: row.current_deposit_date,
+        ambiguous: row.ambiguous,
+      })),
+    });
+  }),
+);
+
+router.get(
+  "/reconciliation/payouts/:payoutId/candidate-deposits",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const payoutResult = await db.execute(sql`
+      SELECT id, amount::text AS amount, currency, arrival_date::text AS arrival_date
+      FROM stripe_payouts
+      WHERE id = ${req.params.payoutId}
+    `);
+    const payout = (payoutResult.rows as Array<{
+      id: string;
+      amount: string;
+      currency: string;
+      arrival_date: string | null;
+    }>)[0];
+    if (!payout) {
+      res.status(404).json({ error: "not_found", message: "Stripe payout not found." });
+      return;
+    }
+    const result = await db.execute(sql`
+      SELECT
+        d.id AS bank_deposit_id,
+        d.deposit_date::text AS deposit_date,
+        d.amount::text AS amount,
+        d.currency,
+        d.memo,
+        (p.bank_deposit_id IS NOT NULL) AS claimed,
+        COALESCE(p.ambiguous_bank_match, false) AS ambiguous
+      FROM bank_deposits d
+      LEFT JOIN stripe_payouts p ON p.bank_deposit_id = d.id
+      WHERE d.amount = ${payout.amount}::numeric
+        AND upper(d.currency) = upper(${payout.currency})
+        AND ${payout.arrival_date ? sql`d.deposit_date >= ${payout.arrival_date}::date AND d.deposit_date <= (${payout.arrival_date}::date + INTERVAL '10 days')` : sql`false`}
+        AND (
+          p.id IS NULL
+          OR (p.id <> ${payout.id} AND p.ambiguous_bank_match = true)
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM bank_deposit_components c
+          WHERE c.bank_deposit_id = d.id
+        )
+      ORDER BY d.deposit_date ASC, d.id ASC
+    `);
+    res.json({
+      data: (result.rows as Array<{
+        bank_deposit_id: string;
+        deposit_date: string;
+        amount: string;
+        currency: string;
+        memo: string | null;
+        claimed: boolean;
+        ambiguous: boolean;
+      }>).map((row) => ({
+        bankDepositId: row.bank_deposit_id,
+        depositDate: row.deposit_date,
+        amount: row.amount,
+        currency: row.currency,
+        memo: row.memo,
+        claimed: row.claimed,
+        ambiguous: row.ambiguous,
+      })),
+    });
+  }),
+);
+
+router.post(
+  "/reconciliation/payouts/:payoutId/bank-deposit",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const payoutId = req.params.payoutId;
+    const depositId = typeof req.body?.bankDepositId === "string" ? req.body.bankDepositId : "";
+    const payoutResult = await db.execute(sql`
+      SELECT id, amount::text AS amount, currency
+      FROM stripe_payouts
+      WHERE id = ${payoutId}
+    `);
+    const payout = (payoutResult.rows as Array<{
+      id: string;
+      amount: string | null;
+      currency: string | null;
+    }>)[0];
+    if (!payout) {
+      res.status(404).json({ error: "not_found", message: "Stripe payout not found." });
+      return;
+    }
+    const depositResult = await db.execute(sql`
+      SELECT id, amount::text AS amount, currency
+      FROM bank_deposits
+      WHERE id = ${depositId}
+    `);
+    const deposit = (depositResult.rows as Array<{
+      id: string;
+      amount: string;
+      currency: string;
+    }>)[0];
+    if (!deposit) {
+      res.status(404).json({ error: "not_found", message: "Bank deposit not found." });
+      return;
+    }
+    const occupiedResult = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM stripe_payouts
+        WHERE bank_deposit_id = ${depositId} AND id <> ${payoutId}
+      ) OR EXISTS (
+        SELECT 1 FROM bank_deposit_components WHERE bank_deposit_id = ${depositId}
+      ) AS occupied
+    `);
+    if ((occupiedResult.rows[0] as { occupied: boolean } | undefined)?.occupied) {
+      res.status(409).json({
+        error: "deposit_not_free",
+        message: "This deposit already has a payout or counted components.",
+      });
+      return;
+    }
+    if (
+      payout.amount !== deposit.amount ||
+      !payout.currency ||
+      payout.currency.toUpperCase() !== deposit.currency.toUpperCase()
+    ) {
+      res.status(400).json({
+        error: "amount_mismatch",
+        message: "The payout amount and currency must match the bank deposit.",
+      });
+      return;
+    }
+    const updateResult = await db.execute(sql`
+      UPDATE stripe_payouts
+      SET bank_deposit_id = ${depositId},
+          ambiguous_bank_match = false,
+          bank_matched_at = now(),
+          updated_at = now()
+      WHERE id = ${payoutId}
+      RETURNING id
+    `);
+    if (!updateResult.rows.length) {
+      res.status(404).json({ error: "not_found", message: "Stripe payout not found." });
+      return;
+    }
+    res.json({ payoutId, bankDepositId: depositId });
+  }),
+);
+
+router.delete(
+  "/reconciliation/payouts/:payoutId/bank-deposit",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const result = await db.execute(sql`
+      UPDATE stripe_payouts
+      SET bank_deposit_id = NULL,
+          ambiguous_bank_match = false,
+          bank_matched_at = now(),
+          updated_at = now()
+      WHERE id = ${req.params.payoutId} AND bank_deposit_id IS NOT NULL
+      RETURNING id
+    `);
+    if (!result.rows.length) {
+      res.status(404).json({ error: "not_found", message: "No payout is linked to this deposit." });
       return;
     }
     res.status(204).send();

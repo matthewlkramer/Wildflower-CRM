@@ -4634,6 +4634,92 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DepositQboComponentMutationResult" } } } }
         "403": { $ref: "#/components/responses/FinanceForbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/deposits/{bankDepositId}/candidate-payouts:
+    get:
+      operationId: listDepositCandidatePayouts
+      tags: [reconciliation]
+      summary: List paid Stripe payouts that can be linked to a bank deposit.
+      parameters:
+        - { name: bankDepositId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Candidate payouts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/DepositCandidatePayout" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/payouts/{payoutId}/bank-deposit:
+    post:
+      operationId: linkPayoutDeposit
+      tags: [reconciliation]
+      summary: Link a Stripe payout to a Wells Fargo bank deposit.
+      parameters:
+        - { name: payoutId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bankDepositId]
+              properties:
+                bankDepositId: { type: string }
+      responses:
+        "200":
+          description: Linked payout
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutDepositLink" }
+        "400":
+          description: Payout and deposit amount or currency do not match.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InlineError" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The deposit already has a payout or counted components.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InlineError" }
+    delete:
+      operationId: unlinkPayoutDeposit
+      tags: [reconciliation]
+      summary: Unlink a Stripe payout from its Wells Fargo bank deposit.
+      parameters:
+        - { name: payoutId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Unlinked }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/payouts/{payoutId}/candidate-deposits:
+    get:
+      operationId: listPayoutCandidateDeposits
+      tags: [reconciliation]
+      summary: List bank deposits that can be linked to a Stripe payout.
+      parameters:
+        - { name: payoutId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Candidate deposits
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/PayoutCandidateDeposit" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /reconciliation/deposit-qbo-components/{id}:
     delete:
       operationId: dismissDepositQboComponent
@@ -9228,6 +9314,7 @@ components:
         adjustmentTotal: { type: string, nullable: true, description: "Authoritative Stripe payout adjustment total." }
         netTotal: { type: string, nullable: true, description: "Authoritative Stripe payout net total; gross − fees − refunds + adjustments." }
         chargeCount: { type: integer, nullable: true, description: "Total charges behind the payout." }
+        payoutAmbiguous: { type: boolean, nullable: true, description: "True when the payout→deposit tie was a deterministic guess among >1 equal-amount/date deposits (ambiguous_bank_match). Finance/admin can re-link." }
         explainedAmount: { type: string, description: "Amount explained by the authoritative payout or component rows." }
         unexplainedAmount: { type: string, description: "Deposit amount not explained by known composition." }
         components:
@@ -9285,6 +9372,40 @@ components:
         qbEntityType: { type: string, nullable: true }
         qbDepositId: { type: string, nullable: true }
         exclusionReason: { type: string, nullable: true }
+    DepositCandidatePayout:
+      type: object
+      required: [payoutId, arrivalDate, amount, currency, currentBankDepositId, currentDepositDate, ambiguous]
+      properties:
+        payoutId: { type: string }
+        arrivalDate: { type: string, format: date }
+        amount: { type: string }
+        currency: { type: string }
+        currentBankDepositId: { type: string, nullable: true }
+        currentDepositDate: { type: string, format: date, nullable: true }
+        ambiguous: { type: boolean }
+    PayoutDepositLink:
+      type: object
+      required: [payoutId, bankDepositId]
+      properties:
+        payoutId: { type: string }
+        bankDepositId: { type: string }
+    PayoutCandidateDeposit:
+      type: object
+      required: [bankDepositId, depositDate, amount, currency, memo, claimed, ambiguous]
+      properties:
+        bankDepositId: { type: string }
+        depositDate: { type: string, format: date }
+        amount: { type: string }
+        currency: { type: string }
+        memo: { type: string, nullable: true }
+        claimed: { type: boolean }
+        ambiguous: { type: boolean }
+    InlineError:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }
     WorkbenchDeposit:
       type: object
       required: [id, kind, anchorId, status, lenses, bank, composition, gifts, charges, qbRecords, accountingChecks, coverage]

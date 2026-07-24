@@ -503,6 +503,67 @@ export const ConfirmDepositQboComponentResponse = zod.object({
 })
 
 /**
+ * @summary List paid Stripe payouts that can be linked to a bank deposit.
+ */
+export const ListDepositCandidatePayoutsParams = zod.object({
+  "bankDepositId": zod.coerce.string()
+})
+
+export const ListDepositCandidatePayoutsResponse = zod.object({
+  "data": zod.array(zod.object({
+  "payoutId": zod.string(),
+  "arrivalDate": zod.string().date(),
+  "amount": zod.string(),
+  "currency": zod.string(),
+  "currentBankDepositId": zod.string().nullable(),
+  "currentDepositDate": zod.string().date().nullable(),
+  "ambiguous": zod.boolean()
+}))
+})
+
+/**
+ * @summary Link a Stripe payout to a Wells Fargo bank deposit.
+ */
+export const LinkPayoutDepositParams = zod.object({
+  "payoutId": zod.coerce.string()
+})
+
+export const LinkPayoutDepositBody = zod.object({
+  "bankDepositId": zod.string()
+})
+
+export const LinkPayoutDepositResponse = zod.object({
+  "payoutId": zod.string(),
+  "bankDepositId": zod.string()
+})
+
+/**
+ * @summary Unlink a Stripe payout from its Wells Fargo bank deposit.
+ */
+export const UnlinkPayoutDepositParams = zod.object({
+  "payoutId": zod.coerce.string()
+})
+
+/**
+ * @summary List bank deposits that can be linked to a Stripe payout.
+ */
+export const ListPayoutCandidateDepositsParams = zod.object({
+  "payoutId": zod.coerce.string()
+})
+
+export const ListPayoutCandidateDepositsResponse = zod.object({
+  "data": zod.array(zod.object({
+  "bankDepositId": zod.string(),
+  "depositDate": zod.string().date(),
+  "amount": zod.string(),
+  "currency": zod.string(),
+  "memo": zod.string().nullable(),
+  "claimed": zod.boolean(),
+  "ambiguous": zod.boolean()
+}))
+})
+
+/**
  * Finance/admin review only. Deletes the provisional accounting-plane row and never changes the counted bank-spine money model.
  * @summary Dismiss a provisional QBO decomposition row.
  */
@@ -1234,6 +1295,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "adjustmentTotal": zod.string().nullish().describe('Authoritative Stripe payout adjustment total.'),
   "netTotal": zod.string().nullish().describe('Authoritative Stripe payout net total; gross − fees − refunds + adjustments.'),
   "chargeCount": zod.number().nullish().describe('Total charges behind the payout.'),
+  "payoutAmbiguous": zod.boolean().nullish().describe('True when the payout→deposit tie was a deterministic guess among >1 equal-amount\/date deposits (ambiguous_bank_match). Finance\/admin can re-link.'),
   "explainedAmount": zod.string().describe('Amount explained by the authoritative payout or component rows.'),
   "unexplainedAmount": zod.string().describe('Deposit amount not explained by known composition.'),
   "components": zod.array(zod.object({
