@@ -1,4 +1,8 @@
 import Stripe from "stripe";
+// Type-only alias: under CJS-view type resolution the default export is the
+// callable constructor namespace, not a type; the named `Stripe` is the
+// instance type under both module views.
+import type { Stripe as StripeClient } from "stripe";
 import { logger } from "./logger";
 
 /**
@@ -99,7 +103,7 @@ async function fetchStripeCredentials(): Promise<StripeCredentials> {
   return { secret, accountId };
 }
 
-function buildStripe(secret: string): Stripe {
+function buildStripe(secret: string): StripeClient {
   return new Stripe(secret, {
     appInfo: { name: "wildflower-crm" },
     maxNetworkRetries: 2,
@@ -130,7 +134,7 @@ function extractAccountId(err: unknown): string | null {
   return null;
 }
 
-async function deriveRestrictedAccountId(stripe: Stripe): Promise<string | null> {
+async function deriveRestrictedAccountId(stripe: StripeClient): Promise<string | null> {
   if (restrictedAccountIdCache) return restrictedAccountIdCache;
   try {
     const account = await stripe.accounts.retrieveCurrent();
@@ -163,7 +167,7 @@ async function deriveRestrictedAccountId(stripe: Stripe): Promise<string | null>
  * is never logged.
  */
 export async function getUncachableStripeClient(): Promise<{
-  stripe: Stripe;
+  stripe: StripeClient;
   accountId: string | null;
 }> {
   const restricted = getRestrictedKey();

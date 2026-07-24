@@ -1,4 +1,4 @@
-import rateLimit, { type RateLimitRequestHandler } from "express-rate-limit";
+import { rateLimit, type RateLimitRequestHandler } from "express-rate-limit";
 import type { Request } from "express";
 
 /**
