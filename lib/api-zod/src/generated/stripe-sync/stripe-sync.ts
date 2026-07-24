@@ -78,23 +78,7 @@ export const GetStripeResyncStatusResponse = zod.object({
 })
 
 /**
- * @summary Re-run Stripe→QuickBooks payout-match proposals across ALL payouts, including prior-account rows never seen by incremental sync (admin only). Proposals only — every match stays in a proposed/conflict state for a human to confirm; never mints or archives anything.
- */
-export const ProposeHistoricalStripeReconciliationResponse = zod.object({
-  "ran": zod.boolean().describe('False when the pass was skipped (a sync\/rematch\/proposal run was already holding the lock, or the Stripe connector was unavailable).'),
-  "payoutsScanned": zod.number().describe('Payouts examined this pass.'),
-  "proposalsCreated": zod.number().describe('Payouts newly moved to a proposed QB-deposit match.'),
-  "conflictsFound": zod.number().describe('Payouts whose candidate QB deposit was already approved into a gift (conflict_approved).'),
-  "alreadyResolved": zod.number().describe('Payouts already in a confirmed\/reconciled state, left untouched.'),
-  "unmatched": zod.number().describe('Payouts with no QB deposit candidate.'),
-  "chargesScanned": zod.number().describe('Donor-less Stripe charges re-scored for a donor hint (charge-grain backfill for single-donation payouts with no deposit lump).'),
-  "chargesRematched": zod.number().describe('Charges that gained a donor hint this pass, surfacing them in the per-charge review queue. DONOR-ONLY — never mints or reconciles.'),
-  "chargeTiesProposed": zod.number().optional().describe('Charges (inside payouts with no settlement link) that ended the pass with a PROPOSED per-charge QuickBooks tie — the individually-booked-payout match a human approves on the Settlement report. Proposals only; never confirms.'),
-  "chargeTiesCleared": zod.number().optional().describe('Stale per-charge QuickBooks tie proposals cleared this pass (candidate disappeared, or the payout gained a settlement link).')
-}).describe('Result of the admin historical Stripe→QuickBooks reconciliation proposal pass over ALL payouts (including prior-account rows). Every match is a PROPOSAL — a human confirms each; nothing is minted or archived.')
-
-/**
- * @summary Read-only triage of untied Stripe payouts (no settlement link). Per payout, reports whether a penny-exact QuickBooks row exists at ANY date, that row's type ('deposit' vs 'payment'), the date gap, and the suggested match grain — so finance can see coverage and triage the genuine orphans. Reads nothing outside QuickBooks/Stripe staging; writes nothing (admin only).
+ * @summary Read-only triage of untied Stripe payouts (no settled QB lump). Per payout, reports whether a penny-exact QuickBooks row exists at ANY date, that row's type ('deposit' vs 'payment'), the date gap, and the suggested match grain — so finance can see coverage and triage the genuine orphans. Reads nothing outside QuickBooks/Stripe staging; writes nothing (admin only).
  */
 export const GetUntiedStripePayoutDiagnosticResponse = zod.object({
   "total": zod.number().describe('Untied positive payouts examined.'),

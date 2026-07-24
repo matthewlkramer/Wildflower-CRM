@@ -23,7 +23,8 @@ import {
  * money systems are the SAME money" — with NO gift involved. This is the third
  * relationship kind alongside the two ratified planes:
  *
- *   • Plane 1 (batch↔batch): `settlement_links` — payout ↔ QB deposit lump.
+ *   • Plane 1 (batch↔batch): the settled payout pairing —
+ *     `staged_payments.settled_stripe_payout_id` (payout ↔ QB deposit lump).
  *   • Plane 2 (unit↔gift):   `payment_applications` — the cash-application ledger.
  *   • THIS table:            unit↔unit claims across evidence sources.
  *
@@ -41,7 +42,7 @@ import {
  * payment_applications row. Never derive status from raw linkage.
  *
  * Deterministic ids so backfill + runtime dual-write converge idempotently
- * (mirrors `settlement_links`' `sl_<payout_id>` convention):
+ * (a deterministic type-prefixed id convention):
  *   charge_qb_tie   → `srcl_ct_<charge_id>`   (one live tie per charge; the
  *                     proposed→confirmed transition is ONE row's lifecycle)
  *   charge_fee_row  → `srcl_fee_<charge_id>`

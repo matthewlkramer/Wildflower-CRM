@@ -1,28 +1,42 @@
 import { describe, it, expect } from "vitest";
 import { derivePayoutLanes } from "../lib/reconciliationLanes";
 
-// `derivePayoutLanes` reads the `settlement_links` mirror (its `lifecycle`) — the
-// authoritative payout↔deposit store. A batch payout has no CRM record of its own;
-// its funding lane is the link's lifecycle, or `unlinked` when there is no link.
+// `derivePayoutLanes` reads plain payout settlement facts: whether a QBO lump
+// carries the payout's pairing fact (settled_stripe_payout_id) and whether the
+// payout is a negative-amount withdrawal. A batch payout has no CRM record of
+// its own, so crmRecord is always null.
 
-describe("derivePayoutLanes (settlement_links-sourced)", () => {
+describe("derivePayoutLanes (pairing-fact-sourced)", () => {
   it("crmRecord is always null for a batch payout", () => {
-    expect(derivePayoutLanes(null).crmRecord).toBeNull();
-    expect(derivePayoutLanes({ lifecycle: "confirmed" }).crmRecord).toBeNull();
+    expect(
+      derivePayoutLanes({ settled: false, withdrawal: false }).crmRecord,
+    ).toBeNull();
+    expect(
+      derivePayoutLanes({ settled: true, withdrawal: false }).crmRecord,
+    ).toBeNull();
   });
 
-  it("orphan (no link) reads funding=unlinked", () => {
-    expect(derivePayoutLanes(null).funding).toBe("unlinked");
-    expect(derivePayoutLanes(undefined).funding).toBe("unlinked");
+  it("unpaired, non-withdrawal reads funding=unlinked", () => {
+    expect(
+      derivePayoutLanes({ settled: false, withdrawal: false }).funding,
+    ).toBe("unlinked");
   });
 
-  it("maps lifecycle straight onto the funding lane", () => {
-    expect(derivePayoutLanes({ lifecycle: "proposed" }).funding).toBe(
-      "proposed",
-    );
-    expect(derivePayoutLanes({ lifecycle: "confirmed" }).funding).toBe(
+  it("a settled pairing reads funding=confirmed", () => {
+    expect(
+      derivePayoutLanes({ settled: true, withdrawal: false }).funding,
+    ).toBe("confirmed");
+  });
+
+  it("an unpaired withdrawal reads funding=exempt", () => {
+    expect(
+      derivePayoutLanes({ settled: false, withdrawal: true }).funding,
+    ).toBe("exempt");
+  });
+
+  it("a settled withdrawal still reads confirmed (pairing wins)", () => {
+    expect(derivePayoutLanes({ settled: true, withdrawal: true }).funding).toBe(
       "confirmed",
     );
-    expect(derivePayoutLanes({ lifecycle: "exempt" }).funding).toBe("exempt");
   });
 });

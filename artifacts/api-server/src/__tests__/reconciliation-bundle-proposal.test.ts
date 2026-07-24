@@ -430,7 +430,7 @@ describe("deriveProposal — already-committed rows are locked + skipped", () =>
 });
 
 describe("deriveProposal — tie", () => {
-  it("proposes confirm_tie for a proposed payout with a deposit", () => {
+  it("proposes confirm_tie for an unmatched payout with a candidate deposit", () => {
     const base: BundleBase = {
       anchorType: "stripe_payout",
       anchorId: "po_1",
@@ -438,11 +438,10 @@ describe("deriveProposal — tie", () => {
       tie: {
         payoutId: "po_1",
         depositStagedPaymentId: "sp_1",
-        status: "proposed",
+        status: "unmatched",
         payoutNetAmount: "100.00",
         depositAmount: "100.00",
         chargeCount: 1,
-        qbConflictGiftId: null,
       },
       facts: { donors: {}, gifts: {} },
       sourceFingerprint: "fp",

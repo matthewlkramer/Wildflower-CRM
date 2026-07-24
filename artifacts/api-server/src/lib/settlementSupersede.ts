@@ -1,7 +1,6 @@
 import { db } from "@workspace/db";
 import {
   paymentApplications,
-  settlementLinks,
   stagedPayments,
   stripeStagedCharges,
 } from "@workspace/db/schema";
@@ -13,13 +12,14 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * §4.3 settlement supersede (docs/reconciliation-design.md): when a coarse QB
- * deposit lump is CONFIRMED-settled against a Stripe payout AND a gift's money
+ * deposit lump is settled against a Stripe payout (the
+ * `settled_stripe_payout_id` pairing fact, 0168) AND a gift's money
  * is fully re-expressed by that payout's per-charge counted Stripe rows, the
  * deposit's coarse QB row for that gift is DEMOTED to `corroborating` — the
  * granular per-charge rows become the money trail, and source-agnostic
  * SUM readers can never count the same dollars twice. The demotion is fully
- * reversible: when the coverage fact goes away (settlement link reverted,
- * charge unbooked), the row is PROMOTED back to `counted`.
+ * reversible: when the coverage fact goes away (pairing cleared, charge
+ * unbooked), the row is PROMOTED back to `counted`.
  *
  * Discriminator — which corroborating rows this module owns:
  *   - A demoted row KEEPS its `amount_applied` (the CHECK allows > 0 on
@@ -30,7 +30,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *     are NEVER touched here.
  *
  * Idempotent + re-runnable: the decision is a pure function of current facts
- * (confirmed link, per-gift Stripe counted sums, fee band), so re-applying on
+ * (settled pairing, per-gift Stripe counted sums, fee band), so re-applying on
  * an already-converged deposit is a no-op.
  */
 
@@ -51,11 +51,11 @@ export interface SupersedeDecision {
 
 /**
  * PURE decision core (DB-free, unit-testable). Given a deposit's QB ledger
- * rows, whether the deposit currently backs a CONFIRMED settlement link, and
- * the per-gift counted Stripe sums booked from that settlement's payout(s),
- * decide which rows flip role.
+ * rows, whether the deposit is currently settled against a payout, and the
+ * per-gift counted Stripe sums booked from that payout, decide which rows
+ * flip role.
  *
- * Coverage = the linked payout's counted Stripe rows for the SAME gift sum to
+ * Coverage = the settled payout's counted Stripe rows for the SAME gift sum to
  * the QB row's amount within the processor fee band (`amountWithinFeeBand`
  * QB-only band: equal to the cent, or gross within ~10% + $1 above the net) —
  * the same-money test used everywhere else in reconciliation.
@@ -93,17 +93,17 @@ export function decideSupersedeActions(args: {
 
 /**
  * Recompute + apply supersede state for a set of QB deposits inside the
- * caller's transaction. Call AFTER the facts changed in the same tx (a
- * settlement link confirmed/reverted, a per-charge Stripe row booked/unbooked,
- * a QB row booked against a linked deposit).
+ * caller's transaction. Call AFTER the facts changed in the same tx (a payout
+ * pairing filled/cleared, a per-charge Stripe row booked/unbooked, a QB row
+ * booked against a settled deposit).
  *
  * Per deposit:
  *   1. FOR UPDATE lock the staged payment (serializes against every other
  *      ledger writer for the anchor — applyPaymentApplication locks the same
  *      row).
  *   2. Read its QB ledger rows (counted + supersede-managed corroborating).
- *   3. Read its CONFIRMED settlement link(s) → payout ids → per-gift counted
- *      Stripe sums for those payouts.
+ *   3. Read its settled payout pairing → per-gift counted Stripe sums for
+ *      that payout.
  *   4. Decide (pure) + apply:
  *      - demote: flip counted → corroborating, KEEPING the amount. Any
  *        pre-existing corroborating row for the same (payment, gift) pair —
@@ -131,7 +131,11 @@ export async function applySettlementSupersedeMany(
 
   for (const depositId of ids) {
     const deposit = await tx
-      .select({ id: stagedPayments.id, amount: stagedPayments.amount })
+      .select({
+        id: stagedPayments.id,
+        amount: stagedPayments.amount,
+        settledStripePayoutId: stagedPayments.settledStripePayoutId,
+      })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, depositId))
       .for("update")
@@ -161,20 +165,11 @@ export async function applySettlementSupersedeMany(
       );
     if (rows.length === 0) continue;
 
-    // CONFIRMED settlement link(s) naming this deposit as the settled lump.
-    // (1:1 in practice — a deposit backs at most one payout — but read as a
-    // set so a future N:1 settlement doesn't silently under-count coverage.)
-    const payoutIds = (
-      await tx
-        .select({ payoutId: settlementLinks.payoutId })
-        .from(settlementLinks)
-        .where(
-          and(
-            eq(settlementLinks.depositStagedPaymentId, depositId),
-            eq(settlementLinks.lifecycle, "confirmed"),
-          ),
-        )
-    ).map((r) => r.payoutId);
+    // The payout this deposit settles as the QBO lump (0168 pairing fact;
+    // UNIQUE per payout, at most one per deposit row).
+    const payoutIds = deposit.settledStripePayoutId
+      ? [deposit.settledStripePayoutId]
+      : [];
 
     const stripeSumByGift = new Map<string, string>();
     if (payoutIds.length > 0) {
@@ -203,6 +198,7 @@ export async function applySettlementSupersedeMany(
 
     const decisions = decideSupersedeActions({
       hasConfirmedLink: payoutIds.length > 0,
+      // ("hasConfirmedLink" kept as the arg name: "the deposit is settled".)
       rows,
       stripeSumByGift,
     });
@@ -297,22 +293,20 @@ export async function applySettlementSupersedeMany(
 
 /**
  * Convenience for the per-charge booking/revert paths, which know the PAYOUT
- * (from the charge) rather than the deposit: resolve the payout's settlement
- * link (any lifecycle — a revert may have just downgraded it) and recompute
- * supersede state for its deposit. No link / no deposit → no-op.
+ * (from the charge) rather than the deposit: resolve the QBO lump settled
+ * against the payout (settled_stripe_payout_id) and recompute supersede state
+ * for it. No settled lump → no-op.
  */
 export async function applySupersedeForPayoutInTx(
   tx: Tx,
   payoutId: string | null | undefined,
 ): Promise<string[]> {
   if (!payoutId) return [];
-  const link = await tx
-    .select({
-      depositStagedPaymentId: settlementLinks.depositStagedPaymentId,
-    })
-    .from(settlementLinks)
-    .where(eq(settlementLinks.payoutId, payoutId))
+  const lump = await tx
+    .select({ id: stagedPayments.id })
+    .from(stagedPayments)
+    .where(eq(stagedPayments.settledStripePayoutId, payoutId))
     .then((r) => r[0]);
-  if (!link?.depositStagedPaymentId) return [];
-  return applySettlementSupersedeMany(tx, [link.depositStagedPaymentId]);
+  if (!lump) return [];
+  return applySettlementSupersedeMany(tx, [lump.id]);
 }

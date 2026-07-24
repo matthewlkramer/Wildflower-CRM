@@ -8,7 +8,6 @@ import {
   people,
   households,
   emails,
-  settlementLinks,
   giftAllocations,
 } from "@workspace/db/schema";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
@@ -51,17 +50,15 @@ import type {
  * whole bundle back) and return the ids the caller must re-derive after the
  * single commit. There is still exactly ONE money path — these mirror the
  * existing Stripe create-gift / link / exclude routes 1:1, just made tx-safe and
- * reusable. The payout↔deposit tie + payout reconciliation is owned by the tie
- * primitives (`stripeConfirm.ts`); the charge primitives never touch the payout
+ * reusable. The payout↔deposit pairing is a plain fact maintained by the
+ * accounting recompute; the charge primitives never touch the payout
  * (matching the standalone per-charge create-gift route).
  */
 
 /**
  * Mint a real gift from a single Stripe charge, crediting the donor the GROSS
  * amount (fee recorded separately) and marking the charge permanent reconciled
- * EVIDENCE (created_the_gift ledger row). Mirrors POST /stripe-staged-charges/:id/create-gift,
- * including the QuickBooks-conflict guard that refuses to double-book a payout
- * already booked as an approved QB lump.
+ * EVIDENCE (created_the_gift ledger row). Mirrors POST /stripe-staged-charges/:id/create-gift.
  */
 export async function createGiftFromChargeInTx(
   tx: Tx,
@@ -94,33 +91,6 @@ export async function createGiftFromChargeInTx(
   const { newGiftId, charge, donor, paymentIntermediaryId, userId, auditReq } =
     args;
   const opportunityId = args.opportunityId ?? null;
-
-  // QuickBooks reconciliation guard: refuse to mint a per-charge gift when this
-  // charge's payout is already booked as an APPROVED QB net lump (an unresolved
-  // conflict, or a confirmed "keep" that left that QB gift in place). Minting
-  // here would double-count the same money. Mirrors the standalone create-gift
-  // route. The payout row is already locked by the caller.
-  if (charge.stripePayoutId) {
-    // Read-flip: the settlement link is authoritative. A link carrying a conflict
-    // gift means this payout's money is already booked as a QB-derived gift —
-    // whether an unresolved conflict (proposed link + conflict gift) or a confirmed
-    // "keep" that left that gift in place (confirmed link + conflict gift). A link
-    // with no conflict gift reconciled a bare deposit into no gift, so per-charge
-    // gifts are still correct — allow it. The payout row is already locked by the
-    // caller, so all settlement-link writers are serialized behind it.
-    const link = await tx
-      .select({ conflictGiftId: settlementLinks.conflictGiftId })
-      .from(settlementLinks)
-      .where(eq(settlementLinks.payoutId, charge.stripePayoutId))
-      .then((r) => r[0]);
-    if (link?.conflictGiftId) {
-      throw new ReconcileAbort(409, {
-        error: "qb_conflict",
-        message:
-          "This payout is already booked as an approved QuickBooks lump. Resolve the QuickBooks side before creating per-charge gifts.",
-      });
-    }
-  }
 
   await tx.insert(giftsAndPayments).values({
     ...buildGiftValuesFromStripeCharge(

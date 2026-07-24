@@ -140,7 +140,7 @@ describe("builders emit consistently quoted identifiers", () => {
       'FROM "payment_applications" "pa_ds"',
     );
     expect(qbSettledExistsText("s")).toContain(
-      'FROM "settlement_links" "sl_ds"',
+      '"s"."settled_stripe_payout_id"',
     );
     expect(qbChargeTieBookedExistsText("s")).toContain(
       'FROM "source_links" "srcl_ds"',

@@ -1,9 +1,5 @@
 import { db } from "@workspace/db";
-import {
-  stagedPayments,
-  stripeStagedCharges,
-  settlementLinks,
-} from "@workspace/db/schema";
+import { stagedPayments, stripeStagedCharges } from "@workspace/db/schema";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { logger } from "./logger";
 import { stagedStatusWhere } from "./derivedStatus";
@@ -14,10 +10,10 @@ import { stagedStatusWhere } from "./derivedStatus";
  *
  * A QB deposit/payment row is only excludable when we can tie it to specific
  * Stripe charges — the "trace" is the union of:
- *   - the charges of any payout settlement-linked to this row as the deposit
- *     lump (`settlement_links.deposit_staged_payment_id`; a CONFIRMED link
- *     already derives the row match_confirmed, so in practice this covers
- *     proposed links), and
+ *   - the charges of the payout this row settles as the QBO deposit lump
+ *     (`staged_payments.settled_stripe_payout_id`; a settled row already
+ *     derives match_confirmed, so this arm rarely fires — kept for
+ *     completeness), and
  *   - any per-charge QB ties naming this row (source_links rows with
  *     link_type='charge_qb_tie', confirmed or proposed lifecycle; the legacy
  *     pointer columns are retired).
@@ -46,10 +42,7 @@ export async function sweepRefundedQbStagedPayments(): Promise<number> {
         AND srcl_tr.stripe_charge_id = "stripe_staged_charges"."id"
         AND srcl_tr.qb_staged_payment_id = "staged_payments"."id"
     )
-    OR ${stripeStagedCharges.stripePayoutId} IN (
-      SELECT ${settlementLinks.payoutId} FROM ${settlementLinks}
-      WHERE ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id}
-    )
+    OR ${stripeStagedCharges.stripePayoutId} = ${stagedPayments.settledStripePayoutId}
   )`;
 
   const rows = await db

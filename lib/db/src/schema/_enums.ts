@@ -500,39 +500,6 @@ export const paymentApplicationLifecycleEnum = pgEnum(
   ["proposed", "confirmed"],
 );
 
-// ---- Settlement links (Plane 1: Stripe payout ↔ QB deposit) ----
-// docs/reconciliation-design.md §4.3. Batch-to-batch settlement is structurally
-// different from the Plane-2 unit↔gift ledger (a settlement row has no donor and
-// no amount split), so it gets its own purpose-built link table.
-//
-// The settlement lifecycle (replaces the 7-value `stripe_payouts
-// .qb_reconciliation_status` going forward):
-//   proposed  — the system proposed a payout↔deposit tie; awaiting human confirm.
-//   confirmed — the tie is confirmed (auto-confirmed or human-confirmed). This is
-//               the single "the payout landed as this deposit" fact; whether the
-//               coarse deposit gift is superseded by per-charge Stripe gifts is a
-//               separate Plane-2 concern (the §4.3 supersede rule), NOT a settlement
-//               status. (Legacy confirmed_excluded/_keep/_replace/_reconciled all
-//               map here — the tie WAS confirmed.)
-//   exempt    — the payout is intentionally not settled against a QB deposit.
-export const settlementLinkLifecycleEnum = pgEnum("settlement_link_lifecycle", [
-  "proposed",
-  "confirmed",
-  "exempt",
-]);
-
-// Who established the settlement link.
-//   system           — a system-proposed tie (lifecycle `proposed`).
-//   system_confirmed — a tie confirmed programmatically / without an attributable
-//                      human (e.g. the 0089 backfill of legacy confirmed rows that
-//                      predate `qb_reconciliation_confirmed_by_user_id` capture).
-//   human            — a person confirmed it in the reconciliation queue
-//                      (confirmed_by_user_id populated).
-export const settlementLinkProvenanceEnum = pgEnum(
-  "settlement_link_provenance",
-  ["system", "system_confirmed", "human"],
-);
-
 // ---- Source links (unit-grain evidence ↔ evidence claims) ----
 // docs/adr-source-link-ledger.md. One ledger for "these two rows in two money
 // systems are the same money" claims (NO gift involved) — replaces the five
@@ -550,8 +517,8 @@ export const sourceLinkTypeEnum = pgEnum("source_link_type", [
   "donorbox_charge",
 ]);
 
-// The claim's lifecycle (shares the settlement_links vocabulary; no `exempt`
-// state exists on the unit-grain claim plane).
+// The claim's lifecycle.
+//   (No `exempt` state exists on the unit-grain claim plane.)
 //   proposed  — system-proposed claim awaiting a human confirm (today only
 //               `charge_qb_tie` rows are ever proposed).
 //   confirmed — the claim stands (human-confirmed or auto-claimed, e.g. the
@@ -561,7 +528,7 @@ export const sourceLinkLifecycleEnum = pgEnum("source_link_lifecycle", [
   "confirmed",
 ]);
 
-// Who established the claim (mirrors settlement_link_provenance).
+// Who established the claim.
 //   system           — a system-proposed/system-derived claim.
 //   system_confirmed — confirmed programmatically / without an attributable
 //                      human (e.g. the pointer backfill of legacy confirmed

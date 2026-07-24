@@ -254,17 +254,17 @@ END)`;
 /* ── slim universe (lens flags only) ───────────────────────────────────── */
 
 // stripe_payout half — per-payout rollup predicates.
-// A confirmed settlement link whose deposit lump has at least one counted
-// payment_application: one gift covers the whole payout (deposit-grain /
-// coarse §4.3 booking). When true, every charge is effectively covered
-// even though no individual charge has its own payment_application.
+// A settled QBO lump (settled_stripe_payout_id pairing fact, 0168) with at
+// least one counted payment_application: one gift covers the whole payout
+// (deposit-grain / coarse §4.3 booking). When true, every charge is
+// effectively covered even though no individual charge has its own
+// payment_application.
 const depositGrainGiftExists = `EXISTS (
-  SELECT 1 FROM settlement_links sl_dg
+  SELECT 1 FROM staged_payments sl_dg
   JOIN payment_applications pa_dg
-    ON pa_dg.payment_id = sl_dg.deposit_staged_payment_id
+    ON pa_dg.payment_id = sl_dg.id
     AND pa_dg.link_role = 'counted'
-  WHERE sl_dg.payout_id = sp.id
-    AND sl_dg.lifecycle = 'confirmed'
+  WHERE sl_dg.settled_stripe_payout_id = sp.id
 )`;
 const payoutAnyOpenCharge = `(EXISTS (
   SELECT 1 FROM stripe_staged_charges oc
@@ -273,10 +273,9 @@ const payoutAnyOpenCharge = `(EXISTS (
 const payoutHasCharges = `EXISTS (SELECT 1 FROM stripe_staged_charges hc WHERE hc.stripe_payout_id = sp.id)`;
 const payoutHasNonExcluded = `EXISTS (SELECT 1 FROM stripe_staged_charges nc WHERE nc.stripe_payout_id = sp.id AND nc.exclusion_reason IS NULL)`;
 const payoutAllExcluded = `(${payoutHasCharges} AND NOT ${payoutHasNonExcluded})`;
-const payoutConflict = `EXISTS (
-  SELECT 1 FROM settlement_links sl_c
-  WHERE sl_c.payout_id = sp.id AND sl_c.lifecycle = 'proposed' AND sl_c.conflict_gift_id IS NOT NULL
-)`;
+// Conflict states were part of the retired settlement propose/confirm
+// workflow (settlement_links); the pairing fact has no conflict shape.
+const payoutConflict = `FALSE`;
 // Pending refund on a LIVE (non-excluded) charge — lockstep with the canonical
 // state's transactions[].state === 'refund_anticipated' (nonExcluded only).
 const payoutRefund = `EXISTS (
@@ -285,19 +284,18 @@ const payoutRefund = `EXISTS (
     AND rf.exclusion_reason IS NULL
     AND rf.refund_propagation_status = 'proposed'
 )`;
-// Settled = a confirmed settlement link OR the individually-booked
+// Settled = a QBO lump carries the pairing fact OR the individually-booked
 // fully-charge-tied path (shared fragment; alias sp — matches this FROM).
 const payoutSettled: SQL = sql`(EXISTS (
-  SELECT 1 FROM settlement_links sl_s
-  WHERE sl_s.payout_id = sp.id AND sl_s.lifecycle = 'confirmed'
+  SELECT 1 FROM staged_payments sl_s
+  WHERE sl_s.settled_stripe_payout_id = sp.id
 ) OR ${fullyChargeTied})`;
-// Human-resolved Stripe withdrawal: an EXEMPT settlement link (no deposit).
-// Such a payout no longer needs accounting and parks in the excluded lens —
-// SQL twin of the JS flags.excluded || settlementLinkState === 'exempt'.
-const payoutExemptLink = `EXISTS (
-  SELECT 1 FROM settlement_links sl_x
-  WHERE sl_x.payout_id = sp.id AND sl_x.lifecycle = 'exempt'
-)`;
+// Stripe withdrawal: a NEGATIVE payout — money leaving Stripe, so no bank
+// deposit ever reaches QuickBooks. Deterministic (no human resolve step,
+// which the retired exempt settlement link used to record): such a payout
+// needs no accounting and parks in the excluded lens — SQL twin of the JS
+// flags.excluded || settlementLinkState === 'exempt'.
+const payoutExemptLink = `(sp.amount IS NOT NULL AND sp.amount < 0)`;
 // Settlement gap: Stripe's reported net (gross − fees) disagrees with the
 // amount that actually arrived at the bank. Lockstep twin of gapOf() in the
 // hydration (which coalesces a NULL net_total to the bank amount ⇒ no gap),
@@ -343,12 +341,12 @@ const feePairedAnchorExpr = (fee: string) => `(
   LIMIT 1)`;
 
 // qb_standalone half — eligibility mirrors the bundle-anchor omission rules
-// (a settlement-linked deposit, a charge-tied or fee row reconciles THROUGH
-// its payout cluster).
+// (a settled deposit lump, a charge-tied or fee row reconciles THROUGH its
+// payout cluster).
 // Parked fiscally-sponsored rows (sponsored-entity money with no gift yet)
 // mirror the queue workbench: they reconcile in their own worklist, not here.
 const qbEligible = `
-  NOT EXISTS (SELECT 1 FROM settlement_links sl_e WHERE sl_e.deposit_staged_payment_id = s.id)
+  s.settled_stripe_payout_id IS NULL
   AND NOT EXISTS (
     SELECT 1 FROM source_links srcl_e
     WHERE srcl_e.link_type IN ('charge_qb_tie', 'charge_fee_row')
@@ -382,12 +380,12 @@ const chargeGrainGiftExists = `EXISTS (
 )`;
 // Total PA amount applied to the settled deposit >= net_total (±0.005 tolerance).
 const depositFullyCovered = `EXISTS (
-  SELECT 1 FROM settlement_links sl_dfc
-  WHERE sl_dfc.payout_id = sp.id AND sl_dfc.lifecycle = 'confirmed'
+  SELECT 1 FROM staged_payments sl_dfc
+  WHERE sl_dfc.settled_stripe_payout_id = sp.id
     AND (
       SELECT COALESCE(SUM(pa_dfc.amount_applied), 0)
       FROM payment_applications pa_dfc
-      WHERE pa_dfc.payment_id = sl_dfc.deposit_staged_payment_id
+      WHERE pa_dfc.payment_id = sl_dfc.id
         AND pa_dfc.link_role = 'counted' AND pa_dfc.evidence_source = 'quickbooks'
     ) >= COALESCE(sp.net_total, sp.amount) - 0.005
 )`;
@@ -401,11 +399,11 @@ const allChargeLinkedGiftsComplete = `NOT EXISTS (
 )`;
 // No deposit-linked gift fails giftComplete.
 const allDepositLinkedGiftsComplete = `NOT EXISTS (
-  SELECT 1 FROM settlement_links sl_gc
-  JOIN payment_applications pa_gc ON pa_gc.payment_id = sl_gc.deposit_staged_payment_id
+  SELECT 1 FROM staged_payments sl_gc
+  JOIN payment_applications pa_gc ON pa_gc.payment_id = sl_gc.id
     AND pa_gc.evidence_source = 'quickbooks' AND pa_gc.link_role = 'counted'
   JOIN gifts_and_payments g ON g.id = pa_gc.gift_id
-  WHERE sl_gc.payout_id = sp.id AND sl_gc.lifecycle = 'confirmed'
+  WHERE sl_gc.settled_stripe_payout_id = sp.id
     AND NOT (${giftComplete})
 )`;
 // No QB-linked gift fails giftComplete.
@@ -613,7 +611,6 @@ interface PayoutRow {
   deposit_payer_name: string | null;
   sl_lifecycle: string | null;
   sl_deposit_id: string | null;
-  sl_conflict_gift_id: string | null;
   settled: boolean;
   qb_candidate_exists: boolean;
   total_count: number;
@@ -835,7 +832,6 @@ function buildClusterCoverage(
   depId: string | null,
   depStatus: string | null,
   slLifecycle: string | null,
-  slConflictGiftId: string | null,
 ): CoverageOut {
   // ── crmLinkage (PA coverage: which charges/deposit are linked to CRM gifts) ─
   const chargeRows = coverageRows.filter((r) => r.grain === "charge");
@@ -1046,12 +1042,10 @@ function buildClusterCoverage(
   const anyMixedGrain = dpGrain === "mixed";
   const noConnections =
     aeToTxn.state === "missing" && txnToCrm.state === "missing" && aeToCrm.state === "missing";
-  const isConflict = slConflictGiftId != null;
-
   let linkageState: LinkCompleteness;
-  if (chainComplete && !anyMixedGrain && !isConflict) {
+  if (chainComplete && !anyMixedGrain) {
     linkageState = "complete";
-  } else if (anyMixedGrain || (isConflict && !noConnections)) {
+  } else if (anyMixedGrain) {
     linkageState = "partial_mixed";
   } else if (noConnections) {
     linkageState = "missing";
@@ -1131,18 +1125,16 @@ function buildClusterCoverage(
     attentionRequired: hasPendingRefund,
   });
 
-  // Settlement link state — always present for payout clusters so the UI can
+  // Settlement state — always present for payout clusters so the UI can
   // distinguish "no settlement yet" (unlinked) from "not applicable" (absent).
+  // Collapsed to facts (the propose/confirm workflow is retired): a settled
+  // lump is 'confirmed', a withdrawal is 'exempt', otherwise 'unlinked'.
   let settlementLinkState: SettlementLinkState;
   if (slLifecycle === "exempt") {
-    // Human-resolved Stripe withdrawal: no QB deposit will ever exist.
+    // Stripe withdrawal (negative payout): no QB deposit will ever exist.
     settlementLinkState = "exempt";
   } else if (slLifecycle === "confirmed") {
     settlementLinkState = "confirmed";
-  } else if (slLifecycle === "proposed") {
-    settlementLinkState = isConflict ? "proposed_conflict" : "proposed_full";
-  } else if (depId) {
-    settlementLinkState = "proposed_partial";
   } else {
     settlementLinkState = "unlinked";
   }
@@ -1161,7 +1153,9 @@ function buildClusterCoverage(
       excluded:
         (nonExcluded.length === 0 && charges.length > 0) ||
         slLifecycle === "exempt",
-      conflict: isConflict,
+      // Conflict states rode the retired settlement propose/confirm workflow;
+      // the pairing fact has no conflict shape.
+      conflict: false,
       attentionRequired: hasPendingRefund,
     },
     settlementLinkState,
@@ -1328,9 +1322,13 @@ router.get(
         COALESCE(sp.net_total, sp.amount)::text AS net_total,
         sp.charge_count AS charge_count,
         ad.payer_name AS deposit_payer_name,
-        sl.lifecycle::text AS sl_lifecycle,
-        sl.deposit_staged_payment_id AS sl_deposit_id,
-        sl.conflict_gift_id AS sl_conflict_gift_id,
+        -- Collapsed settlement state from FACTS (workflow retired): a settled
+        -- lump reads 'confirmed'; a negative payout (withdrawal — no bank
+        -- deposit ever) reads 'exempt'; otherwise NULL (no lump).
+        CASE WHEN ad.id IS NOT NULL THEN 'confirmed'
+             WHEN sp.amount IS NOT NULL AND sp.amount < 0 THEN 'exempt'
+        END AS sl_lifecycle,
+        ad.id AS sl_deposit_id,
         ${payoutSettled} AS settled,
         -- Does ANY plausible QB settlement-lump candidate exist for this payout?
         -- Same envelope as the matcher (stripeReconcile.ts): lump-eligible row
@@ -1473,15 +1471,14 @@ router.get(
                    nf2.payer_name,
                    nf2.qb_entity_type::text, nf2.qb_entity_id,
                    nf2.split_parent_id
-            FROM settlement_links sl_f
-            JOIN staged_payments dep0 ON dep0.id = sl_f.deposit_staged_payment_id
+            FROM staged_payments dep0
             JOIN staged_payments nf2 ON nf2.realm_id = dep0.realm_id
               AND nf2.qb_entity_type = dep0.qb_entity_type
               AND nf2.qb_entity_id = dep0.qb_entity_id
               AND nf2.id <> dep0.id
               AND nf2.qb_entity_type = 'deposit'
               AND nf2.amount < 0
-            WHERE sl_f.payout_id = sp.id
+            WHERE dep0.settled_stripe_payout_id = sp.id
               AND NOT EXISTS (
                 SELECT 1 FROM source_links srcl_x
                 WHERE srcl_x.link_type IN ('charge_qb_tie', 'charge_fee_row')
@@ -1507,14 +1504,7 @@ router.get(
         COALESCE(ad.organization_id, ad.individual_giver_person_id, ad.household_id) AS dep_attributed_donor_id,
         COALESCE(o_dep.name, h_dep.name, ${sql.raw(personNameExpr("p_dep"))}) AS dep_attributed_donor_name
       FROM stripe_payouts sp
-      LEFT JOIN LATERAL (
-        SELECT sl0.lifecycle, sl0.deposit_staged_payment_id, sl0.conflict_gift_id
-        FROM settlement_links sl0
-        WHERE sl0.payout_id = sp.id
-        ORDER BY CASE sl0.lifecycle WHEN 'confirmed' THEN 0 ELSE 1 END
-        LIMIT 1
-      ) sl ON true
-      LEFT JOIN staged_payments ad ON ad.id = sl.deposit_staged_payment_id
+      LEFT JOIN staged_payments ad ON ad.settled_stripe_payout_id = sp.id
       LEFT JOIN organizations o_dep ON o_dep.id = ad.organization_id
       LEFT JOIN people p_dep ON p_dep.id = ad.individual_giver_person_id
       LEFT JOIN households h_dep ON h_dep.id = ad.household_id
@@ -1711,15 +1701,14 @@ router.get(
 
       SELECT
         'deposit'::text AS grain,
-        sl.payout_id,
+        sl.settled_stripe_payout_id AS payout_id,
         pa.id AS pa_id,
         pa.gift_id,
         NULL AS charge_id,
         pa.amount_applied::text AS amount_applied
       FROM payment_applications pa
-      JOIN settlement_links sl ON pa.payment_id = sl.deposit_staged_payment_id
-      WHERE sl.payout_id IN (${inList(payoutIds)})
-        AND sl.lifecycle = 'confirmed'
+      JOIN staged_payments sl ON pa.payment_id = sl.id
+      WHERE sl.settled_stripe_payout_id IN (${inList(payoutIds)})
         AND pa.evidence_source = 'quickbooks'
         AND pa.link_role = 'counted'`)
           .then((r) => r.rows as unknown as CoverageRow[])
@@ -1866,7 +1855,6 @@ router.get(
           h?.dep_id ?? null,
           h?.dep_status ?? null,
           h?.sl_lifecycle ?? null,
-          h?.sl_conflict_gift_id ?? null,
         );
         // Status detail: vary by coverage grain and settlement path for accurate diagnostics.
         let statusDetail: string;
@@ -1883,8 +1871,7 @@ router.get(
           const parts = [`${resolved} of ${total} charges matched`];
           if (h?.settled) parts.push("deposit settled");
           else if (r.f_conflict) parts.push("deposit tie conflicts with an approved gift");
-          else if (h?.sl_lifecycle === "proposed") parts.push("deposit tie proposed");
-          else if (h?.sl_lifecycle === "exempt") parts.push("resolved as Stripe withdrawal");
+          else if (h?.sl_lifecycle === "exempt") parts.push("Stripe withdrawal — no bank deposit");
           else parts.push("no deposit tie yet");
           if (r.f_refund) parts.push("refund awaiting review");
           statusDetail = parts.join(" · ");
@@ -1928,7 +1915,6 @@ router.get(
             ? {
                 lifecycle: h.sl_lifecycle,
                 depositStagedPaymentId: h.sl_deposit_id,
-                conflictGiftId: h.sl_conflict_gift_id,
               }
             : null,
           coverage,

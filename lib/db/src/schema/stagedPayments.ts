@@ -35,6 +35,7 @@ import { giftsAndPayments } from "./giftsAndPayments";
 import { users } from "./users";
 import { quickbooksHandlingRules } from "./quickbooksHandlingRules";
 import { entities } from "./entities";
+import { stripePayouts } from "./stripePayouts";
 
 /**
  * Review queue for incoming-money records pulled one-way from QuickBooks
@@ -65,9 +66,8 @@ import { entities } from "./entities";
  *   match_proposed  ⇐ autoApplied AND matchConfirmedAt IS NULL AND a counted
  *                     payment_applications row — a high-confidence match the
  *                     system already applied, awaiting human review.
- *   match_confirmed ⇐ a counted payment_applications row OR a confirmed
- *                     settlement link on this deposit row — the money is
- *                     booked.
+ *   match_confirmed ⇐ a counted payment_applications row OR a settled payout
+ *                     pairing on this deposit row — the money is booked.
  *   pending         ⇐ none of the above — needs review; matchStatus may be
  *                     'suggested' (a hint) or 'unmatched' (nothing). Nothing
  *                     is applied to the ledger until a human acts.
@@ -120,7 +120,7 @@ export const stagedPayments = pgTable(
     // associations, never edits to the mirror); its derived status becomes
     // terminal 'split' (children exist ⇒ parent is out of matching), and the
     // children participate everywhere real rows do (source_links,
-    // settlement_links, payment_applications). Invariants enforced by the
+    // payment_applications, the settled payout pairing). Invariants enforced by the
     // split service, in one transaction: children sum == parent amount, no
     // nested splits (a child cannot be a parent), parent has no live claims
     // at split time. `split_parent_id IS NOT NULL` is the single authority
@@ -321,6 +321,15 @@ export const stagedPayments = pgTable(
     )
       .notNull()
       .default("auto"),
+    // The Stripe payout this QBO deposit row BOOKS — the plain pairing fact
+    // that replaced the retired settlement_links workflow (0168, bank-spine
+    // ADR). Backfilled from every human-confirmed settlement link;
+    // maintained forward by the deterministic comparer pairing. UNIQUE per
+    // payout (partial index below): a payout settles as at most one QBO lump.
+    settledStripePayoutId: text("settled_stripe_payout_id").references(
+      () => stripePayouts.id,
+      { onDelete: "set null" },
+    ),
 
     // ── Revenue-accounting / QuickBooks coding snapshot (Task #449) ──────────
     // The derived QBO coding snapshot describes a QuickBooks PAYMENT, so it lives
@@ -409,6 +418,9 @@ export const stagedPayments = pgTable(
     index("staged_payments_household_id_idx").on(t.householdId),
     index("staged_payments_entity_id_idx").on(t.entityId),
     index("staged_payments_funding_source_idx").on(t.fundingSource),
+    uniqueIndex("staged_payments_settled_stripe_payout_id_uq")
+      .on(t.settledStripePayoutId)
+      .where(sql`${t.settledStripePayoutId} IS NOT NULL`),
   ],
 );
 

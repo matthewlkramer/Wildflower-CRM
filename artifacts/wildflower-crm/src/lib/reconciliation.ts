@@ -138,34 +138,15 @@ export type ConnectionStatus = {
 
 /**
  * Stripe → QuickBooks: does the Stripe charge tie to the QB deposit?
- * Derived from the Stripe payout's QB-reconciliation status. Returns null when
+ * Derived from the Stripe payout's QB pairing status. Returns null when
  * no Stripe charge/payout backs this money (brokerage/check).
- * `conflict_approved` is NOT a money discrepancy — it only means the QB deposit
- * is already booked to a gift, so the Stripe charge is waiting for a human to
- * confirm tying it in.
  */
 export function stripeToQbStatus(
   status: string | null | undefined,
 ): ConnectionStatus | null {
   switch (status) {
     case "confirmed_reconciled":
-    case "confirmed_keep":
-    case "confirmed_replace":
       return { label: "Matched", variant: "default" };
-    case "proposed":
-      return {
-        label: "Match proposed",
-        variant: "secondary",
-        hint: "A Stripe charge looks like this QuickBooks deposit — confirm to tie them together.",
-      };
-    case "conflict_approved":
-      return {
-        label: "Awaiting confirmation",
-        variant: "secondary",
-        hint: "QuickBooks is already booked to a gift; confirm to tie this Stripe charge in (not a money discrepancy).",
-      };
-    case "confirmed_excluded":
-      return { label: "Excluded", variant: "outline" };
     case "unmatched":
       return { label: "Not matched yet", variant: "outline" };
     case null:

@@ -2763,20 +2763,11 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeResyncStatus" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
-  /stripe/reconciliation/propose-historical:
-    post:
-      operationId: proposeHistoricalStripeReconciliation
-      tags: [stripe-sync]
-      summary: Re-run Stripe→QuickBooks payout-match proposals across ALL payouts, including prior-account rows never seen by incremental sync (admin only). Proposals only — every match stays in a proposed/conflict state for a human to confirm; never mints or archives anything.
-      responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeHistoricalProposalSummary" } } } }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "502": { description: "Historical reconciliation proposal pass failed" }
   /stripe/reconciliation/untied-diagnostic:
     get:
       operationId: getUntiedStripePayoutDiagnostic
       tags: [stripe-sync]
-      summary: "Read-only triage of untied Stripe payouts (no settlement link). Per payout, reports whether a penny-exact QuickBooks row exists at ANY date, that row's type ('deposit' vs 'payment'), the date gap, and the suggested match grain — so finance can see coverage and triage the genuine orphans. Reads nothing outside QuickBooks/Stripe staging; writes nothing (admin only)."
+      summary: "Read-only triage of untied Stripe payouts (no settled QB lump). Per payout, reports whether a penny-exact QuickBooks row exists at ANY date, that row's type ('deposit' vs 'payment'), the date gap, and the suggested match grain — so finance can see coverage and triage the genuine orphans. Reads nothing outside QuickBooks/Stripe staging; writes nothing (admin only)."
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripeUntiedPayoutDiagnostic" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -2963,80 +2954,13 @@ paths:
     get:
       operationId: listStripePayoutReconciliations
       tags: [stripe-staged-charges]
-      summary: List Stripe payouts by their QuickBooks reconciliation state (proposals to confirm, conflicts to resolve, or already-confirmed), with the active QB deposit lump and any conflicting approved gift joined for display.
+      summary: List Stripe payouts by their QuickBooks pairing state (unmatched or already paired), with the settled QB deposit lump joined for display. Read-only — the pairing is maintained deterministically by the accounting recompute; discrepancies surface in qbo_accounting_checks.
       parameters:
-        - { name: queue, in: query, schema: { $ref: "#/components/schemas/StripePayoutReconciliationQueue" }, description: "Which queue to list (default proposed)." }
+        - { name: queue, in: query, schema: { $ref: "#/components/schemas/StripePayoutReconciliationQueue" }, description: "Which queue to list (default all)." }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationList" } } } }
-  /stripe-payouts/{id}/confirm-exclude:
-    post:
-      operationId: confirmStripePayoutExclude
-      tags: [stripe-staged-charges]
-      summary: Confirm a proposed payout↔QB-deposit match — exclude the deposit lump (processor_payout, kept and linked, never deleted) and unblock the per-charge Stripe gift queue.
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses:
-        "403": { $ref: "#/components/responses/FinanceForbidden" }
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "Payout is not in a proposed state" }
-  /stripe-payouts/{id}/confirm-keep:
-    post:
-      operationId: confirmStripePayoutKeep
-      tags: [stripe-staged-charges]
-      summary: Resolve a conflict by keeping the already-approved QuickBooks gift — record only the payout linkage, touching no gift or deposit.
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses:
-        "403": { $ref: "#/components/responses/FinanceForbidden" }
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "Payout is not in a conflict_approved state" }
-  /stripe-payouts/{id}/confirm-replace:
-    post:
-      operationId: confirmStripePayoutReplace
-      tags: [stripe-staged-charges]
-      summary: Resolve a conflict by replacing the coarse QB-derived lump gift — archive it (kept, allocations preserved, never deleted), exclude the deposit, and unblock the per-charge Stripe gift queue. Explicit, default-off in the UI.
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses:
-        "403": { $ref: "#/components/responses/FinanceForbidden" }
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "Payout is not in a conflict_approved state" }
-  /stripe-payouts/{id}/revert-reconciliation:
-    post:
-      operationId: revertStripePayoutReconciliation
-      tags: [stripe-staged-charges]
-      summary: Undo a confirmed payout reconciliation back to its prior proposal state. Refused once any of the payout's Stripe charges have been booked into a gift.
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses:
-        "403": { $ref: "#/components/responses/FinanceForbidden" }
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "Payout cannot be reverted from its current state, or its charges are already booked" }
-  /stripe-payouts/{id}/resolve-withdrawal:
-    post:
-      operationId: resolveStripePayoutWithdrawal
-      tags: [stripe-staged-charges]
-      summary: Resolve a NEGATIVE Stripe payout (a withdrawal back to Stripe — no money reached the bank as a deposit) as exempt from QB deposit settlement. Writes an exempt settlement link (no deposit); finance-gated, human-explicit, idempotent.
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses:
-        "403": { $ref: "#/components/responses/FinanceForbidden" }
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "Payout is not a negative withdrawal, or it already has a proposed/confirmed settlement link" }
-  /stripe-payouts/{id}/revert-withdrawal:
-    post:
-      operationId: revertStripePayoutWithdrawal
-      tags: [stripe-staged-charges]
-      summary: Undo a withdrawal resolution — remove the exempt settlement link so the payout returns to the unlinked state.
-      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
-      responses:
-        "403": { $ref: "#/components/responses/FinanceForbidden" }
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StripePayoutReconciliationResult" } } } }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "Payout has no exempt settlement link to revert" }
-
   # ─── QuickBooks handling rules (admin-editable ingest classifier) ─────────
   /admin/quickbooks-rules:
     get:
@@ -3386,8 +3310,8 @@ paths:
         /reconciliation/staged-payments/{id}/split-units (children sum exactly
         to the parent), then each child unit is matched to its own gift
         through the normal flows. A Stripe payout deposit is never split
-        gift-side: its charges are the counted evidence and the payout ties to
-        the deposit via a settlement link. Always returns 410 with error
+        gift-side: its charges are the counted evidence and the payout pairs with
+        the deposit via the settled pairing fact. Always returns 410 with error
         `gift_side_split_retired`.
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
       responses:
@@ -4683,12 +4607,12 @@ paths:
       tags: [reconciliation]
       summary: Criteria-based Stripe payout search (reverse of qb-search; not anchored to a card).
       description: |
-        Free search over ORPHAN Stripe payouts (no settlement link at all) by
+        Free search over ORPHAN Stripe payouts (no settled QB lump) by
         payout-id text / amount / date window — the reverse of qb-search. Powers
         the Settlement report's "Missing payout" resolve box: a standalone
         QuickBooks deposit anchor uses this to hunt the payout it should settle
-        against. Payouts already tied (proposed or confirmed) are omitted — they
-        belong to another deposit's bundle. Read-only.
+        against. Payouts already paired are omitted — they belong to another
+        deposit's bundle. Read-only.
       parameters:
         - { name: q, in: query, schema: { type: string }, description: "Free-text over the Stripe payout id (po_...)." }
         - { name: amount, in: query, schema: { type: string }, description: "Target amount (major units); when set, results are banded around the payout net." }
@@ -4698,55 +4622,31 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PayoutSearchList" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
-  /reconciliation/settlement-links/{payoutId}/reject:
-    post:
-      operationId: rejectSettlementProposal
-      tags: [reconciliation]
-      summary: Dismiss a PROPOSED payout↔deposit settlement tie.
-      description: |
-        Deletes the PROPOSED settlement link for one Stripe payout, dropping the
-        auto-proposed payout↔deposit tie so the Settlement report shows it as an
-        un-proposed orphan again. Money is untouched: nothing is excluded and no
-        gift is minted. A CONFIRMED link is never rejected here (revert is a
-        separate reconciliation path) — attempting to reject a confirmed tie is a
-        409. Rejecting a payout with no proposed link is a no-op success.
-      parameters:
-        - { name: payoutId, in: path, required: true, schema: { type: string } }
-      responses:
-        "403": { $ref: "#/components/responses/FinanceForbidden" }
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RejectSettlementProposalResult" } } } }
-        "409": { description: "The settlement link is confirmed (use revert, not reject)." }
   /reconciliation/settlement-links/{payoutId}/confirm:
     post:
       operationId: confirmSettlementLink
       tags: [reconciliation]
-      summary: Confirm a payout↔deposit settlement tie (Plane 1 only).
+      summary: Record the payout↔deposit pairing fact (Plane 1 only).
       description: |
-        Confirms the settlement link for ONE Stripe payout — the Plane-1
-        payout↔deposit tie ONLY — without touching the per-charge → gift booking
-        (Plane 2), which the Gift report owns. Approving a "linked" (proposed)
-        settlement is therefore one click: the tie is stamped confirmed and the
-        QuickBooks deposit is marked reconciled so the coarse deposit can never
-        credit donors on top of the individual per-charge Stripe gifts (that
-        deposit→reconciled flip IS the double-count guard).
+        Records the Plane-1 payout↔deposit pairing fact
+        (staged_payments.settled_stripe_payout_id) for ONE Stripe payout —
+        without touching the per-charge → gift booking (Plane 2), which the
+        Gift report owns. The proposed/confirmed settlement lifecycle is
+        retired: the deterministic accounting recompute pairs most payouts
+        automatically; this route is the human escape hatch for the ambiguous
+        remainder. The write is FILL-ONLY — it never repoints an existing
+        pairing (fix mistakes in QuickBooks; the accounting sidecar surfaces
+        expected-vs-actual mismatches as correction_needed).
 
-        Behaviour by the payout's current settlement-link state:
-          • proposed (clean)                → confirm; deposit pending → reconciled.
-          • proposed + already-booked deposit (legacy `approved`, e.g. a split
-            whose money lives in counted payment_applications rows or a
-            gift-linked lump) → LINKAGE-ONLY confirm: the tie is stamped and the
-            deposit is left untouched (kind `confirmed_linkage_only`). An
-            approved deposit with NO provable booking is refused with a
-            permanent 409 `deposit_not_booked` — resolve it in QuickBooks
-            review first.
-          • proposed + approved-QB-gift conflict → keep the existing gift; confirm
-            the linkage only (deposit + gift untouched).
-          • already confirmed               → idempotent success (no re-book).
-          • no link + depositStagedPaymentId body → propose that payout↔deposit tie,
-            then confirm it (powers the Settlement report Resolve box in BOTH
-            directions: a payout anchor picking a deposit, or a deposit anchor
-            picking a payout).
-          • no link + no deposit            → 400 (nothing to confirm).
+        Behaviour:
+          • already paired            → idempotent success (kind `already_confirmed`,
+            returning the ACTUAL paired deposit — never repointed).
+          • unpaired + depositStagedPaymentId body → pair with that QB lump.
+            A deposit that already booked its own money is paired
+            linkage-only (kind `confirmed_linkage_only`; the booking stands);
+            otherwise kind `confirmed_reconciled` and the §4.3 supersede
+            demotes the deposit's coarse counted rows.
+          • unpaired + no deposit     → 400 (nothing to pair).
       parameters:
         - { name: payoutId, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -4759,7 +4659,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConfirmSettlementLinkResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { description: "The payout (or the chosen deposit) no longer exists." }
-        "409": { description: "Either transient drift (error `tie_transition`: the link was already confirmed differently, or the deposit/gift changed — reload and retry) or a PERMANENT rejection (error `deposit_not_booked`: the deposit is approved with no provable booking — retrying won't help)." }
+        "409": { description: "The chosen deposit cannot carry the pairing (not a lump, excluded, auto-proposed and unreviewed, or already paired with another payout)." }
   /reconciliation/payouts/{payoutId}/charge-ties/confirm:
     post:
       operationId: confirmPayoutChargeTies
@@ -4769,7 +4669,7 @@ paths:
         Atomically confirms per-charge QuickBooks ties for ONE Stripe payout —
         the settlement path for payouts the bookkeeper booked as individual QB
         rows (one per donation) instead of a single deposit lump, so no
-        payout↔deposit settlement link will ever exist.
+        payout↔deposit pairing will ever exist.
 
         Two modes, by body:
           • NO qbStagedPaymentIds — approve the SYSTEM-PROPOSED ties: every
@@ -4825,8 +4725,8 @@ paths:
         "Tie selected" still overrides the dismissal.
 
         Plane 1 only: money is untouched — no gift is minted or changed, no QB
-        row's status/donor changes, and settlement links are never touched.
-        409 when the charge carries no proposed tie (nothing to reject) or is
+        row's status/donor changes, and the settled payout pairing is never
+        touched. 409 when the charge carries no proposed tie (nothing to reject) or is
         already confirmed-tied (revert is a separate path).
       parameters:
         - { name: chargeId, in: path, required: true, schema: { type: string } }
@@ -4846,7 +4746,7 @@ paths:
         a deposit that nets a donation against a clawed-back failed payout).
         The parent stays the untouched sync-owned QuickBooks mirror; the
         children are additive CRM rows that participate everywhere real rows
-        do — charge ties, settlement links, cash applications — and may be
+        do — charge ties, settled payout pairing, cash applications — and may be
         NEGATIVE (a clawback unit). Unit amounts must sum to EXACTLY the
         parent's amount (signed, to the cent).
 
@@ -4879,7 +4779,7 @@ paths:
         Deletes ALL synthetic child units of a split QuickBooks staged row and
         returns the parent to the open review flow (its derived status was
         never stored). Refused (409) while any unit still carries
-        reconciliation evidence — a tie, settlement link, or linked gift —
+        reconciliation evidence — a tie, settled pairing, or linked gift —
         revert those first. The hard delete here is the documented soft-delete
         exception: units are synthetic CRM-created rows with zero claims.
       parameters:
@@ -4906,7 +4806,7 @@ paths:
         dismissed — a later proposal pass may re-propose it.
 
         Plane 1 only: money is untouched — no gift is minted or changed, no QB
-        row's donor changes, and settlement links are never touched. 409 when
+        row's donor changes, and the settled payout pairing is never touched. 409 when
         the charge carries no confirmed tie (a merely-PROPOSED tie is rejected
         via the reject endpoint instead).
       parameters:
@@ -7662,21 +7562,6 @@ components:
         ran:     { type: boolean, description: "False when the rematch was skipped (a sync/rematch was already running, or the Stripe connector was unavailable)." }
         scanned: { type: integer, description: "Candidate rows examined (pending + unmatched + no donor)." }
         matched: { type: integer, description: "Rows newly given a donor hint by this run." }
-    StripeHistoricalProposalSummary:
-      type: object
-      required: [ran, payoutsScanned, proposalsCreated, conflictsFound, alreadyResolved, unmatched, chargesScanned, chargesRematched]
-      description: "Result of the admin historical Stripe→QuickBooks reconciliation proposal pass over ALL payouts (including prior-account rows). Every match is a PROPOSAL — a human confirms each; nothing is minted or archived."
-      properties:
-        ran:              { type: boolean, description: "False when the pass was skipped (a sync/rematch/proposal run was already holding the lock, or the Stripe connector was unavailable)." }
-        payoutsScanned:   { type: integer, description: "Payouts examined this pass." }
-        proposalsCreated: { type: integer, description: "Payouts newly moved to a proposed QB-deposit match." }
-        conflictsFound:   { type: integer, description: "Payouts whose candidate QB deposit was already approved into a gift (conflict_approved)." }
-        alreadyResolved:  { type: integer, description: "Payouts already in a confirmed/reconciled state, left untouched." }
-        unmatched:        { type: integer, description: "Payouts with no QB deposit candidate." }
-        chargesScanned:   { type: integer, description: "Donor-less Stripe charges re-scored for a donor hint (charge-grain backfill for single-donation payouts with no deposit lump)." }
-        chargesRematched: { type: integer, description: "Charges that gained a donor hint this pass, surfacing them in the per-charge review queue. DONOR-ONLY — never mints or reconciles." }
-        chargeTiesProposed: { type: integer, description: "Charges (inside payouts with no settlement link) that ended the pass with a PROPOSED per-charge QuickBooks tie — the individually-booked-payout match a human approves on the Settlement report. Proposals only; never confirms." }
-        chargeTiesCleared:  { type: integer, description: "Stale per-charge QuickBooks tie proposals cleared this pass (candidate disappeared, or the payout gained a settlement link)." }
     StripeUntiedPayoutDiagnostic:
       type: object
       required: [total, withExactQbRow, deposits, payments, orphans, rows]
@@ -7964,8 +7849,6 @@ components:
         payoutNetTotal:            { type: string, nullable: true }
         payoutArrivalDate:         { type: string, format: date, nullable: true }
         payoutStatus:              { type: string, nullable: true }
-        payoutQbSupersedeStatus:   { type: string, nullable: true, description: "Non-destructive QuickBooks supersede audit for this charge's payout: none | excluded_pending | conflict_approved. 'conflict_approved' blocks minting a per-charge gift here." }
-        payoutQbConflictGiftId:    { type: string, nullable: true, description: "The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved." }
         reconciliationLanes:       { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two independently-tracked reconciliation lanes (INV-4) for this still-unmatched Stripe evidence, derived read-only: funding = unlinked→proposed→confirmed (exempt when excluded/rejected); crmRecord = unlinked→proposed (donor guessed)→confirmed (human-stamped matchConfirmedAt)." }
         donorbox:                  { allOf: [ { $ref: "#/components/schemas/DonorboxEnrichment" } ], nullable: true, readOnly: true, description: "Donorbox donation facts for this Stripe charge (joined 1:1 by donorbox_donations.stripe_charge_id = id), present when the charge originated from a Donorbox donation. Enrichment only — never mints a gift. Present on list reads; omitted from bare mutation responses." }
     StripeStagedChargeList:
@@ -7976,12 +7859,12 @@ components:
         pagination: { $ref: "#/components/schemas/Pagination" }
     StripePayoutReconciliationStatus:
       type: string
-      description: "Where a Stripe payout sits in the QuickBooks reconciliation lifecycle, DERIVED read-only from the authoritative settlement_links row (payoutStatusFromLink). unmatched: no settlement link. proposed: a link exists (lifecycle=proposed) with no conflict gift. conflict_approved: a proposed link whose deposit was already approved into a gift (needs keep/replace). confirmed_reconciled: lifecycle=confirmed — the per-charge Stripe gifts are the source of truth and the QB deposit lump is marked reconciled (kept, never archived)."
-      enum: [unmatched, proposed, conflict_approved, confirmed_reconciled]
+      description: "Whether a Stripe payout is paired with its QuickBooks deposit lump, DERIVED read-only from the pairing fact (staged_payments.settled_stripe_payout_id). unmatched: no settled QB lump. confirmed_reconciled: a QB lump carries the pairing — the per-charge Stripe gifts are the source of truth and the lump is settlement evidence (kept, never archived)."
+      enum: [unmatched, confirmed_reconciled]
     StripePayoutReconciliationQueue:
       type: string
-      description: "Which reconciliation bucket to list. unmatched: no QB deposit candidate yet (stray Stripe). proposed: awaiting confirm. conflict: conflict_approved awaiting keep/replace. confirmed: any confirmed state (incl. confirmed_reconciled). all: every non-unmatched payout."
-      enum: [unmatched, proposed, conflict, confirmed, all]
+      description: "Which pairing bucket to list. unmatched: no settled QB deposit lump (stray Stripe). confirmed: paired with a settled QB lump. all: every payout."
+      enum: [unmatched, confirmed, all]
     StripePayoutReconciliation:
       type: object
       required: [id, stripeAccountId]
@@ -7998,37 +7881,19 @@ components:
         refundTotal:                     { type: string, nullable: true }
         netTotal:                        { type: string, nullable: true }
         chargeCount:                     { type: integer, nullable: true }
-        # Settlement state — DERIVED read-only from the authoritative settlement_links row.
-        settlementLifecycle:             { type: string, enum: [proposed, confirmed, exempt], nullable: true, description: "The settlement_links lifecycle for this payout (null when there is no link). The reconciliation status is derived from this + the conflict gift via payoutStatusFromLink." }
-        # Active QB deposit lump (matched once confirmed, else the candidate), joined read-only.
+        # Settled QB deposit lump (the pairing fact), joined read-only.
         depositId:                       { type: string, nullable: true }
         depositAmount:                   { type: string, nullable: true }
         depositDateReceived:             { type: string, format: date, nullable: true }
         depositPayerName:                { type: string, nullable: true }
         depositStatus:                   { type: string, nullable: true }
-        # Conflicting already-approved gift (present for conflict_approved / confirmed_replace), joined read-only.
-        conflictGiftAmount:              { type: string, nullable: true }
-        conflictGiftDate:                { type: string, format: date, nullable: true }
-        conflictGiftArchivedAt:          { type: string, format: date-time, nullable: true, description: "Set once a confirm-replace archives this gift (kept, never deleted)." }
-        conflictGiftDonorName:           { type: string, nullable: true }
-        reconciliationLanes:             { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two-lane reconciliation status (INV-4) for this payout, derived read-only from the settlement link: funding = unlinked (no link)→proposed (lifecycle=proposed)→confirmed (lifecycle=confirmed). crmRecord is null — a payout is a batch with no single donor." }
+        reconciliationLanes:             { allOf: [ { $ref: "#/components/schemas/ReconciliationLanes" } ], readOnly: true, description: "Two-lane reconciliation status (INV-4) for this payout, derived read-only from the pairing fact: funding = unlinked (no settled lump) → confirmed (settled lump exists); exempt for a negative payout (Stripe withdrawal — no bank deposit). crmRecord is null — a payout is a batch with no single donor." }
     StripePayoutReconciliationList:
       type: object
       required: [data, pagination]
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/StripePayoutReconciliation" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
-    StripePayoutReconciliationResult:
-      type: object
-      required: [ok, kind, payoutId]
-      description: "Outcome of a payout reconciliation confirm/revert transition."
-      properties:
-        ok:               { type: boolean, enum: [true] }
-        kind:             { type: string, enum: [confirmed_reconciled, confirmed_linkage_only, confirmed_excluded, confirmed_keep, confirmed_replace, reverted, resolved_withdrawal] }
-        payoutId:         { type: string }
-        stagedPaymentId:  { type: string, nullable: true, description: "The QB deposit lump that was excluded/relinked, when applicable." }
-        archivedGiftId:   { type: string, nullable: true, description: "The QB-derived gift archived by a confirm-replace (kept, never deleted)." }
-        restoredGiftId:   { type: string, nullable: true, description: "The gift un-archived by reverting a confirm-replace." }
     GiftStripeChain:
       type: object
       required: [giftId]
@@ -8144,7 +8009,7 @@ components:
             feeAmount:   { type: string, nullable: true }
             netAmount:   { type: string, nullable: true }
             chargeCount: { type: integer, nullable: true }
-            reconciliationStatus: { type: string, nullable: true, description: "The Stripe payout's QB-reconciliation state (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when no payout/charge backs this money." }
+            reconciliationStatus: { type: string, nullable: true, description: "The Stripe payout's QB pairing state (unmatched | confirmed_reconciled); null when no payout/charge backs this money." }
     ReconciliationGraph:
       type: object
       required: [stagedPaymentId, nodes, evidence, ready, blockers]
@@ -8246,7 +8111,7 @@ components:
             chargeCount:          { type: integer, nullable: true }
             arrivalDate:          { type: string, format: date, nullable: true }
             status:               { type: string, nullable: true }
-            reconciliationStatus: { type: string, nullable: true, description: "The payout's QB-reconciliation state (proposed | conflict_approved | confirmed_reconciled | unmatched | …)." }
+            reconciliationStatus: { type: string, nullable: true, description: "The payout's QB pairing state (unmatched | confirmed_reconciled)." }
             linkSource:           { $ref: "#/components/schemas/SettlementLineageLinkSource" }
         charges:
           type: array
@@ -8305,7 +8170,7 @@ components:
         stripeChargeId:    { type: string, nullable: true, description: "When set, this card is ONE Stripe charge (not the whole QB deposit): the active/needs-review/research queues expand a Stripe-payout-backed deposit into one card per backing charge. The card's identity is then the composite (stagedPaymentId, stripeChargeId); approve acts on this single charge → its own CRM gift. Null for non-Stripe rows and the unexpanded (terminal) queues." }
         stripePayoutId:    { type: string, nullable: true }
         stripeChargeCount: { type: integer, nullable: true }
-        stripeReconciliationStatus: { type: string, nullable: true, description: "Reconciliation state of the Stripe payout backing this money (proposed | conflict_approved | confirmed_reconciled | unmatched | …); null when there is no Stripe evidence." }
+        stripeReconciliationStatus: { type: string, nullable: true, description: "Pairing state of the Stripe payout backing this money (unmatched | confirmed_reconciled); null when there is no Stripe evidence." }
         stripeChargeDonorName: { type: string, nullable: true, description: "Payer/customer name (or resolved donor) on the Stripe charge — the real donor, not the 'Stripe' processor name that appears as the QB payer. Set for a per-charge card (stripeChargeId present) and for a single-charge payout; null for an un-expanded multi-charge payout or non-Stripe money." }
         stripeGrossAmount: { type: string, nullable: true, description: "Gross amount (major units) of the Stripe charge for this card; set for a per-charge card or a single-charge payout, null otherwise." }
         stripeNetAmount:   { type: string, nullable: true, description: "Net amount deposited (gross − processor fee) for the Stripe charge for this card; set for a per-charge card or a single-charge payout, null otherwise." }
@@ -8409,21 +8274,16 @@ components:
       required: [data]
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/PayoutSearchCandidate" } }
-    RejectSettlementProposalResult:
-      type: object
-      required: [rejected]
-      properties:
-        rejected: { type: boolean, description: "True when a proposed link was deleted; false when there was no proposed link to reject (no-op)." }
     ConfirmSettlementLinkBody:
       type: object
       description: |
-        Optional resolve payload. When the payout has NO settlement link yet, a
-        depositStagedPaymentId proposes that payout↔deposit tie before confirming
-        (the Settlement report's Resolve box, in either direction). Omit it to
-        confirm an already-proposed tie.
+        Resolve payload. When the payout is unpaired, depositStagedPaymentId
+        picks the QB deposit lump to pair it with (the Settlement report's
+        Resolve box, in either direction). Optional only for the idempotent
+        already-paired case.
       properties:
-        depositStagedPaymentId: { type: string, nullable: true, description: "QB deposit staged-payment id to tie to this payout before confirming (resolve). Omit when a proposed link already exists." }
-        overrideExclusion: { type: boolean, description: "Deliberate human override for a deposit that was excluded from review: re-includes the picked deposit (clears its exclusion, pinning classification_source='manual') in the same transaction, then confirms normally. Only honored together with an explicitly picked depositStagedPaymentId — never applied to an already-proposed link. Default false: an excluded deposit is refused with a 409." }
+        depositStagedPaymentId: { type: string, nullable: true, description: "QB deposit staged-payment id to pair with this payout. Required when the payout is unpaired." }
+        overrideExclusion: { type: boolean, description: "Deliberate human override for a deposit that was excluded from review: re-includes the picked deposit (clears its exclusion, pinning classification_source='manual') in the same transaction, then pairs normally. Only honored together with an explicitly picked depositStagedPaymentId. Default false: an excluded deposit is refused with a 409." }
     ConfirmChargeTiesBody:
       type: object
       description: |
@@ -8504,13 +8364,13 @@ components:
       type: object
       required: [confirmed, kind, payoutId]
       properties:
-        confirmed: { type: boolean, description: "True when the settlement link is confirmed after this call." }
+        confirmed: { type: boolean, description: "True when the pairing fact exists after this call." }
         kind:
           type: string
-          enum: [confirmed_reconciled, confirmed_linkage_only, conflict_kept, already_confirmed]
-          description: "Which path ran: a clean pending-deposit confirm, a linkage-only confirm against an already-booked (approved) deposit that was left untouched, a keep-the-approved-gift confirm, or an idempotent no-op on an already-confirmed link."
+          enum: [confirmed_reconciled, confirmed_linkage_only, already_confirmed]
+          description: "Which path ran: a clean pairing (coarse counted rows superseded), a linkage-only pairing against a deposit that already booked its own money (left untouched), or an idempotent no-op on an already-paired payout."
         payoutId: { type: string }
-        depositStagedPaymentId: { type: string, nullable: true, description: "The QB deposit the confirmed link ties to (null only if the link's deposit pointer had degraded)." }
+        depositStagedPaymentId: { type: string, nullable: true, description: "The QB deposit lump carrying the pairing." }
     GiftMissingQb:
       type: object
       required: [id, rowKey]
@@ -8857,21 +8717,20 @@ components:
       type: string
       enum: [needs_review, confirmed, all]
       description: |
-        Anchor-centric triage bucket for the unified bundle-anchor list (NOT the
-        Stripe-only propose/conflict tie states). needs_review: anchors awaiting
-        reconciliation (Stripe payouts not yet confirmed — unmatched/proposed/conflict;
-        QB deposits still pending). confirmed: already reconciled (Stripe confirmed_*;
-        QB approved/reconciled). all: every eligible anchor.
+        Anchor-centric triage bucket for the unified bundle-anchor list.
+        needs_review: anchors awaiting reconciliation (Stripe payouts with no
+        settled QB lump; QB deposits still pending). confirmed: already
+        reconciled (paired/charge-tied Stripe payouts; QB approved/reconciled).
+        all: every eligible anchor.
     SettlementBatchStatus:
       type: string
-      enum: [settled, proposed, orphan]
+      enum: [settled, orphan]
       description: |
         Derived Plane-1 settlement status for one anchor (design §4.4 batch), used by the
-        Settlement report to group anchors into its three columns. settled: a confirmed
-        payout↔deposit settlement link exists. proposed: only a proposed link exists
-        (awaiting human confirm — the "needs review" filter). orphan: no settlement link
-        (a Stripe payout that never booked to a deposit, or a standalone QB deposit with no
-        payout). Combined with anchorType this fully places a row: Stripe orphan → the
+        Settlement report to group anchors. settled: a QB lump carries the settled payout
+        pairing, or every charge is individually tied. orphan: no pairing (a Stripe payout
+        that never booked to a deposit, or a standalone QB deposit with no payout).
+        Combined with anchorType this fully places a row: Stripe orphan → the
         "missing deposit" column; QB orphan → the "missing payout" column.
     BundleAnchor:
       type: object
@@ -8897,18 +8756,10 @@ components:
         lineItemNames:    { type: array, items: { type: string }, nullable: true, description: "QB anchor only: line item names captured at pull time." }
         lineAccountNames: { type: array, items: { type: string }, nullable: true, description: "QB anchor only: line account names captured at pull time." }
         lineClasses:      { type: array, items: { type: string }, nullable: true, description: "QB anchor only: line class names captured at pull time." }
-        statusLabel: { type: string, description: "Raw source status for the display badge: the Stripe payout's reconciliation status (derived from its settlement link), or the QB staged-payment status." }
+        statusLabel: { type: string, description: "Raw source status for the display badge: the Stripe payout's pairing status (unmatched | confirmed_reconciled), or the QB staged-payment status." }
         batchStatus: { $ref: "#/components/schemas/SettlementBatchStatus" }
         chargeTiesProposed:  { type: integer, nullable: true, description: "Stripe payout only: charges carrying a PROPOSED (unconfirmed) per-charge QuickBooks tie — >0 makes the Missing-deposit card approvable at charge grain. Null for QB anchors." }
         chargeTiesConfirmed: { type: integer, nullable: true, description: "Stripe payout only: charges with a CONFIRMED per-charge QuickBooks tie. Null for QB anchors." }
-        proposedMatch:
-          nullable: true
-          allOf: [ { $ref: "#/components/schemas/BundleAnchorProposedMatch" } ]
-          description: |
-            The proposed counterpart for this anchor, populated ONLY when a
-            `proposed` (not-yet-confirmed) settlement link exists — enough to
-            render the proposed match inline and drive approve/reject without
-            first assembling the full draft. Null for orphan or settled anchors.
         readiness:
           nullable: true
           allOf: [ { $ref: "#/components/schemas/BundleAnchorReadiness" } ]
@@ -8917,32 +8768,6 @@ components:
             snapshot (a hint for the card's approve affordance; the confirm
             endpoint always re-derives and re-gates). Null when no draft has been
             assembled yet.
-    BundleAnchorProposedMatch:
-      type: object
-      required: [counterpartType, counterpartId]
-      description: |
-        A proposed settlement counterpart for a bundle anchor — the QB deposit
-        proposed for a Stripe payout (today the only populated direction; a QB
-        deposit tied to a payout is reconciled THROUGH the payout and never
-        surfaces as its own anchor).
-      properties:
-        counterpartType: { $ref: "#/components/schemas/BundleAnchorType" }
-        counterpartId:   { type: string, description: "staged_payments.id or stripe_payouts.id of the proposed counterpart." }
-        amount:          { type: string, nullable: true, description: "Counterpart amount, major units." }
-        date:            { type: string, format: date, nullable: true, description: "Counterpart date (QB date received or Stripe arrival date)." }
-        payerName:       { type: string, nullable: true, description: "Counterpart payer name." }
-        chargeCount:     { type: integer, nullable: true, description: "Stripe charges behind the counterpart payout; null for a QB deposit." }
-        lineDescription: { type: string, nullable: true, description: "QB counterpart's deposit line / memo description (the proposed deposit for a Stripe payout)." }
-        memo:            { type: string, nullable: true, description: "QB counterpart's transaction-level memo (PrivateNote)." }
-        reference:       { type: string, nullable: true, description: "QB counterpart's human-readable reference (doc/payment ref)." }
-        lineItemNames:    { type: array, items: { type: string }, nullable: true, description: "QB counterpart's line item names captured at pull time." }
-        lineAccountNames: { type: array, items: { type: string }, nullable: true, description: "QB counterpart's line account names captured at pull time." }
-        lineClasses:      { type: array, items: { type: string }, nullable: true, description: "QB counterpart's line class names captured at pull time." }
-        conflictGiftId:  { type: string, nullable: true, description: "The already-approved QB gift the proposal collided with (a conflict tie awaiting a keep decision), if any." }
-        conflictGift:
-          nullable: true
-          allOf: [ { $ref: "#/components/schemas/BundleAnchorConflictGift" } ]
-          description: "Display summary of that conflicting gift (name, donor, amount, date) so the card can explain the keep decision without another fetch. Null when conflictGiftId is null or the gift row no longer exists."
     BundleAnchorConflictGift:
       type: object
       required: [id]
@@ -8981,11 +8806,11 @@ components:
         purely-excluded clusters). needs_donor_or_gift: some evidence row still lacks
         a confirmed CRM gift/donor (pending or match_proposed). needs_accounting:
         money with no accounting side — a crm_only gift, or a payout with no settled
-        deposit (settlement link missing or still proposed). settlement_gaps: a
+        deposit (no pairing fact). settlement_gaps: a
         payout whose Stripe-reported net (gross − fees) disagrees with the amount
         that actually arrived at the bank — the money doesn't add up regardless of
-        linkage state. conflicts: a proposed settlement tie collided with an
-        already-approved gift. refunds: a charge carries a proposed
+        linkage state. conflicts: retired (always empty) — conflict states rode
+        the removed settlement propose/confirm workflow. refunds: a charge carries a proposed
         refund/chargeback propagation awaiting a human decision.
         excluded_qb_says_donation: an excluded QB cluster whose line coding carries
         a donation marker (a Donation item or a 4000/4100-series donation income
@@ -9082,11 +8907,10 @@ components:
     WorkbenchClusterSettlement:
       type: object
       required: [lifecycle]
-      description: "The payout↔deposit settlement tie facts for a stripe_payout cluster."
+      description: "The payout↔deposit pairing facts for a stripe_payout cluster, derived read-only from staged_payments.settled_stripe_payout_id (confirmed) or a negative payout amount (exempt — a Stripe withdrawal that never reaches the bank as a deposit)."
       properties:
-        lifecycle:               { type: string, enum: [proposed, confirmed], description: "proposed = awaiting human confirm (a needs_accounting/conflict signal); confirmed = settled." }
-        depositStagedPaymentId:  { type: string, nullable: true, description: "The QB deposit lump named by the link." }
-        conflictGiftId:          { type: string, nullable: true, description: "The already-approved gift a proposed tie collided with (drives the conflicts lens)." }
+        lifecycle:               { type: string, enum: [confirmed, exempt], description: "confirmed = a settled QB lump carries the pairing; exempt = negative payout (withdrawal)." }
+        depositStagedPaymentId:  { type: string, nullable: true, description: "The settled QB deposit lump (null for exempt)." }
     WorkbenchRowLinkCompleteness:
       type: string
       enum: [complete, partial, mixed, partial_mixed, missing]
@@ -9107,8 +8931,8 @@ components:
         incomplete — one or more CRM gift records lack required donor / allocation information.
     WorkbenchRowSettlementLinkState:
       type: string
-      enum: [unlinked, proposed_full, proposed_partial, proposed_conflict, confirmed, exempt]
-      description: "State of the payout↔deposit settlement link for stripe_payout clusters. Absent for qb_standalone and crm_only. `exempt` = human-resolved as needing no QB deposit (e.g. a negative payout / Stripe withdrawal)."
+      enum: [unlinked, confirmed, exempt]
+      description: "State of the payout↔deposit pairing fact for stripe_payout clusters. Absent for qb_standalone and crm_only. `confirmed` = a settled QB lump carries the pairing; `exempt` = a negative payout (Stripe withdrawal — no bank deposit ever reaches QuickBooks)."
     WorkbenchRowCoverageState:
       type: object
       required: [state, grain, relationshipCount]
@@ -9202,7 +9026,7 @@ components:
         settlementLinkState:
           allOf: [ { $ref: "#/components/schemas/WorkbenchRowSettlementLinkState" } ]
           nullable: true
-          description: "Present for all stripe_payout clusters ('unlinked' when no settlement relationship exists); absent for other cluster kinds."
+          description: "Present for all stripe_payout clusters ('unlinked' when no pairing exists); absent for other cluster kinds."
         qbCards:
           type: array
           items: { $ref: "#/components/schemas/WorkbenchRowQbCardEntry" }

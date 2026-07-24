@@ -20,8 +20,6 @@ import {
   stripeGiftIdForCharge,
   stripeMintedGiftIdForCharge,
 } from "./paymentApplicationsTestUtil";
-import { payoutStatusFromLink } from "../lib/settlementLink";
-import { proposeSettlementLink } from "../lib/settlementWriter";
 import { chargeStatusSql, stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
 import { deriveGiftQbTieLiveExpr } from "../lib/giftQbTie";
@@ -89,7 +87,6 @@ let schema: {
   stagedPayments: Db["stagedPayments"];
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
-  settlementLinks: Db["settlementLinks"];
   paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -291,21 +288,13 @@ async function seedPayout(stagedPaymentId: string): Promise<string> {
     arrivalDate: "2026-03-15",
   });
   payoutIds.push(id);
-  // The approve route finds tied payouts via settlement_links (the authoritative
-  // reconciliation store; the legacy pointer columns are dropped). Seed a
-  // proposed link pointing at this deposit; FK cascade on payout_id cleans it up
-  // when the payout is deleted in afterAll.
-  const link = proposeSettlementLink(stagedPaymentId, null);
-  await db.insert(schema.settlementLinks).values({
-    id: `sl_${id}`,
-    payoutId: id,
-    depositStagedPaymentId: link.depositStagedPaymentId,
-    conflictGiftId: link.conflictGiftId,
-    lifecycle: link.lifecycle,
-    provenance: link.provenance,
-    confirmedByUserId: link.confirmedByUserId,
-    confirmedAt: link.confirmedAt,
-  });
+  // The approve route finds tied payouts through the pairing fact on the QBO
+  // row (staged_payments.settled_stripe_payout_id, 0168) — the settlement-link
+  // lifecycle is retired. Stamp the pairing directly.
+  await db
+    .update(schema.stagedPayments)
+    .set({ settledStripePayoutId: id })
+    .where(eqFn(schema.stagedPayments.id, stagedPaymentId));
   return id;
 }
 
@@ -365,12 +354,12 @@ async function readCharge(id: string) {
     .where(eqFn(schema.stripeStagedCharges.id, id));
   return row;
 }
-async function readLink(payoutId: string) {
+async function readPairedPayoutId(stagedId: string): Promise<string | null> {
   const [row] = await db
-    .select()
-    .from(schema.settlementLinks)
-    .where(eqFn(schema.settlementLinks.payoutId, payoutId));
-  return row;
+    .select({ settledStripePayoutId: schema.stagedPayments.settledStripePayoutId })
+    .from(schema.stagedPayments)
+    .where(eqFn(schema.stagedPayments.id, stagedId));
+  return row?.settledStripePayoutId ?? null;
 }
 
 async function seedOpp(opts: {
@@ -429,7 +418,6 @@ beforeAll(async () => {
     stagedPayments: dbMod.stagedPayments,
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
-    settlementLinks: dbMod.settlementLinks,
     paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
@@ -517,245 +505,42 @@ beforeEach(() => {
 });
 
 describe.skipIf(!HAS_DB)("Reconciliation approve — link existing gift (integration)", () => {
-  it("ties the selected Stripe charge to the gift (matchedGiftId) and stamps the GROSS amount", async () => {
+  it("links a plain QB row (no payout pairing) to the gift — counted ledger row, row confirmed", async () => {
     const giftId = await seedGift("100.00");
     const stagedId = await seedStaged("100.00");
-    const payoutId = await seedPayout(stagedId);
-    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
 
-    const res = await api(
-      `/api/reconciliation/cards/${stagedId}/approve`,
-      { outcome: "link_existing_gift", giftId, stripeChargeId: chargeId },
-    );
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "link_existing_gift",
+      giftId,
+    });
     expect(res.status).toBe(200);
     expect(res.json.ok).toBe(true);
 
-    // Core regression: the charge carries the counted ledger row (the sole
-    // gift-link record) that Stripe list/detail resolution + revert depend on.
-    const charge = await readCharge(chargeId);
-    expect(charge.status).toBe("match_confirmed");
-    expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
-    expect(await stripeMintedGiftIdForCharge(chargeId)).toBeNull();
-    expect(charge.matchStatus).toBe("matched");
-    expect(charge.matchConfirmedByUserId).toBe(TEST_USER_ID);
-
-    // QB staged row + payout become permanent reconciled evidence. §4.3
-    // supersede: the charge's counted Stripe row fully re-expresses this
-    // gift's money, so the coarse QB row DEMOTES to corroborating (amount
-    // kept) — the gift is counted exactly once, at the charge grain.
-    const staged = await readStaged(stagedId);
-    expect(staged.status).toBe("match_confirmed");
-    expect(await qbSoleGiftIdForPayment(stagedId)).toBeNull();
-    const demoted = await qbDemotedRowsForPayment(stagedId);
-    expect(demoted).toHaveLength(1);
-    expect(demoted[0].giftId).toBe(giftId);
-    expect(demoted[0].amountApplied).toBe("100.00");
-
-    const link = await readLink(payoutId);
-    expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
-    expect(link?.depositStagedPaymentId).toBe(stagedId);
-
-    // Gift FINAL amount stamped from the Stripe GROSS; provenance recorded in
-    // the ledger (finalAmountStripeChargeId is @deprecated, never written).
-    const gift = await readGift(giftId);
-    expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
+    expect((await readStaged(stagedId)).status).toBe("match_confirmed");
+    expect(await qbSoleGiftIdForPayment(stagedId)).toBe(giftId);
   }, 30_000);
 
-  it("blocks approving without the Stripe charge when an unreconciled charge exists (stripe_charge_required)", async () => {
+  it("a payout-paired lump (settled fact, 0168) dead-ends on the link path — money books from the charge card", async () => {
     const giftId = await seedGift("100.00");
     const stagedId = await seedStaged("100.00");
     const payoutId = await seedPayout(stagedId);
     const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
 
-    const res = await api(
-      `/api/reconciliation/cards/${stagedId}/approve`,
-      { outcome: "link_existing_gift", giftId },
-    );
-    expect(res.status).toBe(409);
-    expect(res.json.error).toBe("consistency_gate");
-    const codes = (res.json.details?.issues ?? []).map((i: any) => i.code);
-    expect(codes).toContain("stripe_charge_required");
-
-    // Nothing mutated.
-    expect((await readStaged(stagedId)).status).toBe("pending");
-    expect((await readCharge(chargeId)).status).toBe("pending");
-  }, 30_000);
-
-  it("rejects a Stripe charge already reconciled to a different gift (stripe_charge_not_available)", async () => {
-    const otherGiftId = await seedGift("100.00");
-    const targetGiftId = await seedGift("100.00");
-    const stagedId = await seedStaged("100.00");
-    const payoutId = await seedPayout(stagedId);
-    const chargeId = await seedCharge({
-      payoutId,
-      grossAmount: "100.00",
-      matchedGiftId: otherGiftId,
+    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+      outcome: "link_existing_gift",
+      giftId,
+      stripeChargeId: chargeId,
     });
-
-    const res = await api(
-      `/api/reconciliation/cards/${stagedId}/approve`,
-      { outcome: "link_existing_gift", giftId: targetGiftId, stripeChargeId: chargeId },
-    );
     expect(res.status).toBe(409);
-    expect(res.json.error).toBe("stripe_charge_not_available");
+    expect(res.json.error).toBe("not_approvable");
 
-    // The charge still belongs to the original gift; the staged row is untouched.
-    expect(await stripeGiftIdForCharge(chargeId)).toBe(otherGiftId);
-    expect((await readStaged(stagedId)).status).toBe("pending");
+    // Nothing mutated: the pairing fact stands, no money was booked.
+    expect(await readPairedPayoutId(stagedId)).toBe(payoutId);
+    expect((await readCharge(chargeId)).status).toBe("pending");
+    expect(await stripeGiftIdForCharge(chargeId)).toBeNull();
+    expect(await qbSoleGiftIdForPayment(stagedId)).toBeNull();
   }, 30_000);
 });
-
-describe.skipIf(!HAS_DB)(
-  "Reconciliation approve — switch Stripe source (integration)",
-  () => {
-    // Source a gift from an OLD Stripe charge by reconciling that charge to
-    // the gift (the counted ledger row IS the authoritative link), mirroring a
-    // prior link. This is the state the switch override must safely re-point
-    // away from.
-    async function sourceGiftFromCharge(giftId: string, oldChargeId: string) {
-      await db
-        .update(schema.stripeStagedCharges)
-        .set({
-          matchStatus: "matched",
-          matchConfirmedByUserId: TEST_USER_ID,
-        })
-        .where(eqFn(schema.stripeStagedCharges.id, oldChargeId));
-      // The reconcile itself is a counted stripe ledger row (pointer columns
-      // are retired).
-      await seedStripeApplication({
-        stripeChargeId: oldChargeId,
-        giftId,
-        amountApplied: "100.00",
-      });
-    }
-
-    it("hard-blocks without the flag, surfacing the current backing charge in the 409 details", async () => {
-      const giftId = await seedGift("100.00");
-      const oldPayoutId = await seedPayout(await seedStaged("100.00"));
-      const oldChargeId = await seedCharge({
-        payoutId: oldPayoutId,
-        grossAmount: "100.00",
-      });
-      await sourceGiftFromCharge(giftId, oldChargeId);
-
-      const stagedId = await seedStaged("100.00");
-      const payoutId = await seedPayout(stagedId);
-      const newChargeId = await seedCharge({
-        payoutId,
-        grossAmount: "100.00",
-      });
-
-      const res = await api(
-        `/api/reconciliation/cards/${stagedId}/approve`,
-        {
-          outcome: "link_existing_gift",
-          giftId,
-          stripeChargeId: newChargeId,
-        },
-      );
-      expect(res.status).toBe(409);
-      expect(res.json.error).toBe("consistency_gate");
-      const issue = (res.json.details?.issues ?? []).find(
-        (i: any) => i.code === "gift_already_stripe_sourced",
-      );
-      expect(issue).toBeTruthy();
-      expect(issue.details?.currentStripeCharge?.id).toBe(oldChargeId);
-      expect(issue.details?.targetStripeChargeId).toBe(newChargeId);
-
-      // Nothing mutated: the old charge still backs the gift (via ledger).
-      expect(await stripeGiftIdForCharge(oldChargeId)).toBe(giftId);
-      expect((await readCharge(newChargeId)).status).toBe("pending");
-      expect((await readStaged(stagedId)).status).toBe("pending");
-    }, 30_000);
-
-    it("with switchStripeSource orphans the old charge and re-sources the gift to the new one", async () => {
-      const giftId = await seedGift("100.00");
-      const oldPayoutId = await seedPayout(await seedStaged("100.00"));
-      const oldChargeId = await seedCharge({
-        payoutId: oldPayoutId,
-        grossAmount: "100.00",
-      });
-      await sourceGiftFromCharge(giftId, oldChargeId);
-
-      const stagedId = await seedStaged("100.00");
-      const payoutId = await seedPayout(stagedId);
-      const newChargeId = await seedCharge({
-        payoutId,
-        grossAmount: "100.00",
-      });
-
-      const res = await api(
-        `/api/reconciliation/cards/${stagedId}/approve`,
-        {
-          outcome: "link_existing_gift",
-          giftId,
-          stripeChargeId: newChargeId,
-          switchStripeSource: true,
-        },
-      );
-      expect(res.status).toBe(200);
-      expect(res.json.ok).toBe(true);
-
-      // The gift is now sourced from the NEW charge (via ledger).
-      const gift = await readGift(giftId);
-      expect(await stripeGiftIdForCharge(newChargeId)).toBe(giftId);
-
-      // New charge carries the gift linkage (counted ledger row).
-      const newCharge = await readCharge(newChargeId);
-      expect(newCharge.status).toBe("match_confirmed");
-      expect(await stripeGiftIdForCharge(newChargeId)).toBe(giftId);
-
-      // Old charge is orphaned back to the unmatched-money queue.
-      const oldCharge = await readCharge(oldChargeId);
-      expect(oldCharge.status).toBe("pending");
-      expect(await stripeCountedRowForCharge(oldChargeId)).toBeNull();
-      expect(oldCharge.matchStatus).toBe("unmatched");
-    }, 30_000);
-
-    it("a FAILED old charge lands in the excluded bucket after the swap, not back in pending", async () => {
-      // The Dukes dead-end: the gift's Stripe source is a charge whose raw
-      // Stripe status is 'failed' (the donor's card declined; a retry charge
-      // succeeded later). After the swap the failed charge must NOT return to
-      // the pending queue where it would look like real unmatched money — it
-      // lands excluded/failed_charge, mirroring the single-charge revert.
-      const giftId = await seedGift("100.00");
-      const oldPayoutId = await seedPayout(await seedStaged("100.00"));
-      const oldChargeId = await seedCharge({
-        payoutId: oldPayoutId,
-        grossAmount: "100.00",
-      });
-      await db
-        .update(schema.stripeStagedCharges)
-        .set({ rawCharge: { status: "failed" } })
-        .where(eqFn(schema.stripeStagedCharges.id, oldChargeId));
-      await sourceGiftFromCharge(giftId, oldChargeId);
-
-      const stagedId = await seedStaged("100.00");
-      const payoutId = await seedPayout(stagedId);
-      const newChargeId = await seedCharge({
-        payoutId,
-        grossAmount: "100.00",
-      });
-
-      const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
-        outcome: "link_existing_gift",
-        giftId,
-        stripeChargeId: newChargeId,
-        switchStripeSource: true,
-      });
-      expect(res.status).toBe(200);
-      expect(res.json.ok).toBe(true);
-
-      // Gift re-sourced to the NEW charge (via ledger) …
-      expect(await stripeGiftIdForCharge(newChargeId)).toBe(giftId);
-      // … and the failed old charge is excluded, never pending again.
-      const oldCharge = await readCharge(oldChargeId);
-      expect(oldCharge.status).toBe("excluded");
-      expect(oldCharge.exclusionReason).toBe("failed_charge");
-      expect(await stripeCountedRowForCharge(oldChargeId)).toBeNull();
-    }, 30_000);
-  },
-);
 
 describe.skipIf(!HAS_DB)(
   "Reconciliation approve — displace linked QB payment (integration)",
@@ -917,140 +702,10 @@ describe.skipIf(!HAS_DB)(
       expect((await readGift(giftB)).quickbooksTieStatus).toBe("tied");
       expect((await readGift(giftA)).quickbooksTieStatus).not.toBe("tied");
     }, 30_000);
-
-    it("composes with the Stripe source switch: one confirmation resolves BOTH conflicts", async () => {
-      const giftId = await seedGift("100.00");
-      // Incumbent QB link on the gift (creates the ledger row) …
-      const incumbentId = await bookIncumbentLink(giftId, "100.00");
-      // … and additionally tie the gift to an OLD Stripe charge via the
-      // counted ledger so it is ALSO Stripe-sourced. Both conflicts now
-      // coexist.
-      const oldPayoutId = await seedPayout(await seedStaged("100.00"));
-      const oldChargeId = await seedCharge({
-        payoutId: oldPayoutId,
-        grossAmount: "100.00",
-      });
-      await db
-        .update(schema.stripeStagedCharges)
-        .set({
-          matchStatus: "matched",
-          matchConfirmedByUserId: TEST_USER_ID,
-        })
-        .where(eqFn(schema.stripeStagedCharges.id, oldChargeId));
-      await seedStripeApplication({
-        stripeChargeId: oldChargeId,
-        giftId,
-        amountApplied: "100.00",
-      });
-
-      // A NEW Stripe-backed deposit targeting the same gift.
-      const stagedId = await seedStaged("100.00");
-      const payoutId = await seedPayout(stagedId);
-      const newChargeId = await seedCharge({
-        payoutId,
-        grossAmount: "100.00",
-      });
-
-      // Without the flags the gate returns BOTH issues in one 409.
-      const blocked = await api(
-        `/api/reconciliation/cards/${stagedId}/approve`,
-        { outcome: "link_existing_gift", giftId, stripeChargeId: newChargeId },
-      );
-      expect(blocked.status).toBe(409);
-      const codes = (blocked.json.details?.issues ?? []).map(
-        (i: any) => i.code,
-      );
-      expect(codes).toContain("gift_already_stripe_sourced");
-      expect(codes).toContain("gift_already_qb_linked");
-
-      // Both flags together resolve both in a single call.
-      const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
-        outcome: "link_existing_gift",
-        giftId,
-        stripeChargeId: newChargeId,
-        switchStripeSource: true,
-        displaceLinkedPayment: true,
-      });
-      expect(res.status).toBe(200);
-      expect(res.json.ok).toBe(true);
-
-      // QB incumbent released; new payment linked. §4.3 supersede: the new
-      // charge's counted Stripe row covers the gift, so the fresh QB row lands
-      // demoted (corroborating, amount kept) — counted once, at the charge grain.
-      const incumbent = await readStaged(incumbentId);
-      expect(incumbent.status).toBe("pending");
-      expect(await qbCountedRowsForPayment(incumbentId)).toHaveLength(0);
-      expect(await qbSoleGiftIdForPayment(stagedId)).toBeNull();
-      const demoted = await qbDemotedRowsForPayment(stagedId);
-      expect(demoted).toHaveLength(1);
-      expect(demoted[0].giftId).toBe(giftId);
-
-      // Stripe source switched: gift now sourced from the new charge (via ledger);
-      // old charge orphaned back to the unmatched-money queue.
-      expect(await stripeGiftIdForCharge(newChargeId)).toBe(giftId);
-      const oldCharge = await readCharge(oldChargeId);
-      expect(oldCharge.status).toBe("pending");
-      expect(await stripeCountedRowForCharge(oldChargeId)).toBeNull();
-    }, 30_000);
   },
 );
 
 describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)", () => {
-  it("mints a new gift for the chosen donor and stamps the Stripe GROSS (createdGiftId on the QB anchor, matchedGiftId on the charge)", async () => {
-    const stagedId = await seedStaged("100.00");
-    const payoutId = await seedPayout(stagedId);
-    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
-
-    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
-      outcome: "create_gift",
-      organizationId: ORG_ID,
-      stripeChargeId: chargeId,
-    });
-    expect(res.status).toBe(201);
-    expect(res.json.ok).toBe(true);
-    expect(res.json.outcome).toBe("create_gift");
-    expect(res.json.createdGift).toBe(true);
-    expect(res.json.createdPledge).toBe(false);
-    expect(res.json.opportunityId).toBeNull();
-    const newGiftId = res.json.giftId as string;
-    expect(newGiftId).toBeTruthy();
-    giftIds.push(newGiftId);
-
-    // The minted gift carries the chosen donor and the Stripe-GROSS provenance;
-    // ledger row records the charge link (finalAmountStripeChargeId @deprecated).
-    const gift = await readGift(newGiftId);
-    expect(gift.organizationId).toBe(ORG_ID);
-    expect(gift.amount).toBe("100.00");
-    expect(await stripeGiftIdForCharge(chargeId)).toBe(newGiftId);
-    // processor_fee header column is dropped; the fee now lives on the linked charge
-    // (derivedProcessorFee sums exactly this) — assert it at the source.
-    expect((await readCharge(chargeId)).feeAmount).toBe("3.00");
-
-    // The QB anchor OWNS the mint, but §4.3 supersede demotes its ledger row
-    // (the charge's counted Stripe row covers the minted gift): the mint
-    // ownership survives on the demoted corroborating row (created_the_gift,
-    // amount kept); the charge is the counted precise evidence; the payout is
-    // confirmed.
-    const staged = await readStaged(stagedId);
-    expect(staged.status).toBe("match_confirmed");
-    expect(await qbMintedGiftIdForPayment(stagedId)).toBeNull();
-    const demoted = await qbDemotedRowsForPayment(stagedId);
-    expect(demoted).toHaveLength(1);
-    expect(demoted[0].giftId).toBe(newGiftId);
-    expect(demoted[0].createdTheGift).toBe(true);
-    expect(staged.autoApplied).toBe(false);
-    expect(staged.matchStatus).toBe("matched");
-    expect(staged.organizationId).toBe(ORG_ID);
-
-    const charge = await readCharge(chargeId);
-    expect(charge.status).toBe("match_confirmed");
-    expect(await stripeGiftIdForCharge(chargeId)).toBe(newGiftId);
-    expect(await stripeMintedGiftIdForCharge(chargeId)).toBeNull();
-
-    const link = await readLink(payoutId);
-    expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
-    expect(link?.depositStagedPaymentId).toBe(stagedId);
-  }, 30_000);
 
   it("mints a QB-only gift (no Stripe) stamped from the QB staged amount", async () => {
     const stagedId = await seedStaged("250.00");
@@ -1086,25 +741,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — create gift (integration)",
 
     // Nothing mutated.
     expect((await readStaged(stagedId)).status).toBe("pending");
-  }, 30_000);
-
-  it("requires the Stripe charge when an unreconciled charge exists (stripe_charge_required)", async () => {
-    const stagedId = await seedStaged("100.00");
-    const payoutId = await seedPayout(stagedId);
-    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
-
-    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
-      outcome: "create_gift",
-      organizationId: ORG_ID,
-    });
-    expect(res.status).toBe(409);
-    expect(res.json.error).toBe("consistency_gate");
-    const codes = (res.json.details?.issues ?? []).map((i: any) => i.code);
-    expect(codes).toContain("stripe_charge_required");
-
-    // Nothing minted or mutated.
-    expect((await readStaged(stagedId)).status).toBe("pending");
-    expect((await readCharge(chargeId)).status).toBe("pending");
   }, 30_000);
 
   it("is not idempotent — re-approving an already-reconciled row is rejected (not_approvable)", async () => {
@@ -1267,10 +903,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
       matchStatus: "matched",
     });
     const payoutId = await seedPayout(stagedId);
-    await db
-      .update(schema.settlementLinks)
-      .set({ lifecycle: "confirmed" })
-      .where(eqFn(schema.settlementLinks.payoutId, payoutId));
 
     const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
       outcome: "link_existing_gift",
@@ -1288,10 +920,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
   it("still dead-ends a settlement-only confirmed row on the MINT path when NO charge is selected (not_approvable, guidance message)", async () => {
     const stagedId = await seedStaged("100.00", { matchStatus: "matched" });
     const payoutId = await seedPayout(stagedId);
-    await db
-      .update(schema.settlementLinks)
-      .set({ lifecycle: "confirmed" })
-      .where(eqFn(schema.settlementLinks.payoutId, payoutId));
 
     const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
       outcome: "create_gift",
@@ -1320,10 +948,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     const stagedId = await seedStaged("100.00", { matchStatus: "matched" });
     const payoutId = await seedPayout(stagedId);
     const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
-    await db
-      .update(schema.settlementLinks)
-      .set({ lifecycle: "confirmed" })
-      .where(eqFn(schema.settlementLinks.payoutId, payoutId));
 
     const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
       outcome: "create_gift_from_opportunity",
@@ -1363,10 +987,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
   it("charge-anchored escape hatch rejects a charge from a DIFFERENT payout (stripe_charge_wrong_payout, nothing mutated)", async () => {
     const stagedId = await seedStaged("100.00", { matchStatus: "matched" });
     const payoutId = await seedPayout(stagedId);
-    await db
-      .update(schema.settlementLinks)
-      .set({ lifecycle: "confirmed" })
-      .where(eqFn(schema.settlementLinks.payoutId, payoutId));
     // A pending charge that belongs to some OTHER deposit's payout.
     const otherPayoutId = await seedPayout(await seedStaged("100.00"));
     const foreignChargeId = await seedCharge({
@@ -1432,10 +1052,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
   it("still dead-ends a settlement-only confirmed row on the MINT path when NO charge is selected (not_approvable, guidance message)", async () => {
     const stagedId = await seedStaged("100.00", { matchStatus: "matched" });
     const payoutId = await seedPayout(stagedId);
-    await db
-      .update(schema.settlementLinks)
-      .set({ lifecycle: "confirmed" })
-      .where(eqFn(schema.settlementLinks.payoutId, payoutId));
 
     const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
       outcome: "create_gift",
@@ -1464,10 +1080,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     const stagedId = await seedStaged("100.00", { matchStatus: "matched" });
     const payoutId = await seedPayout(stagedId);
     const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
-    await db
-      .update(schema.settlementLinks)
-      .set({ lifecycle: "confirmed" })
-      .where(eqFn(schema.settlementLinks.payoutId, payoutId));
 
     const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
       outcome: "create_gift_from_opportunity",
@@ -1507,10 +1119,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
   it("charge-anchored escape hatch rejects a charge from a DIFFERENT payout (stripe_charge_wrong_payout, nothing mutated)", async () => {
     const stagedId = await seedStaged("100.00", { matchStatus: "matched" });
     const payoutId = await seedPayout(stagedId);
-    await db
-      .update(schema.settlementLinks)
-      .set({ lifecycle: "confirmed" })
-      .where(eqFn(schema.settlementLinks.payoutId, payoutId));
     // A pending charge that belongs to some OTHER deposit's payout.
     const otherPayoutId = await seedPayout(await seedStaged("100.00"));
     const foreignChargeId = await seedCharge({
@@ -1719,49 +1327,6 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — opportunity targets (integr
     expect(res.status).toBe(409);
     expect(res.json.error).toBe("already_pledge");
     expect((await readStaged(stagedId)).status).toBe("pending");
-  }, 30_000);
-
-  it("create_gift_from_opportunity stamps the Stripe GROSS when a charge is selected (charge matchedGiftId, payout confirmed_reconciled)", async () => {
-    const oppId = await seedOpp({
-      stage: "written_commitment",
-      writtenPledge: true,
-      awardedAmount: "100.00",
-    });
-    const stagedId = await seedStaged("100.00");
-    const payoutId = await seedPayout(stagedId);
-    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
-
-    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
-      outcome: "create_gift_from_opportunity",
-      opportunityId: oppId,
-      stripeChargeId: chargeId,
-    });
-    expect(res.status).toBe(201);
-    const giftId = res.json.giftId as string;
-    giftIds.push(giftId);
-
-    const gift = await readGift(giftId);
-    expect(gift.opportunityId).toBe(oppId);
-    // Ledger row records the charge link (finalAmountStripeChargeId @deprecated).
-    expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
-
-    const charge = await readCharge(chargeId);
-    expect(charge.status).toBe("match_confirmed");
-    expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
-    // processor_fee header column is dropped; the fee now lives on the linked charge
-    // (derivedProcessorFee sums exactly this).
-    expect(charge.feeAmount).toBe("3.00");
-
-    const link = await readLink(payoutId);
-    expect(payoutStatusFromLink(link ?? null)).toBe("confirmed_reconciled");
-
-    // §4.3 supersede: the charge's counted Stripe row covers the minted gift,
-    // so the QB anchor's mint row lands demoted (created_the_gift survives).
-    expect(await qbMintedGiftIdForPayment(stagedId)).toBeNull();
-    const demoted = await qbDemotedRowsForPayment(stagedId);
-    expect(demoted).toHaveLength(1);
-    expect(demoted[0].giftId).toBe(giftId);
-    expect(demoted[0].createdTheGift).toBe(true);
   }, 30_000);
 
   it("create_gift IGNORES a stray opportunityId — mints for the body donor, does NOT attach to the opp or re-derive it", async () => {
@@ -1979,104 +1544,6 @@ describe.skipIf(!HAS_DB)("Reconciliation cards — queue visibility (integration
     );
     expect(doneIds).toContain(reconciledId);
     expect(doneIds).not.toContain(pendingId);
-  }, 30_000);
-});
-
-describe.skipIf(!HAS_DB)("Reconciliation approve — single-source-of-truth invariants (integration)", () => {
-  it("reconciling an existing gift NEVER archives the gift and NEVER sets processor_payout on the staged row", async () => {
-    const giftId = await seedGift("100.00");
-    const stagedId = await seedStaged("100.00");
-    const payoutId = await seedPayout(stagedId);
-    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
-
-    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
-      outcome: "link_existing_gift",
-      giftId,
-      stripeChargeId: chargeId,
-    });
-    expect(res.status).toBe(200);
-
-    // The CRM gift stays live (evidence-tied, never archived); the staged row is
-    // reconciled WITHOUT the retired processor_payout exclusion.
-    const gift = await readGift(giftId);
-    expect(gift.archivedAt).toBeNull();
-    const staged = await readStaged(stagedId);
-    expect(staged.status).toBe("match_confirmed");
-    expect(staged.exclusionReason).not.toBe("processor_payout");
-  }, 30_000);
-
-  it("records Stripe as the gift's final-amount source (Stripe precedence), preserving the human amount", async () => {
-    // The gift's prior (human) figure 98.50 sits inside the Stripe [net 97.00,
-    // gross 100.00] window — a pure gross-vs-net gap, so it auto-resolves with no
-    // override. The QB deposit is a coarser net 90.00. Post-#448 the Stripe stamp
-    // records provenance (source + charge pointer) but NO LONGER overwrites the
-    // human amount; the settled GROSS is DERIVED at read time. The QB+Stripe
-    // settled-total derivation (counted-vs-corroborating dedupe) is deferred to
-    // Phase 5, so this asserts provenance, not the derived total.
-    const giftId = await seedGiftWithAllocations("98.50", ["98.50"]);
-    const allocId = allocIds[allocIds.length - 1] as string;
-    const stagedId = await seedStaged("90.00");
-    const payoutId = await seedPayout(stagedId);
-    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
-
-    const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
-      outcome: "link_existing_gift",
-      giftId,
-      stripeChargeId: chargeId,
-    });
-    expect(res.status).toBe(200);
-
-    const gift = await readGift(giftId);
-    // The human amount is preserved (no overwrite); Stripe precedence is recorded
-    // via provenance (source + charge pointer), not by rewriting `amount`.
-    expect(gift.amount).toBe("98.50");
-    // Ledger row records the charge link (finalAmountStripeChargeId @deprecated).
-    expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
-    // No overwrite ⇒ nothing snapshotted, no allocation rescale.
-    expect((await readAlloc(allocId)).subAmount).toBe("98.50");
-    // The QB staged row stays as reconciled evidence at its own coarse figure.
-    const staged = await readStaged(stagedId);
-    expect(staged.status).toBe("match_confirmed");
-    expect(staged.amount).toBe("90.00");
-  }, 30_000);
-
-  it("a gift ABOVE the Stripe gross is a REAL discrepancy → 409 without an override, 200 (Stripe provenance recorded, human amount preserved) with one", async () => {
-    // gross 100.00, net 97.00; a human-recorded 105.00 sits ABOVE gross. A
-    // processor fee can only LOWER the recorded amount, so this is not a pure
-    // gross-vs-net gap and must not silently auto-resolve.
-    const giftId = await seedGiftWithAllocations("105.00", ["105.00"]);
-    const allocId = allocIds[allocIds.length - 1] as string;
-    const stagedId = await seedStaged("90.00");
-    const payoutId = await seedPayout(stagedId);
-    const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
-
-    // No override → blocked by the consistency gate, gift untouched.
-    const blocked = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
-      outcome: "link_existing_gift",
-      giftId,
-      stripeChargeId: chargeId,
-    });
-    expect(blocked.status).toBe(409);
-    expect(blocked.json.error).toBe("consistency_gate");
-    const codes = (blocked.json.details?.issues ?? []).map((i: any) => i.code);
-    expect(codes).toContain("amount_out_of_band");
-    expect((await readGift(giftId)).amount).toBe("105.00");
-
-    // Explicit override reason → approved. The stamp records Stripe provenance
-    // but (post-#448) does NOT overwrite the human amount — the 105-vs-100 gap
-    // now surfaces in the DERIVED settled total (Phase 5), not by rewriting it.
-    const ok = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
-      outcome: "link_existing_gift",
-      giftId,
-      stripeChargeId: chargeId,
-      overrideAmountMismatchReason: "Donor added a tip on top of the charge",
-    });
-    expect(ok.status).toBe(200);
-    const gift = await readGift(giftId);
-    expect(gift.amount).toBe("105.00"); // human figure preserved, not overwritten
-    // Ledger row records the charge link (finalAmountStripeChargeId @deprecated).
-    expect(await stripeGiftIdForCharge(chargeId)).toBe(giftId);
-    expect((await readAlloc(allocId)).subAmount).toBe("105.00");
   }, 30_000);
 });
 

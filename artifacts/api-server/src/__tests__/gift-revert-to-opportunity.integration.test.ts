@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { clearPaymentUnitsForChargeIds } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -243,6 +244,7 @@ afterAll(async () => {
   await db
     .delete(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.id, SP_QB));
+  await clearPaymentUnitsForChargeIds([CHARGE_STRIPE]);
   await db
     .delete(schema.stripeStagedCharges)
     .where(eqFn(schema.stripeStagedCharges.id, CHARGE_STRIPE));

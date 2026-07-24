@@ -94,14 +94,10 @@ const NOPE = "nonexistent_id_xyz";
 // Every finance-gated endpoint (path, body). Keep in sync with the inventory
 // comment in src/lib/financeGuard.ts.
 const GATED: Array<{ name: string; path: string; body?: unknown }> = [
-  // Settlement links (payout ↔ QB deposit)
+  // Settled payout pairing (payout ↔ QB deposit)
   {
     name: "confirmSettlementLink",
     path: `/api/reconciliation/settlement-links/${NOPE}/confirm`,
-  },
-  {
-    name: "rejectSettlementProposal",
-    path: `/api/reconciliation/settlement-links/${NOPE}/reject`,
   },
   {
     name: "confirmReconciliationBundle",
@@ -110,22 +106,6 @@ const GATED: Array<{ name: string; path: string; body?: unknown }> = [
   {
     name: "confirmBundleCrossProcessorTies",
     path: `/api/reconciliation/bundles/${NOPE}/confirm-ties`,
-  },
-  {
-    name: "confirmStripePayoutExclude",
-    path: `/api/stripe-payouts/${NOPE}/confirm-exclude`,
-  },
-  {
-    name: "confirmStripePayoutKeep",
-    path: `/api/stripe-payouts/${NOPE}/confirm-keep`,
-  },
-  {
-    name: "confirmStripePayoutReplace",
-    path: `/api/stripe-payouts/${NOPE}/confirm-replace`,
-  },
-  {
-    name: "revertStripePayoutReconciliation",
-    path: `/api/stripe-payouts/${NOPE}/revert-reconciliation`,
   },
   // Charge ↔ QB ties
   {

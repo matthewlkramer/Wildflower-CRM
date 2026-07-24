@@ -1,11 +1,9 @@
 import { useState } from "react";
-import { Link } from "wouter";
-import { Check, Link2, Loader2, Search, X } from "lucide-react";
+import { Link2, Loader2, Search, X } from "lucide-react";
 import {
   useConfirmPayoutChargeTies,
   useConfirmSettlementLink,
   useRejectChargeQbTie,
-  useRejectSettlementProposal,
   useRevertChargeQbTie,
   type BundleAnchor,
   type BundleAnchorType,
@@ -36,78 +34,6 @@ function errMessage(err: unknown): string {
   const issues = extractGateIssues(err);
   if (issues.length > 0) return issues.join(" · ");
   return err instanceof Error ? err.message : "Something went wrong.";
-}
-
-/** Deduped, trimmed, non-empty entries from a QB line-item text array. */
-function uniqNonEmpty(values: string[] | null | undefined): string[] {
-  if (!values) return [];
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const v of values) {
-    const t = decodeHtmlEntities(v).trim();
-    if (t && !seen.has(t)) {
-      seen.add(t);
-      out.push(t);
-    }
-  }
-  return out;
-}
-
-/**
- * QuickBooks descriptive context for a deposit anchor (or the proposed QB
- * counterpart of a Stripe payout): reference, memo/description, and a compact
- * summary of the deposit's line items (item names, account names, classes) so a
- * reviewer can eyeball the tie without leaving the card. Capped/scrollable for a
- * many-line deposit; renders nothing when there is no QB detail (e.g. a Stripe
- * payout anchor, whose QB fields are all null).
- */
-export function QbDetails({
-  lineDescription,
-  memo,
-  reference,
-  lineItemNames,
-  lineAccountNames,
-  lineClasses,
-}: {
-  lineDescription?: string | null;
-  memo?: string | null;
-  reference?: string | null;
-  lineItemNames?: string[] | null;
-  lineAccountNames?: string[] | null;
-  lineClasses?: string[] | null;
-}) {
-  const desc = decodeHtmlEntities(lineDescription ?? "").trim();
-  const m = decodeHtmlEntities(memo ?? "").trim();
-  const ref = (reference ?? "").trim();
-  const items = uniqNonEmpty(lineItemNames);
-  const accounts = uniqNonEmpty(lineAccountNames);
-  const classes = uniqNonEmpty(lineClasses);
-  if (
-    !desc &&
-    !m &&
-    !ref &&
-    items.length === 0 &&
-    accounts.length === 0 &&
-    classes.length === 0
-  ) {
-    return null;
-  }
-  return (
-    <div className="mt-1 max-h-24 space-y-0.5 overflow-y-auto pr-1 text-[11px] leading-snug text-muted-foreground">
-      {ref && <div className="truncate">Ref: {ref}</div>}
-      {desc && <div className="truncate">{desc}</div>}
-      {m && m !== desc && <div className="truncate">Memo: {m}</div>}
-      {items.length > 0 && (
-        <div className="truncate">Items: {items.join(", ")}</div>
-      )}
-      {accounts.length > 0 && (
-        <div className="truncate">Accounts: {accounts.join(", ")}</div>
-      )}
-      {classes.length > 0 && (
-        <div className="truncate">Classes: {classes.join(", ")}</div>
-      )}
-    </div>
-  );
 }
 
 /**
@@ -315,16 +241,15 @@ export function ChargeList({
 }
 
 /**
- * Card-first settlement anchor (gift-report style). Shows the anchor facts, its
- * proposed counterpart inline, and inline Approve / Reject when a proposal
- * exists — or a Resolve (search-to-tie) entry point when it doesn't.
+ * Card-first settlement anchor (gift-report style). Shows the anchor facts,
+ * with a Resolve (search-to-tie) entry point for an unpaired payout and
+ * approve controls for proposed charge-grain QB ties.
  *
- * This card is Plane 1 ONLY (docs/reconciliation-design.md §4.3/§4.4): Approve
- * confirms JUST the payout↔deposit settlement tie via the dedicated confirm
- * endpoint — it does NOT open or commit a per-charge bundle. Per-charge → gift
- * booking (Plane 2) is owned by the Gift report, so a "linked" (proposed)
- * settlement approves in one click and a charge still awaiting a donor decision
- * no longer blocks it. `onChanged` refreshes the workbench.
+ * This card is Plane 1 ONLY (docs/reconciliation-design.md §4.3/§4.4):
+ * Resolve records JUST the payout↔deposit pairing fact via the dedicated
+ * endpoint — it does NOT open or commit a per-charge bundle. Per-charge →
+ * gift booking (Plane 2) is owned by the Gift report. `onChanged` refreshes
+ * the workbench.
  */
 export function SettlementCard({
   anchor: a,
@@ -342,7 +267,6 @@ export function SettlementCard({
 }) {
   const { toast } = useToast();
   const confirmM = useConfirmSettlementLink();
-  const rejectM = useRejectSettlementProposal();
   const chargeTiesM = useConfirmPayoutChargeTies();
   const rejectTieM = useRejectChargeQbTie();
   const revertTieM = useRevertChargeQbTie();
@@ -359,15 +283,9 @@ export function SettlementCard({
 
   const busy =
     confirmM.isPending ||
-    rejectM.isPending ||
     chargeTiesM.isPending ||
     rejectTieM.isPending ||
     revertTieM.isPending;
-  const proposal = a.proposedMatch;
-  // A proposed tie that collided with an already-approved QB gift: approving
-  // KEEPS that gift (no double-booking) and just records the settlement link.
-  const hasConflict = Boolean(proposal?.conflictGiftId);
-  const conflictGift = proposal?.conflictGift ?? null;
   // Charge-grain QB ties (individually-booked payouts): pending proposals a
   // human can approve in one click, and already-confirmed ties for context.
   const tiesProposed = a.chargeTiesProposed ?? 0;
@@ -382,69 +300,6 @@ export function SettlementCard({
     a.amount != null &&
     Number(a.bankAmount) !== Number(a.amount);
   const showApproveTies = tiesProposed > 0;
-
-  const handleApprove = async () => {
-    // A proposal only ever appears on the Stripe-payout anchor, so anchorId IS
-    // the payout the confirm endpoint is keyed by.
-    try {
-      const res = await confirmM.mutateAsync({
-        payoutId: a.anchorId,
-        data: {},
-      });
-      toast({
-        title:
-          res.kind === "already_confirmed"
-            ? "Already settled."
-            : res.kind === "conflict_kept"
-              ? "Settlement recorded — the existing gift was kept."
-              : res.kind === "confirmed_linkage_only"
-                ? "Settlement approved — the deposit was already booked, so only the link was recorded."
-                : "Settlement approved.",
-        description:
-          res.kind === "conflict_kept"
-            ? "No new gift was created and no money was booked twice."
-            : undefined,
-      });
-      onChanged();
-    } catch (err) {
-      if (is409(err)) {
-        // `deposit_not_booked` / `deposit_unconfirmable` are PERMANENT
-        // rejections — retrying will never succeed, so don't present them as
-        // transient drift.
-        if (isPermanentSettlementError(err)) {
-          toast({
-            title: "Couldn't approve this settlement",
-            description: apiErrorMessage(err) ?? errMessage(err),
-            variant: "destructive",
-          });
-        } else {
-          toast({
-            title: "The settlement changed — refreshed.",
-            description: apiErrorMessage(err) ?? errMessage(err),
-          });
-          onChanged();
-        }
-      } else {
-        toast({ title: "Couldn't approve", description: errMessage(err) });
-      }
-    }
-  };
-
-  const handleReject = async () => {
-    try {
-      const res = await rejectM.mutateAsync({ payoutId: a.anchorId });
-      toast({
-        title: res.rejected
-          ? hasConflict
-            ? "Match rejected — the existing gift is untouched."
-            : "Proposed match rejected."
-          : "No proposed match to reject.",
-      });
-      onChanged();
-    } catch (err) {
-      toast({ title: "Couldn't reject", description: errMessage(err) });
-    }
-  };
 
   const handleApproveTies = async () => {
     // Confirms every still-valid proposed charge→QB tie on this payout in one
@@ -716,73 +571,6 @@ export function SettlementCard({
             untieingChargeId={untieingChargeId}
           />
 
-          {/* Proposed counterpart inline */}
-          {proposal && (
-            <div className="mt-2 rounded-md border bg-muted/30 px-2 py-1.5 text-xs">
-              <div className="flex items-center gap-1 truncate">
-                <span className="text-muted-foreground">→</span>
-                <span className="font-medium">
-                  {SOURCE_LABEL[proposal.counterpartType]}{" "}
-                  {shortId(proposal.counterpartId)}
-                </span>
-              </div>
-              <div className="mt-0.5 text-muted-foreground">
-                {proposal.amount != null ? formatCurrency(proposal.amount) : "—"}
-                {proposal.date ? ` · ${formatDate(proposal.date)}` : ""}
-                {proposal.chargeCount != null
-                  ? ` · ${proposal.chargeCount} charges`
-                  : ""}
-                {proposal.payerName ? ` · ${proposal.payerName}` : ""}
-              </div>
-              <QbDetails
-                lineDescription={proposal.lineDescription}
-                memo={proposal.memo}
-                reference={proposal.reference}
-                lineItemNames={proposal.lineItemNames}
-                lineAccountNames={proposal.lineAccountNames}
-                lineClasses={proposal.lineClasses}
-              />
-              {hasConflict && (
-                <div
-                  className="mt-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900"
-                  data-testid={`conflict-gift-${a.anchorId}`}
-                >
-                  <div className="font-medium">
-                    This QuickBooks deposit is already recorded as a gift.
-                  </div>
-                  <div className="mt-0.5">
-                    <Link
-                      href={`/gifts/${proposal.conflictGiftId}`}
-                      className="font-medium underline underline-offset-2 hover:text-amber-700"
-                      data-testid={`link-conflict-gift-${a.anchorId}`}
-                    >
-                      {conflictGift?.name?.trim()
-                        ? decodeHtmlEntities(conflictGift.name).trim()
-                        : "View the gift"}
-                    </Link>
-                    {conflictGift && (
-                      <span className="text-amber-800">
-                        {conflictGift.donorName?.trim()
-                          ? ` · ${decodeHtmlEntities(conflictGift.donorName).trim()}`
-                          : ""}
-                        {conflictGift.amount != null
-                          ? ` · ${formatCurrency(conflictGift.amount)}`
-                          : ""}
-                        {conflictGift.date
-                          ? ` · ${formatDate(conflictGift.date)}`
-                          : ""}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 text-amber-800">
-                    Approving keeps that gift and just records this
-                    payout–deposit match. No money is counted twice.
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Actions */}
           {selectable && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -803,50 +591,18 @@ export function SettlementCard({
                   Approve {tiesProposed} QB tie{tiesProposed === 1 ? "" : "s"}
                 </Button>
               )}
-              {proposal ? (
-                <>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 gap-1 px-2 text-xs"
-                    disabled={busy}
-                    onClick={handleApprove}
-                    data-testid={`button-settlement-approve-${a.anchorId}`}
-                  >
-                    {busy ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Check className="h-3 w-3" />
-                    )}
-                    {hasConflict ? "Approve — keep existing gift" : "Approve"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 gap-1 px-2 text-xs"
-                    disabled={busy}
-                    onClick={handleReject}
-                    data-testid={`button-settlement-reject-${a.anchorId}`}
-                  >
-                    <X className="h-3 w-3" />
-                    {hasConflict ? "Reject match" : "Reject"}
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 gap-1 px-2 text-xs"
-                  disabled={busy}
-                  onClick={() => setResolveOpen(true)}
-                  data-testid={`button-settlement-resolve-${a.anchorId}`}
-                >
-                  <Search className="h-3 w-3" />
-                  Resolve
-                </Button>
-              )}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 px-2 text-xs"
+                disabled={busy}
+                onClick={() => setResolveOpen(true)}
+                data-testid={`button-settlement-resolve-${a.anchorId}`}
+              >
+                <Search className="h-3 w-3" />
+                Resolve
+              </Button>
             </div>
           )}
         </div>

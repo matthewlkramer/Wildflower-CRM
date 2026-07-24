@@ -6,7 +6,6 @@ import {
   stripePayouts,
   stripeStagedCharges,
   donorboxDonations,
-  settlementLinks,
 } from "@workspace/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { asyncHandler, notFound } from "../../lib/helpers";
@@ -22,8 +21,9 @@ import { upsertDonorboxCounterpartLink } from "../../lib/sourceLinkWrites";
 // join keys already drive the lineage display; this stamps the reviewer's
 // affirmation onto the Donorbox counterpart links so the three sources are
 // directly tied with who/when provenance. Charge↔deposit membership is
-// already authoritative via settlement_links + stripe_payout_id (see NOTE in
-// the handler) — no charge_qb_tie rows are minted here.
+// already authoritative via the settled_stripe_payout_id pairing fact +
+// stripe_payout_id (see NOTE in the handler) — no charge_qb_tie rows are
+// minted here.
 const router: IRouter = Router();
 
 router.post(
@@ -45,21 +45,24 @@ router.post(
       .limit(1);
     if (!staged) return notFound(res, "reconciliation card");
 
-    // The Stripe payout tied to this deposit (authoritative settlement_links
-    // covers every lifecycle — proposed/confirmed and the conflict tie).
+    // The Stripe payout settled into this deposit lump (pairing fact on the
+    // QBO row — staged_payments.settled_stripe_payout_id).
     const [payout] = await db
       .select({ id: stripePayouts.id })
-      .from(settlementLinks)
-      .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
-      .where(eq(settlementLinks.depositStagedPaymentId, id))
+      .from(stagedPayments)
+      .innerJoin(
+        stripePayouts,
+        eq(stripePayouts.id, stagedPayments.settledStripePayoutId),
+      )
+      .where(eq(stagedPayments.id, id))
       .limit(1);
 
     // NOTE: this route deliberately does NOT mint `charge_qb_tie` ledger rows.
     // Per the source-link ADR, `charge_qb_tie` means "charge ↔ individually-
     // booked QB row" and is DB-unique per QB row (confirmed) — a settlement
     // bundle's many charges settling into ONE deposit lump is a different
-    // fact, already carried authoritatively by the settlement link
-    // (payout ↔ deposit) plus each charge's `stripe_payout_id`. Stamping
+    // fact, already carried authoritatively by the pairing fact
+    // (payout ↔ deposit lump) plus each charge's `stripe_payout_id`. Stamping
     // per-charge deposit ties here would violate the QB-side uniqueness for
     // any multi-charge payout. `chargesLinked` stays in the response contract
     // and is always 0 now.

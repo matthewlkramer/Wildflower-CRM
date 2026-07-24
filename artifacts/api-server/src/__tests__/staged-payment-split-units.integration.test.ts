@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  *   - children must sum to EXACTLY the parent amount in signed cents —
  *     negative units are legal (failed-payout clawback shape);
  *   - guards: <2 units, zero unit, sum mismatch, nested split, re-split,
- *     parent with live claims (cash application / settlement link /
+ *     parent with live claims (cash application / settled payout pairing /
  *     non-proposed source_link);
  *   - a PROPOSED source_link on the parent is cleared, not blocking;
  *   - the parent derives `excluded` (SQL arm) while children exist; the
@@ -37,7 +37,6 @@ let schema: {
   stripeStagedCharges: Db["stripeStagedCharges"];
   stripePayouts: Db["stripePayouts"];
   paymentApplications: Db["paymentApplications"];
-  settlementLinks: Db["settlementLinks"];
   sourceLinks: Db["sourceLinks"];
   sourceLinkId: Db["sourceLinkId"];
   giftsAndPayments: Db["giftsAndPayments"];
@@ -121,7 +120,6 @@ beforeAll(async () => {
     stripeStagedCharges: dbMod.stripeStagedCharges,
     stripePayouts: dbMod.stripePayouts,
     paymentApplications: dbMod.paymentApplications,
-    settlementLinks: dbMod.settlementLinks,
     sourceLinks: dbMod.sourceLinks,
     sourceLinkId: dbMod.sourceLinkId,
     giftsAndPayments: dbMod.giftsAndPayments,
@@ -162,9 +160,6 @@ afterAll(async () => {
       .delete(schema.sourceLinks)
       .where(inArrayFn(schema.sourceLinks.qbStagedPaymentId, stagedIds));
   }
-  await db
-    .delete(schema.settlementLinks)
-    .where(eqFn(schema.settlementLinks.payoutId, PAYOUT_ID));
   if (giftIds.length) {
     await db
       .delete(schema.giftAllocations)
@@ -340,22 +335,17 @@ describe.skipIf(!HAS_DB)("staged payment split units (DB)", () => {
     expect(a.payload.code).toBe("parent_has_claims");
   });
 
-  it("rejects a parent named by a settlement link (any lifecycle) → 409 parent_has_claims", async () => {
+  it("rejects a parent settled into a payout (the pairing fact) → 409 parent_has_claims", async () => {
     const parent = await seedParent({ amount: "100.00" });
-    await db.insert(schema.settlementLinks).values({
-      id: `sl_${PAYOUT_ID}`,
-      payoutId: PAYOUT_ID,
-      depositStagedPaymentId: parent,
-      lifecycle: "proposed",
-    });
+    await db
+      .update(schema.stagedPayments)
+      .set({ settledStripePayoutId: PAYOUT_ID })
+      .where(eqFn(schema.stagedPayments.id, parent));
     const a = await abortOf(() =>
       split(parent, [{ amount: "60.00" }, { amount: "40.00" }]),
     );
     expect(a.status).toBe(409);
     expect(a.payload.code).toBe("parent_has_claims");
-    await db
-      .delete(schema.settlementLinks)
-      .where(eqFn(schema.settlementLinks.payoutId, PAYOUT_ID));
   });
 
   it("clears a PROPOSED source_link tie but blocks on a CONFIRMED one", async () => {

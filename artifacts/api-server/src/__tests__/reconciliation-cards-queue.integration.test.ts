@@ -6,10 +6,6 @@ import {
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
-import {
-  proposeSettlementLink,
-  confirmSettlementLink,
-} from "../lib/settlementWriter";
 
 /**
  * DB-backed coverage for the unified reconciler's DEFAULT work-queue filter
@@ -66,7 +62,6 @@ let schema: {
   stripeStagedCharges: Db["stripeStagedCharges"];
   giftAllocations: Db["giftAllocations"];
   paymentApplications: Db["paymentApplications"];
-  settlementLinks: Db["settlementLinks"];
 };
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -172,7 +167,7 @@ async function seedLedgerResolved(
 
 async function seedPayoutFor(
   stagedPaymentId: string,
-  link: "proposed" | "matched" = "proposed",
+  link: "none" | "matched" = "none",
 ): Promise<string> {
   const id = nextId("po");
   await db.insert(schema.stripePayouts).values({
@@ -183,28 +178,16 @@ async function seedPayoutFor(
     arrivalDate: "2026-03-15",
   });
   payoutIds.push(id);
-  // settlement_links is the authoritative payout↔deposit store; the legacy
-  // pointer columns are dropped. Build the intended tie directly. FK cascade
-  // on payout_id cleans it up.
-  const fields =
-    link === "matched"
-      ? confirmSettlementLink({
-          depositStagedPaymentId: stagedPaymentId,
-          conflictGiftId: null,
-          confirmedByUserId: null,
-          confirmedAt: new Date(),
-        })
-      : proposeSettlementLink(stagedPaymentId, null);
-  await db.insert(schema.settlementLinks).values({
-    id: `sl_${id}`,
-    payoutId: id,
-    depositStagedPaymentId: fields.depositStagedPaymentId,
-    conflictGiftId: fields.conflictGiftId,
-    lifecycle: fields.lifecycle,
-    provenance: fields.provenance,
-    confirmedByUserId: fields.confirmedByUserId,
-    confirmedAt: fields.confirmedAt,
-  });
+  // The payout\u2194QBO-lump pairing is a plain fact on the QBO row
+  // (staged_payments.settled_stripe_payout_id, 0168) \u2014 the settlement-link
+  // lifecycle is retired. "matched" stamps the pairing; "none" leaves the
+  // payout unpaired.
+  if (link === "matched") {
+    await db
+      .update(schema.stagedPayments)
+      .set({ settledStripePayoutId: id })
+      .where(eqFn(schema.stagedPayments.id, stagedPaymentId));
+  }
   return id;
 }
 
@@ -317,7 +300,6 @@ beforeAll(async () => {
     stripeStagedCharges: dbMod.stripeStagedCharges,
     giftAllocations: dbMod.giftAllocations,
     paymentApplications: dbMod.paymentApplications,
-    settlementLinks: dbMod.settlementLinks,
   };
   inArrayFn = drizzle.inArray;
   eqFn = drizzle.eq;
@@ -405,9 +387,8 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
       label: "approved-matched-stripe",
       matchedGiftId: giftC,
     });
-    await seedPayoutFor(approvedStripeId);
-    // Same as above but the payout is linked via the MATCHED column (not
-    // proposed) → still real work; locks both legs of "matched OR proposed".
+    await seedPayoutFor(approvedStripeId, "matched");
+    // A second settled leg with a different gift — same re-admit rule.
     const approvedStripeMatchedId = await seedStaged({
       label: "approved-matched-stripe-matched",
       matchedGiftId: giftD,
@@ -457,7 +438,7 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
     await seedLedgerResolved(splitId, splitGiftA, "100.00");
 
     // A ledger-resolved row that STILL has Stripe to tie in remains real
-    // work — the settlement_link re-admits it (mirrors the matched+stripe
+    // work — the settled pairing re-admits it (mirrors the matched+stripe
     // leg above).
     const splitGiftC = await seedGift("100.00");
     const splitStripeId = await seedStaged({
@@ -465,7 +446,7 @@ describe.skipIf(!HAS_DB)("Reconciliation default queue — legacy approved rows 
       amount: "100.00",
     });
     await seedLedgerResolved(splitStripeId, splitGiftC, "100.00");
-    await seedPayoutFor(splitStripeId);
+    await seedPayoutFor(splitStripeId, "matched");
 
     // A group-reconciled member row (counted ledger row from a group
     // reconcile) is likewise resolved and must drop out of the live queue.
@@ -807,9 +788,9 @@ describe.skipIf(!HAS_DB)(
         label: "pending-all-charges-excluded",
         amount: "75.00",
       });
-      // A PROPOSED (not confirmed) payout tie: a confirmed settlement link
-      // would itself derive the deposit match_confirmed — the pending-with-
-      // excluded-charges state only exists while the tie is still proposed.
+      // An UNPAIRED payout: a settled pairing would itself derive the deposit
+      // match_confirmed — the pending-with-excluded-charges state only exists
+      // while the payout is still unpaired.
       const payoutId = await seedPayoutFor(depositId);
       await seedCharge({
         payoutId,

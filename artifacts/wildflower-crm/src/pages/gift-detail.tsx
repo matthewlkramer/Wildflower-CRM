@@ -899,8 +899,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
 
 const RECON_CHAIN_LABEL: Record<StripePayoutReconciliationStatus, string> = {
   unmatched: "Not yet matched to a QuickBooks deposit",
-  proposed: "Proposed — awaiting confirm",
-  conflict_approved: "Conflict — needs a keep/replace decision",
   confirmed_reconciled:
     "Reconciled — Stripe charges are the record; QuickBooks deposit kept",
 };

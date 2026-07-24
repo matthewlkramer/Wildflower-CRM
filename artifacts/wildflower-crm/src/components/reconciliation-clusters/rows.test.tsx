@@ -56,8 +56,6 @@ function allByTestIdPrefix(prefix: string): HTMLElement[] {
 function makeActions(): ClusterActions {
   return {
     busy: false,
-    resolveWithdrawal: vi.fn(),
-    revertWithdrawal: vi.fn(),
     openLinkGift: vi.fn(),
     openCreateGift: vi.fn(),
     openIdentify: vi.fn(),
@@ -72,9 +70,6 @@ function makeActions(): ClusterActions {
     openSettlementSearch: vi.fn(),
     isFinanceOrAdmin: false,
     openQbDetail: vi.fn(),
-    removeSettlementProposal: vi.fn(),
-    revertSettlement: vi.fn(),
-    replaceSettlement: vi.fn(),
     rejectChargeQbTie: vi.fn(),
     confirmProposedMatch: vi.fn(),
     openMatchEvidence: vi.fn(),
@@ -397,66 +392,6 @@ describe("single-charge payout row (canonical state display)", () => {
     const chip = byTestId("settlement-chip-stripe_payout:po_1");
     expect(chip).toBeTruthy();
     expect(chip!.textContent).toContain("Settlement confirmed");
-  });
-
-  it("settlementLinkState=proposed_conflict renders as a chip in the accounting column, not in status", () => {
-    const cluster = makePayoutCluster({
-      charges: [makeCharge()],
-      state: makeState({ settlementLinkState: "proposed_conflict" }),
-    });
-    render(
-      <ClusterRow
-        cluster={cluster}
-        expanded={false}
-        onToggle={noopToggle}
-        actions={makeActions()}
-      />,
-    );
-    const status = byTestId("status-cluster-stripe_payout:po_1");
-    expect(status!.textContent).not.toContain("Settlement conflict");
-    expect(
-      byTestId("settlement-chip-stripe_payout:po_1")!.textContent,
-    ).toContain("Settlement conflict");
-  });
-
-  it("settlementLinkState=proposed_full / proposed_partial render as accounting chips, not status", () => {
-    const full = makePayoutCluster({
-      charges: [makeCharge()],
-      state: makeState({ settlementLinkState: "proposed_full" }),
-    });
-    render(
-      <ClusterRow
-        cluster={full}
-        expanded={false}
-        onToggle={noopToggle}
-        actions={makeActions()}
-      />,
-    );
-    expect(
-      byTestId("status-cluster-stripe_payout:po_1")!.textContent,
-    ).not.toContain("Settlement proposed");
-    expect(
-      byTestId("settlement-chip-stripe_payout:po_1")!.textContent,
-    ).toContain("Settlement proposed");
-
-    const partial = makePayoutCluster({
-      charges: [makeCharge()],
-      state: makeState({ settlementLinkState: "proposed_partial" }),
-    });
-    render(
-      <ClusterRow
-        cluster={partial}
-        expanded={false}
-        onToggle={noopToggle}
-        actions={makeActions()}
-      />,
-    );
-    expect(
-      byTestId("status-cluster-stripe_payout:po_1")!.textContent,
-    ).not.toContain("Partial settlement");
-    expect(
-      byTestId("settlement-chip-stripe_payout:po_1")!.textContent,
-    ).toContain("Partial settlement");
   });
 
   it("unidentified charge → 'Identify donor' next step; identified → 'Create gift'", () => {

@@ -87,8 +87,6 @@ export const ListStripeStagedChargesResponse = zod.object({
   "payoutNetTotal": zod.string().nullish(),
   "payoutArrivalDate": zod.string().date().nullish(),
   "payoutStatus": zod.string().nullish(),
-  "payoutQbSupersedeStatus": zod.string().nullish().describe('Non-destructive QuickBooks supersede audit for this charge\'s payout: none | excluded_pending | conflict_approved. \'conflict_approved\' blocks minting a per-charge gift here.'),
-  "payoutQbConflictGiftId": zod.string().nullish().describe('The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.'),
   "reconciliationLanes": zod.object({
   "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
   "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
@@ -226,8 +224,6 @@ export const ResolveStripeStagedChargeResponse = zod.object({
   "payoutNetTotal": zod.string().nullish(),
   "payoutArrivalDate": zod.string().date().nullish(),
   "payoutStatus": zod.string().nullish(),
-  "payoutQbSupersedeStatus": zod.string().nullish().describe('Non-destructive QuickBooks supersede audit for this charge\'s payout: none | excluded_pending | conflict_approved. \'conflict_approved\' blocks minting a per-charge gift here.'),
-  "payoutQbConflictGiftId": zod.string().nullish().describe('The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.'),
   "reconciliationLanes": zod.object({
   "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
   "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
@@ -330,8 +326,6 @@ export const LinkStripeChargeToGiftResponse = zod.object({
   "payoutNetTotal": zod.string().nullish(),
   "payoutArrivalDate": zod.string().date().nullish(),
   "payoutStatus": zod.string().nullish(),
-  "payoutQbSupersedeStatus": zod.string().nullish().describe('Non-destructive QuickBooks supersede audit for this charge\'s payout: none | excluded_pending | conflict_approved. \'conflict_approved\' blocks minting a per-charge gift here.'),
-  "payoutQbConflictGiftId": zod.string().nullish().describe('The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.'),
   "reconciliationLanes": zod.object({
   "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
   "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
@@ -436,8 +430,6 @@ export const ExcludeStripeStagedChargeResponse = zod.object({
   "payoutNetTotal": zod.string().nullish(),
   "payoutArrivalDate": zod.string().date().nullish(),
   "payoutStatus": zod.string().nullish(),
-  "payoutQbSupersedeStatus": zod.string().nullish().describe('Non-destructive QuickBooks supersede audit for this charge\'s payout: none | excluded_pending | conflict_approved. \'conflict_approved\' blocks minting a per-charge gift here.'),
-  "payoutQbConflictGiftId": zod.string().nullish().describe('The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.'),
   "reconciliationLanes": zod.object({
   "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
   "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
@@ -531,8 +523,6 @@ export const ReIncludeStripeStagedChargeResponse = zod.object({
   "payoutNetTotal": zod.string().nullish(),
   "payoutArrivalDate": zod.string().date().nullish(),
   "payoutStatus": zod.string().nullish(),
-  "payoutQbSupersedeStatus": zod.string().nullish().describe('Non-destructive QuickBooks supersede audit for this charge\'s payout: none | excluded_pending | conflict_approved. \'conflict_approved\' blocks minting a per-charge gift here.'),
-  "payoutQbConflictGiftId": zod.string().nullish().describe('The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.'),
   "reconciliationLanes": zod.object({
   "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
   "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
@@ -626,8 +616,6 @@ export const RevertStripeStagedChargeResponse = zod.object({
   "payoutNetTotal": zod.string().nullish(),
   "payoutArrivalDate": zod.string().date().nullish(),
   "payoutStatus": zod.string().nullish(),
-  "payoutQbSupersedeStatus": zod.string().nullish().describe('Non-destructive QuickBooks supersede audit for this charge\'s payout: none | excluded_pending | conflict_approved. \'conflict_approved\' blocks minting a per-charge gift here.'),
-  "payoutQbConflictGiftId": zod.string().nullish().describe('The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.'),
   "reconciliationLanes": zod.object({
   "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
   "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
@@ -721,8 +709,6 @@ export const ConfirmStripeRefundPropagationResponse = zod.object({
   "payoutNetTotal": zod.string().nullish(),
   "payoutArrivalDate": zod.string().date().nullish(),
   "payoutStatus": zod.string().nullish(),
-  "payoutQbSupersedeStatus": zod.string().nullish().describe('Non-destructive QuickBooks supersede audit for this charge\'s payout: none | excluded_pending | conflict_approved. \'conflict_approved\' blocks minting a per-charge gift here.'),
-  "payoutQbConflictGiftId": zod.string().nullish().describe('The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.'),
   "reconciliationLanes": zod.object({
   "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
   "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
@@ -816,8 +802,6 @@ export const DismissStripeRefundPropagationResponse = zod.object({
   "payoutNetTotal": zod.string().nullish(),
   "payoutArrivalDate": zod.string().date().nullish(),
   "payoutStatus": zod.string().nullish(),
-  "payoutQbSupersedeStatus": zod.string().nullish().describe('Non-destructive QuickBooks supersede audit for this charge\'s payout: none | excluded_pending | conflict_approved. \'conflict_approved\' blocks minting a per-charge gift here.'),
-  "payoutQbConflictGiftId": zod.string().nullish().describe('The already-approved QuickBooks gift this payout conflicts with, when payoutQbSupersedeStatus is conflict_approved.'),
   "reconciliationLanes": zod.object({
   "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
   "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
@@ -842,7 +826,7 @@ export const DismissStripeRefundPropagationResponse = zod.object({
 })
 
 /**
- * @summary List Stripe payouts by their QuickBooks reconciliation state (proposals to confirm, conflicts to resolve, or already-confirmed), with the active QB deposit lump and any conflicting approved gift joined for display.
+ * @summary List Stripe payouts by their QuickBooks pairing state (unmatched or already paired), with the settled QB deposit lump joined for display. Read-only — the pairing is maintained deterministically by the accounting recompute; discrepancies surface in qbo_accounting_checks.
  */
 export const listStripePayoutReconciliationsQueryLimitDefault = 50;
 export const listStripePayoutReconciliationsQueryLimitMax = 10000;
@@ -852,7 +836,7 @@ export const listStripePayoutReconciliationsQueryPageDefault = 1;
 
 
 export const ListStripePayoutReconciliationsQueryParams = zod.object({
-  "queue": zod.enum(['unmatched', 'proposed', 'conflict', 'confirmed', 'all']).optional().describe('Which queue to list (default proposed).'),
+  "queue": zod.enum(['unmatched', 'confirmed', 'all']).optional().describe('Which queue to list (default all).'),
   "limit": zod.coerce.number().min(1).max(listStripePayoutReconciliationsQueryLimitMax).default(listStripePayoutReconciliationsQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listStripePayoutReconciliationsQueryPageDefault)
 })
@@ -870,20 +854,15 @@ export const ListStripePayoutReconciliationsResponse = zod.object({
   "refundTotal": zod.string().nullish(),
   "netTotal": zod.string().nullish(),
   "chargeCount": zod.number().nullish(),
-  "settlementLifecycle": zod.enum(['proposed', 'confirmed', 'exempt']).nullish().describe('The settlement_links lifecycle for this payout (null when there is no link). The reconciliation status is derived from this + the conflict gift via payoutStatusFromLink.'),
   "depositId": zod.string().nullish(),
   "depositAmount": zod.string().nullish(),
   "depositDateReceived": zod.string().date().nullish(),
   "depositPayerName": zod.string().nullish(),
   "depositStatus": zod.string().nullish(),
-  "conflictGiftAmount": zod.string().nullish(),
-  "conflictGiftDate": zod.string().date().nullish(),
-  "conflictGiftArchivedAt": zod.string().datetime({}).nullish().describe('Set once a confirm-replace archives this gift (kept, never deleted).'),
-  "conflictGiftDonorName": zod.string().nullish(),
   "reconciliationLanes": zod.object({
   "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
   "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
-}).describe('The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).').optional().describe('Two-lane reconciliation status (INV-4) for this payout, derived read-only from the settlement link: funding = unlinked (no link)→proposed (lifecycle=proposed)→confirmed (lifecycle=confirmed). crmRecord is null — a payout is a batch with no single donor.')
+}).describe('The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).').optional().describe('Two-lane reconciliation status (INV-4) for this payout, derived read-only from the pairing fact: funding = unlinked (no settled lump) → confirmed (settled lump exists); exempt for a negative payout (Stripe withdrawal — no bank deposit). crmRecord is null — a payout is a batch with no single donor.')
 })),
   "pagination": zod.object({
   "page": zod.number(),
@@ -891,100 +870,4 @@ export const ListStripePayoutReconciliationsResponse = zod.object({
   "total": zod.number()
 })
 })
-
-/**
- * @summary Confirm a proposed payout↔QB-deposit match — exclude the deposit lump (processor_payout, kept and linked, never deleted) and unblock the per-charge Stripe gift queue.
- */
-export const ConfirmStripePayoutExcludeParams = zod.object({
-  "id": zod.coerce.string()
-})
-
-export const ConfirmStripePayoutExcludeResponse = zod.object({
-  "ok": zod.literal(true),
-  "kind": zod.enum(['confirmed_reconciled', 'confirmed_linkage_only', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted', 'resolved_withdrawal']),
-  "payoutId": zod.string(),
-  "stagedPaymentId": zod.string().nullish().describe('The QB deposit lump that was excluded\/relinked, when applicable.'),
-  "archivedGiftId": zod.string().nullish().describe('The QB-derived gift archived by a confirm-replace (kept, never deleted).'),
-  "restoredGiftId": zod.string().nullish().describe('The gift un-archived by reverting a confirm-replace.')
-}).describe('Outcome of a payout reconciliation confirm\/revert transition.')
-
-/**
- * @summary Resolve a conflict by keeping the already-approved QuickBooks gift — record only the payout linkage, touching no gift or deposit.
- */
-export const ConfirmStripePayoutKeepParams = zod.object({
-  "id": zod.coerce.string()
-})
-
-export const ConfirmStripePayoutKeepResponse = zod.object({
-  "ok": zod.literal(true),
-  "kind": zod.enum(['confirmed_reconciled', 'confirmed_linkage_only', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted', 'resolved_withdrawal']),
-  "payoutId": zod.string(),
-  "stagedPaymentId": zod.string().nullish().describe('The QB deposit lump that was excluded\/relinked, when applicable.'),
-  "archivedGiftId": zod.string().nullish().describe('The QB-derived gift archived by a confirm-replace (kept, never deleted).'),
-  "restoredGiftId": zod.string().nullish().describe('The gift un-archived by reverting a confirm-replace.')
-}).describe('Outcome of a payout reconciliation confirm\/revert transition.')
-
-/**
- * @summary Resolve a conflict by replacing the coarse QB-derived lump gift — archive it (kept, allocations preserved, never deleted), exclude the deposit, and unblock the per-charge Stripe gift queue. Explicit, default-off in the UI.
- */
-export const ConfirmStripePayoutReplaceParams = zod.object({
-  "id": zod.coerce.string()
-})
-
-export const ConfirmStripePayoutReplaceResponse = zod.object({
-  "ok": zod.literal(true),
-  "kind": zod.enum(['confirmed_reconciled', 'confirmed_linkage_only', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted', 'resolved_withdrawal']),
-  "payoutId": zod.string(),
-  "stagedPaymentId": zod.string().nullish().describe('The QB deposit lump that was excluded\/relinked, when applicable.'),
-  "archivedGiftId": zod.string().nullish().describe('The QB-derived gift archived by a confirm-replace (kept, never deleted).'),
-  "restoredGiftId": zod.string().nullish().describe('The gift un-archived by reverting a confirm-replace.')
-}).describe('Outcome of a payout reconciliation confirm\/revert transition.')
-
-/**
- * @summary Undo a confirmed payout reconciliation back to its prior proposal state. Refused once any of the payout's Stripe charges have been booked into a gift.
- */
-export const RevertStripePayoutReconciliationParams = zod.object({
-  "id": zod.coerce.string()
-})
-
-export const RevertStripePayoutReconciliationResponse = zod.object({
-  "ok": zod.literal(true),
-  "kind": zod.enum(['confirmed_reconciled', 'confirmed_linkage_only', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted', 'resolved_withdrawal']),
-  "payoutId": zod.string(),
-  "stagedPaymentId": zod.string().nullish().describe('The QB deposit lump that was excluded\/relinked, when applicable.'),
-  "archivedGiftId": zod.string().nullish().describe('The QB-derived gift archived by a confirm-replace (kept, never deleted).'),
-  "restoredGiftId": zod.string().nullish().describe('The gift un-archived by reverting a confirm-replace.')
-}).describe('Outcome of a payout reconciliation confirm\/revert transition.')
-
-/**
- * @summary Resolve a NEGATIVE Stripe payout (a withdrawal back to Stripe — no money reached the bank as a deposit) as exempt from QB deposit settlement. Writes an exempt settlement link (no deposit); finance-gated, human-explicit, idempotent.
- */
-export const ResolveStripePayoutWithdrawalParams = zod.object({
-  "id": zod.coerce.string()
-})
-
-export const ResolveStripePayoutWithdrawalResponse = zod.object({
-  "ok": zod.literal(true),
-  "kind": zod.enum(['confirmed_reconciled', 'confirmed_linkage_only', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted', 'resolved_withdrawal']),
-  "payoutId": zod.string(),
-  "stagedPaymentId": zod.string().nullish().describe('The QB deposit lump that was excluded\/relinked, when applicable.'),
-  "archivedGiftId": zod.string().nullish().describe('The QB-derived gift archived by a confirm-replace (kept, never deleted).'),
-  "restoredGiftId": zod.string().nullish().describe('The gift un-archived by reverting a confirm-replace.')
-}).describe('Outcome of a payout reconciliation confirm\/revert transition.')
-
-/**
- * @summary Undo a withdrawal resolution — remove the exempt settlement link so the payout returns to the unlinked state.
- */
-export const RevertStripePayoutWithdrawalParams = zod.object({
-  "id": zod.coerce.string()
-})
-
-export const RevertStripePayoutWithdrawalResponse = zod.object({
-  "ok": zod.literal(true),
-  "kind": zod.enum(['confirmed_reconciled', 'confirmed_linkage_only', 'confirmed_excluded', 'confirmed_keep', 'confirmed_replace', 'reverted', 'resolved_withdrawal']),
-  "payoutId": zod.string(),
-  "stagedPaymentId": zod.string().nullish().describe('The QB deposit lump that was excluded\/relinked, when applicable.'),
-  "archivedGiftId": zod.string().nullish().describe('The QB-derived gift archived by a confirm-replace (kept, never deleted).'),
-  "restoredGiftId": zod.string().nullish().describe('The gift un-archived by reverting a confirm-replace.')
-}).describe('Outcome of a payout reconciliation confirm\/revert transition.')
 

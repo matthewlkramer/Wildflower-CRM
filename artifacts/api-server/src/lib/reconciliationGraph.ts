@@ -32,7 +32,6 @@ import {
   stripeStagedCharges,
   pledgeAllocations,
   pledgeExpectedPayments,
-  settlementLinks,
 } from "@workspace/db/schema";
 import {
   and,
@@ -82,7 +81,6 @@ import {
   qbLedgerSoleGiftIdForPayment,
   stripeLedgerGiftIdForCharge,
 } from "./paymentApplications";
-import { payoutStatusFromLink } from "./settlementLink";
 import { personDisplayNameSql } from "./personNameSql";
 import {
   ANON_LABEL,
@@ -795,8 +793,8 @@ export async function buildReconciliationGraph(
   stagedPaymentId: string,
   viewer: Viewer,
 ): Promise<RecGraph | null> {
-  // Full row + the DERIVED status (the EXISTS arms — settlement link, counted
-  // ledger row — can't be derived from the row's own columns).
+  // Full row + the DERIVED status (the EXISTS arms — counted ledger row,
+  // charge tie — can't be derived from the row's own columns).
   const staged = await db
     .select({
       ...getTableColumns(stagedPayments),
@@ -812,23 +810,21 @@ export async function buildReconciliationGraph(
   if (!staged) return null;
 
   // ── Evidence: QB anchor (always) + optional Stripe payout/charge ──
-  // The payout tied to this deposit is now resolved through the authoritative
-  // settlement_links row (one `deposit_staged_payment_id`, covering proposed /
-  // confirmed / conflict), not the legacy pointer columns.
-  const stripePayout = await db
-    .select({
-      id: stripePayouts.id,
-      amount: stripePayouts.amount,
-      feeTotal: stripePayouts.feeTotal,
-      netTotal: stripePayouts.netTotal,
-      lifecycle: settlementLinks.lifecycle,
-      conflictGiftId: settlementLinks.conflictGiftId,
-    })
-    .from(settlementLinks)
-    .innerJoin(stripePayouts, eq(stripePayouts.id, settlementLinks.payoutId))
-    .where(eq(settlementLinks.depositStagedPaymentId, stagedPaymentId))
-    .limit(1)
-    .then((r) => r[0] ?? null);
+  // The payout tied to this deposit is resolved through the settled-payout
+  // pairing fact on the row itself (settled_stripe_payout_id, 0168).
+  const stripePayout = staged.settledStripePayoutId
+    ? await db
+        .select({
+          id: stripePayouts.id,
+          amount: stripePayouts.amount,
+          feeTotal: stripePayouts.feeTotal,
+          netTotal: stripePayouts.netTotal,
+        })
+        .from(stripePayouts)
+        .where(eq(stripePayouts.id, staged.settledStripePayoutId))
+        .limit(1)
+        .then((r) => r[0] ?? null)
+    : null;
 
   let stripeEvidence: RecEvidence["stripe"] = null;
   let singleStripeCharge: {
@@ -864,7 +860,9 @@ export async function buildReconciliationGraph(
       feeAmount: single?.feeAmount ?? stripePayout.feeTotal,
       netAmount: single?.netAmount ?? stripePayout.netTotal ?? stripePayout.amount,
       chargeCount: charges.length,
-      reconciliationStatus: payoutStatusFromLink(stripePayout),
+      // Settled by construction: the pairing fact ties this deposit row to
+      // the payout (the proposed/conflict workflow states are retired).
+      reconciliationStatus: "confirmed_reconciled",
     };
   }
 
@@ -1074,18 +1072,7 @@ export async function buildReconciliationGraph(
   // ── Ready + blockers ──
   const blockers: string[] = [];
   if (staged.status !== "pending") {
-    const stripeAwaiting =
-      stripeEvidence != null &&
-      (stripeEvidence.reconciliationStatus === "proposed" ||
-        stripeEvidence.reconciliationStatus === "conflict_approved");
-    if (staged.status === "match_confirmed" && stripeAwaiting) {
-      // The QB→gift side is done; only the Stripe payout still needs a human to
-      // confirm tying it in. Say so explicitly instead of a flat "Already
-      // matched." so the reviewer knows which track is outstanding.
-      blockers.push(
-        "QuickBooks is already matched into a gift — only the Stripe payout is still awaiting confirmation.",
-      );
-    } else if (staged.status === "match_confirmed") {
+    if (staged.status === "match_confirmed") {
       blockers.push("Already matched.");
     } else if (staged.status === "excluded") {
       blockers.push("Already excluded.");
@@ -1448,8 +1435,8 @@ async function searchQb(p: RecSearchParams): Promise<RecCandidate[]> {
 // ─── Criteria-based Stripe payout search (reverse of searchQbStaged) ─────────
 // Powers the Settlement report's "Missing payout" resolve box: given a standalone
 // QuickBooks DEPOSIT anchor, hunt the orphan Stripe payout it should settle
-// against. Only ORPHAN payouts (no settlement link at all) are offered — a payout
-// already tied (proposed or confirmed) belongs to another deposit's bundle.
+// against. Only ORPHAN payouts (no settled QBO lump) are offered — a payout
+// already settled belongs to another deposit's bundle.
 // Requires at least one positive criterion so it never dumps the whole table.
 export interface RecPayoutCharge {
   id: string;
@@ -1485,9 +1472,9 @@ export async function searchPayouts(
   const hasAmount = Number.isFinite(amt) && amt > 0;
   if (!hasText && !hasAmount) return [];
 
-  // Only orphan payouts (no settlement link) are eligible resolve targets.
+  // Only orphan payouts (no settled QBO lump) are eligible resolve targets.
   const conds: SQL[] = [
-    sql`NOT EXISTS (SELECT 1 FROM ${settlementLinks} WHERE ${settlementLinks.payoutId} = ${stripePayouts.id})`,
+    sql`NOT EXISTS (SELECT 1 FROM ${stagedPayments} WHERE ${stagedPayments.settledStripePayoutId} = ${stripePayouts.id})`,
   ];
   if (hasText) {
     // A payout has no human-readable name of its own — the donor names live on
@@ -1662,7 +1649,7 @@ async function searchQbStagedRows(
       // (same as the legacy gift-link columns, which are no longer written).
       linkedGiftId: qbLedgerSoleGiftIdForPayment(),
       // Blocking facts for the conflictReason label (never used to filter):
-      // an exclusion takes the row out of review; a confirmed settlement link
+      // an exclusion takes the row out of review; a settled-payout pairing
       // means its money is already accounted for against another payout; a
       // confirmed charge-grain tie means an individually-booked payout's
       // charge already claims this exact row.

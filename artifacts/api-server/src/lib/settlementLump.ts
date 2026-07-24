@@ -11,12 +11,10 @@ import { eq, or, sql, type SQL } from "drizzle-orm";
  * name ("Misc Customer"). A donor-NAME payment row matches neither signal and
  * stays ineligible — that is a single donation and belongs at the charge grain.
  *
- * The proposal pass (stripeReconcile.ts), the pending-deposit confirm
- * transition (stripeConfirm.ts), and the Resolve manual-pick gate
- * (routes/reconciliation/bundleProposals.ts) MUST all use this ONE predicate so
- * a lump the matcher (or a human) can propose is always confirmable. The
- * propose pass keeps its own extra gates on top (e.g. single-charge payouts
- * still require a true deposit-typed row).
+ * The workbench lump-candidate reads (routes/reconciliation/workbenchClusters.ts)
+ * and the Resolve manual-pick gate (routes/reconciliation/bundleProposals.ts)
+ * MUST both use this ONE predicate so a lump the system surfaces is always
+ * one a human can pair.
  *
  * The TS predicate and the SQL predicate below are the SAME rule in two
  * dialects — keep them in lockstep. Note the asymmetry: "stripe" is tested

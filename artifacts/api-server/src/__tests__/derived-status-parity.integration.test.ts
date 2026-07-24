@@ -34,7 +34,7 @@ import {
  * It also locks the tie ≠ status rule against the live schema: a raw
  * charge→QB tie (linked_qb_staged_payment_id) WITHOUT the tied charge's own
  * counted booking must leave the QB row `pending` — only the booked tie is
- * confirmation evidence. And a merely-PROPOSED settlement link is not
+ * confirmation evidence. And a merely-claimed (unbooked) charge tie is not
  * evidence either.
  *
  * Static SQL-rendering parity lives in derived-status-builders.test.ts.
@@ -57,7 +57,6 @@ let schema: {
   stagedPayments: Db["stagedPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   stripePayouts: Db["stripePayouts"];
-  settlementLinks: Db["settlementLinks"];
   paymentApplications: Db["paymentApplications"];
   sourceLinks: Db["sourceLinks"];
   sourceLinkId: Db["sourceLinkId"];
@@ -70,7 +69,6 @@ const giftIds: string[] = [];
 const stagedIds: string[] = [];
 const chargeIds: string[] = [];
 const payoutIds: string[] = [];
-const settlementLinkIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 
@@ -142,22 +140,17 @@ async function seedPayout(): Promise<string> {
   return id;
 }
 
-async function seedSettlementLink(
+async function seedSettledPairing(
   payoutId: string,
   depositStagedPaymentId: string,
-  lifecycle: "confirmed" | "proposed",
 ): Promise<void> {
-  const id = `sl_${payoutId}`;
-  await db.insert(schema.settlementLinks).values({
-    id,
-    payoutId,
-    depositStagedPaymentId,
-    lifecycle,
-    provenance: lifecycle === "confirmed" ? "human" : "system",
-    confirmedByUserId: null,
-    confirmedAt: lifecycle === "confirmed" ? new Date() : null,
-  });
-  settlementLinkIds.push(id);
+  // The payout\u2194QBO-lump pairing is a plain fact on the QBO row
+  // (staged_payments.settled_stripe_payout_id, 0168) \u2014 the settlement-link
+  // lifecycle is retired; there is no proposed shape.
+  await db
+    .update(schema.stagedPayments)
+    .set({ settledStripePayoutId: payoutId })
+    .where(eqFn(schema.stagedPayments.id, depositStagedPaymentId));
 }
 
 async function seedCharge(
@@ -306,7 +299,6 @@ beforeAll(async () => {
     stagedPayments: dbMod.stagedPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     stripePayouts: dbMod.stripePayouts,
-    settlementLinks: dbMod.settlementLinks,
     paymentApplications: dbMod.paymentApplications,
     sourceLinks: dbMod.sourceLinks,
     sourceLinkId: dbMod.sourceLinkId,
@@ -323,13 +315,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!HAS_DB) return;
-  // FK order: ledger rows → settlement links → gifts → charges → staged
+  // FK order: ledger rows → gifts → charges → staged
   // payments → payouts → org.
   await clearPaymentApplicationsForGiftIds(giftIds);
-  if (settlementLinkIds.length)
-    await db
-      .delete(schema.settlementLinks)
-      .where(inArrayFn(schema.settlementLinks.id, settlementLinkIds));
   if (giftIds.length)
     await db
       .delete(schema.giftsAndPayments)
@@ -392,16 +380,10 @@ describe.skipIf(!HAS_DB)("QB staged-payment derived-status parity", () => {
     await expectQbStatus(id, "match_confirmed");
   });
 
-  it("CONFIRMED settlement link (no ledger row) → match_confirmed", async () => {
+  it("settled payout pairing (no ledger row) → match_confirmed", async () => {
     const id = await seedQbRow();
-    await seedSettlementLink(await seedPayout(), id, "confirmed");
+    await seedSettledPairing(await seedPayout(), id);
     await expectQbStatus(id, "match_confirmed");
-  });
-
-  it("merely-PROPOSED settlement link is NOT evidence → pending", async () => {
-    const id = await seedQbRow();
-    await seedSettlementLink(await seedPayout(), id, "proposed");
-    await expectQbStatus(id, "pending");
   });
 
   it("RAW charge tie WITHOUT the charge's booking is a settlement claim → excluded (never match_confirmed)", async () => {
@@ -432,16 +414,10 @@ describe.skipIf(!HAS_DB)("QB staged-payment derived-status parity", () => {
     await expectQbStatus(id, "excluded");
   });
 
-  it("CONFIRMED settlement link on a deposit_header → match_confirmed (evidence wins over the header arm)", async () => {
+  it("settled pairing on a deposit_header → match_confirmed (evidence wins over the header arm)", async () => {
     const id = await seedQbRow({ qbEntityType: "deposit_header" });
-    await seedSettlementLink(await seedPayout(), id, "confirmed");
+    await seedSettledPairing(await seedPayout(), id);
     await expectQbStatus(id, "match_confirmed");
-  });
-
-  it("merely-PROPOSED settlement link on a deposit_header stays excluded (not pending)", async () => {
-    const id = await seedQbRow({ qbEntityType: "deposit_header" });
-    await seedSettlementLink(await seedPayout(), id, "proposed");
-    await expectQbStatus(id, "excluded");
   });
 });
 

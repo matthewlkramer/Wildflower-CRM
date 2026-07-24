@@ -3,9 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Check, Eye, EyeOff, Loader2, X } from "lucide-react";
 import {
   useConfirmPayoutChargeTies,
-  useConfirmSettlementLink,
   useListReconciliationBundleAnchors,
-  useRejectSettlementProposal,
   getListReconciliationBundleAnchorsQueryKey,
   type BundleAnchor,
 } from "@workspace/api-client-react";
@@ -25,18 +23,17 @@ const anchorKey = (a: Pick<BundleAnchor, "anchorType" | "anchorId">) =>
 /**
  * Settlement report (design §4.5, Plane 1: Stripe payouts ↔ QB deposits),
  * reworked to the Gift report's card-first model. The page is a single list of
- * Stripe payouts missing a confirmed QB deposit (the anchors query is
+ * Stripe payouts missing a settled QB deposit (the anchors query is
  * restricted to `source=stripe_payout`, so standalone QB deposits never load):
- *   • Missing deposit — a Stripe payout with no confirmed deposit (may carry a
- *                       proposed match to approve/reject, else resolve).
- *   • Matched         — a CONFIRMED settlement link (settled). Read-only,
- *                       hidden behind the "Show matched" toggle.
- * The proposed match plus its approve/reject/resolve controls and multi-select
- * bulk actions all live on the cards. This report is Plane 1 ONLY
- * (docs/reconciliation-design.md §4.3/§4.4): Approve confirms JUST the
- * payout↔deposit settlement tie (no per-charge editor) — per-charge → gift
- * booking is owned by the Gift report. Committing stamps the deposit reconciled
- * (the double-count guard) and refreshes the sibling workbench queues.
+ *   • Missing deposit — a Stripe payout with no settled deposit (resolve by
+ *                       picking the QB lump, or approve proposed charge ties).
+ *   • Matched         — a settled pairing exists. Read-only, hidden behind
+ *                       the "Show matched" toggle.
+ * Most payouts pair automatically (the accounting recompute matches exact
+ * amounts in the bank window); this report is the human escape hatch for the
+ * ambiguous remainder. Plane 1 ONLY (docs/reconciliation-design.md §4.3/§4.4):
+ * per-charge → gift booking is owned by the Gift report. Committing stamps the
+ * deposit reconciled (the double-count guard) and refreshes sibling queues.
  */
 export function SettlementReport() {
   const queryClient = useQueryClient();
@@ -52,8 +49,6 @@ export function SettlementReport() {
     false,
   );
 
-  const confirmM = useConfirmSettlementLink();
-  const rejectM = useRejectSettlementProposal();
   const chargeTiesM = useConfirmPayoutChargeTies();
 
   const { data, isLoading, isError } = useListReconciliationBundleAnchors({
@@ -68,9 +63,6 @@ export function SettlementReport() {
     const matched: BundleAnchor[] = [];
     const missingDeposit: BundleAnchor[] = [];
     for (const a of rows) {
-      // Only a CONFIRMED link is "Matched" (read-only). A `proposed` tie is
-      // still actionable, so it stays in the main list with the proposal
-      // shown inline on the card.
       if (a.batchStatus === "settled") {
         matched.push(a);
       } else {
@@ -121,16 +113,14 @@ export function SettlementReport() {
   }, [invalidateWorkbench]);
 
   const runBulkApprove = useCallback(async () => {
-    // Both confirm endpoints are keyed by the payout, so approve the selected
-    // anchors by anchorId. A deposit-lump proposal approves via the settlement
-    // confirm; a payout whose charges carry proposed QB ties
-    // (individually-booked money, no deposit lump) approves via the
-    // charge-ties confirm.
+    // Bulk approve is charge-ties only: a payout whose charges carry proposed
+    // QB ties (individually-booked money, no deposit lump). Deposit-lump
+    // pairing needs an explicitly picked deposit, so it happens per-card.
     const targets = selectedAnchors.filter(
-      (a) => a.proposedMatch || (a.chargeTiesProposed ?? 0) > 0,
+      (a) => (a.chargeTiesProposed ?? 0) > 0,
     );
     if (targets.length === 0) {
-      toast({ title: "No proposed matches in the selection to approve." });
+      toast({ title: "No proposed charge ties in the selection to approve." });
       return;
     }
     setBulkBusy(true);
@@ -140,11 +130,7 @@ export function SettlementReport() {
     const done: string[] = [];
     for (const a of targets) {
       try {
-        if (a.proposedMatch) {
-          await confirmM.mutateAsync({ payoutId: a.anchorId, data: {} });
-        } else {
-          await chargeTiesM.mutateAsync({ payoutId: a.anchorId, data: {} });
-        }
+        await chargeTiesM.mutateAsync({ payoutId: a.anchorId, data: {} });
         approved += 1;
         done.push(anchorKey(a));
       } catch (err) {
@@ -167,39 +153,9 @@ export function SettlementReport() {
     selectedAnchors,
     selection,
     invalidateWorkbench,
-    confirmM,
     chargeTiesM,
     toast,
   ]);
-
-  const runBulkReject = useCallback(async () => {
-    const targets = selectedAnchors.filter((a) => a.proposedMatch);
-    if (targets.length === 0) {
-      toast({ title: "No proposed matches in the selection to reject." });
-      return;
-    }
-    setBulkBusy(true);
-    let rejected = 0;
-    let failed = 0;
-    const done: string[] = [];
-    for (const a of targets) {
-      try {
-        await rejectM.mutateAsync({ payoutId: a.anchorId });
-        rejected += 1;
-        done.push(anchorKey(a));
-      } catch {
-        failed += 1;
-      }
-    }
-    setBulkBusy(false);
-    selection.removeMany(done);
-    invalidateWorkbench();
-    toast({
-      title: `Rejected ${rejected} proposed match${rejected === 1 ? "" : "es"}`,
-      description: failed > 0 ? `${failed} failed.` : undefined,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAnchors, selection, invalidateWorkbench, rejectM, toast]);
 
   const total = data?.pagination.total ?? rows.length;
   const truncated = !isLoading && !isError && total > rows.length;
@@ -215,8 +171,8 @@ export function SettlementReport() {
           data-testid="button-settlement-toggle-matched"
           title={
             showMatched
-              ? "Hide the Matched column (payout ↔ deposit already confirmed)."
-              : "Show the Matched column (payout ↔ deposit already confirmed)."
+              ? "Hide the Matched column (payout ↔ deposit already settled)."
+              : "Show the Matched column (payout ↔ deposit already settled)."
           }
         >
           {showMatched ? (
@@ -261,17 +217,6 @@ export function SettlementReport() {
             <Button
               size="sm"
               variant="outline"
-              className="gap-1"
-              disabled={busy}
-              onClick={runBulkReject}
-              data-testid="button-settlement-bulk-reject"
-            >
-              <X className="h-4 w-4" />
-              Reject
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
               disabled={busy}
               onClick={() => setFlagOpen(true)}
               data-testid="button-settlement-bulk-flag"
@@ -309,7 +254,7 @@ export function SettlementReport() {
           {showMatched && (
             <SettlementColumn
               title="Matched"
-              hint="Payout ↔ deposit confirmed"
+              hint="Payout ↔ deposit settled"
               rows={matched}
               selectable={false}
               selection={selection}
@@ -318,7 +263,7 @@ export function SettlementReport() {
           )}
           <SettlementColumn
             title="Missing deposit"
-            hint="Stripe payout, no confirmed deposit"
+            hint="Stripe payout, no settled deposit"
             rows={missingDeposit}
             selectable
             selection={selection}

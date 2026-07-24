@@ -121,9 +121,9 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     const check = await readCheck(sp);
     expect(check).not.toBeNull();
     expect(check!.disposition).toBe("consistent");
-    const expected = check!.expected as { payout_id: string; paired_by: string };
+    const expected = check!.expected as { payout_id: string; kind: string };
     expect(expected.payout_id).toBe(po);
-    expect(expected.paired_by).toBe("exact_amount_window");
+    expect(expected.kind).toBe("stripe_payout_lump");
   });
 
   it("comparer: no unambiguous pairing → no check row", async () => {

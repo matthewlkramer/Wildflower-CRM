@@ -2,7 +2,6 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql, type SQL } from "drizzle-orm";
 import { asyncHandler, parsePagination } from "../../lib/helpers";
-import { payoutStatusLabelSql } from "../../lib/settlementLink";
 import {
   chargeStatusCaseText,
   qbStatusCaseText,
@@ -30,29 +29,26 @@ type AnchorQueue = "needs_review" | "confirmed" | "all";
 const ANCHOR_QUEUES = ["needs_review", "confirmed", "all"] as const;
 type AnchorSource = "stripe_payout" | "qb_staged_payment";
 
-// Stripe payout buckets (over the settlement_links mirror — S5 read-flip). `all` =
-// every payout is a valid anchor (even a stray orphan one — its charges can still
-// mint gifts).
+// Stripe payout buckets (over the settled_stripe_payout_id pairing fact on the
+// QBO row). `all` = every payout is a valid anchor (even a stray orphan one —
+// its charges can still mint gifts).
 //
 // A payout only NEEDS review when there is actionable work in this workbench:
-//   • its QB-deposit tie is awaiting a human decision (a `proposed` settlement
-//     link), OR
-//   • it has NO settlement link (orphan) AND at least one of its charges has not
-//     yet been reconciled/excluded/rejected (i.e. a gift still needs to be
-//     minted/matched).
-// An orphan payout whose charges are ALL settled has nothing to do here — there is
-// no QB deposit to tie — so it must NOT linger in needs_review (the per-charge
-// gifts have already been confirmed). It still shows under `all`, and re-enters
-// needs_review as `proposed` if the admin propose-all tie pass runs.
+// it has NO settled QBO lump AND at least one of its charges has not yet been
+// reconciled/excluded/rejected (or a proposed charge-grain QB tie is awaiting
+// approval). An orphan payout whose charges are ALL settled has nothing to do
+// here — there is no QB deposit to tie — so it must NOT linger in needs_review.
 // FULLY CHARGE-TIED = the settlement path for "individually-booked" payouts:
-// no settlement link will ever exist (the bookkeeper recorded one QB row per
-// donation, not a deposit lump), but every charge is either confirmed-tied to
-// its own QB row (a confirmed source_links charge_qb_tie row; SQL aliases
-// keep the legacy `linked_qb_staged_payment_id` name for API compatibility)
-// or terminal. Such a payout is
-// SETTLED — it shows as Matched, not Missing deposit.
+// no deposit lump exists (the bookkeeper recorded one QB row per donation),
+// but every charge is either confirmed-tied to its own QB row (a confirmed
+// source_links charge_qb_tie row; SQL aliases keep the legacy
+// `linked_qb_staged_payment_id` name for API compatibility) or terminal. Such
+// a payout is SETTLED — it shows as Matched, not Missing deposit.
+const payoutSettled = sql`EXISTS (
+  SELECT 1 FROM staged_payments slp WHERE slp.settled_stripe_payout_id = sp.id
+)`;
 export const fullyChargeTied = sql`(
-  NOT EXISTS (SELECT 1 FROM settlement_links sl WHERE sl.payout_id = sp.id)
+  NOT ${payoutSettled}
   AND EXISTS (
     SELECT 1 FROM stripe_staged_charges c
     WHERE c.stripe_payout_id = sp.id
@@ -79,43 +75,34 @@ export const fullyChargeTied = sql`(
 function stripeWhere(queue: AnchorQueue): SQL {
   switch (queue) {
     case "confirmed":
-      return sql`(EXISTS (
-        SELECT 1 FROM settlement_links sl
-        WHERE sl.payout_id = sp.id AND sl.lifecycle = 'confirmed'
-      ) OR ${fullyChargeTied})`;
+      return sql`(${payoutSettled} OR ${fullyChargeTied})`;
     case "needs_review":
       return sql`(
-        EXISTS (
-          SELECT 1 FROM settlement_links sl
-          WHERE sl.payout_id = sp.id AND sl.lifecycle = 'proposed'
-        )
-        OR (
-          NOT EXISTS (SELECT 1 FROM settlement_links sl WHERE sl.payout_id = sp.id)
-          AND (
-            EXISTS (
-              SELECT 1 FROM stripe_staged_charges c
-              WHERE c.stripe_payout_id = sp.id
-                AND c.exclusion_reason IS NULL
-                -- pending = no counted ledger row (pointer columns retired)
-                AND NOT EXISTS (
-                  SELECT 1 FROM payment_applications pa
-                  WHERE pa.stripe_charge_id = c.id
-                    AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
-                )
-            )
-            -- A proposed charge-grain QB tie is actionable work here even when
-            -- every charge is already gift-booked (reconciled): the human still
-            -- needs to approve the settlement ties.
-            OR EXISTS (
-              SELECT 1 FROM stripe_staged_charges c
-              WHERE c.stripe_payout_id = sp.id
-                AND EXISTS (
-                  SELECT 1 FROM source_links srcl_pt
-                  WHERE srcl_pt.link_type = 'charge_qb_tie'
-                    AND srcl_pt.lifecycle = 'proposed'
-                    AND srcl_pt.stripe_charge_id = c.id
-                )
-            )
+        NOT ${payoutSettled}
+        AND (
+          EXISTS (
+            SELECT 1 FROM stripe_staged_charges c
+            WHERE c.stripe_payout_id = sp.id
+              AND c.exclusion_reason IS NULL
+              -- pending = no counted ledger row (pointer columns retired)
+              AND NOT EXISTS (
+                SELECT 1 FROM payment_applications pa
+                WHERE pa.stripe_charge_id = c.id
+                  AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+              )
+          )
+          -- A proposed charge-grain QB tie is actionable work here even when
+          -- every charge is already gift-booked (reconciled): the human still
+          -- needs to approve the settlement ties.
+          OR EXISTS (
+            SELECT 1 FROM stripe_staged_charges c
+            WHERE c.stripe_payout_id = sp.id
+              AND EXISTS (
+                SELECT 1 FROM source_links srcl_pt
+                WHERE srcl_pt.link_type = 'charge_qb_tie'
+                  AND srcl_pt.lifecycle = 'proposed'
+                  AND srcl_pt.stripe_charge_id = c.id
+              )
           )
         )
       ) AND NOT ${fullyChargeTied}`;
@@ -135,10 +122,8 @@ function stripeWhere(queue: AnchorQueue): SQL {
 // only `stripe`, `donorbox` (Donorbox frequently settles through Stripe), and
 // NULL (unknown — no signal either way, so never hide it).
 function qbWhere(queue: AnchorQueue): SQL {
-  const eligible = sql`NOT EXISTS (
-      SELECT 1 FROM settlement_links sl
-      WHERE sl.deposit_staged_payment_id = s.id
-    ) AND NOT EXISTS (
+  const eligible = sql`s.settled_stripe_payout_id IS NULL
+    AND NOT EXISTS (
       -- A QB row confirmed-tied to a Stripe charge reconciles THROUGH that
       -- charge's payout (charge-grain twin of the settlement-link omission
       -- above) — it no longer "needs a payout tie".
@@ -209,33 +194,10 @@ interface AnchorRow {
   line_account_names: string[] | null;
   line_classes: string[] | null;
   status_label: string;
-  batch_status: "settled" | "proposed" | "orphan";
+  batch_status: "settled" | "orphan";
   // Charge-grain QB tie rollups (null for a QB anchor).
   charge_ties_proposed: number | null;
   charge_ties_confirmed: number | null;
-  // Proposed counterpart facts (non-null only for a proposed Stripe payout).
-  proposed_counterpart_type: AnchorSource | null;
-  proposed_counterpart_id: string | null;
-  proposed_amount: string | null;
-  proposed_date: string | null;
-  proposed_payer_name: string | null;
-  proposed_charge_count: number | null;
-  proposed_line_description: string | null;
-  proposed_memo: string | null;
-  proposed_reference: string | null;
-  proposed_line_item_names: string[] | null;
-  proposed_line_account_names: string[] | null;
-  proposed_line_classes: string[] | null;
-  proposed_conflict_gift_id: string | null;
-  // Display summary of the conflicting gift (null when no conflict, or the
-  // gift row no longer exists).
-  proposed_conflict_gift: {
-    id: string;
-    name: string | null;
-    donorName: string | null;
-    amount: string | null;
-    date: string | null;
-  } | null;
   // Cached confirm-readiness from the anchor's latest bundle-draft snapshot.
   readiness_ready: boolean | null;
   readiness_warning: number | null;
@@ -262,10 +224,9 @@ router.get(
     const { limit, offset, page } = parsePagination(req.query);
 
     // Normalized projection over each source — identical column list/types so the
-    // two halves UNION ALL cleanly. The settlement link's deposit supplies the
-    // payer name for a Stripe payout. status_label is now DERIVED from the joined
-    // settlement link (Phase-6 read-flip) — the four live values are lossless (prod
-    // holds zero legacy 7-value rows); a payout with no link → 'unmatched'.
+    // two halves UNION ALL cleanly. The settled QBO lump supplies the payer name
+    // for a Stripe payout. status_label is DERIVED from the pairing fact:
+    // settled → 'confirmed_reconciled', otherwise 'unmatched'.
     // Cached confirm-readiness (a hint; confirm re-derives + re-gates) pulled from
     // the anchor's latest bundle-draft snapshot summary. `d` must be the joined
     // reconciliation_bundle_drafts alias in the surrounding SELECT.
@@ -345,16 +306,10 @@ router.get(
         NULL::text[] AS line_item_names,
         NULL::text[] AS line_account_names,
         NULL::text[] AS line_classes,
-        ${payoutStatusLabelSql}::text AS status_label,
+        (CASE WHEN ad.id IS NOT NULL THEN 'confirmed_reconciled' ELSE 'unmatched' END)::text AS status_label,
         (CASE
-          WHEN EXISTS (SELECT 1 FROM settlement_links sl2
-                       WHERE sl2.payout_id = sp.id AND sl2.lifecycle = 'confirmed')
-            THEN 'settled'
-          WHEN EXISTS (SELECT 1 FROM settlement_links sl2
-                       WHERE sl2.payout_id = sp.id AND sl2.lifecycle = 'proposed')
-            THEN 'proposed'
-          WHEN ${fullyChargeTied}
-            THEN 'settled'
+          WHEN ad.id IS NOT NULL THEN 'settled'
+          WHEN ${fullyChargeTied} THEN 'settled'
           ELSE 'orphan'
         END)::text AS batch_status,
         (SELECT count(*)::int FROM stripe_staged_charges cc
@@ -369,48 +324,9 @@ router.get(
            AND srcl_c.lifecycle = 'confirmed'
            AND srcl_c.stripe_charge_id = cc.id
           WHERE cc.stripe_payout_id = sp.id) AS charge_ties_confirmed,
-        -- Proposed counterpart = the deposit of a PROPOSED (not confirmed) link.
-        (CASE WHEN sl.lifecycle = 'proposed' THEN 'qb_staged_payment' END)::text AS proposed_counterpart_type,
-        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.id END)::text AS proposed_counterpart_id,
-        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.amount::text END)::text AS proposed_amount,
-        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.date_received::text END)::text AS proposed_date,
-        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.payer_name END)::text AS proposed_payer_name,
-        NULL::int AS proposed_charge_count,
-        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.line_description END)::text AS proposed_line_description,
-        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.qb_transaction_memo END)::text AS proposed_memo,
-        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.raw_reference END)::text AS proposed_reference,
-        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.line_item_names END) AS proposed_line_item_names,
-        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.line_account_names END) AS proposed_line_account_names,
-        (CASE WHEN sl.lifecycle = 'proposed' THEN ad.line_classes END) AS proposed_line_classes,
-        (CASE WHEN sl.lifecycle = 'proposed' THEN sl.conflict_gift_id END)::text AS proposed_conflict_gift_id,
-        -- Conflict-gift display summary: enough facts (name / donor / amount /
-        -- date) to explain the keep decision on the card without another
-        -- fetch. NULL when there is no conflict or the gift row is gone.
-        (CASE WHEN sl.lifecycle = 'proposed' AND sl.conflict_gift_id IS NOT NULL THEN (
-          SELECT json_build_object(
-            'id', g.id,
-            'name', g.name,
-            'donorName', COALESCE(
-              (SELECT o.name FROM organizations o WHERE o.id = g.organization_id),
-              (SELECT h.name FROM households h WHERE h.id = g.household_id),
-              (SELECT COALESCE(
-                        CASE WHEN NULLIF(TRIM(pp.nickname), '') IS NOT NULL
-                             THEN NULLIF(TRIM(CONCAT_WS(' ', pp.nickname, pp.last_name)), '') END,
-                        NULLIF(TRIM(pp.full_name), ''),
-                        NULLIF(TRIM(CONCAT_WS(' ', pp.first_name, pp.last_name)), '')
-                      )
-                 FROM people pp WHERE pp.id = g.individual_giver_person_id)
-            ),
-            'amount', g.amount::text,
-            'date', g.date_received::text
-          )
-          FROM gifts_and_payments g
-          WHERE g.id = sl.conflict_gift_id
-        ) END) AS proposed_conflict_gift,
         ${readinessSelect("d")}
       FROM stripe_payouts sp
-      LEFT JOIN settlement_links sl ON sl.payout_id = sp.id
-      LEFT JOIN staged_payments ad ON ad.id = sl.deposit_staged_payment_id
+      LEFT JOIN staged_payments ad ON ad.settled_stripe_payout_id = sp.id
       LEFT JOIN reconciliation_bundle_drafts d
         ON d.anchor_type = 'stripe_payout' AND d.anchor_id = sp.id
       WHERE ${stripeWhere(queue)}`;
@@ -437,20 +353,6 @@ router.get(
         'orphan'::text AS batch_status,
         NULL::int AS charge_ties_proposed,
         NULL::int AS charge_ties_confirmed,
-        NULL::text AS proposed_counterpart_type,
-        NULL::text AS proposed_counterpart_id,
-        NULL::text AS proposed_amount,
-        NULL::text AS proposed_date,
-        NULL::text AS proposed_payer_name,
-        NULL::int AS proposed_charge_count,
-        NULL::text AS proposed_line_description,
-        NULL::text AS proposed_memo,
-        NULL::text AS proposed_reference,
-        NULL::text[] AS proposed_line_item_names,
-        NULL::text[] AS proposed_line_account_names,
-        NULL::text[] AS proposed_line_classes,
-        NULL::text AS proposed_conflict_gift_id,
-        NULL::json AS proposed_conflict_gift,
         ${readinessSelect("d")}
       FROM staged_payments s
       LEFT JOIN reconciliation_bundle_drafts d
@@ -473,11 +375,6 @@ router.get(
           line_item_names, line_account_names, line_classes,
           status_label, batch_status,
           charge_ties_proposed, charge_ties_confirmed,
-          proposed_counterpart_type, proposed_counterpart_id, proposed_amount,
-          proposed_date, proposed_payer_name, proposed_charge_count,
-          proposed_line_description, proposed_memo, proposed_reference,
-          proposed_line_item_names, proposed_line_account_names, proposed_line_classes,
-          proposed_conflict_gift_id, proposed_conflict_gift,
           readiness_ready, readiness_warning, readiness_blocker
         FROM ( ${merged} ) AS anchors
         ORDER BY anchor_date DESC NULLS LAST, anchor_id DESC
@@ -511,24 +408,6 @@ router.get(
         batchStatus: r.batch_status,
         chargeTiesProposed: r.charge_ties_proposed,
         chargeTiesConfirmed: r.charge_ties_confirmed,
-        proposedMatch: r.proposed_counterpart_id
-          ? {
-              counterpartType: r.proposed_counterpart_type!,
-              counterpartId: r.proposed_counterpart_id,
-              amount: r.proposed_amount,
-              date: r.proposed_date,
-              payerName: r.proposed_payer_name,
-              chargeCount: r.proposed_charge_count,
-              lineDescription: r.proposed_line_description,
-              memo: r.proposed_memo,
-              reference: r.proposed_reference,
-              lineItemNames: r.proposed_line_item_names,
-              lineAccountNames: r.proposed_line_account_names,
-              lineClasses: r.proposed_line_classes,
-              conflictGiftId: r.proposed_conflict_gift_id,
-              conflictGift: r.proposed_conflict_gift,
-            }
-          : null,
         readiness:
           r.readiness_ready === null
             ? null

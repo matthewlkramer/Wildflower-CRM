@@ -9,10 +9,6 @@ import {
 } from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
-import {
-  proposeSettlementLink,
-  confirmSettlementLink,
-} from "../lib/settlementWriter";
 import { seedStripeApplication } from "./paymentApplicationsTestUtil";
 
 /**
@@ -71,7 +67,6 @@ let schema: {
   stripeStagedCharges: Db["stripeStagedCharges"];
   stagedPayments: Db["stagedPayments"];
   paymentApplications: Db["paymentApplications"];
-  settlementLinks: Db["settlementLinks"];
   donorboxDonations: Db["donorboxDonations"];
   codingFormRows: Db["codingFormRows"];
   sourceLinks: Db["sourceLinks"];
@@ -195,9 +190,7 @@ async function seedGiftWithBareForm(): Promise<string> {
 async function seedPayout(
   opts: {
     settledDeposit?: string;
-    proposedDeposit?: string;
-    conflictGiftId?: string;
-    /** Bank-arrival amount; defaults to 100.00 (≠ netTotal ⇒ a settlement gap). */
+    /** Bank-arrival amount; defaults to 100.00 (\u2260 netTotal \u21d2 a settlement gap). */
     amount?: string;
     netTotal?: string | null;
   } = {},
@@ -214,27 +207,14 @@ async function seedPayout(
     chargeCount: 1,
   });
   payoutIds.push(id);
-  const link = opts.settledDeposit
-    ? confirmSettlementLink({
-        depositStagedPaymentId: opts.settledDeposit,
-        conflictGiftId: null,
-        confirmedByUserId: null,
-        confirmedAt: new Date(),
-      })
-    : opts.proposedDeposit
-      ? proposeSettlementLink(opts.proposedDeposit, opts.conflictGiftId ?? null)
-      : null;
-  if (link) {
-    await db.insert(schema.settlementLinks).values({
-      id: `sl_${id}`,
-      payoutId: id,
-      depositStagedPaymentId: link.depositStagedPaymentId,
-      conflictGiftId: link.conflictGiftId,
-      lifecycle: link.lifecycle,
-      provenance: link.provenance,
-      confirmedByUserId: link.confirmedByUserId,
-      confirmedAt: link.confirmedAt,
-    });
+  // The payout\u2194QBO-lump pairing is a plain fact on the QBO row
+  // (staged_payments.settled_stripe_payout_id, 0168) \u2014 the settlement-link
+  // lifecycle is retired.
+  if (opts.settledDeposit) {
+    await db
+      .update(schema.stagedPayments)
+      .set({ settledStripePayoutId: id })
+      .where(eqFn(schema.stagedPayments.id, opts.settledDeposit));
   }
   return id;
 }
@@ -407,7 +387,6 @@ beforeAll(async () => {
     stripeStagedCharges: dbMod.stripeStagedCharges,
     stagedPayments: dbMod.stagedPayments,
     paymentApplications: dbMod.paymentApplications,
-    settlementLinks: dbMod.settlementLinks,
     donorboxDonations: dbMod.donorboxDonations,
     codingFormRows: dbMod.codingFormRows,
     sourceLinks: dbMod.sourceLinks,
@@ -504,7 +483,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
       linkedQbStagedPaymentId: sTie,
       linkedFeeQbStagedPaymentId: sFee,
     });
-    // Fully settled payout: confirmed settlement link + confirmed charge.
+    // Fully settled payout: settled pairing fact + confirmed charge.
     const sDep = await seedStaged({ entityType: "deposit" });
     const gCharge = await seedCompleteGift();
     const pSettled = await seedPayout({ settledDeposit: sDep });
@@ -573,22 +552,14 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     expect(open.has(`stripe_payout:${pSettled}`)).toBe(true);
   });
 
-  it("flags refunds, conflicts and excluded rows into their lenses", async () => {
+  it("flags refunds and excluded rows into their lenses", async () => {
     const pRefund = await seedPayout();
     await seedCharge(pRefund, { refundProposed: true });
-    const sDep = await seedStaged({ entityType: "deposit" });
-    const gConf = await seedGift();
-    const pConflict = await seedPayout({
-      proposedDeposit: sDep,
-      conflictGiftId: gConf,
-    });
-    await seedCharge(pConflict, {});
     const sExcluded = await seedStaged({ exclusionReason: "other" });
 
-    const [{ map: refunds }, { map: conflicts }, { map: excluded, json }, { map: open }] =
+    const [{ map: refunds }, { map: excluded, json }, { map: open }] =
       await Promise.all([
         listClusters("refunds"),
-        listClusters("conflicts"),
         listClusters("excluded"),
         listClusters("all_open"),
       ]);
@@ -600,12 +571,9 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
         (t: any) => t.state === "refund_anticipated",
       ),
     ).toBe(true);
-
-    const c = conflicts.get(`stripe_payout:${pConflict}`);
-    expect(c).toBeTruthy();
-    expect(c.coverage.state.flags.conflict).toBe(true);
-    expect(c.settlement?.lifecycle).toBe("proposed");
-    expect(c.settlement?.conflictGiftId).toBe(gConf);
+    // Conflict states rode the retired settlement propose/confirm workflow;
+    // the pairing fact has no conflict shape.
+    expect(r.coverage.state.flags.conflict).toBe(false);
 
     const x = excluded.get(`qb_standalone:${sExcluded}`);
     expect(x).toBeTruthy();
@@ -1056,32 +1024,22 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
   //     distinguish "no settlement yet" from "not applicable"),
   //   - qb_standalone / crm_only clusters never carry a settlement facet.
   it("every cluster carries coverage.state; payouts always set settlementLinkState", async () => {
-    // No settlement link at all → "unlinked".
+    // No settled pairing at all → "unlinked".
     const pNone = await seedPayout();
     await seedCharge(pNone, {});
-    // Confirmed settlement + confirmed charge to a complete gift → "confirmed".
+    // Settled pairing + confirmed charge to a complete gift → "confirmed".
     const dep = await seedStaged({ entityType: "deposit" });
     const gDone = await seedCompleteGift();
     const pConfirmed = await seedPayout({ settledDeposit: dep });
     await seedCharge(pConfirmed, { matchedGiftId: gDone });
-    // Proposed link with a conflicting gift → "proposed_conflict".
-    const dep2 = await seedStaged({ entityType: "deposit" });
-    const gConf = await seedGift();
-    const pConflict = await seedPayout({
-      proposedDeposit: dep2,
-      conflictGiftId: gConf,
-    });
-    await seedCharge(pConflict, {});
     // Non-payout kinds: state present, settlement facet absent.
     const gCrm = await seedGift();
     const sQb = await seedStaged({});
 
-    const [{ map: open }, { map: linkComplete }, { map: conflicts }] =
-      await Promise.all([
-        listClusters("all_open"),
-        listClusters("link_complete"),
-        listClusters("conflicts"),
-      ]);
+    const [{ map: open }, { map: linkComplete }] = await Promise.all([
+      listClusters("all_open"),
+      listClusters("link_complete"),
+    ]);
 
     const rowNone = open.get(`stripe_payout:${pNone}`);
     expect(rowNone?.coverage?.state?.settlementLinkState).toBe("unlinked");
@@ -1089,15 +1047,9 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     expect(rowConfirmed?.coverage?.state?.settlementLinkState).toBe(
       "confirmed",
     );
-    const rowConflict = conflicts.get(`stripe_payout:${pConflict}`);
-    expect(rowConflict?.coverage?.state?.settlementLinkState).toBe(
-      "proposed_conflict",
-    );
-    expect(rowConflict?.coverage?.state?.flags.conflict).toBe(true);
-
     const qbRow = open.get(`qb_standalone:${sQb}`);
     const crmRow = open.get(`crm_only:${gCrm}`);
-    for (const row of [rowNone, rowConfirmed, rowConflict, qbRow, crmRow]) {
+    for (const row of [rowNone, rowConfirmed, qbRow, crmRow]) {
       expect(row).toBeTruthy();
       expect(row.coverage?.state).toBeTruthy();
       expect(typeof row.coverage.state.linkage.state).toBe("string");
@@ -1109,24 +1061,15 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     expect(crmRow.coverage.state.settlementLinkState ?? null).toBeNull();
   }, 60_000);
 
-  // ── Withdrawal resolution: exempt settlement link (negative payouts) ────
+  // ── Withdrawal exemption (negative payouts) ──────────────────────────
   //
-  // A NEGATIVE payout resolved as a Stripe withdrawal carries a deposit-less
-  // EXEMPT settlement link. Contract: settlementLinkState = "exempt", the row
-  // parks in the EXCLUDED lens (not open, not conflicts), and statusDetail
-  // says why.
-  it("exempt settlement link → settlementLinkState 'exempt', excluded lens, withdrawal statusDetail", async () => {
+  // A NEGATIVE payout is a Stripe withdrawal: money leaving Stripe, so no
+  // bank deposit ever reaches QuickBooks. The exemption is deterministic (the
+  // retired exempt settlement link recorded a human resolve step). Contract:
+  // settlementLinkState = "exempt", the row parks in the EXCLUDED lens (not
+  // open), and statusDetail says why.
+  it("negative payout → settlementLinkState 'exempt', excluded lens, withdrawal statusDetail", async () => {
     const po = await seedPayout({ amount: "-256.00", netTotal: "-256.00" });
-    await db.insert(schema.settlementLinks).values({
-      id: `sl_${po}`,
-      payoutId: po,
-      depositStagedPaymentId: null,
-      conflictGiftId: null,
-      lifecycle: "exempt",
-      provenance: "human",
-      confirmedByUserId: TEST_USER_ID,
-      confirmedAt: new Date(),
-    });
 
     const [{ map: open }, { map: excluded }] = await Promise.all([
       listClusters("all_open"),
@@ -1139,7 +1082,7 @@ describe.skipIf(!HAS_DB)("Workbench cluster list (integration)", () => {
     expect(row.coverage.state.settlementLinkState).toBe("exempt");
     expect(row.coverage.state.flags.excluded).toBe(true);
     expect(String(row.statusDetail ?? "")).toContain(
-      "resolved as Stripe withdrawal",
+      "Stripe withdrawal",
     );
   }, 60_000);
 

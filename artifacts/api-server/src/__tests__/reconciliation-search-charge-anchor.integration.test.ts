@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearPaymentApplicationsForChargeIds,
+  clearPaymentUnitsForChargeIds,
   seedStripeApplication,
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
@@ -228,6 +229,7 @@ afterAll(async () => {
     .delete(schema.paymentApplications)
     .where(eqFn(schema.paymentApplications.id, PAYAPP_ID));
   await clearPaymentApplicationsForChargeIds([CHARGE_ID, CHARGE_B_ID]);
+  await clearPaymentUnitsForChargeIds([CHARGE_ID, CHARGE_B_ID]);
   for (const id of [CHARGE_ID, CHARGE_B_ID]) {
     await db
       .delete(schema.stripeStagedCharges)

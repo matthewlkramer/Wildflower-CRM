@@ -1,7 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
-  settlementLinks,
   stagedPayments,
   stagedPaymentExclusionReasonEnum,
   stripePayouts,
@@ -33,7 +32,6 @@ import {
   stagedStatusWhere,
 } from "../../lib/derivedStatus";
 import { qbCardStateOfStatus } from "./workbenchRowState";
-import { payoutStatusLabelSql } from "../../lib/settlementLink";
 import {
   entityWhere,
   isParkedFiscallyRow,
@@ -179,7 +177,7 @@ const stripeEvidenceExpr = sql<{
     'chargeCount', (
       SELECT COUNT(*)::int FROM stripe_staged_charges c WHERE c.stripe_payout_id = p.id
     ),
-    'reconciliationStatus', ${payoutStatusLabelSql},
+    'reconciliationStatus', 'confirmed_reconciled',
     -- The single backing charge's money + payer, but ONLY when exactly one
     -- charge backs the payout (MIN collapses that lone row; COUNT<>1 → NULL),
     -- so multi-charge payouts never show one charge's donor as the whole.
@@ -194,8 +192,7 @@ const stripeEvidenceExpr = sql<{
     )
   )
   FROM stripe_payouts p
-  JOIN settlement_links sl ON sl.payout_id = p.id
-  WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
+  WHERE p.id = ${stagedPayments.settledStripePayoutId}
   LIMIT 1
 )`;
 
@@ -235,23 +232,20 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
       OR (
         -- A row RESOLVED by the QB reconciler — 1:1 matched to a pre-existing
         -- gift, group-reconciled, or fully split into counted ledger rows —
-        -- re-enters the live queue while ANY Stripe payout (proposed or
-        -- confirmed settlement link) is tied to it: the Stripe leg is still
-        -- real work. A coarse mint (created_the_gift ledger row) stays out — the minted
+        -- re-enters the live queue while a Stripe payout is paired to it:
+        -- the Stripe leg is still real work. A coarse mint
+        -- (created_the_gift ledger row) stays out — the minted
         -- gift is already the single counted record for this money (design
         -- §4.3), so re-expanding it would invite a double-counting gift.
         ${stagedPayments.exclusionReason} IS NULL
         AND ${qbLedgerMintedGiftIdForPayment()} IS NULL
         AND ${qbLedgerExistsForPayment()}
-        AND EXISTS (
-          SELECT 1 FROM settlement_links sl
-          WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
-        )
+        AND ${stagedPayments.settledStripePayoutId} IS NOT NULL
       )
       OR (
         -- Re-admit for per-charge crediting ONLY a SETTLEMENT-only-confirmed
-        -- deposit — one whose payout↔deposit tie is settled (Plane 1, so the
-        -- row derives match_confirmed via the confirmed settlement link) but
+        -- deposit — one whose payout↔deposit pairing is settled (Plane 1, so
+        -- the row derives match_confirmed via the pairing fact) but
         -- which carries NO coarse gift of its own. When the deposit already
         -- booked its own coarse gift, that gift is the single counted record
         -- for this money (design §4.3 "one count across the settlement
@@ -263,9 +257,8 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
         ${stagedStatusWhere.match_confirmed}
         AND NOT ${qbLedgerExistsForPayment()}
         AND EXISTS (
-          SELECT 1 FROM settlement_links sl
-          JOIN stripe_staged_charges c ON c.stripe_payout_id = sl.payout_id
-          WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
+          SELECT 1 FROM stripe_staged_charges c
+          WHERE c.stripe_payout_id = ${stagedPayments.settledStripePayoutId}
             AND NOT EXISTS (
               SELECT 1 FROM payment_applications pa
               WHERE pa.stripe_charge_id = c.id
@@ -496,10 +489,6 @@ router.get(
         stripeStagedCharges,
         eq(stripeStagedCharges.stripePayoutId, stripePayouts.id),
       )
-      .leftJoin(
-        settlementLinks,
-        eq(settlementLinks.payoutId, stripePayouts.id),
-      )
       .where(
         // Excluded charges (e.g. a FAILED payment attempt auto-excluded as
         // failed_charge) are terminal non-work: they can never be tied to a
@@ -512,7 +501,7 @@ router.get(
         // LEFT JOIN NULL-extension, so it stays visible as its own piece of
         // work.
         sql`${shouldExpand ? sql`TRUE` : sql`FALSE`}
-          AND ${settlementLinks.depositStagedPaymentId} = ${stagedPayments.id}
+          AND ${stripePayouts.id} = ${stagedPayments.settledStripePayoutId}
           AND ${stripeStagedCharges.exclusionReason} IS NULL`,
       )
       .as("charge_unit");

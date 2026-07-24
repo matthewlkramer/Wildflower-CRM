@@ -2,7 +2,6 @@ import { db } from "@workspace/db";
 import {
   stripePayouts,
   stagedPayments,
-  settlementLinks,
   stripeStagedCharges,
   sourceLinks,
   sourceLinkId,
@@ -22,12 +21,13 @@ import {
  * Charge-grain Stripe ↔ QuickBooks tie proposals ("individually-booked
  * payouts").
  *
- * The payout↔deposit proposer (stripeReconcile.ts) only finds a match when the
- * bookkeeper recorded the payout as ONE net deposit lump. For many payouts —
- * especially single-donation ones — each donation was instead booked as its own
- * QB row under the donor's name, so there is no lump to tie and the payout sits
- * in "Missing deposit" forever. This module PROPOSES per-charge ties: for each
- * Stripe charge inside a no-settlement-link payout, the QB staged_payments row
+ * The deterministic payout↔lump pairing (settled_stripe_payout_id, filled by
+ * the QBO accounting comparer) only fires when the bookkeeper recorded the
+ * payout as ONE net deposit lump. For many payouts — especially
+ * single-donation ones — each donation was instead booked as its own QB row
+ * under the donor's name, so there is no lump to pair and the payout sits in
+ * "Missing deposit" forever. This module PROPOSES per-charge ties: for each
+ * Stripe charge inside an unsettled payout, the QB staged_payments row
  * that records the SAME money (exact amount — the charge GROSS or, because
  * bookkeepers sometimes record the post-fee bank deposit instead, the charge
  * NET, both to the cent — close date, and — when several same-amount
@@ -35,7 +35,7 @@ import {
  *
  * PURELY a proposer: it only ever writes PROPOSED `charge_qb_tie` rows in the
  * `source_links` ledger. It NEVER stamps a CONFIRMED tie (a human approve does
- * that), never touches settlement_links, gifts, or any QB row, and never
+ * that), never touches the payout pairing, gifts, or any QB row, and never
  * overwrites a confirmed tie. Idempotent: re-running recomputes the same
  * proposals and clears stale ones.
  */
@@ -487,7 +487,7 @@ export function assignManualChargeQbTies(
 // ── DB proposal pass ──────────────────────────────────────────────────────
 
 export interface ChargeTieSummary {
-  /** No-settlement-link payouts examined. */
+  /** Unsettled payouts examined. */
   payoutsEvaluated: number;
   /** Charges that ended the pass with a proposed QB tie. */
   proposed: number;
@@ -502,7 +502,7 @@ function shiftDate(isoDate: string, days: number): string {
 }
 
 /**
- * Recompute charge↔QB tie proposals over every payout with NO settlement link
+ * Recompute charge↔QB tie proposals over every payout with NO settled lump
  * (optionally restricted to `payoutIds`). Idempotent. Writes ONLY proposed
  * charge_qb_tie rows in source_links, always guarded on no confirmed tie
  * existing for the charge, so a concurrent human approve is never clobbered.
@@ -516,9 +516,10 @@ export async function runChargeTiePass(
 ): Promise<ChargeTieSummary> {
   let cleared = 0;
 
-  // Scope exit: a charge whose payout HAS a settlement link (the lump path owns
-  // it) must not keep a stale charge-grain proposal around. Confirmed ties are
-  // untouched — only PROPOSED claims clear. The ledger is the sole authority.
+  // Scope exit: a charge whose payout IS SETTLED as a QBO lump (the lump path
+  // owns it — staged_payments.settled_stripe_payout_id, 0168) must not keep a
+  // stale charge-grain proposal around. Confirmed ties are untouched — only
+  // PROPOSED claims clear. The ledger is the sole authority.
   const scopeExitLedger = await db.execute<{ charge_id: string }>(sql`
     DELETE FROM source_links srcl
     USING stripe_staged_charges c
@@ -526,16 +527,17 @@ export async function runChargeTiePass(
       AND srcl.lifecycle = 'proposed'
       AND srcl.stripe_charge_id = c.id
       AND EXISTS (
-        SELECT 1 FROM settlement_links sl
-        WHERE sl.payout_id = c.stripe_payout_id
+        SELECT 1 FROM staged_payments t
+        WHERE t.settled_stripe_payout_id = c.stripe_payout_id
       )
     RETURNING c.id AS charge_id
   `);
   cleared += new Set(scopeExitLedger.rows.map((r) => r.charge_id)).size;
 
-  // Payouts with NO settlement link at all (the "Missing deposit" pool).
+  // Payouts with NO settled QBO lump (the "Missing deposit" pool).
   const noLink = sql`NOT EXISTS (
-    SELECT 1 FROM settlement_links sl WHERE sl.payout_id = ${stripePayouts.id}
+    SELECT 1 FROM staged_payments t
+    WHERE t.settled_stripe_payout_id = ${stripePayouts.id}
   )`;
   const payouts = await db
     .select({ id: stripePayouts.id })
@@ -611,7 +613,7 @@ export async function runChargeTiePass(
 
       // Candidate QB rows: exact amount fit, inside the widest per-payout
       // window (the pure assigners re-check per charge), an active status,
-      // and NOT already spoken for — not a settlement-link deposit (any
+      // and NOT already spoken for — not a settled payout lump (any
       // lifecycle), not confirmed-tied to any charge, and not proposed to a
       // charge of ANOTHER payout (this pass re-derives its own payout's
       // proposals). Shared by the 1:1 pass and the combined subset-sum pass
@@ -635,10 +637,7 @@ export async function runChargeTiePass(
               // a swept row's tie already exists (confirmed → filtered below).
               sql`${stagedPayments.dateReceived} >= ${fromStr}`,
               sql`${stagedPayments.dateReceived} <= ${toStr}`,
-              sql`NOT EXISTS (
-                SELECT 1 FROM settlement_links sl
-                WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
-              )`,
+              sql`${stagedPayments.settledStripePayoutId} IS NULL`,
               sql`NOT EXISTS (
                 SELECT 1 FROM source_links srcl
                 WHERE srcl.link_type = 'charge_qb_tie'
@@ -803,7 +802,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * SAME QB deposit as the tied donor row whose amount is exactly
  * −(gross − net) to the cent, with a fee-ish payer/description, not spoken
  * for anywhere (not fee-claimed, not donor-tied/proposed, not a
- * settlement-link deposit). Candidates are locked FOR UPDATE, paired via
+ * settled payout lump). Candidates are locked FOR UPDATE, paired via
  * {@link pairChargeFeeRows}, and stamped guarded — a best-effort enrichment
  * that claims what it can and never aborts the confirm.
  * Returns the number of fee rows claimed.
@@ -906,10 +905,7 @@ export async function claimSiblingFeeRows(
           WHERE srcl.link_type = 'charge_qb_tie'
             AND srcl.qb_staged_payment_id = "staged_payments"."id"
         )`,
-        sql`NOT EXISTS (
-          SELECT 1 FROM settlement_links sl
-          WHERE sl.deposit_staged_payment_id = ${stagedPayments.id}
-        )`,
+        sql`${stagedPayments.settledStripePayoutId} IS NULL`,
       ),
     )
     .for("update");

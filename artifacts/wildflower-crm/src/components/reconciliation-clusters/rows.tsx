@@ -85,20 +85,6 @@ export interface ClusterActions {
   isFinanceOrAdmin: boolean;
   /** Open the read-only in-app QB record detail dialog (§7.2). Linkage word comes from coverage.state.qbCards. */
   openQbDetail: (record: WorkbenchClusterQbRecord, linkage: string) => void;
-  /** Reject/dismiss the system-proposed payout→deposit settlement tie (§6.2 "Remove proposal"). Finance-gated. */
-  removeSettlementProposal: (payoutId: string, label: string) => void;
-  /** Resolve a NEGATIVE payout as a Stripe withdrawal — no QB deposit expected. Finance-gated. */
-  resolveWithdrawal: (payoutId: string) => void;
-  /** Undo a withdrawal resolution (remove the exempt settlement link). Finance-gated. */
-  revertWithdrawal: (payoutId: string) => void;
-  /** Revert a confirmed payout reconciliation back to proposed state (§6.2 "Unmatch confirmed settlement"). Finance-gated; shows confirm dialog before acting. */
-  revertSettlement: (payoutId: string, label: string) => void;
-  /** Revert the confirmed settlement AND re-open the deposit search in one action (§6.2 "Replace settlement relationship"). Finance-gated; shows confirm dialog before acting. */
-  replaceSettlement: (
-    payoutId: string,
-    label: string,
-    search: { amount: string | null; date: string | null },
-  ) => void;
   /** Reject the system-proposed charge↔QB tie for a Stripe charge (§5.2 / §7.2 "Unmatch from QB evidence"). */
   rejectChargeQbTie: (chargeId: string) => void;
   confirmProposedMatch: (stagedPaymentId: string, label: string) => void;
@@ -140,11 +126,8 @@ const INFO_META: Record<WorkbenchRowInformationCompleteness, { tone: Tone; word:
 
 const SETTLEMENT_META: Record<WorkbenchRowSettlementLinkState, { tone: Tone; word: string }> = {
   unlinked: { tone: "amber", word: "No deposit settlement" },
-  proposed_full: { tone: "blue", word: "Settlement proposed" },
-  proposed_partial: { tone: "blue", word: "Partial settlement" },
-  proposed_conflict: { tone: "amber", word: "Settlement conflict" },
   confirmed: { tone: "green", word: "Settlement confirmed" },
-  exempt: { tone: "green", word: "Resolved as withdrawal" },
+  exempt: { tone: "green", word: "Stripe withdrawal" },
 };
 
 const QB_ROLE_LABEL: Record<WorkbenchClusterQbRecord["role"], string> = {
@@ -998,61 +981,9 @@ function QbCard({
       disabledReason: "Fees are accounting detail on the payout, not standalone records",
     });
   } else if (isDeposit) {
-    // §6.2 settlement-link actions live on the deposit card.
-    if (
-      settlementState === "proposed_full" ||
-      settlementState === "proposed_partial" ||
-      settlementState === "proposed_conflict"
-    ) {
-      menu.push(
-        payoutId && isFinance
-          ? {
-              label: "Confirm settlement",
-              onClick: () =>
-                actions.openSettlementSearch({
-                  payoutId,
-                  amount: record.amount ?? null,
-                  date: record.dateReceived ?? null,
-                }),
-            }
-          : {
-              label: "Confirm settlement",
-              disabledReason: isFinance
-                ? "No payout context — confirm via the settlement gap slot on the row"
-                : "Finance team only",
-            },
-        isFinance
-          ? {
-              label: "Remove proposal",
-              destructive: true,
-              onClick: () => actions.removeSettlementProposal(payoutId!, qbLabel(record)),
-            }
-          : { label: "Remove proposal", disabledReason: "Finance team only" },
-      );
-    }
-    if (settlementState === "confirmed") {
-      menu.push(
-        isFinance
-          ? {
-              label: "Unmatch confirmed settlement",
-              destructive: true,
-              onClick: () => payoutId && actions.revertSettlement(payoutId, qbLabel(record)),
-            }
-          : { label: "Unmatch confirmed settlement", disabledReason: "Finance team only" },
-        isFinance
-          ? {
-              label: "Replace settlement relationship",
-              destructive: true,
-              onClick: () =>
-                payoutId &&
-                actions.replaceSettlement(payoutId, qbLabel(record), {
-                  amount: record.amount ?? null,
-                  date: record.dateReceived ?? null,
-                }),
-            }
-          : { label: "Replace settlement relationship", disabledReason: "Finance team only" },
-      );
-    }
+    // The settled payout pairing is a plain fact — never repointed from the
+    // workbench (mistakes are corrected in QuickBooks and surface in the
+    // accounting checks), so no settlement actions live here.
     if (linked) {
       menu.push(
         {
@@ -1366,9 +1297,9 @@ function StatusAction({
   );
 }
 
-/** ⋯ menu on the "No QB deposit linked yet" slot — §§6.2 settlement-link
- * actions for the `unlinked` state: search-and-tie is live; confirm stays
- * honestly disabled because nothing is proposed when this slot shows. */
+/** ⋯ menu on the "No QB deposit linked yet" slot — search-and-pair is the
+ * one live action for the `unlinked` state (the deterministic recompute pairs
+ * most payouts; this is the human escape hatch for the ambiguous remainder). */
 function SettlementGapMenu({
   cluster,
   actions,
@@ -1376,10 +1307,6 @@ function SettlementGapMenu({
   cluster: WorkbenchCluster;
   actions: ClusterActions;
 }) {
-  // Negative payout ⇒ money went BACK to Stripe (a withdrawal); no QB deposit
-  // will ever exist, so the finance-gated escape hatch is offered here.
-  const isNegative = Number(cluster.bankAmount ?? cluster.netTotal ?? 0) < 0;
-  const isExempt = cluster.coverage.state.settlementLinkState === "exempt";
   const items = [
     {
       label: "Search QuickBooks for this deposit",
@@ -1390,34 +1317,7 @@ function SettlementGapMenu({
           date: cluster.date ?? null,
         }),
     },
-    {
-      label: "Confirm settlement link",
-      disabledReason: "Nothing proposed yet — needs a QB deposit first",
-    },
   ];
-  if (isNegative) {
-    items.push(
-      isExempt
-        ? actions.isFinanceOrAdmin
-          ? {
-              label: "Undo withdrawal resolution",
-              onClick: () => actions.revertWithdrawal(cluster.anchorId),
-            }
-          : {
-              label: "Undo withdrawal resolution",
-              disabledReason: "Finance team only",
-            }
-        : actions.isFinanceOrAdmin
-          ? {
-              label: "Resolve as Stripe withdrawal",
-              onClick: () => actions.resolveWithdrawal(cluster.anchorId),
-            }
-          : {
-              label: "Resolve as Stripe withdrawal",
-              disabledReason: "Finance team only",
-            },
-    );
-  }
   return (
     <CardMenu items={items} testId={`button-settlement-menu-${cluster.id}`} />
   );
@@ -1425,7 +1325,7 @@ function SettlementGapMenu({
 
 /** Cardless "no QB deposit yet" slot — absence isn't evidence, so it renders
  * as plain text (no card chrome), keeping the settlement-gap ⋯ menu. Three
- * variants: resolved-withdrawal (exempt link — settled, green), "not booked
+ * variants: withdrawal (exempt — negative payout, settled, green), "not booked
  * yet" (no plausible QB candidate exists — informational, not actionable),
  * and the default actionable "settlement link missing". */
 function SettlementGapSlot({

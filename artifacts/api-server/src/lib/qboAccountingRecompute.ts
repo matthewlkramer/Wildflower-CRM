@@ -10,11 +10,14 @@ import { sql } from "drizzle-orm";
  *
  * v1 scope — Stripe payout lumps, the highest-risk posting (net lump amounts,
  * known bookkeeping errors): for each QBO deposit row claiming Stripe money,
- * pair it to the payout it books (human-confirmed settlement link first, else
- * unambiguous exact amount in the [arrival, +5d] bank window) and compare the
- * posted amount against the payout's net.
+ * pair it to the payout it books and compare the posted amount against the
+ * payout's net. The pairing FACT is `staged_payments.settled_stripe_payout_id`
+ * (0168 — seeded from the retired settlement_links confirmations): this pass
+ * first FILLS it for unpaired lumps with an unambiguous exact-amount payout in
+ * the [arrival, +5d] bank window (fill-only, never re-points), then compares
+ * every paired lump.
  *
- *   expected = { kind, payout_id, net_amount, arrival_date, bank_deposit_id, paired_by }
+ *   expected = { kind, payout_id, net_amount, arrival_date, bank_deposit_id }
  *   actual   = { amount, date_received, account }
  *   disposition: consistent | correction_needed (machine states)
  *
@@ -26,22 +29,18 @@ import { sql } from "drizzle-orm";
  * always fine).
  */
 export async function recomputeQboAccountingChecks(): Promise<void> {
+  // 1. Fill the pairing fact for unpaired lumps with an unambiguous
+  //    exact-amount payout in the bank window. Fill-only: an existing pairing
+  //    (human-confirmed 0168 backfill or an earlier pass) is never re-pointed,
+  //    and a payout already claimed by another lump is never re-used.
   await db.execute(sql`
     WITH lumps AS (
-      SELECT sp.id, sp.amount, sp.date_received, sp.qb_deposit_to_account_name
+      SELECT sp.id, sp.amount, sp.date_received
       FROM staged_payments sp
       WHERE sp.amount IS NOT NULL AND sp.amount > 0
+        AND sp.settled_stripe_payout_id IS NULL
         AND (sp.exclusion_reason = 'processor_payout' OR sp.funding_source = 'stripe')
     ),
-    -- Pairing authority 1: the human-confirmed settlement link.
-    linked AS (
-      SELECT l.id AS staged_id, p.id AS payout_id, 'settlement_link' AS paired_by
-      FROM lumps l
-      JOIN settlement_links sl
-        ON sl.deposit_staged_payment_id = l.id AND sl.lifecycle = 'confirmed'
-      JOIN stripe_payouts p ON p.id = sl.payout_id
-    ),
-    -- Pairing authority 2: unambiguous exact amount in the bank window.
     exact_cand AS (
       SELECT l.id AS staged_id, p.id AS payout_id
       FROM lumps l
@@ -50,29 +49,40 @@ export async function recomputeQboAccountingChecks(): Promise<void> {
        AND p.status = 'paid'
        AND l.date_received >= p.arrival_date
        AND l.date_received <= p.arrival_date + INTERVAL '5 days'
-      WHERE NOT EXISTS (SELECT 1 FROM linked k WHERE k.staged_id = l.id)
+      WHERE NOT EXISTS (SELECT 1 FROM staged_payments t
+                        WHERE t.settled_stripe_payout_id = p.id)
     ),
     exact_1to1 AS (
-      SELECT staged_id, min(payout_id) AS payout_id, 'exact_amount_window' AS paired_by
+      SELECT staged_id, min(payout_id) AS payout_id
       FROM exact_cand
       GROUP BY staged_id
       HAVING count(DISTINCT payout_id) = 1
     ),
-    pairs AS (
-      SELECT * FROM linked
-      UNION ALL
-      SELECT * FROM exact_1to1
-    ),
-    checks AS (
+    -- One payout must not pair to two lumps within this pass either.
+    payout_1to1 AS (
+      SELECT payout_id, min(staged_id) AS staged_id
+      FROM exact_1to1
+      GROUP BY payout_id
+      HAVING count(*) = 1
+    )
+    UPDATE staged_payments sp
+    SET settled_stripe_payout_id = m.payout_id, updated_at = now()
+    FROM payout_1to1 m
+    WHERE sp.id = m.staged_id
+      AND sp.settled_stripe_payout_id IS NULL
+  `);
+
+  // 2. Compare every paired lump.
+  await db.execute(sql`
+    WITH checks AS (
       SELECT
         l.id AS staged_id,
         jsonb_build_object(
           'kind', 'stripe_payout_lump',
-          'payout_id', pr.payout_id,
+          'payout_id', p.id,
           'net_amount', p.amount,
           'arrival_date', p.arrival_date,
-          'bank_deposit_id', p.bank_deposit_id,
-          'paired_by', pr.paired_by
+          'bank_deposit_id', p.bank_deposit_id
         ) AS expected,
         jsonb_build_object(
           'amount', l.amount,
@@ -87,9 +97,8 @@ export async function recomputeQboAccountingChecks(): Promise<void> {
           WHEN abs(l.amount - p.amount) <= 0.01 THEN NULL
           ELSE 'QBO posts ' || l.amount || ' but the payout net is ' || p.amount
         END AS note
-      FROM lumps l
-      JOIN pairs pr ON pr.staged_id = l.id
-      JOIN stripe_payouts p ON p.id = pr.payout_id
+      FROM staged_payments l
+      JOIN stripe_payouts p ON p.id = l.settled_stripe_payout_id
     )
     INSERT INTO qbo_accounting_checks (
       id, staged_payment_id, expected, actual, disposition, note, computed_at
