@@ -6012,6 +6012,10 @@ export interface PayoutDepositLink {
   bankDepositId: string;
 }
 
+export interface PayoutBankMatchConfirmation {
+  payoutId: string;
+}
+
 export interface PayoutCandidateDeposit {
   bankDepositId: string;
   depositDate: string;

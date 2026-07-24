@@ -30,6 +30,7 @@ import {
   useListDepositCandidatePayouts,
   useLinkPayoutDeposit,
   useUnlinkPayoutDeposit,
+  useConfirmPayoutBankMatch,
   useListPayoutCandidateDeposits,
   type DepositCandidatePayout,
   type PayoutCandidateDeposit,
@@ -102,6 +103,7 @@ export default function ReconciliationDepositsPage() {
   const dismissDepositQbo = useDismissDepositQboComponent();
   const linkPayout = useLinkPayoutDeposit();
   const unlinkPayout = useUnlinkPayoutDeposit();
+  const confirmPayoutBankMatch = useConfirmPayoutBankMatch();
   const deposits = data?.data ?? [];
   const canManageAccounting = data?.viewerCanManageAccounting ?? false;
   const total = data?.pagination.total ?? 0;
@@ -118,6 +120,7 @@ export default function ReconciliationDepositsPage() {
   const [settlementSearchFor, setSettlementSearchFor] = useState<{ payoutId: string; amount: string | null; date: string | null } | null>(null);
   const [linkPayoutFor, setLinkPayoutFor] = useState<string | null>(null);
   const [unlinkPayoutFor, setUnlinkPayoutFor] = useState<string | null>(null);
+  const [confirmPayoutFor, setConfirmPayoutFor] = useState<string | null>(null);
   const [payoutCandidateFor, setPayoutCandidateFor] = useState<string | null>(null);
   const candidatePayouts = useListDepositCandidatePayouts(linkPayoutFor ?? "", {
     query: {
@@ -135,7 +138,7 @@ export default function ReconciliationDepositsPage() {
   const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
   const mergeQueries = useQueries({ queries: mergeGiftIds.map((id) => getGetGiftOrPaymentQueryOptions(id, { query: { enabled: mergeGiftIds.length > 0, queryKey: getGetGiftOrPaymentQueryKey(id) } })) });
   const mergeRecords = useMemo<GiftOrPaymentDetail[]>(() => mergeQueries.map((query) => query.data).filter((record): record is GiftOrPaymentDetail => !!record), [mergeQueries]);
-  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending;
+  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: getListWorkbenchDepositsQueryKey() });
@@ -191,6 +194,7 @@ export default function ReconciliationDepositsPage() {
     openLinkDepositPayout: setLinkPayoutFor,
     openLinkPayoutDeposit: setPayoutCandidateFor,
     openUnlinkPayoutDeposit: setUnlinkPayoutFor,
+    openConfirmPayoutBankMatch: setConfirmPayoutFor,
     isFinanceOrAdmin: canManageAccounting && (me?.role === "finance" || me?.role === "admin"),
     openQbDetail: (record, linkage) => setQbDetailFor({ record, linkage }),
     rejectChargeQbTie: () => undefined,
@@ -348,6 +352,29 @@ export default function ReconciliationDepositsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction disabled={busy} onClick={() => { if (!unlinkPayoutFor) return; void unlinkPayout.mutateAsync({ payoutId: unlinkPayoutFor }).then(() => { setUnlinkPayoutFor(null); invalidate(); }); }}>Unlink payout</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={confirmPayoutFor != null} onOpenChange={(open) => { if (!open && !busy) setConfirmPayoutFor(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm payout match?</AlertDialogTitle>
+            <AlertDialogDescription>This confirms the guessed Stripe payout → bank deposit tie without changing the linked deposit or any counted money.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={() => {
+                if (!confirmPayoutFor) return;
+                void confirmPayoutBankMatch.mutateAsync({ payoutId: confirmPayoutFor }).then(() => {
+                  setConfirmPayoutFor(null);
+                  invalidate();
+                });
+              }}
+            >
+              Confirm match
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

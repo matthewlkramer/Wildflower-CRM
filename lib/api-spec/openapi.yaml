@@ -4699,6 +4699,22 @@ paths:
         "204": { description: Unlinked }
         "403": { $ref: "#/components/responses/FinanceForbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/payouts/{payoutId}/confirm-bank-match:
+    post:
+      operationId: confirmPayoutBankMatch
+      tags: [reconciliation]
+      summary: Confirm an ambiguous Stripe payout to bank deposit match.
+      description: Finance/admin review only. Clears the ambiguity flag without changing the payout's linked bank deposit.
+      parameters:
+        - { name: payoutId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Confirmed payout match
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutBankMatchConfirmation" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /reconciliation/payouts/{payoutId}/candidate-deposits:
     get:
       operationId: listPayoutCandidateDeposits
@@ -9389,6 +9405,11 @@ components:
       properties:
         payoutId: { type: string }
         bankDepositId: { type: string }
+    PayoutBankMatchConfirmation:
+      type: object
+      required: [payoutId]
+      properties:
+        payoutId: { type: string }
     PayoutCandidateDeposit:
       type: object
       required: [bankDepositId, depositDate, amount, currency, memo, claimed, ambiguous]
