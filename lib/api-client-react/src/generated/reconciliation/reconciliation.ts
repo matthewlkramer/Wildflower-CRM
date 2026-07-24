@@ -46,6 +46,7 @@ import type {
   ListWorkbenchClustersParams,
   ListWorkbenchDepositsParams,
   NotFoundResponse,
+  PayoutBankMatchConfirmation,
   PayoutDepositLink,
   PayoutSearchList,
   ReconciliationApproveResult,
@@ -1060,6 +1061,76 @@ export const useUnlinkPayoutDeposit = <TError = ErrorType<FinanceForbiddenRespon
         TContext
       > => {
       return useMutation(getUnlinkPayoutDepositMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Clears the ambiguity flag without changing the payout's linked bank deposit.
+ * @summary Confirm an ambiguous Stripe payout to bank deposit match.
+ */
+export const getConfirmPayoutBankMatchUrl = (payoutId: string,) => {
+
+
+
+
+  return `/api/reconciliation/payouts/${payoutId}/confirm-bank-match`
+}
+
+export const confirmPayoutBankMatch = async (payoutId: string, options?: RequestInit): Promise<PayoutBankMatchConfirmation> => {
+
+  return customFetch<PayoutBankMatchConfirmation>(getConfirmPayoutBankMatchUrl(payoutId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getConfirmPayoutBankMatchMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmPayoutBankMatch>>, TError,{payoutId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof confirmPayoutBankMatch>>, TError,{payoutId: string}, TContext> => {
+
+const mutationKey = ['confirmPayoutBankMatch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmPayoutBankMatch>>, {payoutId: string}> = (props) => {
+          const {payoutId} = props ?? {};
+
+          return  confirmPayoutBankMatch(payoutId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConfirmPayoutBankMatchMutationResult = NonNullable<Awaited<ReturnType<typeof confirmPayoutBankMatch>>>
+
+    export type ConfirmPayoutBankMatchMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Confirm an ambiguous Stripe payout to bank deposit match.
+ */
+export const useConfirmPayoutBankMatch = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmPayoutBankMatch>>, TError,{payoutId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof confirmPayoutBankMatch>>,
+        TError,
+        {payoutId: string},
+        TContext
+      > => {
+      return useMutation(getConfirmPayoutBankMatchMutationOptions(options));
     }
     /**
  * @summary List bank deposits that can be linked to a Stripe payout.

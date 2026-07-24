@@ -1103,4 +1103,28 @@ router.delete(
   }),
 );
 
+router.post(
+  "/reconciliation/payouts/:payoutId/confirm-bank-match",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const result = await db.execute(sql`
+      UPDATE stripe_payouts
+      SET ambiguous_bank_match = false,
+          bank_matched_at = now(),
+          updated_at = now()
+      WHERE id = ${req.params.payoutId}
+        AND bank_deposit_id IS NOT NULL
+      RETURNING id
+    `);
+    if (!result.rows.length) {
+      res.status(404).json({
+        error: "not_found",
+        message: "Stripe payout not found or is not currently linked to a bank deposit.",
+      });
+      return;
+    }
+    res.json({ payoutId: req.params.payoutId });
+  }),
+);
+
 export default router;

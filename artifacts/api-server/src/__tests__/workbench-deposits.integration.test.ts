@@ -417,4 +417,36 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(mismatchLink.status).toBe(400);
     await expect(mismatchLink.json()).resolves.toMatchObject({ error: "amount_mismatch" });
   });
+
+  it("confirms an ambiguous payout match without changing its deposit", async () => {
+    const depositId = await seedDeposit("Confirm payout deposit");
+    const payoutId = await seedPayout("100.00", depositId, true);
+
+    const response = await fetch(`${baseUrl}/api/reconciliation/payouts/${payoutId}/confirm-bank-match`, {
+      method: "POST",
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ payoutId });
+
+    const confirmed = await db.query.stripePayouts.findFirst({
+      where: eqFn(schema.stripePayouts.id, payoutId),
+    });
+    expect(confirmed).toMatchObject({
+      bankDepositId: depositId,
+      ambiguousBankMatch: false,
+    });
+  });
+
+  it("returns 404 when confirming an untied or missing payout", async () => {
+    const untiedPayout = await seedPayout();
+    const untied = await fetch(`${baseUrl}/api/reconciliation/payouts/${untiedPayout}/confirm-bank-match`, {
+      method: "POST",
+    });
+    expect(untied.status).toBe(404);
+
+    const missing = await fetch(`${baseUrl}/api/reconciliation/payouts/missing-payout/confirm-bank-match`, {
+      method: "POST",
+    });
+    expect(missing.status).toBe(404);
+  });
 });

@@ -87,6 +87,7 @@ const NOOP_ACTIONS: ClusterActions = {
   openLinkDepositPayout: () => undefined,
   openLinkPayoutDeposit: () => undefined,
   openUnlinkPayoutDeposit: () => undefined,
+  openConfirmPayoutBankMatch: () => undefined,
   isFinanceOrAdmin: false,
   openQbDetail: () => undefined,
   rejectChargeQbTie: () => undefined,
@@ -158,6 +159,9 @@ function Composition({
             {composition.payoutAmbiguous ? <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300">guessed match</span> : <span />}
             {actions.isFinanceOrAdmin && composition.payoutId ? (
               <CardActionsMenu items={[
+                ...(composition.payoutAmbiguous
+                  ? [{ label: "Confirm match", onSelect: () => actions.openConfirmPayoutBankMatch?.(composition.payoutId ?? "") }]
+                  : []),
                 { label: "Unlink deposit", onSelect: () => actions.openUnlinkPayoutDeposit?.(composition.payoutId ?? "") },
                 { label: "Link to a different deposit…", onSelect: () => actions.openLinkPayoutDeposit?.(composition.payoutId ?? "") },
                 { label: "Resolve payout settlement", onSelect: () => actions.openSettlementSearch({ payoutId: composition.payoutId ?? "", amount: deposit.bank.amount, date: deposit.date ?? null }) },

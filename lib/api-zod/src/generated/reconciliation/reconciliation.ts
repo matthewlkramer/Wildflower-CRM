@@ -545,6 +545,18 @@ export const UnlinkPayoutDepositParams = zod.object({
 })
 
 /**
+ * Finance/admin review only. Clears the ambiguity flag without changing the payout's linked bank deposit.
+ * @summary Confirm an ambiguous Stripe payout to bank deposit match.
+ */
+export const ConfirmPayoutBankMatchParams = zod.object({
+  "payoutId": zod.coerce.string()
+})
+
+export const ConfirmPayoutBankMatchResponse = zod.object({
+  "payoutId": zod.string()
+})
+
+/**
  * @summary List bank deposits that can be linked to a Stripe payout.
  */
 export const ListPayoutCandidateDepositsParams = zod.object({
