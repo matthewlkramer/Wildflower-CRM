@@ -10,6 +10,7 @@
     "import:coding-forms": "tsx ./src/import-coding-forms.ts",
     "import:bank-register": "tsx ./src/import-bank-register.ts",
     "import:bank-csv": "tsx ./src/import-bank-csv.ts",
+    "recompute:bank-spine": "tsx ./src/recompute-bank-spine.ts",
     "test": "tsx --test ./src/*.test.ts",
     "gen:coding-forms-seed": "tsx ./src/generate-coding-forms-seed-sql.ts",
     "typecheck": "flock /tmp/wf-tsc-libs.lock sh -c 'tsc --build ../tsconfig.json && tsc -p tsconfig.json --noEmit'"
