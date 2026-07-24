@@ -23,6 +23,8 @@ let schema: {
   stagedPayments: Db["stagedPayments"];
   stripePayouts: Db["stripePayouts"];
   bankDeposits: Db["bankDeposits"];
+  paymentUnits: Db["paymentUnits"];
+  bankDepositComponents: Db["bankDepositComponents"];
   qboAccountingChecks: Db["qboAccountingChecks"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -32,6 +34,8 @@ let recompute: typeof import("../lib/bankSpineRecompute");
 const stagedIds: string[] = [];
 const payoutIds: string[] = [];
 const depositIds: string[] = [];
+const paymentUnitIds: string[] = [];
+const componentIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 
@@ -100,6 +104,8 @@ beforeAll(async () => {
     stagedPayments: dbMod.stagedPayments,
     stripePayouts: dbMod.stripePayouts,
     bankDeposits: dbMod.bankDeposits,
+    paymentUnits: dbMod.paymentUnits,
+    bankDepositComponents: dbMod.bankDepositComponents,
     qboAccountingChecks: dbMod.qboAccountingChecks,
   };
   eqFn = drizzle.eq;
@@ -109,6 +115,16 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!HAS_DB) return;
+  if (componentIds.length) {
+    await db
+      .delete(schema.bankDepositComponents)
+      .where(inArrayFn(schema.bankDepositComponents.id, componentIds));
+  }
+  if (paymentUnitIds.length) {
+    await db
+      .delete(schema.paymentUnits)
+      .where(inArrayFn(schema.paymentUnits.id, paymentUnitIds));
+  }
   if (stagedIds.length) {
     await db
       .delete(schema.qboAccountingChecks)
@@ -223,5 +239,55 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
       .from(schema.stripePayouts)
       .where(eqFn(schema.stripePayouts.id, payout)))[0];
     expect(row).toEqual({ bankDepositId: humanDeposit, ambiguousBankMatch: true });
+  });
+
+  it("preserves an existing differently keyed deposit component", async () => {
+    const stagedId = nextId("component_sp");
+    const paymentUnitId = `pu_${stagedId}`;
+    const existingDeposit = await seedDeposit("604.00", "2026-06-20");
+    await seedDeposit("604.00", "2026-06-20");
+    const qbDepositId = nextId("qbd");
+    await db.insert(schema.stagedPayments).values({
+      id: stagedId,
+      realmId: REALM_ID,
+      qbEntityType: "deposit",
+      qbEntityId: qbDepositId,
+      qbDepositId,
+      amount: "604.00",
+      dateReceived: "2026-06-20",
+      qbRaw: { TotalAmt: "604.00", TxnDate: "2026-06-20" },
+    });
+    stagedIds.push(stagedId);
+    await db.insert(schema.paymentUnits).values({
+      id: paymentUnitId,
+      kind: "check",
+      sourceStagedPaymentId: stagedId,
+      grossAmount: "604.00",
+      netAmount: "604.00",
+      currency: "USD",
+      receivedDate: "2026-06-20",
+    });
+    paymentUnitIds.push(paymentUnitId);
+    const componentId = `bdc_0172_${nextId("component")}`;
+    await db.insert(schema.bankDepositComponents).values({
+      id: componentId,
+      bankDepositId: existingDeposit,
+      paymentUnitId,
+      amount: "604.00",
+      source: "qbo_inferred",
+      sourceStagedPaymentId: stagedId,
+    });
+    componentIds.push(componentId);
+
+    await expect(recompute.recomputeBankSpine()).resolves.toBeUndefined();
+
+    const rows = await db
+      .select({
+        id: schema.bankDepositComponents.id,
+        bankDepositId: schema.bankDepositComponents.bankDepositId,
+      })
+      .from(schema.bankDepositComponents)
+      .where(eqFn(schema.bankDepositComponents.paymentUnitId, paymentUnitId));
+    expect(rows).toEqual([{ id: componentId, bankDepositId: existingDeposit }]);
   });
 });

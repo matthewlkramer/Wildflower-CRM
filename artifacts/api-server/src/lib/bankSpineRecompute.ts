@@ -242,6 +242,11 @@ export async function recomputeBankSpine(): Promise<void> {
         AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
         AND sp.amount IS NOT NULL AND sp.amount > 0
         AND EXISTS (SELECT 1 FROM payment_units pu WHERE pu.id = 'pu_' || sp.id)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM bank_deposit_components c
+          WHERE c.payment_unit_id = 'pu_' || sp.id
+        )
     ),
     depinfo AS (
       SELECT g.realm_id, g.qb_deposit_id,
