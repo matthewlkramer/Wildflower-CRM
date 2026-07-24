@@ -12,6 +12,7 @@ import bundleAnchorsRouter from "./bundleAnchors";
 import chargeTiesRouter from "./chargeTies";
 import splitUnitsRouter from "./splitUnits";
 import workbenchClustersRouter from "./workbenchClusters";
+import workbenchDepositsRouter from "./workbenchDeposits";
 import recentChangesRouter from "./recentChanges";
 
 /**
@@ -40,6 +41,7 @@ router.use(bundleAnchorsRouter);
 router.use(chargeTiesRouter);
 router.use(splitUnitsRouter);
 router.use(workbenchClustersRouter);
+router.use(workbenchDepositsRouter);
 router.use(recentChangesRouter);
 
 export default router;
