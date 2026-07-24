@@ -22,6 +22,7 @@ let db: Db["db"];
 let schema: {
   stagedPayments: Db["stagedPayments"];
   stripePayouts: Db["stripePayouts"];
+  bankDeposits: Db["bankDeposits"];
   qboAccountingChecks: Db["qboAccountingChecks"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -30,6 +31,7 @@ let recompute: typeof import("../lib/bankSpineRecompute");
 
 const stagedIds: string[] = [];
 const payoutIds: string[] = [];
+const depositIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 
@@ -63,6 +65,20 @@ async function seedPayout(amount: string, arrivalDate: string): Promise<string> 
   return id;
 }
 
+async function seedDeposit(amount: string, depositDate: string): Promise<string> {
+  const id = nextId("bd");
+  await db.insert(schema.bankDeposits).values({
+    id,
+    source: "bank_csv_export",
+    depositDate,
+    amount,
+    currency: "USD",
+    account: ACCOUNT_ID,
+  });
+  depositIds.push(id);
+  return id;
+}
+
 async function readCheck(stagedId: string) {
   const rows = await db
     .select({
@@ -83,6 +99,7 @@ beforeAll(async () => {
   schema = {
     stagedPayments: dbMod.stagedPayments,
     stripePayouts: dbMod.stripePayouts,
+    bankDeposits: dbMod.bankDeposits,
     qboAccountingChecks: dbMod.qboAccountingChecks,
   };
   eqFn = drizzle.eq;
@@ -104,6 +121,10 @@ afterAll(async () => {
     await db
       .delete(schema.stripePayouts)
       .where(inArrayFn(schema.stripePayouts.id, payoutIds));
+  if (depositIds.length)
+    await db
+      .delete(schema.bankDeposits)
+      .where(inArrayFn(schema.bankDeposits.id, depositIds));
 });
 
 describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
@@ -136,5 +157,71 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     await recompute.recomputeBankSpine();
 
     expect(await readCheck(sp)).toBeNull();
+  });
+
+  it("pairs a payout cluster to the nearest deposit after arrival", async () => {
+    const firstPayout = await seedPayout("601.00", "2026-03-01");
+    const secondPayout = await seedPayout("601.00", "2026-03-05");
+    const firstDeposit = await seedDeposit("601.00", "2026-03-02");
+    const secondDeposit = await seedDeposit("601.00", "2026-03-06");
+
+    await recompute.recomputeBankSpine();
+
+    const rows = await db
+      .select({
+        id: schema.stripePayouts.id,
+        bankDepositId: schema.stripePayouts.bankDepositId,
+        ambiguousBankMatch: schema.stripePayouts.ambiguousBankMatch,
+      })
+      .from(schema.stripePayouts)
+      .where(inArrayFn(schema.stripePayouts.id, [firstPayout, secondPayout]));
+    expect(rows).toEqual(expect.arrayContaining([
+      { id: firstPayout, bankDepositId: firstDeposit, ambiguousBankMatch: false },
+      { id: secondPayout, bankDepositId: secondDeposit, ambiguousBankMatch: false },
+    ]));
+  });
+
+  it("flags a genuine nearest-date tie as ambiguous", async () => {
+    const payout = await seedPayout("602.00", "2026-04-01");
+    const firstDeposit = await seedDeposit("602.00", "2026-04-02");
+    await seedDeposit("602.00", "2026-04-02");
+
+    await recompute.recomputeBankSpine();
+
+    const row = (await db
+      .select({
+        bankDepositId: schema.stripePayouts.bankDepositId,
+        ambiguousBankMatch: schema.stripePayouts.ambiguousBankMatch,
+      })
+      .from(schema.stripePayouts)
+      .where(eqFn(schema.stripePayouts.id, payout)))[0];
+    expect(row).toEqual({ bankDepositId: firstDeposit, ambiguousBankMatch: true });
+  });
+
+  it("preserves a pre-existing human payout tie", async () => {
+    const humanDeposit = await seedDeposit("603.00", "2026-05-06");
+    await seedDeposit("603.00", "2026-05-02");
+    const payout = nextId("po");
+    await db.insert(schema.stripePayouts).values({
+      id: payout,
+      stripeAccountId: ACCOUNT_ID,
+      amount: "603.00",
+      arrivalDate: "2026-05-01",
+      status: "paid",
+      bankDepositId: humanDeposit,
+      ambiguousBankMatch: true,
+    });
+    payoutIds.push(payout);
+
+    await recompute.recomputeBankSpine();
+
+    const row = (await db
+      .select({
+        bankDepositId: schema.stripePayouts.bankDepositId,
+        ambiguousBankMatch: schema.stripePayouts.ambiguousBankMatch,
+      })
+      .from(schema.stripePayouts)
+      .where(eqFn(schema.stripePayouts.id, payout)))[0];
+    expect(row).toEqual({ bankDepositId: humanDeposit, ambiguousBankMatch: true });
   });
 });
