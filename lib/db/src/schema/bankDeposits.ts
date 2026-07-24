@@ -23,15 +23,13 @@ import { bankTransactions } from "./bankTransactions";
  * other way around.
  *
  * ── Source (curated projection, not a new sync) ────────────────────────
- * Today a bank deposit is a PROJECTION of a deposit-type `bank_transactions`
- * row (`source = 'qbo_register_export'`, `deposit IS NOT NULL AND deposit > 0`)
- * — QBO's own mirror of the bank feed. `sourceBankTransactionId` records that
- * provenance and is UNIQUE so the projection is exactly 1:1 and idempotent
- * (re-projection upserts by that key). When a bank-native feed arrives
- * (`plaid`) or a deposit is hand-entered (`manual`), the same table is
- * repopulated from the better source WITHOUT changing the schema or anything
- * that hangs off it — the whole point of making the deposit a first-class
- * object now.
+ * A bank deposit is a PROJECTION of a positive `bank_transactions` row
+ * (`deposit IS NOT NULL AND deposit > 0`). Wells Fargo CSV rows
+ * (`source = 'bank_csv_export'`) are the current bank-native historical
+ * source; QBO register rows remain accounting evidence. `sourceBankTransactionId`
+ * records provenance and is UNIQUE so the projection is exactly 1:1 and
+ * idempotent (re-projection upserts by that key). Future `plaid` rows and rare
+ * `manual` rows use the same table without changing anything that hangs off it.
  *
  * ── Derived, never stored ──────────────────────────────────────────────
  * Composition state (unresolved / partial / complete / overallocated) is a
@@ -48,10 +46,10 @@ import { bankTransactions } from "./bankTransactions";
 export const bankDeposits = pgTable(
   "bank_deposits",
   {
-    // Deterministic id so re-projection is stable and idempotent. For a
-    // qbo_register_export projection this is `bdep_<source bnk hash>` (the
-    // source bank_transactions id with its `bnk_` prefix swapped) — see the
-    // 0159 projection SQL. Plaid/manual rows use their own deterministic scheme.
+    // Deterministic id so re-projection is stable and idempotent. For imported
+    // bank rows this is `bdep_<source bnk hash>` (the source
+    // bank_transactions id with its `bnk_` prefix swapped). Plaid/manual rows
+    // use their own deterministic scheme.
     id: text("id").primaryKey(),
 
     source: bankDepositSourceEnum("source").notNull(),

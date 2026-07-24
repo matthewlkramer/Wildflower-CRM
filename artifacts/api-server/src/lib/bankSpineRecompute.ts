@@ -27,17 +27,17 @@ import { recomputeQboAccountingChecks } from "./qboAccountingRecompute";
  * exists, so step 2 also re-derives lifecycle on existing stripe units.
  */
 export async function recomputeBankSpine(): Promise<void> {
-  // 1. Project new positive register lines into bank_deposits (0159).
+  // 1. Project positive bank evidence lines into bank_deposits (0159/0170).
   await db.execute(sql`
     INSERT INTO bank_deposits (
       id, source, source_bank_transaction_id, deposit_date, amount,
       currency, account, location, reference, memo
     )
     SELECT
-      'bdep_' || substring(bt.id FROM 5), 'qbo_register_export', bt.id,
+      'bdep_' || substring(bt.id FROM 5), 'bank_csv_export', bt.id,
       bt.txn_date, bt.deposit, 'USD', bt.account, bt.location, bt.ref_no, bt.memo
     FROM bank_transactions bt
-    WHERE bt.source = 'qbo_register_export'
+    WHERE bt.source = 'bank_csv_export'
       AND bt.deposit IS NOT NULL AND bt.deposit > 0
     ON CONFLICT (id) DO NOTHING
   `);

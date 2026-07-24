@@ -293,11 +293,10 @@ export const opportunityConditionalEnum = pgEnum("opportunity_conditional", [
 // boolean flag so grants that are only partially satisfied can be tracked.
 // Default 'no' so legacy false/unset rows are non-destructively classified as
 // 'no'; legacy true rows migrate to 'yes' (see migration 0059).
-export const opportunityConditionsMetEnum = pgEnum("opportunity_conditions_met", [
-  "no",
-  "partial",
-  "yes",
-]);
+export const opportunityConditionsMetEnum = pgEnum(
+  "opportunity_conditions_met",
+  ["no", "partial", "yes"],
+);
 
 // Authoritative loan-vs-grant classification — the SINGLE flag that designates
 // whether a gift / opportunity / goal is loan-fund principal ("loan") or
@@ -1078,9 +1077,12 @@ export const codingFormRowStatusEnum = pgEnum("coding_form_row_status", [
 // Where a bank_transactions row came from.
 //   qbo_register_export — historical QuickBooks Online bank-register XLS
 //                         exports (merged + deduplicated at import time)
+//   bank_csv_export    — Wells Fargo bank CSV exports (merged +
+//                         deduplicated at import time)
 //   plaid               — live Plaid transaction feed (future)
 export const bankTransactionSourceEnum = pgEnum("bank_transaction_source", [
   "qbo_register_export",
+  "bank_csv_export",
   "plaid",
 ]);
 
@@ -1093,10 +1095,12 @@ export const bankTransactionSourceEnum = pgEnum("bank_transaction_source", [
 // bank-native feed (Plaid / check images) replaces it.
 //   qbo_register_export — projected from a deposit-type bank_transactions row
 //                         (QBO's mirror of the bank feed; today's only source)
+//   bank_csv_export    — projected from a Wells Fargo bank CSV transaction
 //   plaid               — future live bank feed
 //   manual              — hand-entered deposit (rare; e.g. a correction)
 export const bankDepositSourceEnum = pgEnum("bank_deposit_source", [
   "qbo_register_export",
+  "bank_csv_export",
   "plaid",
   "manual",
 ]);
@@ -1145,9 +1149,7 @@ export const bankDepositComponentSourceEnum = pgEnum(
 // `correction_needed` — a human should fix QBO (in QBO; the CRM never writes
 // back); `corrected` — the fix landed and a re-compare confirmed it;
 // `accepted_historical` — wrong but deliberately left (frozen history).
-export const qboAccountingDispositionEnum = pgEnum("qbo_accounting_disposition", [
-  "consistent",
-  "correction_needed",
-  "corrected",
-  "accepted_historical",
-]);
+export const qboAccountingDispositionEnum = pgEnum(
+  "qbo_accounting_disposition",
+  ["consistent", "correction_needed", "corrected", "accepted_historical"],
+);
