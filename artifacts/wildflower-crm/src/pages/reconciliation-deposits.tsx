@@ -70,7 +70,6 @@ export default function ReconciliationDepositsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -221,15 +220,6 @@ export default function ReconciliationDepositsPage() {
     }
   };
 
-  const toggleExpanded = (id: string) => {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   return (
     <div className="space-y-4">
       <div>
@@ -251,7 +241,7 @@ export default function ReconciliationDepositsPage() {
           {isLoading ? <p className="py-8 text-center text-sm text-muted-foreground">Loading deposits…</p> : isError ? <p className="py-8 text-center text-sm text-destructive">Failed to load the deposit list.</p> : deposits.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">{q ? "No deposits match this search." : "Nothing in this lens right now."}</p> : (
             <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
               <DepositGridHeader />
-              {deposits.map((deposit) => <DepositRow key={deposit.id} deposit={deposit} actions={actions} expanded={expanded.has(deposit.id)} onToggle={() => toggleExpanded(deposit.id)} onConfirmProvisional={(id) => void confirmDepositQbo.mutateAsync({ id }).then(invalidate)} onDismissProvisional={(id) => void dismissDepositQbo.mutateAsync({ id }).then(invalidate)} />)}
+              {deposits.map((deposit) => <DepositRow key={deposit.id} deposit={deposit} actions={actions} onConfirmProvisional={(id) => void confirmDepositQbo.mutateAsync({ id }).then(invalidate)} onDismissProvisional={(id) => void dismissDepositQbo.mutateAsync({ id }).then(invalidate)} />)}
             </div>
           )}
           {totalPages > 1 ? <div className="flex items-center justify-center gap-3 pt-2">

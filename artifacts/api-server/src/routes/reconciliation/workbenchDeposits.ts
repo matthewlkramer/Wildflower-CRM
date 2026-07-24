@@ -125,6 +125,20 @@ function amount(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function inferredPaymentMethod(alias: "sp" | "psp" | "qsp") {
+  return sql.raw(`CASE
+    WHEN NULLIF(BTRIM(${alias}.qb_payment_method), '') IS NOT NULL THEN ${alias}.qb_payment_method
+    WHEN COALESCE(${alias}.qb_transaction_memo, '') ~* '(^|[^A-Z])(WT|FED#|WIRE)([^A-Z]|$)'
+      OR COALESCE(d.memo, '') ~* '(^|[^A-Z])(WT|FED#|WIRE)([^A-Z]|$)' THEN 'wire'
+    WHEN COALESCE(${alias}.qb_transaction_memo, '') ~* '(GVD|EDI|ONLINE[[:space:]]+PAYMENT|ACH|EFT)'
+      OR COALESCE(d.memo, '') ~* '(GVD|EDI|ONLINE[[:space:]]+PAYMENT|ACH|EFT)' THEN 'ach'
+    WHEN ${alias}.qb_check_number IS NOT NULL
+      OR COALESCE(${alias}.qb_transaction_memo, '') ~* '(LBX|LOCKBOX|CHECK)'
+      OR COALESCE(d.memo, '') ~* '(LBX|LOCKBOX|CHECK)' THEN 'check'
+    ELSE 'other'
+  END`);
+}
+
 function notFundraisingMemo(memo: string | null): boolean {
   if (!memo) return false;
   // Brokerage transfers are intentionally excluded from this classification:
@@ -505,9 +519,9 @@ router.get(
             'componentId', dqc.id, 'paymentUnitId', NULL,
             'amount', dqc.amount::text,
             'kind', CASE
-              WHEN sp.qb_check_number IS NOT NULL OR sp.qb_payment_method ILIKE '%check%' THEN 'check'
-              WHEN sp.qb_payment_method ILIKE '%wire%' THEN 'wire'
-              WHEN sp.funding_source = 'wire_ach' THEN 'direct_ach'
+              WHEN (${inferredPaymentMethod("sp")}) ILIKE '%check%' THEN 'check'
+              WHEN (${inferredPaymentMethod("sp")}) ILIKE '%wire%' THEN 'wire'
+              WHEN (${inferredPaymentMethod("sp")}) ILIKE '%ach%' OR sp.funding_source = 'wire_ach' THEN 'direct_ach'
               ELSE 'other'
             END,
             'needsReview', dqc.match_basis = 'deposit_header_ambiguous',
@@ -595,7 +609,7 @@ router.get(
               'stagedPaymentId', sp.id, 'role', 'component', 'reference', sp.raw_reference,
               'lineDescription', sp.line_description, 'memo', sp.qb_transaction_memo,
               'amount', sp.amount::text, 'dateReceived', sp.date_received::text,
-              'paymentMethod', sp.qb_payment_method, 'payerName', sp.payer_name,
+              'paymentMethod', ${inferredPaymentMethod("sp")}, 'payerName', sp.payer_name,
               'qbTransactionMemo', sp.qb_transaction_memo, 'qbLocation', sp.qb_location,
               'revenueLocation', sp.revenue_location, 'qbDocNumber', sp.qb_doc_number,
               'qbCheckNumber', sp.qb_check_number, 'entityId', sp.entity_id,
@@ -612,7 +626,7 @@ router.get(
               'stagedPaymentId', psp.id, 'role', 'deposit', 'reference', psp.raw_reference,
               'lineDescription', psp.line_description, 'memo', psp.qb_transaction_memo,
               'amount', psp.amount::text, 'dateReceived', psp.date_received::text,
-              'paymentMethod', psp.qb_payment_method, 'payerName', psp.payer_name,
+              'paymentMethod', ${inferredPaymentMethod("psp")}, 'payerName', psp.payer_name,
               'qbTransactionMemo', psp.qb_transaction_memo, 'qbLocation', psp.qb_location,
               'revenueLocation', psp.revenue_location, 'qbDocNumber', psp.qb_doc_number,
               'qbCheckNumber', psp.qb_check_number, 'entityId', psp.entity_id,
@@ -629,7 +643,7 @@ router.get(
               'stagedPaymentId', qsp.id, 'role', 'component', 'reference', qsp.raw_reference,
               'lineDescription', qsp.line_description, 'memo', qsp.qb_transaction_memo,
               'amount', qsp.amount::text, 'dateReceived', qsp.date_received::text,
-              'paymentMethod', qsp.qb_payment_method, 'payerName', qsp.payer_name,
+              'paymentMethod', ${inferredPaymentMethod("qsp")}, 'payerName', qsp.payer_name,
               'qbTransactionMemo', qsp.qb_transaction_memo, 'qbLocation', qsp.qb_location,
               'revenueLocation', qsp.revenue_location, 'qbDocNumber', qsp.qb_doc_number,
               'qbCheckNumber', qsp.qb_check_number, 'entityId', qsp.entity_id,
