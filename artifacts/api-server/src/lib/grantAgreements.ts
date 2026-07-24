@@ -222,7 +222,7 @@ export async function pullGrantAgreement(
       "Content-Type": file.contentType,
       "Content-Length": String(file.bytes.length),
     },
-    body: file.bytes,
+    body: new Uint8Array(file.bytes),
   });
   if (!putRes.ok) {
     const msg = `object-storage upload HTTP ${putRes.status}`;

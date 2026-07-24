@@ -1,11 +1,18 @@
-import express, { type Express } from "express";
+import express, { type Express, type RequestHandler } from "express";
 import cors, { type CorsOptions } from "cors";
-import helmet from "helmet";
-import pinoHttp from "pino-http";
+import * as helmetModule from "helmet";
+import { type HelmetOptions } from "helmet";
+import { pinoHttp } from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
 import { CLERK_PROXY_PATH, clerkProxyMiddleware } from "./middlewares/clerkProxyMiddleware";
 import router from "./routes";
 import { logger } from "./lib/logger";
+
+// Interop-safe access to helmet's default export: some TS resolution modes
+// (e.g. Vercel's builder) type the CJS module namespace as non-callable.
+const helmet = helmetModule.default as unknown as (
+  options?: Readonly<HelmetOptions>,
+) => RequestHandler;
 
 const app: Express = express();
 

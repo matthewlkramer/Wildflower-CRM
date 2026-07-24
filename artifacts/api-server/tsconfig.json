@@ -3,7 +3,10 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "esModuleInterop": true,
+    "noEmitOnError": false
   },
   "include": ["src"],
   "references": [

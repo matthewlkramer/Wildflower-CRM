@@ -5,8 +5,7 @@ import {
   stripeStagedCharges,
 } from "@workspace/db/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import type Stripe from "stripe";
-import { logger } from "./logger";
+import type { Stripe } from "stripe";import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { chargeStatusIn, chargeStatusWhere } from "./derivedStatus";
 import { getUncachableStripeClient } from "./stripeClient";
@@ -24,6 +23,19 @@ import {
   stripeLedgerGiftIdForCharge,
   chargeIdOwningGiftExcludingCharge,
 } from "./paymentApplications";
+
+// Stripe resource types derived from the client's method signatures rather
+// than the `Stripe.X` namespace: the namespace types are unavailable under
+// CJS-view type resolution (e.g. Vercel's builder), while the class instance
+// type is fully typed under both module views.
+type StripeBalanceTransaction = Awaited<
+  ReturnType<Stripe["balanceTransactions"]["list"]>
+>["data"][number];
+type StripePayout = Awaited<ReturnType<Stripe["payouts"]["list"]>>["data"][number];
+type StripeCharge = Awaited<ReturnType<Stripe["charges"]["list"]>>["data"][number];
+type StripeRefund = Awaited<ReturnType<Stripe["refunds"]["list"]>>["data"][number];
+type StripeDispute = Awaited<ReturnType<Stripe["disputes"]["list"]>>["data"][number];
+type StripePayoutListParams = NonNullable<Parameters<Stripe["payouts"]["list"]>[0]>;
 
 function isUniqueViolation(e: unknown): boolean {
   return (
@@ -94,7 +106,7 @@ export interface ChargeFacts {
  * credited the captured GROSS amount; the processor fee is taken out at the
  * payout level, not the donor's gift.
  */
-export function extractChargeFacts(charge: Stripe.Charge): ChargeFacts {
+export function extractChargeFacts(charge: StripeCharge): ChargeFacts {
   const bd = charge.billing_details;
   const card =
     charge.payment_method_details && "card" in charge.payment_method_details
@@ -161,7 +173,7 @@ export interface PayoutRollup {
  * amount = −payout.amount) is skipped: it is the other side of the equation.
  */
 export function rollupPayout(
-  bts: Stripe.BalanceTransaction[],
+  bts: StripeBalanceTransaction[],
 ): PayoutRollup {
   let grossMinor = 0;
   let feeMinor = 0;
@@ -196,8 +208,8 @@ export function rollupPayout(
 
 /** Narrow an expanded balance-transaction source to a Charge. */
 function chargeFromSource(
-  source: Stripe.BalanceTransaction["source"],
-): Stripe.Charge | null {
+  source: StripeBalanceTransaction["source"],
+): StripeCharge | null {
   if (source && typeof source !== "string" && source.object === "charge") {
     return source;
   }
@@ -211,12 +223,12 @@ function chargeFromSource(
  * any other balance-transaction type.
  */
 function refundOrDisputeChargeId(
-  bt: Stripe.BalanceTransaction,
+  bt: StripeBalanceTransaction,
 ): string | null {
   const src = bt.source;
   if (!src || typeof src === "string") return null;
   if (src.object === "refund" || src.object === "dispute") {
-    const ch = (src as Stripe.Refund | Stripe.Dispute).charge;
+    const ch = (src as StripeRefund | StripeDispute).charge;
     return typeof ch === "string" ? ch : (ch?.id ?? null);
   }
   return null;
@@ -236,7 +248,7 @@ function refundOrDisputeChargeId(
  */
 async function propagateRefundsForPayout(
   stripe: Stripe,
-  bts: Stripe.BalanceTransaction[],
+  bts: StripeBalanceTransaction[],
 ): Promise<number> {
   const chargeIds = new Set<string>();
   for (const bt of bts) {
@@ -263,7 +275,7 @@ async function propagateRefundsForPayout(
       .then((r) => r[0]);
     if (!row) continue;
 
-    let charge: Stripe.Charge;
+    let charge: StripeCharge;
     try {
       charge = await stripe.charges.retrieve(chargeId);
     } catch (e) {
@@ -496,7 +508,7 @@ async function stripeAutoApply(
 async function stagePayoutAndCharges(
   stripe: Stripe,
   accountId: string,
-  payout: Stripe.Payout,
+  payout: StripePayout,
   opts: { enrichAllStatuses?: boolean } = {},
 ): Promise<{
   staged: number;
@@ -510,7 +522,7 @@ async function stagePayoutAndCharges(
 
   // All balance transactions that settled in this payout, charge sources
   // expanded so we can read donor facts in one pass.
-  const bts: Stripe.BalanceTransaction[] = [];
+  const bts: StripeBalanceTransaction[] = [];
   for await (const bt of stripe.balanceTransactions.list({
     payout: payout.id,
     limit: 100,
@@ -840,7 +852,7 @@ export async function syncStripe(
     const seenPayoutIds: string[] = [];
 
     try {
-      const params: Stripe.PayoutListParams = { limit: 100 };
+      const params: StripePayoutListParams = { limit: 100 };
       if (watermark) {
         // gte (not gt) + idempotent upsert tolerates the boundary payout being
         // re-pulled rather than risk skipping one created in the watermark sec.
@@ -992,7 +1004,7 @@ export async function syncStripeBackfill(opts: {
     let autoApplied = 0;
     const seenIds: string[] = [];
 
-    const params: Stripe.PayoutListParams = {
+    const params: StripePayoutListParams = {
       limit: 100,
       created: toSec != null ? { gte: fromSec, lte: toSec } : { gte: fromSec },
     };
