@@ -58,6 +58,27 @@ async function seedDeposit(memo: string, amount = "100.00"): Promise<string> {
   return id;
 }
 
+async function seedPayout(
+  amount = "100.00",
+  bankDepositId: string | null = null,
+  ambiguousBankMatch = false,
+): Promise<string> {
+  const id = nextId("payout");
+  await db.insert(schema.stripePayouts).values({
+    id,
+    stripeAccountId: ACCOUNT_ID,
+    amount,
+    netTotal: amount,
+    currency: "USD",
+    status: "paid",
+    arrivalDate: "2099-12-30",
+    bankDepositId,
+    ambiguousBankMatch,
+  });
+  payoutIds.push(id);
+  return id;
+}
+
 async function seedUnit(
   depositId: string,
   amount: string,
@@ -315,5 +336,85 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(confirmed.json).toMatchObject({ id: componentId, confirmed: true });
     const dismissed = await requestJson("DELETE", `/api/reconciliation/deposit-qbo-components/${componentId}`);
     expect(dismissed.status).toBe(204);
+  });
+
+  it("lists candidate payouts, repoints an ambiguous tie, and unlinks it", async () => {
+    const currentDeposit = await seedDeposit("Current payout deposit");
+    const targetDeposit = await seedDeposit("Target payout deposit");
+    const payoutId = await seedPayout("100.00", currentDeposit, true);
+
+    const candidates = await getJson(`/api/reconciliation/deposits/${targetDeposit}/candidate-payouts`);
+    expect(candidates.status).toBe(200);
+    expect(candidates.json.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        payoutId,
+        currentBankDepositId: currentDeposit,
+        currentDepositDate: "2099-12-31",
+        ambiguous: true,
+      }),
+    ]));
+
+    const depositCandidates = await getJson(`/api/reconciliation/payouts/${payoutId}/candidate-deposits`);
+    expect(depositCandidates.status).toBe(200);
+    expect(depositCandidates.json.data).toEqual(expect.arrayContaining([expect.objectContaining({
+      bankDepositId: targetDeposit,
+      depositDate: "2099-12-31",
+      claimed: false,
+      ambiguous: false,
+    })]));
+
+    const validLinkResponse = await fetch(`${baseUrl}/api/reconciliation/payouts/${payoutId}/bank-deposit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bankDepositId: targetDeposit }),
+    });
+    expect(validLinkResponse.status).toBe(200);
+    expect(await validLinkResponse.json()).toEqual({ payoutId, bankDepositId: targetDeposit });
+    const linkedPayout = await db.query.stripePayouts.findFirst({ where: eqFn(schema.stripePayouts.id, payoutId) });
+    expect(linkedPayout).toMatchObject({ bankDepositId: targetDeposit, ambiguousBankMatch: false });
+
+    const unlinked = await requestJson("DELETE", `/api/reconciliation/payouts/${payoutId}/bank-deposit`);
+    expect(unlinked.status).toBe(204);
+    const unlinkedPayout = await db.query.stripePayouts.findFirst({ where: eqFn(schema.stripePayouts.id, payoutId) });
+    expect(unlinkedPayout).toMatchObject({ bankDepositId: null, ambiguousBankMatch: false });
+  });
+
+  it("protects missing, occupied, component-backed, and mismatched deposits", async () => {
+    const missing = await getJson("/api/reconciliation/deposits/missing-deposit/candidate-payouts");
+    expect(missing.status).toBe(404);
+    const missingPayoutCandidates = await getJson("/api/reconciliation/payouts/missing-payout/candidate-deposits");
+    expect(missingPayoutCandidates.status).toBe(404);
+    const missingUnlink = await requestJson("DELETE", "/api/reconciliation/payouts/missing-payout/bank-deposit");
+    expect(missingUnlink.status).toBe(404);
+
+    const occupied = await seedDeposit("Occupied payout deposit");
+    await seedPayout("100.00", occupied);
+    const candidate = await seedPayout("100.00");
+    const occupiedLink = await fetch(`${baseUrl}/api/reconciliation/payouts/${candidate}/bank-deposit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bankDepositId: occupied }),
+    });
+    expect(occupiedLink.status).toBe(409);
+
+    const componentDeposit = await seedDeposit("Occupied component deposit");
+    await seedUnit(componentDeposit, "100.00");
+    const componentPayout = await seedPayout("100.00");
+    const componentLink = await fetch(`${baseUrl}/api/reconciliation/payouts/${componentPayout}/bank-deposit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bankDepositId: componentDeposit }),
+    });
+    expect(componentLink.status).toBe(409);
+
+    const mismatchDeposit = await seedDeposit("Mismatched payout deposit");
+    const mismatchPayout = await seedPayout("99.00");
+    const mismatchLink = await fetch(`${baseUrl}/api/reconciliation/payouts/${mismatchPayout}/bank-deposit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bankDepositId: mismatchDeposit }),
+    });
+    expect(mismatchLink.status).toBe(400);
+    await expect(mismatchLink.json()).resolves.toMatchObject({ error: "amount_mismatch" });
   });
 });

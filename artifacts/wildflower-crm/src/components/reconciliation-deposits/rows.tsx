@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, CircleAlert, Landmark } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleAlert, Landmark, MoreHorizontal } from "lucide-react";
 import type {
   WorkbenchDeposit,
   WorkbenchDepositAccountingCheck,
@@ -7,6 +7,7 @@ import type {
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { ClusterActions, AnchorRef } from "@/components/reconciliation-clusters/rows";
 import type { EvidencePickOption, EvidencePreview } from "@/components/reconciliation-clusters/dialogs";
 
@@ -36,6 +37,30 @@ function checkTone(disposition: WorkbenchDepositAccountingCheck["disposition"]) 
       : "outline";
 }
 
+function CardActionsMenu({
+  items,
+}: {
+  items: Array<{ label: string; onSelect: () => void; disabled?: boolean }>;
+}) {
+  if (!items.length) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" aria-label="Card actions" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={(event) => event.stopPropagation()}>
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+        {items.map((item) => (
+          <DropdownMenuItem key={item.label} disabled={item.disabled} onSelect={item.onSelect}>
+            {item.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export interface DepositRowProps {
   deposit: WorkbenchDeposit;
   expanded: boolean;
@@ -59,6 +84,9 @@ const NOOP_ACTIONS: ClusterActions = {
   openFlagGift: () => undefined,
   openMarkLoss: () => undefined,
   openSettlementSearch: () => undefined,
+  openLinkDepositPayout: () => undefined,
+  openLinkPayoutDeposit: () => undefined,
+  openUnlinkPayoutDeposit: () => undefined,
   isFinanceOrAdmin: false,
   openQbDetail: () => undefined,
   rejectChargeQbTie: () => undefined,
@@ -126,6 +154,16 @@ function Composition({
           <p className="mt-1 text-[10px] tabular-nums text-muted-foreground">
             Gross {money(composition.grossTotal)} − fees {money(composition.feeTotal)} − refunds {money(composition.refundTotal)} + adjustments {money(composition.adjustmentTotal)} = {money(composition.netTotal)} = bank {money(deposit.bank.amount)}
           </p>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            {composition.payoutAmbiguous ? <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300">guessed match</span> : <span />}
+            {actions.isFinanceOrAdmin && composition.payoutId ? (
+              <CardActionsMenu items={[
+                { label: "Unlink deposit", onSelect: () => actions.openUnlinkPayoutDeposit?.(composition.payoutId ?? "") },
+                { label: "Link to a different deposit…", onSelect: () => actions.openLinkPayoutDeposit?.(composition.payoutId ?? "") },
+                { label: "Resolve payout settlement", onSelect: () => actions.openSettlementSearch({ payoutId: composition.payoutId ?? "", amount: deposit.bank.amount, date: deposit.date ?? null }) },
+              ]} />
+            ) : null}
+          </div>
         </div>
         {deposit.charges.slice(0, 3).map((charge) => (
           <div key={charge.chargeId} className="flex items-center justify-between rounded border bg-card px-2 py-1 text-[11px]">
@@ -249,9 +287,20 @@ export function DepositRow({ deposit, expanded, onToggle, actions: suppliedActio
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </span>
         <span className="min-w-0">
-          <span className="flex items-center gap-1.5 text-sm font-semibold tabular-nums">
-            {money(deposit.bank.amount)}
-            {isNotFundraising ? <Badge variant="outline" className="text-[9px]">Not fundraising{deposit.notFundraisingReason ? ` · ${deposit.notFundraisingReason.replaceAll("_", " ")}` : ""}</Badge> : null}
+          <span className="flex items-center justify-between gap-1.5 text-sm font-semibold tabular-nums">
+            <span className="flex min-w-0 items-center gap-1.5 truncate">
+              {money(deposit.bank.amount)}
+              {isNotFundraising ? <Badge variant="outline" className="text-[9px]">Not fundraising{deposit.notFundraisingReason ? ` · ${deposit.notFundraisingReason.replaceAll("_", " ")}` : ""}</Badge> : null}
+            </span>
+            {actions.isFinanceOrAdmin ? (
+              <CardActionsMenu items={[
+                ...(deposit.composition.payoutId
+                  ? [{ label: "Unlink payout", onSelect: () => actions.openUnlinkPayoutDeposit?.(deposit.composition.payoutId ?? "") }]
+                  : /stripe\s+transfer/i.test(deposit.bank.memo ?? "")
+                    ? [{ label: "Link a payout…", onSelect: () => actions.openLinkDepositPayout?.(deposit.anchorId) }]
+                    : []),
+              ]} />
+            ) : null}
           </span>
           <span className="mt-1 block text-[11px] text-muted-foreground">
             {deposit.date ? formatDateShort(deposit.date) : "Undated"} · {deposit.bank.account ?? "Wells Fargo"}
@@ -336,7 +385,6 @@ export function DepositRow({ deposit, expanded, onToggle, actions: suppliedActio
                   </div>
                 );
               })}
-              {deposit.composition.payoutId && actions.isFinanceOrAdmin ? <button type="button" className="rounded border px-2 py-1 text-xs text-primary hover:bg-muted" onClick={() => actions.openSettlementSearch({ payoutId: deposit.composition.payoutId!, amount: deposit.bank.amount, date: deposit.date ?? null })}>Resolve payout settlement</button> : null}
             </div>
           </div>
           <div className="rounded-md border bg-card p-3">

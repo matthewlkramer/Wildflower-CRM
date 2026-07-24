@@ -35,13 +35,18 @@ import type {
   FinanceForbiddenResponse,
   GiftMissingQbList,
   IncompleteGiftList,
+  InlineError,
+  LinkPayoutDepositBody,
+  ListDepositCandidatePayouts200,
   ListGiftsMissingQbParams,
   ListIncompleteGiftsParams,
+  ListPayoutCandidateDeposits200,
   ListReconciliationBundleAnchorsParams,
   ListReconciliationCardsParams,
   ListWorkbenchClustersParams,
   ListWorkbenchDepositsParams,
   NotFoundResponse,
+  PayoutDepositLink,
   PayoutSearchList,
   ReconciliationApproveResult,
   ReconciliationBundleConfirmResult,
@@ -843,6 +848,294 @@ export const useConfirmDepositQboComponent = <TError = ErrorType<FinanceForbidde
       return useMutation(getConfirmDepositQboComponentMutationOptions(options));
     }
     /**
+ * @summary List paid Stripe payouts that can be linked to a bank deposit.
+ */
+export const getListDepositCandidatePayoutsUrl = (bankDepositId: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposits/${bankDepositId}/candidate-payouts`
+}
+
+export const listDepositCandidatePayouts = async (bankDepositId: string, options?: RequestInit): Promise<ListDepositCandidatePayouts200> => {
+
+  return customFetch<ListDepositCandidatePayouts200>(getListDepositCandidatePayoutsUrl(bankDepositId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDepositCandidatePayoutsQueryKey = (bankDepositId: string,) => {
+    return [
+    `/api/reconciliation/deposits/${bankDepositId}/candidate-payouts`
+    ] as const;
+    }
+
+
+export const getListDepositCandidatePayoutsQueryOptions = <TData = Awaited<ReturnType<typeof listDepositCandidatePayouts>>, TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>>(bankDepositId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDepositCandidatePayouts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDepositCandidatePayoutsQueryKey(bankDepositId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDepositCandidatePayouts>>> = ({ signal }) => listDepositCandidatePayouts(bankDepositId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(bankDepositId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDepositCandidatePayouts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDepositCandidatePayoutsQueryResult = NonNullable<Awaited<ReturnType<typeof listDepositCandidatePayouts>>>
+export type ListDepositCandidatePayoutsQueryError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>
+
+
+/**
+ * @summary List paid Stripe payouts that can be linked to a bank deposit.
+ */
+
+export function useListDepositCandidatePayouts<TData = Awaited<ReturnType<typeof listDepositCandidatePayouts>>, TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>>(
+ bankDepositId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDepositCandidatePayouts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDepositCandidatePayoutsQueryOptions(bankDepositId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * @summary Link a Stripe payout to a Wells Fargo bank deposit.
+ */
+export const getLinkPayoutDepositUrl = (payoutId: string,) => {
+
+
+
+
+  return `/api/reconciliation/payouts/${payoutId}/bank-deposit`
+}
+
+export const linkPayoutDeposit = async (payoutId: string,
+    linkPayoutDepositBody: LinkPayoutDepositBody, options?: RequestInit): Promise<PayoutDepositLink> => {
+
+  return customFetch<PayoutDepositLink>(getLinkPayoutDepositUrl(payoutId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      linkPayoutDepositBody,)
+  }
+);}
+
+
+
+
+export const getLinkPayoutDepositMutationOptions = <TError = ErrorType<InlineError | FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof linkPayoutDeposit>>, TError,{payoutId: string;data: BodyType<LinkPayoutDepositBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof linkPayoutDeposit>>, TError,{payoutId: string;data: BodyType<LinkPayoutDepositBody>}, TContext> => {
+
+const mutationKey = ['linkPayoutDeposit'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof linkPayoutDeposit>>, {payoutId: string;data: BodyType<LinkPayoutDepositBody>}> = (props) => {
+          const {payoutId,data} = props ?? {};
+
+          return  linkPayoutDeposit(payoutId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LinkPayoutDepositMutationResult = NonNullable<Awaited<ReturnType<typeof linkPayoutDeposit>>>
+    export type LinkPayoutDepositMutationBody = BodyType<LinkPayoutDepositBody>
+    export type LinkPayoutDepositMutationError = ErrorType<InlineError | FinanceForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Link a Stripe payout to a Wells Fargo bank deposit.
+ */
+export const useLinkPayoutDeposit = <TError = ErrorType<InlineError | FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof linkPayoutDeposit>>, TError,{payoutId: string;data: BodyType<LinkPayoutDepositBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof linkPayoutDeposit>>,
+        TError,
+        {payoutId: string;data: BodyType<LinkPayoutDepositBody>},
+        TContext
+      > => {
+      return useMutation(getLinkPayoutDepositMutationOptions(options));
+    }
+    /**
+ * @summary Unlink a Stripe payout from its Wells Fargo bank deposit.
+ */
+export const getUnlinkPayoutDepositUrl = (payoutId: string,) => {
+
+
+
+
+  return `/api/reconciliation/payouts/${payoutId}/bank-deposit`
+}
+
+export const unlinkPayoutDeposit = async (payoutId: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getUnlinkPayoutDepositUrl(payoutId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getUnlinkPayoutDepositMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlinkPayoutDeposit>>, TError,{payoutId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unlinkPayoutDeposit>>, TError,{payoutId: string}, TContext> => {
+
+const mutationKey = ['unlinkPayoutDeposit'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unlinkPayoutDeposit>>, {payoutId: string}> = (props) => {
+          const {payoutId} = props ?? {};
+
+          return  unlinkPayoutDeposit(payoutId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnlinkPayoutDepositMutationResult = NonNullable<Awaited<ReturnType<typeof unlinkPayoutDeposit>>>
+
+    export type UnlinkPayoutDepositMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Unlink a Stripe payout from its Wells Fargo bank deposit.
+ */
+export const useUnlinkPayoutDeposit = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlinkPayoutDeposit>>, TError,{payoutId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unlinkPayoutDeposit>>,
+        TError,
+        {payoutId: string},
+        TContext
+      > => {
+      return useMutation(getUnlinkPayoutDepositMutationOptions(options));
+    }
+    /**
+ * @summary List bank deposits that can be linked to a Stripe payout.
+ */
+export const getListPayoutCandidateDepositsUrl = (payoutId: string,) => {
+
+
+
+
+  return `/api/reconciliation/payouts/${payoutId}/candidate-deposits`
+}
+
+export const listPayoutCandidateDeposits = async (payoutId: string, options?: RequestInit): Promise<ListPayoutCandidateDeposits200> => {
+
+  return customFetch<ListPayoutCandidateDeposits200>(getListPayoutCandidateDepositsUrl(payoutId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPayoutCandidateDepositsQueryKey = (payoutId: string,) => {
+    return [
+    `/api/reconciliation/payouts/${payoutId}/candidate-deposits`
+    ] as const;
+    }
+
+
+export const getListPayoutCandidateDepositsQueryOptions = <TData = Awaited<ReturnType<typeof listPayoutCandidateDeposits>>, TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>>(payoutId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPayoutCandidateDeposits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPayoutCandidateDepositsQueryKey(payoutId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPayoutCandidateDeposits>>> = ({ signal }) => listPayoutCandidateDeposits(payoutId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(payoutId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPayoutCandidateDeposits>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPayoutCandidateDepositsQueryResult = NonNullable<Awaited<ReturnType<typeof listPayoutCandidateDeposits>>>
+export type ListPayoutCandidateDepositsQueryError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>
+
+
+/**
+ * @summary List bank deposits that can be linked to a Stripe payout.
+ */
+
+export function useListPayoutCandidateDeposits<TData = Awaited<ReturnType<typeof listPayoutCandidateDeposits>>, TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>>(
+ payoutId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPayoutCandidateDeposits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPayoutCandidateDepositsQueryOptions(payoutId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
  * Finance/admin review only. Deletes the provisional accounting-plane row and never changes the counted bank-spine money model.
  * @summary Dismiss a provisional QBO decomposition row.
  */

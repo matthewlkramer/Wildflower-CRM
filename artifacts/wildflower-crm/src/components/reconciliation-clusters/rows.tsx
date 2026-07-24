@@ -81,6 +81,9 @@ export interface ClusterActions {
     amount: string | null;
     date: string | null;
   }) => void;
+  openLinkDepositPayout?: (bankDepositId: string) => void;
+  openLinkPayoutDeposit?: (payoutId: string) => void;
+  openUnlinkPayoutDeposit?: (payoutId: string) => void;
   /** True when the viewer is a finance team member or admin. Finance-gates QB write actions (§7.3). */
   isFinanceOrAdmin: boolean;
   /** Open the read-only in-app QB record detail dialog (§7.2). Linkage word comes from coverage.state.qbCards. */
