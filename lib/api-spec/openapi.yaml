@@ -4622,6 +4622,30 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PayoutSearchList" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /reconciliation/deposit-qbo-components/{id}/confirm:
+    post:
+      operationId: confirmDepositQboComponent
+      tags: [reconciliation]
+      summary: Confirm a provisional QBO decomposition row for a bank deposit.
+      description: Finance/admin review only. Confirmation records accounting review and never promotes the row into the counted bank-spine money model.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DepositQboComponentMutationResult" } } } }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/deposit-qbo-components/{id}:
+    delete:
+      operationId: dismissDepositQboComponent
+      tags: [reconciliation]
+      summary: Dismiss a provisional QBO decomposition row.
+      description: Finance/admin review only. Deletes the provisional accounting-plane row and never changes the counted bank-spine money model.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Dismissed }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /reconciliation/settlement-links/{payoutId}/confirm:
     post:
       operationId: confirmSettlementLink
@@ -9195,7 +9219,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [stripe_payout, stripe_unlinked, components, unresolved]
+          enum: [stripe_payout, stripe_unlinked, components, qbo_provisional, unresolved]
         payoutId: { type: string, nullable: true }
         payoutDate: { type: string, format: date, nullable: true, description: "Stripe payout arrival date." }
         grossTotal: { type: string, nullable: true, description: "Authoritative Stripe payout gross total." }
@@ -9210,15 +9234,21 @@ components:
           type: array
           items:
             type: object
-            required: [componentId, paymentUnitId, amount, kind, needsReview, ambiguousDepositMatch]
+            required: [componentId, amount, kind, needsReview, ambiguousDepositMatch]
             properties:
               componentId: { type: string }
-              paymentUnitId: { type: string }
+              paymentUnitId: { type: string, nullable: true }
               amount: { type: string }
               kind: { type: string, enum: [check, direct_ach, wire, other, stripe_charge] }
               needsReview: { type: boolean }
               ambiguousDepositMatch: { type: boolean }
               countedGiftIds: { type: array, items: { type: string } }
+              unconfirmed: { type: boolean, description: "True for a provisional QBO accounting-plane decomposition row." }
+              source: { type: string, enum: [bank_spine, qbo_provisional] }
+              stagedPaymentId: { type: string, nullable: true }
+              label: { type: string, nullable: true }
+              exclusionReason: { type: string, nullable: true }
+              matchBasis: { type: string, enum: [deposit_header_exact, deposit_header_ambiguous], nullable: true }
         units:
           type: array
           items:
@@ -9283,6 +9313,7 @@ components:
         accountingChecks:
           type: array
           items: { $ref: "#/components/schemas/WorkbenchDepositAccountingCheck" }
+        notFundraisingReason: { type: string, nullable: true, description: "Representative staged-payment exclusion reason when every non-Stripe QBO line tied to this deposit is excluded." }
         coverage: { $ref: "#/components/schemas/WorkbenchClusterCoverage" }
     WorkbenchDepositCharge:
       allOf:
@@ -9310,6 +9341,16 @@ components:
             entityId: { type: string, nullable: true }
             qbPayerType: { type: string, nullable: true }
             exclusionReason: { type: string, nullable: true }
+            depositQboComponentId: { type: string, nullable: true }
+            unconfirmed: { type: boolean, nullable: true }
+            source: { type: string, enum: [bank_spine, qbo_provisional], nullable: true }
+            matchBasis: { type: string, enum: [deposit_header_exact, deposit_header_ambiguous], nullable: true }
+    DepositQboComponentMutationResult:
+      type: object
+      required: [id, confirmed]
+      properties:
+        id: { type: string }
+        confirmed: { type: boolean }
     WorkbenchDepositLensCounts:
       type: object
       required: [all_open, unresolved_composition, ambiguous_pairing, needs_gift, accounting_corrections, refunds, completed, not_fundraising]

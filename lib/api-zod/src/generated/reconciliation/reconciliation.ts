@@ -490,6 +490,27 @@ export const SearchReconciliationPayoutsResponse = zod.object({
 })
 
 /**
+ * Finance/admin review only. Confirmation records accounting review and never promotes the row into the counted bank-spine money model.
+ * @summary Confirm a provisional QBO decomposition row for a bank deposit.
+ */
+export const ConfirmDepositQboComponentParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ConfirmDepositQboComponentResponse = zod.object({
+  "id": zod.string(),
+  "confirmed": zod.boolean()
+})
+
+/**
+ * Finance/admin review only. Deletes the provisional accounting-plane row and never changes the counted bank-spine money model.
+ * @summary Dismiss a provisional QBO decomposition row.
+ */
+export const DismissDepositQboComponentParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+/**
  * Records the Plane-1 payout↔deposit pairing fact
 (staged_payments.settled_stripe_payout_id) for ONE Stripe payout —
 without touching the per-charge → gift booking (Plane 2), which the
@@ -1204,7 +1225,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "memo": zod.string().nullable()
 }),
   "composition": zod.object({
-  "kind": zod.enum(['stripe_payout', 'stripe_unlinked', 'components', 'unresolved']),
+  "kind": zod.enum(['stripe_payout', 'stripe_unlinked', 'components', 'qbo_provisional', 'unresolved']),
   "payoutId": zod.string().nullable(),
   "payoutDate": zod.string().date().nullish().describe('Stripe payout arrival date.'),
   "grossTotal": zod.string().nullish().describe('Authoritative Stripe payout gross total.'),
@@ -1217,12 +1238,18 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "unexplainedAmount": zod.string().describe('Deposit amount not explained by known composition.'),
   "components": zod.array(zod.object({
   "componentId": zod.string(),
-  "paymentUnitId": zod.string(),
+  "paymentUnitId": zod.string().nullish(),
   "amount": zod.string(),
   "kind": zod.enum(['check', 'direct_ach', 'wire', 'other', 'stripe_charge']),
   "needsReview": zod.boolean(),
   "ambiguousDepositMatch": zod.boolean(),
-  "countedGiftIds": zod.array(zod.string()).optional()
+  "countedGiftIds": zod.array(zod.string()).optional(),
+  "unconfirmed": zod.boolean().optional().describe('True for a provisional QBO accounting-plane decomposition row.'),
+  "source": zod.enum(['bank_spine', 'qbo_provisional']).optional(),
+  "stagedPaymentId": zod.string().nullish(),
+  "label": zod.string().nullish(),
+  "exclusionReason": zod.string().nullish(),
+  "matchBasis": zod.enum(['deposit_header_exact', 'deposit_header_ambiguous']).nullish()
 })),
   "units": zod.array(zod.object({
   "paymentUnitId": zod.string(),
@@ -1304,7 +1331,11 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "qbCheckNumber": zod.string().nullish(),
   "entityId": zod.string().nullish(),
   "qbPayerType": zod.string().nullish(),
-  "exclusionReason": zod.string().nullish()
+  "exclusionReason": zod.string().nullish(),
+  "depositQboComponentId": zod.string().nullish(),
+  "unconfirmed": zod.boolean().nullish(),
+  "source": zod.enum(['bank_spine', 'qbo_provisional']).nullish(),
+  "matchBasis": zod.enum(['deposit_header_exact', 'deposit_header_ambiguous']).nullish()
 }))),
   "accountingChecks": zod.array(zod.object({
   "id": zod.string(),
@@ -1328,6 +1359,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "qbDepositId": zod.string().nullish(),
   "exclusionReason": zod.string().nullish()
 })),
+  "notFundraisingReason": zod.string().nullish().describe('Representative staged-payment exclusion reason when every non-Stripe QBO line tied to this deposit is excluded.'),
   "coverage": zod.object({
   "evidenceRecords": zod.array(zod.object({
   "id": zod.string().describe('External record id: stripe_staged_charges.id (ch_…), staged_payments.id, etc.'),

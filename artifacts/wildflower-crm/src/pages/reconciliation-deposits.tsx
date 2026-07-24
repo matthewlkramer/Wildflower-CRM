@@ -10,10 +10,12 @@ import {
   getGetGiftOrPaymentQueryKey,
   getGetGiftOrPaymentQueryOptions,
   useConfirmSettlementLink,
+  useConfirmDepositQboComponent,
   useConfirmStripeRefundPropagation,
   useCreateGiftFromStagedPayment,
   useCreateGiftFromStripeStagedCharge,
   useDismissStripeRefundPropagation,
+  useDismissDepositQboComponent,
   useExcludeStagedPayment,
   useExcludeStripeStagedCharge,
   useGetCurrentUser,
@@ -87,6 +89,8 @@ export default function ReconciliationDepositsPage() {
   const confirmRefund = useConfirmStripeRefundPropagation();
   const dismissRefund = useDismissStripeRefundPropagation();
   const confirmSettlement = useConfirmSettlementLink();
+  const confirmDepositQbo = useConfirmDepositQboComponent();
+  const dismissDepositQbo = useDismissDepositQboComponent();
   const deposits = data?.data ?? [];
   const canManageAccounting = data?.viewerCanManageAccounting ?? false;
   const total = data?.pagination.total ?? 0;
@@ -105,7 +109,7 @@ export default function ReconciliationDepositsPage() {
   const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
   const mergeQueries = useQueries({ queries: mergeGiftIds.map((id) => getGetGiftOrPaymentQueryOptions(id, { query: { enabled: mergeGiftIds.length > 0, queryKey: getGetGiftOrPaymentQueryKey(id) } })) });
   const mergeRecords = useMemo<GiftOrPaymentDetail[]>(() => mergeQueries.map((query) => query.data).filter((record): record is GiftOrPaymentDetail => !!record), [mergeQueries]);
-  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending;
+  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: getListWorkbenchDepositsQueryKey() });
@@ -214,7 +218,7 @@ export default function ReconciliationDepositsPage() {
           {isLoading ? <p className="py-8 text-center text-sm text-muted-foreground">Loading deposits…</p> : isError ? <p className="py-8 text-center text-sm text-destructive">Failed to load the deposit list.</p> : deposits.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">{q ? "No deposits match this search." : "Nothing in this lens right now."}</p> : (
             <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
               <DepositGridHeader />
-              {deposits.map((deposit) => <DepositRow key={deposit.id} deposit={deposit} actions={actions} expanded={expanded.has(deposit.id)} onToggle={() => toggleExpanded(deposit.id)} />)}
+              {deposits.map((deposit) => <DepositRow key={deposit.id} deposit={deposit} actions={actions} expanded={expanded.has(deposit.id)} onToggle={() => toggleExpanded(deposit.id)} onConfirmProvisional={(id) => void confirmDepositQbo.mutateAsync({ id }).then(invalidate)} onDismissProvisional={(id) => void dismissDepositQbo.mutateAsync({ id }).then(invalidate)} />)}
             </div>
           )}
           {totalPages > 1 ? <div className="flex items-center justify-center gap-3 pt-2">

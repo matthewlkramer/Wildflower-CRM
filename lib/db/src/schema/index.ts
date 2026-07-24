@@ -64,6 +64,7 @@ export * from "./bankTransactions";
 export * from "./bankDeposits";
 export * from "./paymentUnits";
 export * from "./bankDepositComponents";
+export * from "./depositQboComponents";
 export * from "./qboAccountingChecks";
 export * from "./connectionEnthusiasmHistory";
 export * from "./grantLeads";

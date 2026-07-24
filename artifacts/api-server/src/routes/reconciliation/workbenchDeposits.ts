@@ -2,7 +2,8 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { asyncHandler, parsePagination } from "../../lib/helpers";
-import { viewerCanManageAccounting } from "../../lib/financeGuard";
+import { getAppUser } from "../../lib/appRequest";
+import { requireFinance, viewerCanManageAccounting } from "../../lib/financeGuard";
 import { getViewer, maskName } from "../../lib/identityVisibility";
 import {
   informationStateOf,
@@ -71,15 +72,23 @@ type DepositRow = {
   payout_refund_total: string | null;
   payout_adjustment: string | null;
   payout_charge_count: number | null;
+  not_fundraising_reason: string | null;
   components: Array<{
     componentId: string;
-    paymentUnitId: string;
+    paymentUnitId: string | null;
     amount: string;
     kind: string;
     needsReview: boolean;
     ambiguousDepositMatch: boolean;
     countedGiftIds: string[];
+    unconfirmed?: boolean;
+    source?: "bank_spine" | "qbo_provisional";
+    stagedPaymentId?: string | null;
+    label?: string | null;
+    exclusionReason?: string | null;
+    matchBasis?: "deposit_header_exact" | "deposit_header_ambiguous" | null;
   }>;
+  provisional_components: DepositRow["components"];
   units: Array<{
     paymentUnitId: string;
     kind: string;
@@ -129,6 +138,7 @@ function stateForDeposit(
   units: DepositRow["units"],
   gifts: DepositRow["gifts"],
   checks: DepositRow["accounting_checks"],
+  qbRecords: DepositRow["qb_records"],
 ): WorkbenchRowState {
   const hasPayout = Boolean((row as SlimRow & { payout_id?: string | null }).payout_id);
   const hasUnits = units.length > 0;
@@ -176,7 +186,7 @@ function stateForDeposit(
     linkage: {
       state: complete || allUnitsBooked ? "complete" : hasUnits ? "partial" : "missing",
       accountingToTransaction: {
-        state: hasPayout || checks.length > 0 ? "complete" : hasUnits ? "partial" : "missing",
+        state: hasPayout || checks.length > 0 || qbRecords.length > 0 ? "complete" : hasUnits ? "partial" : "missing",
         grain: hasPayout ? "bundle" : hasUnits ? "unit" : "none",
         relationshipCount: hasPayout ? 1 : checks.length,
       },
@@ -194,13 +204,13 @@ function stateForDeposit(
     information: {
       state: informationStateOf({
         crmComplete,
-        qbEvidenceComplete: hasPayout || checks.length > 0 || hasUnits,
+        qbEvidenceComplete: hasPayout || checks.length > 0 || qbRecords.length > 0 || hasUnits,
         qbDocumented: complete,
         attentionRequired: correction,
       }),
       crmComplete,
       qbComplete: complete,
-      qbEvidenceComplete: hasPayout || checks.length > 0 || hasUnits,
+      qbEvidenceComplete: hasPayout || checks.length > 0 || qbRecords.length > 0 || hasUnits,
     },
     flags: {
       excluded: row.f_not_fundraising,
@@ -323,7 +333,46 @@ function buildUniverse(q: string | null) {
         )
       ) AS f_completed,
       (
-        COALESCE(d.memo, '') ~* '\\m(loan|interest)\\M'
+        (
+          COALESCE(d.memo, '') ~* '\\m(loan|interest)\\M'
+          OR (
+            EXISTS (
+              SELECT 1
+              FROM (
+                SELECT qsp.id, qsp.exclusion_reason
+                FROM deposit_qbo_components dqc
+                JOIN staged_payments qsp ON qsp.id = dqc.staged_payment_id
+                WHERE dqc.bank_deposit_id = d.id
+                  AND (qsp.funding_source IS NULL OR qsp.funding_source <> 'stripe')
+                UNION
+                SELECT rsp.id, rsp.exclusion_reason
+                FROM bank_deposit_components rbc
+                JOIN payment_units rpu ON rpu.id = rbc.payment_unit_id
+                JOIN staged_payments rsp ON rsp.id = rpu.source_staged_payment_id
+                WHERE rbc.bank_deposit_id = d.id
+                  AND (rsp.funding_source IS NULL OR rsp.funding_source <> 'stripe')
+              ) qbo_lines
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM (
+                SELECT qsp.id, qsp.exclusion_reason
+                FROM deposit_qbo_components dqc
+                JOIN staged_payments qsp ON qsp.id = dqc.staged_payment_id
+                WHERE dqc.bank_deposit_id = d.id
+                  AND (qsp.funding_source IS NULL OR qsp.funding_source <> 'stripe')
+                UNION
+                SELECT rsp.id, rsp.exclusion_reason
+                FROM bank_deposit_components rbc
+                JOIN payment_units rpu ON rpu.id = rbc.payment_unit_id
+                JOIN staged_payments rsp ON rsp.id = rpu.source_staged_payment_id
+                WHERE rbc.bank_deposit_id = d.id
+                  AND (rsp.funding_source IS NULL OR rsp.funding_source <> 'stripe')
+              ) qbo_lines
+              WHERE qbo_lines.exclusion_reason IS NULL
+            )
+          )
+        )
         AND COALESCE(d.memo, '') !~* 'transfer[[:space:]]+from[[:space:]]+(brk|brokerage)'
       ) AS f_not_fundraising
     FROM bank_deposits d
@@ -411,6 +460,27 @@ router.get(
         p.refund_total::text AS payout_refund_total,
         p.adjustment_total::text AS payout_adjustment,
         p.charge_count AS payout_charge_count,
+        (
+          SELECT qbo_lines.exclusion_reason
+          FROM (
+            SELECT qsp.exclusion_reason
+            FROM deposit_qbo_components dqc
+            JOIN staged_payments qsp ON qsp.id = dqc.staged_payment_id
+            WHERE dqc.bank_deposit_id = d.id
+              AND (qsp.funding_source IS NULL OR qsp.funding_source <> 'stripe')
+            UNION ALL
+            SELECT rsp.exclusion_reason
+            FROM bank_deposit_components rbc
+            JOIN payment_units rpu ON rpu.id = rbc.payment_unit_id
+            JOIN staged_payments rsp ON rsp.id = rpu.source_staged_payment_id
+            WHERE rbc.bank_deposit_id = d.id
+              AND (rsp.funding_source IS NULL OR rsp.funding_source <> 'stripe')
+          ) qbo_lines
+          WHERE qbo_lines.exclusion_reason IS NOT NULL
+          GROUP BY qbo_lines.exclusion_reason
+          ORDER BY count(*) DESC, qbo_lines.exclusion_reason
+          LIMIT 1
+        ) AS not_fundraising_reason,
         COALESCE((
           SELECT bool_or(ch.raw_charge->>'status' = 'succeeded' AND ch.refund_propagation_status = 'proposed')
           FROM stripe_staged_charges ch WHERE ch.stripe_payout_id = p.id
@@ -420,6 +490,8 @@ router.get(
             'componentId', c.id, 'paymentUnitId', u.id, 'amount', c.amount::text,
             'kind', u.kind, 'needsReview', c.needs_review,
             'ambiguousDepositMatch', c.ambiguous_deposit_match,
+            'unconfirmed', false, 'source', 'bank_spine',
+            'stagedPaymentId', u.source_staged_payment_id,
             'countedGiftIds', COALESCE((
               SELECT jsonb_agg(pa.gift_id) FROM payment_applications pa
               WHERE pa.payment_unit_id = u.id AND pa.link_role = 'counted' AND pa.lifecycle = 'confirmed'
@@ -428,6 +500,29 @@ router.get(
           FROM bank_deposit_components c JOIN payment_units u ON u.id = c.payment_unit_id
           WHERE c.bank_deposit_id = d.id
         ), '[]'::jsonb) AS components,
+        COALESCE((
+          SELECT jsonb_agg(jsonb_build_object(
+            'componentId', dqc.id, 'paymentUnitId', NULL,
+            'amount', dqc.amount::text,
+            'kind', CASE
+              WHEN sp.qb_check_number IS NOT NULL OR sp.qb_payment_method ILIKE '%check%' THEN 'check'
+              WHEN sp.qb_payment_method ILIKE '%wire%' THEN 'wire'
+              WHEN sp.funding_source = 'wire_ach' THEN 'direct_ach'
+              ELSE 'other'
+            END,
+            'needsReview', dqc.match_basis = 'deposit_header_ambiguous',
+            'ambiguousDepositMatch', dqc.match_basis = 'deposit_header_ambiguous',
+            'unconfirmed', NOT dqc.confirmed, 'source', 'qbo_provisional',
+            'stagedPaymentId', sp.id,
+            'label', COALESCE(sp.payer_name, sp.qb_transaction_memo, sp.line_description, sp.raw_reference, sp.id),
+            'exclusionReason', sp.exclusion_reason,
+            'matchBasis', dqc.match_basis,
+            'countedGiftIds', '[]'::jsonb
+          ) ORDER BY dqc.id)
+          FROM deposit_qbo_components dqc
+          JOIN staged_payments sp ON sp.id = dqc.staged_payment_id
+          WHERE dqc.bank_deposit_id = d.id
+        ), '[]'::jsonb) AS provisional_components,
         COALESCE((
           SELECT jsonb_agg(jsonb_build_object(
             'paymentUnitId', u.id, 'kind', u.kind, 'amount', COALESCE(u.gross_amount, u.net_amount)::text,
@@ -506,7 +601,8 @@ router.get(
               'qbCheckNumber', sp.qb_check_number, 'entityId', sp.entity_id,
               'qbPayerType', sp.qb_payer_type, 'qbEntityType', sp.qb_entity_type,
               'qbEntityId', sp.qb_entity_id, 'qbDepositId', sp.qb_deposit_id,
-              'exclusionReason', sp.exclusion_reason
+              'exclusionReason', sp.exclusion_reason,
+              'unconfirmed', false, 'source', 'bank_spine'
             ) AS item
             FROM payment_units qu JOIN bank_deposit_components qc ON qc.payment_unit_id = qu.id
             JOIN staged_payments sp ON sp.id = qu.source_staged_payment_id
@@ -522,11 +618,30 @@ router.get(
               'qbCheckNumber', psp.qb_check_number, 'entityId', psp.entity_id,
               'qbPayerType', psp.qb_payer_type, 'qbEntityType', psp.qb_entity_type,
               'qbEntityId', psp.qb_entity_id, 'qbDepositId', psp.qb_deposit_id,
-              'exclusionReason', psp.exclusion_reason
+              'exclusionReason', psp.exclusion_reason,
+              'unconfirmed', false, 'source', 'bank_spine'
             ) AS item
             FROM staged_payments psp
             JOIN stripe_payouts pp ON pp.id = psp.settled_stripe_payout_id
             WHERE pp.bank_deposit_id = d.id
+            UNION ALL
+            SELECT jsonb_build_object(
+              'stagedPaymentId', qsp.id, 'role', 'component', 'reference', qsp.raw_reference,
+              'lineDescription', qsp.line_description, 'memo', qsp.qb_transaction_memo,
+              'amount', qsp.amount::text, 'dateReceived', qsp.date_received::text,
+              'paymentMethod', qsp.qb_payment_method, 'payerName', qsp.payer_name,
+              'qbTransactionMemo', qsp.qb_transaction_memo, 'qbLocation', qsp.qb_location,
+              'revenueLocation', qsp.revenue_location, 'qbDocNumber', qsp.qb_doc_number,
+              'qbCheckNumber', qsp.qb_check_number, 'entityId', qsp.entity_id,
+              'qbPayerType', qsp.qb_payer_type, 'qbEntityType', qsp.qb_entity_type,
+              'qbEntityId', qsp.qb_entity_id, 'qbDepositId', qsp.qb_deposit_id,
+              'exclusionReason', qsp.exclusion_reason,
+              'depositQboComponentId', dqc.id, 'unconfirmed', NOT dqc.confirmed,
+              'source', 'qbo_provisional', 'matchBasis', dqc.match_basis
+            ) AS item
+            FROM deposit_qbo_components dqc
+            JOIN staged_payments qsp ON qsp.id = dqc.staged_payment_id
+            WHERE dqc.bank_deposit_id = d.id
           ) records
         ), '[]'::jsonb) AS qb_records,
         COALESCE((
@@ -590,6 +705,7 @@ router.get(
         r.units,
         gifts,
         r.accounting_checks,
+        r.qb_records,
       );
       const lenses = depositLenses(s, state, s);
       return [{
@@ -613,7 +729,11 @@ router.get(
             ? "stripe_payout"
             : s.f_ambiguous && /stripe\s+transfer/i.test(r.memo ?? "")
               ? "stripe_unlinked"
-              : r.components.length ? "components" : "unresolved",
+              : r.components.length
+                ? "components"
+                : r.provisional_components.length
+                  ? "qbo_provisional"
+                  : "unresolved",
           payoutId: r.payout_id,
           payoutDate: r.payout_date,
           grossTotal: r.payout_gross,
@@ -622,15 +742,20 @@ router.get(
           adjustmentTotal: r.payout_adjustment,
           netTotal: r.payout_net,
           chargeCount: r.payout_charge_count,
-          explainedAmount: r.payout_id ? r.amount : r.components.reduce((sum, c) => sum + amount(c.amount), 0).toFixed(2),
-          unexplainedAmount: r.payout_id ? "0.00" : Math.max(0, amount(r.amount) - r.components.reduce((sum, c) => sum + amount(c.amount), 0)).toFixed(2),
-          components: r.components,
+          explainedAmount: r.payout_id
+            ? r.amount
+            : [...r.components, ...r.provisional_components].reduce((sum, c) => sum + amount(c.amount), 0).toFixed(2),
+          unexplainedAmount: r.payout_id
+            ? "0.00"
+            : Math.max(0, amount(r.amount) - [...r.components, ...r.provisional_components].reduce((sum, c) => sum + amount(c.amount), 0)).toFixed(2),
+          components: [...r.components, ...r.provisional_components],
           units: r.units,
         },
         gifts,
         charges: r.charges,
         qbRecords: r.qb_records,
         accountingChecks: r.accounting_checks,
+        notFundraisingReason: r.not_fundraising_reason,
         coverage: {
           evidenceRecords: [],
           donorPurpose: {
@@ -704,6 +829,50 @@ router.get(
       pagination: { page, limit, total: counts[lens] ?? 0 },
       viewerCanManageAccounting: viewerCanManageAccounting(req),
     });
+  }),
+);
+
+router.post(
+  "/reconciliation/deposit-qbo-components/:id/confirm",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const result = await db.execute(sql`
+      UPDATE deposit_qbo_components
+      SET confirmed = true,
+          confirmed_by_user_id = ${user.id},
+          confirmed_at = now(),
+          updated_at = now()
+      WHERE id = ${req.params.id}
+      RETURNING id, confirmed
+    `);
+    const row = (result.rows as Array<{ id: string; confirmed: boolean }>)[0];
+    if (!row) {
+      res.status(404).json({ error: "not_found", message: "Provisional QBO component not found." });
+      return;
+    }
+    res.json(row);
+  }),
+);
+
+router.delete(
+  "/reconciliation/deposit-qbo-components/:id",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const result = await db.execute(sql`
+      DELETE FROM deposit_qbo_components
+      WHERE id = ${req.params.id}
+      RETURNING id
+    `);
+    if (!result.rows.length) {
+      res.status(404).json({ error: "not_found", message: "Provisional QBO component not found." });
+      return;
+    }
+    res.status(204).send();
   }),
 );
 

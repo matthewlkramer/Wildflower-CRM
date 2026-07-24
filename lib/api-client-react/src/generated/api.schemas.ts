@@ -5865,6 +5865,7 @@ export const WorkbenchDepositCompositionKind = {
   stripe_payout: 'stripe_payout',
   stripe_unlinked: 'stripe_unlinked',
   components: 'components',
+  qbo_provisional: 'qbo_provisional',
   unresolved: 'unresolved',
 } as const;
 
@@ -5879,14 +5880,37 @@ export const WorkbenchDepositCompositionComponentsItemKind = {
   stripe_charge: 'stripe_charge',
 } as const;
 
+export type WorkbenchDepositCompositionComponentsItemSource = typeof WorkbenchDepositCompositionComponentsItemSource[keyof typeof WorkbenchDepositCompositionComponentsItemSource];
+
+
+export const WorkbenchDepositCompositionComponentsItemSource = {
+  bank_spine: 'bank_spine',
+  qbo_provisional: 'qbo_provisional',
+} as const;
+
+export type WorkbenchDepositCompositionComponentsItemMatchBasis = typeof WorkbenchDepositCompositionComponentsItemMatchBasis[keyof typeof WorkbenchDepositCompositionComponentsItemMatchBasis] | null;
+
+
+export const WorkbenchDepositCompositionComponentsItemMatchBasis = {
+  deposit_header_exact: 'deposit_header_exact',
+  deposit_header_ambiguous: 'deposit_header_ambiguous',
+} as const;
+
 export type WorkbenchDepositCompositionComponentsItem = {
   componentId: string;
-  paymentUnitId: string;
+  paymentUnitId?: string | null;
   amount: string;
   kind: WorkbenchDepositCompositionComponentsItemKind;
   needsReview: boolean;
   ambiguousDepositMatch: boolean;
   countedGiftIds?: string[];
+  /** True for a provisional QBO accounting-plane decomposition row. */
+  unconfirmed?: boolean;
+  source?: WorkbenchDepositCompositionComponentsItemSource;
+  stagedPaymentId?: string | null;
+  label?: string | null;
+  exclusionReason?: string | null;
+  matchBasis?: WorkbenchDepositCompositionComponentsItemMatchBasis;
 };
 
 export type WorkbenchDepositCompositionUnitsItemKind = typeof WorkbenchDepositCompositionUnitsItemKind[keyof typeof WorkbenchDepositCompositionUnitsItemKind];
@@ -6000,6 +6024,22 @@ export type WorkbenchDepositCharge = WorkbenchClusterCharge & ({
   captured?: boolean | null;
 });
 
+export type WorkbenchDepositQbRecordSource = typeof WorkbenchDepositQbRecordSource[keyof typeof WorkbenchDepositQbRecordSource] | null;
+
+
+export const WorkbenchDepositQbRecordSource = {
+  bank_spine: 'bank_spine',
+  qbo_provisional: 'qbo_provisional',
+} as const;
+
+export type WorkbenchDepositQbRecordMatchBasis = typeof WorkbenchDepositQbRecordMatchBasis[keyof typeof WorkbenchDepositQbRecordMatchBasis] | null;
+
+
+export const WorkbenchDepositQbRecordMatchBasis = {
+  deposit_header_exact: 'deposit_header_exact',
+  deposit_header_ambiguous: 'deposit_header_ambiguous',
+} as const;
+
 export type WorkbenchDepositQbRecord = WorkbenchClusterQbRecord & ({
   qbTransactionMemo?: string | null;
   qbLocation?: string | null;
@@ -6009,6 +6049,10 @@ export type WorkbenchDepositQbRecord = WorkbenchClusterQbRecord & ({
   entityId?: string | null;
   qbPayerType?: string | null;
   exclusionReason?: string | null;
+  depositQboComponentId?: string | null;
+  unconfirmed?: boolean | null;
+  source?: WorkbenchDepositQbRecordSource;
+  matchBasis?: WorkbenchDepositQbRecordMatchBasis;
 });
 
 export interface WorkbenchDeposit {
@@ -6028,7 +6072,14 @@ export interface WorkbenchDeposit {
   charges: WorkbenchDepositCharge[];
   qbRecords: WorkbenchDepositQbRecord[];
   accountingChecks: WorkbenchDepositAccountingCheck[];
+  /** Representative staged-payment exclusion reason when every non-Stripe QBO line tied to this deposit is excluded. */
+  notFundraisingReason?: string | null;
   coverage: WorkbenchClusterCoverage;
+}
+
+export interface DepositQboComponentMutationResult {
+  id: string;
+  confirmed: boolean;
 }
 
 export interface WorkbenchDepositLensCounts {
