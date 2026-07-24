@@ -1204,8 +1204,15 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "memo": zod.string().nullable()
 }),
   "composition": zod.object({
-  "kind": zod.enum(['stripe_payout', 'components', 'unresolved']),
+  "kind": zod.enum(['stripe_payout', 'stripe_unlinked', 'components', 'unresolved']),
   "payoutId": zod.string().nullable(),
+  "payoutDate": zod.string().date().nullish().describe('Stripe payout arrival date.'),
+  "grossTotal": zod.string().nullish().describe('Authoritative Stripe payout gross total.'),
+  "feeTotal": zod.string().nullish().describe('Authoritative Stripe payout processor-fee total.'),
+  "refundTotal": zod.string().nullish().describe('Authoritative Stripe payout refund total.'),
+  "adjustmentTotal": zod.string().nullish().describe('Authoritative Stripe payout adjustment total.'),
+  "netTotal": zod.string().nullish().describe('Authoritative Stripe payout net total; gross − fees − refunds + adjustments.'),
+  "chargeCount": zod.number().nullish().describe('Total charges behind the payout.'),
   "explainedAmount": zod.string().describe('Amount explained by the authoritative payout or component rows.'),
   "unexplainedAmount": zod.string().describe('Deposit amount not explained by known composition.'),
   "components": zod.array(zod.object({
@@ -1260,7 +1267,16 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "donorId": zod.string(),
   "donorName": zod.string().nullish()
 }).nullish().describe('Donor identified on this specific charge via the Identify action. Null when no donor has been identified on this charge.')
-}).describe('One Stripe charge in the cluster\'s payment-evidence facet. Per-charge status\/exclusion\/refund state is NOT carried here — read the matching coverage.state.transactions entry (keyed by chargeId), the one source of truth.')),
+}).describe('One Stripe charge in the cluster\'s payment-evidence facet. Per-charge status\/exclusion\/refund state is NOT carried here — read the matching coverage.state.transactions entry (keyed by chargeId), the one source of truth.').and(zod.object({
+  "refunded": zod.boolean().nullish(),
+  "amountRefunded": zod.string().nullish(),
+  "refundPropagationStatus": zod.string().nullish(),
+  "refundPropagationKind": zod.string().nullish(),
+  "refundProposedAmount": zod.string().nullish(),
+  "exclusionReason": zod.string().nullish(),
+  "status": zod.string().nullish().describe('Imported Stripe charge status from raw_charge.status.'),
+  "captured": zod.boolean().nullish().describe('Imported Stripe captured flag from raw_charge.captured.')
+}))),
   "qbRecords": zod.array(zod.object({
   "stagedPaymentId": zod.string().describe('staged_payments.id'),
   "role": zod.enum(['anchor', 'deposit', 'fee', 'charge_tie']).describe('How the row participates: anchor = the qb_standalone cluster\'s own row; deposit = the payout\'s settlement-linked deposit lump; fee = a processor-fee row linked via a charge; charge_tie = a per-charge QB tie.'),
@@ -1280,14 +1296,37 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "donorId": zod.string(),
   "donorName": zod.string().nullish()
 }).nullish().describe('Donor identified on this specific QB row via the Identify action. Present for anchor\/deposit roles when a donor has been identified; null otherwise.')
-}).describe('One QuickBooks staged row in the cluster\'s bank-and-accounting facet. Per-record linkage state is NOT carried here — read the matching coverage.state.qbCards entry (keyed by stagedPaymentId), the one source of truth.')),
+}).describe('One QuickBooks staged row in the cluster\'s bank-and-accounting facet. Per-record linkage state is NOT carried here — read the matching coverage.state.qbCards entry (keyed by stagedPaymentId), the one source of truth.').and(zod.object({
+  "qbTransactionMemo": zod.string().nullish(),
+  "qbLocation": zod.string().nullish(),
+  "revenueLocation": zod.string().nullish(),
+  "qbDocNumber": zod.string().nullish(),
+  "qbCheckNumber": zod.string().nullish(),
+  "entityId": zod.string().nullish(),
+  "qbPayerType": zod.string().nullish(),
+  "exclusionReason": zod.string().nullish()
+}))),
   "accountingChecks": zod.array(zod.object({
   "id": zod.string(),
   "stagedPaymentId": zod.string(),
   "disposition": zod.enum(['consistent', 'correction_needed', 'corrected', 'accepted_historical']),
   "expected": zod.record(zod.string(), zod.unknown()).nullish(),
   "actual": zod.record(zod.string(), zod.unknown()).nullish(),
-  "note": zod.string().nullish()
+  "note": zod.string().nullish(),
+  "dateReceived": zod.string().date().nullish(),
+  "amount": zod.string().nullish(),
+  "qbTransactionMemo": zod.string().nullish(),
+  "lineDescription": zod.string().nullish(),
+  "qbLocation": zod.string().nullish(),
+  "revenueLocation": zod.string().nullish(),
+  "qbDocNumber": zod.string().nullish(),
+  "qbCheckNumber": zod.string().nullish(),
+  "payerName": zod.string().nullish(),
+  "qbPayerType": zod.string().nullish(),
+  "entityId": zod.string().nullish(),
+  "qbEntityType": zod.string().nullish(),
+  "qbDepositId": zod.string().nullish(),
+  "exclusionReason": zod.string().nullish()
 })),
   "coverage": zod.object({
   "evidenceRecords": zod.array(zod.object({

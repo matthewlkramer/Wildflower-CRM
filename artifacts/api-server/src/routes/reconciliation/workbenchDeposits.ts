@@ -65,6 +65,12 @@ type DepositRow = {
   payout_ambiguous: boolean;
   payout_refund: boolean;
   payout_net: string | null;
+  payout_date: string | null;
+  payout_gross: string | null;
+  payout_fee: string | null;
+  payout_refund_total: string | null;
+  payout_adjustment: string | null;
+  payout_charge_count: number | null;
   components: Array<{
     componentId: string;
     paymentUnitId: string;
@@ -240,18 +246,20 @@ function buildUniverse(q: string | null) {
       d.id,
       d.deposit_date AS anchor_date,
       (
-        p.id IS NULL AND (
+        p.id IS NULL AND NOT (COALESCE(d.memo, '') ~* 'stripe[[:space:]]+transfer') AND (
           count(c.id) = 0 OR abs(COALESCE(sum(c.amount), 0) - d.amount) >= 0.005
         )
       ) AS f_unresolved,
       (
         COALESCE(p.ambiguous_bank_match, false) OR
+        (p.id IS NULL AND COALESCE(d.memo, '') ~* 'stripe[[:space:]]+transfer') OR
         COALESCE(bool_or(c.needs_review OR c.ambiguous_deposit_match), false)
       ) AS f_ambiguous,
       (
         EXISTS (
           SELECT 1 FROM stripe_staged_charges pc
           WHERE pc.stripe_payout_id = p.id
+            AND pc.raw_charge->>'status' = 'succeeded'
             AND NOT EXISTS (
               SELECT 1 FROM payment_applications ppa
               WHERE ppa.stripe_charge_id = pc.id
@@ -284,6 +292,7 @@ function buildUniverse(q: string | null) {
         SELECT 1 FROM stripe_payouts rp
         JOIN stripe_staged_charges rc ON rc.stripe_payout_id = rp.id
         WHERE rp.bank_deposit_id = d.id
+          AND rc.raw_charge->>'status' = 'succeeded'
           AND rc.refund_propagation_status = 'proposed'
       ) AS f_refund,
       (
@@ -395,9 +404,15 @@ router.get(
       SELECT
         d.id, d.deposit_date, d.amount, d.currency, d.account, d.location, d.reference, d.memo,
         p.id AS payout_id, COALESCE(p.ambiguous_bank_match, false) AS payout_ambiguous,
-        COALESCE(p.net_total, p.amount)::text AS payout_net,
+        p.net_total::text AS payout_net,
+        p.arrival_date::text AS payout_date,
+        p.gross_total::text AS payout_gross,
+        p.fee_total::text AS payout_fee,
+        p.refund_total::text AS payout_refund_total,
+        p.adjustment_total::text AS payout_adjustment,
+        p.charge_count AS payout_charge_count,
         COALESCE((
-          SELECT bool_or(ch.refund_propagation_status = 'proposed')
+          SELECT bool_or(ch.raw_charge->>'status' = 'succeeded' AND ch.refund_propagation_status = 'proposed')
           FROM stripe_staged_charges ch WHERE ch.stripe_payout_id = p.id
         ), false) AS payout_refund,
         COALESCE((
@@ -453,7 +468,7 @@ router.get(
           LEFT JOIN people p2 ON p2.id = g.individual_giver_person_id
           WHERE pa.link_role = 'counted' AND pa.lifecycle = 'confirmed' AND (
             pa.payment_unit_id IN (SELECT c2.payment_unit_id FROM bank_deposit_components c2 WHERE c2.bank_deposit_id = d.id)
-            OR pa.stripe_charge_id IN (SELECT ch2.id FROM stripe_staged_charges ch2 WHERE ch2.stripe_payout_id = p.id)
+            OR pa.stripe_charge_id IN (SELECT ch2.id FROM stripe_staged_charges ch2 WHERE ch2.stripe_payout_id = p.id AND ch2.raw_charge->>'status' = 'succeeded')
           )
           AND g.archived_at IS NULL
         ), '[]'::jsonb) AS gifts,
@@ -462,9 +477,21 @@ router.get(
             'chargeId', ch.id, 'payerName', ch.payer_name, 'cardBrand', ch.card_brand,
             'description', ch.description, 'statementDescriptor', ch.statement_descriptor,
             'amount', ch.gross_amount::text, 'feeAmount', ch.fee_amount::text,
-            'netAmount', ch.net_amount::text, 'chargeDate', ch.date_received::text
+            'netAmount', ch.net_amount::text, 'chargeDate', ch.date_received::text,
+            'linkedGiftId', (SELECT pa.gift_id FROM payment_applications pa
+              WHERE pa.stripe_charge_id = ch.id AND pa.link_role = 'counted'
+                AND pa.lifecycle = 'confirmed' LIMIT 1),
+            'refunded', ch.refunded, 'amountRefunded', ch.amount_refunded::text,
+            'refundPropagationStatus', ch.refund_propagation_status,
+            'refundPropagationKind', ch.refund_propagation_kind,
+            'refundProposedAmount', ch.refund_proposed_amount::text,
+            'refundKind', CASE WHEN ch.refund_propagation_status = 'proposed' THEN ch.refund_propagation_kind END,
+            'exclusionReason', ch.exclusion_reason,
+            'status', ch.raw_charge->>'status',
+            'captured', (ch.raw_charge->>'captured')::boolean
           ) ORDER BY ch.gross_amount DESC)
-          FROM stripe_staged_charges ch WHERE ch.stripe_payout_id = p.id
+          FROM stripe_staged_charges ch
+          WHERE ch.stripe_payout_id = p.id AND ch.raw_charge->>'status' = 'succeeded'
         ), '[]'::jsonb) AS charges,
         COALESCE((
           SELECT jsonb_agg(item ORDER BY item->>'stagedPaymentId')
@@ -473,7 +500,13 @@ router.get(
               'stagedPaymentId', sp.id, 'role', 'component', 'reference', sp.raw_reference,
               'lineDescription', sp.line_description, 'memo', sp.qb_transaction_memo,
               'amount', sp.amount::text, 'dateReceived', sp.date_received::text,
-              'paymentMethod', sp.qb_payment_method, 'payerName', sp.payer_name
+              'paymentMethod', sp.qb_payment_method, 'payerName', sp.payer_name,
+              'qbTransactionMemo', sp.qb_transaction_memo, 'qbLocation', sp.qb_location,
+              'revenueLocation', sp.revenue_location, 'qbDocNumber', sp.qb_doc_number,
+              'qbCheckNumber', sp.qb_check_number, 'entityId', sp.entity_id,
+              'qbPayerType', sp.qb_payer_type, 'qbEntityType', sp.qb_entity_type,
+              'qbEntityId', sp.qb_entity_id, 'qbDepositId', sp.qb_deposit_id,
+              'exclusionReason', sp.exclusion_reason
             ) AS item
             FROM payment_units qu JOIN bank_deposit_components qc ON qc.payment_unit_id = qu.id
             JOIN staged_payments sp ON sp.id = qu.source_staged_payment_id
@@ -483,7 +516,13 @@ router.get(
               'stagedPaymentId', psp.id, 'role', 'deposit', 'reference', psp.raw_reference,
               'lineDescription', psp.line_description, 'memo', psp.qb_transaction_memo,
               'amount', psp.amount::text, 'dateReceived', psp.date_received::text,
-              'paymentMethod', psp.qb_payment_method, 'payerName', psp.payer_name
+              'paymentMethod', psp.qb_payment_method, 'payerName', psp.payer_name,
+              'qbTransactionMemo', psp.qb_transaction_memo, 'qbLocation', psp.qb_location,
+              'revenueLocation', psp.revenue_location, 'qbDocNumber', psp.qb_doc_number,
+              'qbCheckNumber', psp.qb_check_number, 'entityId', psp.entity_id,
+              'qbPayerType', psp.qb_payer_type, 'qbEntityType', psp.qb_entity_type,
+              'qbEntityId', psp.qb_entity_id, 'qbDepositId', psp.qb_deposit_id,
+              'exclusionReason', psp.exclusion_reason
             ) AS item
             FROM staged_payments psp
             JOIN stripe_payouts pp ON pp.id = psp.settled_stripe_payout_id
@@ -496,9 +535,17 @@ router.get(
             SELECT jsonb_build_object(
               'id', qc.id, 'stagedPaymentId', qc.staged_payment_id,
               'disposition', qc.disposition, 'expected', qc.expected,
-              'actual', qc.actual, 'note', qc.note
+              'actual', qc.actual, 'note', qc.note,
+              'dateReceived', sp.date_received::text, 'amount', sp.amount::text,
+              'qbTransactionMemo', sp.qb_transaction_memo, 'lineDescription', sp.line_description,
+              'qbLocation', sp.qb_location, 'revenueLocation', sp.revenue_location,
+              'qbDocNumber', sp.qb_doc_number, 'qbCheckNumber', sp.qb_check_number,
+              'payerName', sp.payer_name, 'qbPayerType', sp.qb_payer_type,
+              'entityId', sp.entity_id, 'qbEntityType', sp.qb_entity_type,
+              'qbDepositId', sp.qb_deposit_id, 'exclusionReason', sp.exclusion_reason
             ) AS item
             FROM qbo_accounting_checks qc
+            JOIN staged_payments sp ON sp.id = qc.staged_payment_id
             JOIN payment_units qu ON qu.source_staged_payment_id = qc.staged_payment_id
             JOIN bank_deposit_components qdc ON qdc.payment_unit_id = qu.id
             WHERE qdc.bank_deposit_id = d.id
@@ -506,7 +553,14 @@ router.get(
             SELECT jsonb_build_object(
               'id', pqc.id, 'stagedPaymentId', pqc.staged_payment_id,
               'disposition', pqc.disposition, 'expected', pqc.expected,
-              'actual', pqc.actual, 'note', pqc.note
+              'actual', pqc.actual, 'note', pqc.note,
+              'dateReceived', psp.date_received::text, 'amount', psp.amount::text,
+              'qbTransactionMemo', psp.qb_transaction_memo, 'lineDescription', psp.line_description,
+              'qbLocation', psp.qb_location, 'revenueLocation', psp.revenue_location,
+              'qbDocNumber', psp.qb_doc_number, 'qbCheckNumber', psp.qb_check_number,
+              'payerName', psp.payer_name, 'qbPayerType', psp.qb_payer_type,
+              'entityId', psp.entity_id, 'qbEntityType', psp.qb_entity_type,
+              'qbDepositId', psp.qb_deposit_id, 'exclusionReason', psp.exclusion_reason
             ) AS item
             FROM qbo_accounting_checks pqc
             JOIN staged_payments psp ON psp.id = pqc.staged_payment_id
@@ -555,8 +609,19 @@ router.get(
           memo: r.memo,
         },
         composition: {
-          kind: r.payout_id ? "stripe_payout" : r.components.length ? "components" : "unresolved",
+          kind: r.payout_id
+            ? "stripe_payout"
+            : s.f_ambiguous && /stripe\s+transfer/i.test(r.memo ?? "")
+              ? "stripe_unlinked"
+              : r.components.length ? "components" : "unresolved",
           payoutId: r.payout_id,
+          payoutDate: r.payout_date,
+          grossTotal: r.payout_gross,
+          feeTotal: r.payout_fee,
+          refundTotal: r.payout_refund_total,
+          adjustmentTotal: r.payout_adjustment,
+          netTotal: r.payout_net,
+          chargeCount: r.payout_charge_count,
           explainedAmount: r.payout_id ? r.amount : r.components.reduce((sum, c) => sum + amount(c.amount), 0).toFixed(2),
           unexplainedAmount: r.payout_id ? "0.00" : Math.max(0, amount(r.amount) - r.components.reduce((sum, c) => sum + amount(c.amount), 0)).toFixed(2),
           components: r.components,
