@@ -21,8 +21,7 @@ async function filesUnder(root: string): Promise<string[]> {
   for (const entry of dirs) {
     const full = path.join(root, entry.name);
     if (entry.isDirectory()) files.push(...(await filesUnder(full)));
-    else if (/cUsersmatthDownloadsWells_Fargo_\d+\.csv$/.test(entry.name))
-      files.push(full);
+    else if (/Wells_Fargo.*\.csv$/i.test(entry.name)) files.push(full);
   }
   return files.sort();
 }
