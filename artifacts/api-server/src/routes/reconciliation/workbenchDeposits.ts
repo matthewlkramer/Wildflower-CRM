@@ -266,19 +266,27 @@ function depositLenses(
 function buildUniverse(q: string | null) {
   const search = q ? `%${q.replaceAll("%", "\\%").replaceAll("_", "\\_")}%` : null;
   return sql`
-    SELECT
-      d.id,
-      d.deposit_date AS anchor_date,
-      (
-        p.id IS NULL AND NOT (COALESCE(d.memo, '') ~* 'stripe[[:space:]]+transfer') AND (
-          count(c.id) = 0 OR abs(COALESCE(sum(c.amount), 0) - d.amount) >= 0.005
-        )
-      ) AS f_unresolved,
-      (
-        COALESCE(p.ambiguous_bank_match, false) OR
-        (p.id IS NULL AND COALESCE(d.memo, '') ~* 'stripe[[:space:]]+transfer') OR
-        COALESCE(bool_or(c.needs_review OR c.ambiguous_deposit_match), false)
-      ) AS f_ambiguous,
+    SELECT id, anchor_date,
+      (f_unresolved AND NOT f_not_fundraising) AS f_unresolved,
+      (f_ambiguous AND NOT f_not_fundraising) AS f_ambiguous,
+      (f_needs_gift AND NOT f_not_fundraising) AS f_needs_gift,
+      (f_correction AND NOT f_not_fundraising) AS f_correction,
+      f_refund,
+      f_completed,
+      f_not_fundraising
+    FROM (
+      SELECT
+        d.id,
+        d.deposit_date AS anchor_date,
+        (
+          p.id IS NULL AND (
+            count(c.id) = 0 OR abs(COALESCE(sum(c.amount), 0) - d.amount) >= 0.005
+          )
+        ) AS f_unresolved,
+        (
+          COALESCE(p.ambiguous_bank_match, false) OR
+          COALESCE(bool_or(c.needs_review OR c.ambiguous_deposit_match), false)
+        ) AS f_ambiguous,
       (
         EXISTS (
           SELECT 1 FROM stripe_staged_charges pc
@@ -361,7 +369,14 @@ function buildUniverse(q: string | null) {
                 FROM deposit_qbo_components dqc
                 JOIN staged_payments qsp ON qsp.id = dqc.staged_payment_id
                 WHERE dqc.bank_deposit_id = d.id
-                  AND (qsp.funding_source IS NULL OR qsp.funding_source <> 'stripe')
+                  AND (
+                    qsp.funding_source IS NULL
+                    OR qsp.funding_source <> 'stripe'
+                    OR NOT EXISTS (
+                      SELECT 1 FROM stripe_payouts nfp
+                      WHERE nfp.bank_deposit_id = d.id
+                    )
+                  )
                 UNION
                 SELECT rsp.id, rsp.exclusion_reason
                 FROM bank_deposit_components rbc
@@ -378,7 +393,14 @@ function buildUniverse(q: string | null) {
                 FROM deposit_qbo_components dqc
                 JOIN staged_payments qsp ON qsp.id = dqc.staged_payment_id
                 WHERE dqc.bank_deposit_id = d.id
-                  AND (qsp.funding_source IS NULL OR qsp.funding_source <> 'stripe')
+                  AND (
+                    qsp.funding_source IS NULL
+                    OR qsp.funding_source <> 'stripe'
+                    OR NOT EXISTS (
+                      SELECT 1 FROM stripe_payouts nfp
+                      WHERE nfp.bank_deposit_id = d.id
+                    )
+                  )
                 UNION
                 SELECT rsp.id, rsp.exclusion_reason
                 FROM bank_deposit_components rbc
@@ -410,7 +432,8 @@ function buildUniverse(q: string | null) {
           )
         )`}
       )
-    GROUP BY d.id, p.id, p.ambiguous_bank_match
+      GROUP BY d.id, p.id, p.ambiguous_bank_match
+    ) base
   `;
 }
 

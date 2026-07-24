@@ -309,7 +309,6 @@ export async function recomputeBankSpine(): Promise<void> {
       WHERE sp.qb_deposit_id IS NOT NULL
         AND sp.qb_entity_type <> 'deposit_header'
         AND sp.amount IS NOT NULL AND sp.amount > 0
-        AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
         AND NOT EXISTS (SELECT 1 FROM staged_payments child WHERE child.split_parent_id = sp.id)
     ),
     depinfo AS (
