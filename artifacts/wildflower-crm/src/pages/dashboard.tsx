@@ -395,7 +395,7 @@ const WORKLIST_ITEMS: ReadonlyArray<{
     key: "stagedUnprocessed",
     label: "Money staged, not processed",
     desc: "Staged QuickBooks / Stripe payments awaiting reconciliation.",
-    href: "/reconciliation/clusters",
+    href: "/reconciliation/deposits",
   },
   {
     key: "giftsMissingAllocations",
@@ -497,4 +497,3 @@ function MyTasksRow() {
     </Card>
   );
 }
-
