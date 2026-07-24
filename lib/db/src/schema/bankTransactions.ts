@@ -14,10 +14,9 @@ import { bankTransactionSourceEnum } from "./_enums";
  * Raw bank-account transaction evidence — one row per register line in the
  * organization's bank account, tagged by `source`.
  *
- * Current source: `qbo_register_export` — seven overlapping QuickBooks Online
- * bank-register XLS exports (2016 → 2026), merged and deduplicated at import
- * time by the scripts importer (`import:bank-register`). A future `plaid`
- * source will append live feed rows under the same shape.
+ * Sources include `qbo_register_export` (QuickBooks accounting evidence) and
+ * `bank_csv_export` (Wells Fargo bank evidence). A future `plaid` source will
+ * append live feed rows under the same shape.
  *
  * This is EVIDENCE, not CRM data:
  *   - read-only after import; rows are never edited, split, or archived;
@@ -61,6 +60,11 @@ export const bankTransactions = pgTable(
     // inside QuickBooks, unrelated to CRM reconciliation.
     reconciliationStatus: text("reconciliation_status"),
     addedInBanking: text("added_in_banking"),
+    // Wells Fargo's "Transaction Posted" / "Match/Categorize" text, retained
+    // as the bridge back to the QuickBooks booking and account classification.
+    qbPosting: text("qb_posting"),
+    // Wells Fargo's donor column, when present in the export.
+    donor: text("donor"),
 
     // ── Money (major units, 2dp; sign as in the register) ───────────────
     // Money out. NULL when the row is a deposit-only line.
