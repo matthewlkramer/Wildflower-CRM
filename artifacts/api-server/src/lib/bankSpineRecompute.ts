@@ -103,15 +103,15 @@ export async function recomputeBankSpine(): Promise<void> {
       AND NOT EXISTS (SELECT 1 FROM bank_deposit_components c WHERE c.payment_unit_id = pu.id)
   `);
 
-  // 3. Payout → bank deposit (0163 window; forward version pairs equal
-  //    amount/date classes deterministically by rank and FLAGS them instead of
-  //    leaving them unmatched). Fill-only: never rewrites an existing match.
+  // 3. Payout → bank deposit (0163 window; forward version greedily assigns
+  //    each payout to its nearest available deposit on/after arrival). Fill-
+  //    only: never rewrites an existing match.
   await db.execute(sql`
-    WITH pside AS (
+    WITH RECURSIVE
+    pside AS (
       SELECT p.id, p.amount, p.arrival_date,
         upper(COALESCE(p.currency, 'USD')) AS cur,
-        count(*)     OVER (PARTITION BY p.amount, p.arrival_date) AS class_n,
-        row_number() OVER (PARTITION BY p.amount, p.arrival_date ORDER BY p.id) AS rn
+        row_number() OVER (ORDER BY p.arrival_date, p.id) AS rn
       FROM stripe_payouts p
       WHERE p.status = 'paid' AND p.amount IS NOT NULL AND p.amount > 0
         AND p.bank_deposit_id IS NULL
@@ -122,37 +122,54 @@ export async function recomputeBankSpine(): Promise<void> {
       WHERE NOT EXISTS (SELECT 1 FROM stripe_payouts x WHERE x.bank_deposit_id = d.id)
         AND NOT EXISTS (SELECT 1 FROM bank_deposit_components c WHERE c.bank_deposit_id = d.id)
     ),
-    cand AS (
-      SELECT p.id AS payout_id, d.id AS deposit_id, p.class_n, p.rn
-      FROM pside p
-      JOIN dside d
-        ON d.amount = p.amount AND d.cur = p.cur
-       AND d.deposit_date >= p.arrival_date
-       AND d.deposit_date <= p.arrival_date + INTERVAL '5 days'
-    ),
-    ranked AS (
-      SELECT payout_id, deposit_id, class_n, rn,
-        row_number() OVER (PARTITION BY payout_id ORDER BY deposit_id) AS drn,
-        count(*)     OVER (PARTITION BY payout_id) AS dn,
-        count(*)     OVER (PARTITION BY deposit_id) AS pn
-      FROM cand
-    ),
-    pick AS (
-      -- Deterministic pairing: the nth payout of an equal class takes the nth
-      -- candidate deposit; ambiguous when either side had >1 possibility.
-      SELECT DISTINCT ON (deposit_id)
-        payout_id, deposit_id, (class_n > 1 OR dn > 1 OR pn > 1) AS ambiguous
-      FROM ranked
-      WHERE drn = LEAST(rn, dn)
-      ORDER BY deposit_id, payout_id
+    greedy (rn, claimed_ids, payout_id, deposit_id, ambiguous) AS (
+      SELECT 0::bigint, ARRAY[]::text[], NULL::text, NULL::text, false
+      UNION ALL
+      SELECT
+        p.rn,
+        CASE
+          WHEN pick.deposit_id IS NULL THEN g.claimed_ids
+          ELSE g.claimed_ids || pick.deposit_id
+        END,
+        p.id,
+        pick.deposit_id,
+        COALESCE(pick.tie_count > 1, false)
+      FROM greedy g
+      JOIN pside p ON p.rn = g.rn + 1
+      LEFT JOIN LATERAL (
+        SELECT choice.deposit_id, ties.tie_count
+        FROM (
+          SELECT d.id AS deposit_id, d.deposit_date - p.arrival_date AS gap
+          FROM dside d
+          WHERE d.amount = p.amount
+            AND d.cur = p.cur
+            AND d.deposit_date >= p.arrival_date
+            AND d.deposit_date <= p.arrival_date + 5
+            AND NOT (d.id = ANY(g.claimed_ids))
+          ORDER BY gap ASC, d.deposit_date ASC, d.id ASC
+          LIMIT 1
+        ) choice
+        CROSS JOIN LATERAL (
+          SELECT count(*)::int AS tie_count
+          FROM dside d2
+          WHERE d2.amount = p.amount
+            AND d2.cur = p.cur
+            AND d2.deposit_date >= p.arrival_date
+            AND d2.deposit_date <= p.arrival_date + 5
+            AND d2.deposit_date - p.arrival_date = choice.gap
+            AND NOT (d2.id = ANY(g.claimed_ids))
+        ) ties
+      ) pick ON true
     )
     UPDATE stripe_payouts p
-    SET bank_deposit_id = k.deposit_id,
-        ambiguous_bank_match = k.ambiguous,
+    SET bank_deposit_id = g.deposit_id,
+        ambiguous_bank_match = g.ambiguous,
         bank_matched_at = now(),
         updated_at = now()
-    FROM pick k
-    WHERE p.id = k.payout_id AND p.bank_deposit_id IS NULL
+    FROM greedy g
+    WHERE p.id = g.payout_id
+      AND g.deposit_id IS NOT NULL
+      AND p.bank_deposit_id IS NULL
   `);
 
   // 4a. Provisional check/direct-payment units from QBO deposit-composing rows
