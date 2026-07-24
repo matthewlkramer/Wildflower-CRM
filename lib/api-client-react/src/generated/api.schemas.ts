@@ -5838,6 +5838,165 @@ export interface WorkbenchClusterCoverage {
 }
 
 /**
+ * Deposit-first worklist lens. all_open is the union of unresolved_composition,
+ambiguous_pairing, needs_gift, and accounting_corrections, excluding completed
+and not_fundraising. not_fundraising is derived from loan/interest memo text;
+brokerage-transfer memos remain fundraising.
+
+ */
+export type WorkbenchDepositLens = typeof WorkbenchDepositLens[keyof typeof WorkbenchDepositLens];
+
+
+export const WorkbenchDepositLens = {
+  all_open: 'all_open',
+  unresolved_composition: 'unresolved_composition',
+  ambiguous_pairing: 'ambiguous_pairing',
+  needs_gift: 'needs_gift',
+  accounting_corrections: 'accounting_corrections',
+  refunds: 'refunds',
+  completed: 'completed',
+  not_fundraising: 'not_fundraising',
+} as const;
+
+export type WorkbenchDepositCompositionKind = typeof WorkbenchDepositCompositionKind[keyof typeof WorkbenchDepositCompositionKind];
+
+
+export const WorkbenchDepositCompositionKind = {
+  stripe_payout: 'stripe_payout',
+  components: 'components',
+  unresolved: 'unresolved',
+} as const;
+
+export type WorkbenchDepositCompositionComponentsItemKind = typeof WorkbenchDepositCompositionComponentsItemKind[keyof typeof WorkbenchDepositCompositionComponentsItemKind];
+
+
+export const WorkbenchDepositCompositionComponentsItemKind = {
+  check: 'check',
+  direct_ach: 'direct_ach',
+  wire: 'wire',
+  other: 'other',
+  stripe_charge: 'stripe_charge',
+} as const;
+
+export type WorkbenchDepositCompositionComponentsItem = {
+  componentId: string;
+  paymentUnitId: string;
+  amount: string;
+  kind: WorkbenchDepositCompositionComponentsItemKind;
+  needsReview: boolean;
+  ambiguousDepositMatch: boolean;
+  countedGiftIds?: string[];
+};
+
+export type WorkbenchDepositCompositionUnitsItemKind = typeof WorkbenchDepositCompositionUnitsItemKind[keyof typeof WorkbenchDepositCompositionUnitsItemKind];
+
+
+export const WorkbenchDepositCompositionUnitsItemKind = {
+  check: 'check',
+  direct_ach: 'direct_ach',
+  wire: 'wire',
+  other: 'other',
+  stripe_charge: 'stripe_charge',
+} as const;
+
+export type WorkbenchDepositCompositionUnitsItem = {
+  paymentUnitId: string;
+  kind: WorkbenchDepositCompositionUnitsItemKind;
+  amount: string | null;
+  lifecycle: string;
+  sourceStagedPaymentId?: string | null;
+  countedGiftIds: string[];
+};
+
+export interface WorkbenchDepositComposition {
+  kind: WorkbenchDepositCompositionKind;
+  payoutId: string | null;
+  /** Amount explained by the authoritative payout or component rows. */
+  explainedAmount: string;
+  /** Deposit amount not explained by known composition. */
+  unexplainedAmount: string;
+  components: WorkbenchDepositCompositionComponentsItem[];
+  units?: WorkbenchDepositCompositionUnitsItem[];
+}
+
+export type WorkbenchDepositAccountingCheckDisposition = typeof WorkbenchDepositAccountingCheckDisposition[keyof typeof WorkbenchDepositAccountingCheckDisposition];
+
+
+export const WorkbenchDepositAccountingCheckDisposition = {
+  consistent: 'consistent',
+  correction_needed: 'correction_needed',
+  corrected: 'corrected',
+  accepted_historical: 'accepted_historical',
+} as const;
+
+export type WorkbenchDepositAccountingCheckExpected = { [key: string]: unknown } | null;
+
+export type WorkbenchDepositAccountingCheckActual = { [key: string]: unknown } | null;
+
+export interface WorkbenchDepositAccountingCheck {
+  id: string;
+  stagedPaymentId: string;
+  disposition: WorkbenchDepositAccountingCheckDisposition;
+  expected?: WorkbenchDepositAccountingCheckExpected;
+  actual?: WorkbenchDepositAccountingCheckActual;
+  note?: string | null;
+}
+
+export type WorkbenchDepositKind = typeof WorkbenchDepositKind[keyof typeof WorkbenchDepositKind];
+
+
+export const WorkbenchDepositKind = {
+  bank_deposit: 'bank_deposit',
+} as const;
+
+export type WorkbenchDepositBank = {
+  amount: string;
+  currency: string;
+  account: string | null;
+  location: string | null;
+  reference: string | null;
+  memo: string | null;
+};
+
+export interface WorkbenchDeposit {
+  /** Stable key: 'bank_deposit:<bank_deposits.id>'. */
+  id: string;
+  kind: WorkbenchDepositKind;
+  /** bank_deposits.id. */
+  anchorId: string;
+  /** Server-derived summary status. */
+  status: string;
+  date?: string;
+  title?: string | null;
+  lenses: WorkbenchDepositLens[];
+  bank: WorkbenchDepositBank;
+  composition: WorkbenchDepositComposition;
+  gifts: WorkbenchClusterGift[];
+  charges: WorkbenchClusterCharge[];
+  qbRecords: WorkbenchClusterQbRecord[];
+  accountingChecks: WorkbenchDepositAccountingCheck[];
+  coverage: WorkbenchClusterCoverage;
+}
+
+export interface WorkbenchDepositLensCounts {
+  all_open: number;
+  unresolved_composition: number;
+  ambiguous_pairing: number;
+  needs_gift: number;
+  accounting_corrections: number;
+  refunds: number;
+  completed: number;
+  not_fundraising: number;
+}
+
+export interface WorkbenchDepositListResponse {
+  data: WorkbenchDeposit[];
+  lensCounts: WorkbenchDepositLensCounts;
+  pagination: Pagination;
+  viewerCanManageAccounting: boolean;
+}
+
+/**
  * One reconciliation cluster row. A single flat shape for all three kinds —
 `kind` discriminates; kind-inapplicable fields are null/empty (house style,
 mirrors BundleAnchor). Money fields are null when unknowable for the kind
@@ -10684,6 +10843,26 @@ export type ListWorkbenchClustersParams = {
 lens?: WorkbenchLens;
 /**
  * Free-text over payer/donor/gift names, QB memo/reference and charge/payout ids.
+ */
+q?: string;
+/**
+ * @minimum 1
+ * @maximum 10000
+ */
+limit?: LimitParameter;
+/**
+ * @minimum 1
+ */
+page?: PageParameter;
+};
+
+export type ListWorkbenchDepositsParams = {
+/**
+ * Which deposit lens to list (default all_open).
+ */
+lens?: WorkbenchDepositLens;
+/**
+ * Free-text over bank memo/reference/account, payment-unit ids and linked gift names.
  */
 q?: string;
 /**

@@ -685,7 +685,7 @@ interface CrmGiftRow extends GiftRowBase {
   title_gift_name: string | null;
 }
 
-interface GiftOut {
+export interface GiftOut {
   giftId: string;
   opportunityId: string | null;
   name: string | null;
@@ -795,7 +795,7 @@ function mapSatisfiedBy(legacy: CrmSatisfiedBy): CrmSatisfiedByCanonical {
 }
 
 /** Build the crmRecordCompleteness sub-dimension from a set of linked CRM gifts. */
-function buildCrmRecordCompleteness(gifts: GiftOut[]): CrmRecordCompletenessOut {
+export function buildCrmRecordCompleteness(gifts: GiftOut[]): CrmRecordCompletenessOut {
   if (gifts.length === 0) {
     return { complete: true, completeGiftIds: [], incompleteGiftIds: [], reasonsByGift: [] };
   }

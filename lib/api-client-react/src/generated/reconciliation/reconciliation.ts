@@ -39,6 +39,7 @@ import type {
   ListReconciliationBundleAnchorsParams,
   ListReconciliationCardsParams,
   ListWorkbenchClustersParams,
+  ListWorkbenchDepositsParams,
   NotFoundResponse,
   PayoutSearchList,
   ReconciliationApproveResult,
@@ -58,6 +59,7 @@ import type {
   SplitStagedPaymentUnitsResult,
   UnsplitStagedPaymentUnitsResult,
   WorkbenchClusterListResponse,
+  WorkbenchDepositListResponse,
   WorkbenchRecentChangesResponse
 } from '../api.schemas';
 
@@ -1665,6 +1667,93 @@ export function useListWorkbenchClusters<TData = Awaited<ReturnType<typeof listW
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListWorkbenchClustersQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * One row per real Wells Fargo bank_deposits row. Composition follows the
+authority ladder: a Stripe payout paired directly to the deposit wins;
+otherwise bank_deposit_components expand to payment units; otherwise the
+deposit is unresolved. lensCounts are computed over the complete filtered
+deposit universe, not only the current page. Read-only.
+
+ * @summary The deposit-first reconciliation workbench, anchored on Wells Fargo bank deposits.
+ */
+export const getListWorkbenchDepositsUrl = (params?: ListWorkbenchDepositsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reconciliation/workbench-deposits?${stringifiedParams}` : `/api/reconciliation/workbench-deposits`
+}
+
+export const listWorkbenchDeposits = async (params?: ListWorkbenchDepositsParams, options?: RequestInit): Promise<WorkbenchDepositListResponse> => {
+  
+  return customFetch<WorkbenchDepositListResponse>(getListWorkbenchDepositsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getListWorkbenchDepositsQueryKey = (params?: ListWorkbenchDepositsParams,) => {
+    return [
+    `/api/reconciliation/workbench-deposits`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getListWorkbenchDepositsQueryOptions = <TData = Awaited<ReturnType<typeof listWorkbenchDeposits>>, TError = ErrorType<BadRequestResponse>>(params?: ListWorkbenchDepositsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchDeposits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWorkbenchDepositsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWorkbenchDeposits>>> = ({ signal }) => listWorkbenchDeposits(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchDeposits>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWorkbenchDepositsQueryResult = NonNullable<Awaited<ReturnType<typeof listWorkbenchDeposits>>>
+export type ListWorkbenchDepositsQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary The deposit-first reconciliation workbench, anchored on Wells Fargo bank deposits.
+ */
+
+export function useListWorkbenchDeposits<TData = Awaited<ReturnType<typeof listWorkbenchDeposits>>, TError = ErrorType<BadRequestResponse>>(
+ params?: ListWorkbenchDepositsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkbenchDeposits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWorkbenchDepositsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

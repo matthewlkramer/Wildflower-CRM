@@ -4928,6 +4928,25 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/WorkbenchClusterListResponse" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /reconciliation/workbench-deposits:
+    get:
+      operationId: listWorkbenchDeposits
+      tags: [reconciliation]
+      summary: The deposit-first reconciliation workbench, anchored on Wells Fargo bank deposits.
+      description: |
+        One row per real Wells Fargo bank_deposits row. Composition follows the
+        authority ladder: a Stripe payout paired directly to the deposit wins;
+        otherwise bank_deposit_components expand to payment units; otherwise the
+        deposit is unresolved. lensCounts are computed over the complete filtered
+        deposit universe, not only the current page. Read-only.
+      parameters:
+        - { name: lens, in: query, schema: { $ref: "#/components/schemas/WorkbenchDepositLens" }, description: "Which deposit lens to list (default all_open)." }
+        - { name: q, in: query, schema: { type: string }, description: "Free-text over bank memo/reference/account, payment-unit ids and linked gift names." }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/WorkbenchDepositListResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /reconciliation/workbench-recent-changes:
     get:
       operationId: listWorkbenchRecentChanges
@@ -9162,6 +9181,108 @@ components:
         state:
           allOf: [ { $ref: "#/components/schemas/WorkbenchRowState" } ]
           description: "Canonical row-level state (Option C). Required — the server always derives it; coverage.complete and all lens flags are derived from this."
+    WorkbenchDepositLens:
+      type: string
+      enum: [all_open, unresolved_composition, ambiguous_pairing, needs_gift, accounting_corrections, refunds, completed, not_fundraising]
+      description: |
+        Deposit-first worklist lens. all_open is the union of unresolved_composition,
+        ambiguous_pairing, needs_gift, and accounting_corrections, excluding completed
+        and not_fundraising. not_fundraising is derived from loan/interest memo text;
+        brokerage-transfer memos remain fundraising.
+    WorkbenchDepositComposition:
+      type: object
+      required: [kind, explainedAmount, unexplainedAmount, components, payoutId]
+      properties:
+        kind:
+          type: string
+          enum: [stripe_payout, components, unresolved]
+        payoutId: { type: string, nullable: true }
+        explainedAmount: { type: string, description: "Amount explained by the authoritative payout or component rows." }
+        unexplainedAmount: { type: string, description: "Deposit amount not explained by known composition." }
+        components:
+          type: array
+          items:
+            type: object
+            required: [componentId, paymentUnitId, amount, kind, needsReview, ambiguousDepositMatch]
+            properties:
+              componentId: { type: string }
+              paymentUnitId: { type: string }
+              amount: { type: string }
+              kind: { type: string, enum: [check, direct_ach, wire, other, stripe_charge] }
+              needsReview: { type: boolean }
+              ambiguousDepositMatch: { type: boolean }
+              countedGiftIds: { type: array, items: { type: string } }
+        units:
+          type: array
+          items:
+            type: object
+            required: [paymentUnitId, kind, amount, lifecycle, countedGiftIds]
+            properties:
+              paymentUnitId: { type: string }
+              kind: { type: string, enum: [check, direct_ach, wire, other, stripe_charge] }
+              amount: { type: string, nullable: true }
+              lifecycle: { type: string }
+              sourceStagedPaymentId: { type: string, nullable: true }
+              countedGiftIds: { type: array, items: { type: string } }
+    WorkbenchDepositAccountingCheck:
+      type: object
+      required: [id, stagedPaymentId, disposition]
+      properties:
+        id: { type: string }
+        stagedPaymentId: { type: string }
+        disposition: { type: string, enum: [consistent, correction_needed, corrected, accepted_historical] }
+        expected: { type: object, nullable: true, additionalProperties: true }
+        actual: { type: object, nullable: true, additionalProperties: true }
+        note: { type: string, nullable: true }
+    WorkbenchDeposit:
+      type: object
+      required: [id, kind, anchorId, status, lenses, bank, composition, gifts, charges, qbRecords, accountingChecks, coverage]
+      properties:
+        id: { type: string, description: "Stable key: 'bank_deposit:<bank_deposits.id>'." }
+        kind: { type: string, enum: [bank_deposit] }
+        anchorId: { type: string, description: "bank_deposits.id." }
+        status: { type: string, description: "Server-derived summary status." }
+        date: { type: string, format: date }
+        title: { type: string, nullable: true }
+        lenses: { type: array, items: { $ref: "#/components/schemas/WorkbenchDepositLens" } }
+        bank:
+          type: object
+          required: [amount, currency, account, location, reference, memo]
+          properties:
+            amount: { type: string }
+            currency: { type: string }
+            account: { type: string, nullable: true }
+            location: { type: string, nullable: true }
+            reference: { type: string, nullable: true }
+            memo: { type: string, nullable: true }
+        composition: { $ref: "#/components/schemas/WorkbenchDepositComposition" }
+        gifts: { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterGift" } }
+        charges: { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterCharge" } }
+        qbRecords: { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterQbRecord" } }
+        accountingChecks:
+          type: array
+          items: { $ref: "#/components/schemas/WorkbenchDepositAccountingCheck" }
+        coverage: { $ref: "#/components/schemas/WorkbenchClusterCoverage" }
+    WorkbenchDepositLensCounts:
+      type: object
+      required: [all_open, unresolved_composition, ambiguous_pairing, needs_gift, accounting_corrections, refunds, completed, not_fundraising]
+      properties:
+        all_open: { type: integer }
+        unresolved_composition: { type: integer }
+        ambiguous_pairing: { type: integer }
+        needs_gift: { type: integer }
+        accounting_corrections: { type: integer }
+        refunds: { type: integer }
+        completed: { type: integer }
+        not_fundraising: { type: integer }
+    WorkbenchDepositListResponse:
+      type: object
+      required: [data, lensCounts, pagination, viewerCanManageAccounting]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/WorkbenchDeposit" } }
+        lensCounts: { $ref: "#/components/schemas/WorkbenchDepositLensCounts" }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+        viewerCanManageAccounting: { type: boolean }
     WorkbenchCluster:
       type: object
       required: [id, kind, anchorId, status, lenses, gifts, charges, qbRecords, coverage]

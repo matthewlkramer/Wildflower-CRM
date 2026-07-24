@@ -1164,6 +1164,251 @@ export const ListWorkbenchClustersResponse = zod.object({
 })
 
 /**
+ * One row per real Wells Fargo bank_deposits row. Composition follows the
+authority ladder: a Stripe payout paired directly to the deposit wins;
+otherwise bank_deposit_components expand to payment units; otherwise the
+deposit is unresolved. lensCounts are computed over the complete filtered
+deposit universe, not only the current page. Read-only.
+
+ * @summary The deposit-first reconciliation workbench, anchored on Wells Fargo bank deposits.
+ */
+export const listWorkbenchDepositsQueryLimitDefault = 50;
+export const listWorkbenchDepositsQueryLimitMax = 10000;
+
+export const listWorkbenchDepositsQueryPageDefault = 1;
+
+
+
+export const ListWorkbenchDepositsQueryParams = zod.object({
+  "lens": zod.enum(['all_open', 'unresolved_composition', 'ambiguous_pairing', 'needs_gift', 'accounting_corrections', 'refunds', 'completed', 'not_fundraising']).optional().describe('Which deposit lens to list (default all_open).'),
+  "q": zod.coerce.string().optional().describe('Free-text over bank memo\/reference\/account, payment-unit ids and linked gift names.'),
+  "limit": zod.coerce.number().min(1).max(listWorkbenchDepositsQueryLimitMax).default(listWorkbenchDepositsQueryLimitDefault),
+  "page": zod.coerce.number().min(1).default(listWorkbenchDepositsQueryPageDefault)
+})
+
+export const ListWorkbenchDepositsResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string().describe('Stable key: \'bank_deposit:<bank_deposits.id>\'.'),
+  "kind": zod.enum(['bank_deposit']),
+  "anchorId": zod.string().describe('bank_deposits.id.'),
+  "status": zod.string().describe('Server-derived summary status.'),
+  "date": zod.string().date().optional(),
+  "title": zod.string().nullish(),
+  "lenses": zod.array(zod.enum(['all_open', 'unresolved_composition', 'ambiguous_pairing', 'needs_gift', 'accounting_corrections', 'refunds', 'completed', 'not_fundraising']).describe('Deposit-first worklist lens. all_open is the union of unresolved_composition,\nambiguous_pairing, needs_gift, and accounting_corrections, excluding completed\nand not_fundraising. not_fundraising is derived from loan\/interest memo text;\nbrokerage-transfer memos remain fundraising.\n')),
+  "bank": zod.object({
+  "amount": zod.string(),
+  "currency": zod.string(),
+  "account": zod.string().nullable(),
+  "location": zod.string().nullable(),
+  "reference": zod.string().nullable(),
+  "memo": zod.string().nullable()
+}),
+  "composition": zod.object({
+  "kind": zod.enum(['stripe_payout', 'components', 'unresolved']),
+  "payoutId": zod.string().nullable(),
+  "explainedAmount": zod.string().describe('Amount explained by the authoritative payout or component rows.'),
+  "unexplainedAmount": zod.string().describe('Deposit amount not explained by known composition.'),
+  "components": zod.array(zod.object({
+  "componentId": zod.string(),
+  "paymentUnitId": zod.string(),
+  "amount": zod.string(),
+  "kind": zod.enum(['check', 'direct_ach', 'wire', 'other', 'stripe_charge']),
+  "needsReview": zod.boolean(),
+  "ambiguousDepositMatch": zod.boolean(),
+  "countedGiftIds": zod.array(zod.string()).optional()
+})),
+  "units": zod.array(zod.object({
+  "paymentUnitId": zod.string(),
+  "kind": zod.enum(['check', 'direct_ach', 'wire', 'other', 'stripe_charge']),
+  "amount": zod.string().nullable(),
+  "lifecycle": zod.string(),
+  "sourceStagedPaymentId": zod.string().nullish(),
+  "countedGiftIds": zod.array(zod.string())
+})).optional()
+}),
+  "gifts": zod.array(zod.object({
+  "giftId": zod.string().describe('gifts_and_payments.id'),
+  "opportunityId": zod.string().nullish().describe('The gift\'s linked opportunity\/pledge id, when it is a payment against one. Enables opportunity-level actions (e.g. setting loss_type) straight from the workbench.'),
+  "name": zod.string().nullish().describe('Gift name (NOT anonymous-masked today — matches app-wide behavior).'),
+  "donorName": zod.string().nullish().describe('Donor display name, anonymous-masked for the viewer.'),
+  "donorKind": zod.enum(['organization', 'person', 'household']).nullish(),
+  "donorId": zod.string().nullish().describe('The donor record\'s id (organization \/ person \/ household per donorKind).'),
+  "amount": zod.string().nullish().describe('Gift amount, major units.'),
+  "dateReceived": zod.string().date().nullish(),
+  "quickbooksTie": zod.enum(['exempt', 'tied', 'amount_mismatch', 'missing']).describe('Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.').nullish().describe('The gift\'s persisted QB tie status (exempt\/tied\/amount_mismatch\/missing).'),
+  "donorbox": zod.boolean().optional().describe('True when a counted Donorbox ledger row backs this gift (renders the DB badge).'),
+  "grantLetter": zod.boolean().optional().describe('True when a grant\/award letter file is attached — the gift\'s own upload or its linked pledge\'s letter (renders the letter badge).'),
+  "codingForm": zod.boolean().optional().describe('True when an APPLIED Donation Revenue Coding Form row is matched to this gift (renders the coding badge).'),
+  "recordComplete": zod.boolean().optional().describe('True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule.'),
+  "linkedChargeIds": zod.array(zod.string()).optional().describe('stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters.'),
+  "linkedStagedPaymentIds": zod.array(zod.string()).optional().describe('staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only.')
+}).describe('One CRM gift card in the cluster\'s donor-and-purpose facet. Carries actionable ids so later phases can wire actions without a contract change.')),
+  "charges": zod.array(zod.object({
+  "chargeId": zod.string().describe('stripe_staged_charges.id (ch_...).'),
+  "payerName": zod.string().nullish().describe('Raw processor payer name (external Stripe evidence, not a CRM name — never anonymous-masked, matching the bundle workbench).'),
+  "cardBrand": zod.string().nullish().describe('Card brand from the charge\'s payment method (e.g. visa, mastercard); null for non-card charges.'),
+  "description": zod.string().nullish().describe('Stripe charge.description — frequently carries the real donor name \/ memo.'),
+  "statementDescriptor": zod.string().nullish().describe('The statement descriptor the payer saw on their card statement.'),
+  "amount": zod.string().nullish().describe('Charge gross amount, major units.'),
+  "feeAmount": zod.string().nullish().describe('Processor fee, major units.'),
+  "netAmount": zod.string().nullish().describe('Net (gross − fee), major units.'),
+  "chargeDate": zod.string().date().nullish(),
+  "linkedGiftId": zod.string().nullish().describe('The gift this charge\'s counted ledger row feeds, if any.'),
+  "refundKind": zod.enum(['full_refund', 'partial_refund', 'chargeback']).nullish().describe('The kind of proposed reversal; null when no reversal is proposed (whether one is pending comes from the charge\'s coverage.state.transactions entry: refundStatus = anticipated).'),
+  "attributedDonor": zod.object({
+  "donorKind": zod.enum(['organization', 'person', 'household']),
+  "donorId": zod.string(),
+  "donorName": zod.string().nullish()
+}).nullish().describe('Donor identified on this specific charge via the Identify action. Null when no donor has been identified on this charge.')
+}).describe('One Stripe charge in the cluster\'s payment-evidence facet. Per-charge status\/exclusion\/refund state is NOT carried here — read the matching coverage.state.transactions entry (keyed by chargeId), the one source of truth.')),
+  "qbRecords": zod.array(zod.object({
+  "stagedPaymentId": zod.string().describe('staged_payments.id'),
+  "role": zod.enum(['anchor', 'deposit', 'fee', 'charge_tie']).describe('How the row participates: anchor = the qb_standalone cluster\'s own row; deposit = the payout\'s settlement-linked deposit lump; fee = a processor-fee row linked via a charge; charge_tie = a per-charge QB tie.'),
+  "reference": zod.string().nullish().describe('Human-readable doc\/payment reference.'),
+  "lineDescription": zod.string().nullish().describe('Deposit line \/ memo description.'),
+  "memo": zod.string().nullish().describe('Transaction-level memo (PrivateNote).'),
+  "amount": zod.string().nullish().describe('Staged amount, major units.'),
+  "dateReceived": zod.string().date().nullish(),
+  "paymentMethod": zod.string().nullish().describe('Raw QB PaymentMethodRef name (e.g. Check, ACH, Visa) from the staged row — accounting evidence as QuickBooks recorded it; null when QB recorded none.'),
+  "linkedChargeId": zod.string().nullish().describe('For fee \/ charge_tie roles: the stripe_staged_charges id the link runs through.'),
+  "payerName": zod.string().nullish().describe('QB payer name from the staged_payments row; populated for anchor and deposit roles; null for fee \/ charge_tie.'),
+  "qbEntityType": zod.enum(['sales_receipt', 'payment', 'deposit', 'deposit_header']).nullish().describe('The QuickBooks transaction type this staged row came from — drives the \'View in QuickBooks\' deep link (deposit_header deep-links to its Deposit).'),
+  "qbEntityId": zod.string().nullish().describe('The QuickBooks transaction id within the company file (pairs with qbEntityType for the deep link).'),
+  "splitUnitParentId": zod.string().nullish().describe('When this row is a SYNTHETIC reconciliation unit (created by splitting a QuickBooks row that bundled several money events), the id of the original QuickBooks parent row. Null for real QuickBooks rows. Synthetic units have no QuickBooks deep link of their own — the parent carries the qbEntityType\/qbEntityId.'),
+  "attributedDonor": zod.object({
+  "donorKind": zod.enum(['organization', 'person', 'household']),
+  "donorId": zod.string(),
+  "donorName": zod.string().nullish()
+}).nullish().describe('Donor identified on this specific QB row via the Identify action. Present for anchor\/deposit roles when a donor has been identified; null otherwise.')
+}).describe('One QuickBooks staged row in the cluster\'s bank-and-accounting facet. Per-record linkage state is NOT carried here — read the matching coverage.state.qbCards entry (keyed by stagedPaymentId), the one source of truth.')),
+  "accountingChecks": zod.array(zod.object({
+  "id": zod.string(),
+  "stagedPaymentId": zod.string(),
+  "disposition": zod.enum(['consistent', 'correction_needed', 'corrected', 'accepted_historical']),
+  "expected": zod.record(zod.string(), zod.unknown()).nullish(),
+  "actual": zod.record(zod.string(), zod.unknown()).nullish(),
+  "note": zod.string().nullish()
+})),
+  "coverage": zod.object({
+  "evidenceRecords": zod.array(zod.object({
+  "id": zod.string().describe('External record id: stripe_staged_charges.id (ch_…), staged_payments.id, etc.'),
+  "source": zod.enum(['stripe_charge', 'qb_record', 'donorbox']),
+  "roles": zod.array(zod.enum(['payment_transaction', 'accounting', 'donor_purpose'])).describe('Dimensions this record satisfies. A single QBO record may satisfy both payment_transaction and accounting.'),
+  "grain": zod.enum(['unit', 'bundle']).describe('unit = covers one charge \/ unit; bundle = covers the whole payout \/ group.'),
+  "amount": zod.string().nullish().describe('Record amount, major units.'),
+  "linkedGiftId": zod.string().nullish().describe('gifts_and_payments.id this record is counted into, if any.')
+}).describe('One external evidence record in the cluster. Each physical record appears exactly once; the roles array lists every reconciliation dimension it satisfies.')).describe('Deduplicated list of all external evidence records. Each physical record appears once even when it satisfies multiple dimensions.'),
+  "donorPurpose": zod.object({
+  "crmLinkage": zod.object({
+  "grain": zod.enum(['none', 'unit', 'bundle', 'mixed']).describe('Grain at which a dimension is satisfied: none = no evidence yet; unit = one evidence record per charge \/ QB row; bundle = one record covers all units; mixed = competing unit + bundle representations (always incomplete).'),
+  "complete": zod.boolean(),
+  "coveredIds": zod.array(zod.string()).describe('Charge \/ QB-row ids that have a counted CRM-gift link.'),
+  "uncoveredIds": zod.array(zod.string()).describe('Charge \/ QB-row ids that lack a counted CRM-gift link.'),
+  "expectedAmount": zod.string().nullish(),
+  "representedAmount": zod.string().nullish(),
+  "representationNote": zod.string().nullish().describe('Present when grain=mixed: describes the competing representations.')
+}).describe('CRM-linkage sub-dimension: whether the cluster\'s payment units are linked to CRM gift records with valid amount coverage.').describe('Whether the relevant payment units or bundle are linked to one or more CRM gift records with valid amount coverage.'),
+  "crmRecordCompleteness": zod.object({
+  "complete": zod.boolean().describe('True when all linked CRM gifts are complete (vacuously true when no linked gifts yet).'),
+  "completeGiftIds": zod.array(zod.string()),
+  "incompleteGiftIds": zod.array(zod.string()),
+  "reasonsByGift": zod.array(zod.object({
+  "giftId": zod.string(),
+  "reasons": zod.array(zod.enum(['missing_donor', 'missing_restriction_fields', 'missing_allocation']).describe('Why a specific linked gift fails the record-completeness predicate.')).describe('Empty when satisfiedBy is non-null (gift is complete).'),
+  "satisfiedBy": zod.enum(['donorbox', 'coding_form', 'donor_and_allocations']).nullish().describe('Which path satisfied completeness; null when the gift is incomplete.')
+}).describe('Per-gift completeness detail for one linked CRM gift.'))
+}).describe('CRM-record-completeness sub-dimension: whether every linked CRM gift contains sufficient donor and purpose information.').describe('Whether every linked CRM gift contains sufficient donor and purpose information.'),
+  "complete": zod.boolean().describe('True when both crmLinkage.complete and crmRecordCompleteness.complete are true.')
+}).describe('Donor\/purpose dimension split into two explicit sub-states: CRM linkage (payment units linked to CRM gift records) and CRM record completeness (linked gifts have sufficient donor and purpose information).').describe('Dimension 1: donor identified, CRM gift booked with sufficient record completeness. Split into crmLinkage (payment units linked to CRM gifts) and crmRecordCompleteness (linked gifts have donor + allocation data).'),
+  "paymentTransaction": zod.object({
+  "grain": zod.enum(['none', 'unit', 'bundle', 'mixed']).describe('Grain at which a dimension is satisfied: none = no evidence yet; unit = one evidence record per charge \/ QB row; bundle = one record covers all units; mixed = competing unit + bundle representations (always incomplete).'),
+  "complete": zod.boolean(),
+  "coveredIds": zod.array(zod.string()).describe('Ids of units (charges or QB rows) that are satisfied for this dimension.'),
+  "uncoveredIds": zod.array(zod.string()).describe('Ids of units that participate in this dimension but are not yet satisfied.'),
+  "expectedAmount": zod.string().nullish().describe('Total expected for this dimension, major units.'),
+  "representedAmount": zod.string().nullish().describe('Amount currently represented by covered evidence, major units.'),
+  "representationNote": zod.string().nullish().describe('Human-readable note for mixed or competing representations (grain=mixed).')
+}).describe('Coverage status for one of the three reconciliation dimensions.').describe('Dimension 2: real-world transaction identified (Stripe charge, check, QBO payment, Donorbox). For stripe_payout: any non-excluded, non-refunded Stripe charge is valid evidence — independent of CRM linkage. QBO may satisfy both this and accountingEvidence.'),
+  "accountingEvidence": zod.object({
+  "grain": zod.enum(['none', 'unit', 'bundle', 'mixed']).describe('Grain at which a dimension is satisfied: none = no evidence yet; unit = one evidence record per charge \/ QB row; bundle = one record covers all units; mixed = competing unit + bundle representations (always incomplete).'),
+  "complete": zod.boolean(),
+  "coveredIds": zod.array(zod.string()).describe('Ids of units (charges or QB rows) that are satisfied for this dimension.'),
+  "uncoveredIds": zod.array(zod.string()).describe('Ids of units that participate in this dimension but are not yet satisfied.'),
+  "expectedAmount": zod.string().nullish().describe('Total expected for this dimension, major units.'),
+  "representedAmount": zod.string().nullish().describe('Amount currently represented by covered evidence, major units.'),
+  "representationNote": zod.string().nullish().describe('Human-readable note for mixed or competing representations (grain=mixed).')
+}).describe('Coverage status for one of the three reconciliation dimensions.').describe('Dimension 3: money is represented in QuickBooks or another accounting system (settlement link or per-charge QB tie).'),
+  "complete": zod.boolean().describe('True when all three dimensions are complete: donorPurpose.complete (crmLinkage + crmRecordCompleteness), paymentTransaction.complete, and accountingEvidence.complete.'),
+  "state": zod.object({
+  "linkage": zod.object({
+  "state": zod.enum(['complete', 'partial', 'mixed', 'partial_mixed', 'missing']).describe('End-to-end chain completeness across all three columns (accounting \/ transaction \/ CRM).\ncomplete — chain fully connected, no conflict, no competing grains.\npartial — some connections exist but the chain is not fully closed.\nmixed — competing grain representations coexist (always requires resolution).\npartial_mixed — both partial and mixed.\nmissing — no connections at all (only one column of evidence).\n'),
+  "accountingToTransaction": zod.object({
+  "state": zod.enum(['missing', 'partial', 'complete', 'mixed']),
+  "grain": zod.enum(['unit', 'bundle', 'mixed', 'none']),
+  "relationshipCount": zod.number().describe('Number of linked records on the source side of this pairwise edge.')
+}).describe('Pairwise coverage between two of the three columns.').describe('QB ↔ Stripe: does the accounting record know about the transaction?'),
+  "transactionToCrm": zod.object({
+  "state": zod.enum(['missing', 'partial', 'complete', 'mixed']),
+  "grain": zod.enum(['unit', 'bundle', 'mixed', 'none']),
+  "relationshipCount": zod.number().describe('Number of linked records on the source side of this pairwise edge.')
+}).describe('Pairwise coverage between two of the three columns.').describe('Stripe ↔ CRM: does the transaction link to a CRM gift?'),
+  "accountingToCrm": zod.object({
+  "state": zod.enum(['missing', 'partial', 'complete', 'mixed']),
+  "grain": zod.enum(['unit', 'bundle', 'mixed', 'none']),
+  "relationshipCount": zod.number().describe('Number of linked records on the source side of this pairwise edge.')
+}).describe('Pairwise coverage between two of the three columns.').describe('QB ↔ CRM: direct accounting-to-CRM link (deposit-grain PAs; missing for the charge-tie path).')
+}),
+  "information": zod.object({
+  "state": zod.enum(['audit_ready', 'accounting_pending', 'incomplete']).describe('Content completeness of the cluster\'s records.\naudit_ready — CRM gift records complete AND accounting evidence settled AND no pending refunds.\naccounting_pending — CRM records complete but accounting not yet settled or a refund is pending.\nincomplete — one or more CRM gift records lack required donor \/ allocation information.\n'),
+  "crmComplete": zod.boolean().describe('True when all linked CRM gift records satisfy the record-completeness predicate.'),
+  "qbComplete": zod.boolean().describe('QB DOCUMENTATION completeness: finance has filled out the QB record from CRM (fill-out-QB workflow). Always false until that workflow ships — gates audit_ready, so evidence-linked-but-undocumented rows stay accounting_pending.'),
+  "qbEvidenceComplete": zod.boolean().describe('True when the accounting evidence is present and settled (evidence linkage only — does NOT imply documentation completeness).')
+}),
+  "flags": zod.object({
+  "excluded": zod.boolean(),
+  "conflict": zod.boolean(),
+  "attentionRequired": zod.boolean().describe('True when a pending refund blocks audit_ready status.')
+}),
+  "settlementLinkState": zod.enum(['unlinked', 'confirmed', 'exempt']).describe('State of the payout↔deposit pairing fact for stripe_payout clusters. Absent for qb_standalone and crm_only. `confirmed` = a settled QB lump carries the pairing; `exempt` = a negative payout (Stripe withdrawal — no bank deposit ever reaches QuickBooks).').nullish().describe('Present for all stripe_payout clusters (\'unlinked\' when no pairing exists); absent for other cluster kinds.'),
+  "qbCards": zod.array(zod.object({
+  "qbRecordId": zod.string(),
+  "state": zod.enum(['raw', 'enriched', 'match_proposed', 'matched_complete', 'matched_partial_qb_surplus', 'matched_partial_external_surplus', 'matched_conflict', 'excluded']).describe('Derived display state for one QB evidence card. Also carries the record\'s linkage vocabulary: raw = no candidate gift yet (pending); match_proposed = candidate awaiting human confirm; matched_\* = counted into a gift; excluded = marked not-a-donation. enriched is reserved for the future fill-out-QB documentation workflow.'),
+  "isTransactionEvidence": zod.boolean().describe('True for qb_standalone clusters where the QB record is also the transaction evidence.')
+}).describe('One QB evidence card in the cluster — one entry per QB record in qbRecords (keyed by qbRecordId = stagedPaymentId), the ONE source of per-record QB linkage state.')),
+  "transactions": zod.array(zod.object({
+  "transactionId": zod.string(),
+  "livePayment": zod.boolean().describe('False when the charge is proposed-refunded.'),
+  "refundStatus": zod.enum(['none', 'anticipated', 'refunded']),
+  "state": zod.enum(['unmatched', 'partial', 'amount_mismatch', 'info_conflict', 'matched', 'refund_anticipated', 'refunded', 'excluded']).describe('Canonical per-transaction card state (docs\/workbench-business-rules.md §5.1).\nunmatched = live transaction with no CRM\/accounting link; partial = some\nlinkage but coverage incomplete; amount_mismatch = links exist but amounts\ndo not reconcile; info_conflict = amounts reconcile but metadata materially\nconflicts; matched = required links present and amounts reconcile;\nrefund_anticipated \/ refunded apply to the individual transaction only;\nexcluded = intentionally excluded from active reconciliation.\n')
+}).describe('One countable transaction unit (Stripe charge or QB record for qb_standalone).')),
+  "crmCards": zod.array(zod.object({
+  "giftId": zod.string(),
+  "recordComplete": zod.boolean(),
+  "state": zod.enum(['missing', 'unmatched_incomplete', 'unmatched_complete', 'matched_incomplete', 'matched_complete', 'partial_gift_surplus', 'partial_external_surplus', 'mixed', 'conflict', 'pledge_link_broken', 'lost', 'dormant']).describe('Derived display state for one CRM gift card.'),
+  "satisfiedBy": zod.enum(['donorbox', 'completed_coding_form', 'donor_allocations_and_supporting_documents']).nullish().describe('Canonical vocabulary for which completeness path was satisfied; null when the gift is incomplete.')
+}).describe('One CRM gift card in the cluster.'))
+}).describe('Canonical row-level state per docs\/workbench-business-rules.md §10.\nComputed once per cluster from authoritative DB\/hydration data. All\nother per-cluster display fields (coverage.complete, lenses) are derived\nfrom this — never maintained independently.\n').describe('Canonical row-level state (Option C). Required — the server always derives it; coverage.complete and all lens flags are derived from this.')
+}).describe('Three-dimension canonical cluster state. Derived once and used for both lens counts and\nthe hydrated response — a cluster whose complete=false never appears in the Completed lens.\nPresent for all cluster kinds (stripe_payout, qb_standalone, crm_only).\n')
+})),
+  "lensCounts": zod.object({
+  "all_open": zod.number(),
+  "unresolved_composition": zod.number(),
+  "ambiguous_pairing": zod.number(),
+  "needs_gift": zod.number(),
+  "accounting_corrections": zod.number(),
+  "refunds": zod.number(),
+  "completed": zod.number(),
+  "not_fundraising": zod.number()
+}),
+  "pagination": zod.object({
+  "page": zod.number(),
+  "limit": zod.number(),
+  "total": zod.number()
+}),
+  "viewerCanManageAccounting": zod.boolean()
+})
+
+/**
  * The most recent human reconciliation queue actions (exclude / re-include /
 resolve / reconcile / mint / link / revert / refund decisions), newest
 first, hydrated from the audit log's reconciliation-domain entries. Each
