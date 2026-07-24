@@ -169,11 +169,20 @@ function Composition({
             ) : null}
           </div>
         </div>
-        {deposit.charges.map((charge) => (
+        {deposit.charges.map((charge) => {
+          const refundedAmount = Number(charge.amountRefunded ?? 0);
+          const laterRefunded = charge.refunded || refundedAmount > 0;
+          const partialLaterRefund = laterRefunded && refundedAmount > 0 && refundedAmount < Number(charge.amount);
+          return (
           <div key={charge.chargeId} className="flex items-center justify-between rounded border bg-card px-2 py-1 text-[11px]">
             <span className="truncate">{charge.payerName ?? charge.chargeId}</span>
             <span className="flex shrink-0 items-center gap-1">
               <span className="tabular-nums">{money(charge.amount)}</span>
+              {laterRefunded ? (
+                <Badge variant="outline" className="border-rose-300 text-[9px] text-rose-700 dark:border-rose-800 dark:text-rose-300">
+                  Later refunded{partialLaterRefund ? ` · ${money(charge.amountRefunded)}` : ""}
+                </Badge>
+              ) : null}
               {actions.isFinanceOrAdmin ? (
                 <CardActionsMenu items={[
                   { label: "Exclude", onSelect: () => actions.openExclude({ kind: "charge", id: charge.chargeId, label: charge.payerName ?? charge.chargeId }) },
@@ -188,7 +197,8 @@ function Composition({
               ) : null}
             </span>
           </div>
-        ))}
+          );
+        })}
         {refundTotal > 0 ? (
           <div className="flex items-center justify-between rounded border border-rose-200 bg-rose-50/50 px-2 py-1 text-[11px] text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
             <span className="truncate">Refunds settled in payout</span>

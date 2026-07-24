@@ -284,6 +284,10 @@ function buildUniverse(q: string | null) {
           SELECT 1 FROM stripe_staged_charges pc
           WHERE pc.stripe_payout_id = p.id
             AND pc.raw_charge->>'status' = 'succeeded'
+            AND NOT (
+              pc.refunded = true
+              AND COALESCE(pc.amount_refunded, 0) >= pc.gross_amount
+            )
             AND NOT EXISTS (
               SELECT 1 FROM payment_applications ppa
               WHERE ppa.stripe_charge_id = pc.id

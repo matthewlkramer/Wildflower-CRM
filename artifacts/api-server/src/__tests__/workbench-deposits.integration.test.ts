@@ -24,6 +24,7 @@ const ORG_ID = `${RUN}_org`;
 const ACCOUNT_ID = `${RUN}_acct`;
 const depositIds: string[] = [];
 const payoutIds: string[] = [];
+const chargeIds: string[] = [];
 const unitIds: string[] = [];
 const componentIds: string[] = [];
 const stagedIds: string[] = [];
@@ -68,7 +69,10 @@ async function seedPayout(
     id,
     stripeAccountId: ACCOUNT_ID,
     amount,
+    grossTotal: amount,
     netTotal: amount,
+    feeTotal: "0.00",
+    refundTotal: "0.00",
     currency: "USD",
     status: "paid",
     arrivalDate: "2099-12-30",
@@ -76,6 +80,32 @@ async function seedPayout(
     ambiguousBankMatch,
   });
   payoutIds.push(id);
+  return id;
+}
+
+async function seedCharge(
+  payoutId: string,
+  {
+    grossAmount,
+    refunded = false,
+    amountRefunded = "0.00",
+  }: { grossAmount: string; refunded?: boolean; amountRefunded?: string },
+): Promise<string> {
+  const id = nextId("charge");
+  await db.insert(schema.stripeStagedCharges).values({
+    id,
+    stripeAccountId: ACCOUNT_ID,
+    stripePayoutId: payoutId,
+    grossAmount,
+    feeAmount: "0.00",
+    netAmount: grossAmount,
+    amountRefunded,
+    currency: "USD",
+    dateReceived: "2099-12-31",
+    refunded,
+    rawCharge: { status: "succeeded" },
+  });
+  chargeIds.push(id);
   return id;
 }
 
@@ -181,6 +211,9 @@ afterAll(async () => {
     await db.delete(schema.stagedPayments).where(inArrayFn(schema.stagedPayments.id, stagedIds));
   }
   if (payoutIds.length) {
+    if (chargeIds.length) {
+      await db.delete(schema.stripeStagedCharges).where(inArrayFn(schema.stripeStagedCharges.id, chargeIds));
+    }
     await db.delete(schema.stripePayouts).where(inArrayFn(schema.stripePayouts.id, payoutIds));
   }
   if (depositIds.length) {
@@ -231,6 +264,41 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(bundledRow?.composition.units).toHaveLength(2);
     const searchResult = await listDeposits("unresolved_composition", "Unresolved donor");
     expect(searchResult.data.some((item: any) => item.anchorId === unresolved)).toBe(true);
+  });
+
+  it("does not demand a gift for a fully refunded later charge", async () => {
+    const deposit = await seedDeposit("Later refunded Stripe charge", "100.00");
+    const payout = await seedPayout("100.00", deposit);
+    await seedCharge(payout, {
+      grossAmount: "100.00",
+      refunded: true,
+      amountRefunded: "100.00",
+    });
+
+    const needsGift = await listDeposits("needs_gift", "Later refunded Stripe charge");
+    expect(needsGift.data.some((item: any) => item.anchorId === deposit)).toBe(false);
+
+    const completed = await listDeposits("completed", "Later refunded Stripe charge");
+    const row = completed.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.charges[0]).toMatchObject({
+      refunded: true,
+      amountRefunded: "100.00",
+      amount: "100.00",
+    });
+  });
+
+  it("still demands gifts for active gross charges in a bundled payout", async () => {
+    const deposit = await seedDeposit("Bundled later refund and active charge", "200.00");
+    const payout = await seedPayout("200.00", deposit);
+    await seedCharge(payout, {
+      grossAmount: "100.00",
+      refunded: true,
+      amountRefunded: "100.00",
+    });
+    await seedCharge(payout, { grossAmount: "100.00" });
+
+    const needsGift = await listDeposits("needs_gift", "Bundled later refund and active charge");
+    expect(needsGift.data.some((item: any) => item.anchorId === deposit)).toBe(true);
   });
 
   it("surfaces correction_needed accounting checks for component units", async () => {
