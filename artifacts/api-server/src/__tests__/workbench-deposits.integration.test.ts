@@ -304,10 +304,7 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       refNo: "REF-123",
       payee: "Example Payee",
       memo: "Source bank memo",
-      class: "Fundraising",
       account: ACCOUNT_ID,
-      qbPosting: "1503 Pledges/Services Receivable",
-      donor: "Example Donor",
       deposit: "100.00",
       dedupKey: nextId("dedup"),
       occurrence: 0,
@@ -318,13 +315,13 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const result = await listDeposits("all_open", "Source bank memo");
     const row = result.data.find((item: any) => item.anchorId === deposit);
     expect(row?.bank).toMatchObject({
-      qbPosting: "1503 Pledges/Services Receivable",
       payee: "Example Payee",
-      donor: "Example Donor",
-      qbClass: "Fundraising",
       refNo: "REF-123",
       txnType: "Deposit",
     });
+    expect(row?.bank).not.toHaveProperty("qbPosting");
+    expect(row?.bank).not.toHaveProperty("donor");
+    expect(row?.bank).not.toHaveProperty("qbClass");
   });
 
   it("supports multi-unit composition, unresolved work, memo search, and full-universe counts", async () => {

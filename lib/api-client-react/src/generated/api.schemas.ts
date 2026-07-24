@@ -6045,10 +6045,7 @@ export type WorkbenchDepositBank = {
   location: string | null;
   reference: string | null;
   memo: string | null;
-  qbPosting: string | null;
   payee: string | null;
-  donor: string | null;
-  qbClass: string | null;
   refNo: string | null;
   txnType: string | null;
 };

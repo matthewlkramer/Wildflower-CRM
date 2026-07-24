@@ -310,8 +310,6 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
   const isNotFundraising = deposit.lenses.includes("not_fundraising");
   const bankSourceDetails = [
     deposit.bank.payee,
-    deposit.bank.donor,
-    deposit.bank.qbClass,
     deposit.bank.refNo,
   ].filter(Boolean).join(" · ");
   const linkedStagedPaymentIds = new Set(deposit.gifts.flatMap((gift) => gift.linkedStagedPaymentIds ?? []));
@@ -353,7 +351,6 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
             {deposit.date ? formatDateShort(deposit.date) : "Undated"} · {deposit.bank.account ?? "Wells Fargo"}
           </span>
           <span className="mt-1 block truncate text-[11px] text-muted-foreground">{deposit.bank.memo ?? deposit.bank.reference ?? deposit.anchorId}</span>
-          {deposit.bank.qbPosting ? <span className="mt-1 block truncate text-[11px] font-medium text-muted-foreground">QBO: {deposit.bank.qbPosting}</span> : null}
           {bankSourceDetails ? <span className="block truncate text-[11px] text-muted-foreground">{bankSourceDetails}</span> : null}
         </span>
         <span onClick={(event) => event.stopPropagation()}><Composition deposit={deposit} actions={actions} onConfirmProvisional={onConfirmProvisional} onDismissProvisional={onDismissProvisional} /></span>

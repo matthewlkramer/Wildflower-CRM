@@ -9440,7 +9440,7 @@ components:
         lenses: { type: array, items: { $ref: "#/components/schemas/WorkbenchDepositLens" } }
         bank:
           type: object
-          required: [amount, currency, account, location, reference, memo, qbPosting, payee, donor, qbClass, refNo, txnType]
+          required: [amount, currency, account, location, reference, memo, payee, refNo, txnType]
           properties:
             amount: { type: string }
             currency: { type: string }
@@ -9448,10 +9448,7 @@ components:
             location: { type: string, nullable: true }
             reference: { type: string, nullable: true }
             memo: { type: string, nullable: true }
-            qbPosting: { type: string, nullable: true }
             payee: { type: string, nullable: true }
-            donor: { type: string, nullable: true }
-            qbClass: { type: string, nullable: true }
             refNo: { type: string, nullable: true }
             txnType: { type: string, nullable: true }
         composition: { $ref: "#/components/schemas/WorkbenchDepositComposition" }

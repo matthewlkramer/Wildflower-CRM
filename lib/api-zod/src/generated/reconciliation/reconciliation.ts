@@ -1296,10 +1296,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "location": zod.string().nullable(),
   "reference": zod.string().nullable(),
   "memo": zod.string().nullable(),
-  "qbPosting": zod.string().nullable(),
   "payee": zod.string().nullable(),
-  "donor": zod.string().nullable(),
-  "qbClass": zod.string().nullable(),
   "refNo": zod.string().nullable(),
   "txnType": zod.string().nullable()
 }),
