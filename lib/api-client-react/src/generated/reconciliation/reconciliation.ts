@@ -52,6 +52,7 @@ import type {
   PayoutBankMatchConfirmation,
   PayoutDepositLink,
   PayoutSearchList,
+  QboAccountingCheckDispositionResult,
   ReconciliationApproveResult,
   ReconciliationBundleConfirmResult,
   ReconciliationBundleProposal,
@@ -65,6 +66,7 @@ import type {
   SearchReconciliationPayoutsParams,
   SearchReconciliationQbStagedParams,
   SetBankDepositExclusionBody,
+  SetQboAccountingCheckDispositionBody,
   SettlementLineage,
   SplitStagedPaymentUnitsBody,
   SplitStagedPaymentUnitsResult,
@@ -1209,6 +1211,83 @@ export const useReIncludeBankDepositComponent = <TError = ErrorType<FinanceForbi
         TContext
       > => {
       return useMutation(getReIncludeBankDepositComponentMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Human disposition is limited to corrected
+or accepted_historical; comparer-owned consistent and correction_needed
+cannot be set through this route. accepted_historical requires a
+non-blank note. This updates only the accounting review sidecar and
+resolver metadata; it never changes money, gift, or application records.
+
+ * @summary Record a human disposition for a QuickBooks accounting check.
+ */
+export const getSetQboAccountingCheckDispositionUrl = (id: string,) => {
+
+
+
+
+  return `/api/reconciliation/accounting-checks/${id}/disposition`
+}
+
+export const setQboAccountingCheckDisposition = async (id: string,
+    setQboAccountingCheckDispositionBody: SetQboAccountingCheckDispositionBody, options?: RequestInit): Promise<QboAccountingCheckDispositionResult> => {
+
+  return customFetch<QboAccountingCheckDispositionResult>(getSetQboAccountingCheckDispositionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      setQboAccountingCheckDispositionBody,)
+  }
+);}
+
+
+
+
+export const getSetQboAccountingCheckDispositionMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setQboAccountingCheckDisposition>>, TError,{id: string;data: BodyType<SetQboAccountingCheckDispositionBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setQboAccountingCheckDisposition>>, TError,{id: string;data: BodyType<SetQboAccountingCheckDispositionBody>}, TContext> => {
+
+const mutationKey = ['setQboAccountingCheckDisposition'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setQboAccountingCheckDisposition>>, {id: string;data: BodyType<SetQboAccountingCheckDispositionBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setQboAccountingCheckDisposition(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetQboAccountingCheckDispositionMutationResult = NonNullable<Awaited<ReturnType<typeof setQboAccountingCheckDisposition>>>
+    export type SetQboAccountingCheckDispositionMutationBody = BodyType<SetQboAccountingCheckDispositionBody>
+    export type SetQboAccountingCheckDispositionMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Record a human disposition for a QuickBooks accounting check.
+ */
+export const useSetQboAccountingCheckDisposition = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setQboAccountingCheckDisposition>>, TError,{id: string;data: BodyType<SetQboAccountingCheckDispositionBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setQboAccountingCheckDisposition>>,
+        TError,
+        {id: string;data: BodyType<SetQboAccountingCheckDispositionBody>},
+        TContext
+      > => {
+      return useMutation(getSetQboAccountingCheckDispositionMutationOptions(options));
     }
     /**
  * @summary Link a Stripe payout to a Wells Fargo bank deposit.

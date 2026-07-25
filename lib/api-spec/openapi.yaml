@@ -4728,6 +4728,34 @@ paths:
         "403": { $ref: "#/components/responses/FinanceForbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Component is not excluded" }
+  /reconciliation/accounting-checks/{id}/disposition:
+    post:
+      operationId: setQboAccountingCheckDisposition
+      tags: [reconciliation]
+      summary: Record a human disposition for a QuickBooks accounting check.
+      description: |
+        Finance/admin review only. Human disposition is limited to corrected
+        or accepted_historical; comparer-owned consistent and correction_needed
+        cannot be set through this route. accepted_historical requires a
+        non-blank note. This updates only the accounting review sidecar and
+        resolver metadata; it never changes money, gift, or application records.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetQboAccountingCheckDispositionBody" }
+      responses:
+        "200":
+          description: Updated accounting check
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QboAccountingCheckDispositionResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The accounting check is comparer-owned or the disposition cannot be applied." }
   /reconciliation/payouts/{payoutId}/bank-deposit:
     post:
       operationId: linkPayoutDeposit
@@ -9562,6 +9590,26 @@ components:
           allOf: [ { $ref: "#/components/schemas/StagedPaymentExclusionReason" } ]
           nullable: true
         classificationSource: { $ref: "#/components/schemas/StagedPaymentClassificationSource" }
+    SetQboAccountingCheckDispositionBody:
+      type: object
+      required: [disposition]
+      properties:
+        disposition:
+          type: string
+          enum: [corrected, accepted_historical]
+        note:
+          type: string
+          nullable: true
+          description: Required and non-blank when disposition is accepted_historical.
+    QboAccountingCheckDispositionResult:
+      type: object
+      required: [id, disposition, note, resolvedByUserId, resolvedAt]
+      properties:
+        id: { type: string }
+        disposition: { type: string, enum: [corrected, accepted_historical] }
+        note: { type: string, nullable: true }
+        resolvedByUserId: { type: string, nullable: true }
+        resolvedAt: { type: string, format: date-time, nullable: true }
     WorkbenchDepositCharge:
       allOf:
         - $ref: "#/components/schemas/WorkbenchClusterCharge"

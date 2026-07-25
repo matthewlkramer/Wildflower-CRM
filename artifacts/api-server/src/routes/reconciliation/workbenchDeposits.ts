@@ -4,8 +4,9 @@ import {
   bankDepositComponents,
   bankDepositExclusions,
   bankDeposits,
+  qboAccountingChecks,
 } from "@workspace/db/schema";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { requireFinance, viewerCanManageAccounting } from "../../lib/financeGuard";
@@ -17,6 +18,7 @@ import {
   ReIncludeBankDepositComponentParams,
   SetBankDepositExclusionBody,
   SetBankDepositExclusionParams,
+  SetQboAccountingCheckDispositionBody,
 } from "@workspace/api-zod";
 import {
   informationStateOf,
@@ -1118,6 +1120,67 @@ router.post(
         id: bankDepositComponents.id,
         exclusionReason: bankDepositComponents.exclusionReason,
         classificationSource: bankDepositComponents.classificationSource,
+      });
+    res.json(row);
+  }),
+);
+
+router.post(
+  "/reconciliation/accounting-checks/:id/disposition",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const body = parseOrBadRequest(SetQboAccountingCheckDispositionBody, req.body, res);
+    if (!body) return;
+    const checkId = req.params.id as string;
+    if (body.disposition === "accepted_historical" && !body.note?.trim()) {
+      res.status(400).json({
+        error: "note_required",
+        message: "A note is required when accepting historical accounting.",
+      });
+      return;
+    }
+
+    const [current] = await db
+      .select({
+        id: qboAccountingChecks.id,
+        disposition: qboAccountingChecks.disposition,
+      })
+      .from(qboAccountingChecks)
+      .where(eq(qboAccountingChecks.id, checkId))
+      .limit(1);
+    if (!current) {
+      notFound(res, "accounting check");
+      return;
+    }
+    if (current.disposition === "consistent") {
+      res.status(409).json({
+        error: "comparer_owned",
+        message: "Consistent accounting checks are not eligible for human disposition.",
+      });
+      return;
+    }
+
+    const [row] = await db
+      .update(qboAccountingChecks)
+      .set({
+        disposition: body.disposition,
+        note: body.note?.trim() ?? null,
+        resolvedByUserId: user.id,
+        resolvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(qboAccountingChecks.id, checkId))
+      .returning({
+        id: qboAccountingChecks.id,
+        disposition: qboAccountingChecks.disposition,
+        note: qboAccountingChecks.note,
+        resolvedByUserId: qboAccountingChecks.resolvedByUserId,
+        resolvedAt: qboAccountingChecks.resolvedAt,
       });
     res.json(row);
   }),

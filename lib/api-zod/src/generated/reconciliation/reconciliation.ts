@@ -580,6 +580,32 @@ export const ReIncludeBankDepositComponentResponse = zod.object({
 })
 
 /**
+ * Finance/admin review only. Human disposition is limited to corrected
+or accepted_historical; comparer-owned consistent and correction_needed
+cannot be set through this route. accepted_historical requires a
+non-blank note. This updates only the accounting review sidecar and
+resolver metadata; it never changes money, gift, or application records.
+
+ * @summary Record a human disposition for a QuickBooks accounting check.
+ */
+export const SetQboAccountingCheckDispositionParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const SetQboAccountingCheckDispositionBody = zod.object({
+  "disposition": zod.enum(['corrected', 'accepted_historical']),
+  "note": zod.string().nullish().describe('Required and non-blank when disposition is accepted_historical.')
+})
+
+export const SetQboAccountingCheckDispositionResponse = zod.object({
+  "id": zod.string(),
+  "disposition": zod.enum(['corrected', 'accepted_historical']),
+  "note": zod.string().nullable(),
+  "resolvedByUserId": zod.string().nullable(),
+  "resolvedAt": zod.string().datetime({}).nullable()
+})
+
+/**
  * @summary Link a Stripe payout to a Wells Fargo bank deposit.
  */
 export const LinkPayoutDepositParams = zod.object({

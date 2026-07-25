@@ -9,7 +9,17 @@ import { formatCurrency, formatDateShort } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { ClusterActions, AnchorRef } from "@/components/reconciliation-clusters/rows";
-import type { EvidencePickOption, EvidencePreview } from "@/components/reconciliation-clusters/dialogs";
+import type { EvidencePreview } from "@/components/reconciliation-clusters/dialogs";
+
+export type DepositActions = Omit<
+  ClusterActions,
+  "openMarkLoss" | "openMatchEvidence" | "unmatchPledge"
+> & {
+  openAccountingDisposition?: (
+    checkId: string,
+    disposition: "corrected" | "accepted_historical",
+  ) => void;
+};
 
 export const DEPOSIT_GRID =
   "grid grid-cols-[26px_minmax(150px,1fr)_minmax(220px,1.35fr)_minmax(220px,1.35fr)_minmax(190px,1fr)] gap-3 px-4 items-start";
@@ -65,12 +75,12 @@ export interface DepositRowProps {
   deposit: WorkbenchDeposit;
   expanded?: boolean;
   onToggle?: () => void;
-  actions?: ClusterActions;
+  actions?: DepositActions;
   onConfirmProvisional?: (id: string) => void;
   onDismissProvisional?: (id: string) => void;
 }
 
-const NOOP_ACTIONS: ClusterActions = {
+const NOOP_ACTIONS: DepositActions = {
   busy: false,
   openLinkGift: () => undefined,
   openCreateGift: () => undefined,
@@ -82,7 +92,6 @@ const NOOP_ACTIONS: ClusterActions = {
   openDismissRefund: () => undefined,
   openFlag: () => undefined,
   openFlagGift: () => undefined,
-  openMarkLoss: () => undefined,
   openSettlementSearch: () => undefined,
   openLinkDepositPayout: () => undefined,
   openLinkPayoutDeposit: () => undefined,
@@ -94,8 +103,6 @@ const NOOP_ACTIONS: ClusterActions = {
   openQbDetail: () => undefined,
   rejectChargeQbTie: () => undefined,
   confirmProposedMatch: () => undefined,
-  openMatchEvidence: () => undefined,
-  unmatchPledge: () => undefined,
   openUnlinkChooser: () => undefined,
   openMergeGifts: () => undefined,
   confirmChargeProposal: () => undefined,
@@ -120,7 +127,7 @@ function Composition({
   onDismissProvisional,
 }: {
   deposit: WorkbenchDeposit;
-  actions: ClusterActions;
+  actions: DepositActions;
   onConfirmProvisional?: (id: string) => void;
   onDismissProvisional?: (id: string) => void;
 }) {
@@ -250,7 +257,7 @@ function accountingLabel(record: WorkbenchDepositAccountingCheck | WorkbenchDepo
   return record.qbTransactionMemo ?? ("memo" in record ? record.memo : null) ?? record.lineDescription ?? record.stagedPaymentId;
 }
 
-function Accounting({ checks, records, actions }: { checks: WorkbenchDepositAccountingCheck[]; records: WorkbenchDepositQbRecord[]; actions: ClusterActions }) {
+function Accounting({ checks, records, actions }: { checks: WorkbenchDepositAccountingCheck[]; records: WorkbenchDepositQbRecord[]; actions: DepositActions }) {
   const checksByPayment = new Map(checks.map((check) => [check.stagedPaymentId, check]));
   const items = [
     ...records.map((record) => ({ record, check: checksByPayment.get(record.stagedPaymentId) })),
@@ -287,6 +294,12 @@ function Accounting({ checks, records, actions }: { checks: WorkbenchDepositAcco
               <CardActionsMenu items={[
                 { label: "QB detail", onSelect: () => actions.openQbDetail(record ?? (display as WorkbenchDepositQbRecord), check ? "matched" : "missing") },
                 { label: "Exclude", onSelect: () => actions.openExclude(anchor) },
+                ...(check && check.disposition === "correction_needed"
+                  ? [
+                      { label: "Mark corrected", onSelect: () => actions.openAccountingDisposition?.(check.id, "corrected") },
+                      { label: "Accept historical…", onSelect: () => actions.openAccountingDisposition?.(check.id, "accepted_historical") },
+                    ]
+                  : []),
               ]} />
             ) : null}
           </span>
@@ -325,20 +338,6 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
     deposit.bank.refNo,
   ].filter(Boolean).join(" · ");
   const linkedStagedPaymentIds = new Set(deposit.gifts.flatMap((gift) => gift.linkedStagedPaymentIds ?? []));
-  const evidenceOptions: EvidencePickOption[] = [
-    ...deposit.charges.map((charge) => ({
-      anchor: { kind: "charge" as const, id: charge.chargeId, label: charge.payerName ?? charge.chargeId },
-      source: `Stripe charge · ${charge.payerName ?? charge.chargeId}`,
-      amount: money(charge.amount),
-      date: charge.chargeDate ?? null,
-    })),
-    ...deposit.qbRecords.map((record) => ({
-      anchor: { kind: "staged" as const, id: record.stagedPaymentId, label: record.lineDescription ?? record.stagedPaymentId },
-      source: `QuickBooks · ${record.lineDescription ?? record.stagedPaymentId}`,
-      amount: money(record.amount),
-      date: record.dateReceived ?? null,
-    })),
-  ];
   return (
     <section className="border-b last:border-b-0" data-testid={`deposit-row-${deposit.anchorId}`}>
       <div className={`${DEPOSIT_GRID} w-full py-3 text-left transition-colors hover:bg-muted/30`}>
@@ -378,7 +377,6 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
               </p>
               <p className="text-[11px] tabular-nums">{money(gift.amount)}</p>
               <div className="mt-1 flex flex-wrap gap-1">
-                <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openMatchEvidence(gift.giftId, gift.name ?? gift.giftId, evidenceOptions)}>Match evidence</button>
                 {(gift.linkedChargeIds?.length ?? 0) + (gift.linkedStagedPaymentIds?.length ?? 0) > 0 ? (
                   <button
                     type="button"

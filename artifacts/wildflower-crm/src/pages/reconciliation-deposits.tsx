@@ -11,7 +11,11 @@ import {
   getListPayoutCandidateDepositsQueryKey,
   getGetGiftOrPaymentQueryKey,
   getGetGiftOrPaymentQueryOptions,
+  getGetReconciliationGraphQueryOptions,
   useConfirmSettlementLink,
+  useConfirmStagedPaymentMatch,
+  useApproveReconciliationCard,
+  useSetQboAccountingCheckDisposition,
   useConfirmDepositQboComponent,
   useConfirmStripeRefundPropagation,
   useCreateGiftFromStagedPayment,
@@ -23,6 +27,7 @@ import {
   useExcludeStripeStagedCharge,
   useGetCurrentUser,
   useLinkStripeChargeToGift,
+  useRejectChargeQbTie,
   useReconcileStagedPayment,
   useResolveStagedPayment,
   useResolveStripeStagedCharge,
@@ -52,7 +57,7 @@ import {
   type WorkbenchRecentChange,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/format";
-import { DepositGridHeader, DepositRow, DEPOSIT_LENSES } from "@/components/reconciliation-deposits/rows";
+import { DepositGridHeader, DepositRow, DEPOSIT_LENSES, type DepositActions } from "@/components/reconciliation-deposits/rows";
 import { GiftSearchDialog } from "@/components/gift-search-dialog";
 import { MergeGiftsDialog } from "@/components/gift-merge-dialogs";
 import { ResolveTieDialog, type PickOptions } from "@/components/reconciliation-bundles/ResolveTieDialog";
@@ -62,6 +67,8 @@ import type { DonorType } from "@/components/entity-picker";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { apiErrorMessage, is409 } from "@/components/reconciliation-bundles/settlement-actions";
+import { deriveApproveBodyFromProposal } from "@/lib/reconciliation";
 
 const PAGE_SIZE = 25;
 const DEPOSIT_EXCLUSION_REASONS = Object.values(DepositExclusionReason);
@@ -70,6 +77,10 @@ function formatWhen(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : "Unexpected error";
 }
 
 export default function ReconciliationDepositsPage() {
@@ -116,6 +127,10 @@ export default function ReconciliationDepositsPage() {
   const confirmPayoutBankMatch = useConfirmPayoutBankMatch();
   const setBankDepositExclusion = useSetBankDepositExclusion();
   const clearBankDepositExclusion = useClearBankDepositExclusion();
+  const confirmMatch = useConfirmStagedPaymentMatch();
+  const rejectChargeQbTie = useRejectChargeQbTie();
+  const approveCard = useApproveReconciliationCard();
+  const setAccountingDisposition = useSetQboAccountingCheckDisposition();
   const deposits = data?.data ?? [];
   const canManageAccounting = data?.viewerCanManageAccounting ?? false;
   const total = data?.pagination.total ?? 0;
@@ -137,6 +152,11 @@ export default function ReconciliationDepositsPage() {
   const [bankExclusionFor, setBankExclusionFor] = useState<{ depositId: string; existing: BankDepositExclusion | null } | null>(null);
   const [bankExclusionReason, setBankExclusionReason] = useState<DepositExclusionReason>("other");
   const [bankExclusionNote, setBankExclusionNote] = useState("");
+  const [accountingDispositionFor, setAccountingDispositionFor] = useState<{
+    checkId: string;
+    disposition: "corrected" | "accepted_historical";
+  } | null>(null);
+  const [accountingDispositionNote, setAccountingDispositionNote] = useState("");
   const candidatePayouts = useListDepositCandidatePayouts(linkPayoutFor ?? "", {
     query: {
       enabled: linkPayoutFor != null,
@@ -153,11 +173,90 @@ export default function ReconciliationDepositsPage() {
   const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
   const mergeQueries = useQueries({ queries: mergeGiftIds.map((id) => getGetGiftOrPaymentQueryOptions(id, { query: { enabled: mergeGiftIds.length > 0, queryKey: getGetGiftOrPaymentQueryKey(id) } })) });
   const mergeRecords = useMemo<GiftOrPaymentDetail[]>(() => mergeQueries.map((query) => query.data).filter((record): record is GiftOrPaymentDetail => !!record), [mergeQueries]);
-  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || excludeComponent.isPending || reIncludeComponent.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending;
+  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || excludeComponent.isPending || reIncludeComponent.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmMatch.isPending || rejectChargeQbTie.isPending || approveCard.isPending || setAccountingDisposition.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: getListWorkbenchDepositsQueryKey() });
     void queryClient.invalidateQueries({ queryKey: getListWorkbenchRecentChangesQueryKey() });
+  };
+
+  const handleConfirmProposedMatch = async (stagedPaymentId: string, label: string) => {
+    try {
+      await confirmMatch.mutateAsync({ id: stagedPaymentId });
+      invalidate();
+      toast({ title: "Match confirmed", description: `${label} is now confirmed against its gift.` });
+    } catch (err) {
+      if (is409(err)) {
+        toast({ title: "The record changed — try again.", description: apiErrorMessage(err) ?? errMessage(err) });
+        invalidate();
+      } else {
+        toast({ title: "Couldn't confirm match", description: errMessage(err), variant: "destructive" });
+      }
+    }
+  };
+
+  const handleRejectChargeQbTie = async (chargeId: string) => {
+    try {
+      await rejectChargeQbTie.mutateAsync({ chargeId });
+      invalidate();
+      toast({ title: "QB tie dismissed", description: "The proposed charge–QB link was cleared." });
+    } catch (err) {
+      toast({ title: "Couldn't dismiss QB tie", description: errMessage(err), variant: "destructive" });
+    }
+  };
+
+  const handleConfirmChargeProposal = async (chargeId: string, label: string, depositStagedPaymentId: string) => {
+    try {
+      const graph = await queryClient.fetchQuery(getGetReconciliationGraphQueryOptions(depositStagedPaymentId));
+      if ((graph.evidence.stripe?.chargeId ?? null) !== chargeId) {
+        toast({
+          title: "Confirm from the QuickBooks card",
+          description: "This proposal covers the whole deposit, not just this charge — use “Confirm proposed match” on the deposit's QuickBooks card.",
+        });
+        return;
+      }
+      const derived = deriveApproveBodyFromProposal(graph);
+      if (!derived.ok) {
+        toast({ title: "Can't confirm yet", description: derived.reason });
+        return;
+      }
+      if (derived.confirm && !window.confirm(`${derived.confirm.title}\n\n${derived.confirm.description}`)) return;
+      await approveCard.mutateAsync({ stagedPaymentId: depositStagedPaymentId, data: derived.body });
+      invalidate();
+      toast({ title: "Match confirmed", description: `${label} was approved as proposed.` });
+    } catch (err) {
+      if (is409(err)) {
+        toast({ title: "The record changed — try again.", description: apiErrorMessage(err) ?? errMessage(err) });
+        invalidate();
+      } else {
+        toast({ title: "Couldn't confirm match", description: errMessage(err), variant: "destructive" });
+      }
+    }
+  };
+
+  const handleAccountingDisposition = async () => {
+    if (!accountingDispositionFor) return;
+    try {
+      await setAccountingDisposition.mutateAsync({
+        id: accountingDispositionFor.checkId,
+        data: {
+          disposition: accountingDispositionFor.disposition,
+          ...(accountingDispositionFor.disposition === "accepted_historical"
+            ? { note: accountingDispositionNote.trim() }
+            : {}),
+        },
+      });
+      setAccountingDispositionFor(null);
+      setAccountingDispositionNote("");
+      invalidate();
+      toast({ title: "Accounting disposition saved" });
+    } catch (err) {
+      toast({
+        title: "Couldn't save accounting disposition",
+        description: errMessage(err),
+        variant: "destructive",
+      });
+    }
   };
 
   const donorBody = (type: DonorType, id: string) => ({ organizationId: type === "organization" ? id : null, individualGiverPersonId: type === "individual" ? id : null, householdId: type === "household" ? id : null });
@@ -193,7 +292,7 @@ export default function ReconciliationDepositsPage() {
     else await revertStaged.mutateAsync({ id: revertFor.anchor.id });
     setRevertFor(null); invalidate();
   };
-  const actions: ClusterActions = {
+  const actions: DepositActions = {
     busy,
     openLinkGift: setLinkGiftFor,
     openCreateGift: (anchor, preview) => setCreateFor({ anchor, preview }),
@@ -211,7 +310,6 @@ export default function ReconciliationDepositsPage() {
     openDismissRefund: (chargeId, label) => setDismissFor({ chargeId, label }),
     openFlag: () => undefined,
     openFlagGift: () => undefined,
-    openMarkLoss: () => undefined,
     openSettlementSearch: setSettlementSearchFor,
     openLinkDepositPayout: setLinkPayoutFor,
     openLinkPayoutDeposit: setPayoutCandidateFor,
@@ -227,13 +325,15 @@ export default function ReconciliationDepositsPage() {
     },
     isFinanceOrAdmin: canManageAccounting && (me?.role === "finance" || me?.role === "admin"),
     openQbDetail: (record, linkage) => setQbDetailFor({ record, linkage }),
-    rejectChargeQbTie: () => undefined,
-    confirmProposedMatch: () => undefined,
-    openMatchEvidence: (giftId, giftLabel, options) => setMatchEvidenceFor({ giftId, giftLabel, options }),
-    unmatchPledge: () => undefined,
+    rejectChargeQbTie: (chargeId) => void handleRejectChargeQbTie(chargeId),
+    confirmProposedMatch: (stagedPaymentId, label) => void handleConfirmProposedMatch(stagedPaymentId, label),
     openUnlinkChooser: (giftLabel, options) => setUnlinkChooserFor({ giftLabel, options }),
     openMergeGifts: setMergeGiftIds,
-    confirmChargeProposal: () => undefined,
+    confirmChargeProposal: (chargeId, label, depositStagedPaymentId) => void handleConfirmChargeProposal(chargeId, label, depositStagedPaymentId),
+    openAccountingDisposition: (checkId: string, disposition: "corrected" | "accepted_historical") => {
+      setAccountingDispositionFor({ checkId, disposition });
+      setAccountingDispositionNote("");
+    },
   };
 
   const handleUndo = async (change: WorkbenchRecentChange) => {
@@ -481,6 +581,34 @@ export default function ReconciliationDepositsPage() {
       </AlertDialog>
       <AlertDialog open={dismissFor != null} onOpenChange={(open) => { if (!open && !busy) setDismissFor(null); }}>
         <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Dismiss reversal proposal?</AlertDialogTitle><AlertDialogDescription>{dismissFor?.label} stays booked.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={() => { if (!dismissFor) return; void dismissRefund.mutateAsync({ id: dismissFor.chargeId }).then(() => { setDismissFor(null); invalidate(); }); }}>Dismiss</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={accountingDispositionFor != null} onOpenChange={(open) => { if (!open && !busy) setAccountingDispositionFor(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {accountingDispositionFor?.disposition === "accepted_historical" ? "Accept historical accounting?" : "Mark accounting corrected?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This records a human review decision on the accounting check only. It does not change money or gift relationships.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {accountingDispositionFor?.disposition === "accepted_historical" ? (
+            <Textarea
+              value={accountingDispositionNote}
+              onChange={(event) => setAccountingDispositionNote(event.target.value)}
+              placeholder="Explain why this historical discrepancy is intentionally accepted"
+            />
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy || (accountingDispositionFor?.disposition === "accepted_historical" && !accountingDispositionNote.trim())}
+              onClick={() => void handleAccountingDisposition()}
+            >
+              Save disposition
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
       </AlertDialog>
       {settlementSearchFor ? <ResolveTieDialog anchor={{ anchorId: settlementSearchFor.payoutId, amount: settlementSearchFor.amount, date: settlementSearchFor.date }} open onOpenChange={(open) => { if (!open) setSettlementSearchFor(null); }} onPick={(id, options: PickOptions) => { if (!settlementSearchFor) return; void confirmSettlement.mutateAsync({ payoutId: settlementSearchFor.payoutId, data: { depositStagedPaymentId: id, ...(options?.overrideExclusion ? { overrideExclusion: true } : {}) } }).then(() => { setSettlementSearchFor(null); invalidate(); }); }} busy={busy} /> : null}
       <QbRecordDetailDialog open={qbDetailFor != null} onOpenChange={(open) => { if (!open) setQbDetailFor(null); }} record={qbDetailFor?.record ?? null} linkage={qbDetailFor?.linkage ?? null} />
