@@ -11,11 +11,14 @@ import {
   getListPayoutCandidateDepositsQueryKey,
   getGetGiftOrPaymentQueryKey,
   getGetGiftOrPaymentQueryOptions,
+  getListCodingFormRowsQueryKey,
+  getListDonorboxReviewQueryKey,
   useConfirmSettlementLink,
   useConfirmDepositQboComponent,
   useConfirmStripeRefundPropagation,
   useCreateGiftFromStagedPayment,
   useCreateGiftFromStripeStagedCharge,
+  useCreateGiftFromDonorboxDonation,
   useDismissStripeRefundPropagation,
   useDismissDepositQboComponent,
   useExcludeStagedPayment,
@@ -28,8 +31,11 @@ import {
   useResolveStripeStagedCharge,
   useListWorkbenchDeposits,
   useListWorkbenchRecentChanges,
+  useListCodingFormRows,
+  useListDonorboxReview,
   useListDepositCandidatePayouts,
   useLinkPayoutDeposit,
+  useLinkDonorboxDonationToGift,
   useUnlinkPayoutDeposit,
   useConfirmPayoutBankMatch,
   useSetBankDepositExclusion,
@@ -46,6 +52,8 @@ import {
   useRevertStripeStagedCharge,
   type GiftOrPayment,
   type GiftOrPaymentDetail,
+  type CodingFormRow,
+  type DonorboxReviewRow,
   type StagedPaymentExclusionReason,
   type WorkbenchClusterQbRecord,
   type WorkbenchDepositLens,
@@ -56,7 +64,7 @@ import { DepositGridHeader, DepositRow, DEPOSIT_LENSES } from "@/components/reco
 import { GiftSearchDialog } from "@/components/gift-search-dialog";
 import { MergeGiftsDialog } from "@/components/gift-merge-dialogs";
 import { ResolveTieDialog, type PickOptions } from "@/components/reconciliation-bundles/ResolveTieDialog";
-import { DonorResolveDialog, EvidenceChooserDialog, ExcludeReasonDialog, QbRecordDetailDialog, UnlinkChooserDialog, type EvidencePickOption, type EvidencePreview, type UnlinkOption } from "@/components/reconciliation-clusters/dialogs";
+import { CodingFormLookupDialog, DonorboxSearchDialog, DonorResolveDialog, EvidenceChooserDialog, ExcludeReasonDialog, QbRecordDetailDialog, UnlinkChooserDialog, type EvidencePickOption, type EvidencePreview, type UnlinkOption } from "@/components/reconciliation-clusters/dialogs";
 import type { AnchorRef, ClusterActions } from "@/components/reconciliation-clusters/rows";
 import type { DonorType } from "@/components/entity-picker";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -101,6 +109,8 @@ export default function ReconciliationDepositsPage() {
   const linkCharge = useLinkStripeChargeToGift();
   const resolveCharge = useResolveStripeStagedCharge();
   const createChargeGift = useCreateGiftFromStripeStagedCharge();
+  const linkDonorbox = useLinkDonorboxDonationToGift();
+  const createDonorboxGift = useCreateGiftFromDonorboxDonation();
   const resolveStaged = useResolveStagedPayment();
   const createStagedGift = useCreateGiftFromStagedPayment();
   const reconcileStaged = useReconcileStagedPayment();
@@ -121,6 +131,11 @@ export default function ReconciliationDepositsPage() {
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const [linkGiftFor, setLinkGiftFor] = useState<AnchorRef | null>(null);
+  const [donorboxFor, setDonorboxFor] = useState<{ anchor: AnchorRef; preview: EvidencePreview } | null>(null);
+  const [donorboxSearch, setDonorboxSearch] = useState("");
+  const [donorboxLinkRow, setDonorboxLinkRow] = useState<DonorboxReviewRow | null>(null);
+  const [codingFormFor, setCodingFormFor] = useState<{ anchor: AnchorRef; preview: EvidencePreview } | null>(null);
+  const [codingHint, setCodingHint] = useState<CodingFormRow | null>(null);
   const [createFor, setCreateFor] = useState<{ anchor: AnchorRef; preview: EvidencePreview } | null>(null);
   const [identifyFor, setIdentifyFor] = useState<{ anchor: AnchorRef; preview: EvidencePreview } | null>(null);
   const [excludeFor, setExcludeFor] = useState<AnchorRef | null>(null);
@@ -137,6 +152,20 @@ export default function ReconciliationDepositsPage() {
   const [bankExclusionFor, setBankExclusionFor] = useState<{ depositId: string; existing: BankDepositExclusion | null } | null>(null);
   const [bankExclusionReason, setBankExclusionReason] = useState<DepositExclusionReason>("other");
   const [bankExclusionNote, setBankExclusionNote] = useState("");
+  const donorboxParams = { queue: "needs_review" as const, search: donorboxSearch.trim() || undefined, limit: 25, page: 1 };
+  const donorboxRows = useListDonorboxReview(donorboxParams, {
+    query: {
+      enabled: donorboxFor != null,
+      queryKey: getListDonorboxReviewQueryKey(donorboxParams),
+    },
+  });
+  const codingFormParams = { status: "pending" as const, limit: 500, page: 1 };
+  const codingFormRows = useListCodingFormRows(codingFormParams, {
+    query: {
+      enabled: codingFormFor != null && canManageAccounting && me?.role === "admin",
+      queryKey: getListCodingFormRowsQueryKey(codingFormParams),
+    },
+  });
   const candidatePayouts = useListDepositCandidatePayouts(linkPayoutFor ?? "", {
     query: {
       enabled: linkPayoutFor != null,
@@ -153,19 +182,59 @@ export default function ReconciliationDepositsPage() {
   const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
   const mergeQueries = useQueries({ queries: mergeGiftIds.map((id) => getGetGiftOrPaymentQueryOptions(id, { query: { enabled: mergeGiftIds.length > 0, queryKey: getGetGiftOrPaymentQueryKey(id) } })) });
   const mergeRecords = useMemo<GiftOrPaymentDetail[]>(() => mergeQueries.map((query) => query.data).filter((record): record is GiftOrPaymentDetail => !!record), [mergeQueries]);
-  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || excludeComponent.isPending || reIncludeComponent.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending;
+  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || excludeComponent.isPending || reIncludeComponent.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || linkDonorbox.isPending || createDonorboxGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: getListWorkbenchDepositsQueryKey() });
     void queryClient.invalidateQueries({ queryKey: getListWorkbenchRecentChangesQueryKey() });
   };
 
+  const linkAnchorToGift = async (anchor: AnchorRef, giftId: string) => {
+    if (anchor.kind === "charge") {
+      await linkCharge.mutateAsync({ id: anchor.id, data: { giftId } });
+    } else if (anchor.kind === "staged") {
+      await reconcileStaged.mutateAsync({ id: anchor.id, data: { giftId } });
+    }
+  };
+
   const donorBody = (type: DonorType, id: string) => ({ organizationId: type === "organization" ? id : null, individualGiverPersonId: type === "individual" ? id : null, householdId: type === "household" ? id : null });
   const handlePickGift = async (gift: GiftOrPayment) => {
     if (!linkGiftFor) return;
-    if (linkGiftFor.kind === "charge") await linkCharge.mutateAsync({ id: linkGiftFor.id, data: { giftId: gift.id } });
-    else await reconcileStaged.mutateAsync({ id: linkGiftFor.id, data: { giftId: gift.id } });
+    if (donorboxLinkRow) {
+      await linkDonorbox.mutateAsync({ id: donorboxLinkRow.id, data: { giftId: gift.id } });
+      await linkAnchorToGift(linkGiftFor, gift.id);
+      setDonorboxLinkRow(null);
+    } else {
+      await linkAnchorToGift(linkGiftFor, gift.id);
+    }
     setLinkGiftFor(null); invalidate();
+  };
+
+  const handleCreateFromDonorbox = async (row: DonorboxReviewRow) => {
+    if (!donorboxFor) return;
+    const donorbox = await createDonorboxGift.mutateAsync({
+      id: row.id,
+      data: {
+        organizationId: row.organizationId ?? null,
+        individualGiverPersonId: row.individualGiverPersonId ?? null,
+        householdId: row.householdId ?? null,
+      },
+    });
+    await linkAnchorToGift(donorboxFor.anchor, donorbox.gift.id);
+    setDonorboxFor(null);
+    setDonorboxSearch("");
+    invalidate();
+  };
+
+  const handleUseCodingForm = (row: CodingFormRow, mode: "identify" | "create") => {
+    if (!codingFormFor) return;
+    setCodingHint(row);
+    if (mode === "create") {
+      setCreateFor(codingFormFor);
+    } else {
+      setIdentifyFor(codingFormFor);
+    }
+    setCodingFormFor(null);
   };
   const handleDonor = async (type: DonorType, id: string, create: boolean) => {
     const target = create ? createFor : identifyFor;
@@ -198,6 +267,11 @@ export default function ReconciliationDepositsPage() {
     openLinkGift: setLinkGiftFor,
     openCreateGift: (anchor, preview) => setCreateFor({ anchor, preview }),
     openIdentify: (anchor, preview) => setIdentifyFor({ anchor, preview: preview ?? { amount: "—", date: "—", method: "Payment", source: anchor.label, memo: null } }),
+    openDonorboxSearch: (anchor, preview) => {
+      setDonorboxFor({ anchor, preview });
+      setDonorboxSearch("");
+    },
+    openCodingFormLookup: (anchor, preview) => setCodingFormFor({ anchor, preview }),
     openExclude: setExcludeFor,
     reInclude: (anchor) => void (
       anchor.kind === "charge"
@@ -226,6 +300,7 @@ export default function ReconciliationDepositsPage() {
       void clearBankDepositExclusion.mutateAsync({ bankDepositId: depositId }).then(invalidate);
     },
     isFinanceOrAdmin: canManageAccounting && (me?.role === "finance" || me?.role === "admin"),
+    canUseCodingForm: canManageAccounting && me?.role === "admin",
     openQbDetail: (record, linkage) => setQbDetailFor({ record, linkage }),
     rejectChargeQbTie: () => undefined,
     confirmProposedMatch: () => undefined,
@@ -296,11 +371,38 @@ export default function ReconciliationDepositsPage() {
       </div>
       <GiftSearchDialog
         open={linkGiftFor != null}
-        onOpenChange={(open) => { if (!open) setLinkGiftFor(null); }}
+        onOpenChange={(open) => { if (!open) { setLinkGiftFor(null); setDonorboxLinkRow(null); } }}
         onPick={(gift) => void handlePickGift(gift)}
         busy={busy}
         title="Link to an existing gift"
         description={linkGiftFor ? `Pick the CRM donation record that ${linkGiftFor.label} pays.` : undefined}
+      />
+      <DonorboxSearchDialog
+        open={donorboxFor != null}
+        onOpenChange={(open) => { if (!open) { setDonorboxFor(null); setDonorboxSearch(""); } }}
+        rows={donorboxRows.data?.data ?? []}
+        search={donorboxSearch}
+        onSearchChange={setDonorboxSearch}
+        busy={busy || donorboxRows.isFetching}
+        onLink={(row) => {
+          if (!donorboxFor) return;
+          setDonorboxLinkRow(row);
+          setLinkGiftFor(donorboxFor.anchor);
+          setDonorboxFor(null);
+        }}
+        onCreate={(row) => void handleCreateFromDonorbox(row)}
+      />
+      <CodingFormLookupDialog
+        open={codingFormFor != null}
+        onOpenChange={(open) => { if (!open) setCodingFormFor(null); }}
+        rows={(codingFormRows.data?.data ?? []).filter((row) => {
+          if (!codingFormFor) return false;
+          const amountMatches = !codingFormFor.preview.amount || codingFormFor.preview.amount === "—" || row.amount == null || codingFormFor.preview.amount.includes(row.amount);
+          const dateMatches = !codingFormFor.preview.date || codingFormFor.preview.date === "—" || row.donationDate == null || codingFormFor.preview.date.includes(row.donationDate);
+          return amountMatches || dateMatches;
+        }).slice(0, 50)}
+        busy={busy || codingFormRows.isFetching}
+        onUse={handleUseCodingForm}
       />
       <EvidenceChooserDialog
         open={matchEvidenceFor != null}
@@ -329,8 +431,8 @@ export default function ReconciliationDepositsPage() {
           setRevertFor({ anchor: option.anchor, description: `Unlink “${label}” from ${option.source}.` });
         }}
       />
-      <DonorResolveDialog open={createFor != null} onOpenChange={(open) => { if (!open) setCreateFor(null); }} mode="create" recordLabel={createFor?.anchor.label ?? ""} preview={createFor?.preview ?? null} busy={busy} onSubmit={(type, id) => void handleDonor(type, id, true)} />
-      <DonorResolveDialog open={identifyFor != null} onOpenChange={(open) => { if (!open) setIdentifyFor(null); }} mode="identify" recordLabel={identifyFor?.anchor.label ?? ""} preview={identifyFor?.preview ?? null} busy={busy} onSubmit={(type, id) => void handleDonor(type, id, false)} />
+      <DonorResolveDialog open={createFor != null} onOpenChange={(open) => { if (!open) { setCreateFor(null); setCodingHint(null); } }} mode="create" recordLabel={createFor?.anchor.label ?? ""} preview={createFor?.preview ?? null} contextNote={codingHint ? `Coding form suggests ${codingHint.donorName ?? codingHint.donorNameRaw ?? "an unidentified donor"}${codingHint.intendedUsageSuggested ? ` · purpose: ${codingHint.intendedUsageSuggested}` : ""}.` : null} busy={busy} onSubmit={(type, id) => void handleDonor(type, id, true)} />
+      <DonorResolveDialog open={identifyFor != null} onOpenChange={(open) => { if (!open) { setIdentifyFor(null); setCodingHint(null); } }} mode="identify" recordLabel={identifyFor?.anchor.label ?? ""} preview={identifyFor?.preview ?? null} contextNote={codingHint ? `Coding form suggests ${codingHint.donorName ?? codingHint.donorNameRaw ?? "an unidentified donor"}${codingHint.intendedUsageSuggested ? ` · purpose: ${codingHint.intendedUsageSuggested}` : ""}.` : null} busy={busy} onSubmit={(type, id) => void handleDonor(type, id, false)} />
       <ExcludeReasonDialog open={excludeFor != null} onOpenChange={(open) => { if (!open) setExcludeFor(null); }} recordLabel={excludeFor?.label ?? "this record"} busy={busy} onSubmit={(reason) => void handleExclude(reason)} />
       <AlertDialog open={revertFor != null} onOpenChange={(open) => { if (!open && !busy) setRevertFor(null); }}>
         <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Unlink this match?</AlertDialogTitle><AlertDialogDescription>{revertFor?.description}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={() => void handleRevert()}>Unlink</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
