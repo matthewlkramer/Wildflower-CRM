@@ -8,6 +8,7 @@ import {
   getListWorkbenchDepositsQueryKey,
   getListWorkbenchRecentChangesQueryKey,
   getListDepositCandidatePayoutsQueryKey,
+  getListDepositCandidatePaymentUnitsQueryKey,
   getListPayoutCandidateDepositsQueryKey,
   getGetGiftOrPaymentQueryKey,
   getGetGiftOrPaymentQueryOptions,
@@ -45,10 +46,14 @@ import {
   useConfirmPayoutBankMatch,
   useSetBankDepositExclusion,
   useClearBankDepositExclusion,
+  useListDepositCandidatePaymentUnits,
+  useAddBankDepositComponent,
+  useRemoveManualBankDepositComponent,
   DepositExclusionReason,
   type BankDepositExclusion,
   useListPayoutCandidateDeposits,
   type DepositCandidatePayout,
+  type DepositCandidatePaymentUnit,
   type PayoutCandidateDeposit,
   useReIncludeStagedPayment,
   useReIncludeBankDepositComponent,
@@ -171,6 +176,13 @@ export default function ReconciliationDepositsPage() {
     disposition: "corrected" | "accepted_historical";
   } | null>(null);
   const [accountingDispositionNote, setAccountingDispositionNote] = useState("");
+  const [knownPaymentFor, setKnownPaymentFor] = useState<{ depositId: string; remainder: string } | null>(null);
+  const [knownPaymentMode, setKnownPaymentMode] = useState<"search" | "create">("search");
+  const [knownPaymentSearch, setKnownPaymentSearch] = useState("");
+  const [knownPaymentAmount, setKnownPaymentAmount] = useState("");
+  const [knownPaymentKind, setKnownPaymentKind] = useState<"check" | "direct_ach" | "wire" | "other">("check");
+  const [knownPaymentDate, setKnownPaymentDate] = useState("");
+  const [manualComponentFor, setManualComponentFor] = useState<{ id: string; label: string } | null>(null);
   const donorboxParams = { queue: "needs_review" as const, search: donorboxSearch.trim() || undefined, limit: 25, page: 1 };
   const donorboxRows = useListDonorboxReview(donorboxParams, {
     query: {
@@ -197,11 +209,27 @@ export default function ReconciliationDepositsPage() {
       queryKey: getListPayoutCandidateDepositsQueryKey(payoutCandidateFor ?? ""),
     },
   });
+  const candidatePaymentUnits = useListDepositCandidatePaymentUnits(knownPaymentFor?.depositId ?? "", {
+    amount: knownPaymentFor?.remainder,
+    q: knownPaymentSearch.trim() || undefined,
+    limit: 25,
+  }, {
+    query: {
+      enabled: knownPaymentFor != null && knownPaymentMode === "search",
+      queryKey: getListDepositCandidatePaymentUnitsQueryKey(knownPaymentFor?.depositId ?? "", {
+        amount: knownPaymentFor?.remainder,
+        q: knownPaymentSearch.trim() || undefined,
+        limit: 25,
+      }),
+    },
+  });
   const [qbDetailFor, setQbDetailFor] = useState<{ record: WorkbenchClusterQbRecord; linkage: string } | null>(null);
   const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
   const mergeQueries = useQueries({ queries: mergeGiftIds.map((id) => getGetGiftOrPaymentQueryOptions(id, { query: { enabled: mergeGiftIds.length > 0, queryKey: getGetGiftOrPaymentQueryKey(id) } })) });
   const mergeRecords = useMemo<GiftOrPaymentDetail[]>(() => mergeQueries.map((query) => query.data).filter((record): record is GiftOrPaymentDetail => !!record), [mergeQueries]);
-  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || excludeComponent.isPending || reIncludeComponent.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || linkDonorbox.isPending || createDonorboxGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmMatch.isPending || rejectChargeQbTie.isPending || approveCard.isPending || setAccountingDisposition.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending;
+  const addBankComponent = useAddBankDepositComponent();
+  const removeManualComponent = useRemoveManualBankDepositComponent();
+  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || excludeComponent.isPending || reIncludeComponent.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || linkDonorbox.isPending || createDonorboxGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmMatch.isPending || rejectChargeQbTie.isPending || approveCard.isPending || setAccountingDisposition.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending || addBankComponent.isPending || removeManualComponent.isPending;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: getListWorkbenchDepositsQueryKey() });
@@ -350,6 +378,46 @@ export default function ReconciliationDepositsPage() {
     else await excludeComponent.mutateAsync({ id: excludeFor.id, data: { exclusionReason: reason } });
     setExcludeFor(null); invalidate();
   };
+  const handleFlagRemainder = async (depositId: string, remainder: string) => {
+    await addBankComponent.mutateAsync({
+      bankDepositId: depositId,
+      data: { mode: "placeholder", amount: remainder },
+    });
+    toast({ title: "Remainder flagged for research", description: `${formatCurrency(remainder)} remains visible as a review placeholder.` });
+    invalidate();
+  };
+  const handleAttachPaymentUnit = async (candidate: DepositCandidatePaymentUnit) => {
+    if (!knownPaymentFor) return;
+    await addBankComponent.mutateAsync({
+      bankDepositId: knownPaymentFor.depositId,
+      data: { mode: "attach", paymentUnitId: candidate.id },
+    });
+    setKnownPaymentFor(null);
+    setKnownPaymentSearch("");
+    invalidate();
+  };
+  const handleCreateKnownPayment = async () => {
+    if (!knownPaymentFor || !knownPaymentAmount.trim()) return;
+    await addBankComponent.mutateAsync({
+      bankDepositId: knownPaymentFor.depositId,
+      data: {
+        mode: "create",
+        kind: knownPaymentKind,
+        amount: knownPaymentAmount.trim(),
+        receivedDate: knownPaymentDate || undefined,
+      },
+    });
+    setKnownPaymentFor(null);
+    setKnownPaymentSearch("");
+    invalidate();
+  };
+  const handleRemoveManualComponent = async () => {
+    if (!manualComponentFor) return;
+    await removeManualComponent.mutateAsync({ id: manualComponentFor.id });
+    setManualComponentFor(null);
+    toast({ title: "Manual component removed", description: "The unexplained remainder has been reopened." });
+    invalidate();
+  };
   const handleRevert = async () => {
     if (!revertFor) return;
     if (revertFor.anchor.kind === "charge") await revertCharge.mutateAsync({ id: revertFor.anchor.id });
@@ -392,6 +460,17 @@ export default function ReconciliationDepositsPage() {
     clearBankDepositExclusion: (depositId) => {
       void clearBankDepositExclusion.mutateAsync({ bankDepositId: depositId }).then(invalidate);
     },
+    openAddKnownPayment: (depositId, remainder) => {
+      setKnownPaymentFor({ depositId, remainder });
+      setKnownPaymentMode("search");
+      setKnownPaymentSearch("");
+      setKnownPaymentAmount(remainder);
+      setKnownPaymentDate("");
+    },
+    openFlagRemainder: (depositId, remainder) => {
+      void handleFlagRemainder(depositId, remainder);
+    },
+    removeManualComponent: (id, label) => setManualComponentFor({ id, label }),
     isFinanceOrAdmin: canManageAccounting && (me?.role === "finance" || me?.role === "admin"),
     canUseCodingForm: canManageAccounting && me?.role === "admin",
     openQbDetail: (record, linkage) => setQbDetailFor({ record, linkage }),
@@ -464,6 +543,83 @@ export default function ReconciliationDepositsPage() {
           </div>
         </aside>
       </div>
+      <AlertDialog open={knownPaymentFor != null} onOpenChange={(open) => { if (!open && !busy) setKnownPaymentFor(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add known payment</AlertDialogTitle>
+            <AlertDialogDescription>
+              Resolve {knownPaymentFor ? formatCurrency(knownPaymentFor.remainder) : "the"} unexplained remainder by attaching an unclaimed payment unit or creating a new one.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex gap-2">
+            <Button type="button" variant={knownPaymentMode === "search" ? "default" : "outline"} size="sm" onClick={() => setKnownPaymentMode("search")}>Search existing</Button>
+            <Button type="button" variant={knownPaymentMode === "create" ? "default" : "outline"} size="sm" onClick={() => setKnownPaymentMode("create")}>Create new</Button>
+          </div>
+          {knownPaymentMode === "search" ? (
+            <div className="space-y-3">
+              <Input value={knownPaymentSearch} onChange={(event) => setKnownPaymentSearch(event.target.value)} placeholder="Search payer, memo, or payment unit…" />
+              <div className="max-h-64 space-y-2 overflow-y-auto">
+                {candidatePaymentUnits.isLoading ? <p className="text-sm text-muted-foreground">Searching unclaimed payment units…</p> : candidatePaymentUnits.isError ? <p className="text-sm text-destructive">Could not load candidate payment units.</p> : candidatePaymentUnits.data?.data.length ? candidatePaymentUnits.data.data.map((candidate) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm hover:bg-muted"
+                    disabled={busy}
+                    onClick={() => void handleAttachPaymentUnit(candidate)}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{candidate.sourceLabel}</span>
+                      <span className="block text-xs text-muted-foreground">{candidate.kind.replace("_", " ")} · {candidate.receivedDate ?? "undated"} · {candidate.id}</span>
+                    </span>
+                    <span className="shrink-0 tabular-nums">{formatCurrency(candidate.amount)} {candidate.currency}</span>
+                  </button>
+                )) : <p className="text-sm text-muted-foreground">No unclaimed payment units near this remainder.</p>}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="known-payment-kind">Payment method</label>
+                <Select value={knownPaymentKind} onValueChange={(value) => setKnownPaymentKind(value as typeof knownPaymentKind)}>
+                  <SelectTrigger id="known-payment-kind"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="check">Check</SelectItem>
+                    <SelectItem value="direct_ach">Direct ACH</SelectItem>
+                    <SelectItem value="wire">Wire</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="known-payment-amount">Amount</label>
+                <Input id="known-payment-amount" inputMode="decimal" value={knownPaymentAmount} onChange={(event) => setKnownPaymentAmount(event.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="known-payment-date">Received date (optional)</label>
+                <Input id="known-payment-date" type="date" value={knownPaymentDate} onChange={(event) => setKnownPaymentDate(event.target.value)} />
+              </div>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            {knownPaymentMode === "create" ? <AlertDialogAction disabled={busy || !knownPaymentAmount.trim()} onClick={() => void handleCreateKnownPayment()}>Create payment</AlertDialogAction> : null}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={manualComponentFor != null} onOpenChange={(open) => { if (!open && !busy) setManualComponentFor(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove manual component?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove {manualComponentFor?.label ?? "this component"} and reopen the unexplained remainder. Gifts and payment applications are not changed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={busy} onClick={() => void handleRemoveManualComponent()}>Remove component</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <GiftSearchDialog
         open={linkGiftFor != null}
         onOpenChange={(open) => { if (!open) { setLinkGiftFor(null); setDonorboxLinkRow(null); } }}

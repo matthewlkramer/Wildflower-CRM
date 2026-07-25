@@ -13,8 +13,13 @@ import { requireFinance, viewerCanManageAccounting } from "../../lib/financeGuar
 import { getViewer, maskName } from "../../lib/identityVisibility";
 import {
   ClearBankDepositExclusionParams,
+  AddBankDepositComponentBody,
+  AddBankDepositComponentParams,
   ExcludeBankDepositComponentBody,
   ExcludeBankDepositComponentParams,
+  ListDepositCandidatePaymentUnitsParams,
+  ListDepositCandidatePaymentUnitsQueryParams,
+  RemoveManualBankDepositComponentParams,
   ReIncludeBankDepositComponentParams,
   SetBankDepositExclusionBody,
   SetBankDepositExclusionParams,
@@ -609,6 +614,7 @@ router.get(
             'kind', u.kind, 'needsReview', c.needs_review,
             'ambiguousDepositMatch', c.ambiguous_deposit_match,
             'unconfirmed', false, 'source', 'bank_spine',
+            'manual', (c.source = 'manual'),
             'stagedPaymentId', u.source_staged_payment_id,
             'exclusionReason', c.exclusion_reason,
             'countedGiftIds', COALESCE((
@@ -632,6 +638,7 @@ router.get(
             'needsReview', dqc.match_basis = 'deposit_header_ambiguous',
             'ambiguousDepositMatch', dqc.match_basis = 'deposit_header_ambiguous',
             'unconfirmed', NOT dqc.confirmed, 'source', 'qbo_provisional',
+            'manual', false,
             'stagedPaymentId', sp.id,
             'label', COALESCE(sp.payer_name, sp.qb_transaction_memo, sp.line_description, sp.raw_reference, sp.id),
             'exclusionReason', sp.exclusion_reason,
@@ -1122,6 +1129,330 @@ router.post(
         classificationSource: bankDepositComponents.classificationSource,
       });
     res.json(row);
+  }),
+);
+
+router.get(
+  "/reconciliation/deposits/:bankDepositId/candidate-payment-units",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const params = parseOrBadRequest(ListDepositCandidatePaymentUnitsParams, req.params, res);
+    if (!params) return;
+    const query = parseOrBadRequest(ListDepositCandidatePaymentUnitsQueryParams, req.query, res);
+    if (!query) return;
+
+    const depositResult = await db.execute(sql`
+      SELECT d.amount::text AS amount,
+             COALESCE(SUM(c.amount), 0)::text AS component_total,
+             COALESCE((
+               SELECT SUM(dqc.amount)
+               FROM deposit_qbo_components dqc
+               WHERE dqc.bank_deposit_id = d.id
+             ), 0)::text AS provisional_total,
+             p.amount::text AS payout_amount
+      FROM bank_deposits d
+      LEFT JOIN stripe_payouts p ON p.bank_deposit_id = d.id
+      LEFT JOIN bank_deposit_components c ON c.bank_deposit_id = d.id
+      WHERE d.id = ${params.bankDepositId}
+      GROUP BY d.id, p.amount
+    `);
+    const deposit = (depositResult.rows as Array<{
+      amount: string;
+      component_total: string;
+      provisional_total: string;
+      payout_amount: string | null;
+    }>)[0];
+    if (!deposit) {
+      notFound(res, "bank deposit");
+      return;
+    }
+    const remainder = Math.max(
+      0,
+      Number(deposit.amount) -
+        Number(deposit.payout_amount ?? 0) -
+        Number(deposit.component_total) -
+        Number(deposit.provisional_total),
+    );
+    const targetAmount = query.amount ? Number(query.amount) : remainder;
+    const amountBand = Math.max(0.01, targetAmount * 0.2);
+    const search = query.q?.trim() || null;
+    const result = await db.execute(sql`
+      SELECT
+        u.id,
+        u.kind,
+        COALESCE(u.gross_amount, u.net_amount)::text AS amount,
+        u.currency,
+        u.received_date::text AS received_date,
+        COALESCE(
+          sp.payer_name,
+          sp.qb_transaction_memo,
+          sp.line_description,
+          sp.raw_reference,
+          u.id
+        ) AS source_label
+      FROM payment_units u
+      LEFT JOIN staged_payments sp ON sp.id = u.source_staged_payment_id
+      WHERE u.kind IN ('check', 'direct_ach', 'wire', 'other')
+        AND u.stripe_charge_id IS NULL
+        AND COALESCE(u.gross_amount, u.net_amount) IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM bank_deposit_components claimed
+          WHERE claimed.payment_unit_id = u.id
+        )
+        AND abs(COALESCE(u.gross_amount, u.net_amount) - ${targetAmount}::numeric) <= ${amountBand}::numeric
+        AND (
+          ${search}::text IS NULL
+          OR u.id ILIKE '%' || ${search} || '%'
+          OR COALESCE(sp.payer_name, '') ILIKE '%' || ${search} || '%'
+          OR COALESCE(sp.qb_transaction_memo, '') ILIKE '%' || ${search} || '%'
+          OR COALESCE(sp.line_description, '') ILIKE '%' || ${search} || '%'
+        )
+      ORDER BY abs(COALESCE(u.gross_amount, u.net_amount) - ${targetAmount}::numeric),
+               u.received_date DESC NULLS LAST,
+               u.id
+      LIMIT ${query.limit}
+    `);
+    res.json({
+      data: (result.rows as Array<{
+        id: string;
+        kind: "check" | "direct_ach" | "wire" | "other";
+        amount: string;
+        currency: string;
+        received_date: string | null;
+        source_label: string;
+      }>).map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        amount: row.amount,
+        currency: row.currency,
+        receivedDate: row.received_date,
+        sourceLabel: row.source_label,
+      })),
+    });
+  }),
+);
+
+router.post(
+  "/reconciliation/deposits/:bankDepositId/components",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const params = parseOrBadRequest(AddBankDepositComponentParams, req.params, res);
+    if (!params) return;
+    const body = parseOrBadRequest(AddBankDepositComponentBody, req.body, res);
+    if (!body) return;
+
+    const result = await db.transaction(async (tx) => {
+      const depositResult = await tx.execute(sql`
+        SELECT d.amount::text AS amount, d.currency, d.deposit_date::text AS deposit_date,
+               p.amount::text AS payout_amount,
+               COALESCE(SUM(c.amount), 0)::text AS component_total,
+               COALESCE((
+                 SELECT SUM(dqc.amount)
+                 FROM deposit_qbo_components dqc
+                 WHERE dqc.bank_deposit_id = d.id
+               ), 0)::text AS provisional_total
+        FROM bank_deposits d
+        LEFT JOIN stripe_payouts p ON p.bank_deposit_id = d.id
+        LEFT JOIN bank_deposit_components c ON c.bank_deposit_id = d.id
+        WHERE d.id = ${params.bankDepositId}
+        GROUP BY d.id, p.amount
+      `);
+      const deposit = (depositResult.rows as Array<{
+        amount: string;
+        currency: string;
+        deposit_date: string;
+        payout_amount: string | null;
+        component_total: string;
+        provisional_total: string;
+      }>)[0];
+      if (!deposit) return { kind: "not_found" as const };
+
+      const amount =
+        body.mode === "attach"
+          ? null
+          : Number(body.amount);
+      if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
+        return { kind: "invalid_amount" as const };
+      }
+      const remainder = Math.max(
+        0,
+        Number(deposit.amount) -
+          Number(deposit.payout_amount ?? 0) -
+          Number(deposit.component_total) -
+          Number(deposit.provisional_total),
+      );
+
+      let paymentUnitId: string;
+      let componentAmount: number;
+      let needsReview = false;
+      if (body.mode === "attach") {
+        const unitResult = await tx.execute(sql`
+          SELECT id, kind, stripe_charge_id,
+                 COALESCE(gross_amount, net_amount)::text AS amount
+          FROM payment_units
+          WHERE id = ${body.paymentUnitId}
+          FOR UPDATE
+        `);
+        const unit = (unitResult.rows as Array<{
+          id: string;
+          kind: "check" | "direct_ach" | "wire" | "other";
+          stripe_charge_id: string | null;
+          amount: string | null;
+        }>)[0];
+        if (
+          !unit ||
+          unit.stripe_charge_id ||
+          !["check", "direct_ach", "wire", "other"].includes(unit.kind)
+        ) {
+          return { kind: "unit_unavailable" as const };
+        }
+        const claimed = await tx.execute(sql`
+          SELECT 1
+          FROM bank_deposit_components
+          WHERE payment_unit_id = ${body.paymentUnitId}
+          LIMIT 1
+        `);
+        if (claimed.rows.length) return { kind: "unit_unavailable" as const };
+        paymentUnitId = unit.id;
+        componentAmount = body.amount == null ? Number(unit.amount ?? 0) : Number(body.amount);
+        if (!Number.isFinite(componentAmount) || componentAmount <= 0) {
+          return { kind: "invalid_amount" as const };
+        }
+      } else {
+        paymentUnitId = `pu_manual_${newId()}`;
+        componentAmount = amount ?? 0;
+        needsReview = body.mode === "placeholder";
+        if (componentAmount > remainder + 0.005) {
+          return { kind: "amount_exceeds_remainder" as const };
+        }
+        await tx.execute(sql`
+          INSERT INTO payment_units
+            (id, kind, gross_amount, fee_amount, net_amount, currency, received_date, lifecycle)
+          VALUES (
+            ${paymentUnitId},
+            ${body.mode === "placeholder" ? "other" : body.kind},
+            ${componentAmount}::numeric,
+            0,
+            ${componentAmount}::numeric,
+            ${deposit.currency},
+            ${body.mode === "create" && body.receivedDate ? body.receivedDate : deposit.deposit_date},
+            'received'
+          )
+        `);
+      }
+      if (componentAmount > remainder + 0.005) {
+        return { kind: "amount_exceeds_remainder" as const };
+      }
+      const componentId = `bdc_${newId()}`;
+      await tx.execute(sql`
+        INSERT INTO bank_deposit_components
+          (id, bank_deposit_id, payment_unit_id, amount, source, needs_review)
+        VALUES (
+          ${componentId},
+          ${params.bankDepositId},
+          ${paymentUnitId},
+          ${componentAmount}::numeric,
+          'manual',
+          ${needsReview}
+        )
+      `);
+      return {
+        kind: "ok" as const,
+        id: componentId,
+        paymentUnitId,
+        amount: componentAmount.toFixed(2),
+        needsReview,
+      };
+    });
+
+    if (result.kind === "not_found") {
+      notFound(res, "bank deposit");
+      return;
+    }
+    if (result.kind === "invalid_amount") {
+      res.status(400).json({ error: "invalid_amount", message: "Amount must be greater than zero." });
+      return;
+    }
+    if (result.kind === "unit_unavailable") {
+      res.status(409).json({ error: "payment_unit_unavailable", message: "That payment unit is already claimed or is not a direct payment." });
+      return;
+    }
+    if (result.kind === "amount_exceeds_remainder") {
+      res.status(409).json({ error: "amount_exceeds_remainder", message: "The component amount exceeds this deposit's unexplained remainder." });
+      return;
+    }
+    res.status(201).json({
+      id: result.id,
+      paymentUnitId: result.paymentUnitId,
+      amount: result.amount,
+      source: "manual",
+      needsReview: result.needsReview,
+    });
+  }),
+);
+
+router.delete(
+  "/reconciliation/deposit-components/:id",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const params = parseOrBadRequest(RemoveManualBankDepositComponentParams, req.params, res);
+    if (!params) return;
+    const result = await db.transaction(async (tx) => {
+      const componentResult = await tx.execute(sql`
+        SELECT c.id, c.source, c.payment_unit_id,
+               u.id AS unit_id, u.id LIKE 'pu_manual_%' AS minted,
+               EXISTS (
+                 SELECT 1 FROM payment_applications pa
+                 WHERE pa.payment_unit_id = c.payment_unit_id
+                   AND pa.link_role = 'counted'
+                   AND pa.lifecycle = 'confirmed'
+               ) AS has_counted_application
+        FROM bank_deposit_components c
+        JOIN payment_units u ON u.id = c.payment_unit_id
+        WHERE c.id = ${params.id}
+        FOR UPDATE OF c, u
+      `);
+      const component = (componentResult.rows as Array<{
+        id: string;
+        source: string;
+        payment_unit_id: string;
+        unit_id: string;
+        minted: boolean;
+        has_counted_application: boolean;
+      }>)[0];
+      if (!component) return { kind: "not_found" as const };
+      if (component.source !== "manual" || component.has_counted_application) {
+        return { kind: "not_removable" as const };
+      }
+      await tx.execute(sql`
+        DELETE FROM bank_deposit_components WHERE id = ${params.id}
+      `);
+      if (component.minted) {
+        const hasApplications = await tx.execute(sql`
+          SELECT 1 FROM payment_applications
+          WHERE payment_unit_id = ${component.payment_unit_id}
+          LIMIT 1
+        `);
+        if (!hasApplications.rows.length) {
+          await tx.execute(sql`
+            DELETE FROM payment_units
+            WHERE id = ${component.payment_unit_id}
+              AND id LIKE 'pu_manual_%'
+          `);
+        }
+      }
+      return { kind: "ok" as const };
+    });
+    if (result.kind === "not_found") {
+      notFound(res, "bank deposit component");
+      return;
+    }
+    if (result.kind === "not_removable") {
+      res.status(409).json({ error: "component_not_removable", message: "Only manually-added components without a counted gift can be removed." });
+      return;
+    }
+    res.status(204).send();
   }),
 );
 

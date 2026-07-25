@@ -4655,6 +4655,61 @@ paths:
                     items: { $ref: "#/components/schemas/DepositCandidatePayout" }
         "403": { $ref: "#/components/responses/FinanceForbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/deposits/{bankDepositId}/candidate-payment-units:
+    get:
+      operationId: listDepositCandidatePaymentUnits
+      tags: [reconciliation]
+      summary: List unclaimed non-Stripe payment units for a deposit remainder.
+      description: Finance/admin review only. Returns check, direct ACH, wire, and other payment units that are not already attached to a bank deposit component. Results can be narrowed by amount and source text.
+      parameters:
+        - { name: bankDepositId, in: path, required: true, schema: { type: string } }
+        - { name: amount, in: query, schema: { type: string }, description: "Target amount in major units; results are ordered by proximity." }
+        - { name: q, in: query, schema: { type: string }, description: "Optional text over the source staged-payment payer or memo and the payment-unit id." }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        "200":
+          description: Candidate payment units
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DepositCandidatePaymentUnitList" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/deposits/{bankDepositId}/components:
+    post:
+      operationId: addBankDepositComponent
+      tags: [reconciliation]
+      summary: Add a placeholder or known direct-payment component to a bank deposit.
+      description: Finance/admin review only. Adds only a manual bank-spine component and, for placeholder/create modes, its payment-unit identity. The placeholder uses needsReview as the honest needs-research marker. No gifts, applications, QBO ties, or bank money are changed.
+      parameters:
+        - { name: bankDepositId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddBankDepositComponentBody" }
+      responses:
+        "201":
+          description: Added manual component
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BankDepositComponentMutation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The amount exceeds the current unexplained remainder or the selected payment unit is unavailable." }
+  /reconciliation/deposit-components/{id}:
+    delete:
+      operationId: removeManualBankDepositComponent
+      tags: [reconciliation]
+      summary: Remove a manually-added bank-deposit component.
+      description: Finance/admin review only. Removes a manual component only when it has no counted gift/application; a now-orphaned placeholder/create payment unit is removed in the same transaction.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Manual component removed }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Only unclaimed manually-added components can be removed." }
   /reconciliation/deposits/{bankDepositId}/exclusion:
     post:
       operationId: setBankDepositExclusion
@@ -9446,6 +9501,7 @@ components:
               kind: { type: string, enum: [check, direct_ach, wire, other, stripe_charge] }
               needsReview: { type: boolean }
               ambiguousDepositMatch: { type: boolean }
+              manual: { type: boolean, description: "True when this direct component was added manually through the remainder-resolution flow." }
               countedGiftIds: { type: array, items: { type: string } }
               unconfirmed: { type: boolean, description: "True for a provisional QBO accounting-plane decomposition row." }
               source: { type: string, enum: [bank_spine, qbo_provisional] }
@@ -9610,6 +9666,52 @@ components:
         note: { type: string, nullable: true }
         resolvedByUserId: { type: string, nullable: true }
         resolvedAt: { type: string, format: date-time, nullable: true }
+    DepositCandidatePaymentUnit:
+      type: object
+      required: [id, kind, amount, currency, receivedDate, sourceLabel]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [check, direct_ach, wire, other] }
+        amount: { type: string }
+        currency: { type: string }
+        receivedDate: { type: string, format: date, nullable: true }
+        sourceLabel: { type: string }
+    DepositCandidatePaymentUnitList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/DepositCandidatePaymentUnit" }
+    AddBankDepositComponentBody:
+      oneOf:
+        - type: object
+          required: [mode, amount]
+          properties:
+            mode: { type: string, enum: [placeholder] }
+            amount: { type: string }
+        - type: object
+          required: [mode, paymentUnitId]
+          properties:
+            mode: { type: string, enum: [attach] }
+            paymentUnitId: { type: string }
+            amount: { type: string, nullable: true }
+        - type: object
+          required: [mode, kind, amount]
+          properties:
+            mode: { type: string, enum: [create] }
+            kind: { type: string, enum: [check, direct_ach, wire, other] }
+            amount: { type: string }
+            receivedDate: { type: string, format: date, nullable: true }
+    BankDepositComponentMutation:
+      type: object
+      required: [id, paymentUnitId, amount, source, needsReview]
+      properties:
+        id: { type: string }
+        paymentUnitId: { type: string }
+        amount: { type: string }
+        source: { type: string, enum: [manual] }
+        needsReview: { type: boolean }
     WorkbenchDepositCharge:
       allOf:
         - $ref: "#/components/schemas/WorkbenchClusterCharge"

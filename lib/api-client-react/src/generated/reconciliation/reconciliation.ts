@@ -20,9 +20,11 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AddBankDepositComponentBody,
   ApproveCompleteMatchBody,
   BadRequestResponse,
   BankDepositComponentExclusion,
+  BankDepositComponentMutation,
   BankDepositExclusion,
   BundleAnchorInput,
   BundleAnchorListResponse,
@@ -33,6 +35,7 @@ import type {
   ConfirmChargeTiesResult,
   ConfirmSettlementLinkBody,
   ConfirmSettlementLinkResult,
+  DepositCandidatePaymentUnitList,
   DepositQboComponentMutationResult,
   ExcludeStagedPaymentBody,
   FinanceForbiddenResponse,
@@ -40,6 +43,7 @@ import type {
   IncompleteGiftList,
   InlineError,
   LinkPayoutDepositBody,
+  ListDepositCandidatePaymentUnitsParams,
   ListDepositCandidatePayouts200,
   ListGiftsMissingQbParams,
   ListIncompleteGiftsParams,
@@ -929,6 +933,235 @@ export function useListDepositCandidatePayouts<TData = Awaited<ReturnType<typeof
 
 
 /**
+ * Finance/admin review only. Returns check, direct ACH, wire, and other payment units that are not already attached to a bank deposit component. Results can be narrowed by amount and source text.
+ * @summary List unclaimed non-Stripe payment units for a deposit remainder.
+ */
+export const getListDepositCandidatePaymentUnitsUrl = (bankDepositId: string,
+    params?: ListDepositCandidatePaymentUnitsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reconciliation/deposits/${bankDepositId}/candidate-payment-units?${stringifiedParams}` : `/api/reconciliation/deposits/${bankDepositId}/candidate-payment-units`
+}
+
+export const listDepositCandidatePaymentUnits = async (bankDepositId: string,
+    params?: ListDepositCandidatePaymentUnitsParams, options?: RequestInit): Promise<DepositCandidatePaymentUnitList> => {
+
+  return customFetch<DepositCandidatePaymentUnitList>(getListDepositCandidatePaymentUnitsUrl(bankDepositId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDepositCandidatePaymentUnitsQueryKey = (bankDepositId: string,
+    params?: ListDepositCandidatePaymentUnitsParams,) => {
+    return [
+    `/api/reconciliation/deposits/${bankDepositId}/candidate-payment-units`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListDepositCandidatePaymentUnitsQueryOptions = <TData = Awaited<ReturnType<typeof listDepositCandidatePaymentUnits>>, TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>>(bankDepositId: string,
+    params?: ListDepositCandidatePaymentUnitsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDepositCandidatePaymentUnits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDepositCandidatePaymentUnitsQueryKey(bankDepositId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDepositCandidatePaymentUnits>>> = ({ signal }) => listDepositCandidatePaymentUnits(bankDepositId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(bankDepositId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDepositCandidatePaymentUnits>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDepositCandidatePaymentUnitsQueryResult = NonNullable<Awaited<ReturnType<typeof listDepositCandidatePaymentUnits>>>
+export type ListDepositCandidatePaymentUnitsQueryError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>
+
+
+/**
+ * @summary List unclaimed non-Stripe payment units for a deposit remainder.
+ */
+
+export function useListDepositCandidatePaymentUnits<TData = Awaited<ReturnType<typeof listDepositCandidatePaymentUnits>>, TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>>(
+ bankDepositId: string,
+    params?: ListDepositCandidatePaymentUnitsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDepositCandidatePaymentUnits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDepositCandidatePaymentUnitsQueryOptions(bankDepositId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Finance/admin review only. Adds only a manual bank-spine component and, for placeholder/create modes, its payment-unit identity. The placeholder uses needsReview as the honest needs-research marker. No gifts, applications, QBO ties, or bank money are changed.
+ * @summary Add a placeholder or known direct-payment component to a bank deposit.
+ */
+export const getAddBankDepositComponentUrl = (bankDepositId: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposits/${bankDepositId}/components`
+}
+
+export const addBankDepositComponent = async (bankDepositId: string,
+    addBankDepositComponentBody: AddBankDepositComponentBody, options?: RequestInit): Promise<BankDepositComponentMutation> => {
+
+  return customFetch<BankDepositComponentMutation>(getAddBankDepositComponentUrl(bankDepositId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      addBankDepositComponentBody,)
+  }
+);}
+
+
+
+
+export const getAddBankDepositComponentMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addBankDepositComponent>>, TError,{bankDepositId: string;data: BodyType<AddBankDepositComponentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addBankDepositComponent>>, TError,{bankDepositId: string;data: BodyType<AddBankDepositComponentBody>}, TContext> => {
+
+const mutationKey = ['addBankDepositComponent'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addBankDepositComponent>>, {bankDepositId: string;data: BodyType<AddBankDepositComponentBody>}> = (props) => {
+          const {bankDepositId,data} = props ?? {};
+
+          return  addBankDepositComponent(bankDepositId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddBankDepositComponentMutationResult = NonNullable<Awaited<ReturnType<typeof addBankDepositComponent>>>
+    export type AddBankDepositComponentMutationBody = BodyType<AddBankDepositComponentBody>
+    export type AddBankDepositComponentMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Add a placeholder or known direct-payment component to a bank deposit.
+ */
+export const useAddBankDepositComponent = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addBankDepositComponent>>, TError,{bankDepositId: string;data: BodyType<AddBankDepositComponentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addBankDepositComponent>>,
+        TError,
+        {bankDepositId: string;data: BodyType<AddBankDepositComponentBody>},
+        TContext
+      > => {
+      return useMutation(getAddBankDepositComponentMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Removes a manual component only when it has no counted gift/application; a now-orphaned placeholder/create payment unit is removed in the same transaction.
+ * @summary Remove a manually-added bank-deposit component.
+ */
+export const getRemoveManualBankDepositComponentUrl = (id: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposit-components/${id}`
+}
+
+export const removeManualBankDepositComponent = async (id: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getRemoveManualBankDepositComponentUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getRemoveManualBankDepositComponentMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeManualBankDepositComponent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeManualBankDepositComponent>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['removeManualBankDepositComponent'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeManualBankDepositComponent>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  removeManualBankDepositComponent(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveManualBankDepositComponentMutationResult = NonNullable<Awaited<ReturnType<typeof removeManualBankDepositComponent>>>
+
+    export type RemoveManualBankDepositComponentMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Remove a manually-added bank-deposit component.
+ */
+export const useRemoveManualBankDepositComponent = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeManualBankDepositComponent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeManualBankDepositComponent>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRemoveManualBankDepositComponentMutationOptions(options));
+    }
+    /**
  * Finance/admin review only. Records only the deposit-level exclusion decision; it never creates or changes payment units, deposit components, or payment applications.
  * @summary Mark a Wells Fargo bank deposit as not fundraising.
  */
