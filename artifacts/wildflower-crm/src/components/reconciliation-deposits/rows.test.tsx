@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { WorkbenchDeposit } from "@workspace/api-client-react";
+import type { ClusterActions } from "@/components/reconciliation-clusters/rows";
 import { DEPOSIT_LENSES, DepositRow } from "./rows";
 
 (globalThis as Record<string, unknown>)["IS_REACT_ACT_ENVIRONMENT"] = true;
@@ -57,8 +58,8 @@ function makeDeposit(overrides: Partial<WorkbenchDeposit> = {}): WorkbenchDeposi
   };
 }
 
-function render(deposit: WorkbenchDeposit) {
-  act(() => root.render(<DepositRow deposit={deposit} expanded onToggle={() => undefined} />));
+function render(deposit: WorkbenchDeposit, actions?: Partial<ClusterActions>) {
+  act(() => root.render(<DepositRow deposit={deposit} expanded onToggle={() => undefined} actions={actions as ClusterActions | undefined} />));
 }
 
 describe("deposit workbench rows", () => {
@@ -116,5 +117,23 @@ describe("deposit workbench rows", () => {
     expect(container.textContent).toContain("Not fundraising");
     expect(DEPOSIT_LENSES).toHaveLength(8);
     expect(DEPOSIT_LENSES.map((lens) => lens.id)).toContain("accounting_corrections");
+  });
+
+  it("shows the finance-only mark action for an unexcluded deposit", () => {
+    render(makeDeposit(), { isFinanceOrAdmin: true });
+    const trigger = container.querySelector('button[aria-label="Card actions"]');
+    expect(trigger).not.toBeNull();
+    act(() => trigger?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
+    expect(document.body.textContent).toContain("Mark not fundraising…");
+  });
+
+  it("shows return-to-open-queue for a direct bank exclusion", () => {
+    render(makeDeposit({
+      bankExclusion: { reason: "membership", note: "reviewed" },
+    }), { isFinanceOrAdmin: true });
+    const trigger = container.querySelector('button[aria-label="Card actions"]');
+    expect(trigger).not.toBeNull();
+    act(() => trigger?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
+    expect(document.body.textContent).toContain("Return to open queue");
   });
 });

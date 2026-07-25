@@ -4655,6 +4655,39 @@ paths:
                     items: { $ref: "#/components/schemas/DepositCandidatePayout" }
         "403": { $ref: "#/components/responses/FinanceForbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/deposits/{bankDepositId}/exclusion:
+    post:
+      operationId: setBankDepositExclusion
+      tags: [reconciliation]
+      summary: Mark a Wells Fargo bank deposit as not fundraising.
+      description: Finance/admin review only. Records only the deposit-level exclusion decision; it never creates or changes payment units, deposit components, or payment applications.
+      parameters:
+        - { name: bankDepositId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetBankDepositExclusionBody" }
+      responses:
+        "200":
+          description: Deposit exclusion
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BankDepositExclusion" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: clearBankDepositExclusion
+      tags: [reconciliation]
+      summary: Return a bank deposit to the open reconciliation queue.
+      description: Finance/admin review only. Deletes only the deposit-level exclusion decision.
+      parameters:
+        - { name: bankDepositId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deposit returned to the open queue }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /reconciliation/payouts/{payoutId}/bank-deposit:
     post:
       operationId: linkPayoutDeposit
@@ -9458,8 +9491,28 @@ components:
         accountingChecks:
           type: array
           items: { $ref: "#/components/schemas/WorkbenchDepositAccountingCheck" }
+        bankExclusion:
+          allOf:
+            - $ref: "#/components/schemas/BankDepositExclusion"
+          nullable: true
+          description: Direct bank-deposit exclusion decision, if one exists. This is separate from inferred staged-payment exclusion reasons.
         notFundraisingReason: { type: string, nullable: true, description: "Representative staged-payment exclusion reason when every non-Stripe QBO line tied to this deposit is excluded." }
         coverage: { $ref: "#/components/schemas/WorkbenchClusterCoverage" }
+    DepositExclusionReason:
+      type: string
+      enum: [membership, loan_repayment, loan_proceeds, note_payable, earned_income, interest, other_revenue, intercompany_transfer, tax_refund, insurance, expense_refund, expensify, returned_wire, miscoded_withdrawal, other]
+    SetBankDepositExclusionBody:
+      type: object
+      required: [reason]
+      properties:
+        reason: { $ref: "#/components/schemas/DepositExclusionReason" }
+        note: { type: string, nullable: true }
+    BankDepositExclusion:
+      type: object
+      required: [reason, note]
+      properties:
+        reason: { $ref: "#/components/schemas/DepositExclusionReason" }
+        note: { type: string, nullable: true }
     WorkbenchDepositCharge:
       allOf:
         - $ref: "#/components/schemas/WorkbenchClusterCharge"

@@ -4,8 +4,9 @@ import type { Server } from "node:http";
 
 const RAW_DB_URL = process.env.DATABASE_URL;
 const HAS_DB = !!RAW_DB_URL && !/test:test@localhost:5432\/test/.test(RAW_DB_URL);
-const { TEST_USER_ID } = vi.hoisted(() => ({
+const { TEST_USER_ID, currentRole } = vi.hoisted(() => ({
   TEST_USER_ID: `wb_deposits_user_${Date.now()}`,
+  currentRole: { value: "admin" as string },
 }));
 
 vi.mock("../middlewares/requireAuth", () => ({
@@ -14,9 +15,13 @@ vi.mock("../middlewares/requireAuth", () => ({
     _res: unknown,
     next: () => void,
   ) => {
-    req.appUser = { id: TEST_USER_ID, role: "admin" };
+    req.appUser = { id: TEST_USER_ID, role: currentRole.value };
     next();
   },
+}));
+
+vi.mock("@clerk/express", () => ({
+  clerkMiddleware: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 const RUN = `wbdeposit_${Date.now()}`;
@@ -273,6 +278,68 @@ beforeEach(() => {
 });
 
 describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
+  it("writes only the bank-deposit exclusion row and supports update, validation, auth, and removal", async () => {
+    const deposit = await seedDeposit("Deposit exclusion API test", "321.00");
+    const beforeUnits = await db.select({ id: schema.paymentUnits.id }).from(schema.paymentUnits);
+    const beforeApplications = await db.select({ id: schema.paymentApplications.id }).from(schema.paymentApplications);
+
+    const first = await fetch(`${baseUrl}/api/reconciliation/deposits/${deposit}/exclusion`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "membership", note: "initial review" }),
+    });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ reason: "membership", note: "initial review" });
+
+    const second = await fetch(`${baseUrl}/api/reconciliation/deposits/${deposit}/exclusion`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "intercompany_transfer", note: "updated review" }),
+    });
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual({ reason: "intercompany_transfer", note: "updated review" });
+    const exclusions = await db
+      .select({ reason: schema.bankDepositExclusions.reason, note: schema.bankDepositExclusions.note })
+      .from(schema.bankDepositExclusions)
+      .where(eqFn(schema.bankDepositExclusions.bankDepositId, deposit));
+    expect(exclusions).toEqual([{ reason: "intercompany_transfer", note: "updated review" }]);
+    const listed = await getJson(`/api/reconciliation/workbench-deposits?lens=not_fundraising&q=Deposit%20exclusion%20API%20test`);
+    expect(listed.status).toBe(200);
+    expect(listed.json.data.find((item: any) => item.anchorId === deposit)?.bankExclusion).toEqual({
+      reason: "intercompany_transfer",
+      note: "updated review",
+    });
+
+    const invalid = await fetch(`${baseUrl}/api/reconciliation/deposits/${deposit}/exclusion`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "failed_charge" }),
+    });
+    expect(invalid.status).toBe(400);
+
+    currentRole.value = "team_member";
+    const forbidden = await fetch(`${baseUrl}/api/reconciliation/deposits/${deposit}/exclusion`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "other" }),
+    });
+    expect(forbidden.status).toBe(403);
+    currentRole.value = "admin";
+
+    const removed = await fetch(`${baseUrl}/api/reconciliation/deposits/${deposit}/exclusion`, { method: "DELETE" });
+    expect(removed.status).toBe(204);
+    const remaining = await db
+      .select({ id: schema.bankDepositExclusions.id })
+      .from(schema.bankDepositExclusions)
+      .where(eqFn(schema.bankDepositExclusions.bankDepositId, deposit));
+    expect(remaining).toHaveLength(0);
+
+    const afterUnits = await db.select({ id: schema.paymentUnits.id }).from(schema.paymentUnits);
+    const afterApplications = await db.select({ id: schema.paymentApplications.id }).from(schema.paymentApplications);
+    expect(afterUnits).toEqual(beforeUnits);
+    expect(afterApplications).toEqual(beforeApplications);
+  });
+
   it("anchors rows on deposits and resolves a payout at rung one", async () => {
     const depositId = await seedDeposit("Stripe payout");
     const payoutId = nextId("payout");
