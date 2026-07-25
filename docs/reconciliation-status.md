@@ -41,8 +41,7 @@ finance-gated UI #1 deposit-exclusion action writes only
 default reconciliation surface.
 
 Migrations **0179→0180→0181→0182→Publish→0183** were the human-gated final
-steps. This status document does not assert that they have been applied to
-production.
+steps and are **applied to production** (owner-confirmed 2026-07-23).
 
 ## UI #2 component-grain target
 
