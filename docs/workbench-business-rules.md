@@ -1,9 +1,16 @@
 ---
 status: ratified
-last_verified: 2026-07-21
+last_verified: 2026-07-23
 ---
 
 # Reconciliation Workbench Business Rules
+
+> **Current physical/UI note (2026-07-23):** The realized UI is the
+> four-column deposit-first workbench (**Bank | Composition | Gifts |
+> Accounting**) over the bank-deposit spine. Composition, Gifts, and Accounting
+> carry the three semantic roles described below. Payout↔deposit pairing is
+> deterministic via `stripe_payouts.bank_deposit_id`; payment applications are
+> anchored by `payment_unit_id`.
 
 This document is the **ratified product specification** for the reconciliation
 workbench. It is normative even where current code disagrees; implementation
@@ -305,57 +312,56 @@ If a row contains one refunded transaction and one live matched transaction, the
 
 ---
 
-# 6. Settlement-Link State
+# 6. Payout↔Bank-Deposit Pairing State
 
-For Stripe payout clusters, settlement-link state describes the relationship between the payout and QuickBooks accounting evidence.
+For Stripe payout clusters, the current pairing state describes the deterministic
+relationship between the payout and its Wells Fargo bank deposit. QBO remains
+downstream accounting evidence, including the historical
+`staged_payments.settled_stripe_payout_id` pairing fact.
 
 It is distinct from the state of the QuickBooks record itself.
 
-## 6.1 Settlement-link states
+## 6.1 Pairing states
 
-| State               | Meaning                                                                                             |
-| ------------------- | --------------------------------------------------------------------------------------------------- |
-| `unlinked`          | The payout has no QuickBooks settlement relationship                                                |
-| `proposed_full`     | A proposed QuickBooks record fully represents the payout within tolerance                           |
-| `proposed_partial`  | The proposed relationship covers only part of the payout or contains an unexplained amount variance |
-| `proposed_conflict` | The proposal overlaps or contradicts another accounting relationship                                |
-| `confirmed`         | The payout-to-QuickBooks settlement relationship has been confirmed                                 |
-| `exempt`            | A human confirmed the payout has no expected QuickBooks deposit (e.g. a Stripe balance withdrawal or a negative/failed payout) |
+| State | Meaning |
+| --- | --- |
+| `unlinked` | No `stripe_payouts.bank_deposit_id` pairing exists — the payout has not (yet) been matched to a bank deposit |
+| `paired` | A deterministic payout↔bank-deposit pairing exists (the common resolved state) |
+| `ambiguous` | Equivalent candidate deposits existed at match time; `ambiguous_bank_match` is set and a deterministic pairing is chosen, awaiting a human confirmation to lock it |
 
-An `exempt` settlement link carries no QuickBooks deposit pointer. It is the
-canonical "resolved as Stripe withdrawal" fact: the payout is settled and leaves
-the attention queue without accounting evidence. Negative and failed payouts are
-the typical candidates; resolving one as a withdrawal requires the same finance
-permission as confirming a settlement, and it can be undone (unmatched) like any
-other settlement relationship.
+The pairing is **deterministic and recomputed** — the matcher pairs each payout
+with the nearest bank deposit on/after arrival by amount+date. There is no
+`proposed → confirmed` lifecycle: a swapped equal-amount/same-day pair is
+economically inert, so most payouts are simply `paired` with no human step. The
+only human touchpoints are (a) confirming an `ambiguous` pick and (b) finance
+overrides of a wrong pairing (§6.2).
 
 A bundle-level QuickBooks deposit connected to multiple individual Stripe charges is not inherently a conflict. It is a normal bundle-to-unit mapping when amounts reconcile and no competing accounting relationship exists.
 
-## 6.2 Settlement-link actions
+## 6.2 Pairing actions (replacing the retired settlement-link lifecycle)
 
-| Action                                     | Availability                                                 |
-| ------------------------------------------ | ------------------------------------------------------------ |
-| Propose settlement by searching QuickBooks | Unlinked                                                     |
-| Confirm settlement                         | Proposed full or proposed partial, subject to validation     |
-| Remove proposal                            | Any proposed state                                           |
-| View QuickBooks record                     | Any proposed or confirmed relationship                       |
-| Unmatch confirmed settlement               | Confirmed or exempt, subject to permissions and safeguards   |
-| Replace settlement relationship            | Confirmed or proposed, subject to permissions and safeguards |
-| Resolve as Stripe withdrawal (exempt)      | Unlinked payout, subject to finance permission               |
+`settlement_links` (with its `proposed`/`confirmed`/`exempt` lifecycle) is
+retired and dropped. The deposit-first workbench replaces those actions with a
+deterministic pairing plus finance overrides. The mapping from the old model:
 
-An excluded QuickBooks record is still a legitimate settlement candidate: a
-stored `exclusion_reason` (e.g. `other_revenue`) removes the record from the
-donation review queue, but it does not disqualify the record from being
-proposed or confirmed as the deposit that settles a Stripe payout. Exclusion
-and settlement eligibility are independent facts.
+| Retired settlement-link action | Current action | Availability |
+| --- | --- | --- |
+| Propose settlement (search QB) | *(none — the matcher auto-pairs)* | — |
+| Confirm settlement | **Confirm match** — locks the deterministic pick | Finance/admin, only when `ambiguous_bank_match` is set |
+| Remove proposal | *(none — there is no proposal state)* | — |
+| Unmatch confirmed settlement | **Unlink deposit** | Finance/admin, when a pairing exists |
+| Replace settlement relationship | **Link to a different deposit…** | Finance/admin |
+| Resolve as Stripe withdrawal (exempt) | **Resolve payout settlement** — records the resolution for a payout with no expected bank deposit (Stripe balance withdrawal, negative/failed payout) via the QBO accounting-evidence search | Finance/admin, for a payout with no bank deposit |
 
-A QuickBooks record claimed by a **confirmed** settlement link (or a confirmed
-charge tie) derives `excluded` from that claim — its money story is told by the
-Stripe side, so it needs no separate donation review. This derived exclusion
-carries no stored `exclusion_reason` and disappears if the settlement claim is
-removed.
+Deposit-level "not fundraising" is a **separate** authority, not a pairing
+action: finance/admin may **Mark bank deposit not fundraising** (writes only a
+`bank_deposit_exclusions` row) or **Return bank deposit to open queue** (deletes
+that row). It never creates or changes payment units, components, applications,
+or gifts.
 
-Only authorized finance-team members may create, confirm, remove, replace, or unmatch accounting relationships when the action changes or controls QuickBooks treatment.
+An excluded QBO record remains accounting evidence and does not itself decide
+whether a bank deposit is fundraising. Deposit exclusion and payout pairing are
+independent facts.
 
 ---
 

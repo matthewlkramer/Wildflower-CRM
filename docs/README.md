@@ -36,9 +36,11 @@ unverified and confirm against code before relying on it.
    reconciliation change.
 2. [`workbench-business-rules.md`](workbench-business-rules.md) — **ratified**
    product semantics for the reconciliation workbench (rows, columns, states,
-   actions). Normative.
-3. [`reconciliation-design.md`](reconciliation-design.md) — target money and
-   relationship model.
+   actions). Normative; the realized UI is the four-column deposit-first
+   workbench (Bank | Composition | Gifts | Accounting).
+3. [`adr-bank-spine-money-model.md`](adr-bank-spine-money-model.md) —
+   **primary current physical-model authority**: the landed bank-spine model
+   with bank deposits as the spine and QBO downstream.
 4. [`adr-source-link-ledger.md`](adr-source-link-ledger.md) — evidence↔evidence
    ledger (**implemented**; `source_links` is the sole authority — the
    source-specific pointer columns it replaced were dropped in migration 0149).
@@ -46,13 +48,11 @@ unverified and confirm against code before relying on it.
    coding rules (gift = one payment event; meaning splits on allocations;
    expectations on the pledge) and the bank-anchored linear target model,
    including unit-group retirement and the production recoding inventory.
-   (§3's Layer-2 physical target is **superseded** by the ADR below.)
-6. [`adr-bank-spine-money-model.md`](adr-bank-spine-money-model.md) —
-   **ratified** successor: bank deposit is the spine; `bank_deposits`,
-   `payment_units`, `bank_deposit_components` become first-class tables and QBO
-   (`staged_payments` → `qbo_payment_records`) demotes to a downstream
-   accounting mirror + check-inference source. Governs the reconciliation
-   physical model going forward; implemented in prod-safe phases.
+   (§3's Layer-2 physical target is **superseded** by the implemented bank-spine
+   ADR above.)
+6. [`reconciliation-design.md`](reconciliation-design.md) — historical
+   two-plane conceptual framing and ratified relationship context; its physical
+   money target is partly superseded by the implemented bank-spine ADR.
 
 ## Other canonical documents
 

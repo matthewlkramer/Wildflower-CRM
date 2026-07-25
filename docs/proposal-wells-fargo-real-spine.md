@@ -1,6 +1,18 @@
+---
+status: historical
+last_verified: 2026-07-23
+---
+
 # Proposal: real bank deposits (Wells Fargo) as the spine
 
-Status: draft for discussion — no code yet.
+> **Landed / superseded (2026-07-23):** This proposal's central decision
+> landed in PR #17. Real Wells Fargo `bank_deposits` are now the money spine;
+> QBO remains downstream accounting evidence and an inference source. The
+> proposal's future-state framing and open questions are preserved below as
+> history. See [`adr-bank-spine-money-model.md`](adr-bank-spine-money-model.md)
+> for the current physical model.
+
+Status: landed; historical proposal retained for context.
 
 ## The problem this fixes
 

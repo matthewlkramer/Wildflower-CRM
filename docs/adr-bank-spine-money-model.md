@@ -5,11 +5,17 @@ last_verified: 2026-07-23
 
 # ADR: Bank-anchored money model — bank deposit is the spine, QBO is downstream
 
-**Status:** Ratified 2026-07-23 (owner design discussion; supersedes
-[`adr-linear-money-model.md`](adr-linear-money-model.md) §3, the Layer-2
-bank-anchored target). Implementation under way as a sequence of prod-safe,
-additive-first phases (§6). Written in response to the owner's
-"bank-deposit-as-spine" design note (2026-07-23).
+**Status:** Ratified and IMPLEMENTED 2026-07-23 (owner design discussion;
+supersedes [`adr-linear-money-model.md`](adr-linear-money-model.md) §3, the
+Layer-2 bank-anchored target). The landed implementation sequence is reflected
+by PRs **#34–#42**: `payment_units`, `bank_deposits`, and
+`bank_deposit_components` are first-class; payout↔deposit pairing is carried
+by `stripe_payouts.bank_deposit_id`; `payment_applications` is re-anchored to
+`payment_unit_id`; and `settlement_links` is retired. Migrations
+**0179→0180→0181→0182→Publish→0183** were the reviewed, human-gated final
+steps and are **applied to production** (owner-confirmed 2026-07-23).
+Written in response to the owner's "bank-deposit-as-spine" design note
+(2026-07-23).
 
 **Relationship to existing docs.** This is the **successor to
 [`adr-linear-money-model.md`](adr-linear-money-model.md) §3 (Layer 2, the
@@ -182,12 +188,17 @@ and the Donorbox-sourced one do not both count.
 
 ## 6. Where to be careful / disagreements of sequencing
 
+The sequencing notes below are retained as implementation history. The
+bank-spine phases landed in PRs #34–#42 and their migrations (through 0183)
+are applied to production (owner-confirmed 2026-07-23).
+
 - **Finish 0158 first — it is not wasted.** The counted-uniqueness work the
   building agent is landing (three per-anchor partial unique indexes) is correct
   for *today's* shape and should ship. `payment_units` re-anchoring later
   *replaces* those three with one `UNIQUE(payment_unit_id)` — supersession, not
   waste. Do not block or skip 0158 on account of this ADR.
-- **Do not start before the in-flight linear-money rollout lands.**
+- **Historical sequencing note — do not start before the in-flight
+  linear-money rollout lands.**
   `adr-linear-money-model.md` §7 is mid-flight: multi-match done, unit_groups
   retired, prod recoding `0157` applied, **counted-uniqueness `0158` still
   awaiting human apply**, Layer 2 unstarted. Re-anchoring
@@ -227,12 +238,13 @@ and the Donorbox-sourced one do not both count.
   and compares; it never writes QuickBooks and never becomes a second money
   ledger (invariant on §5 of linear-money ADR; replit.md audit_ready rule).
 
-## 6. Implementation order (the note's 13 steps, re-expressed as prod-safe phases)
+## 6. Historical implementation order (the note's 13 steps, re-expressed as
+prod-safe phases)
 
-Each phase is independently shippable and reversible; every prod **data** change
-is a reviewed, idempotent, human-applied SQL file in `lib/db/migrations/`
-(INV-F). Phases 0 is a precondition; 1–4 are additive+backfill; 5–7 flip reads;
-8–9 retire.
+Each phase was independently shippable and reversible; every prod **data**
+change remains a reviewed, idempotent, human-applied SQL file in
+`lib/db/migrations/` (INV-F). The implementation is landed; the list remains
+the historical sequence and does not assert production migration application.
 
 0. **Precondition:** `0158_counted_uniqueness_index.sql` applied + verified in
    prod. Write this ADR; freeze feature work on `settlement_links` /

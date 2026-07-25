@@ -1,9 +1,19 @@
 ---
 status: design-target
-last_verified: 2026-07-21
+last_verified: 2026-07-23
 ---
 
 # Reconciliation — Target-State Design (ratified)
+
+> **Superseded in part (2026-07-23):** The PHYSICAL money model described
+> below — including polymorphic `payment_applications.source_id`/source
+> anchors in §4.2, the `settlement_links` table in §4.3, and `unit_groups` —
+> is superseded by [`adr-bank-spine-money-model.md`](adr-bank-spine-money-model.md),
+> which is now IMPLEMENTED. Bank deposits are the spine; payout↔deposit pairing
+> is `stripe_payouts.bank_deposit_id` with no `settlement_links`; and
+> `payment_applications` is anchored solely by `payment_unit_id`. The
+> two-plane conceptual framing and INV-A…INV-G remain useful history. Section
+> bodies are preserved as a point-in-time design record.
 
 **Status:** ratified design, now largely implemented. This document is the
 committed target for the reconciliation subsystem. It locks the model, resolves

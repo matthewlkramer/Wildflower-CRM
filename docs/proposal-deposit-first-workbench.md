@@ -1,7 +1,22 @@
+---
+status: current-status
+last_verified: 2026-07-23
+---
+
 # Proposal: deposit-first reconciliation workbench
 
-Status: in progress. API landed (`GET /reconciliation/workbench-deposits`);
-deposit-anchored UI to follow.
+Status: LANDED. The default route is `/reconciliation/deposits`, with four
+visible columns: Bank | Composition | Gifts | Accounting. UI #1 (finance/admin
+deposit exclusion and return-to-open-queue actions) shipped in PR #42.
+
+The worklist-lens and open-question sections below remain useful design
+context; completed items are marked where they differ from the original plan.
+
+---
+
+> **Landed (2026-07-23):** This proposal is now a current-status record for
+> the shipped deposit-first workbench. The API and UI cutover are complete;
+> the older payout/QBO-anchored workbench is retired as the default.
 
 ## Authority ladder (the spec)
 
@@ -107,22 +122,21 @@ Dropped: `settlement_gaps` and `conflicts` as separate lenses (both fold into
 
 ## Build plan (each step shippable)
 
-1. **API**: `GET /workbench/deposits` — deposit-anchored clusters + new lens
-   counts, built from the same joins the parity gates use. Old endpoint stays
-   during migration.
-2. **UI**: new deposit list + row expansion reusing the existing card
-   components; behind a toggle next to the current view.
-3. **Cutover**: default to the deposit view; retire the payout/QB-anchored
-   list and its lenses once you've lived with it.
-4. Later, alongside the staged_payments → qbo_payment_records rename: the
-   accounting column reads purely from qbo_accounting_checks.
+1. **API — DONE**: `GET /workbench/deposits` is the deposit-anchored workbench
+   API.
+2. **UI — DONE**: the live deposit list and row expansion reuse the existing
+   card components. UI #1 adds the finance/admin deposit exclusion controls.
+3. **Cutover — DONE**: `/reconciliation/deposits` is the default route;
+   `/reconciliation` and `/reconciliation-workbench` redirect to it, and the
+   old six-queue workbench is retired.
+4. **Still open**: the later `staged_payments` → `qbo_payment_records` rename
+   and any remaining accounting-column refinements.
 
 ## Open questions for you
 
-- Default lens: "All open work" (union of 1–4) or land on "Unresolved
-  composition" first?
-- Should excluded/non-fundraising deposits (loans, transfers, interest) get a
-  derived "not fundraising" badge and hide by default? (They're in
-  bank_deposits by design.)
-- Keep the recent-changes rail on the new page from day one, or add after
-  cutover?
+- **Resolved:** the default deposit-first route and four-column layout are
+  shipped.
+- **Resolved:** direct deposit exclusions have a finance/admin picker and
+  return-to-open-queue action (PR #42).
+- **Still open:** final default-lens policy and the accounting-column
+  refinements described above.
