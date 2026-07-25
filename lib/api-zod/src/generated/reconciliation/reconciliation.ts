@@ -522,6 +522,66 @@ export const ListDepositCandidatePayoutsResponse = zod.object({
 })
 
 /**
+ * Finance/admin review only. Returns check, direct ACH, wire, and other payment units that are not already attached to a bank deposit component. Results can be narrowed by amount and source text.
+ * @summary List unclaimed non-Stripe payment units for a deposit remainder.
+ */
+export const ListDepositCandidatePaymentUnitsParams = zod.object({
+  "bankDepositId": zod.coerce.string()
+})
+
+export const listDepositCandidatePaymentUnitsQueryLimitDefault = 25;
+export const listDepositCandidatePaymentUnitsQueryLimitMax = 100;
+
+
+
+export const ListDepositCandidatePaymentUnitsQueryParams = zod.object({
+  "amount": zod.coerce.string().optional().describe('Target amount in major units; results are ordered by proximity.'),
+  "q": zod.coerce.string().optional().describe('Optional text over the source staged-payment payer or memo and the payment-unit id.'),
+  "limit": zod.coerce.number().min(1).max(listDepositCandidatePaymentUnitsQueryLimitMax).default(listDepositCandidatePaymentUnitsQueryLimitDefault)
+})
+
+export const ListDepositCandidatePaymentUnitsResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['check', 'direct_ach', 'wire', 'other']),
+  "amount": zod.string(),
+  "currency": zod.string(),
+  "receivedDate": zod.string().date().nullable(),
+  "sourceLabel": zod.string()
+}))
+})
+
+/**
+ * Finance/admin review only. Adds only a manual bank-spine component and, for placeholder/create modes, its payment-unit identity. The placeholder uses needsReview as the honest needs-research marker. No gifts, applications, QBO ties, or bank money are changed.
+ * @summary Add a placeholder or known direct-payment component to a bank deposit.
+ */
+export const AddBankDepositComponentParams = zod.object({
+  "bankDepositId": zod.coerce.string()
+})
+
+export const AddBankDepositComponentBody = zod.union([zod.object({
+  "mode": zod.enum(['placeholder']),
+  "amount": zod.string()
+}),zod.object({
+  "mode": zod.enum(['attach']),
+  "paymentUnitId": zod.string(),
+  "amount": zod.string().nullish()
+}),zod.object({
+  "mode": zod.enum(['create']),
+  "kind": zod.enum(['check', 'direct_ach', 'wire', 'other']),
+  "amount": zod.string(),
+  "receivedDate": zod.string().date().nullish()
+})])
+
+/**
+ * Finance/admin review only. Removes a manual component only when it has no counted gift/application; a now-orphaned placeholder/create payment unit is removed in the same transaction.
+ * @summary Remove a manually-added bank-deposit component.
+ */
+export const RemoveManualBankDepositComponentParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+/**
  * Finance/admin review only. Records only the deposit-level exclusion decision; it never creates or changes payment units, deposit components, or payment applications.
  * @summary Mark a Wells Fargo bank deposit as not fundraising.
  */
@@ -1378,6 +1438,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "kind": zod.enum(['check', 'direct_ach', 'wire', 'other', 'stripe_charge']),
   "needsReview": zod.boolean(),
   "ambiguousDepositMatch": zod.boolean(),
+  "manual": zod.boolean().optional().describe('True when this direct component was added manually through the remainder-resolution flow.'),
   "countedGiftIds": zod.array(zod.string()).optional(),
   "unconfirmed": zod.boolean().optional().describe('True for a provisional QBO accounting-plane decomposition row.'),
   "source": zod.enum(['bank_spine', 'qbo_provisional']).optional(),

@@ -5903,6 +5903,8 @@ export type WorkbenchDepositCompositionComponentsItem = {
   kind: WorkbenchDepositCompositionComponentsItemKind;
   needsReview: boolean;
   ambiguousDepositMatch: boolean;
+  /** True when this direct component was added manually through the remainder-resolution flow. */
+  manual?: boolean;
   countedGiftIds?: string[];
   /** True for a provisional QBO accounting-plane decomposition row. */
   unconfirmed?: boolean;
@@ -6153,6 +6155,58 @@ export interface BankDepositComponentExclusion {
   id: string;
   exclusionReason: StagedPaymentExclusionReason | null;
   classificationSource: StagedPaymentClassificationSource;
+}
+
+export type DepositCandidatePaymentUnitKind = typeof DepositCandidatePaymentUnitKind[keyof typeof DepositCandidatePaymentUnitKind];
+
+
+export const DepositCandidatePaymentUnitKind = {
+  check: 'check',
+  direct_ach: 'direct_ach',
+  wire: 'wire',
+  other: 'other',
+} as const;
+
+export interface DepositCandidatePaymentUnit {
+  id: string;
+  kind: DepositCandidatePaymentUnitKind;
+  amount: string;
+  currency: string;
+  receivedDate: string | null;
+  sourceLabel: string;
+}
+
+export interface DepositCandidatePaymentUnitList {
+  data: DepositCandidatePaymentUnit[];
+}
+
+export type AddBankDepositComponentBody = {
+  mode: 'placeholder';
+  amount: string;
+} | {
+  mode: 'attach';
+  paymentUnitId: string;
+  amount?: string | null;
+} | {
+  mode: 'create';
+  kind: 'check' | 'direct_ach' | 'wire' | 'other';
+  amount: string;
+  receivedDate?: string | null;
+};
+
+export type BankDepositComponentMutationSource = typeof BankDepositComponentMutationSource[keyof typeof BankDepositComponentMutationSource];
+
+
+export const BankDepositComponentMutationSource = {
+  manual: 'manual',
+} as const;
+
+export interface BankDepositComponentMutation {
+  id: string;
+  paymentUnitId: string;
+  amount: string;
+  source: BankDepositComponentMutationSource;
+  needsReview: boolean;
 }
 
 export interface DepositQboComponentMutationResult {
@@ -10941,6 +10995,22 @@ limit?: number;
 
 export type ListDepositCandidatePayouts200 = {
   data: DepositCandidatePayout[];
+};
+
+export type ListDepositCandidatePaymentUnitsParams = {
+/**
+ * Target amount in major units; results are ordered by proximity.
+ */
+amount?: string;
+/**
+ * Optional text over the source staged-payment payer or memo and the payment-unit id.
+ */
+q?: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
 };
 
 export type LinkPayoutDepositBody = {
