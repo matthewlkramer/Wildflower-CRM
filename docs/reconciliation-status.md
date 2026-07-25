@@ -21,12 +21,12 @@ canonical boundary first (see `replit.md`).
 
 | Relationship | Authority today |
 |---|---|
-| Payment/evidence unit → CRM gift | `payment_applications` anchored **solely by `payment_unit_id`** (`link_role='counted'`); the three source-anchor columns and their legacy indexes are dropped. QB/Stripe/Donorbox no longer read row-level pointer columns, and `payment_units` are minted eagerly at booking. Counted uniqueness is per unit; corroborating uniqueness is `(payment_unit_id, gift_id)` for `link_role='corroborating'`. |
+| Payment/evidence unit → CRM gift | `payment_applications` anchored **solely by `payment_unit_id`** (`link_role='counted'`); each component/payment unit has zero or one counted gift. The three source-anchor columns and their legacy indexes are dropped. QB/Stripe/Donorbox no longer read row-level pointer columns, and `payment_units` are minted eagerly at booking. Apparent multiple gifts on one unit are repaired by merging into allocation rows on one gift; there is no deposit→gift link. |
 | Stripe payout → bank deposit | `stripe_payouts.bank_deposit_id`, a recomputed deterministic pairing with `ambiguous_bank_match` and `bank_matched_at`; there is no lifecycle or confirmation workflow. `settlement_links` is retired and dropped (0169); the historical QBO pairing fact lives on `staged_payments.settled_stripe_payout_id`. |
 | Evidence ↔ evidence (cross-source) | `source_links` — implemented and sole authority ([`adr-source-link-ledger.md`](adr-source-link-ledger.md), phases 1–6 complete; the old source-specific pointer columns were physically dropped in migration 0149). Never add a sibling pointer column |
 | Gift ↔ QB tie signal | Live-derived at read time (`deriveGiftQbTieLiveExpr` in `giftQbTie.ts`); the stored `quickbooks_tie_status` column and its applier were retired — there is no recompute call site |
-| Staged/charge statuses | Derived from facts via the shared builders in `derivedStatus.ts`; no stored status columns (Donorbox's stored lifecycle is mapped to the shared vocabulary at every emit point). Deposit-header and derived-excluded logic remain for historical/accounting evidence, while the deposit-level `bank_deposit_exclusions` row is the authoritative reviewed "not fundraising" disposition. A direct exclusion never counts money, composes a deposit, or changes payment relationships. |
-| Workbench UI | The deposit-first four-column workbench at `/reconciliation/deposits` is the current default: **Bank \| Composition \| Gifts \| Accounting**. `/reconciliation` and `/reconciliation-workbench` redirect there; `/reconciliation/clusters` remains a secondary view, and the old six-queue workbench is retired. |
+| Staged/charge statuses | Derived from facts via the shared builders in `derivedStatus.ts`; no stored status columns (Donorbox's stored lifecycle is mapped to the shared vocabulary at every emit point). Deposit-header and derived-excluded logic remain for historical/accounting evidence. The current deposit-level `bank_deposit_exclusions` row is the PR #42 implementation being migrated to component/payment-unit exclusion; target deposit not-fundraising state is derived when all components are excluded. Excluded components remain visible and badged. |
+| Workbench UI | The deposit-first four-column workbench at `/reconciliation/deposits` is the current default: **Bank \| Composition \| Gifts \| Accounting**. Columns 2–4 are row-aligned per component/payment unit; QBO is derived documentation. `/reconciliation` and `/reconciliation-workbench` redirect there; `/reconciliation/clusters` remains a secondary view, and the old six-queue workbench is retired. |
 | Manual gift creation on a pledge | Blocked at `POST /gifts-and-payments` (`manual_gift_on_pledge_blocked`, Task #788) — pledge payments are minted from QuickBooks evidence via reconciliation. Sole escape hatch: the explicit finance-gated `offBooksException` request flag (money that never hits QuickBooks); the flag is never persisted. Minted gifts inherit scope from the pledge's remaining plan (`copyPledgeAllocationsToGift`, stamped via `gift_allocations.source_pledge_allocation_id`) |
 | Several QB rows → one gift | `POST /quickbooks/staged-payments/multi-match` writes N `payment_applications` counted rows atomically (no `unit_group` row; open to all team members — CRM-side matching; zero-amount members rejected at selection). Unit groups are fully retired ([`adr-linear-money-model.md`](adr-linear-money-model.md) §7 step 3 done): nothing reads or writes `unit_groups` / `unit_group_members`; `/group`, `/group-reconcile`, `/ungroup`, and `/:id/eject-from-group` are 410 `group_creation_retired` tombstones; per-row revert is the single undo path. Legacy rows sit inert until step 4 verifies and drops the tables |
 
@@ -42,6 +42,32 @@ default reconciliation surface.
 
 Migrations **0179→0180→0181→0182→Publish→0183** were the human-gated final
 steps and are **applied to production** (owner-confirmed 2026-07-23).
+
+## UI #2 component-grain target
+
+The locked design target makes the component/payment unit the true grain for
+the workbench:
+
+- A deposit decomposes into components; Composition, Gifts, and Accounting are
+  row-aligned per component.
+- Each component has zero or one counted gift application. Multiple apparent
+  gifts are merged into allocation rows on one gift; deposit→gift is not
+  modeled.
+- Excluded components remain visible with an **Excluded** badge.
+- QBO remains downstream documentation through typed `source_links` claims and
+  `deposit_qbo_components`; gift/allocation↔QBO is derived transitively, with
+  no direct gift↔QBO or general M:N link.
+- “No expected bank deposit” for balance withdrawals, net ≤ 0, and failed
+  payouts is derived, not a routine manual bundle action.
+- Unresolved remainders target two flows: a needs-research placeholder, or a
+  known component that first searches unclaimed check payment units and only
+  creates a fresh unit if none matches, with optional QBO attachment or a
+  missing-QBO annotation.
+
+The component-grain exclusion migration, placeholder/known-component creation,
+per-component QBO rollup and backward attach, and accounting-check disposition
+write action remain target work. No direct `qbo_accounting_checks` disposition
+endpoint exists today.
 
 ## Ratified rules with known or suspected implementation gaps
 

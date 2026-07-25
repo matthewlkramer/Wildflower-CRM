@@ -9,8 +9,9 @@ last_verified: 2026-07-23
 > four-column deposit-first workbench (**Bank | Composition | Gifts |
 > Accounting**) over the bank-deposit spine. Composition, Gifts, and Accounting
 > carry the three semantic roles described below. Payout↔deposit pairing is
-> deterministic via `stripe_payouts.bank_deposit_id`; payment applications are
-> anchored by `payment_unit_id`.
+> deterministic via `stripe_payouts.bank_deposit_id`; the component/payment unit
+> is the true action and display grain; payment applications are anchored by
+> `payment_unit_id`.
 
 This document is the **ratified product specification** for the reconciliation
 workbench. It is normative even where current code disagrees; implementation
@@ -37,6 +38,42 @@ A row has:
 A single physical record may satisfy more than one semantic role. For example, a QuickBooks ACH or check may serve as both transaction evidence and accounting evidence.
 
 ---
+
+## 1.1 Component-grain deposit workbench rules
+
+The deposit-first surface is anchored by one `bank_deposits` row, but its
+actionable and row-aligned children are components/payment units:
+
+```text
+Bank deposit
+└── component/payment unit
+    ├── 0 or 1 counted gift/allocation
+    └── 0..N documenting QBO records
+```
+
+Composition, Gifts, and Accounting render per component rather than as
+independent deposit-level lists. A deposit→gift relationship is not tracked.
+`payment_applications` permits one counted gift per payment unit; apparent
+multiple gifts on one component are repaired by merging meaning into
+allocation rows on one gift, not by retaining parallel counted links.
+
+Exclusion is likewise a component/payment-unit fact. The deposit-level
+`bank_deposit_exclusions` action shipped in PR #42 is the current
+implementation and is being migrated down to component grain; it must not be
+described as the target authority. A deposit's not-fundraising state is derived
+when all of its components are excluded. “Mark whole deposit not fundraising”
+and “Return whole deposit to open queue” are convenience operations for
+excluding or re-including all components.
+
+Excluded components remain visible in Composition with an **Excluded** badge.
+They leave active counting but remain in the gross→net→bank reconciliation.
+The detailed UI #2 target and LIVE/WIRE/GAP action status are in
+[`proposal-ui2-workbench-actions.md`](proposal-ui2-workbench-actions.md).
+
+QBO is downstream documentation. Typed `source_links` claims and
+`deposit_qbo_components` remain the authorities for QBO ties; gift/allocation
+↔ QBO is derived transitively through a component. No direct gift↔QBO link or
+general M:N documentation table should be added.
 
 # 2. Row Status
 
@@ -310,6 +347,10 @@ If a row contains one refunded transaction and one live matched transaction, the
 | Un-exclude transaction           | Excluded transaction                                               |
 | View processor record            | Any transaction with an external source record                     |
 
+On the deposit-first surface, these actions apply to the individual
+component/payment unit. An excluded component stays in the Composition column
+with an **Excluded** badge so the gross→net→bank calculation remains visible.
+
 ---
 
 # 6. Payout↔Bank-Deposit Pairing State
@@ -351,17 +392,18 @@ deterministic pairing plus finance overrides. The mapping from the old model:
 | Remove proposal | *(none — there is no proposal state)* | — |
 | Unmatch confirmed settlement | **Unlink deposit** | Finance/admin, when a pairing exists |
 | Replace settlement relationship | **Link to a different deposit…** | Finance/admin |
-| Resolve as Stripe withdrawal (exempt) | **Resolve payout settlement** — records the resolution for a payout with no expected bank deposit (Stripe balance withdrawal, negative/failed payout) via the QBO accounting-evidence search | Finance/admin, for a payout with no bank deposit |
+| Resolve as Stripe withdrawal (exempt) | **Resolve payout settlement** — a rare manual escape hatch for a genuinely ambiguous remainder; “no expected bank deposit” for balance withdrawals, net ≤ 0, and failed payouts is derived from payout facts, not a routine bundle action | Finance/admin, only for a genuinely ambiguous remainder |
 
-Deposit-level "not fundraising" is a **separate** authority, not a pairing
-action: finance/admin may **Mark bank deposit not fundraising** (writes only a
-`bank_deposit_exclusions` row) or **Return bank deposit to open queue** (deletes
-that row). It never creates or changes payment units, components, applications,
-or gifts.
+Not-fundraising is a **separate component disposition**, not a pairing action:
+finance/admin may exclude or re-include a component. The current PR #42
+`bank_deposit_exclusions` row is a deposit-grain implementation being migrated
+to that authority; the deposit-level mark/return controls are all-component
+convenience shortcuts. Exclusion never creates or changes counted money,
+applications, or gifts.
 
-An excluded QBO record remains accounting evidence and does not itself decide
-whether a bank deposit is fundraising. Deposit exclusion and payout pairing are
-independent facts.
+An excluded component remains visible and its downstream QBO documentation is
+still evidence; a derived QBO card is not independently excluded. Component
+disposition and payout pairing are independent facts.
 
 ---
 
@@ -520,6 +562,12 @@ Mixed requires competing or overlapping CRM representations.
 | Fill out QuickBooks from gift             | Displayed grayed out with the reason — the system cannot write to QuickBooks (see 7.4)    |
 
 `Remove CRM card from row` and `Move CRM card to a new row` are relationship actions. They do not delete or archive the CRM gift.
+
+On the deposit-first UI #2 surface, “Match CRM gift to QuickBooks evidence” is
+not a direct gift↔QBO relationship: the QBO card is derived through the
+component's typed evidence ties. The old “Match evidence” pile-on is removed,
+and “Mark gift lost” / “Mark gift dormant” are not actions on a paid gift
+component; loss disposition belongs to the opportunity/pledge lifecycle.
 
 ---
 

@@ -99,8 +99,12 @@ mutation.
 ### Evidence relationships (one authority each)
 
 - `payment_applications` is the **sole** unit↔gift cash-application ledger
-  (evidence unit → CRM gift). Header grain (`gift_id`, never an allocation;
-  `gift_allocation_id` is a narrowing annotation only).
+  (evidence unit → CRM gift). The true relationship grain is the
+  component/payment unit: each unit has zero or one counted gift application.
+  Header grain (`gift_id`, never an allocation; `gift_allocation_id` is a
+  narrowing annotation only) remains the stored link, while apparent multiple
+  gifts on one unit are repaired by merging meaning into allocation rows on one
+  gift. There is no deposit→gift relationship.
 - `stripe_payouts.bank_deposit_id` is the current payout↔bank-deposit
   relationship: a recomputed deterministic pairing with
   `ambiguous_bank_match` and `bank_matched_at`, with no confirmation workflow.
@@ -110,7 +114,11 @@ mutation.
 - `source_links` is the sole unit↔unit evidence↔evidence claim ledger
   (charge↔QB tie, charge fee row, Donorbox↔QB, Donorbox↔charge). It replaced
   the retired source-specific pointer columns — **never reintroduce pointer
-  columns** on evidence or gift tables.
+  columns** on evidence or gift tables. These typed claims, together with
+  `deposit_qbo_components` (QBO deposit member line ↔ bank deposit), are the
+  QBO documentation authorities. Gift/allocation↔QBO is derived transitively
+  through the component; do not add a direct gift↔QBO link or general M:N
+  documentation table.
 - Statuses (QB tie, payout settlement, match status) **derive from these
   relationships at read time**; do not add stored status columns for them.
   A `source_links` claim is not itself status evidence (claim ≠ status).
@@ -368,27 +376,27 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   `bank_deposits` row. It explains how accounting records map into a bank
   deposit but is not the money spine and does not replace direct
   `bank_deposit_components`.
-- `bank_deposit_exclusions` — the reviewed **deposit-level "not fundraising"
-  decision authority**. One row (`UNIQUE(bank_deposit_id)`) marks a specific
-  bank deposit as non-fundraising money movement directly on the spine, for
-  deposits with no QBO/staged-payment record to hang an exclusion on (e.g.
-  internal `ONLINE TRANSFER … CSP/PAYROLL/NONPAYROLL`) or whose only tie to a
-  human exclusion is an inferred amount+date+name match that must not become a
-  stored money relationship. A DECISION authority, not evidence: it never counts
-  money, never composes a deposit, and only drives the workbench
-  Not-fundraising classification. `reason` reuses
-  `staged_payment_exclusion_reason`; overridable (delete the row to re-open the
-  deposit). Reviewed backfill of the 66 name-confirmed affiliated dues/loans +
-  33 internal transfers is migration 0176.
+- `bank_deposit_exclusions` — the current PR #42 reviewed **deposit-level
+  "not fundraising" implementation**, being migrated to component/payment-unit
+  grain. The target exclusion authority is the component: a deposit's
+  not-fundraising state is derived when all components are excluded, and the
+  deposit-level mark/return controls are all-component convenience operations.
+  Until that migration is shipped, this table remains one row
+  (`UNIQUE(bank_deposit_id)`) per deposit. It is a DECISION authority, not
+  evidence: it never counts money, composes a deposit, or changes payment
+  relationships. `reason` reuses `staged_payment_exclusion_reason`.
 - `qbo_accounting_checks` — the QBO **expected-vs-actual accounting sidecar**
   (Phase 7): one row per QBO record comparing the DERIVED expected posting
   (from the resolved real chain) against what QBO actually says. jsonb
   `expected`/`actual` snapshots + `disposition`
   (consistent / correction_needed / corrected / accepted_historical).
   Accounting REVIEW, never a money ledger; the CRM never writes to QBO —
-  `correction_needed` is a worklist for fixing QBO in QBO.
-- `payment_applications` — the unit↔gift cash-application ledger. Each row is
-  anchored solely by the non-null `payment_unit_id`; the legacy
+  `correction_needed` is a worklist for fixing QBO in QBO. A write endpoint for
+  accounting-check dispositions is not yet implemented.
+- `payment_applications` — the component/payment-unit↔gift
+  cash-application ledger. Each row is anchored solely by the non-null
+  `payment_unit_id`; a unit may have zero or one `counted` gift application.
+  The legacy
   `payment_id`/`stripe_charge_id`/`donorbox_donation_id` columns, FKs, checks,
   and per-anchor indexes were dropped in migrations 0179–0183. `link_role`
   (`counted` / `corroborating`) — money reads SUM only `counted` rows;
