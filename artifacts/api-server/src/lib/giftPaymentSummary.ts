@@ -71,7 +71,8 @@ export function settledGrossForGift(
     + COALESCE((
       SELECT SUM(pa.amount_applied)
       FROM payment_applications pa
-      JOIN donorbox_donations dd ON dd.id = pa.donorbox_donation_id
+      JOIN payment_units pu_sg ON pu_sg.id = pa.payment_unit_id
+      JOIN donorbox_donations dd ON dd.id = pu_sg.donorbox_donation_id
       WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox'
         AND pa.link_role = 'counted'
         AND dd.donation_type IS DISTINCT FROM 'stripe'
@@ -91,14 +92,16 @@ export function totalFeesForGift(
     COALESCE((
       SELECT SUM(ssc.fee_amount)
       FROM payment_applications pa
-      JOIN stripe_staged_charges ssc ON ssc.id = pa.stripe_charge_id
+      JOIN payment_units pu_tf ON pu_tf.id = pa.payment_unit_id
+      JOIN stripe_staged_charges ssc ON ssc.id = pu_tf.stripe_charge_id
       WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe'
         AND pa.link_role = 'counted'
     ), 0)
     + COALESCE((
       SELECT SUM(dd.processing_fee)
       FROM payment_applications pa
-      JOIN donorbox_donations dd ON dd.id = pa.donorbox_donation_id
+      JOIN payment_units pu_tf_dbx ON pu_tf_dbx.id = pa.payment_unit_id
+      JOIN donorbox_donations dd ON dd.id = pu_tf_dbx.donorbox_donation_id
       WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox'
         AND pa.link_role = 'counted'
         AND dd.donation_type IS DISTINCT FROM 'stripe'
@@ -127,7 +130,8 @@ export function hasLinkedPaymentForGift(
     )
     OR EXISTS (
       SELECT 1 FROM payment_applications pa
-      JOIN donorbox_donations dd ON dd.id = pa.donorbox_donation_id
+      JOIN payment_units pu_hp ON pu_hp.id = pa.payment_unit_id
+      JOIN donorbox_donations dd ON dd.id = pu_hp.donorbox_donation_id
       WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox'
         AND pa.link_role = 'counted'
         AND dd.donation_type IS DISTINCT FROM 'stripe'

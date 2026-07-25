@@ -2545,7 +2545,8 @@ router.get(
       .where(
         sql`EXISTS (
           SELECT 1 FROM payment_applications pa
-          WHERE pa.stripe_charge_id = ${stripeStagedCharges.id}
+          JOIN payment_units pu ON pu.id = pa.payment_unit_id
+          WHERE pu.stripe_charge_id = ${stripeStagedCharges.id}
             AND pa.evidence_source = 'stripe'
             AND pa.link_role = 'counted'
             AND pa.gift_id = ${id}
