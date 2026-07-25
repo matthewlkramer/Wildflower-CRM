@@ -6149,6 +6149,12 @@ export interface SetBankDepositExclusionBody {
   note?: string | null;
 }
 
+export interface BankDepositComponentExclusion {
+  id: string;
+  exclusionReason: StagedPaymentExclusionReason | null;
+  classificationSource: StagedPaymentClassificationSource;
+}
+
 export interface DepositQboComponentMutationResult {
   id: string;
   confirmed: boolean;

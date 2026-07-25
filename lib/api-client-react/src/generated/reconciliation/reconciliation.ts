@@ -22,6 +22,7 @@ import type {
 import type {
   ApproveCompleteMatchBody,
   BadRequestResponse,
+  BankDepositComponentExclusion,
   BankDepositExclusion,
   BundleAnchorInput,
   BundleAnchorListResponse,
@@ -33,6 +34,7 @@ import type {
   ConfirmSettlementLinkBody,
   ConfirmSettlementLinkResult,
   DepositQboComponentMutationResult,
+  ExcludeStagedPaymentBody,
   FinanceForbiddenResponse,
   GiftMissingQbList,
   IncompleteGiftList,
@@ -1065,6 +1067,148 @@ export const useClearBankDepositExclusion = <TError = ErrorType<FinanceForbidden
         TContext
       > => {
       return useMutation(getClearBankDepositExclusionMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Records the component-level exclusion decision without changing the payment unit, deposit composition, applications, or gifts.
+ * @summary Exclude a direct bank-deposit component from fundraising.
+ */
+export const getExcludeBankDepositComponentUrl = (id: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposit-components/${id}/exclude`
+}
+
+export const excludeBankDepositComponent = async (id: string,
+    excludeStagedPaymentBody: ExcludeStagedPaymentBody, options?: RequestInit): Promise<BankDepositComponentExclusion> => {
+
+  return customFetch<BankDepositComponentExclusion>(getExcludeBankDepositComponentUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      excludeStagedPaymentBody,)
+  }
+);}
+
+
+
+
+export const getExcludeBankDepositComponentMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof excludeBankDepositComponent>>, TError,{id: string;data: BodyType<ExcludeStagedPaymentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof excludeBankDepositComponent>>, TError,{id: string;data: BodyType<ExcludeStagedPaymentBody>}, TContext> => {
+
+const mutationKey = ['excludeBankDepositComponent'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof excludeBankDepositComponent>>, {id: string;data: BodyType<ExcludeStagedPaymentBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  excludeBankDepositComponent(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExcludeBankDepositComponentMutationResult = NonNullable<Awaited<ReturnType<typeof excludeBankDepositComponent>>>
+    export type ExcludeBankDepositComponentMutationBody = BodyType<ExcludeStagedPaymentBody>
+    export type ExcludeBankDepositComponentMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Exclude a direct bank-deposit component from fundraising.
+ */
+export const useExcludeBankDepositComponent = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof excludeBankDepositComponent>>, TError,{id: string;data: BodyType<ExcludeStagedPaymentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof excludeBankDepositComponent>>,
+        TError,
+        {id: string;data: BodyType<ExcludeStagedPaymentBody>},
+        TContext
+      > => {
+      return useMutation(getExcludeBankDepositComponentMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Clears the component exclusion decision without changing the payment unit, deposit composition, applications, or gifts.
+ * @summary Re-include an excluded direct bank-deposit component.
+ */
+export const getReIncludeBankDepositComponentUrl = (id: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposit-components/${id}/re-include`
+}
+
+export const reIncludeBankDepositComponent = async (id: string, options?: RequestInit): Promise<BankDepositComponentExclusion> => {
+
+  return customFetch<BankDepositComponentExclusion>(getReIncludeBankDepositComponentUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getReIncludeBankDepositComponentMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reIncludeBankDepositComponent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reIncludeBankDepositComponent>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['reIncludeBankDepositComponent'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reIncludeBankDepositComponent>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  reIncludeBankDepositComponent(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReIncludeBankDepositComponentMutationResult = NonNullable<Awaited<ReturnType<typeof reIncludeBankDepositComponent>>>
+
+    export type ReIncludeBankDepositComponentMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Re-include an excluded direct bank-deposit component.
+ */
+export const useReIncludeBankDepositComponent = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reIncludeBankDepositComponent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reIncludeBankDepositComponent>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getReIncludeBankDepositComponentMutationOptions(options));
     }
     /**
  * @summary Link a Stripe payout to a Wells Fargo bank deposit.

@@ -185,6 +185,9 @@ function Composition({
                   Later refunded{partialLaterRefund ? ` · ${money(charge.amountRefunded)}` : ""}
                 </Badge>
               ) : null}
+              {charge.exclusionReason ? (
+                <Badge variant="destructive" className="text-[9px]">Excluded</Badge>
+              ) : null}
               {actions.isFinanceOrAdmin ? (
                 <CardActionsMenu items={[
                   { label: "Exclude", onSelect: () => actions.openExclude({ kind: "charge", id: charge.chargeId, label: charge.payerName ?? charge.chargeId }) },
@@ -218,10 +221,17 @@ function Composition({
             {component.needsReview || component.ambiguousDepositMatch ? <CircleAlert className="h-3 w-3 shrink-0 text-amber-600" /> : null}
             <span className="font-medium">{component.label ?? component.kind.replace("_", " ")}</span>
             {component.unconfirmed ? <Badge variant="outline" className="shrink-0 border-amber-400 text-[9px] text-amber-700">Unconfirmed</Badge> : null}
-            {component.exclusionReason ? <Badge variant="secondary" className="shrink-0 text-[9px]">{component.exclusionReason.replaceAll("_", " ")}</Badge> : null}
+            {component.exclusionReason ? <Badge variant="destructive" className="shrink-0 text-[9px]">Excluded</Badge> : null}
           </span>
           <span className="flex shrink-0 items-center gap-2">
             <span className="tabular-nums">{money(component.amount)}</span>
+            {actions.isFinanceOrAdmin && component.source !== "qbo_provisional" ? (
+              <CardActionsMenu items={[
+                component.exclusionReason
+                  ? { label: "Re-include", onSelect: () => actions.reInclude({ kind: "component", id: component.componentId, label: component.label ?? component.kind }) }
+                  : { label: "Exclude…", onSelect: () => actions.openExclude({ kind: "component", id: component.componentId, label: component.label ?? component.kind }) },
+              ]} />
+            ) : null}
             {component.unconfirmed && component.componentId && actions.isFinanceOrAdmin ? (
               <>
                 <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => onConfirmProvisional?.(component.componentId)}>Confirm</button>

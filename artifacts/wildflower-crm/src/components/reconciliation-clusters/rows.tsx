@@ -49,7 +49,8 @@ type AttributedDonor = NonNullable<WorkbenchClusterCharge["attributedDonor"]>;
 /** The evidence row an action targets: a Stripe charge or a QB staged payment. */
 export type AnchorRef =
   | { kind: "charge"; id: string; label: string }
-  | { kind: "staged"; id: string; label: string };
+  | { kind: "staged"; id: string; label: string }
+  | { kind: "component"; id: string; label: string };
 
 /** Action callbacks the page wires to the real endpoints. */
 export interface ClusterActions {
