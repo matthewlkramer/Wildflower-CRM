@@ -439,7 +439,8 @@ export async function giftCandidatesFor(
     ABS(${giftsAndPayments.dateReceived} - ${anchorDate}),
     (SELECT MIN(ABS(sp.date_received - ${anchorDate}))
        FROM payment_applications pa
-       JOIN staged_payments sp ON sp.id = pa.payment_id
+       JOIN payment_units pu ON pu.id = pa.payment_unit_id
+       JOIN staged_payments sp ON sp.id = pu.source_staged_payment_id
       WHERE pa.gift_id = ${giftsAndPayments.id}
         AND pa.evidence_source = 'quickbooks'
         AND pa.link_role = 'counted'
