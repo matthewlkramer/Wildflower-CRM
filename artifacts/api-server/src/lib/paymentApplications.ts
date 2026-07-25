@@ -154,7 +154,7 @@ export interface ApplyPaymentApplicationArgs {
 /**
  * The resolved anchor for a ledger row: which processor row it hangs off, its
  * cap amount (for the book-once guard), and the ledger column that stores the
- * anchor id (used for both the live per-anchor SUM and the ON CONFLICT target).
+ * anchor id used for the live per-anchor SUM.
  */
 interface ResolvedAnchor {
   id: string;
@@ -164,16 +164,11 @@ interface ResolvedAnchor {
     | typeof paymentApplications.paymentId
     | typeof paymentApplications.stripeChargeId
     | typeof paymentApplications.donorboxDonationId;
-  /** ON CONFLICT arbiter (matches the per-anchor partial/plain UNIQUE). */
-  conflictTarget: [SQLColumn, typeof paymentApplications.giftId];
-  /** Partial-index predicate; omitted for the plain quickbooks UNIQUE. */
+  /** ON CONFLICT arbiter for counted payment-unit uniqueness. */
+  conflictTarget: [typeof paymentApplications.paymentUnitId];
+  /** Counted partial-index predicate. */
   conflictTargetWhere?: SQL;
 }
-
-type SQLColumn =
-  | typeof paymentApplications.paymentId
-  | typeof paymentApplications.stripeChargeId
-  | typeof paymentApplications.donorboxDonationId;
 
 /**
  * Resolve + lock the anchor for `args`, reading its cap amount FOR UPDATE so
@@ -224,11 +219,7 @@ async function resolveAndLockAnchor(
         id: args.paymentId,
         cap: row.amount,
         ledgerColumn: paymentApplications.paymentId,
-        // Partial UNIQUE arbiter — must match the counted book-once index predicate.
-        conflictTarget: [
-          paymentApplications.paymentId,
-          paymentApplications.giftId,
-        ],
+        conflictTarget: [paymentApplications.paymentUnitId],
         conflictTargetWhere: sql`${paymentApplications.linkRole} = 'counted'`,
       };
     }
@@ -253,11 +244,8 @@ async function resolveAndLockAnchor(
         id: args.stripeChargeId,
         cap: row.amount,
         ledgerColumn: paymentApplications.stripeChargeId,
-        conflictTarget: [
-          paymentApplications.stripeChargeId,
-          paymentApplications.giftId,
-        ],
-        conflictTargetWhere: sql`${paymentApplications.stripeChargeId} IS NOT NULL AND ${paymentApplications.linkRole} = 'counted'`,
+        conflictTarget: [paymentApplications.paymentUnitId],
+        conflictTargetWhere: sql`${paymentApplications.linkRole} = 'counted'`,
       };
     }
     case "donorbox": {
@@ -281,11 +269,8 @@ async function resolveAndLockAnchor(
         id: args.donorboxDonationId,
         cap: row.amount,
         ledgerColumn: paymentApplications.donorboxDonationId,
-        conflictTarget: [
-          paymentApplications.donorboxDonationId,
-          paymentApplications.giftId,
-        ],
-        conflictTargetWhere: sql`${paymentApplications.donorboxDonationId} IS NOT NULL AND ${paymentApplications.linkRole} = 'counted'`,
+        conflictTarget: [paymentApplications.paymentUnitId],
+        conflictTargetWhere: sql`${paymentApplications.linkRole} = 'counted'`,
       };
     }
   }
@@ -351,7 +336,7 @@ export async function applyPaymentApplication(
   //     and its Donorbox donation) is the same real payment: same gift → the
   //     old description is consolidated away (this write supersedes it);
   //     different gift → hard conflict, same as 2b. Runs before the upsert so
-  //     the 0167 unique index never fires a raw 23505.
+  //     the counted payment-unit index never fires a raw 23505.
   const paymentUnitId = await ensurePaymentUnit(
     tx,
     args.evidenceSource,
@@ -366,9 +351,6 @@ export async function applyPaymentApplication(
     .where(
       and(
         eq(paymentApplications.paymentUnitId, paymentUnitId),
-        // IS DISTINCT FROM: rows via another source carry NULL in this
-        // anchor's column, and plain <> would drop them.
-        sql`${anchor.ledgerColumn} IS DISTINCT FROM ${anchor.id}`,
         eq(paymentApplications.linkRole, "counted"),
       ),
     );
@@ -395,7 +377,8 @@ export async function applyPaymentApplication(
   });
   if (!result.ok) throw new PaymentOverApplicationError(anchor.id, result);
 
-  // 4. Idempotent upsert (the per-anchor UNIQUE pair is the book-once key).
+  // 4. Idempotent upsert (the counted payment-unit UNIQUE key is the
+  //    book-once key).
   //    link_role / lifecycle keep their column defaults (counted / confirmed)
   //    for every current caller, so they are intentionally not written here.
   const now = new Date();
