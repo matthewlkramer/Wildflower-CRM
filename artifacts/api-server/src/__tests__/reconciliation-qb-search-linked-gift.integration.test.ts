@@ -1,3 +1,7 @@
+import {
+  clearPaymentApplicationsForStagedIds,
+  unitIdForAnchor,
+} from "./paymentApplicationsTestUtil";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -59,6 +63,7 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
   paymentApplications: Db["paymentApplications"];
+  paymentUnits: Db["paymentUnits"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let server: Server;
@@ -95,6 +100,7 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
     paymentApplications: dbMod.paymentApplications,
+    paymentUnits: dbMod.paymentUnits,
   };
   eqFn = drizzle.eq;
 
@@ -132,7 +138,7 @@ beforeAll(async () => {
   });
   await db.insert(schema.paymentApplications).values({
     id: `${STAGED_MATCHED_ID}_pa`,
-    paymentId: STAGED_MATCHED_ID,
+    paymentUnitId: await unitIdForAnchor("quickbooks", STAGED_MATCHED_ID),
     giftId: GIFT_MATCHED_ID,
     amountApplied: "250.00",
     evidenceSource: "quickbooks",
@@ -150,7 +156,7 @@ beforeAll(async () => {
   });
   await db.insert(schema.paymentApplications).values({
     id: `${STAGED_CREATED_ID}_pa`,
-    paymentId: STAGED_CREATED_ID,
+    paymentUnitId: await unitIdForAnchor("quickbooks", STAGED_CREATED_ID),
     giftId: GIFT_CREATED_ID,
     amountApplied: "250.00",
     evidenceSource: "quickbooks",
@@ -179,9 +185,7 @@ afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const id of [STAGED_MATCHED_ID, STAGED_CREATED_ID, STAGED_FREE_ID]) {
-    await db
-      .delete(schema.paymentApplications)
-      .where(eqFn(schema.paymentApplications.paymentId, id));
+    await clearPaymentApplicationsForStagedIds([id]);
     await db
       .delete(schema.stagedPayments)
       .where(eqFn(schema.stagedPayments.id, id));

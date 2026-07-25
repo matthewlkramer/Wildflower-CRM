@@ -9,7 +9,9 @@ import {
 } from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
-import { seedStripeApplication } from "./paymentApplicationsTestUtil";
+import { seedStripeApplication ,
+  unitIdForAnchor,
+} from "./paymentApplicationsTestUtil";
 
 /**
  * DB-backed coverage for GET /api/reconciliation/workbench-clusters — the ONE
@@ -294,7 +296,7 @@ async function seedDepositApplication(opts: {
   const id = nextId("pa");
   await db.insert(schema.paymentApplications).values({
     id,
-    paymentId: opts.depositId,
+    paymentUnitId: await unitIdForAnchor("quickbooks", opts.depositId),
     giftId: opts.giftId,
     amountApplied: opts.amountApplied,
     evidenceSource: "quickbooks",
@@ -342,7 +344,7 @@ async function seedStaged(
   if (opts.matchedGiftId) {
     await db.insert(schema.paymentApplications).values({
       id: nextId("pa"),
-      paymentId: id,
+      paymentUnitId: await unitIdForAnchor("quickbooks", id),
       giftId: opts.matchedGiftId,
       amountApplied: opts.amount ?? "75.00",
       evidenceSource: "quickbooks",
@@ -363,7 +365,7 @@ async function seedDonorboxApplication(giftId: string): Promise<void> {
   donorboxIds.push(donationId);
   await db.insert(schema.paymentApplications).values({
     id: nextId("pa"),
-    donorboxDonationId: donationId,
+    paymentUnitId: await unitIdForAnchor("donorbox", donationId),
     giftId,
     amountApplied: "75.00",
     evidenceSource: "donorbox",

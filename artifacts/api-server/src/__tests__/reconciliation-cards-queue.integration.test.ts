@@ -3,6 +3,7 @@ import {
   clearPaymentApplicationsForStagedIds,
   clearPaymentApplicationsForChargeIds,
   seedStripeApplication,
+  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -132,7 +133,7 @@ async function seedStaged(opts: {
   if (linkedGiftId) {
     await db.insert(schema.paymentApplications).values({
       id: nextId("pa"),
-      paymentId: id,
+      paymentUnitId: await unitIdForAnchor("quickbooks", id),
       giftId: linkedGiftId,
       amountApplied: opts.amount ?? "100.00",
       evidenceSource: "quickbooks",
@@ -156,7 +157,7 @@ async function seedLedgerResolved(
   const id = nextId("split");
   await db.insert(schema.paymentApplications).values({
     id,
-    paymentId: stagedPaymentId,
+    paymentUnitId: await unitIdForAnchor("quickbooks", stagedPaymentId),
     giftId,
     amountApplied: subAmount,
     evidenceSource: "quickbooks",

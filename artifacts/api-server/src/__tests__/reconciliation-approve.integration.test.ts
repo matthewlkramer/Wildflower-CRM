@@ -19,6 +19,7 @@ import {
   stripeCountedRowForCharge,
   stripeGiftIdForCharge,
   stripeMintedGiftIdForCharge,
+  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 import { chargeStatusSql, stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
@@ -88,6 +89,7 @@ let schema: {
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   paymentApplications: Db["paymentApplications"];
+  paymentUnits: Db["paymentUnits"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -197,7 +199,7 @@ async function seedStaged(
   if (ledgerGiftId != null) {
     await db.insert(schema.paymentApplications).values({
       id: nextId("pa"),
-      paymentId: id,
+      paymentUnitId: await unitIdForAnchor("quickbooks", id),
       giftId: ledgerGiftId,
       amountApplied: amount,
       evidenceSource: "quickbooks",
@@ -419,6 +421,7 @@ beforeAll(async () => {
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     paymentApplications: dbMod.paymentApplications,
+    paymentUnits: dbMod.paymentUnits,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -630,7 +633,7 @@ describe.skipIf(!HAS_DB)(
         .where(eqFn(schema.stagedPayments.id, paymentId));
       await db.insert(schema.paymentApplications).values({
         id: nextId("pa"),
-        paymentId,
+        paymentUnitId: await unitIdForAnchor("quickbooks", paymentId),
         giftId: giftA,
         amountApplied: amount,
         evidenceSource: "quickbooks",
@@ -692,8 +695,17 @@ describe.skipIf(!HAS_DB)(
       const paRows = await db
         .select()
         .from(schema.paymentApplications)
-        .where(eqFn(schema.paymentApplications.paymentId, paymentId));
-      const counted = paRows.filter((r) => r.linkRole === "counted");
+        .innerJoin(
+          schema.paymentUnits,
+          eqFn(
+            schema.paymentApplications.paymentUnitId,
+            schema.paymentUnits.id,
+          ),
+        )
+        .where(eqFn(schema.paymentUnits.sourceStagedPaymentId, paymentId));
+      const counted = paRows
+        .map((r) => r.payment_applications)
+        .filter((r) => r.linkRole === "counted");
       expect(counted).toHaveLength(1);
       expect(counted[0].giftId).toBe(giftB);
 
@@ -1024,7 +1036,7 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // The split's counted cash-application ledger row books the money.
     await db.insert(schema.paymentApplications).values({
       id: nextId("pa"),
-      paymentId: stagedId,
+      paymentUnitId: await unitIdForAnchor("quickbooks", stagedId),
       giftId: splitGift,
       amountApplied: "100.00",
       evidenceSource: "quickbooks",

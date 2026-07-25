@@ -186,89 +186,13 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
         }
       }
 
-      // Direct fixture inserts intentionally bypass the application booking
-      // helper. Keep those rows in the same post-PR-B shape as production
-      // booking by eagerly materializing their canonical payment unit.
+      // Teardown safety net for the shared test DB: a concurrently running
+      // suite's post-sync bank-spine recompute can mint a canonical unit for any
+      // pending charge, so deleting a charge must first drop the unit that
+      // RESTRICT-references it. (Fixture inserts now resolve their own
+      // payment_unit_id via ensurePaymentUnit — the ledger has no source-anchor
+      // columns to materialize from anymore.)
       await test.query(`
-        CREATE OR REPLACE FUNCTION test_meta.ensure_payment_application_unit()
-        RETURNS trigger LANGUAGE plpgsql AS $$
-        DECLARE
-          unit_id text;
-        BEGIN
-          IF NEW.payment_unit_id IS NOT NULL THEN
-            RETURN NEW;
-          END IF;
-          IF NEW.evidence_source = 'stripe' AND NEW.stripe_charge_id IS NOT NULL THEN
-            INSERT INTO payment_units (
-              id, kind, stripe_charge_id, gross_amount, fee_amount, net_amount,
-              currency, received_date, lifecycle
-            )
-            SELECT
-              'pu_' || sc.id, 'stripe_charge', sc.id, sc.gross_amount,
-              sc.fee_amount, sc.net_amount, upper(coalesce(sc.currency, 'USD')),
-              sc.date_received,
-              CASE
-                WHEN sc.disputed THEN 'disputed'
-                WHEN sc.refunded THEN 'refunded'
-                WHEN sc.amount_refunded IS NOT NULL AND sc.amount_refunded > 0
-                  THEN 'partially_refunded'
-                ELSE 'received'
-              END::payment_unit_lifecycle
-            FROM stripe_staged_charges sc
-            WHERE sc.id = NEW.stripe_charge_id
-            ON CONFLICT (id) DO NOTHING;
-            SELECT pu.id INTO unit_id FROM payment_units pu
-            WHERE pu.stripe_charge_id = NEW.stripe_charge_id LIMIT 1;
-          ELSIF NEW.evidence_source = 'quickbooks' AND NEW.payment_id IS NOT NULL THEN
-            INSERT INTO payment_units (
-              id, kind, source_staged_payment_id, gross_amount, fee_amount,
-              net_amount, currency, received_date, lifecycle
-            )
-            SELECT
-              'pu_' || sp.id,
-              CASE
-                WHEN sp.funding_source = 'check' THEN 'check'
-                WHEN sp.funding_source = 'wire_ach'
-                  AND sp.qb_payment_method ILIKE '%wire%' THEN 'wire'
-                WHEN sp.funding_source = 'wire_ach' THEN 'direct_ach'
-                WHEN sp.qb_check_number IS NOT NULL
-                  OR sp.qb_payment_method ILIKE '%check%' THEN 'check'
-                ELSE 'other'
-              END::payment_unit_kind,
-              sp.id, sp.amount, NULL, sp.amount,
-              upper(coalesce(sp.qb_currency, 'USD')), sp.date_received, 'received'
-            FROM staged_payments sp
-            WHERE sp.id = NEW.payment_id
-            ON CONFLICT (id) DO NOTHING;
-            SELECT pu.id INTO unit_id FROM payment_units pu
-            WHERE pu.source_staged_payment_id = NEW.payment_id LIMIT 1;
-          ELSIF NEW.evidence_source = 'donorbox'
-            AND NEW.donorbox_donation_id IS NOT NULL THEN
-            INSERT INTO payment_units (
-              id, kind, donorbox_donation_id, gross_amount, fee_amount,
-              net_amount, currency, received_date, lifecycle
-            )
-            SELECT
-              'pu_' || dd.id, 'other', dd.id, dd.amount, dd.processing_fee,
-              CASE WHEN dd.amount IS NULL OR dd.processing_fee IS NULL
-                THEN dd.amount ELSE dd.amount - dd.processing_fee END,
-              upper(coalesce(dd.currency, 'USD')), dd.date_received, 'received'
-            FROM donorbox_donations dd
-            WHERE dd.id = NEW.donorbox_donation_id
-            ON CONFLICT (id) DO NOTHING;
-            SELECT pu.id INTO unit_id FROM payment_units pu
-            WHERE pu.donorbox_donation_id = NEW.donorbox_donation_id LIMIT 1;
-          END IF;
-          NEW.payment_unit_id := unit_id;
-          RETURN NEW;
-        END;
-        $$;
-        DROP TRIGGER IF EXISTS ensure_payment_application_unit
-          ON payment_applications;
-        CREATE TRIGGER ensure_payment_application_unit
-          BEFORE INSERT ON payment_applications
-          FOR EACH ROW
-          EXECUTE FUNCTION test_meta.ensure_payment_application_unit();
         CREATE OR REPLACE FUNCTION test_meta.cleanup_stripe_payment_unit()
         RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN

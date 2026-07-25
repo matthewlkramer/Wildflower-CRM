@@ -268,7 +268,10 @@ describe("tie consultation: booked = evidence, raw link = settlement claim", () 
   it("the booked predicate requires the tied charge's own counted booking", () => {
     const booked = qbChargeTieBookedExistsText("s");
     expect(booked).toContain(
-      `"pa_ct_ds"."stripe_charge_id" = "srcl_ds"."stripe_charge_id"`,
+      `"pu_ct_ds"."stripe_charge_id" = "srcl_ds"."stripe_charge_id"`,
+    );
+    expect(booked).toContain(
+      `JOIN "payment_units" "pu_ct_ds" ON "pu_ct_ds"."id" = "pa_ct_ds"."payment_unit_id"`,
     );
     expect(booked).toContain(`"pa_ct_ds"."link_role" = 'counted'`);
     expect(booked).toContain(`"pa_ct_ds"."evidence_source" = 'stripe'`);

@@ -15,6 +15,7 @@ import {
 import {
   clearPaymentApplicationsForGiftIds,
   seedStripeApplication,
+  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 
 /**
@@ -117,7 +118,7 @@ async function seedQbApplication(paymentId: string): Promise<void> {
   await db.insert(schema.paymentApplications).values({
     id: nextId("pa"),
     giftId: await seedGift(),
-    paymentId,
+    paymentUnitId: await unitIdForAnchor("quickbooks", paymentId),
     amountApplied: "50.00",
     evidenceSource: "quickbooks",
     matchMethod: "system",

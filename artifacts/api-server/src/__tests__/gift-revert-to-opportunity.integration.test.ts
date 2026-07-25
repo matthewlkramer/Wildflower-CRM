@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { clearPaymentUnitsForChargeIds } from "./paymentApplicationsTestUtil";
+import { clearPaymentUnitsForChargeIds ,
+  unitIdForAnchor,
+} from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -203,7 +205,7 @@ beforeAll(async () => {
   await db.insert(schema.paymentApplications).values({
     id: PA_QB,
     giftId: GIFT_QB,
-    paymentId: SP_QB,
+    paymentUnitId: await unitIdForAnchor("quickbooks", SP_QB),
     evidenceSource: "quickbooks",
     linkRole: "counted",
     amountApplied: "600.00",
@@ -219,7 +221,7 @@ beforeAll(async () => {
   await db.insert(schema.paymentApplications).values({
     id: PA_STRIPE,
     giftId: GIFT_STRIPE,
-    stripeChargeId: CHARGE_STRIPE,
+    paymentUnitId: await unitIdForAnchor("stripe", CHARGE_STRIPE),
     evidenceSource: "stripe",
     linkRole: "counted",
     amountApplied: "150.00",

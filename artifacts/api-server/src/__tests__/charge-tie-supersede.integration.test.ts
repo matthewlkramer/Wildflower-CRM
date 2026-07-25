@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
+  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 
 /**
@@ -47,6 +48,7 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   paymentApplications: Db["paymentApplications"];
+  paymentUnits: Db["paymentUnits"];
   organizations: Db["organizations"];
   users: Db["users"];
   sourceLinks: Db["sourceLinks"];
@@ -107,7 +109,7 @@ async function seedQbLedgerRow(
   const id = nextId("pa");
   await db.insert(schema.paymentApplications).values({
     id,
-    paymentId: sp,
+    paymentUnitId: await unitIdForAnchor("quickbooks", sp),
     giftId: gift,
     amountApplied: over?.amount === undefined ? "103.00" : over.amount,
     evidenceSource: "quickbooks",
@@ -163,7 +165,7 @@ async function seedChargeLedgerRow(
     giftId: gift,
     amountApplied: over?.amount ?? "103.00",
     evidenceSource: "stripe",
-    stripeChargeId: charge,
+    paymentUnitId: await unitIdForAnchor("stripe", charge),
     linkRole: "counted",
     note: over?.note ?? null,
   });
@@ -179,9 +181,16 @@ async function readQbRows(sp: string) {
       linkRole: schema.paymentApplications.linkRole,
     })
     .from(schema.paymentApplications)
+    .innerJoin(
+      schema.paymentUnits,
+      eqFn(
+        schema.paymentApplications.paymentUnitId,
+        schema.paymentUnits.id,
+      ),
+    )
     .where(
       andFn(
-        eqFn(schema.paymentApplications.paymentId, sp),
+        eqFn(schema.paymentUnits.sourceStagedPaymentId, sp),
         eqFn(schema.paymentApplications.evidenceSource, "quickbooks"),
       ),
     );
@@ -198,7 +207,14 @@ async function readChargeRows(charge: string) {
       confirmedByUserId: schema.paymentApplications.confirmedByUserId,
     })
     .from(schema.paymentApplications)
-    .where(eqFn(schema.paymentApplications.stripeChargeId, charge));
+    .innerJoin(
+      schema.paymentUnits,
+      eqFn(
+        schema.paymentApplications.paymentUnitId,
+        schema.paymentUnits.id,
+      ),
+    )
+    .where(eqFn(schema.paymentUnits.stripeChargeId, charge));
 }
 
 async function apply(pairs: { chargeId: string; qbStagedPaymentId: string }[]) {
@@ -231,6 +247,7 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     paymentApplications: dbMod.paymentApplications,
+    paymentUnits: dbMod.paymentUnits,
     organizations: dbMod.organizations,
     users: dbMod.users,
     sourceLinks: dbMod.sourceLinks,

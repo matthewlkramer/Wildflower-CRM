@@ -214,7 +214,7 @@ export function qbSettledExistsText(alias: string): string {
  *  status untouched (the refund sweep and the workbench still own that work). */
 export function qbChargeTieBookedExistsText(alias: string): string {
   const a = quotedSqlAlias(alias);
-  return `EXISTS (SELECT 1 FROM "source_links" "srcl_ds" WHERE "srcl_ds"."link_type" = 'charge_qb_tie' AND "srcl_ds"."lifecycle" = 'confirmed' AND "srcl_ds"."qb_staged_payment_id" = ${a}."id" AND EXISTS (SELECT 1 FROM "payment_applications" "pa_ct_ds" WHERE "pa_ct_ds"."stripe_charge_id" = "srcl_ds"."stripe_charge_id" AND "pa_ct_ds"."evidence_source" = 'stripe' AND "pa_ct_ds"."link_role" = 'counted'))`;
+  return `EXISTS (SELECT 1 FROM "source_links" "srcl_ds" WHERE "srcl_ds"."link_type" = 'charge_qb_tie' AND "srcl_ds"."lifecycle" = 'confirmed' AND "srcl_ds"."qb_staged_payment_id" = ${a}."id" AND EXISTS (SELECT 1 FROM "payment_applications" "pa_ct_ds" JOIN "payment_units" "pu_ct_ds" ON "pu_ct_ds"."id" = "pa_ct_ds"."payment_unit_id" WHERE "pu_ct_ds"."stripe_charge_id" = "srcl_ds"."stripe_charge_id" AND "pa_ct_ds"."evidence_source" = 'stripe' AND "pa_ct_ds"."link_role" = 'counted'))`;
 }
 
 /** EXISTS: RAW charge-grain tie linkage — some Stripe charge names QB row

@@ -480,10 +480,7 @@ router.post(
           id: newId(),
           giftId,
           evidenceSource,
-          paymentId: body.evidenceKind === "qb_staged" ? body.evidenceId : null,
           paymentUnitId,
-          stripeChargeId:
-            body.evidenceKind === "stripe_charge" ? body.evidenceId : null,
           amountApplied: null,
           matchMethod: "human" as const,
           linkRole: "corroborating" as const,
@@ -494,14 +491,11 @@ router.post(
         })),
       )
       .onConflictDoNothing({
-        target:
-          body.evidenceKind === "qb_staged"
-            ? [paymentApplications.paymentId, paymentApplications.giftId]
-            : [paymentApplications.stripeChargeId, paymentApplications.giftId],
-        where:
-          body.evidenceKind === "qb_staged"
-            ? sql`${paymentApplications.paymentId} IS NOT NULL AND ${paymentApplications.linkRole} = 'corroborating'`
-            : sql`${paymentApplications.stripeChargeId} IS NOT NULL AND ${paymentApplications.linkRole} = 'corroborating'`,
+        target: [
+          paymentApplications.paymentUnitId,
+          paymentApplications.giftId,
+        ],
+        where: sql`${paymentApplications.linkRole} = 'corroborating'`,
       });
 
     res.json({

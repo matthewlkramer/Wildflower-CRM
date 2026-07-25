@@ -39,6 +39,7 @@ import {
   people,
   households,
   paymentApplications,
+  paymentUnits,
 } from "@workspace/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { deriveGiftQbTieLiveExpr } from "../lib/giftQbTie";
@@ -290,8 +291,12 @@ async function main(): Promise<void> {
         })
         .from(paymentApplications)
         .innerJoin(
+          paymentUnits,
+          eq(paymentUnits.id, paymentApplications.paymentUnitId),
+        )
+        .innerJoin(
           stagedPayments,
-          eq(stagedPayments.id, paymentApplications.paymentId),
+          eq(stagedPayments.id, paymentUnits.sourceStagedPaymentId),
         )
         .where(
           and(

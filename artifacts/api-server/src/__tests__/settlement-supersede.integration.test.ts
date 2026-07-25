@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
+  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 
 /**
@@ -41,6 +42,7 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   paymentApplications: Db["paymentApplications"];
+  paymentUnits: Db["paymentUnits"];
   organizations: Db["organizations"];
   users: Db["users"];
 };
@@ -99,7 +101,7 @@ async function seedQbRow(
   const id = nextId("pa");
   await db.insert(schema.paymentApplications).values({
     id,
-    paymentId: dep,
+    paymentUnitId: await unitIdForAnchor("quickbooks", dep),
     giftId: gift,
     amountApplied: over?.amount === undefined ? "1000.00" : over.amount,
     evidenceSource: "quickbooks",
@@ -158,7 +160,7 @@ async function seedCountedCharge(
     giftId: gift,
     amountApplied: over?.gross ?? "1030.00",
     evidenceSource: "stripe",
-    stripeChargeId: id,
+    paymentUnitId: await unitIdForAnchor("stripe", id),
     createdTheGift: true,
   });
   return id;
@@ -173,9 +175,16 @@ async function readQbRows(dep: string) {
       linkRole: schema.paymentApplications.linkRole,
     })
     .from(schema.paymentApplications)
+    .innerJoin(
+      schema.paymentUnits,
+      eqFn(
+        schema.paymentApplications.paymentUnitId,
+        schema.paymentUnits.id,
+      ),
+    )
     .where(
       andFn(
-        eqFn(schema.paymentApplications.paymentId, dep),
+        eqFn(schema.paymentUnits.sourceStagedPaymentId, dep),
         eqFn(schema.paymentApplications.evidenceSource, "quickbooks"),
       ),
     );
@@ -193,6 +202,7 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     paymentApplications: dbMod.paymentApplications,
+    paymentUnits: dbMod.paymentUnits,
     organizations: dbMod.organizations,
     users: dbMod.users,
   };

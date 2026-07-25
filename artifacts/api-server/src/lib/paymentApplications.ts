@@ -10,7 +10,7 @@ import {
   stripeStagedCharges,
   donorboxDonations,
 } from "@workspace/db/schema";
-import { and, eq, inArray, isNotNull, ne, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 import { newId } from "./helpers";
 import { ensurePaymentUnit } from "./paymentUnits";
 
@@ -152,18 +152,14 @@ export interface ApplyPaymentApplicationArgs {
 }
 
 /**
- * The resolved anchor for a ledger row: which processor row it hangs off, its
- * cap amount (for the book-once guard), and the ledger column that stores the
- * anchor id used for the live per-anchor SUM.
+ * The resolved anchor for a ledger row: which processor row it hangs off and
+ * its cap amount (for the book-once guard). The ledger no longer stores the
+ * source anchor id — `payment_unit_id` is the row's identity — so the anchor
+ * only resolves/locks the source row and mints its canonical unit.
  */
 interface ResolvedAnchor {
   id: string;
   cap: string | null;
-  /** payment_applications column that carries this anchor's id. */
-  ledgerColumn:
-    | typeof paymentApplications.paymentId
-    | typeof paymentApplications.stripeChargeId
-    | typeof paymentApplications.donorboxDonationId;
   /** ON CONFLICT arbiter for counted payment-unit uniqueness. */
   conflictTarget: [typeof paymentApplications.paymentUnitId];
   /** Counted partial-index predicate. */
@@ -218,7 +214,6 @@ async function resolveAndLockAnchor(
       return {
         id: args.paymentId,
         cap: row.amount,
-        ledgerColumn: paymentApplications.paymentId,
         conflictTarget: [paymentApplications.paymentUnitId],
         conflictTargetWhere: sql`${paymentApplications.linkRole} = 'counted'`,
       };
@@ -243,7 +238,6 @@ async function resolveAndLockAnchor(
       return {
         id: args.stripeChargeId,
         cap: row.amount,
-        ledgerColumn: paymentApplications.stripeChargeId,
         conflictTarget: [paymentApplications.paymentUnitId],
         conflictTargetWhere: sql`${paymentApplications.linkRole} = 'counted'`,
       };
@@ -268,7 +262,6 @@ async function resolveAndLockAnchor(
       return {
         id: args.donorboxDonationId,
         cap: row.amount,
-        ledgerColumn: paymentApplications.donorboxDonationId,
         conflictTarget: [paymentApplications.paymentUnitId],
         conflictTargetWhere: sql`${paymentApplications.linkRole} = 'counted'`,
       };
@@ -297,46 +290,18 @@ export async function applyPaymentApplication(
   // 1. Resolve + lock the anchor (serializes concurrent applications of it).
   const anchor = await resolveAndLockAnchor(tx, args);
 
-  // 2. Live state already booked to OTHER gifts against THIS anchor (counted).
-  const sumRows = await tx
-    .select({
-      sum: sql<string>`coalesce(sum(${paymentApplications.amountApplied}), 0)`,
-      count: sql<number>`count(*)::int`,
-      existingGiftId: sql<string | null>`min(${paymentApplications.giftId})`,
-    })
-    .from(paymentApplications)
-    .where(
-      and(
-        eq(anchor.ledgerColumn, anchor.id),
-        ne(paymentApplications.giftId, args.giftId),
-        eq(paymentApplications.linkRole, "counted"),
-      ),
-    );
-  const otherSum = sumRows[0]?.sum ?? "0";
-
-  // 2b. Counted-uniqueness invariant (linear money model §7 step 5): ONE
-  //     counted row per evidence anchor. Any live counted row for a different
-  //     gift is a hard conflict regardless of amounts — the fee-band split
-  //     era, where several counted rows could share one anchor, is retired.
-  //     Re-point flows delete the old counted row earlier in this same tx, so
-  //     this read sees the post-delete state and passes. The partial unique
-  //     indexes back this guard at the DB layer.
-  const otherCount = sumRows[0]?.count ?? 0;
-  if (otherCount > 0) {
-    throw new AnchorAlreadyCountedError(
-      anchor.id,
-      sumRows[0]?.existingGiftId ?? "unknown",
-      args.giftId,
-    );
-  }
-
-  // 2c. UNIT-level counted uniqueness (bank-spine ADR, 0167): one counted row
-  //     per canonical payment unit. A counted row for the SAME unit via a
-  //     DIFFERENT source anchor (offline check booked from both its QB row
-  //     and its Donorbox donation) is the same real payment: same gift → the
-  //     old description is consolidated away (this write supersedes it);
-  //     different gift → hard conflict, same as 2b. Runs before the upsert so
-  //     the counted payment-unit index never fires a raw 23505.
+  // 2. Counted-uniqueness invariant (linear money model §7 step 5, bank-spine
+  //    ADR): ONE counted row per canonical payment unit — one real payment
+  //    settles one gift. The unit is the row's identity, so a counted row for
+  //    the SAME unit reached via a DIFFERENT source anchor (an offline check
+  //    booked from both its QB row and its Donorbox donation) is the same real
+  //    payment: same gift → the old description is consolidated away (this
+  //    write supersedes it); different gift → hard conflict regardless of
+  //    amounts (the fee-band split era, where several counted rows could share
+  //    one payment, is retired). Re-point flows delete the old counted row
+  //    earlier in this same tx, so this read sees the post-delete state and
+  //    passes. Runs before the upsert so the counted payment-unit index never
+  //    fires a raw 23505.
   const paymentUnitId = await ensurePaymentUnit(
     tx,
     args.evidenceSource,
@@ -357,7 +322,7 @@ export async function applyPaymentApplication(
   const conflicting = unitRows.find((r) => r.giftId !== args.giftId);
   if (conflicting) {
     throw new AnchorAlreadyCountedError(
-      paymentUnitId,
+      anchor.id,
       conflicting.giftId,
       args.giftId,
     );
@@ -367,6 +332,9 @@ export async function applyPaymentApplication(
       .delete(paymentApplications)
       .where(eq(paymentApplications.id, dup.id));
   }
+  // No counted row survives against this unit for another gift, so the
+  // book-once guard below weighs this write against an empty ledger slot.
+  const otherSum = "0";
 
   // 3. Pure book-once guard.
   const result = checkBookOnce({
@@ -383,14 +351,11 @@ export async function applyPaymentApplication(
   //    for every current caller, so they are intentionally not written here.
   const now = new Date();
   const values = {
-    paymentId: args.paymentId ?? null,
     paymentUnitId,
     giftId: args.giftId,
     giftAllocationId: args.giftAllocationId ?? null,
     amountApplied: args.amountApplied,
     evidenceSource: args.evidenceSource,
-    stripeChargeId: args.stripeChargeId ?? null,
-    donorboxDonationId: args.donorboxDonationId ?? null,
     matchMethod: args.matchMethod ?? ("system" as const),
     confirmedByUserId: args.confirmedByUserId ?? null,
     confirmedAt: args.confirmedAt ?? null,
@@ -410,22 +375,15 @@ export async function applyPaymentApplication(
 
 /**
  * Remove every ledger row for a gift about to be hard-deleted (gift_id is
- * RESTRICT, so the rows must go first). Returns the affected payment ids.
- * Caller holds the transaction.
+ * RESTRICT, so the rows must go first). Caller holds the transaction.
  */
 export async function removePaymentApplicationsForGift(
   tx: Tx,
   giftId: string,
-): Promise<string[]> {
-  const removed = await tx
+): Promise<void> {
+  await tx
     .delete(paymentApplications)
-    .where(eq(paymentApplications.giftId, giftId))
-    .returning({ paymentId: paymentApplications.paymentId });
-  // payment_id is null for stripe/donorbox rows; callers use these ids only to
-  // recompute the QB tie, so drop the non-QB anchors.
-  return removed
-    .map((r) => r.paymentId)
-    .filter((p): p is string => p !== null);
+    .where(eq(paymentApplications.giftId, giftId));
 }
 
 /**

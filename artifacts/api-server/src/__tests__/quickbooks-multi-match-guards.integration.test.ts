@@ -11,6 +11,7 @@ import {
   clearPaymentApplicationsForRealm,
   qbCountedRowsForPayment,
   qbSoleGiftIdForPayment,
+  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 import { stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
@@ -157,7 +158,7 @@ async function seedStaged(
   if (opts.linkedGiftId) {
     await db.insert(schema.paymentApplications).values({
       id: `${id}_pa_${opts.linkedGiftId}`,
-      paymentId: id,
+      paymentUnitId: await unitIdForAnchor("quickbooks", id),
       giftId: opts.linkedGiftId,
       amountApplied: amount,
       evidenceSource: "quickbooks",

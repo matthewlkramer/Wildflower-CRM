@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
+import { clearPaymentApplicationsForRealm ,
+  unitIdForAnchor,
+} from "./paymentApplicationsTestUtil";
 
 /**
  * DB-backed guard for the "Fiscally sponsored" queue split. Money attributed to
@@ -90,7 +92,7 @@ async function seed(
   if (opts.linkedGiftId) {
     await db.insert(paymentApplications).values({
       id: `${id}_pa`,
-      paymentId: id,
+      paymentUnitId: await unitIdForAnchor("quickbooks", id),
       giftId: opts.linkedGiftId,
       amountApplied: "100.00",
       evidenceSource: "quickbooks",

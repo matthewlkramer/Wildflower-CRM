@@ -2,7 +2,6 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { recomputeQboAccountingChecks } from "./qboAccountingRecompute";
-import { ensurePaymentUnit } from "./paymentUnits";
 
 /**
  * Forward maintenance of the bank-spine money model
@@ -21,8 +20,7 @@ import { ensurePaymentUnit } from "./paymentUnits";
  *      ambiguous_bank_match=true — the approved flag-not-workflow policy)
  *   4. check units+components  ← QBO deposit-composing rows     (0162)
  *   5. donorbox pointer        ← pulled charge id / human link  (0165)
- *   6. ledger annotation       ← payment_applications.payment_unit_id (0164)
- *   7. QBO accounting sidecar  ← expected-vs-actual comparer        (0166)
+ *   6. QBO accounting sidecar  ← expected-vs-actual comparer        (0166)
  *
  * Lifecycle refresh: a charge's refund/dispute facts can change after its unit
  * exists, so step 2 also re-derives lifecycle on existing stripe units.
@@ -42,32 +40,6 @@ export async function recomputeBankSpine(): Promise<void> {
       AND bt.deposit IS NOT NULL AND bt.deposit > 0
     ON CONFLICT (id) DO NOTHING
   `);
-
-  // Keep the booking-time derivation and maintenance derivation on one path.
-  // The source-specific INSERTs below remain the backstop for evidence that
-  // has no application yet; application-backed anchors are ensured eagerly.
-  const applicationAnchors = await db.execute(sql`
-    SELECT DISTINCT evidence_source::text AS source, anchor_id
-    FROM (
-      SELECT 'quickbooks' AS evidence_source, payment_id AS anchor_id
-      FROM payment_applications
-      WHERE payment_id IS NOT NULL
-      UNION ALL
-      SELECT 'stripe', stripe_charge_id
-      FROM payment_applications
-      WHERE stripe_charge_id IS NOT NULL
-      UNION ALL
-      SELECT 'donorbox', donorbox_donation_id
-      FROM payment_applications
-      WHERE donorbox_donation_id IS NOT NULL
-    ) anchors
-  `);
-  for (const row of applicationAnchors.rows as Array<{
-    source: "quickbooks" | "stripe" | "donorbox";
-    anchor_id: string;
-  }>) {
-    await ensurePaymentUnit(db, row.source, row.anchor_id);
-  }
 
   // 2. One unit per non-excluded Stripe charge (0160)…
   await db.execute(sql`
@@ -427,49 +399,7 @@ export async function recomputeBankSpine(): Promise<void> {
                       WHERE x.donorbox_donation_id = sl.donorbox_donation_id)
   `);
 
-  // 6. Annotate ledger rows that predate their unit (0164). The forward writer
-  //    (applyPaymentApplication) sets payment_unit_id inline; this catch-up
-  //    covers rows written before this recompute minted the unit. Since 0167
-  //    counted rows are UNIQUE per unit: a counted row whose unit already
-  //    carries another counted row is SKIPPED (a same-booking duplicate the
-  //    forward writer consolidates on its next write) rather than violating
-  //    the index.
-  const countedSlotFree = sql`
-    NOT (pa.link_role = 'counted' AND EXISTS (
-      SELECT 1 FROM payment_applications pa2
-      WHERE pa2.payment_unit_id = pu.id
-        AND pa2.link_role = 'counted'
-        AND pa2.id <> pa.id
-    ))`;
-  await db.execute(sql`
-    UPDATE payment_applications pa
-    SET payment_unit_id = pu.id, updated_at = now()
-    FROM payment_units pu
-    WHERE pa.payment_unit_id IS NULL
-      AND pa.stripe_charge_id IS NOT NULL
-      AND pu.stripe_charge_id = pa.stripe_charge_id
-      AND ${countedSlotFree}
-  `);
-  await db.execute(sql`
-    UPDATE payment_applications pa
-    SET payment_unit_id = pu.id, updated_at = now()
-    FROM payment_units pu
-    WHERE pa.payment_unit_id IS NULL
-      AND pa.payment_id IS NOT NULL
-      AND pu.source_staged_payment_id = pa.payment_id
-      AND ${countedSlotFree}
-  `);
-  await db.execute(sql`
-    UPDATE payment_applications pa
-    SET payment_unit_id = pu.id, updated_at = now()
-    FROM payment_units pu
-    WHERE pa.payment_unit_id IS NULL
-      AND pa.donorbox_donation_id IS NOT NULL
-      AND pu.donorbox_donation_id = pa.donorbox_donation_id
-      AND ${countedSlotFree}
-  `);
-
-  // 7. QBO expected-vs-actual sidecar (0166's comparer).
+  // 6. QBO expected-vs-actual sidecar (0166's comparer).
   await recomputeQboAccountingChecks();
 }
 
