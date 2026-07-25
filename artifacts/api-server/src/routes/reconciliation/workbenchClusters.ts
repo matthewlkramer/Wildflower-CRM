@@ -262,7 +262,11 @@ END)`;
 const depositGrainGiftExists = `EXISTS (
   SELECT 1 FROM staged_payments sl_dg
   JOIN payment_applications pa_dg
-    ON pa_dg.payment_id = sl_dg.id
+    ON pa_dg.payment_unit_id IN (
+      SELECT pu_dg.id
+      FROM payment_units pu_dg
+      WHERE pu_dg.source_staged_payment_id = sl_dg.id
+    )
     AND pa_dg.link_role = 'counted'
   WHERE sl_dg.settled_stripe_payout_id = sp.id
 )`;
@@ -374,7 +378,9 @@ const qbExcludedSaysDonation = `(${qbAllExcluded} AND ${qbSaysDonation("s")})`;
 // At least one charge has a counted charge-grain Stripe PA.
 const chargeGrainGiftExists = `EXISTS (
   SELECT 1 FROM stripe_staged_charges cc_cg
-  JOIN payment_applications pa_cg ON pa_cg.stripe_charge_id = cc_cg.id
+  JOIN payment_applications pa_cg ON pa_cg.payment_unit_id IN (
+    SELECT pu_cg.id FROM payment_units pu_cg WHERE pu_cg.stripe_charge_id = cc_cg.id
+  )
     AND pa_cg.evidence_source = 'stripe' AND pa_cg.link_role = 'counted'
   WHERE cc_cg.stripe_payout_id = sp.id
 )`;
@@ -385,14 +391,17 @@ const depositFullyCovered = `EXISTS (
     AND (
       SELECT COALESCE(SUM(pa_dfc.amount_applied), 0)
       FROM payment_applications pa_dfc
-      WHERE pa_dfc.payment_id = sl_dfc.id
+      JOIN payment_units pu_dfc ON pu_dfc.id = pa_dfc.payment_unit_id
+      WHERE pu_dfc.source_staged_payment_id = sl_dfc.id
         AND pa_dfc.link_role = 'counted' AND pa_dfc.evidence_source = 'quickbooks'
     ) >= COALESCE(sp.net_total, sp.amount) - 0.005
 )`;
 // No charge-linked gift fails giftComplete.
 const allChargeLinkedGiftsComplete = `NOT EXISTS (
   SELECT 1 FROM stripe_staged_charges cc_gc
-  JOIN payment_applications pa_gc ON pa_gc.stripe_charge_id = cc_gc.id
+  JOIN payment_applications pa_gc ON pa_gc.payment_unit_id IN (
+    SELECT pu_gc.id FROM payment_units pu_gc WHERE pu_gc.stripe_charge_id = cc_gc.id
+  )
     AND pa_gc.evidence_source = 'stripe' AND pa_gc.link_role = 'counted'
   JOIN gifts_and_payments g ON g.id = pa_gc.gift_id
   WHERE cc_gc.stripe_payout_id = sp.id AND NOT (${giftComplete})
@@ -400,7 +409,9 @@ const allChargeLinkedGiftsComplete = `NOT EXISTS (
 // No deposit-linked gift fails giftComplete.
 const allDepositLinkedGiftsComplete = `NOT EXISTS (
   SELECT 1 FROM staged_payments sl_gc
-  JOIN payment_applications pa_gc ON pa_gc.payment_id = sl_gc.id
+  JOIN payment_applications pa_gc ON pa_gc.payment_unit_id IN (
+    SELECT pu_gc.id FROM payment_units pu_gc WHERE pu_gc.source_staged_payment_id = sl_gc.id
+  )
     AND pa_gc.evidence_source = 'quickbooks' AND pa_gc.link_role = 'counted'
   JOIN gifts_and_payments g ON g.id = pa_gc.gift_id
   WHERE sl_gc.settled_stripe_payout_id = sp.id
@@ -412,7 +423,10 @@ const allQbLinkedGiftsComplete = `NOT EXISTS (
   JOIN gifts_and_payments g ON g.id = pa_qgc.gift_id
   WHERE pa_qgc.link_role = 'counted'
     AND NOT (${giftComplete})
-    AND pa_qgc.payment_id = s.id
+    AND pa_qgc.payment_unit_id IN (
+      SELECT pu_qgc.id FROM payment_units pu_qgc
+      WHERE pu_qgc.source_staged_payment_id = s.id
+    )
 )`;
 
 // crm_only half — an on-books gift with no counted QB/Stripe ledger row.
@@ -1387,7 +1401,8 @@ router.get(
                    cc.date_received::text AS charge_date,
                    ${sql.raw(chargeStatusCaseText("cc"))} AS status,
                    (SELECT pa_l.gift_id FROM payment_applications pa_l
-                     WHERE pa_l.stripe_charge_id = cc.id
+                     JOIN payment_units pu_l ON pu_l.id = pa_l.payment_unit_id
+                     WHERE pu_l.stripe_charge_id = cc.id
                        AND pa_l.evidence_source = 'stripe' AND pa_l.link_role = 'counted'
                      LIMIT 1) AS linked_gift_id,
                    (cc.refund_propagation_status = 'proposed') AS refund_proposed,
@@ -1532,7 +1547,9 @@ router.get(
         ${sql.raw(giftSatisfiedBy)}::text AS satisfied_by,
         ${sql.raw(giftCrmReason)}::text AS crm_reason
       FROM stripe_staged_charges cc
-      JOIN payment_applications pa_j ON pa_j.stripe_charge_id = cc.id
+      JOIN payment_applications pa_j ON pa_j.payment_unit_id IN (
+        SELECT pu_j.id FROM payment_units pu_j WHERE pu_j.stripe_charge_id = cc.id
+      )
         AND pa_j.evidence_source = 'stripe' AND pa_j.link_role = 'counted'
       JOIN gifts_and_payments g ON g.id = pa_j.gift_id
       ${sql.raw(donorJoins)}
@@ -1613,9 +1630,10 @@ router.get(
         ${sql.raw(giftSatisfiedBy)}::text AS satisfied_by,
         ${sql.raw(giftCrmReason)}::text AS crm_reason
       FROM payment_applications pa_j
+      JOIN payment_units pu_j ON pu_j.id = pa_j.payment_unit_id
       JOIN gifts_and_payments g ON g.id = pa_j.gift_id
       ${sql.raw(donorJoins)}
-      WHERE pa_j.link_role = 'counted' AND pa_j.payment_id IN (${inList(qbIds)})`)
+      WHERE pa_j.link_role = 'counted' AND pu_j.source_staged_payment_id IN (${inList(qbIds)})`)
           .then((r) => r.rows as unknown as QbGiftRow[])
       : Promise.resolve([]);
 
@@ -1648,9 +1666,10 @@ router.get(
         ${sql.raw(giftSatisfiedBy)}::text AS satisfied_by,
         ${sql.raw(giftCrmReason)}::text AS crm_reason
       FROM payment_applications pa_j
+      JOIN payment_units pu_j ON pu_j.id = pa_j.payment_unit_id
       JOIN gifts_and_payments g ON g.id = pa_j.gift_id
       ${sql.raw(donorJoins)}
-      WHERE pa_j.link_role = 'counted' AND pa_j.payment_id IN (${inList(depIds)})`);
+      WHERE pa_j.link_role = 'counted' AND pu_j.source_staged_payment_id IN (${inList(depIds)})`);
           return result.rows as unknown as QbGiftRow[];
         })
       : Promise.resolve([]);
@@ -1693,7 +1712,8 @@ router.get(
         pa.stripe_charge_id AS charge_id,
         pa.amount_applied::text AS amount_applied
       FROM payment_applications pa
-      JOIN stripe_staged_charges cc ON cc.id = pa.stripe_charge_id
+      JOIN payment_units pu ON pu.id = pa.payment_unit_id
+      JOIN stripe_staged_charges cc ON cc.id = pu.stripe_charge_id
       WHERE cc.stripe_payout_id IN (${inList(payoutIds)})
         AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
 
@@ -1707,7 +1727,8 @@ router.get(
         NULL AS charge_id,
         pa.amount_applied::text AS amount_applied
       FROM payment_applications pa
-      JOIN staged_payments sl ON pa.payment_id = sl.id
+      JOIN payment_units pu ON pu.id = pa.payment_unit_id
+      JOIN staged_payments sl ON pu.source_staged_payment_id = sl.id
       WHERE sl.settled_stripe_payout_id IN (${inList(payoutIds)})
         AND pa.evidence_source = 'quickbooks'
         AND pa.link_role = 'counted'`)

@@ -301,7 +301,8 @@ function buildUniverse(q: string | null) {
             )
             AND NOT EXISTS (
               SELECT 1 FROM payment_applications ppa
-              WHERE ppa.stripe_charge_id = pc.id
+              JOIN payment_units ppu ON ppu.id = ppa.payment_unit_id
+              WHERE ppu.stripe_charge_id = pc.id
                 AND ppa.link_role = 'counted'
                 AND ppa.lifecycle = 'confirmed'
             )
@@ -615,7 +616,13 @@ router.get(
           LEFT JOIN people p2 ON p2.id = g.individual_giver_person_id
           WHERE pa.link_role = 'counted' AND pa.lifecycle = 'confirmed' AND (
             pa.payment_unit_id IN (SELECT c2.payment_unit_id FROM bank_deposit_components c2 WHERE c2.bank_deposit_id = d.id)
-            OR pa.stripe_charge_id IN (SELECT ch2.id FROM stripe_staged_charges ch2 WHERE ch2.stripe_payout_id = p.id AND ch2.raw_charge->>'status' = 'succeeded')
+            OR pa.payment_unit_id IN (
+              SELECT pu2.id
+              FROM payment_units pu2
+              JOIN stripe_staged_charges ch2 ON ch2.id = pu2.stripe_charge_id
+              WHERE ch2.stripe_payout_id = p.id
+                AND ch2.raw_charge->>'status' = 'succeeded'
+            )
           )
           AND g.archived_at IS NULL
         ), '[]'::jsonb) AS gifts,
@@ -626,7 +633,8 @@ router.get(
             'amount', ch.gross_amount::text, 'feeAmount', ch.fee_amount::text,
             'netAmount', ch.net_amount::text, 'chargeDate', ch.date_received::text,
             'linkedGiftId', (SELECT pa.gift_id FROM payment_applications pa
-              WHERE pa.stripe_charge_id = ch.id AND pa.link_role = 'counted'
+              JOIN payment_units pu ON pu.id = pa.payment_unit_id
+              WHERE pu.stripe_charge_id = ch.id AND pa.link_role = 'counted'
                 AND pa.lifecycle = 'confirmed' LIMIT 1),
             'refunded', ch.refunded, 'amountRefunded', ch.amount_refunded::text,
             'refundPropagationStatus', ch.refund_propagation_status,
