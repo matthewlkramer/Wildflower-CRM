@@ -197,12 +197,11 @@ export const paymentApplications = pgTable(
       ),
     // The END-STATE counted-uniqueness (bank-spine ADR, 0167): one counted
     // row per canonical payment unit — one real payment settles one gift.
-    // Subsumes the three per-source counted uniques for unit-annotated rows;
-    // those remain for rows whose unit is still NULL and as ON CONFLICT
-    // arbiters until the source anchors retire.
+    // Subsumes the three per-source counted uniques; those indexes are retired
+    // by migration 0181 while the legacy anchor columns remain dual-written.
     uniqueIndex("payment_applications_payment_unit_id_counted_uq")
       .on(t.paymentUnitId)
-      .where(sql`${t.paymentUnitId} IS NOT NULL AND ${t.linkRole} = 'counted'`),
+      .where(sql`${t.linkRole} = 'counted'`),
     index("payment_applications_payment_unit_id_idx").on(t.paymentUnitId),
     index("payment_applications_gift_id_idx").on(t.giftId),
     index("payment_applications_gift_allocation_id_idx").on(t.giftAllocationId),
