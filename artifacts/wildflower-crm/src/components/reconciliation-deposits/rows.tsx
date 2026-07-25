@@ -308,6 +308,10 @@ function qbPreview(record: WorkbenchDeposit["qbRecords"][number]): EvidencePrevi
 export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisional, onDismissProvisional }: DepositRowProps) {
   const actions = suppliedActions ?? NOOP_ACTIONS;
   const isNotFundraising = deposit.lenses.includes("not_fundraising");
+  const bankSourceDetails = [
+    deposit.bank.payee,
+    deposit.bank.refNo,
+  ].filter(Boolean).join(" · ");
   const linkedStagedPaymentIds = new Set(deposit.gifts.flatMap((gift) => gift.linkedStagedPaymentIds ?? []));
   const evidenceOptions: EvidencePickOption[] = [
     ...deposit.charges.map((charge) => ({
@@ -347,6 +351,7 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
             {deposit.date ? formatDateShort(deposit.date) : "Undated"} · {deposit.bank.account ?? "Wells Fargo"}
           </span>
           <span className="mt-1 block truncate text-[11px] text-muted-foreground">{deposit.bank.memo ?? deposit.bank.reference ?? deposit.anchorId}</span>
+          {bankSourceDetails ? <span className="block truncate text-[11px] text-muted-foreground">{bankSourceDetails}</span> : null}
         </span>
         <span onClick={(event) => event.stopPropagation()}><Composition deposit={deposit} actions={actions} onConfirmProvisional={onConfirmProvisional} onDismissProvisional={onDismissProvisional} /></span>
         <span onClick={(event) => event.stopPropagation()} className="space-y-1.5">

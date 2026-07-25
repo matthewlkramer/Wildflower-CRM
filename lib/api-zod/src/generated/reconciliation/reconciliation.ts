@@ -1295,7 +1295,10 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "account": zod.string().nullable(),
   "location": zod.string().nullable(),
   "reference": zod.string().nullable(),
-  "memo": zod.string().nullable()
+  "memo": zod.string().nullable(),
+  "payee": zod.string().nullable(),
+  "refNo": zod.string().nullable(),
+  "txnType": zod.string().nullable()
 }),
   "composition": zod.object({
   "kind": zod.enum(['stripe_payout', 'stripe_unlinked', 'components', 'qbo_provisional', 'unresolved']),

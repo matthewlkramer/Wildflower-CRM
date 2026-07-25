@@ -6045,6 +6045,9 @@ export type WorkbenchDepositBank = {
   location: string | null;
   reference: string | null;
   memo: string | null;
+  payee: string | null;
+  refNo: string | null;
+  txnType: string | null;
 };
 
 export type WorkbenchDepositCharge = WorkbenchClusterCharge & ({

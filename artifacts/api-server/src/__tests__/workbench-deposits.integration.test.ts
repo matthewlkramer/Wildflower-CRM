@@ -28,6 +28,7 @@ const chargeIds: string[] = [];
 const unitIds: string[] = [];
 const componentIds: string[] = [];
 const stagedIds: string[] = [];
+const bankTransactionIds: string[] = [];
 const depositQboComponentIds: string[] = [];
 const accountingCheckIds: string[] = [];
 let db: (typeof import("@workspace/db"))["db"];
@@ -44,7 +45,11 @@ async function getJson(path: string): Promise<{ status: number; json: any }> {
   return { status: response.status, json: await response.json() };
 }
 
-async function seedDeposit(memo: string, amount = "100.00"): Promise<string> {
+async function seedDeposit(
+  memo: string,
+  amount = "100.00",
+  sourceBankTransactionId: string | null = null,
+): Promise<string> {
   const id = nextId("deposit");
   await db.insert(schema.bankDeposits).values({
     id,
@@ -54,6 +59,7 @@ async function seedDeposit(memo: string, amount = "100.00"): Promise<string> {
     currency: "USD",
     account: ACCOUNT_ID,
     memo,
+    sourceBankTransactionId,
   });
   depositIds.push(id);
   return id;
@@ -254,6 +260,9 @@ afterAll(async () => {
   if (depositIds.length) {
     await db.delete(schema.bankDeposits).where(inArrayFn(schema.bankDeposits.id, depositIds));
   }
+  if (bankTransactionIds.length) {
+    await db.delete(schema.bankTransactions).where(inArrayFn(schema.bankTransactions.id, bankTransactionIds));
+  }
   await db.delete(schema.organizations).where(eqFn(schema.organizations.id, ORG_ID));
   await db.delete(schema.users).where(eqFn(schema.users.id, TEST_USER_ID));
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -282,6 +291,37 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(row?.lenses).toContain("completed");
     const open = await listDeposits("all_open");
     expect(open.data.some((item: any) => item.anchorId === depositId)).toBe(false);
+  });
+
+  it("returns source bank transaction classification fields", async () => {
+    const bankTransactionId = nextId("bank_transaction");
+    await db.insert(schema.bankTransactions).values({
+      id: bankTransactionId,
+      source: "bank_csv_export",
+      sourceFile: "workbench-test.csv",
+      txnDate: "2099-12-31",
+      txnType: "Deposit",
+      refNo: "REF-123",
+      payee: "Example Payee",
+      memo: "Source bank memo",
+      account: ACCOUNT_ID,
+      deposit: "100.00",
+      dedupKey: nextId("dedup"),
+      occurrence: 0,
+    });
+    bankTransactionIds.push(bankTransactionId);
+    const deposit = await seedDeposit("Source bank memo", "100.00", bankTransactionId);
+
+    const result = await listDeposits("all_open", "Source bank memo");
+    const row = result.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.bank).toMatchObject({
+      payee: "Example Payee",
+      refNo: "REF-123",
+      txnType: "Deposit",
+    });
+    expect(row?.bank).not.toHaveProperty("qbPosting");
+    expect(row?.bank).not.toHaveProperty("donor");
+    expect(row?.bank).not.toHaveProperty("qbClass");
   });
 
   it("supports multi-unit composition, unresolved work, memo search, and full-universe counts", async () => {

@@ -36,6 +36,9 @@ function makeDeposit(overrides: Partial<WorkbenchDeposit> = {}): WorkbenchDeposi
       location: null,
       reference: "ref",
       memo: "Test memo",
+      payee: "Example Payee",
+      refNo: "REF-123",
+      txnType: "Deposit",
     },
     composition: {
       kind: "unresolved",
@@ -104,6 +107,8 @@ describe("deposit workbench rows", () => {
 
     render(makeDeposit());
     expect(container.textContent).toContain("Unresolved composition");
+    expect(container.textContent).toContain("Example Payee · REF-123");
+    expect(container.textContent).not.toContain("QBO:");
   });
 
   it("marks not-fundraising rows and exposes the eight lens labels", () => {

@@ -62,6 +62,9 @@ type DepositRow = {
   location: string | null;
   reference: string | null;
   memo: string | null;
+  payee: string | null;
+  ref_no: string | null;
+  txn_type: string | null;
   payout_id: string | null;
   payout_ambiguous: boolean;
   payout_refund: boolean;
@@ -493,6 +496,7 @@ router.get(
     const rowResult = await db.execute(sql`
       SELECT
         d.id, d.deposit_date, d.amount, d.currency, d.account, d.location, d.reference, d.memo,
+        bt.payee, bt.ref_no, bt.txn_type,
         p.id AS payout_id, COALESCE(p.ambiguous_bank_match, false) AS payout_ambiguous,
         p.net_total::text AS payout_net,
         p.arrival_date::text AS payout_date,
@@ -726,8 +730,9 @@ router.get(
         ), '[]'::jsonb) AS accounting_checks
       FROM bank_deposits d
       LEFT JOIN stripe_payouts p ON p.bank_deposit_id = d.id
+      LEFT JOIN bank_transactions bt ON bt.id = d.source_bank_transaction_id
       WHERE d.id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
-      GROUP BY d.id, p.id
+      GROUP BY d.id, p.id, bt.payee, bt.ref_no, bt.txn_type
     `);
     const byId = new Map((rowResult.rows as unknown as DepositRow[]).map((r) => [r.id, r]));
     const data = slim.flatMap((s) => {
@@ -764,6 +769,9 @@ router.get(
           location: r.location,
           reference: r.reference,
           memo: r.memo,
+          payee: r.payee,
+          refNo: r.ref_no,
+          txnType: r.txn_type,
         },
         composition: {
           kind: r.payout_id
