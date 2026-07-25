@@ -25,6 +25,7 @@ import type {
   BadRequestResponse,
   BankDepositComponentExclusion,
   BankDepositComponentMutation,
+  BankDepositComponentSourceStagedPaymentMutation,
   BankDepositExclusion,
   BundleAnchorInput,
   BundleAnchorListResponse,
@@ -69,6 +70,7 @@ import type {
   SearchReconciliationNodeParams,
   SearchReconciliationPayoutsParams,
   SearchReconciliationQbStagedParams,
+  SetBankDepositComponentSourceStagedPaymentBody,
   SetBankDepositExclusionBody,
   SetQboAccountingCheckDispositionBody,
   SettlementLineage,
@@ -1160,6 +1162,78 @@ export const useRemoveManualBankDepositComponent = <TError = ErrorType<FinanceFo
         TContext
       > => {
       return useMutation(getRemoveManualBankDepositComponentMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Updates only the payment unit's source_staged_payment_id pointer; it never changes money, gifts, applications, or component amount. Stripe units and provisional deposit-QBO rows are not eligible.
+ * @summary Set or clear a direct component's QBO source pointer.
+ */
+export const getSetBankDepositComponentSourceStagedPaymentUrl = (id: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposit-components/${id}/source-staged-payment`
+}
+
+export const setBankDepositComponentSourceStagedPayment = async (id: string,
+    setBankDepositComponentSourceStagedPaymentBody: SetBankDepositComponentSourceStagedPaymentBody, options?: RequestInit): Promise<BankDepositComponentSourceStagedPaymentMutation> => {
+
+  return customFetch<BankDepositComponentSourceStagedPaymentMutation>(getSetBankDepositComponentSourceStagedPaymentUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      setBankDepositComponentSourceStagedPaymentBody,)
+  }
+);}
+
+
+
+
+export const getSetBankDepositComponentSourceStagedPaymentMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setBankDepositComponentSourceStagedPayment>>, TError,{id: string;data: BodyType<SetBankDepositComponentSourceStagedPaymentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setBankDepositComponentSourceStagedPayment>>, TError,{id: string;data: BodyType<SetBankDepositComponentSourceStagedPaymentBody>}, TContext> => {
+
+const mutationKey = ['setBankDepositComponentSourceStagedPayment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setBankDepositComponentSourceStagedPayment>>, {id: string;data: BodyType<SetBankDepositComponentSourceStagedPaymentBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setBankDepositComponentSourceStagedPayment(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetBankDepositComponentSourceStagedPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof setBankDepositComponentSourceStagedPayment>>>
+    export type SetBankDepositComponentSourceStagedPaymentMutationBody = BodyType<SetBankDepositComponentSourceStagedPaymentBody>
+    export type SetBankDepositComponentSourceStagedPaymentMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Set or clear a direct component's QBO source pointer.
+ */
+export const useSetBankDepositComponentSourceStagedPayment = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setBankDepositComponentSourceStagedPayment>>, TError,{id: string;data: BodyType<SetBankDepositComponentSourceStagedPaymentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setBankDepositComponentSourceStagedPayment>>,
+        TError,
+        {id: string;data: BodyType<SetBankDepositComponentSourceStagedPaymentBody>},
+        TContext
+      > => {
+      return useMutation(getSetBankDepositComponentSourceStagedPaymentMutationOptions(options));
     }
     /**
  * Finance/admin review only. Records only the deposit-level exclusion decision; it never creates or changes payment units, deposit components, or payment applications.

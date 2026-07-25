@@ -5,6 +5,7 @@ import type {
   WorkbenchDepositQbRecord,
   WorkbenchDepositNodeQbRecord,
   WorkbenchDepositCharge,
+  WorkbenchDepositCompositionComponentsItem,
   WorkbenchDepositLens,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort } from "@/lib/format";
@@ -25,6 +26,8 @@ export type DepositActions = Omit<
   openFlagRemainder?: (bankDepositId: string, remainder: string) => void;
   removeManualComponent?: (componentId: string, label: string) => void;
   openChargeQbSearch?: (charge: WorkbenchDepositCharge) => void;
+  openComponentQbSearch?: (component: WorkbenchDepositCompositionComponentsItem) => void;
+  clearComponentQbSource?: (componentId: string) => void;
 };
 
 export const DEPOSIT_GRID =
@@ -119,6 +122,8 @@ const NOOP_ACTIONS: DepositActions = {
   openFlagRemainder: () => undefined,
   removeManualComponent: () => undefined,
   openChargeQbSearch: () => undefined,
+  openComponentQbSearch: () => undefined,
+  clearComponentQbSource: () => undefined,
 };
 
 export function DepositGridHeader() {
@@ -297,6 +302,16 @@ function Composition({
             {component.manual && (component.countedGiftIds?.length ?? 0) === 0 && actions.isFinanceOrAdmin ? (
               <button type="button" className="text-[10px] text-destructive hover:underline" onClick={() => actions.removeManualComponent?.(component.componentId, component.label ?? component.kind)}>
                 Remove
+              </button>
+            ) : null}
+            {!component.unconfirmed && component.kind !== "stripe_charge" && component.source !== "qbo_provisional" && actions.isFinanceOrAdmin ? (
+              <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openComponentQbSearch?.(component)}>
+                Search QuickBooks
+              </button>
+            ) : null}
+            {component.sourceStagedPaymentManual && component.stagedPaymentId && actions.isFinanceOrAdmin ? (
+              <button type="button" className="text-[10px] text-muted-foreground hover:underline" onClick={() => actions.clearComponentQbSource?.(component.componentId)}>
+                Clear QBO source
               </button>
             ) : null}
           </span>
