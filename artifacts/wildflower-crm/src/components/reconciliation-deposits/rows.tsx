@@ -11,6 +11,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import type { ClusterActions, AnchorRef } from "@/components/reconciliation-clusters/rows";
 import type { EvidencePickOption, EvidencePreview } from "@/components/reconciliation-clusters/dialogs";
 
+export type DepositActions = ClusterActions & {
+  openAddKnownPayment?: (bankDepositId: string, remainder: string) => void;
+  openFlagRemainder?: (bankDepositId: string, remainder: string) => void;
+  removeManualComponent?: (componentId: string, label: string) => void;
+};
+
 export const DEPOSIT_GRID =
   "grid grid-cols-[26px_minmax(150px,1fr)_minmax(220px,1.35fr)_minmax(220px,1.35fr)_minmax(190px,1fr)] gap-3 px-4 items-start";
 
@@ -65,12 +71,12 @@ export interface DepositRowProps {
   deposit: WorkbenchDeposit;
   expanded?: boolean;
   onToggle?: () => void;
-  actions?: ClusterActions;
+  actions?: DepositActions;
   onConfirmProvisional?: (id: string) => void;
   onDismissProvisional?: (id: string) => void;
 }
 
-const NOOP_ACTIONS: ClusterActions = {
+const NOOP_ACTIONS: DepositActions = {
   busy: false,
   openLinkGift: () => undefined,
   openCreateGift: () => undefined,
@@ -102,6 +108,9 @@ const NOOP_ACTIONS: ClusterActions = {
   openUnlinkChooser: () => undefined,
   openMergeGifts: () => undefined,
   confirmChargeProposal: () => undefined,
+  openAddKnownPayment: () => undefined,
+  openFlagRemainder: () => undefined,
+  removeManualComponent: () => undefined,
 };
 
 export function DepositGridHeader() {
@@ -123,11 +132,42 @@ function Composition({
   onDismissProvisional,
 }: {
   deposit: WorkbenchDeposit;
-  actions: ClusterActions;
+  actions: DepositActions;
   onConfirmProvisional?: (id: string) => void;
   onDismissProvisional?: (id: string) => void;
 }) {
   const composition = deposit.composition;
+  const remainder = Number(composition.unexplainedAmount ?? 0);
+  const showRemainderActions =
+    actions.isFinanceOrAdmin &&
+    (composition.kind === "unresolved" ||
+      ((composition.kind === "components" || composition.kind === "qbo_provisional") &&
+        remainder > 0.005));
+  const remainderActions = showRemainderActions ? (
+    <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/20">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-amber-900 dark:text-amber-200">
+          {money(composition.unexplainedAmount)} unresolved remainder
+        </span>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            className="text-[10px] font-medium text-primary hover:underline"
+            onClick={() => actions.openAddKnownPayment?.(deposit.anchorId, composition.unexplainedAmount)}
+          >
+            Add known payment…
+          </button>
+          <button
+            type="button"
+            className="text-[10px] font-medium text-amber-800 hover:underline dark:text-amber-200"
+            onClick={() => actions.openFlagRemainder?.(deposit.anchorId, composition.unexplainedAmount)}
+          >
+            Flag remainder for research
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
   if (composition.kind === "stripe_unlinked") {
     return (
       <div className="rounded-md border border-amber-300 bg-amber-50/60 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
@@ -140,11 +180,14 @@ function Composition({
   }
   if (composition.kind === "unresolved") {
     return (
-      <div className="rounded-md border border-amber-300 bg-amber-50/60 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
-        <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Unresolved composition</p>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {money(composition.unexplainedAmount)} of the deposit has no known source.
-        </p>
+      <div className="space-y-1.5">
+        <div className="rounded-md border border-amber-300 bg-amber-50/60 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
+          <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Unresolved composition</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {money(composition.unexplainedAmount)} of the deposit has no known source.
+          </p>
+        </div>
+        {remainderActions}
       </div>
     );
   }
@@ -224,6 +267,8 @@ function Composition({
             {component.needsReview || component.ambiguousDepositMatch ? <CircleAlert className="h-3 w-3 shrink-0 text-amber-600" /> : null}
             <span className="font-medium">{component.label ?? component.kind.replace("_", " ")}</span>
             {component.unconfirmed ? <Badge variant="outline" className="shrink-0 border-amber-400 text-[9px] text-amber-700">Unconfirmed</Badge> : null}
+            {component.manual && component.needsReview ? <Badge variant="outline" className="shrink-0 border-amber-400 text-[9px] text-amber-700">Research placeholder</Badge> : null}
+            {component.manual && !component.needsReview ? <Badge variant="outline" className="shrink-0 text-[9px]">Manual</Badge> : null}
             {component.exclusionReason ? <Badge variant="destructive" className="shrink-0 text-[9px]">Excluded</Badge> : null}
           </span>
           <span className="flex shrink-0 items-center gap-2">
@@ -241,10 +286,16 @@ function Composition({
                 <button type="button" className="text-[10px] text-muted-foreground hover:underline" onClick={() => onDismissProvisional?.(component.componentId)}>Dismiss</button>
               </>
             ) : null}
+            {component.manual && (component.countedGiftIds?.length ?? 0) === 0 && actions.isFinanceOrAdmin ? (
+              <button type="button" className="text-[10px] text-destructive hover:underline" onClick={() => actions.removeManualComponent?.(component.componentId, component.label ?? component.kind)}>
+                Remove
+              </button>
+            ) : null}
           </span>
         </div>
       ))}
       {!composition.components.length ? <span className="text-xs text-muted-foreground">No components</span> : null}
+      {remainderActions}
     </div>
   );
 }
