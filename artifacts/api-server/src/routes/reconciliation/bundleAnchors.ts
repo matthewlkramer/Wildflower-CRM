@@ -87,7 +87,8 @@ function stripeWhere(queue: AnchorQueue): SQL {
               -- pending = no counted ledger row (pointer columns retired)
               AND NOT EXISTS (
                 SELECT 1 FROM payment_applications pa
-                WHERE pa.stripe_charge_id = c.id
+                JOIN payment_units pu ON pu.id = pa.payment_unit_id
+                WHERE pu.stripe_charge_id = c.id
                   AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
               )
           )
@@ -142,7 +143,8 @@ function qbWhere(queue: AnchorQueue): SQL {
   // gift-link columns are @deprecated and no longer written).
   const resolvedEvidence = `EXISTS (
       SELECT 1 FROM payment_applications pa
-      WHERE pa.payment_id = s.id AND pa.link_role = 'counted'
+      JOIN payment_units pu ON pu.id = pa.payment_unit_id
+      WHERE pu.source_staged_payment_id = s.id AND pa.link_role = 'counted'
     )`;
   const statusClause =
     queue === "confirmed"

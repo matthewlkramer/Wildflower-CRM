@@ -117,7 +117,8 @@ export const parkedFiscallyExpr = (a: string): string =>
     AND ${a}.entity_id IN (${FISCALLY_SPONSORED_ENTITY_IDS.map((id) => `'${id}'`).join(", ")})
     AND NOT EXISTS (
       SELECT 1 FROM payment_applications pa_fs
-      WHERE pa_fs.payment_id = ${a}.id
+      JOIN payment_units pu_fs ON pu_fs.id = pa_fs.payment_unit_id
+      WHERE pu_fs.source_staged_payment_id = ${a}.id
         AND pa_fs.evidence_source = 'quickbooks' AND pa_fs.link_role = 'counted'
     ))`;
 
@@ -241,22 +242,25 @@ export const stagedSelect = {
   splitCount: sql<number>`(
     SELECT CASE WHEN COUNT(*) > 1 THEN COUNT(*)::int ELSE 0 END
     FROM payment_applications pa
-    WHERE pa.payment_id = ${stagedPayments.id}
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    WHERE pu.source_staged_payment_id = ${stagedPayments.id}
       AND pa.evidence_source = 'quickbooks'
       AND pa.link_role = 'counted'
   )`.as("split_count"),
   splitTotal: sql<string | null>`(
     SELECT CASE WHEN COUNT(*) > 1 THEN SUM(pa.amount_applied) END
     FROM payment_applications pa
-    WHERE pa.payment_id = ${stagedPayments.id}
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    WHERE pu.source_staged_payment_id = ${stagedPayments.id}
       AND pa.evidence_source = 'quickbooks'
       AND pa.link_role = 'counted'
   )`.as("split_total"),
   splitGiftNames: sql<string[] | null>`(
     SELECT CASE WHEN COUNT(*) > 1 THEN array_agg(g.name ORDER BY g.name) END
     FROM payment_applications pa
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
     JOIN gifts_and_payments g ON g.id = pa.gift_id
-    WHERE pa.payment_id = ${stagedPayments.id}
+    WHERE pu.source_staged_payment_id = ${stagedPayments.id}
       AND pa.evidence_source = 'quickbooks'
       AND pa.link_role = 'counted'
   )`.as("split_gift_names"),

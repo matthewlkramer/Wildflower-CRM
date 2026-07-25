@@ -190,7 +190,13 @@ export function quotedSqlAlias(alias: string): string {
 /** EXISTS: a counted cash-application ledger row anchored on QB row `alias`. */
 export function qbCountedExistsText(alias: string): string {
   const a = quotedSqlAlias(alias);
-  return `EXISTS (SELECT 1 FROM "payment_applications" "pa_ds" WHERE "pa_ds"."payment_id" = ${a}."id" AND "pa_ds"."link_role" = 'counted')`;
+  return `EXISTS (
+    SELECT 1
+    FROM "payment_applications" "pa_ds"
+    JOIN "payment_units" "pu_ds" ON "pu_ds"."id" = "pa_ds"."payment_unit_id"
+    WHERE "pu_ds"."source_staged_payment_id" = ${a}."id"
+      AND "pa_ds"."link_role" = 'counted'
+  )`;
 }
 
 /** QB row `alias` is the settled QBO lump of a Stripe payout (the plain
@@ -314,7 +320,14 @@ export function qbOpenText(alias: string): string {
 /** EXISTS: a counted Stripe cash-application ledger row anchored on charge `alias`. */
 export function chargeCountedExistsText(alias: string): string {
   const a = quotedSqlAlias(alias);
-  return `EXISTS (SELECT 1 FROM "payment_applications" "pa_ds" WHERE "pa_ds"."stripe_charge_id" = ${a}."id" AND "pa_ds"."evidence_source" = 'stripe' AND "pa_ds"."link_role" = 'counted')`;
+  return `EXISTS (
+    SELECT 1
+    FROM "payment_applications" "pa_ds"
+    JOIN "payment_units" "pu_ds" ON "pu_ds"."id" = "pa_ds"."payment_unit_id"
+    WHERE "pu_ds"."stripe_charge_id" = ${a}."id"
+      AND "pa_ds"."evidence_source" = 'stripe'
+      AND "pa_ds"."link_role" = 'counted'
+  )`;
 }
 
 export function chargeProposedText(alias: string): string {
