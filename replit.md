@@ -68,9 +68,21 @@ current-status document.
 5. **Loan and revenue remain separate.** `loan_or_grant` is the sole persisted
    classification. `gifts_and_payments.type` and the legacy `fundraising_category`
    model are retired and must not be revived.
-6. **Canonical money relationships.** Use:
-   - `payment_applications` for payment/evidence unit → CRM gift;
-   - `settlement_links` for Stripe payout → QuickBooks deposit;
+6. **Canonical money relationships.** Bank deposits are the money spine; QBO is
+   downstream accounting evidence, not the arbiter (see
+   [`docs/adr-bank-spine-money-model.md`](docs/adr-bank-spine-money-model.md)).
+   Use:
+   - `bank_deposits` as the real-money spine (one curated row per bank credit);
+   - `bank_deposit_components` for direct (non-Stripe) composition — checks,
+     ACH, wires, other direct payments — each resolving to a `payment_units` row;
+   - `stripe_payouts.bank_deposit_id` for the Stripe payout → bank deposit tie
+     (a recomputed deterministic pairing with `ambiguous_bank_match`; NOT a
+     confirmation workflow — `settlement_links` is retired and dropped);
+   - `payment_units` as the canonical donor-level payment/evidence identity;
+   - `payment_applications` (anchored solely by `payment_unit_id`) for payment
+     unit → CRM gift — the three legacy source-anchor columns (`payment_id` /
+     `stripe_charge_id` / `donorbox_donation_id`) are dropped; never re-add one;
+   - `qbo_accounting_checks` as the accounting discrepancy/review sidecar;
    - `source_links` for evidence ↔ evidence (implemented; the old
      source-specific pointer columns are dropped — never add a sibling
      pointer column).
@@ -108,13 +120,16 @@ Before any reconciliation change, read:
   ratified product semantics (normative even where current code disagrees);
 - [`docs/reconciliation-design.md`](docs/reconciliation-design.md) — target money
   and relationship model;
-- [`docs/adr-source-link-ledger.md`](docs/adr-source-link-ledger.md) — proposed
-  evidence-to-evidence ledger.
+- [`docs/adr-source-link-ledger.md`](docs/adr-source-link-ledger.md) —
+  implemented evidence-to-evidence ledger; `source_links` is the sole
+  authority and the old pointer columns were dropped in migration 0149.
 
 Required rules:
 
 - The three semantic columns are donor/purpose (CRM), payment transaction, and
-  accounting evidence. One physical record may serve more than one role.
+  accounting evidence. One physical record may serve more than one role. The
+  realized deposit-first workbench surfaces them as Composition, Gifts, and
+  Accounting over the Bank spine (Bank | Composition | Gifts | Accounting).
 - Link completeness and information completeness are independent signals.
 - CRM completeness applies to every CRM card on the row, linked or not. A pledge
   by itself is never complete — completeness requires a CRM gift/payment, whose

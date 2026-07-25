@@ -2,11 +2,11 @@
 status: current-status
 last_verified: 2026-07-23
 verification_basis: >
-  Relationship-authority table and derived-status claims verified against code
-  on 2026-07-21 (commit d68abae9). Drift items are labeled individually:
-  "ratified drift" items were confirmed against code and ratified by the owner
-  on 2026-07-21; "flagged" items came from an external documentation review and
-  must be re-verified against code before any repair work.
+  Bank-spine landing and relationship-authority claims verified against code
+  on 2026-07-23. Drift items are labeled individually: "ratified drift" items
+  were confirmed against code and ratified by the owner; "flagged" items came
+  from an external documentation review and must be re-verified against code
+  before any repair work.
 ---
 
 # Reconciliation — Current Implementation Status
@@ -21,14 +21,28 @@ canonical boundary first (see `replit.md`).
 
 | Relationship | Authority today |
 |---|---|
-| Payment/evidence unit → CRM gift | `payment_applications` (`link_role='counted'`); QB reads flipped to the ledger; Stripe/Donorbox still read their row-level pointer columns while the ledger dual-writes |
-| Stripe payout → QuickBooks deposit | `settlement_links` (`lifecycle`: `proposed`/`confirmed`/`exempt`; `exempt` = human-confirmed "no deposit expected" — Stripe balance withdrawal / negative or failed payout — with a NULL deposit pointer) |
+| Payment/evidence unit → CRM gift | `payment_applications` anchored **solely by `payment_unit_id`** (`link_role='counted'`); the three source-anchor columns and their legacy indexes are dropped. QB/Stripe/Donorbox no longer read row-level pointer columns, and `payment_units` are minted eagerly at booking. Counted uniqueness is per unit; corroborating uniqueness is `(payment_unit_id, gift_id)` for `link_role='corroborating'`. |
+| Stripe payout → bank deposit | `stripe_payouts.bank_deposit_id`, a recomputed deterministic pairing with `ambiguous_bank_match` and `bank_matched_at`; there is no lifecycle or confirmation workflow. `settlement_links` is retired and dropped (0169); the historical QBO pairing fact lives on `staged_payments.settled_stripe_payout_id`. |
 | Evidence ↔ evidence (cross-source) | `source_links` — implemented and sole authority ([`adr-source-link-ledger.md`](adr-source-link-ledger.md), phases 1–6 complete; the old source-specific pointer columns were physically dropped in migration 0149). Never add a sibling pointer column |
 | Gift ↔ QB tie signal | Live-derived at read time (`deriveGiftQbTieLiveExpr` in `giftQbTie.ts`); the stored `quickbooks_tie_status` column and its applier were retired — there is no recompute call site |
-| Staged/charge statuses | Derived from facts via the shared builders in `derivedStatus.ts`; no stored status columns (Donorbox's stored lifecycle is mapped to the shared vocabulary at every emit point). A QB deposit claimed by a confirmed settlement link or confirmed charge tie derives `excluded` (settled by the Stripe side; no stored `exclusion_reason`). A whole-deposit `deposit_header` row (staged when every line of a bank Deposit re-records an already-ingested Payment/SalesReceipt) also derives `excluded` by entity type alone — it is settlement evidence, never donation-review work; a confirmed settlement link naming it still derives `match_confirmed`. A stored exclusion does NOT disqualify a deposit from settlement matching — exclusion and settlement eligibility are independent facts |
-| Workbench UI | The cluster view is the current design, superseding the older six-queue workbench described in earlier documents |
+| Staged/charge statuses | Derived from facts via the shared builders in `derivedStatus.ts`; no stored status columns (Donorbox's stored lifecycle is mapped to the shared vocabulary at every emit point). Deposit-header and derived-excluded logic remain for historical/accounting evidence, while the deposit-level `bank_deposit_exclusions` row is the authoritative reviewed "not fundraising" disposition. A direct exclusion never counts money, composes a deposit, or changes payment relationships. |
+| Workbench UI | The deposit-first four-column workbench at `/reconciliation/deposits` is the current default: **Bank \| Composition \| Gifts \| Accounting**. `/reconciliation` and `/reconciliation-workbench` redirect there; `/reconciliation/clusters` remains a secondary view, and the old six-queue workbench is retired. |
 | Manual gift creation on a pledge | Blocked at `POST /gifts-and-payments` (`manual_gift_on_pledge_blocked`, Task #788) — pledge payments are minted from QuickBooks evidence via reconciliation. Sole escape hatch: the explicit finance-gated `offBooksException` request flag (money that never hits QuickBooks); the flag is never persisted. Minted gifts inherit scope from the pledge's remaining plan (`copyPledgeAllocationsToGift`, stamped via `gift_allocations.source_pledge_allocation_id`) |
 | Several QB rows → one gift | `POST /quickbooks/staged-payments/multi-match` writes N `payment_applications` counted rows atomically (no `unit_group` row; open to all team members — CRM-side matching; zero-amount members rejected at selection). Unit groups are fully retired ([`adr-linear-money-model.md`](adr-linear-money-model.md) §7 step 3 done): nothing reads or writes `unit_groups` / `unit_group_members`; `/group`, `/group-reconcile`, `/ungroup`, and `/:id/eject-from-group` are 410 `group_creation_retired` tombstones; per-row revert is the single undo path. Legacy rows sit inert until step 4 verifies and drops the tables |
+
+## Bank-spine cutover — landed
+
+The bank-spine cutover landed across PRs **#34–#42**. `bank_deposits` are the
+money spine; `payment_units` are canonical donor-level payment identities;
+`payment_applications` is anchored solely by `payment_unit_id`; the legacy
+source-anchor columns are dropped; `settlement_links` is retired; and the
+finance-gated UI #1 deposit-exclusion action writes only
+`bank_deposit_exclusions`. The deposit-first four-column workbench is the
+default reconciliation surface.
+
+Migrations **0179→0180→0181→0182→Publish→0183** are reviewed, human-gated
+final steps. This document does not assert that they have been applied to
+production.
 
 ## Ratified rules with known or suspected implementation gaps
 

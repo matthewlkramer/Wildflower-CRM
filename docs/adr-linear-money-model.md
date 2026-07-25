@@ -5,21 +5,14 @@ last_verified: 2026-07-23
 
 # ADR: Linear money model — gift = payment event, bank-anchored evidence tree
 
-**Status:** Ratified 2026-07-23 (design discussion with owner; production-data
-analysis + architecture review). Implementation is under way — §7 steps 1–4
-are done (step 2: `POST /quickbooks/staged-payments/multi-match` writes N
-counted rows atomically; the group and group-reconcile endpoints are 410
-stubs, so no new unit groups can be created; step 3: every unit-group read
-and behavior is retired — nothing reads or writes `unit_groups` /
-`unit_group_members` any more; the tables persist as inert legacy data until
-their post-verification drop; step 4: the 0157 recoding was applied to prod
-2026-07-23 — every prod evidence unit now carries at most one counted row).
-Step 5 (counted-uniqueness) is code-complete — domain guard, DB partial
-unique indexes, and gift-side split retirement — with its index migration
-awaiting human apply. Step 6 is not started; see §7 for sequencing. Layer 1 (§2) is ratified coding semantics; Layer 2 (§3) is
-design-target — its QB grain (one entry per allocation) is a working
-assumption pending accountant confirmation (owner: "easy to roll up if
-wrong").
+**Status:** Ratified 2026-07-23. Layer 1 coding semantics remain ratified;
+Layer 2's physical target is superseded and implemented by
+[`adr-bank-spine-money-model.md`](adr-bank-spine-money-model.md). The
+multi-match and unit-group retirement work is landed, and
+`payment_applications` now uses the bank-spine `payment_unit_id` anchor.
+Migrations 0179–0183 remain reviewed, human-gated final steps; their production
+application is not asserted here. The QB expected-posting grain remains an
+accountant-confirmation question.
 **Owner:** reconciliation
 **Companions:** [`workbench-business-rules.md`](workbench-business-rules.md)
 (ratified workbench semantics — unchanged by this ADR except where noted),
@@ -38,7 +31,7 @@ of which already has exactly one canonical mechanism:
 | Bank deposit split into multiple QB records (e.g. Arthur Rock annual gift booked 1 QB record per allocation) | N `payment_applications` counted rows → 1 gift |
 | One gift payment divided by meaning (fiscal year, entity, restriction, regrant) | `gift_allocations` |
 | Multiple payments/deposits/gifts per pledge (incl. conditional/drawdown pledges such as Walton) | pledge → N gifts via `opportunity_id` |
-| Multiple Stripe charges per Stripe payout/deposit | charge→payout (Stripe-side fact) + `settlement_links` (payout ↔ QB deposit) |
+| Multiple Stripe charges per Stripe payout/deposit | charge→payout (Stripe-side fact) + `stripe_payouts.bank_deposit_id` (deterministic payout ↔ bank deposit pairing) |
 
 The two structures that go beyond these — `unit_groups` (pre-match grouping)
 and gift-side partial application (one evidence unit counted toward several
@@ -77,14 +70,18 @@ rules below, not a modeling need.
   multi-select match that writes N counted ledger rows atomically. Group
   outcomes already live entirely in the ledger; the only pre-match group in
   production (PELSB) is re-expressed by selecting its rows together.
-- **Counted uniqueness:** after the §6 recoding, add a partial unique index —
-  one `counted` `payment_applications` row per evidence anchor
-  (`WHERE link_role = 'counted'`). `corroborating` rows are unconstrained.
+- **Counted uniqueness (superseded physical detail):** the original Layer-1
+  target used one `counted` row per evidence anchor. The implemented
+  bank-spine physical rule is one counted `payment_applications` row per
+  `payment_unit_id`, with corroborating uniqueness on
+  `(payment_unit_id, gift_id)`.
 - **`amount_applied` is retained.** Partial refunds legitimately reduce the
   applied amount below the unit's gross (`stripeRefund.ts`; invariant #7).
   Uniqueness constrains *which gift* a unit counts toward, not the amount.
-- `payment_applications`, `settlement_links`, `source_links` (live since
-  2026-07-21), header+allocations: all retained. No new tables.
+- `payment_applications` (anchored by `payment_unit_id`), `source_links` (live
+  since 2026-07-21), header+allocations: retained. `settlement_links` is
+  retired and dropped; the bank-spine ADR owns the physical payout/deposit
+  model.
 
 ## 3. Target end-state (Layer 2 — the linear tree)
 
@@ -143,8 +140,8 @@ the miscoding type; lens inventory as of 2026-07-23:
 | Standalone QB payment duplicating a Stripe charge | EXISTS — conflict lenses (`f_conflict`); resolution = corroborating tie, Stripe stays counted |
 | QB deposit with no bank line | **MISSING** — add as a distinct lens (small; nearest is `crm_only`) |
 
-`audit_ready` semantics unchanged: settlement link at deposit grain can hold
-while line-level QB documentation is incomplete; unexplained rows stay
+`audit_ready` semantics unchanged: deterministic payout/deposit pairing can
+hold while line-level QB documentation is incomplete; unexplained rows stay
 honestly unmatched.
 
 ## 5. Explicitly out of scope / unchanged
@@ -220,7 +217,7 @@ in `lib/db/migrations/` (evidence anchor ids from the 2026-07-23 analysis):
    table are recorded inline above. The `unit_groups` /
    `unit_group_members` table drop is deliberately NOT in 0157 — it ships as
    a separate later file once 0157 is verified in prod.
-5. **Counted-uniqueness constraint LAST**, in a migration ordered strictly
+5. **Historical counted-uniqueness constraint plan**, in a migration ordered strictly
    after the recoding file — never before, or the prod migration fails.
    **Done in code (2026-07-23):** `applyPaymentApplication` throws
    `AnchorAlreadyCountedError` (step 2b guard) when an anchor already
@@ -230,9 +227,9 @@ in `lib/db/migrations/` (evidence anchor ids from the 2026-07-23 analysis):
    dev); the gift-side split endpoint is a 410 `split_retired` tombstone and
    all split UI is removed. **Awaiting human apply:**
    `lib/db/migrations/0158_counted_uniqueness_index.sql`.
-6. Layer 2 (bank-anchored counted role, prescription list, verification lens,
-   missing "QB deposit with no bank line" lens) as a follow-on project once
-   the accountants confirm the per-allocation grain.
+6. **Historical Layer-2 follow-on:** the bank-anchored counted role and related
+   verification lenses were subsequently implemented under the bank-spine ADR;
+   remaining production migration application is human-gated.
 
 Independent hygiene (any time): purge dev-DB test debris (stale test unit
 groups/members/apps); backfill the 26 zero-allocation production gifts.

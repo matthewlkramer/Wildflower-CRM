@@ -1,3 +1,8 @@
+---
+status: ratified
+last_verified: 2026-07-23
+---
+
 # ADR: One source-link ledger for evidence↔evidence claims
 
 **Status:** Implemented (2026-07-21; phases 1–6 complete — pointer columns
@@ -9,10 +14,11 @@ open: *where do evidence↔evidence claims live?*
 
 ## 1. Context — the claim plane is still pointer-shaped
 
-The ratified design gives each of the two link planes one durable home:
+The ratified design gave each of the two link planes one durable home:
 
-- **Plane 1 (batch↔batch):** `settlement_links` (payout ↔ QB deposit lump) —
-  shipped.
+- **Plane 1 (batch↔batch):** historically `settlement_links` (payout ↔ QB
+  deposit lump) — retired and dropped by the bank-spine cutover; current
+  pairing is `stripe_payouts.bank_deposit_id`.
 - **Plane 2 (unit↔gift):** the `payment_applications` cash-application ledger —
   shipped (sole gift-link record; all six evidence→gift pointers retired).
 

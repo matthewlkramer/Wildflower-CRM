@@ -1,8 +1,8 @@
 # Database Schema Map
 
 **Status:** current-status (implementation map)
-**Last verified:** 2026-07-22
-**Verified against:** `c76b27df6aefb0a78e611f03c4edd740bbee1d59`
+**Last verified:** 2026-07-23
+**Verified against:** landed bank-spine implementation (PRs #34–#42)
 
 ## Authority
 
@@ -101,9 +101,12 @@ mutation.
 - `payment_applications` is the **sole** unit↔gift cash-application ledger
   (evidence unit → CRM gift). Header grain (`gift_id`, never an allocation;
   `gift_allocation_id` is a narrowing annotation only).
-- `staged_payments.settled_stripe_payout_id` is the sole payout↔deposit
-  relationship (Stripe payout → QuickBooks deposit lump) — a plain pairing
-  fact, unique per payout; the `settlement_links` workflow table is retired.
+- `stripe_payouts.bank_deposit_id` is the current payout↔bank-deposit
+  relationship: a recomputed deterministic pairing with
+  `ambiguous_bank_match` and `bank_matched_at`, with no confirmation workflow.
+  The historical QBO pairing fact remains on
+  `staged_payments.settled_stripe_payout_id`; `settlement_links` is retired and
+  dropped.
 - `source_links` is the sole unit↔unit evidence↔evidence claim ledger
   (charge↔QB tie, charge fee row, Donorbox↔QB, Donorbox↔charge). It replaced
   the retired source-specific pointer columns — **never reintroduce pointer
@@ -305,16 +308,12 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   (`exclude` / `auto_create_approve`); seed rules must mirror the code
   classifier.
 - `stripe_payouts` / `stripe_staged_charges` / `stripe_sync_state` — payout
-  lumps, per-charge gross records, and the sync watermark. Stripe↔QB
-  reconciliation ties a QB deposit lump to its charges; the coarse QB-derived
-  gift is archived and the QB row excluded (`processor_payout`, set only on
-  human confirm) so money isn't booked twice. `stripe_payouts.bank_deposit_id`
-  (UNIQUE) ties a payout directly to the ONE register-projected `bank_deposits`
-  row it settled as (docs/adr-bank-spine-money-model.md Phase 4) — a NEW
-  relationship, distinct from the QBO pairing
-  (`staged_payments.settled_stripe_payout_id`). Inferred match
-  (amount+currency+date); >1 equivalent candidate sets `ambiguous_bank_match`
-  with a deterministic pairing — flag only, NO confirmation workflow.
+  lumps, per-charge gross records, and the sync watermark. The current
+  payout↔bank-deposit fact is `stripe_payouts.bank_deposit_id` (UNIQUE), with
+  `ambiguous_bank_match` and `bank_matched_at`; it is a recomputed deterministic
+  pairing with no confirmation workflow and no reconciliation mirror columns.
+  The historical QBO pairing remains on
+  `staged_payments.settled_stripe_payout_id`.
 - `donorbox_donations` / `donorbox_sync_state` — Donorbox donor/purpose
   evidence (not transaction evidence).
 - `bank_transactions` — raw bank-register evidence, one row per register line,
@@ -327,19 +326,17 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   anchors `payment_applications` rows, and carries NO foreign keys — any
   cross-evidence tie goes through the `source_links` ledger (implemented).
 - `bank_deposits` — **the SPINE of the bank-anchored money model**
-  (docs/adr-bank-spine-money-model.md). One row per real bank credit. Today a
-  curated PROJECTION of a deposit-type `bank_transactions` row
-  (`source='qbo_register_export'`, `deposit > 0`) — QBO's mirror of the bank
-  feed — recorded by `source_bank_transaction_id` (UNIQUE, so the projection is
-  1:1/idempotent). Repopulated from a bank-native feed (`plaid`) or `manual`
-  entry later WITHOUT schema change. A Stripe payout settles as one bank deposit
-  (`stripe_payouts.bank_deposit_id`, Phase 4); a check deposit is composed of
-  check `payment_units` via `bank_deposit_components` (Phase 3). Composition
-  state (unresolved/partial/complete/overallocated) is DERIVED, never stored.
+  (docs/adr-bank-spine-money-model.md). One row per Wells Fargo bank credit,
+  projected from immutable `bank_transactions` evidence and recorded by
+  `source_bank_transaction_id` (UNIQUE, so the projection is 1:1/idempotent).
+  A Stripe payout settles as one bank deposit
+  (`stripe_payouts.bank_deposit_id`); a check deposit is composed of check
+  `payment_units` via `bank_deposit_components`. Composition state
+  (unresolved/partial/complete/overallocated) is DERIVED, never stored.
 - `payment_units` — the canonical **donor-level payment unit** (one row = one
   real payment event; `kind` = stripe_charge | check | direct_ach | wire |
-  other). The single anchor `payment_applications` re-anchors onto in Phase 5
-  (collapsing its three source anchors to one). Carries NO donor identity/coding
+  other). The sole `payment_applications` anchor is `payment_unit_id`.
+  Carries NO donor identity/coding
   (those stay on the gift) and NO parent pointer (a charge's parent is its
   payout; a check's is a `bank_deposit_components` row). Pointers, each at most
   one authority: `stripe_charge_id` (1:1, UNIQUE, required iff kind=stripe_charge),
@@ -367,6 +364,10 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   TotalAmt+TxnDate; equal-amount/same-date classes pair deterministically by
   rank and set `ambiguous_deposit_match` (flag only, like
   `stripe_payouts.ambiguous_bank_match` — no review workflow).
+- `deposit_qbo_components` — QBO decomposition evidence for a
+  `bank_deposits` row. It explains how accounting records map into a bank
+  deposit but is not the money spine and does not replace direct
+  `bank_deposit_components`.
 - `bank_deposit_exclusions` — the reviewed **deposit-level "not fundraising"
   decision authority**. One row (`UNIQUE(bank_deposit_id)`) marks a specific
   bank deposit as non-fundraising money movement directly on the spine, for
@@ -386,23 +387,15 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   (consistent / correction_needed / corrected / accepted_historical).
   Accounting REVIEW, never a money ledger; the CRM never writes to QBO —
   `correction_needed` is a worklist for fixing QBO in QBO.
-- `payment_applications` — the unit↔gift cash-application ledger. Each row
-  anchors on exactly one evidence unit per `evidence_source` (`quickbooks` →
-  `payment_id`, `stripe` → `stripe_charge_id`, `donorbox` →
-  `donorbox_donation_id`; enforced by per-source CHECKs). `payment_unit_id`
-  (Phase 5, 0164) is the successor anchor — backfilled from whichever source
-  anchor the row carries and dual-written forward; counted-UNIQUE since 0167
-  (Phase 9a): ONE counted row per canonical unit — same-(unit, gift) duplicate
-  descriptions (e.g. a quickbooks row and the donorbox row for one offline
-  check) were consolidated by 0167 and are consolidated-on-write by
-  `applyPaymentApplication` going forward; the three source anchors demote to
-  provenance at read cutover. `link_role`
+- `payment_applications` — the unit↔gift cash-application ledger. Each row is
+  anchored solely by the non-null `payment_unit_id`; the legacy
+  `payment_id`/`stripe_charge_id`/`donorbox_donation_id` columns, FKs, checks,
+  and per-anchor indexes were dropped in migrations 0179–0183. `link_role`
   (`counted` / `corroborating`) — money reads SUM only `counted` rows;
   `amount_applied` must be > 0 on counted rows. Book-once is enforced by
-  **partial unique indexes per evidence anchor** — one counted unique and one
-  corroborating unique per anchor kind (payment / stripe charge / donorbox
-  donation × gift) — plus the service helper's transactional row-lock and
-  per-anchor SUM validation. Both the unit and gift FKs are RESTRICT.
+  `UNIQUE(payment_unit_id) WHERE link_role='counted'` plus the partial
+  `UNIQUE(payment_unit_id, gift_id) WHERE link_role='corroborating'`; both the
+  unit and gift FKs are RESTRICT.
   `created_the_gift` preserves the mint-ownership signal.
 - `source_links` — unit↔unit evidence claims (`charge_qb_tie`,
   `charge_fee_row`, `donorbox_qb`, `donorbox_charge`) with deterministic ids
