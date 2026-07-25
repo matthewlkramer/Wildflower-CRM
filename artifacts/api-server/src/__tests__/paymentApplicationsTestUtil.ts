@@ -194,13 +194,20 @@ export async function seedStripeApplication(args: {
   confirmedAt?: Date | null;
 }): Promise<string> {
   const { db, paymentApplications } = await import("@workspace/db");
+  const { ensurePaymentUnit } = await import("../lib/paymentUnits");
   const id = `patest_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const paymentUnitId = await ensurePaymentUnit(
+    db,
+    "stripe",
+    args.stripeChargeId,
+  );
   await db.insert(paymentApplications).values({
     id,
     giftId: args.giftId,
     amountApplied: args.amountApplied,
     evidenceSource: "stripe",
     stripeChargeId: args.stripeChargeId,
+    paymentUnitId,
     matchMethod: args.matchMethod ?? "human",
     confirmedAt: args.confirmedAt === undefined ? new Date() : args.confirmedAt,
     createdTheGift: args.createdTheGift ?? false,

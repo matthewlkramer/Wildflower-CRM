@@ -71,6 +71,10 @@ export async function absorbGiftEvidenceIntoSurvivor(
   const splitRows = await tx
     .select({ giftId: paymentApplications.giftId })
     .from(paymentApplications)
+    .innerJoin(
+      paymentUnits,
+      eq(paymentUnits.id, paymentApplications.paymentUnitId),
+    )
     .where(
       and(
         inArray(paymentApplications.giftId, allIds),

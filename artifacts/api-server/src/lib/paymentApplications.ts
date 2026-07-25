@@ -12,6 +12,7 @@ import {
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNotNull, ne, sql, type SQL } from "drizzle-orm";
 import { newId } from "./helpers";
+import { ensurePaymentUnit } from "./paymentUnits";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -304,31 +305,6 @@ async function resolveAndLockAnchor(
  *  4. Upserts the (anchor_id, gift_id) row via the per-anchor UNIQUE key —
  *     re-runs replace the amount instead of duplicating.
  */
-/**
- * Resolve the canonical payment_units row for the anchor (bank-spine dual
- * write, docs/adr-bank-spine-money-model.md Phase 5b). Returns null when the
- * unit does not exist yet — the post-sync recompute annotates the row later
- * (same NULL-tolerant contract as the 0164 backfill).
- */
-async function resolvePaymentUnitId(
-  tx: Tx,
-  evidenceSource: PaymentApplicationEvidenceSource,
-  anchorId: string,
-): Promise<string | null> {
-  const where =
-    evidenceSource === "quickbooks"
-      ? eq(paymentUnits.sourceStagedPaymentId, anchorId)
-      : evidenceSource === "stripe"
-        ? eq(paymentUnits.stripeChargeId, anchorId)
-        : eq(paymentUnits.donorboxDonationId, anchorId);
-  const row = await tx
-    .select({ id: paymentUnits.id })
-    .from(paymentUnits)
-    .where(where)
-    .then((r) => r[0]);
-  return row?.id ?? null;
-}
-
 export async function applyPaymentApplication(
   tx: Tx,
   args: ApplyPaymentApplicationArgs,
@@ -376,40 +352,38 @@ export async function applyPaymentApplication(
   //     old description is consolidated away (this write supersedes it);
   //     different gift → hard conflict, same as 2b. Runs before the upsert so
   //     the 0167 unique index never fires a raw 23505.
-  const paymentUnitId = await resolvePaymentUnitId(
+  const paymentUnitId = await ensurePaymentUnit(
     tx,
     args.evidenceSource,
     anchor.id,
   );
-  if (paymentUnitId !== null) {
-    const unitRows = await tx
-      .select({
-        id: paymentApplications.id,
-        giftId: paymentApplications.giftId,
-      })
-      .from(paymentApplications)
-      .where(
-        and(
-          eq(paymentApplications.paymentUnitId, paymentUnitId),
-          // IS DISTINCT FROM: rows via another source carry NULL in this
-          // anchor's column, and plain <> would drop them.
-          sql`${anchor.ledgerColumn} IS DISTINCT FROM ${anchor.id}`,
-          eq(paymentApplications.linkRole, "counted"),
-        ),
-      );
-    const conflicting = unitRows.find((r) => r.giftId !== args.giftId);
-    if (conflicting) {
-      throw new AnchorAlreadyCountedError(
-        paymentUnitId,
-        conflicting.giftId,
-        args.giftId,
-      );
-    }
-    for (const dup of unitRows) {
-      await tx
-        .delete(paymentApplications)
-        .where(eq(paymentApplications.id, dup.id));
-    }
+  const unitRows = await tx
+    .select({
+      id: paymentApplications.id,
+      giftId: paymentApplications.giftId,
+    })
+    .from(paymentApplications)
+    .where(
+      and(
+        eq(paymentApplications.paymentUnitId, paymentUnitId),
+        // IS DISTINCT FROM: rows via another source carry NULL in this
+        // anchor's column, and plain <> would drop them.
+        sql`${anchor.ledgerColumn} IS DISTINCT FROM ${anchor.id}`,
+        eq(paymentApplications.linkRole, "counted"),
+      ),
+    );
+  const conflicting = unitRows.find((r) => r.giftId !== args.giftId);
+  if (conflicting) {
+    throw new AnchorAlreadyCountedError(
+      paymentUnitId,
+      conflicting.giftId,
+      args.giftId,
+    );
+  }
+  for (const dup of unitRows) {
+    await tx
+      .delete(paymentApplications)
+      .where(eq(paymentApplications.id, dup.id));
   }
 
   // 3. Pure book-once guard.

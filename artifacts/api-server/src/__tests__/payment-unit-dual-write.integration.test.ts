@@ -246,7 +246,7 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
     ]);
   });
 
-  it("writes NULL (not an error) when the anchor has no unit yet", async () => {
+  it("creates and stamps a unit when the anchor has no unit yet", async () => {
     const gift = await seedGift();
     const ch = await seedCharge();
 
@@ -256,7 +256,7 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
       .select({ paymentUnitId: schema.paymentApplications.paymentUnitId })
       .from(schema.paymentApplications)
       .where(eqFn(schema.paymentApplications.stripeChargeId, ch));
-    expect(rows).toEqual([{ paymentUnitId: null }]);
+    expect(rows).toEqual([{ paymentUnitId: `pu_${ch}` }]);
   });
 
   it("same unit, same gift via another source: consolidates to ONE counted row", async () => {

@@ -23,6 +23,7 @@ import {
   qbLedgerExistsForPayment,
 } from "../lib/paymentApplications";
 import { stagedStatusWhere } from "../lib/derivedStatus";
+import { ensurePaymentUnit } from "../lib/paymentUnits";
 
 // ── Financial-corrections review queue (admin-only) ──────────────────────────
 //
@@ -467,15 +468,11 @@ router.post(
     const now = new Date();
     const evidenceSource: "quickbooks" | "stripe" =
       body.evidenceKind === "qb_staged" ? "quickbooks" : "stripe";
-    const paymentUnitId = await db
-      .select({ id: paymentUnits.id })
-      .from(paymentUnits)
-      .where(
-        evidenceSource === "quickbooks"
-          ? eq(paymentUnits.sourceStagedPaymentId, body.evidenceId)
-          : eq(paymentUnits.stripeChargeId, body.evidenceId),
-      )
-      .then((rows) => rows[0]?.id ?? null);
+    const paymentUnitId = await ensurePaymentUnit(
+      db,
+      evidenceSource,
+      body.evidenceId,
+    );
     await db
       .insert(paymentApplications)
       .values(
