@@ -715,6 +715,7 @@ router.get(
           ) ORDER BY ch.gross_amount DESC)
           FROM stripe_staged_charges ch
           WHERE ch.stripe_payout_id = p.id
+            AND (ch.raw_charge->>'status' = 'succeeded' OR ch.exclusion_reason IS NOT NULL)
         ), '[]'::jsonb) AS charges,
         COALESCE((
           SELECT jsonb_agg(item ORDER BY item->>'stagedPaymentId')
