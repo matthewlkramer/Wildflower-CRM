@@ -58,6 +58,8 @@ export interface ClusterActions {
   openLinkGift: (anchor: AnchorRef) => void;
   openCreateGift: (anchor: AnchorRef, preview: EvidencePreview) => void;
   openIdentify: (anchor: AnchorRef, preview: EvidencePreview | null) => void;
+  openDonorboxSearch?: (anchor: AnchorRef, preview: EvidencePreview) => void;
+  openCodingFormLookup?: (anchor: AnchorRef, preview: EvidencePreview) => void;
   openExclude: (anchor: AnchorRef) => void;
   reInclude: (anchor: AnchorRef) => void;
   /** Confirm-gated unlink/undo: reverts a booked link (may delete a minted gift). */
@@ -91,6 +93,8 @@ export interface ClusterActions {
   clearBankDepositExclusion?: (bankDepositId: string) => void;
   /** True when the viewer is a finance team member or admin. Finance-gates QB write actions (§7.3). */
   isFinanceOrAdmin: boolean;
+  /** Existing coding-form lookup endpoint is admin-only. */
+  canUseCodingForm?: boolean;
   /** Open the read-only in-app QB record detail dialog (§7.2). Linkage word comes from coverage.state.qbCards. */
   openQbDetail: (record: WorkbenchClusterQbRecord, linkage: string) => void;
   /** Reject the system-proposed charge↔QB tie for a Stripe charge (§5.2 / §7.2 "Unmatch from QB evidence"). */

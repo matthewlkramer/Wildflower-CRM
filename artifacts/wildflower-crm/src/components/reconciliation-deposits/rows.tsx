@@ -75,6 +75,8 @@ const NOOP_ACTIONS: ClusterActions = {
   openLinkGift: () => undefined,
   openCreateGift: () => undefined,
   openIdentify: () => undefined,
+  openDonorboxSearch: () => undefined,
+  openCodingFormLookup: () => undefined,
   openExclude: () => undefined,
   reInclude: () => undefined,
   openRevert: () => undefined,
@@ -91,6 +93,7 @@ const NOOP_ACTIONS: ClusterActions = {
   openBankDepositExclusion: () => undefined,
   clearBankDepositExclusion: () => undefined,
   isFinanceOrAdmin: false,
+  canUseCodingForm: false,
   openQbDetail: () => undefined,
   rejectChargeQbTie: () => undefined,
   confirmProposedMatch: () => undefined,
@@ -414,6 +417,8 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
                   <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openLinkGift(anchor)}>Search and link gift</button>
                   <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCreateGift(anchor, chargePreview(charge))}>Create gift</button>
                   <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openIdentify(anchor, chargePreview(charge))}>Identify donor</button>
+                  {actions.isFinanceOrAdmin && actions.openDonorboxSearch ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openDonorboxSearch?.(anchor, chargePreview(charge))}>Donorbox lookup</button> : null}
+                  {actions.canUseCodingForm && actions.openCodingFormLookup ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCodingFormLookup?.(anchor, chargePreview(charge))}>Coding form</button> : null}
                 </div>
               </div>
             );
@@ -426,10 +431,41 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
                 <div className="mt-1 flex flex-wrap gap-2">
                   <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openLinkGift(anchor)}>Search and link gift</button>
                   <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCreateGift(anchor, qbPreview(record))}>Create gift</button>
+                  {actions.isFinanceOrAdmin && actions.openDonorboxSearch ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openDonorboxSearch?.(anchor, qbPreview(record))}>Donorbox lookup</button> : null}
+                  {actions.canUseCodingForm && actions.openCodingFormLookup ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCodingFormLookup?.(anchor, qbPreview(record))}>Coding form</button> : null}
                 </div>
               </div>
             );
           })}
+          {deposit.composition.kind === "components" ? deposit.composition.components
+            .filter((component) => component.source === "bank_spine" && (component.countedGiftIds?.length ?? 0) === 0 && component.stagedPaymentId)
+            .map((component) => {
+              const anchor: AnchorRef = {
+                kind: "staged",
+                id: component.stagedPaymentId ?? "",
+                label: component.label ?? component.kind,
+              };
+              const preview: EvidencePreview = {
+                amount: money(component.amount),
+                date: deposit.date ? formatDateShort(deposit.date) : "—",
+                method: component.kind.replaceAll("_", " "),
+                source: component.label ?? component.kind,
+                memo: null,
+              };
+              return (
+                <div key={`unlinked-component-${component.componentId}`} className="rounded-md border border-dashed bg-card px-2.5 py-1.5">
+                  <p className="truncate text-[11px] font-medium">{component.label ?? component.kind}</p>
+                  <p className="text-[11px] tabular-nums text-muted-foreground">{money(component.amount)}</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openLinkGift(anchor)}>Search and link gift</button>
+                    <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCreateGift(anchor, preview)}>Create gift</button>
+                    <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openIdentify(anchor, preview)}>Identify donor</button>
+                    {actions.isFinanceOrAdmin && actions.openDonorboxSearch ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openDonorboxSearch?.(anchor, preview)}>Donorbox lookup</button> : null}
+                    {actions.canUseCodingForm && actions.openCodingFormLookup ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCodingFormLookup?.(anchor, preview)}>Coding form</button> : null}
+                  </div>
+                </div>
+              );
+            }) : null}
         </span>
         <span><Accounting checks={deposit.accountingChecks} records={deposit.qbRecords} actions={actions} /></span>
       </div>
