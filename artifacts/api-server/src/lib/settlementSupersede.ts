@@ -1,6 +1,7 @@
 import { db } from "@workspace/db";
 import {
   paymentApplications,
+  paymentUnits,
   stagedPayments,
   stripeStagedCharges,
 } from "@workspace/db/schema";
@@ -150,9 +151,10 @@ export async function applySettlementSupersedeMany(
         linkRole: paymentApplications.linkRole,
       })
       .from(paymentApplications)
+      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
       .where(
         and(
-          eq(paymentApplications.paymentId, depositId),
+          eq(paymentUnits.sourceStagedPaymentId, depositId),
           eq(paymentApplications.evidenceSource, "quickbooks"),
           or(
             eq(paymentApplications.linkRole, "counted"),
@@ -178,13 +180,14 @@ export async function applySettlementSupersedeMany(
         .select({
           giftId: paymentApplications.giftId,
           total: sql<string>`coalesce(sum(${paymentApplications.amountApplied}), 0)::text`,
-        })
-        .from(paymentApplications)
+      })
+      .from(paymentApplications)
+      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
         .innerJoin(
           stripeStagedCharges,
-          eq(stripeStagedCharges.id, paymentApplications.stripeChargeId),
+          eq(stripeStagedCharges.id, paymentUnits.stripeChargeId),
         )
-        .where(
+      .where(
           and(
             eq(paymentApplications.evidenceSource, "stripe"),
             eq(paymentApplications.linkRole, "counted"),
@@ -216,7 +219,13 @@ export async function applySettlementSupersedeMany(
         .delete(paymentApplications)
         .where(
           and(
-            eq(paymentApplications.paymentId, depositId),
+            inArray(
+              paymentApplications.paymentUnitId,
+              tx
+                .select({ id: paymentUnits.id })
+                .from(paymentUnits)
+                .where(eq(paymentUnits.sourceStagedPaymentId, depositId)),
+            ),
             eq(paymentApplications.giftId, d.giftId),
             eq(paymentApplications.linkRole, "corroborating"),
             ne(paymentApplications.id, d.rowId),
@@ -236,9 +245,10 @@ export async function applySettlementSupersedeMany(
       const countedExists = await tx
         .select({ id: paymentApplications.id })
         .from(paymentApplications)
+        .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
         .where(
           and(
-            eq(paymentApplications.paymentId, depositId),
+            eq(paymentUnits.sourceStagedPaymentId, depositId),
             eq(paymentApplications.giftId, d.giftId),
             eq(paymentApplications.linkRole, "counted"),
           ),
@@ -262,9 +272,10 @@ export async function applySettlementSupersedeMany(
           total: sql<string>`coalesce(sum(${paymentApplications.amountApplied}), 0)::text`,
         })
         .from(paymentApplications)
+        .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
         .where(
           and(
-            eq(paymentApplications.paymentId, depositId),
+            eq(paymentUnits.sourceStagedPaymentId, depositId),
             eq(paymentApplications.linkRole, "counted"),
             ne(paymentApplications.giftId, d.giftId),
           ),

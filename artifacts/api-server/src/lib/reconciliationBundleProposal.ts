@@ -8,6 +8,7 @@ import {
   people,
   households,
   paymentApplications,
+  paymentUnits,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -1066,9 +1067,10 @@ async function loadFacts(
     const stagedLinks = await conn
       .select({
         gid: paymentApplications.giftId,
-        sid: paymentApplications.paymentId,
+        sid: paymentUnits.sourceStagedPaymentId,
       })
       .from(paymentApplications)
+      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
       .where(
         and(
           inArray(paymentApplications.giftId, [...giftIds]),
@@ -1085,15 +1087,16 @@ async function loadFacts(
     const chargeLinks = await conn
       .select({
         gid: paymentApplications.giftId,
-        cid: paymentApplications.stripeChargeId,
+        cid: paymentUnits.stripeChargeId,
       })
       .from(paymentApplications)
+      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
       .where(
         and(
           inArray(paymentApplications.giftId, [...giftIds]),
           eq(paymentApplications.evidenceSource, "stripe"),
           eq(paymentApplications.linkRole, "counted"),
-          isNotNull(paymentApplications.stripeChargeId),
+          isNotNull(paymentUnits.stripeChargeId),
         ),
       );
     for (const r of chargeLinks) {

@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { recomputeQboAccountingChecks } from "./qboAccountingRecompute";
+import { ensurePaymentUnit } from "./paymentUnits";
 
 /**
  * Forward maintenance of the bank-spine money model
@@ -41,6 +42,32 @@ export async function recomputeBankSpine(): Promise<void> {
       AND bt.deposit IS NOT NULL AND bt.deposit > 0
     ON CONFLICT (id) DO NOTHING
   `);
+
+  // Keep the booking-time derivation and maintenance derivation on one path.
+  // The source-specific INSERTs below remain the backstop for evidence that
+  // has no application yet; application-backed anchors are ensured eagerly.
+  const applicationAnchors = await db.execute(sql`
+    SELECT DISTINCT evidence_source::text AS source, anchor_id
+    FROM (
+      SELECT 'quickbooks' AS evidence_source, payment_id AS anchor_id
+      FROM payment_applications
+      WHERE payment_id IS NOT NULL
+      UNION ALL
+      SELECT 'stripe', stripe_charge_id
+      FROM payment_applications
+      WHERE stripe_charge_id IS NOT NULL
+      UNION ALL
+      SELECT 'donorbox', donorbox_donation_id
+      FROM payment_applications
+      WHERE donorbox_donation_id IS NOT NULL
+    ) anchors
+  `);
+  for (const row of applicationAnchors.rows as Array<{
+    source: "quickbooks" | "stripe" | "donorbox";
+    anchor_id: string;
+  }>) {
+    await ensurePaymentUnit(db, row.source, row.anchor_id);
+  }
 
   // 2. One unit per non-excluded Stripe charge (0160)…
   await db.execute(sql`

@@ -19,6 +19,7 @@ import {
   stripePayouts,
   donorboxDonations,
   paymentApplications,
+  paymentUnits,
   sourceLinks,
   type NewGiftAllocation,
 } from "@workspace/db/schema";
@@ -2415,7 +2416,7 @@ router.get(
     // still surface evidence if any exists, but it isn't required of them.
     const ledgerRows = await db
       .select({
-        stagedPaymentId: paymentApplications.paymentId,
+        stagedPaymentId: paymentUnits.sourceStagedPaymentId,
         amountApplied: paymentApplications.amountApplied,
         createdTheGift: paymentApplications.createdTheGift,
         realmId: stagedPayments.realmId,
@@ -2428,15 +2429,17 @@ router.get(
         dateReceived: stagedPayments.dateReceived,
         countedAppCount: sql<number>`(
           SELECT COUNT(*)::int FROM payment_applications pa2
-          WHERE pa2.payment_id = ${paymentApplications.paymentId}
+          JOIN payment_units pu2 ON pu2.id = pa2.payment_unit_id
+          WHERE pu2.source_staged_payment_id = ${paymentUnits.sourceStagedPaymentId}
             AND pa2.evidence_source = 'quickbooks'
             AND pa2.link_role = 'counted'
         )`,
       })
       .from(paymentApplications)
+      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
       .innerJoin(
         stagedPayments,
-        eq(stagedPayments.id, paymentApplications.paymentId),
+        eq(stagedPayments.id, paymentUnits.sourceStagedPaymentId),
       )
       .where(
         and(
@@ -2471,7 +2474,7 @@ router.get(
     // always null (mirrors payment_applications.amount_applied being null there).
     const corroboratingRows = await db
       .select({
-        stagedPaymentId: paymentApplications.paymentId,
+        stagedPaymentId: paymentUnits.sourceStagedPaymentId,
         createdTheGift: paymentApplications.createdTheGift,
         realmId: stagedPayments.realmId,
         qbEntityType: stagedPayments.qbEntityType,
@@ -2483,9 +2486,10 @@ router.get(
         dateReceived: stagedPayments.dateReceived,
       })
       .from(paymentApplications)
+      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
       .innerJoin(
         stagedPayments,
-        eq(stagedPayments.id, paymentApplications.paymentId),
+        eq(stagedPayments.id, paymentUnits.sourceStagedPaymentId),
       )
       .where(
         and(

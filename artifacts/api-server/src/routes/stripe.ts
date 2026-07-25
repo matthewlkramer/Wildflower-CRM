@@ -14,6 +14,7 @@ import {
   people,
   paymentIntermediaries,
   paymentApplications,
+  paymentUnits,
 } from "@workspace/db/schema";
 import {
   and,
@@ -663,14 +664,15 @@ router.post(
         // if the incumbent minted it — it is the switch target. Resolved via
         // the counted ledger rows (pointer columns are retired).
         const incumbentLedger = await tx
-          .select({ chargeId: paymentApplications.stripeChargeId })
+          .select({ chargeId: paymentUnits.stripeChargeId })
           .from(paymentApplications)
+          .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
           .where(
             and(
               eq(paymentApplications.giftId, giftId),
               eq(paymentApplications.evidenceSource, "stripe"),
               eq(paymentApplications.linkRole, "counted"),
-              ne(paymentApplications.stripeChargeId, charge.id),
+              ne(paymentUnits.stripeChargeId, charge.id),
             ),
           )
           .limit(1)

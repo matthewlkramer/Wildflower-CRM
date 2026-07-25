@@ -2,6 +2,7 @@ import { type Request } from "express";
 import {
   giftsAndPayments,
   paymentApplications,
+  paymentUnits,
   stripeStagedCharges,
   stagedPayments,
   organizations,
@@ -251,12 +252,13 @@ export async function linkChargeToGiftInTx(
   const ownedByOtherCharge = await tx
     .select({ id: paymentApplications.id })
     .from(paymentApplications)
+    .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
     .where(
       and(
         eq(paymentApplications.giftId, giftId),
         eq(paymentApplications.evidenceSource, "stripe"),
         eq(paymentApplications.linkRole, "counted"),
-        ne(paymentApplications.stripeChargeId, charge.id),
+        ne(paymentUnits.stripeChargeId, charge.id),
       ),
     )
     .limit(1);

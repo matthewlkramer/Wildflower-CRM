@@ -23,6 +23,7 @@ import {
   qbLedgerExistsForPayment,
 } from "../lib/paymentApplications";
 import { stagedStatusWhere } from "../lib/derivedStatus";
+import { ensurePaymentUnit } from "../lib/paymentUnits";
 
 // ── Financial-corrections review queue (admin-only) ──────────────────────────
 //
@@ -325,11 +326,12 @@ export async function detectFinancialCorrections(
   const existingLinks = await db
     .select({
       evidenceSource: paymentApplications.evidenceSource,
-      paymentId: paymentApplications.paymentId,
-      stripeChargeId: paymentApplications.stripeChargeId,
+      paymentId: paymentUnits.sourceStagedPaymentId,
+      stripeChargeId: paymentUnits.stripeChargeId,
       giftId: paymentApplications.giftId,
     })
     .from(paymentApplications)
+    .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
     .where(eq(paymentApplications.linkRole, "corroborating"));
   const linkedSet = new Set(
     existingLinks
@@ -466,15 +468,11 @@ router.post(
     const now = new Date();
     const evidenceSource: "quickbooks" | "stripe" =
       body.evidenceKind === "qb_staged" ? "quickbooks" : "stripe";
-    const paymentUnitId = await db
-      .select({ id: paymentUnits.id })
-      .from(paymentUnits)
-      .where(
-        evidenceSource === "quickbooks"
-          ? eq(paymentUnits.sourceStagedPaymentId, body.evidenceId)
-          : eq(paymentUnits.stripeChargeId, body.evidenceId),
-      )
-      .then((rows) => rows[0]?.id ?? null);
+    const paymentUnitId = await ensurePaymentUnit(
+      db,
+      evidenceSource,
+      body.evidenceId,
+    );
     await db
       .insert(paymentApplications)
       .values(

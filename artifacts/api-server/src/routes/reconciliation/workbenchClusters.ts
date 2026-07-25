@@ -1615,7 +1615,7 @@ router.get(
       ? db
           .execute(sql`
       SELECT
-        pa_j.payment_id AS payment_id,
+        pu_j.source_staged_payment_id AS payment_id,
         g.id AS gift_id,
         g.opportunity_id AS opportunity_id,
         g.name AS gift_name,
@@ -1651,7 +1651,7 @@ router.get(
           if (depIds.length === 0) return [];
           const result = await db.execute(sql`
       SELECT
-        pa_j.payment_id AS payment_id,
+        pu_j.source_staged_payment_id AS payment_id,
         g.id AS gift_id,
         g.opportunity_id AS opportunity_id,
         g.name AS gift_name,
@@ -1709,7 +1709,7 @@ router.get(
         cc.stripe_payout_id AS payout_id,
         pa.id AS pa_id,
         pa.gift_id,
-        pa.stripe_charge_id AS charge_id,
+        pu.stripe_charge_id AS charge_id,
         pa.amount_applied::text AS amount_applied
       FROM payment_applications pa
       JOIN payment_units pu ON pu.id = pa.payment_unit_id

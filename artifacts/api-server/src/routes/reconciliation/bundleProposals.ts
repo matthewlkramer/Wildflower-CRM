@@ -8,6 +8,7 @@ import {
   stripePayouts,
   giftsAndPayments,
   paymentApplications,
+  paymentUnits,
 } from "@workspace/db/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { asyncHandler, notFound, parseOrBadRequest, newId } from "../../lib/helpers";
@@ -983,9 +984,10 @@ router.post(
         const hasCountedLedgerRows = await tx
           .select({ id: paymentApplications.id })
           .from(paymentApplications)
+          .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
           .where(
             and(
-              eq(paymentApplications.paymentId, pickedDepositId),
+              eq(paymentUnits.sourceStagedPaymentId, pickedDepositId),
               eq(paymentApplications.linkRole, "counted"),
             ),
           )
