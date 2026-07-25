@@ -15,6 +15,7 @@ import {
   getListCodingFormRowsQueryKey,
   getListDonorboxReviewQueryKey,
   useConfirmSettlementLink,
+  useConfirmPayoutChargeTies,
   useConfirmDepositQboComponent,
   useConfirmStripeRefundPropagation,
   useCreateGiftFromStagedPayment,
@@ -61,6 +62,7 @@ import {
   type DonorboxReviewRow,
   type StagedPaymentExclusionReason,
   type WorkbenchClusterQbRecord,
+  type PayoutChargeSummary,
   type WorkbenchDepositLens,
   type WorkbenchRecentChange,
 } from "@workspace/api-client-react";
@@ -69,6 +71,7 @@ import { DepositGridHeader, DepositRow, DEPOSIT_LENSES, type DepositActions } fr
 import { GiftSearchDialog } from "@/components/gift-search-dialog";
 import { MergeGiftsDialog } from "@/components/gift-merge-dialogs";
 import { ResolveTieDialog, type PickOptions } from "@/components/reconciliation-bundles/ResolveTieDialog";
+import { TieChargeQbDialog } from "@/components/reconciliation-bundles/TieChargeQbDialog";
 import { CodingFormLookupDialog, DonorboxSearchDialog, DonorResolveDialog, EvidenceChooserDialog, ExcludeReasonDialog, QbRecordDetailDialog, UnlinkChooserDialog, type EvidencePickOption, type EvidencePreview, type UnlinkOption } from "@/components/reconciliation-clusters/dialogs";
 import type { AnchorRef } from "@/components/reconciliation-clusters/rows";
 import type { DonorType } from "@/components/entity-picker";
@@ -124,6 +127,7 @@ export default function ReconciliationDepositsPage() {
   const confirmRefund = useConfirmStripeRefundPropagation();
   const dismissRefund = useDismissStripeRefundPropagation();
   const confirmSettlement = useConfirmSettlementLink();
+  const confirmChargeTies = useConfirmPayoutChargeTies();
   const confirmDepositQbo = useConfirmDepositQboComponent();
   const dismissDepositQbo = useDismissDepositQboComponent();
   const linkPayout = useLinkPayoutDeposit();
@@ -164,6 +168,7 @@ export default function ReconciliationDepositsPage() {
   const [knownPaymentKind, setKnownPaymentKind] = useState<"check" | "direct_ach" | "wire" | "other">("check");
   const [knownPaymentDate, setKnownPaymentDate] = useState("");
   const [manualComponentFor, setManualComponentFor] = useState<{ id: string; label: string } | null>(null);
+  const [tieChargeFor, setTieChargeFor] = useState<{ payoutId: string; charge: PayoutChargeSummary } | null>(null);
   const donorboxParams = { queue: "needs_review" as const, search: donorboxSearch.trim() || undefined, limit: 25, page: 1 };
   const donorboxRows = useListDonorboxReview(donorboxParams, {
     query: {
@@ -210,7 +215,7 @@ export default function ReconciliationDepositsPage() {
   const mergeRecords = useMemo<GiftOrPaymentDetail[]>(() => mergeQueries.map((query) => query.data).filter((record): record is GiftOrPaymentDetail => !!record), [mergeQueries]);
   const addBankComponent = useAddBankDepositComponent();
   const removeManualComponent = useRemoveManualBankDepositComponent();
-  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || excludeComponent.isPending || reIncludeComponent.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || linkDonorbox.isPending || createDonorboxGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending || addBankComponent.isPending || removeManualComponent.isPending;
+  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || excludeComponent.isPending || reIncludeComponent.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || linkDonorbox.isPending || createDonorboxGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmChargeTies.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending || addBankComponent.isPending || removeManualComponent.isPending;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: getListWorkbenchDepositsQueryKey() });
@@ -324,6 +329,24 @@ export default function ReconciliationDepositsPage() {
     toast({ title: "Manual component removed", description: "The unexplained remainder has been reopened." });
     invalidate();
   };
+  const handleChargeQbPick = async (qbStagedPaymentId: string, opts?: PickOptions) => {
+    if (!tieChargeFor) return;
+    try {
+      await confirmChargeTies.mutateAsync({
+        payoutId: tieChargeFor.payoutId,
+        data: {
+          qbStagedPaymentIds: [qbStagedPaymentId],
+          chargeId: tieChargeFor.charge.id,
+          ...opts,
+        },
+      });
+      toast({ title: "QuickBooks row tied", description: "The selected QBO record now documents this Stripe charge." });
+      setTieChargeFor(null);
+      invalidate();
+    } catch (error) {
+      toast({ title: "Couldn't tie QuickBooks row", description: error instanceof Error ? error.message : "The charge or QBO row changed. Refresh and try again.", variant: "destructive" });
+    }
+  };
   const handleRevert = async () => {
     if (!revertFor) return;
     if (revertFor.anchor.kind === "charge") await revertCharge.mutateAsync({ id: revertFor.anchor.id });
@@ -378,6 +401,25 @@ export default function ReconciliationDepositsPage() {
       void handleFlagRemainder(depositId, remainder);
     },
     removeManualComponent: (id, label) => setManualComponentFor({ id, label }),
+    openChargeQbSearch: (charge) => {
+      const deposit = deposits.find((item) => item.charges.some((itemCharge) => itemCharge.chargeId === charge.chargeId));
+      if (!deposit?.composition.payoutId) return;
+      setTieChargeFor({
+        payoutId: deposit.composition.payoutId,
+        charge: {
+          id: charge.chargeId,
+          payerName: charge.payerName,
+          amount: charge.amount,
+          fee: charge.feeAmount,
+          net: charge.netAmount,
+          description: charge.description,
+          statementDescriptor: charge.statementDescriptor,
+          date: charge.chargeDate,
+          status: charge.status,
+          exclusionReason: charge.exclusionReason,
+        },
+      });
+    },
     isFinanceOrAdmin: canManageAccounting && (me?.role === "finance" || me?.role === "admin"),
     canUseCodingForm: canManageAccounting && me?.role === "admin",
     openQbDetail: (record, linkage) => setQbDetailFor({ record, linkage }),
@@ -741,6 +783,7 @@ export default function ReconciliationDepositsPage() {
         <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Dismiss reversal proposal?</AlertDialogTitle><AlertDialogDescription>{dismissFor?.label} stays booked.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={() => { if (!dismissFor) return; void dismissRefund.mutateAsync({ id: dismissFor.chargeId }).then(() => { setDismissFor(null); invalidate(); }); }}>Dismiss</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
       </AlertDialog>
       {settlementSearchFor ? <ResolveTieDialog anchor={{ anchorId: settlementSearchFor.payoutId, amount: settlementSearchFor.amount, date: settlementSearchFor.date }} open onOpenChange={(open) => { if (!open) setSettlementSearchFor(null); }} onPick={(id, options: PickOptions) => { if (!settlementSearchFor) return; void confirmSettlement.mutateAsync({ payoutId: settlementSearchFor.payoutId, data: { depositStagedPaymentId: id, ...(options?.overrideExclusion ? { overrideExclusion: true } : {}) } }).then(() => { setSettlementSearchFor(null); invalidate(); }); }} busy={busy} /> : null}
+      {tieChargeFor ? <TieChargeQbDialog payoutId={tieChargeFor.payoutId} charge={tieChargeFor.charge} open onOpenChange={(open) => { if (!open) setTieChargeFor(null); }} onPick={(id, options) => void handleChargeQbPick(id, options)} busy={busy} /> : null}
       <QbRecordDetailDialog open={qbDetailFor != null} onOpenChange={(open) => { if (!open) setQbDetailFor(null); }} record={qbDetailFor?.record ?? null} linkage={qbDetailFor?.linkage ?? null} />
       <MergeGiftsDialog open={mergeGiftIds.length > 0} onOpenChange={(open) => { if (!open) setMergeGiftIds([]); }} gifts={mergeRecords} expectedCount={mergeGiftIds.length} loadError={mergeQueries.some((query) => query.isError)} onDone={() => { setMergeGiftIds([]); invalidate(); }} />
     </div>

@@ -110,6 +110,7 @@ type DepositRow = {
     label?: string | null;
     exclusionReason?: string | null;
     matchBasis?: "deposit_header_exact" | "deposit_header_ambiguous" | null;
+    qboRecords?: NodeQbRecord[];
   }>;
   provisional_components: DepositRow["components"];
   units: Array<{
@@ -137,15 +138,163 @@ type DepositRow = {
     recordComplete: boolean;
     linkedChargeIds: string[];
     linkedStagedPaymentIds: string[];
+    qboRecords?: NodeQbRecord[];
   }>;
-  charges: Array<Record<string, unknown>>;
+  charges: Array<Record<string, unknown> & { chargeId?: string; qboRecords?: NodeQbRecord[] }>;
   qb_records: Array<Record<string, unknown>>;
   accounting_checks: Array<Record<string, unknown>>;
+};
+
+type NodeQbRecord = {
+  stagedPaymentId: string;
+  role: "component" | "provisional" | "fee" | "charge_tie";
+  reference: string | null;
+  lineDescription: string | null;
+  memo: string | null;
+  amount: string | null;
+  dateReceived: string | null;
+  paymentMethod?: string | null;
+  linkedChargeId?: string | null;
+  componentId?: string | null;
+  paymentUnitId?: string | null;
+  accountingCheckId?: string | null;
+  payerName?: string | null;
+  qbEntityType?: string | null;
+  qbEntityId?: string | null;
+  qbTransactionMemo?: string | null;
+  qbLocation?: string | null;
+  revenueLocation?: string | null;
+  qbDocNumber?: string | null;
+  qbCheckNumber?: string | null;
+  entityId?: string | null;
+  qbPayerType?: string | null;
+  exclusionReason?: string | null;
 };
 
 function amount(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
+  const chargeIds = [...new Set(rows.flatMap((row) => row.charges.map((charge) => String(charge.chargeId ?? "")).filter(Boolean)))];
+  const componentRefs = rows.flatMap((row) =>
+    [...row.components, ...row.provisional_components]
+      .filter((component) => component.stagedPaymentId)
+      .map((component) => ({
+        stagedPaymentId: component.stagedPaymentId as string,
+        componentId: component.componentId,
+        paymentUnitId: component.paymentUnitId,
+        role: component.source === "qbo_provisional" ? "provisional" as const : "component" as const,
+      })),
+  );
+  const stagedPaymentIds = [...new Set(componentRefs.map((ref) => ref.stagedPaymentId))];
+  if (chargeIds.length === 0 && stagedPaymentIds.length === 0) return;
+  const stagedFilter = stagedPaymentIds.length
+    ? sql`sp.id IN (${sql.join(stagedPaymentIds.map((id) => sql`${id}`), sql`, `)})`
+    : sql`FALSE`;
+  const chargeFilter = chargeIds.length
+    ? sql`sl.stripe_charge_id IN (${sql.join(chargeIds.map((id) => sql`${id}`), sql`, `)})`
+    : sql`FALSE`;
+
+  const result = await db.execute(sql`
+    SELECT
+      sp.id AS staged_payment_id,
+      sp.raw_reference,
+      sp.line_description,
+      sp.qb_transaction_memo,
+      sp.amount::text AS amount,
+      sp.date_received::text AS date_received,
+      sp.qb_payment_method,
+      sp.payer_name,
+      sp.qb_entity_type,
+      sp.qb_entity_id,
+      sp.qb_location,
+      sp.revenue_location,
+      sp.qb_doc_number,
+      sp.qb_check_number,
+      sp.entity_id,
+      sp.qb_payer_type,
+      sp.exclusion_reason,
+      sl.link_type,
+      sl.stripe_charge_id,
+      qc.id AS accounting_check_id
+    FROM staged_payments sp
+    LEFT JOIN source_links sl
+      ON sl.qb_staged_payment_id = sp.id
+     AND sl.link_type IN ('charge_qb_tie', 'charge_fee_row')
+     AND sl.lifecycle IN ('proposed', 'confirmed')
+    LEFT JOIN qbo_accounting_checks qc ON qc.staged_payment_id = sp.id
+    WHERE ${stagedFilter} OR ${chargeFilter}
+  `);
+
+  const componentByStaged = new Map(componentRefs.map((ref) => [ref.stagedPaymentId, ref]));
+  const recordsByCharge = new Map<string, NodeQbRecord[]>();
+  const recordsByStaged = new Map<string, NodeQbRecord[]>();
+  for (const raw of result.rows as Array<Record<string, unknown>>) {
+    const stagedPaymentId = String(raw.staged_payment_id);
+    const linkType = raw.link_type === "charge_fee_row" ? "fee" : raw.link_type === "charge_qb_tie" ? "charge_tie" : null;
+    const componentRef = componentByStaged.get(stagedPaymentId);
+    const role = linkType ?? componentRef?.role;
+    if (!role) continue;
+    const record: NodeQbRecord = {
+      stagedPaymentId,
+      role,
+      reference: (raw.raw_reference as string | null) ?? null,
+      lineDescription: (raw.line_description as string | null) ?? null,
+      memo: (raw.qb_transaction_memo as string | null) ?? null,
+      amount: (raw.amount as string | null) ?? null,
+      dateReceived: (raw.date_received as string | null) ?? null,
+      paymentMethod: (raw.qb_payment_method as string | null) ?? null,
+      linkedChargeId: (raw.stripe_charge_id as string | null) ?? null,
+      componentId: componentRef?.componentId ?? null,
+      paymentUnitId: componentRef?.paymentUnitId ?? null,
+      accountingCheckId: (raw.accounting_check_id as string | null) ?? null,
+      payerName: (raw.payer_name as string | null) ?? null,
+      qbEntityType: (raw.qb_entity_type as string | null) ?? null,
+      qbEntityId: (raw.qb_entity_id as string | null) ?? null,
+      qbTransactionMemo: (raw.qb_transaction_memo as string | null) ?? null,
+      qbLocation: (raw.qb_location as string | null) ?? null,
+      revenueLocation: (raw.revenue_location as string | null) ?? null,
+      qbDocNumber: (raw.qb_doc_number as string | null) ?? null,
+      qbCheckNumber: (raw.qb_check_number as string | null) ?? null,
+      entityId: (raw.entity_id as string | null) ?? null,
+      qbPayerType: (raw.qb_payer_type as string | null) ?? null,
+      exclusionReason: (raw.exclusion_reason as string | null) ?? null,
+    };
+    const stagedRecords = recordsByStaged.get(stagedPaymentId) ?? [];
+    if (!stagedRecords.some((existing) => existing.role === record.role && existing.linkedChargeId === record.linkedChargeId)) {
+      stagedRecords.push(record);
+      recordsByStaged.set(stagedPaymentId, stagedRecords);
+    }
+    if (record.linkedChargeId) {
+      const chargeRecords = recordsByCharge.get(record.linkedChargeId) ?? [];
+      if (!chargeRecords.some((existing) => existing.stagedPaymentId === record.stagedPaymentId && existing.role === record.role)) {
+        chargeRecords.push(record);
+        recordsByCharge.set(record.linkedChargeId, chargeRecords);
+      }
+    }
+  }
+
+  for (const row of rows) {
+    for (const component of [...row.components, ...row.provisional_components]) {
+      component.qboRecords = component.stagedPaymentId
+        ? recordsByStaged.get(component.stagedPaymentId) ?? []
+        : [];
+    }
+    for (const charge of row.charges) {
+      charge.qboRecords = charge.chargeId ? recordsByCharge.get(String(charge.chargeId)) ?? [] : [];
+    }
+    for (const gift of row.gifts) {
+      const giftRecords = [
+        ...gift.linkedChargeIds.flatMap((id) => recordsByCharge.get(id) ?? []),
+        ...gift.linkedStagedPaymentIds.flatMap((id) => recordsByStaged.get(id) ?? []),
+      ];
+      gift.qboRecords = giftRecords.filter((record, index, all) =>
+        all.findIndex((candidate) => candidate.stagedPaymentId === record.stagedPaymentId && candidate.role === record.role && candidate.linkedChargeId === record.linkedChargeId) === index,
+      );
+    }
+  }
 }
 
 function inferredPaymentMethod(alias: "sp" | "psp" | "qsp") {
@@ -826,6 +975,7 @@ router.get(
       GROUP BY d.id, p.id, bt.payee, bt.ref_no, bt.txn_type
     `);
     const byId = new Map((rowResult.rows as unknown as DepositRow[]).map((r) => [r.id, r]));
+    await hydrateQboRollups(rowResult.rows as unknown as DepositRow[]);
     const data = slim.flatMap((s) => {
       const r = byId.get(s.id);
       if (!r) return [];
