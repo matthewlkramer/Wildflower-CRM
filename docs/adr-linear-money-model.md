@@ -10,9 +10,8 @@ Layer 2's physical target is superseded and implemented by
 [`adr-bank-spine-money-model.md`](adr-bank-spine-money-model.md). The
 multi-match and unit-group retirement work is landed, and
 `payment_applications` now uses the bank-spine `payment_unit_id` anchor.
-Migrations 0179–0183 remain reviewed, human-gated final steps; their production
-application is not asserted here. The QB expected-posting grain remains an
-accountant-confirmation question.
+Migrations 0179–0183 are applied to production (owner-confirmed 2026-07-23).
+The QB expected-posting grain remains an accountant-confirmation question.
 **Owner:** reconciliation
 **Companions:** [`workbench-business-rules.md`](workbench-business-rules.md)
 (ratified workbench semantics — unchanged by this ADR except where noted),

@@ -321,35 +321,43 @@ downstream accounting evidence, including the historical
 
 It is distinct from the state of the QuickBooks record itself.
 
-## 6.1 Settlement-link states
+## 6.1 Pairing states
 
 | State | Meaning |
 | --- | --- |
-| `unlinked` | No deterministic `stripe_payouts.bank_deposit_id` pairing exists |
-| `paired` | A deterministic payout↔bank-deposit pairing exists |
-| `ambiguous` | Equivalent candidate deposits exist; `ambiguous_bank_match` is set while the deterministic pairing remains inspectable |
+| `unlinked` | No `stripe_payouts.bank_deposit_id` pairing exists — the payout has not (yet) been matched to a bank deposit |
+| `paired` | A deterministic payout↔bank-deposit pairing exists (the common resolved state) |
+| `ambiguous` | Equivalent candidate deposits existed at match time; `ambiguous_bank_match` is set and a deterministic pairing is chosen, awaiting a human confirmation to lock it |
 
-There is no settlement-link lifecycle or confirmation workflow. A direct
-deposit-level `bank_deposit_exclusions` decision is separate: finance/admin may
-mark a bank deposit not fundraising, or return it to the open queue. That
-decision never creates or changes payment units, components, applications, or
-gifts.
+The pairing is **deterministic and recomputed** — the matcher pairs each payout
+with the nearest bank deposit on/after arrival by amount+date. There is no
+`proposed → confirmed` lifecycle: a swapped equal-amount/same-day pair is
+economically inert, so most payouts are simply `paired` with no human step. The
+only human touchpoints are (a) confirming an `ambiguous` pick and (b) finance
+overrides of a wrong pairing (§6.2).
 
 A bundle-level QuickBooks deposit connected to multiple individual Stripe charges is not inherently a conflict. It is a normal bundle-to-unit mapping when amounts reconcile and no competing accounting relationship exists.
 
-## 6.2 Pairing actions and retired workflow
+## 6.2 Pairing actions (replacing the retired settlement-link lifecycle)
 
-| Action | Availability |
-| --- | --- |
-| View deterministic payout↔bank pairing | Any payout |
-| Inspect ambiguous candidates | `ambiguous_bank_match` |
-| Mark bank deposit not fundraising | Finance/admin; writes only `bank_deposit_exclusions` |
-| Return bank deposit to open queue | Finance/admin; deletes only the direct exclusion |
+`settlement_links` (with its `proposed`/`confirmed`/`exempt` lifecycle) is
+retired and dropped. The deposit-first workbench replaces those actions with a
+deterministic pairing plus finance overrides. The mapping from the old model:
 
-> **Open question (owner):** The old settlement-link propose/confirm/remove/
-> unmatch/resolve-as-withdrawal actions no longer exist under deterministic
-> payout↔deposit pairing; confirm the intended replacement semantics for any
-> product documentation that still needs those actions.
+| Retired settlement-link action | Current action | Availability |
+| --- | --- | --- |
+| Propose settlement (search QB) | *(none — the matcher auto-pairs)* | — |
+| Confirm settlement | **Confirm match** — locks the deterministic pick | Finance/admin, only when `ambiguous_bank_match` is set |
+| Remove proposal | *(none — there is no proposal state)* | — |
+| Unmatch confirmed settlement | **Unlink deposit** | Finance/admin, when a pairing exists |
+| Replace settlement relationship | **Link to a different deposit…** | Finance/admin |
+| Resolve as Stripe withdrawal (exempt) | **Resolve payout settlement** — records the resolution for a payout with no expected bank deposit (Stripe balance withdrawal, negative/failed payout) via the QBO accounting-evidence search | Finance/admin, for a payout with no bank deposit |
+
+Deposit-level "not fundraising" is a **separate** authority, not a pairing
+action: finance/admin may **Mark bank deposit not fundraising** (writes only a
+`bank_deposit_exclusions` row) or **Return bank deposit to open queue** (deletes
+that row). It never creates or changes payment units, components, applications,
+or gifts.
 
 An excluded QBO record remains accounting evidence and does not itself decide
 whether a bank deposit is fundraising. Deposit exclusion and payout pairing are

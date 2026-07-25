@@ -40,9 +40,8 @@ finance-gated UI #1 deposit-exclusion action writes only
 `bank_deposit_exclusions`. The deposit-first four-column workbench is the
 default reconciliation surface.
 
-Migrations **0179→0180→0181→0182→Publish→0183** are reviewed, human-gated
-final steps. This document does not assert that they have been applied to
-production.
+Migrations **0179→0180→0181→0182→Publish→0183** were the human-gated final
+steps and are **applied to production** (owner-confirmed 2026-07-23).
 
 ## Ratified rules with known or suspected implementation gaps
 

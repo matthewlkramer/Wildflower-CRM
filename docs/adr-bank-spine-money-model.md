@@ -12,8 +12,8 @@ by PRs **#34–#42**: `payment_units`, `bank_deposits`, and
 `bank_deposit_components` are first-class; payout↔deposit pairing is carried
 by `stripe_payouts.bank_deposit_id`; `payment_applications` is re-anchored to
 `payment_unit_id`; and `settlement_links` is retired. Migrations
-**0179→0180→0181→0182→Publish→0183** are the reviewed, human-gated final
-steps; this ADR does not assert that they have been applied to production.
+**0179→0180→0181→0182→Publish→0183** were the reviewed, human-gated final
+steps and are **applied to production** (owner-confirmed 2026-07-23).
 Written in response to the owner's "bank-deposit-as-spine" design note
 (2026-07-23).
 
@@ -189,8 +189,8 @@ and the Donorbox-sourced one do not both count.
 ## 6. Where to be careful / disagreements of sequencing
 
 The sequencing notes below are retained as implementation history. The
-bank-spine phases have landed in PRs #34–#42; remaining production application
-of migrations is human-gated and is not asserted here.
+bank-spine phases landed in PRs #34–#42 and their migrations (through 0183)
+are applied to production (owner-confirmed 2026-07-23).
 
 - **Finish 0158 first — it is not wasted.** The counted-uniqueness work the
   building agent is landing (three per-anchor partial unique indexes) is correct
