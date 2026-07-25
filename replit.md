@@ -79,13 +79,20 @@ current-status document.
      (a recomputed deterministic pairing with `ambiguous_bank_match`; NOT a
      confirmation workflow — `settlement_links` is retired and dropped);
    - `payment_units` as the canonical donor-level payment/evidence identity;
-   - `payment_applications` (anchored solely by `payment_unit_id`) for payment
-     unit → CRM gift — the three legacy source-anchor columns (`payment_id` /
+   - `payment_applications` (anchored solely by `payment_unit_id`) for the
+     component/payment-unit → CRM gift relationship: each unit has 0 or 1
+     counted gift; apparent multiple gifts are merged into allocation rows on
+     one gift; the three legacy source-anchor columns (`payment_id` /
      `stripe_charge_id` / `donorbox_donation_id`) are dropped; never re-add one;
+   - exclusion is a component/payment-unit fact. The current PR #42
+     `bank_deposit_exclusions` implementation is being migrated down from
+     deposit grain; a deposit's not-fundraising state is derived when all
+     components are excluded. Never add a deposit→gift link;
    - `qbo_accounting_checks` as the accounting discrepancy/review sidecar;
    - `source_links` for evidence ↔ evidence (implemented; the old
      source-specific pointer columns are dropped — never add a sibling
-     pointer column).
+     pointer column); gift/allocation↔QBO is derived transitively through the
+     component, so never add a direct gift↔QBO link or general M:N QBO table.
 7. **Refunds are transaction facts.** A processed refund removes or reduces live
    payment evidence. It does not, by itself, archive the CRM gift, rewrite donor
    intent, or prove the gift was never paid. There is no anticipatory refund
@@ -119,7 +126,8 @@ Before any reconciliation change, read:
 - [`docs/workbench-business-rules.md`](docs/workbench-business-rules.md) —
   ratified product semantics (normative even where current code disagrees);
 - [`docs/reconciliation-design.md`](docs/reconciliation-design.md) — target money
-  and relationship model;
+  and relationship model (with its physical target partly superseded by the
+  landed bank-spine ADR);
 - [`docs/adr-source-link-ledger.md`](docs/adr-source-link-ledger.md) —
   implemented evidence-to-evidence ledger; `source_links` is the sole
   authority and the old pointer columns were dropped in migration 0149.

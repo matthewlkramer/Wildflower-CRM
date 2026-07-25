@@ -38,19 +38,22 @@ unverified and confirm against code before relying on it.
    product semantics for the reconciliation workbench (rows, columns, states,
    actions). Normative; the realized UI is the four-column deposit-first
    workbench (Bank | Composition | Gifts | Accounting).
-3. [`adr-bank-spine-money-model.md`](adr-bank-spine-money-model.md) —
+3. [`proposal-ui2-workbench-actions.md`](proposal-ui2-workbench-actions.md) —
+   **ratified** UI #2 action target: component-grain row alignment, LIVE/WIRE/GAP
+   action status, and the typed QBO-derived accounting column.
+4. [`adr-bank-spine-money-model.md`](adr-bank-spine-money-model.md) —
    **primary current physical-model authority**: the landed bank-spine model
    with bank deposits as the spine and QBO downstream.
-4. [`adr-source-link-ledger.md`](adr-source-link-ledger.md) — evidence↔evidence
+5. [`adr-source-link-ledger.md`](adr-source-link-ledger.md) — evidence↔evidence
    ledger (**implemented**; `source_links` is the sole authority — the
    source-specific pointer columns it replaced were dropped in migration 0149).
-5. [`adr-linear-money-model.md`](adr-linear-money-model.md) — **ratified**
+6. [`adr-linear-money-model.md`](adr-linear-money-model.md) — **ratified**
    coding rules (gift = one payment event; meaning splits on allocations;
    expectations on the pledge) and the bank-anchored linear target model,
    including unit-group retirement and the production recoding inventory.
    (§3's Layer-2 physical target is **superseded** by the implemented bank-spine
    ADR above.)
-6. [`reconciliation-design.md`](reconciliation-design.md) — historical
+7. [`reconciliation-design.md`](reconciliation-design.md) — historical
    two-plane conceptual framing and ratified relationship context; its physical
    money target is partly superseded by the implemented bank-spine ADR.
 

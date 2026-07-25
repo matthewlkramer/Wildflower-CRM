@@ -90,6 +90,37 @@ Row anatomy (maps to existing data, nothing speculative):
   `qbo_accounting_checks` disposition (consistent / correction_needed /
   corrected / accepted_historical).
 
+## UI #2 target: component-aligned actions
+
+The next action slice is component/payment-unit grain, not a new
+deposit-to-gift model. Composition, Gifts, and Accounting are row-aligned per
+component:
+
+```text
+bank deposit → component/payment unit → 0/1 counted gift → 0..N QBO records
+```
+
+The deposit-level exclusion shipped in PR #42 is the current implementation
+being migrated down to component exclusion. “Mark not fundraising” and
+“Return to open queue” become all-component convenience shortcuts, while the
+deposit not-fundraising state is derived when all components are excluded.
+Excluded components stay visible and badge **Excluded** so gross→net→bank
+reconciliation remains inspectable.
+
+UI #2 does not track deposit→gift links. A component may have zero or one
+counted gift; apparent multiple gifts are merged into allocation rows on one
+gift. The old Match-evidence pile-on and gift lost/dormant actions are removed
+from this surface. Loss remains an opportunity/pledge disposition.
+
+QBO remains downstream documentation: typed `source_links` and
+`deposit_qbo_components` are retained, gift/allocation↔QBO is derived
+transitively, and no direct gift↔QBO or general M:N documentation table is
+introduced. The target adds per-component QBO rollup, backward “search QB and
+attach” from Composition/Gifts, component exclusion, unresolved-remainder
+placeholder/known-payment flows, and accounting-check dispositions. These are
+tracked as target gaps in
+[`proposal-ui2-workbench-actions.md`](proposal-ui2-workbench-actions.md).
+
 ## Worklist lenses (replace the current lens rail)
 
 1. **Unresolved composition** — deposit with dollars not explained by any
@@ -119,6 +150,12 @@ Dropped: `settlement_gaps` and `conflicts` as separate lenses (both fold into
 - The Resolve manual-pick + QuickBooks search escape hatch.
 - `viewerCanManageAccounting` gating.
 - Recent-changes rail + undo.
+
+The existing per-charge flows are retained while their exclusion and display
+grain is migrated to components/payment units. A payout with no expected bank
+deposit (balance withdrawal, net ≤ 0, or failed) is a derived state, not a
+routine manual bundle action; only a rare ambiguous-remainder escape hatch
+remains.
 
 ## Build plan (each step shippable)
 
