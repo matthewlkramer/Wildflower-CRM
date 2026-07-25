@@ -7,7 +7,9 @@ import {
   it,
   vi,
 } from "vitest";
-import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
+import { clearPaymentApplicationsForRealm ,
+  unitIdForAnchor,
+} from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -417,7 +419,7 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
     });
     await db.insert(schema.paymentApplications).values({
       id: nextId("pa"),
-      paymentId: sp,
+      paymentUnitId: await unitIdForAnchor("quickbooks", sp),
       giftId: b,
       amountApplied: "100.00",
       evidenceSource: "quickbooks",
@@ -465,14 +467,14 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
     await db.insert(schema.paymentApplications).values([
       {
         id: nextId("pa"),
-        paymentId: sp1,
+        paymentUnitId: await unitIdForAnchor("quickbooks", sp1),
         giftId: a,
         amountApplied: "100.00",
         evidenceSource: "quickbooks",
       },
       {
         id: nextId("pa"),
-        paymentId: sp2,
+        paymentUnitId: await unitIdForAnchor("quickbooks", sp2),
         giftId: b,
         amountApplied: "60.00",
         evidenceSource: "quickbooks",
@@ -826,7 +828,7 @@ describe.skipIf(!HAS_DB)(
       // The QB link lives in the counted ledger (the sole gift-link source).
       await db.insert(schema.paymentApplications).values({
         id: nextId("pa"),
-        paymentId: spId,
+        paymentUnitId: await unitIdForAnchor("quickbooks", spId),
         giftId,
         amountApplied: "100.00",
         evidenceSource: "quickbooks",
@@ -860,7 +862,7 @@ describe.skipIf(!HAS_DB)(
       });
       await db.insert(schema.paymentApplications).values({
         id: nextId("pa"),
-        paymentId: spId,
+        paymentUnitId: await unitIdForAnchor("quickbooks", spId),
         giftId,
         amountApplied: "100.00",
         evidenceSource: "quickbooks",

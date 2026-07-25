@@ -9,7 +9,9 @@ import {
 } from "vitest";
 import { stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
-import { clearPaymentApplicationsForRealm } from "./paymentApplicationsTestUtil";
+import { clearPaymentApplicationsForRealm ,
+  unitIdForAnchor,
+} from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -142,7 +144,7 @@ async function seedLedgerRow(opts: {
 }): Promise<string> {
   await db.insert(schema.paymentApplications).values({
     id: opts.id,
-    paymentId: opts.paymentId,
+    paymentUnitId: await unitIdForAnchor("quickbooks", opts.paymentId),
     giftId: opts.giftId,
     amountApplied: opts.amountApplied,
     evidenceSource: "quickbooks",

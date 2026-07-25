@@ -59,11 +59,15 @@ async function main(): Promise<void> {
           -- ledger; the legacy pointer columns are retired).
           OR EXISTS (
             SELECT 1 FROM payment_applications pa
+            JOIN payment_units pu
+              ON pu.id = pa.payment_unit_id
             JOIN payment_applications spa
               ON spa.gift_id = pa.gift_id
               AND spa.evidence_source = 'stripe'
               AND spa.link_role = 'counted'
-            WHERE pa.payment_id = sp.id
+            JOIN payment_units spu
+              ON spu.id = spa.payment_unit_id
+            WHERE pu.source_staged_payment_id = sp.id
               AND pa.evidence_source = 'quickbooks'
               AND pa.link_role = 'counted'
           )

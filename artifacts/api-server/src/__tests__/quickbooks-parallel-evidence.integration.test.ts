@@ -1,3 +1,8 @@
+import {
+  clearPaymentApplicationsForChargeIds,
+  clearPaymentApplicationsForStagedIds,
+  unitIdForAnchor,
+} from "./paymentApplicationsTestUtil";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 /**
@@ -43,6 +48,7 @@ let schema: {
   stagedPayments: Db["stagedPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   paymentApplications: Db["paymentApplications"];
+  paymentUnits: Db["paymentUnits"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -66,6 +72,7 @@ beforeAll(async () => {
     stagedPayments: dbMod.stagedPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     paymentApplications: dbMod.paymentApplications,
+    paymentUnits: dbMod.paymentUnits,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -91,7 +98,7 @@ beforeAll(async () => {
   // QB ownership lives in the counted ledger row (the sole gift-link source).
   await db.insert(schema.paymentApplications).values({
     id: `${stagedId}_pa`,
-    paymentId: stagedId,
+    paymentUnitId: await unitIdForAnchor("quickbooks", stagedId),
     giftId: qbGiftId,
     amountApplied: QB_GIFT_AMOUNT,
     evidenceSource: "quickbooks",
@@ -115,7 +122,7 @@ beforeAll(async () => {
   });
   await db.insert(schema.paymentApplications).values({
     id: `${chargeId}_pa`,
-    stripeChargeId: chargeId,
+    paymentUnitId: await unitIdForAnchor("stripe", chargeId),
     giftId: chargeGiftId,
     amountApplied: CHARGE_GIFT_AMOUNT,
     evidenceSource: "stripe",
@@ -127,19 +134,13 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (seededStagedIds.length) {
-    await db
-      .delete(schema.paymentApplications)
-      .where(inArrayFn(schema.paymentApplications.paymentId, seededStagedIds));
+    await clearPaymentApplicationsForStagedIds(seededStagedIds);
     await db
       .delete(schema.stagedPayments)
       .where(inArrayFn(schema.stagedPayments.id, seededStagedIds));
   }
   if (seededChargeIds.length) {
-    await db
-      .delete(schema.paymentApplications)
-      .where(
-        inArrayFn(schema.paymentApplications.stripeChargeId, seededChargeIds),
-      );
+    await clearPaymentApplicationsForChargeIds(seededChargeIds);
     await db
       .delete(schema.stripeStagedCharges)
       .where(inArrayFn(schema.stripeStagedCharges.id, seededChargeIds));

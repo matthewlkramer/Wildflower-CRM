@@ -1,3 +1,7 @@
+import {
+  clearPaymentApplicationsForChargeIds,
+  unitIdForAnchor,
+} from "./paymentApplicationsTestUtil";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -36,6 +40,7 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   paymentApplications: Db["paymentApplications"];
+  paymentUnits: Db["paymentUnits"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let andFn: (typeof import("drizzle-orm"))["and"];
@@ -92,7 +97,7 @@ async function seedChargeWithProposal(opts: {
     giftId: opts.giftId,
     amountApplied: opts.amountApplied ?? gross,
     evidenceSource: "stripe",
-    stripeChargeId: id,
+    paymentUnitId: await unitIdForAnchor("stripe", id),
     matchMethod: "human",
     confirmedAt: new Date(),
     createdTheGift: false,
@@ -119,9 +124,16 @@ async function ledgerRowsForCharge(chargeId: string) {
       note: schema.paymentApplications.note,
     })
     .from(schema.paymentApplications)
+    .innerJoin(
+      schema.paymentUnits,
+      eqFn(
+        schema.paymentApplications.paymentUnitId,
+        schema.paymentUnits.id,
+      ),
+    )
     .where(
       andFn(
-        eqFn(schema.paymentApplications.stripeChargeId, chargeId),
+        eqFn(schema.paymentUnits.stripeChargeId, chargeId),
         eqFn(schema.paymentApplications.evidenceSource, "stripe"),
       ),
     );
@@ -146,6 +158,7 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     paymentApplications: dbMod.paymentApplications,
+    paymentUnits: dbMod.paymentUnits,
   };
   eqFn = drizzle.eq;
   andFn = drizzle.and;
@@ -167,10 +180,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!HAS_DB || !db) return;
-  if (chargeIds.length)
-    await db
-      .delete(schema.paymentApplications)
-      .where(inArrayFn(schema.paymentApplications.stripeChargeId, chargeIds));
+  if (chargeIds.length) await clearPaymentApplicationsForChargeIds(chargeIds);
   if (giftIds.length)
     await db
       .delete(schema.paymentApplications)

@@ -1,3 +1,7 @@
+import {
+  clearPaymentApplicationsForStagedIds,
+  unitIdForAnchor,
+} from "./paymentApplicationsTestUtil";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -37,6 +41,7 @@ let schema: {
   stripeStagedCharges: Db["stripeStagedCharges"];
   stripePayouts: Db["stripePayouts"];
   paymentApplications: Db["paymentApplications"];
+  paymentUnits: Db["paymentUnits"];
   sourceLinks: Db["sourceLinks"];
   sourceLinkId: Db["sourceLinkId"];
   giftsAndPayments: Db["giftsAndPayments"];
@@ -120,6 +125,7 @@ beforeAll(async () => {
     stripeStagedCharges: dbMod.stripeStagedCharges,
     stripePayouts: dbMod.stripePayouts,
     paymentApplications: dbMod.paymentApplications,
+    paymentUnits: dbMod.paymentUnits,
     sourceLinks: dbMod.sourceLinks,
     sourceLinkId: dbMod.sourceLinkId,
     giftsAndPayments: dbMod.giftsAndPayments,
@@ -153,9 +159,7 @@ afterAll(async () => {
   if (!HAS_DB) return;
   // Children reference parents; claims reference children. Peel outward-in.
   if (stagedIds.length) {
-    await db
-      .delete(schema.paymentApplications)
-      .where(inArrayFn(schema.paymentApplications.paymentId, stagedIds));
+    await clearPaymentApplicationsForStagedIds(stagedIds);
     await db
       .delete(schema.sourceLinks)
       .where(inArrayFn(schema.sourceLinks.qbStagedPaymentId, stagedIds));
@@ -322,7 +326,7 @@ describe.skipIf(!HAS_DB)("staged payment split units (DB)", () => {
     giftIds.push(gift);
     await db.insert(schema.paymentApplications).values({
       id: nextId("pa"),
-      paymentId: parent,
+      paymentUnitId: await unitIdForAnchor("quickbooks", parent),
       giftId: gift,
       amountApplied: "100.00",
       evidenceSource: "quickbooks",

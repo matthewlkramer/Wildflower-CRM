@@ -3,6 +3,7 @@ import {
   clearPaymentApplicationsForChargeIds,
   clearPaymentUnitsForChargeIds,
   seedStripeApplication,
+  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -179,7 +180,7 @@ beforeAll(async () => {
   }
   await db.insert(schema.paymentApplications).values({
     id: PAYAPP_ID,
-    paymentId: STAGED_ID,
+    paymentUnitId: await unitIdForAnchor("quickbooks", STAGED_ID),
     giftId: GIFT_QB_ID,
     amountApplied: "100.00",
     evidenceSource: "quickbooks" as never,

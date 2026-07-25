@@ -15,6 +15,7 @@ import {
   qbMintedGiftIdForPayment,
   qbSoleGiftIdForPayment,
   seedStripeApplication,
+  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 
 /**
@@ -282,7 +283,7 @@ async function seedStaged(opts: {
   if (linkedGiftId) {
     await db.insert(schema.paymentApplications).values({
       id: nextId("pa"),
-      paymentId: id,
+      paymentUnitId: await unitIdForAnchor("quickbooks", id),
       giftId: linkedGiftId,
       amountApplied: opts.amount ?? "75.00",
       evidenceSource: "quickbooks",

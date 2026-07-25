@@ -1,3 +1,4 @@
+import { unitIdForAnchor } from "./paymentApplicationsTestUtil";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -121,6 +122,7 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
   paymentApplications: Db["paymentApplications"];
+  paymentUnits: Db["paymentUnits"];
   stripeStagedCharges: Db["stripeStagedCharges"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -170,9 +172,16 @@ async function corrLedgerCount(): Promise<number> {
   const rows = await db
     .select({ id: schema.paymentApplications.id })
     .from(schema.paymentApplications)
+    .innerJoin(
+      schema.paymentUnits,
+      eqFn(
+        schema.paymentApplications.paymentUnitId,
+        schema.paymentUnits.id,
+      ),
+    )
     .where(
       andFn(
-        eqFn(schema.paymentApplications.paymentId, STAGED_E),
+        eqFn(schema.paymentUnits.sourceStagedPaymentId, STAGED_E),
         eqFn(schema.paymentApplications.linkRole, "corroborating"),
       ),
     );
@@ -190,6 +199,7 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
     paymentApplications: dbMod.paymentApplications,
+    paymentUnits: dbMod.paymentUnits,
     stripeStagedCharges: dbMod.stripeStagedCharges,
   };
   eqFn = drizzle.eq;
@@ -309,7 +319,7 @@ beforeAll(async () => {
   await db.insert(schema.paymentApplications).values({
     id: `${RUN}_pa_c1`,
     giftId: GIFT_C1,
-    stripeChargeId: CH_C,
+    paymentUnitId: await unitIdForAnchor("stripe", CH_C),
     evidenceSource: "stripe",
     linkRole: "counted",
     amountApplied: "300.00",

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
+  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 
 /**
@@ -43,6 +44,7 @@ let schema: {
   stripeStagedCharges: Db["stripeStagedCharges"];
   donorboxDonations: Db["donorboxDonations"];
   paymentApplications: Db["paymentApplications"];
+  paymentUnits: Db["paymentUnits"];
   organizations: Db["organizations"];
   users: Db["users"];
 };
@@ -129,20 +131,13 @@ async function apply(anchor: AnchorArgs, giftId: string, amount: string) {
 }
 
 function anchorWhere(anchor: AnchorArgs) {
-  switch (anchor.evidenceSource) {
-    case "quickbooks":
-      return eqFn(schema.paymentApplications.paymentId, anchor.paymentId);
-    case "stripe":
-      return eqFn(
-        schema.paymentApplications.stripeChargeId,
-        anchor.stripeChargeId,
-      );
-    case "donorbox":
-      return eqFn(
-        schema.paymentApplications.donorboxDonationId,
-        anchor.donorboxDonationId,
-      );
-  }
+  const anchorId =
+    anchor.evidenceSource === "quickbooks"
+      ? anchor.paymentId
+      : anchor.evidenceSource === "stripe"
+        ? anchor.stripeChargeId
+        : anchor.donorboxDonationId;
+  return eqFn(schema.paymentUnits.id, `pu_${anchorId}`);
 }
 
 async function readRows(anchor: AnchorArgs) {
@@ -153,6 +148,10 @@ async function readRows(anchor: AnchorArgs) {
       linkRole: schema.paymentApplications.linkRole,
     })
     .from(schema.paymentApplications)
+    .innerJoin(
+      schema.paymentUnits,
+      eqFn(schema.paymentApplications.paymentUnitId, schema.paymentUnits.id),
+    )
     .where(anchorWhere(anchor));
 }
 
@@ -175,6 +174,7 @@ beforeAll(async () => {
     stripeStagedCharges: dbMod.stripeStagedCharges,
     donorboxDonations: dbMod.donorboxDonations,
     paymentApplications: dbMod.paymentApplications,
+    paymentUnits: dbMod.paymentUnits,
     organizations: dbMod.organizations,
     users: dbMod.users,
   };
@@ -296,7 +296,7 @@ describe.skipIf(!HAS_DB)("counted-uniqueness invariant (DB)", () => {
         .delete(schema.paymentApplications)
         .where(
           andFn(
-            eqFn(schema.paymentApplications.paymentId, sp),
+            eqFn(schema.paymentApplications.paymentUnitId, `pu_${sp}`),
             eqFn(schema.paymentApplications.linkRole, "counted"),
           ),
         );
@@ -324,22 +324,23 @@ describe.skipIf(!HAS_DB)("counted-uniqueness invariant (DB)", () => {
     const dn = await seedDonation();
 
     const anchors: {
-      cols: Record<string, string>;
+      anchorId: string;
       source: "quickbooks" | "stripe" | "donorbox";
     }[] = [
-      { cols: { paymentId: sp }, source: "quickbooks" },
-      { cols: { stripeChargeId: ch }, source: "stripe" },
-      { cols: { donorboxDonationId: dn }, source: "donorbox" },
+      { anchorId: sp, source: "quickbooks" },
+      { anchorId: ch, source: "stripe" },
+      { anchorId: dn, source: "donorbox" },
     ];
 
     for (const a of anchors) {
+      const paymentUnitId = await unitIdForAnchor(a.source, a.anchorId);
       await db.insert(schema.paymentApplications).values({
         id: nextId("pa"),
         giftId: giftA,
         amountApplied: "40.00",
         evidenceSource: a.source,
         linkRole: "counted",
-        ...a.cols,
+        paymentUnitId,
       });
       const err = await db
         .insert(schema.paymentApplications)
@@ -349,7 +350,7 @@ describe.skipIf(!HAS_DB)("counted-uniqueness invariant (DB)", () => {
           amountApplied: "40.00",
           evidenceSource: a.source,
           linkRole: "counted",
-          ...a.cols,
+          paymentUnitId,
         })
         .then(
           () => null,
@@ -364,7 +365,7 @@ describe.skipIf(!HAS_DB)("counted-uniqueness invariant (DB)", () => {
         amountApplied: "40.00",
         evidenceSource: a.source,
         linkRole: "corroborating",
-        ...a.cols,
+        paymentUnitId,
       });
     }
   });

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
+  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -169,7 +170,7 @@ async function seedStaged(opts: {
   if (linkedGiftId) {
     await db.insert(schema.paymentApplications).values({
       id: nextId("pa"),
-      paymentId: id,
+      paymentUnitId: await unitIdForAnchor("quickbooks", id),
       giftId: linkedGiftId,
       amountApplied: opts.amount ?? "100.00",
       evidenceSource: "quickbooks",
@@ -223,7 +224,7 @@ async function seedStripeLedgerRow(
   await db.insert(schema.paymentApplications).values({
     id: nextId("pa"),
     giftId,
-    stripeChargeId,
+    paymentUnitId: await unitIdForAnchor("stripe", stripeChargeId),
     amountApplied: "100.00",
     evidenceSource: "stripe",
     matchMethod: "human",
@@ -239,7 +240,7 @@ async function seedDonorboxLedgerRow(
   await db.insert(schema.paymentApplications).values({
     id: nextId("pa"),
     giftId,
-    donorboxDonationId,
+    paymentUnitId: await unitIdForAnchor("donorbox", donorboxDonationId),
     amountApplied: "100.00",
     evidenceSource: "donorbox",
     matchMethod: "human",
@@ -439,7 +440,7 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
     const stagedUnlinked = await seedStaged({ label: "ledger-only" }); // no legacy link ⇒ no auto PA row
     await db.insert(schema.paymentApplications).values({
       id: nextId("pa"),
-      paymentId: stagedUnlinked,
+      paymentUnitId: await unitIdForAnchor("quickbooks", stagedUnlinked),
       giftId: giftLedgerOnly,
       amountApplied: "100.00",
       evidenceSource: "quickbooks",

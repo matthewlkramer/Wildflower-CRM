@@ -11,6 +11,7 @@ import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
   seedStripeApplication,
+  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 import { chargeStatusSql, stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
@@ -73,6 +74,7 @@ let schema: {
   stagedPayments: Db["stagedPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   paymentApplications: Db["paymentApplications"];
+  paymentUnits: Db["paymentUnits"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -183,7 +185,7 @@ async function seedPaymentApplication(
 ): Promise<void> {
   await db.insert(schema.paymentApplications).values({
     id: `${stagedPaymentId}_pa`,
-    paymentId: stagedPaymentId,
+    paymentUnitId: await unitIdForAnchor("quickbooks", stagedPaymentId),
     giftId,
     amountApplied: amount,
     evidenceSource: "quickbooks",
@@ -213,9 +215,25 @@ async function readCharge(id: string) {
 
 async function readPaymentApplications(stagedPaymentId: string) {
   return db
-    .select()
+    .select({
+      id: schema.paymentApplications.id,
+      giftId: schema.paymentApplications.giftId,
+      amountApplied: schema.paymentApplications.amountApplied,
+      createdTheGift: schema.paymentApplications.createdTheGift,
+      evidenceSource: schema.paymentApplications.evidenceSource,
+      paymentUnitId: schema.paymentApplications.paymentUnitId,
+      linkRole: schema.paymentApplications.linkRole,
+      lifecycle: schema.paymentApplications.lifecycle,
+    })
     .from(schema.paymentApplications)
-    .where(eqFn(schema.paymentApplications.paymentId, stagedPaymentId));
+    .innerJoin(
+      schema.paymentUnits,
+      eqFn(
+        schema.paymentApplications.paymentUnitId,
+        schema.paymentUnits.id,
+      ),
+    )
+    .where(eqFn(schema.paymentUnits.sourceStagedPaymentId, stagedPaymentId));
 }
 
 beforeAll(async () => {
@@ -231,6 +249,7 @@ beforeAll(async () => {
     stagedPayments: dbMod.stagedPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     paymentApplications: dbMod.paymentApplications,
+    paymentUnits: dbMod.paymentUnits,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;

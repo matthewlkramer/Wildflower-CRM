@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
+  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 
 /**
@@ -255,7 +256,14 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
     const rows = await db
       .select({ paymentUnitId: schema.paymentApplications.paymentUnitId })
       .from(schema.paymentApplications)
-      .where(eqFn(schema.paymentApplications.stripeChargeId, ch));
+      .innerJoin(
+        schema.paymentUnits,
+        eqFn(
+          schema.paymentApplications.paymentUnitId,
+          schema.paymentUnits.id,
+        ),
+      )
+      .where(eqFn(schema.paymentUnits.stripeChargeId, ch));
     expect(rows).toEqual([{ paymentUnitId: `pu_${ch}` }]);
   });
 
@@ -323,8 +331,7 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
       giftId: giftA,
       amountApplied: "40.00",
       evidenceSource: "quickbooks",
-      paymentId: sp,
-      paymentUnitId: unit,
+      paymentUnitId: await unitIdForAnchor("quickbooks", sp),
       linkRole: "counted",
     });
     const err = await db
@@ -334,8 +341,7 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
         giftId: giftB,
         amountApplied: "40.00",
         evidenceSource: "donorbox",
-        donorboxDonationId: dn,
-        paymentUnitId: unit,
+        paymentUnitId: await unitIdForAnchor("donorbox", dn),
         linkRole: "counted",
       })
       .then(
