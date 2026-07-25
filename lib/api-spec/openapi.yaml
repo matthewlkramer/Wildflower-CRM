@@ -4710,6 +4710,29 @@ paths:
         "403": { $ref: "#/components/responses/FinanceForbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Only unclaimed manually-added components can be removed." }
+  /reconciliation/deposit-components/{id}/source-staged-payment:
+    patch:
+      operationId: setBankDepositComponentSourceStagedPayment
+      tags: [reconciliation]
+      summary: Set or clear a direct component's QBO source pointer.
+      description: Finance/admin review only. Updates only the payment unit's source_staged_payment_id pointer; it never changes money, gifts, applications, or component amount. Stripe units and provisional deposit-QBO rows are not eligible.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetBankDepositComponentSourceStagedPaymentBody" }
+      responses:
+        "200":
+          description: Updated source pointer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BankDepositComponentSourceStagedPaymentMutation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The component is Stripe/provisional or the selected QBO record is already claimed or excluded." }
   /reconciliation/deposits/{bankDepositId}/exclusion:
     post:
       operationId: setBankDepositExclusion
@@ -9510,6 +9533,7 @@ components:
               unconfirmed: { type: boolean, description: "True for a provisional QBO accounting-plane decomposition row." }
               source: { type: string, enum: [bank_spine, qbo_provisional] }
               stagedPaymentId: { type: string, nullable: true }
+              sourceStagedPaymentManual: { type: boolean, description: "Derived UI hint: the payment-unit pointer differs from the bank component's recompute provenance pointer, so finance can clear the human-attached source without a migration-backed audit column." }
               label: { type: string, nullable: true }
               exclusionReason: { type: string, nullable: true }
               matchBasis: { type: string, enum: [deposit_header_exact, deposit_header_ambiguous], nullable: true }
@@ -9719,6 +9743,19 @@ components:
         paymentUnitId: { type: string }
         amount: { type: string }
         source: { type: string, enum: [manual] }
+        needsReview: { type: boolean }
+    SetBankDepositComponentSourceStagedPaymentBody:
+      type: object
+      required: [stagedPaymentId]
+      properties:
+        stagedPaymentId: { type: string, nullable: true, description: "QBO staged-payment id to attach, or null to clear the pointer." }
+    BankDepositComponentSourceStagedPaymentMutation:
+      type: object
+      required: [componentId, paymentUnitId, sourceStagedPaymentId, needsReview]
+      properties:
+        componentId: { type: string }
+        paymentUnitId: { type: string }
+        sourceStagedPaymentId: { type: string, nullable: true }
         needsReview: { type: boolean }
     WorkbenchDepositCharge:
       allOf:

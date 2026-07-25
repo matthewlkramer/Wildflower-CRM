@@ -582,6 +582,25 @@ export const RemoveManualBankDepositComponentParams = zod.object({
 })
 
 /**
+ * Finance/admin review only. Updates only the payment unit's source_staged_payment_id pointer; it never changes money, gifts, applications, or component amount. Stripe units and provisional deposit-QBO rows are not eligible.
+ * @summary Set or clear a direct component's QBO source pointer.
+ */
+export const SetBankDepositComponentSourceStagedPaymentParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const SetBankDepositComponentSourceStagedPaymentBody = zod.object({
+  "stagedPaymentId": zod.string().nullable().describe('QBO staged-payment id to attach, or null to clear the pointer.')
+})
+
+export const SetBankDepositComponentSourceStagedPaymentResponse = zod.object({
+  "componentId": zod.string(),
+  "paymentUnitId": zod.string(),
+  "sourceStagedPaymentId": zod.string().nullable(),
+  "needsReview": zod.boolean()
+})
+
+/**
  * Finance/admin review only. Records only the deposit-level exclusion decision; it never creates or changes payment units, deposit components, or payment applications.
  * @summary Mark a Wells Fargo bank deposit as not fundraising.
  */
@@ -1494,6 +1513,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "unconfirmed": zod.boolean().optional().describe('True for a provisional QBO accounting-plane decomposition row.'),
   "source": zod.enum(['bank_spine', 'qbo_provisional']).optional(),
   "stagedPaymentId": zod.string().nullish(),
+  "sourceStagedPaymentManual": zod.boolean().optional().describe('Derived UI hint: the payment-unit pointer differs from the bank component\'s recompute provenance pointer, so finance can clear the human-attached source without a migration-backed audit column.'),
   "label": zod.string().nullish(),
   "exclusionReason": zod.string().nullish(),
   "matchBasis": zod.enum(['deposit_header_exact', 'deposit_header_ambiguous']).nullish(),

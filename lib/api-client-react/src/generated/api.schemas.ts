@@ -5951,6 +5951,8 @@ export type WorkbenchDepositCompositionComponentsItem = {
   unconfirmed?: boolean;
   source?: WorkbenchDepositCompositionComponentsItemSource;
   stagedPaymentId?: string | null;
+  /** Derived UI hint: the payment-unit pointer differs from the bank component's recompute provenance pointer, so finance can clear the human-attached source without a migration-backed audit column. */
+  sourceStagedPaymentManual?: boolean;
   label?: string | null;
   exclusionReason?: string | null;
   matchBasis?: WorkbenchDepositCompositionComponentsItemMatchBasis;
@@ -6281,6 +6283,18 @@ export interface BankDepositComponentMutation {
   paymentUnitId: string;
   amount: string;
   source: BankDepositComponentMutationSource;
+  needsReview: boolean;
+}
+
+export interface SetBankDepositComponentSourceStagedPaymentBody {
+  /** QBO staged-payment id to attach, or null to clear the pointer. */
+  stagedPaymentId: string | null;
+}
+
+export interface BankDepositComponentSourceStagedPaymentMutation {
+  componentId: string;
+  paymentUnitId: string;
+  sourceStagedPaymentId: string | null;
   needsReview: boolean;
 }
 

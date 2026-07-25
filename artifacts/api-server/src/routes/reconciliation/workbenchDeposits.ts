@@ -20,6 +20,8 @@ import {
   ListDepositCandidatePaymentUnitsParams,
   ListDepositCandidatePaymentUnitsQueryParams,
   RemoveManualBankDepositComponentParams,
+  SetBankDepositComponentSourceStagedPaymentParams,
+  SetBankDepositComponentSourceStagedPaymentBody,
   ReIncludeBankDepositComponentParams,
   SetBankDepositExclusionBody,
   SetBankDepositExclusionParams,
@@ -765,13 +767,18 @@ router.get(
             'unconfirmed', false, 'source', 'bank_spine',
             'manual', (c.source = 'manual'),
             'stagedPaymentId', u.source_staged_payment_id,
+            'sourceStagedPaymentManual', (
+              u.source_staged_payment_id IS NOT NULL
+              AND c.source_staged_payment_id IS DISTINCT FROM u.source_staged_payment_id
+            ),
             'exclusionReason', c.exclusion_reason,
             'countedGiftIds', COALESCE((
               SELECT jsonb_agg(pa.gift_id) FROM payment_applications pa
               WHERE pa.payment_unit_id = u.id AND pa.link_role = 'counted' AND pa.lifecycle = 'confirmed'
             ), '[]'::jsonb)
           ) ORDER BY c.id)
-          FROM bank_deposit_components c JOIN payment_units u ON u.id = c.payment_unit_id
+          FROM bank_deposit_components c
+          JOIN payment_units u ON u.id = c.payment_unit_id
           WHERE c.bank_deposit_id = d.id
         ), '[]'::jsonb) AS components,
         COALESCE((
@@ -1196,6 +1203,146 @@ router.delete(
       .delete(bankDepositExclusions)
       .where(sql`${bankDepositExclusions.bankDepositId} = ${params.bankDepositId}`);
     res.status(204).send();
+  }),
+);
+
+router.patch(
+  "/reconciliation/deposit-components/:id/source-staged-payment",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const params = parseOrBadRequest(SetBankDepositComponentSourceStagedPaymentParams, req.params, res);
+    if (!params) return;
+    const body = parseOrBadRequest(SetBankDepositComponentSourceStagedPaymentBody, req.body, res);
+    if (!body) return;
+
+    const result = await db.transaction(async (tx) => {
+      const componentResult = await tx.execute(sql`
+        SELECT c.id, c.source, c.needs_review, c.payment_unit_id,
+               u.id AS unit_id, u.kind, u.source_staged_payment_id
+        FROM bank_deposit_components c
+        JOIN payment_units u ON u.id = c.payment_unit_id
+        WHERE c.id = ${params.id}
+        FOR UPDATE OF c, u
+      `);
+      const component = (componentResult.rows as Array<{
+        id: string;
+        source: string;
+        needs_review: boolean;
+        payment_unit_id: string;
+        unit_id: string;
+        kind: string;
+        source_staged_payment_id: string | null;
+      }>)[0];
+      if (!component) return { kind: "not_found" as const };
+      if (!["check", "direct_ach", "wire", "other"].includes(component.kind)) {
+        return { kind: "component_not_eligible" as const };
+      }
+      if (!body.stagedPaymentId) {
+        await tx.execute(sql`
+          UPDATE payment_units
+          SET source_staged_payment_id = NULL, updated_at = now()
+          WHERE id = ${component.payment_unit_id}
+        `);
+        return {
+          kind: "ok" as const,
+          componentId: component.id,
+          paymentUnitId: component.payment_unit_id,
+          sourceStagedPaymentId: null,
+          needsReview: component.needs_review,
+        };
+      }
+
+      const targetResult = await tx.execute(sql`
+        SELECT
+          sp.id,
+          sp.exclusion_reason,
+          EXISTS (
+            SELECT 1
+            FROM payment_units other
+            WHERE other.source_staged_payment_id = sp.id
+              AND other.id <> ${component.payment_unit_id}
+          ) AS claimed_by_unit,
+          EXISTS (
+            SELECT 1
+            FROM source_links sl
+            WHERE sl.qb_staged_payment_id = sp.id
+              AND sl.lifecycle IN ('proposed', 'confirmed')
+          ) AS linked_in_source_links,
+          EXISTS (
+            SELECT 1
+            FROM payment_units booked_unit
+            JOIN payment_applications pa ON pa.payment_unit_id = booked_unit.id
+            WHERE booked_unit.source_staged_payment_id = sp.id
+              AND pa.link_role = 'counted'
+              AND pa.lifecycle = 'confirmed'
+          ) AS counted_to_gift
+        FROM staged_payments sp
+        WHERE sp.id = ${body.stagedPaymentId}
+        FOR SHARE
+      `);
+      const target = (targetResult.rows as Array<{
+        id: string;
+        exclusion_reason: string | null;
+        claimed_by_unit: boolean;
+        linked_in_source_links: boolean;
+        counted_to_gift: boolean;
+      }>)[0];
+      if (
+        !target ||
+        target.exclusion_reason ||
+        target.claimed_by_unit ||
+        target.linked_in_source_links ||
+        target.counted_to_gift
+      ) {
+        return { kind: "qbo_unavailable" as const };
+      }
+
+      const clearPlaceholderReview = component.unit_id.startsWith("pu_manual_") && component.needs_review;
+      await tx.execute(sql`
+        UPDATE payment_units
+        SET source_staged_payment_id = ${body.stagedPaymentId}, updated_at = now()
+        WHERE id = ${component.payment_unit_id}
+      `);
+      if (clearPlaceholderReview) {
+        await tx.execute(sql`
+          UPDATE bank_deposit_components
+          SET needs_review = false, updated_at = now()
+          WHERE id = ${component.id}
+        `);
+      }
+      return {
+        kind: "ok" as const,
+        componentId: component.id,
+        paymentUnitId: component.payment_unit_id,
+        sourceStagedPaymentId: body.stagedPaymentId,
+        needsReview: clearPlaceholderReview ? false : component.needs_review,
+      };
+    });
+
+    if (result.kind === "not_found") {
+      notFound(res, "bank deposit component");
+      return;
+    }
+    if (result.kind === "component_not_eligible") {
+      res.status(409).json({
+        error: "component_not_eligible",
+        message: "Only direct check, ACH, wire, and other components can use a source QBO pointer.",
+      });
+      return;
+    }
+    if (result.kind === "qbo_unavailable") {
+      res.status(409).json({
+        error: "qbo_staged_payment_unavailable",
+        message: "That QBO record is already claimed, linked as evidence, counted to a gift, or excluded.",
+      });
+      return;
+    }
+    res.json({
+      componentId: result.componentId,
+      paymentUnitId: result.paymentUnitId,
+      sourceStagedPaymentId: result.sourceStagedPaymentId,
+      needsReview: result.needsReview,
+    });
   }),
 );
 

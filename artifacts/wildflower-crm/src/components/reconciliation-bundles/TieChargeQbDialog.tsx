@@ -52,6 +52,7 @@ export function TieChargeQbDialog({
   onOpenChange,
   onPick,
   busy = false,
+  mode = "charge",
 }: {
   payoutId: string;
   charge: PayoutChargeSummary;
@@ -59,6 +60,7 @@ export function TieChargeQbDialog({
   onOpenChange: (open: boolean) => void;
   onPick: (qbStagedPaymentId: string, opts?: PickOptions) => void;
   busy?: boolean;
+  mode?: "charge" | "component";
 }) {
   const [q, setQ] = useState("");
   const payer = decodeHtmlEntities(charge.payerName ?? "").trim();
@@ -74,21 +76,19 @@ export function TieChargeQbDialog({
     >
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Find the QuickBooks row for this charge</DialogTitle>
+          <DialogTitle>{mode === "component" ? "Find the QuickBooks row for this component" : "Find the QuickBooks row for this charge"}</DialogTitle>
           <DialogDescription>
-            Tie the QuickBooks row recording the same donation as{" "}
+            {mode === "component" ? "Attach the unclaimed QuickBooks row documenting " : "Tie the QuickBooks row recording the same donation as "}
             {payer || shortId(charge.id)}
             {charge.amount != null
               ? ` (${formatCurrency(charge.amount)}`
               : " ("}
-            {charge.date ? ` · ${formatDate(charge.date)})` : ")"} on payout{" "}
-            {shortId(payoutId)}. The row's amount normally must exactly match
-            the charge's gross
+            {charge.date ? ` · ${formatDate(charge.date)})` : ")"}
+            {mode === "charge" ? ` on payout ${shortId(payoutId)}. The row's amount normally must exactly match the charge's gross` : ". The row must not already be tied to a charge, gift, payment unit, or exclusion."}
             {charge.net != null && charge.net !== charge.amount
-              ? ` or net (${formatCurrency(charge.net)})`
+              ? mode === "charge" ? ` or net (${formatCurrency(charge.net)})` : ""
               : ""}{" "}
-            amount — a differently-booked row can be tied with a deliberate
-            second click.
+            {mode === "charge" ? "amount — a differently-booked row can be tied with a deliberate second click." : ""}
           </DialogDescription>
         </DialogHeader>
         <div className="relative">
@@ -103,7 +103,7 @@ export function TieChargeQbDialog({
           />
         </div>
         <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
-          <QbRowResults q={q} charge={charge} busy={busy} onPick={onPick} />
+          <QbRowResults q={q} charge={charge} busy={busy} onPick={onPick} mode={mode} />
         </div>
       </DialogContent>
     </Dialog>
@@ -115,11 +115,13 @@ function QbRowResults({
   charge,
   busy,
   onPick,
+  mode,
 }: {
   q: string;
   charge: PayoutChargeSummary;
   busy: boolean;
   onPick: (id: string, opts?: PickOptions) => void;
+  mode: "charge" | "component";
 }) {
   const { data, isFetching, isError } = useSearchReconciliationQbStaged({
     q: q.trim() || undefined,
@@ -139,6 +141,7 @@ function QbRowResults({
     // The confirm accepts an exact match on the charge GROSS or NET (the
     // bookkeeper may have booked the post-fee bank deposit) — to the cent.
     const amountMismatch =
+      mode === "charge" &&
       chargeCents != null &&
       rowCents !== chargeCents &&
       (netCents == null || rowCents !== netCents);
@@ -149,8 +152,8 @@ function QbRowResults({
     // human can assert "this row records this charge's money" even when the
     // bookkeeper booked a different amount (e.g. a partial or adjusted
     // booking). Each blocker contributes its own explicit override flag.
-    const hardBlocked = c.conflictReason != null && !excluded;
-    const overridable = !hardBlocked && (excluded || amountMismatch);
+    const hardBlocked = c.conflictReason != null && (mode === "component" || !excluded);
+    const overridable = mode === "charge" && !hardBlocked && (excluded || amountMismatch);
     return {
       id: c.id,
       primary: c.label ?? shortId(c.id),
